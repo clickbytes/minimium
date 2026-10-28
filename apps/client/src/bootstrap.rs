@@ -262,9 +262,13 @@ pub fn connect_or_start(
             if let Some(status) = child_exit_status {
                 return Err(format!("local server exited during startup: {status}").into());
             }
+            // Startup never established ownership of a validated endpoint.
+            // Reap only our own child and report the useful startup error rather
+            // than attempting an admin shutdown against an unverified server.
+            owned.terminate()?;
             return Err(io::Error::new(
                 io::ErrorKind::TimedOut,
-                "timed out waiting for local server startup",
+                "timed out waiting for a validated local server; rebuild both client and server with `cargo build --workspace` and check the server output",
             )
             .into());
         }

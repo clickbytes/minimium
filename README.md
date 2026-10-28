@@ -24,6 +24,10 @@ Run the desktop client with its default local server behavior:
 cargo run -p minimium-client
 ~~~
 
+After updating the source, build the whole workspace before launching the
+client. `cargo run -p minimium-client` builds the client package only; its
+separately launched server executable can otherwise be missing or outdated.
+
 For a custom map, pass the same path to client and server. For example, this starts a local server automatically:
 
 ~~~text
