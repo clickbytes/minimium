@@ -43,14 +43,14 @@ pub(crate) fn initialize(
     }
 
     let map = if let Some(path) = map_path {
-        WorldMap::load_file(path).map_err(|error| {
+        minimium_assets::load_map(path).map_err(|error| {
             io::Error::new(
                 error.kind(),
                 format!("could not load map {}: {error}", path.display()),
             )
         })?
     } else {
-        WorldMap::parse(SAMPLE_MAP)
+        minimium_assets::parse_map(SAMPLE_MAP)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
     };
 

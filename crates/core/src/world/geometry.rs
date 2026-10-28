@@ -4,7 +4,7 @@ use super::{CELL_SIZE, COLLISION_EPSILON, PLAYER_HEIGHT, PLAYER_RADIUS};
 use crate::ids::PlayerId;
 use std::collections::HashMap;
 
-pub(super) fn triangle_area_squared(vertices: [[f32; 3]; 3]) -> f32 {
+pub fn triangle_area_squared(vertices: [[f32; 3]; 3]) -> f32 {
     let cross = triangle_normal(vertices);
     cross[0] * cross[0] + cross[1] * cross[1] + cross[2] * cross[2]
 }

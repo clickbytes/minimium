@@ -8,7 +8,7 @@ use crate::{
     options::ClientOptions,
     session::{ClientSession, SessionEvent, SessionState},
 };
-use minimium_core::{identity::PlayerProfileId, world::WorldMap};
+use minimium_core::identity::PlayerProfileId;
 use minimium_protocol::ServerMessage;
 use std::{
     error::Error,
@@ -23,7 +23,7 @@ const INPUT_QUEUE_CAPACITY: usize = 64;
 pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
     let map_path = options.map_path.clone();
     let map = if let Some(path) = map_path.as_deref() {
-        WorldMap::load_file(path).map_err(|error| {
+        minimium_assets::load_map(path).map_err(|error| {
             Text::MapLoadFailed {
                 path: path.display().to_string(),
                 detail: error.to_string(),
@@ -31,7 +31,7 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
             .to_string()
         })?
     } else {
-        WorldMap::parse(crate::SAMPLE_MAP)
+        minimium_assets::parse_map(crate::SAMPLE_MAP)
             .map_err(|error| Text::BundledMapInvalid(error.to_string()).to_string())?
     };
     let fingerprint = map.fingerprint();

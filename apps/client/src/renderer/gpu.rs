@@ -160,7 +160,7 @@ impl Renderer {
             camera_bind_group,
             depth_view,
             size,
-            character: CharacterState::at_spawn(map.spawn),
+            character: CharacterState::at_spawn(map.spawn()),
             health: PLAYER_MAX_HEALTH,
             collision_index,
             collision_query: CollisionQuery::default(),
