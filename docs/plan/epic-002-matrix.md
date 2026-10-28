@@ -104,4 +104,4 @@ Rzeczywisty graf i przyszły układ rozdzielono w architecture.md, decyzje opisa
 
 ## E002-15 — integracja przed testami
 
-Wyniki bramek statycznych dla 8043f24 oraz lista scenariuszy znajdują się w epic-002-verification.md. Main był przodkiem gałęzi epica. Przeglądy zadań i macierz kontraktów nie zastępują końcowej weryfikacji wykonania. PR #31 pozostaje draftem, a #30 i #14 otwarte do osobnego polecenia rozpoczęcia testów, ich pozytywnego wyniku i scalenia do main.
+Wyniki bramek statycznych i końcowe scenariusze runtime opisuje epic-002-verification.md. Wszystkie 18 manifestów obciążenia, dwa klienty, ownership Attached/Owned, lock, zapis/restart, migracja v2 oraz przejście przez schody, górny deck, bridge, rampę i blokadę pionowym trójkątem przeszły na hoście x86_64. Test symulacji porównał stałe wejścia 32 graczy dla lane 1/2/auto. Nie wykonano pełnego testu wizualnego ani awarii storage; lane equivalence przez rzeczywistą sieć i sprzęt Pentium 500 MHz nie są potwierdzone. PR #31 nadal wymaga końcowego review przed merge.

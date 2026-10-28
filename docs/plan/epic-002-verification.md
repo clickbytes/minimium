@@ -1,29 +1,30 @@
 # Epic 002 — verification ledger
 
-On 2026-10-28, Windows x86_64-pc-windows-msvc, rustc 1.99.0 (b940084d7 2026-09-28), integration head `8043f24cf0a2c5cad8495024d7a84e8b3d549274`, main `53314514dac1456744af909aa4a1ea910458d111`. Main was an ancestor of the integration head. These checks apply to this head before this documentation-only ledger change.
+Runtime phase executed on 2026-10-28 after the user's completion instruction. Environment: Windows 10 IoT Enterprise LTSC build 19044, x86_64-pc-windows-msvc, rustc 1.99.0 (b940084d7 2026-09-28), 12th Gen Intel Core i5-12600K, 10 cores / 16 logical processors, 128 GiB visible memory. Release workloads used binaries built at integration head `df83342f677f970c82a6c5ab64c55a95692622dc`. Main was `53314514dac1456744af909aa4a1ea910458d111` and an ancestor of that head.
 
 | Gate | Command | Result |
 | --- | --- | --- |
-| Format | `cargo fmt --all -- --check` | PASS |
-| Types | `cargo check --workspace --locked --offline` | PASS |
-| Static lint | `cargo clippy --workspace --locked --offline` | PASS with existing warnings |
-| Release build | `cargo build --workspace --release --locked --offline` | PASS |
-| Allocation feature build | `cargo build -p minimium-server --features allocation-metrics --locked --offline` | PASS |
-| File policy | `python scripts/check_file_lengths.py` | PASS, 104 source files |
-| Dependency graph | `python scripts/check_architecture.py` | PASS, workspace graph only |
-| Integration diff | `git diff --check origin/main` | PASS |
+| Format | `cargo fmt --all -- --check` | PASS at final working tree |
+| Types | `cargo check --workspace --locked --offline` | PASS at final working tree |
+| Static lint | `cargo clippy --workspace --locked --offline` | PASS with existing warnings: `large_enum_variant` for `ServerMessage` and `SessionEvent`, and `manual_div_ceil` in telemetry |
+| Release build | `cargo build --workspace --release --locked --offline` | PASS at final working tree |
+| Allocation feature build | `cargo build -p minimium-server --features allocation-metrics --locked --offline` | PASS at final working tree |
+| Architecture | `python scripts/check_architecture.py` | PASS, workspace graph only |
+| File policy | `python scripts/check_file_lengths.py` | PASS, 104 source files, maximum 500 physical lines |
+| Deterministic simulation | `cargo test -p minimium-server --locked --offline` | PASS, 1 test: same 32 fixed player inputs for 40 fixed steps gave identical bitwise positions and velocities at lanes 1, 2 and host `auto` |
+| Workspace tests | `cargo test --workspace --locked --offline` | PASS, 1 unit test; all other unit and doc-test targets contain zero tests |
+| Integration diff | `git diff --check origin/main` | PASS at final working tree |
 
-Clippy still reports `large_enum_variant` for `ServerMessage` and `SessionEvent`, as in the baseline; no boxing was added to silence it. Incremental compilation reports failed hardlinks and copies cache files instead; Git reports missing commit-graph files. The integration name-status review found deleted source files `message_dispatch.rs` and core `commands.rs`, whose responsibilities moved to runtime and platform respectively; no user data assets are deleted. Static checks and reviews do not demonstrate runtime behavior, compatibility or performance. Individual task evidence is recorded in issues #15–#29 and [the review](epic-002-review.md).
+The 18 release load runs used `games/sample/maps/performance.map`, 60 seconds each, generator lane 1, server lanes 1/2/auto. Both `clustered` and `dispersed` completed at 2, 100 and 500 requested clients. All 18 reports were schema v2, recorded all requested clients connected at start, had `errors=0`, exit code 0, and contained all three server samples. The reports counted 2,167,200 received snapshots total; each recorded RTT p99 of 20 ms on this host. A raw scan found no `admin_token`, `nonce` or `server_token` strings. Raw reports and process logs remain under `D:\Temp\minimium-epic002-matrix\20261028T160924Z-151e92bd`.
 
-## Final phase — NOT RUN
+Additional runtime checks passed: two independent console profiles connected to one server, moved, exchanged chat, pinged and completed a hitscan; a duplicate active profile was rejected. A queued save survived a clean restart and restored the profile name. A v2-compatible snapshot derived from a real v3 save loaded with legacy health defaulted to 100, and the next save wrote v3. The local owner started a child server, a second console attached, the attached client's exit left the server alive, and the owner exit stopped its child. A competing server could not acquire an already locked data directory. A raw fragmented v8 header with an incomplete Identify payload was closed; two following clients then connected without errors. Per-run evidence is in `D:\Temp\minimium-epic002-clients`, `D:\Temp\minimium-epic002-v2`, `D:\Temp\minimium-epic002-ownership`, `D:\Temp\minimium-epic002-lock` and `D:\Temp\minimium-epic002-partial`.
 
-This phase requires a separate explicit user instruction that the project is ready for final testing. Record commands, environment, SHA, observations and failures when authorized. No application, test or generator was run for this ledger.
+The demo-map collision route passed: after approaching from beyond the stair end, the raw client climbed each step to `y=4.0`, crossed the upper deck, bridge and far platform, stopped at a vertical triangle near `z=-2.5`, then climbed the walkable triangle ramp to about `y=0.8`. Position samples are in `D:\Temp\minimium-epic002-geometry\geometry.csv`.
 
-- Two clients against one server; UI console, prediction and interpolation.
-- Handshake, EOF, partial/zero writes, backpressure, timeout, reconnect, DNS and cancellation.
-- Snapshot v2 migration and v3 save/restart, errors, lock races and owned/attached process cleanup.
-- Movement, collision geometry, combat and full/delta snapshots.
-- Equivalent authoritative inputs and outcomes for lanes 1, 2 and auto with at least 32 players.
-- All 18 clustered/dispersed manifests at 2, 100 and 500 clients and lanes 1, 2 and auto; report v2, token isolation, CPU, RSS and optional allocation phases.
+The desktop demo opened a window whose title showed a live FPS value and 100 HP. Windows Graphics Capture timed out twice, so the 3D scene, console, resize, prediction and interpolation did not receive visual verification. The displayed FPS is not a benchmark.
 
-PR #31 remains draft and issue #30 and epic #14 remain open until the final phase passes and the epic PR is merged to main. Suitable 500 MHz hardware and a compatible target have not been established; record actual hardware and limitations instead of claiming the research target was met.
+An exploratory live lane comparison sampled input and world state at unsynchronized times and observed position differences up to 2.3 units. It did not align workload start and input tick, so it is inconclusive about live network lane equivalence. The controlled fixed-input simulation test passed, but exact live admission/input-tick equivalence remains open.
+
+Still unverified: desktop visual behavior; DNS/cancellation and reconnect timeouts; forced storage/final-save failures and crash recovery; zero-byte writes, sustained backpressure, slow or oversized admin I/O; exact network lane equivalence; and the Pentium-class 500 MHz target. The 500-client runs establish only that the prepared workloads completed on this Windows host. They do not demonstrate the 500 MHz capacity target.
+
+Clippy's existing `large_enum_variant` warnings for `ServerMessage` and `SessionEvent`, and `manual_div_ceil` in telemetry, remain; boxing or code churn was not added to silence them. The environment reports failed incremental hardlinks and falls back to copying cache files; Git has reported missing commit-graph files. All listed workspace gates now pass at this working tree, but runtime scenarios listed above remain open. PR #31 and issues #30/#14 remain open until the remaining runtime verification and integration review are recorded.
