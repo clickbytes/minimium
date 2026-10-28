@@ -227,3 +227,77 @@ pub(super) fn finite_input(value: f32) -> f32 {
         0.0
     }
 }
+
+/// Advances a character on the outside of a sphere using radial gravity.
+/// The surface is an analytic collision shell; rendered cube-sphere triangles
+/// are deliberately visual-only. Other solid objects are not resolved here.
+pub fn step_character_on_planet(
+    state: &mut CharacterState,
+    input: CharacterInput,
+    planet: super::regions::CubeSphere,
+    delta_seconds: f32,
+) {
+    if !delta_seconds.is_finite() || delta_seconds <= 0.0 {
+        return;
+    }
+    let (east, up, north) = planet.frame_at(state.position);
+    let mut direction = [
+        finite_input(input.direction[0]),
+        finite_input(input.direction[1]),
+    ];
+    let squared = direction.iter().map(|x| x * x).sum::<f32>();
+    if squared > 1.0 {
+        let inverse = squared.sqrt().recip();
+        direction = direction.map(|x| x * inverse);
+    }
+    let tangent = [
+        (east[0] * direction[0] + north[0] * direction[1]) * PLAYER_MOVE_SPEED,
+        (east[1] * direction[0] + north[1] * direction[1]) * PLAYER_MOVE_SPEED,
+        (east[2] * direction[0] + north[2] * direction[1]) * PLAYER_MOVE_SPEED,
+    ];
+    let mut vertical = if state.grounded {
+        if input.jump { PLAYER_JUMP_SPEED } else { 0.0 }
+    } else {
+        state
+            .velocity
+            .iter()
+            .zip(up)
+            .map(|(a, b)| a * b)
+            .sum::<f32>()
+    };
+    vertical = (vertical - GRAVITY * delta_seconds).max(-MAX_FALL_SPEED);
+    let next = [
+        state.position[0] + (tangent[0] + up[0] * vertical) * delta_seconds,
+        state.position[1] + (tangent[1] + up[1] * vertical) * delta_seconds,
+        state.position[2] + (tangent[2] + up[2] * vertical) * delta_seconds,
+    ];
+    let next_up = planet.up_at(next);
+    let distance = next
+        .iter()
+        .zip(planet.center)
+        .map(|(a, b)| (a - b) * (a - b))
+        .sum::<f32>()
+        .sqrt();
+    if distance <= planet.radius && vertical <= 0.0 {
+        state.position = [
+            planet.center[0] + next_up[0] * planet.radius,
+            planet.center[1] + next_up[1] * planet.radius,
+            planet.center[2] + next_up[2] * planet.radius,
+        ];
+        let normal_speed = tangent.iter().zip(next_up).map(|(a, b)| a * b).sum::<f32>();
+        state.velocity = [
+            tangent[0] - normal_speed * next_up[0],
+            tangent[1] - normal_speed * next_up[1],
+            tangent[2] - normal_speed * next_up[2],
+        ];
+        state.grounded = true;
+    } else {
+        state.position = next;
+        state.velocity = [
+            tangent[0] + next_up[0] * vertical,
+            tangent[1] + next_up[1] * vertical,
+            tangent[2] + next_up[2] * vertical,
+        ];
+        state.grounded = false;
+    }
+}

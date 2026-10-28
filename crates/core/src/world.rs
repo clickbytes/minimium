@@ -36,6 +36,6 @@ pub use map::{
     MapBox, MapTriangle, WorldMap, MAX_MAP_BOXES, MAX_MAP_COORDINATE, MAX_MAP_TRIANGLES,
 };
 pub use regions::{portal_destination, CubeSphere, WorldKind, WorldPortal};
-pub use rules::{step_character, CharacterInput, CharacterState, Player, ShotOutcome};
+pub use rules::{step_character, step_character_on_planet, CharacterInput, CharacterState, Player, ShotOutcome};
 pub use snapshot::WorldSnapshot;
 pub use world_state::{step_batch, SimulationBatch, World};

@@ -3,7 +3,8 @@ use super::collision_queries::{CollisionQuery, CollisionQueryStats};
 use super::geometry::{cell_for, intersects_player, update_cell_index};
 use super::map::WorldMap;
 use super::raycast::{MapRayQuery, PlayerRayQuery};
-use super::rules::{step_character, CharacterInput, CharacterState, Player};
+use super::rules::{step_character, step_character_on_planet, CharacterInput, CharacterState, Player};
+use super::regions::{portal_destination, CubeSphere, WorldPortal};
 use super::snapshot::WorldSnapshot;
 use super::{
     MAX_PLAYER_NAME_CHARS, PARALLEL_SIMULATION_MIN_PLAYERS, PLAYERS_PER_SIMULATION_BATCH,
@@ -32,6 +33,7 @@ pub struct SimulationBatch {
     pub(super) results: Vec<PlayerStepResult>,
     pub(super) collision_query: CollisionQuery,
     pub(super) collision_stats: CollisionQueryStats,
+    pub(super) planet: Option<CubeSphere>,
 }
 
 #[derive(Default)]
@@ -40,6 +42,8 @@ pub struct World {
     pub(super) cells: Arc<HashMap<Cell, Vec<PlayerId>>>,
     pub(super) player_cells: Arc<HashMap<PlayerId, Cell>>,
     pub(super) collision_index: Arc<CollisionIndex>,
+    pub(super) planet: Option<CubeSphere>,
+    pub(super) portals: Vec<WorldPortal>,
     pub(super) collision_query: CollisionQuery,
     pub(super) combat_player_query: PlayerRayQuery,
     pub(super) combat_map_query: MapRayQuery,
@@ -126,6 +130,7 @@ impl World {
         inputs: &HashMap<PlayerId, CharacterInput>,
         delta_seconds: f32,
     ) -> CollisionQueryStats {
+        let planet = self.planet;
         let Self {
             players,
             cells,
@@ -145,14 +150,18 @@ impl World {
                 grounded: player.grounded,
             };
             let input = inputs.get(id).copied().unwrap_or_default();
-            collision_stats.accumulate(collision_query.fill(collision_index, state, delta_seconds));
-            step_character(
-                &mut state,
-                input,
-                collision_query.candidates(),
-                collision_query.surface_candidates(),
-                delta_seconds,
-            );
+            if let Some(sphere) = planet.filter(|sphere| sphere.contains(state.position)) {
+                step_character_on_planet(&mut state, input, sphere, delta_seconds);
+            } else {
+                collision_stats.accumulate(collision_query.fill(collision_index, state, delta_seconds));
+                step_character(
+                    &mut state,
+                    input,
+                    collision_query.candidates(),
+                    collision_query.surface_candidates(),
+                    delta_seconds,
+                );
+            }
             player.position = state.position;
             player.velocity = state.velocity;
             player.grounded = state.grounded;
@@ -199,6 +208,7 @@ impl World {
             batch.inputs.clear();
             batch.results.clear();
             batch.collision_stats = CollisionQueryStats::default();
+            batch.planet = self.planet;
             if batch.inputs.capacity() < inputs_per_batch {
                 batch.inputs.reserve(inputs_per_batch);
             }
@@ -304,12 +314,33 @@ impl World {
         self.players.len()
     }
 
+    /// Apply map portals after the movement phase. Destination markers are kept
+    /// outside the paired source trigger, so one teleport cannot ping-pong.
+    pub fn resolve_portals(&mut self) {
+        if self.portals.is_empty() {
+            return;
+        }
+        let players = Arc::make_mut(&mut self.players);
+        let cells = Arc::make_mut(&mut self.cells);
+        let player_cells = Arc::make_mut(&mut self.player_cells);
+        for (id, player) in players.iter_mut() {
+            if let Some(destination) = portal_destination(player.position, &self.portals) {
+                player.position = destination;
+                player.velocity = [0.0; 3];
+                player.grounded = false;
+                update_cell_index(cells, player_cells, *id, destination);
+            }
+        }
+    }
+
     pub fn add_collider(&mut self, collider: Aabb) {
         Arc::make_mut(&mut self.collision_index).add(collider);
     }
 
     pub fn load_map(&mut self, map: &WorldMap) {
         self.spawn = map.spawn;
+        self.planet = map.planet();
+        self.portals = map.portals().to_vec();
         self.collision_index = Arc::new(map.collision_index());
         self.collision_query = CollisionQuery::default();
         self.combat_player_query = PlayerRayQuery::default();
@@ -326,18 +357,22 @@ pub fn step_batch(
 ) -> SimulationBatch {
     for step in batch.inputs.drain(..) {
         let mut state = step.state;
-        batch.collision_stats.accumulate(batch.collision_query.fill(
-            collision_index,
-            state,
-            delta_seconds,
-        ));
-        step_character(
-            &mut state,
-            step.input,
-            batch.collision_query.candidates(),
-            batch.collision_query.surface_candidates(),
-            delta_seconds,
-        );
+        if let Some(planet) = batch.planet.filter(|planet| planet.contains(state.position)) {
+            step_character_on_planet(&mut state, step.input, planet, delta_seconds);
+        } else {
+            batch.collision_stats.accumulate(batch.collision_query.fill(
+                collision_index,
+                state,
+                delta_seconds,
+            ));
+            step_character(
+                &mut state,
+                step.input,
+                batch.collision_query.candidates(),
+                batch.collision_query.surface_candidates(),
+                delta_seconds,
+            );
+        }
         batch.results.push(PlayerStepResult { id: step.id, state });
     }
     batch

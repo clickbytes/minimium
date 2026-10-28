@@ -110,6 +110,7 @@ impl ServerRuntime {
             TICK.as_secs_f32(),
             &self.executor,
         );
+        self.game.world.resolve_portals();
         self.metrics.record_collision_queries(collision_stats);
         self.metrics.simulation.record(simulation_started.elapsed());
         drop(simulation_phase);
