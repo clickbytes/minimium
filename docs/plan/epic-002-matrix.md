@@ -97,3 +97,7 @@ Katalog klienta przypisuje typowany identyfikator do każdej nazwy i aliasu; par
 ## E002-13 — telemetria i raport
 
 Inwentaryzacja metryk, granice histogramów, opcjonalna instrumentacja i potencjalne koszty alokacji znajdują się w performance.md; format v2 i ograniczenia identyfikacji endpointu w scenarios/report-v2.md. Ranga percentyla używa szerszej arytmetyki, a niefinitywna opcjonalna liczba jest zapisywana jako brak wartości. Statycznie sprawdzono 18 manifestów; pomiary, bezpieczeństwo próbek, zgodność lane i poprawność działania pozostają do końcowej fazy.
+
+## E002-14 — granice architektury
+
+Rzeczywisty graf i przyszły układ rozdzielono w architecture.md, decyzje opisano w ADR 0004, a dowody i odroczone scenariusze w epic-002-review.md. Checker analizuje krawędzie pakietów workspace i zgłasza zakazane zależności core oraz serwera od grafiki; nie bada tranzytywnych zależności zewnętrznych. Scoped search nie wykazał I/O ani unsafe w core. Przegląd statyczny nie dowodzi nieobecności wszystkich martwych API ani poprawności runtime.
