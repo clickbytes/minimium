@@ -73,4 +73,3 @@ Odebrana część implementacyjna: **67/67** pozycji (61 pól checklist #1–#12
 | 1.C4 | Pełny tick/fazy, pamięć i sieć raportu. | RuntimeMetrics; ProcessSampler; report::capture_server | I01 | odebrane — [przegląd](review.md) |
 | 1.C5 | Piętra, schody, most i przejście pod nim. | demo.map; step_character; docs/maps.md AABB | I01 | odebrane — [przegląd](review.md) |
 | 1.C6 | Publiczne interfejsy, wersjonowanie, rozszerzanie gry. | docs/architecture.md: Current module contracts; docs/protocol.md | I01 | odebrane — [przegląd](review.md) |
-
