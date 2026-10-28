@@ -1,5 +1,6 @@
 use crate::metrics::RuntimeMetrics;
 use minimium_core::identity::PlayerProfileId;
+use minimium_core::ids::PlayerId;
 use minimium_protocol::{encode_server_into, RemotePlayers, ServerMessage, MAX_SERVER_FRAME_BYTES};
 use std::{
     collections::VecDeque,
@@ -12,7 +13,7 @@ pub(crate) const MAX_QUEUED_OUTPUT_FRAMES: usize = 256;
 pub(crate) const CLIENT_CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub(crate) struct Client {
-    pub(crate) player_id: Option<u64>,
+    pub(crate) player_id: Option<PlayerId>,
     pub(crate) profile_id: Option<PlayerProfileId>,
     pub(crate) stream: TcpStream,
     pub(crate) input: Vec<u8>,

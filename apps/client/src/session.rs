@@ -92,7 +92,7 @@ impl ClientSession {
     /// the required Identify handshake frame. The first poll writes it.
     pub fn new(
         stream: TcpStream,
-        profile_id: [u8; 16],
+        profile_id: PlayerProfileId,
         expected_map_fingerprint: u64,
     ) -> io::Result<Self> {
         stream.set_nonblocking(true)?;
@@ -112,7 +112,7 @@ impl ClientSession {
             metrics: SessionMetrics::default(),
         };
         session
-            .append_encoded(&ClientMessage::Identify(profile_id))
+            .append_encoded(&ClientMessage::Identify(*profile_id.as_bytes()))
             .expect("Identify frame is within protocol limits");
         Ok(session)
     }
@@ -379,3 +379,4 @@ impl ClientSession {
         events.push(SessionEvent::Disconnected(reason));
     }
 }
+use minimium_core::identity::PlayerProfileId;

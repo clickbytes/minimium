@@ -268,7 +268,7 @@ fn poll_connector(
             if let Some(server) = server {
                 super::retain_local_server(local_server, server);
             }
-            match ClientSession::new(stream, *profile_id.as_bytes(), fingerprint) {
+            match ClientSession::new(stream, *profile_id, fingerprint) {
                 Ok(connected) => {
                     *session = Some(connected);
                     println!("{}", Text::AwaitingWelcome);

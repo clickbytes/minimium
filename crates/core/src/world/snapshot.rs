@@ -2,14 +2,15 @@ use super::collision_index::Cell;
 use super::geometry::cell_for;
 use super::rules::{CharacterState, Player};
 use super::VISIBILITY_RADIUS;
+use crate::ids::PlayerId;
 use std::collections::HashMap;
 use std::fmt::Write as FmtWrite;
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct WorldSnapshot {
-    pub(super) players: Arc<HashMap<u64, Player>>,
-    pub(super) cells: Arc<HashMap<Cell, Vec<u64>>>,
+    pub(super) players: Arc<HashMap<PlayerId, Player>>,
+    pub(super) cells: Arc<HashMap<Cell, Vec<PlayerId>>>,
 }
 
 #[derive(Clone, Copy)]
@@ -19,11 +20,11 @@ pub(super) struct NearbyCandidate<'a> {
 }
 
 impl WorldSnapshot {
-    pub fn position(&self, entity: u64) -> Option<[f32; 3]> {
+    pub fn position(&self, entity: PlayerId) -> Option<[f32; 3]> {
         self.players.get(&entity).map(|player| player.position)
     }
 
-    pub fn character_state(&self, entity: u64) -> Option<CharacterState> {
+    pub fn character_state(&self, entity: PlayerId) -> Option<CharacterState> {
         self.players.get(&entity).map(|player| CharacterState {
             position: player.position,
             velocity: player.velocity,
@@ -31,7 +32,7 @@ impl WorldSnapshot {
         })
     }
 
-    pub fn append_nearby(&self, recipient: u64, limit: usize, output: &mut String) {
+    pub fn append_nearby(&self, recipient: PlayerId, limit: usize, output: &mut String) {
         let mut append = |player: &Player| {
             let _ = write!(
                 output,
@@ -50,7 +51,7 @@ impl WorldSnapshot {
 
     pub fn visit_nearby<const CAPACITY: usize>(
         &self,
-        recipient: u64,
+        recipient: PlayerId,
         limit: usize,
         mut visit: impl FnMut(&Player),
     ) {
@@ -97,7 +98,7 @@ impl WorldSnapshot {
         }
     }
 
-    pub fn nearby_players(&self, recipient: u64, limit: usize) -> Vec<Player> {
+    pub fn nearby_players(&self, recipient: PlayerId, limit: usize) -> Vec<Player> {
         if limit == 0 {
             return Vec::new();
         }
@@ -119,7 +120,7 @@ impl WorldSnapshot {
 
     fn for_each_nearby_candidate<'a>(
         &'a self,
-        recipient: u64,
+        recipient: PlayerId,
         mut visit: impl FnMut(&'a Player, f32),
     ) {
         let Some(origin) = self.players.get(&recipient) else {
@@ -142,7 +143,7 @@ impl WorldSnapshot {
         let query_cell_count = axis_cell_count(minimum.0, maximum.0)
             .saturating_mul(axis_cell_count(minimum.1, maximum.1))
             .saturating_mul(axis_cell_count(minimum.2, maximum.2));
-        let mut inspect_ids = |ids: &[u64]| {
+        let mut inspect_ids = |ids: &[PlayerId]| {
             for id in ids {
                 if *id == recipient {
                     continue;

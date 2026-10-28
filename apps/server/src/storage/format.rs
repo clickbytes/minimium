@@ -2,6 +2,7 @@ use super::{
     invalid_world_snapshot,
     player_store::{PlayerStore, SaveSnapshot, StoredName, StoredPlayer},
 };
+use minimium_core::ids::PlayerId;
 use minimium_core::{
     files::atomic_replace_file,
     identity::PlayerProfileId,
@@ -64,7 +65,7 @@ pub(super) fn load(data_dir: &Path, map: &WorldMap) -> io::Result<PlayerStore> {
             return Err(invalid_world_snapshot("snapshot has too many players"));
         }
         let mut fields = line.split('\t');
-        let id = parse_saved_id(fields.next())?;
+        let id = PlayerId::new(parse_saved_id(fields.next())?);
         let profile_id = PlayerProfileId::from_hex(
             fields
                 .next()

@@ -39,3 +39,11 @@ Pełny zakres, implementacja krok po kroku, kryteria odbioru i blokery są w iss
 ## E002-00 — odbiór
 
 PR #13 scalono jako a3cba16f232a7967505376f84497350667f5c38e; zmienione pliki: apps/client/src/main.rs, apps/server/src/{main,message_dispatch,startup,world_inputs}.rs, crates/core/src/world.rs, crates/core/src/world/world_state.rs, docs/plan/architecture-review-2026-10-28.md. Przegląd i kontrole opisano w baseline; scenariusze runtime odroczone. Dokumentacja baseline i macierz uzupełnione w PR #32; wykonano przegląd zmian.
+
+## E002-01 — identyfikatory
+
+`core::ids::PlayerId` obejmuje wszystkie wartości `u64` bez dodatkowej walidacji; `new` i `get` jawnie przekraczają granicę. Indeksy świata, snapshoty domenowe, wejścia, połączenia i store używają tego typu. Indeks połączenia pozostaje `usize`; licznik przydziału, fingerprint i czas pozostają `u64`. Zapis i odczyt snapshotu zachowują dziesiętną reprezentację i dotychczasową walidację dodatniego ID. `PlayerProfileId` pozostaje w `core::identity`; protocol reexportuje długość z tego źródła, a klient i generator konwertują jawnie przy Identify.
+
+`claim` nadal blokuje aktywny profil, `release` usuwa aktywne ID, a `pending_departures` blokuje ponowne dołączenie do zastosowania Leave. Zamiana gracza w świecie usuwa stary wpis komórki. Nie wprowadzono `PlayerName`: transport i store wymagają ASCII alnum lub `_`, 1–24 bajtów, natomiast `World::rename_player` przycina do 24 znaków bez walidacji; ujednolicenie zmieniłoby zachowanie. Fingerprint pozostaje `u64`, ponieważ jest wartością mapy, a nie ID gracza; dalsze typowanie wymaga odrębnej oceny.
+
+Granice pozostające dla E002-02: `ClientMessage::Identify` używa 16 bajtów; `ServerMessage::Welcome.id`, `ShotResult.target_id`, `Chat.sender_id`, `RemotePlayer.id` i `RemotePlayerIds` używają `u64`. Serwer konwertuje przy budowaniu wiadomości i odczycie/zapisie snapshotu; klient nadal konsumuje model wire. Zmiana typów kodeka musi zachować wszystkie wartości i bajty v8. Scenariusze rejoin i kompatybilności wire/save są odroczone do końcowej fazy testów.

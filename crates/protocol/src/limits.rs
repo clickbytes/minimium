@@ -6,7 +6,7 @@ pub const MAX_FRAME_BYTES: usize = HEADER_BYTES + MAX_PAYLOAD_BYTES;
 pub const MAX_VISIBLE_PLAYERS: usize = 16;
 pub const MAX_SERVER_FRAME_BYTES: usize =
     HEADER_BYTES + 36 + MAX_VISIBLE_PLAYERS * (45 + std::mem::size_of::<u64>());
-pub const PLAYER_PROFILE_ID_BYTES: usize = 16;
+pub use minimium_core::identity::PLAYER_PROFILE_ID_BYTES;
 pub const MAX_CHAT_BYTES: usize = 128;
 
 pub(crate) const CLIENT_PING: u8 = 1;

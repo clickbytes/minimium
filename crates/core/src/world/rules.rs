@@ -9,11 +9,12 @@ use super::{
     COLLISION_EPSILON, GRAVITY, MAX_FALL_SPEED, MAX_STEP_UP, PLAYER_HEIGHT, PLAYER_JUMP_SPEED,
     PLAYER_MOVE_SPEED, PLAYER_RADIUS,
 };
+use crate::ids::PlayerId;
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct Player {
-    pub id: u64,
+    pub id: PlayerId,
     pub name: Arc<str>,
     pub position: [f32; 3],
     pub velocity: [f32; 3],
@@ -23,7 +24,7 @@ pub struct Player {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ShotOutcome {
-    pub target_id: Option<u64>,
+    pub target_id: Option<PlayerId>,
     pub remaining_health: Option<u16>,
     pub killed: bool,
 }
