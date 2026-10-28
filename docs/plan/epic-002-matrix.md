@@ -65,3 +65,7 @@ Przegląd unsafe: `MoveFileExW` otrzymuje żyjące podczas wywołania, zakończo
 ## E002-05 — symulacja i executor
 
 Executor i przypisanie faz telemetrii należą do serwera; core nie ma zależności telemetry. `World::step_players_with` utrzymuje wyłączny dostęp do świata przez przygotowanie, dispatch i zastosowanie wyników; `step_batch` otrzymuje niemutowalny indeks kolizji. Dispatcher musi zwrócić wszystkie batche w kolejności wejściowej; serwerowy executor odtwarza tę kolejność po zakończeniu workerów. Próg 32, rozmiar batcha 16, copy-on-write przed dispatch i ponowne użycie buforów zachowano. Porządek HashMap nie jest gwarantowany między uruchomieniami; lane equivalence i koszty alokacji pozostają nieweryfikowane do końcowych scenariuszy.
+
+## E002-06 — runtime serwera
+
+`ServerRuntime` posiada `GameState`, `ConnectionState`, `OperationsState` i `Scheduler`; fazy i kolejność udokumentowano w architecture.md. Świat pozostaje mutowany tylko w runtime na głównej lane. Błędy poll admin i accept przechodzą przez istniejące kontrolowane shutdown, guard endpointu jest zwalniany przed blokadą katalogu. `DispatchContext` i `WorldInputsContext` nadal istnieją na granicach faz; ich zawężenie i pipeline wejść pozostają do E002-08, więc pełny odbiór tego kryterium jest otwarty. Scenariusze shutdown i kolejności nie były uruchamiane.
