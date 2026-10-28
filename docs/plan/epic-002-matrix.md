@@ -62,7 +62,7 @@ Przegląd unsafe: `MoveFileExW` otrzymuje żyjące podczas wywołania, zakończo
 
 ## E002-04 — assets
 
-`minimium-assets::{load_map, parse_map}` jest jedynym parserem; zależy od core, które posiada walidowany model `WorldMap::from_parts`, geometrię i niezmieniony algorytm fingerprintu. `spawn()` zastępuje publiczne pole zapobiegając zmianie danych bez przeliczenia hash. Parser zachowuje limity i kolejność rekordów, kanonikalizację ścieżek OBJ oraz algorytm triangulacji. Core nie zawiera już plikowego I/O ani ścieżek map; executor/telemetry pozostaje do E002-05. Porównanie wartości fingerprintu i scenariusze błędnych ścieżek, symlinków, geometrii i limitów odroczono do końcowej fazy.
+`minimium-assets::{load_map, parse_map}` jest jedynym parserem; zależy od core, które posiada walidowany model `WorldMap::from_parts`, geometrię i niezmieniony algorytm fingerprintu. `spawn()` zastępuje publiczne pole zapobiegając zmianie danych bez przeliczenia hash. Parser zachowuje limity i kolejność rekordów, kanonikalizację ścieżek OBJ oraz algorytm triangulacji. Core nie zawiera już plikowego I/O ani ścieżek map; executor/telemetry pozostaje do E002-05. Release serwery z commita przed E002-04 (`a6873f5`) i aktualnego źródła zgłosiły identyczny fingerprint `demo.map`: `ef9eda1d989b6076`; zapis wyników: `D:\Temp\minimium-map-fingerprint-comparison\result.json`. Nie porównano innych map ani wyczerpująco ścieżek błędnych, symlinków i limitów.
 
 ## E002-05 — symulacja i executor
 

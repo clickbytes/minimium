@@ -1,6 +1,6 @@
 # Epic 002 final integration review
 
-Review baseline: source state f0033459075ad0ef07bd6b6b4b2dcdc1f5955314 against main 53314514dac1456744af909aa4a1ea910458d111. Later commits a8c6db9 and d1afe42 changed documentation only. Main is an ancestor of the integration branch. All task PRs #13 and #32–#47 are merged into the epic branch, and issues #15–#29 are closed. Final PR #31 targets main, is open and draft, and GitHub reports it mergeable with a clean merge state. GitHub reports no configured checks or submitted reviews for #31.
+Review baseline: source state f0033459075ad0ef07bd6b6b4b2dcdc1f5955314 against main 53314514dac1456744af909aa4a1ea910458d111. Commits a8c6db9, d1afe42, 33185e6 and e858372 changed documentation only after that source checkpoint. Main is an ancestor of the integration branch. All task PRs #13 and #32–#47 are merged into the epic branch, and issues #15–#29 are closed. Final PR #31 targets main, is open and draft, and GitHub reports it mergeable with a clean merge state. GitHub reports no configured checks or submitted reviews for #31.
 
 | Task | Issue | Task PR | Merge SHA | Reviewed runtime and static evidence |
 | --- | --- | --- | --- | --- |
@@ -8,7 +8,7 @@ Review baseline: source state f0033459075ad0ef07bd6b6b4b2dcdc1f5955314 against m
 | E002-01 | #16 | #33 | 9200bd5 | Typed identity boundaries; two clients, duplicate active profile rejection, reconnect and profile restore passed. |
 | E002-02 | #17 | #34 | 62075a8 | Typed v8 codec; live handshake, malformed partial Identify EOF and snapshot full/delta/removal passed. A legacy golden-frame corpus was not run. |
 | E002-03 | #18 | #35 | a6873f5 | Platform filesystem/profile/endpoint boundaries; directory lock, admin bounds, save and recovery scenarios passed. |
-| E002-04 | #19 | #36 | 10185dac | Asset loader and OBJ parser boundaries; bundled map collision route passed. Historical fingerprint comparison was not independently measured. |
+| E002-04 | #19 | #36 | 10185dac | Asset loader and OBJ parser boundaries; bundled map collision route passed. Baseline and current release servers reported the same bundled demo-map fingerprint, `ef9eda1d989b6076`. |
 | E002-05 | #20 | #37 | caafe2e | Pure simulation and executor separation; 32-player deterministic and live lane 1/2/auto state comparisons passed bitwise. |
 | E002-06 | #21 | #38 | 54827bc | Runtime phase ownership and shutdown; clean shutdown and Owned/Attached lifecycle passed. |
 | E002-07 | #22 | #39 | 186752c | Bounded TCP buffers; partial write, WouldBlock, WriteZero via scripted writer, EOF and live byte guard before frame cap passed. OS-level TCP WriteZero was not observed. |
@@ -30,7 +30,7 @@ The code review covered changed protocol encoding/decoding, identity storage, se
 | Protocol v8 and unknown error codes | crates/protocol/src | Explicit codec, discriminants and preserved unknown error values | Current v8 sessions, incomplete Identify EOF and snapshot transitions passed; no historical golden-frame corpus was compared. |
 | Profile format and player identity | crates/core/src/identity.rs, crates/platform/src/identity_store.rs | Domain identity separated from file operations | Two clients, duplicate active profile rejection, reconnect and profile restore passed; concurrent first-time profile creation was not stress-tested. |
 | Snapshot v3 and v2 migration | apps/server/src/storage | Versioned decoding and atomic file replacement | v2 migration, v3 save/restart, forced write failure and prior-snapshot recovery passed. |
-| Map fingerprint and geometry | crates/assets/src, crates/core/src/world | Shared loader and domain fingerprint | Bundled map and collision route passed; historical fingerprint comparison was not independently measured. |
+| Map fingerprint and geometry | crates/assets/src, crates/core/src/world | Shared loader and domain fingerprint; fingerprint serialization and float canonicalization match the pre-E002-04 source | Pre-E002-04 and current release servers reported the same bundled demo-map fingerprint, `ef9eda1d989b6076`; the collision route passed. Other map inputs were not covered by this fingerprint comparison. |
 | Commands and configuration | crates/platform/src/commands.rs, apps/client/src/client_commands.rs | Typed catalogs and documented options | Four help commands, selected invalid limits and chat/exit aliases passed; exhaustive option-combination testing was not run. |
 | Ordered world input and ownership | apps/server/src/runtime.rs, apps/server/src/runtime/inputs.rs, apps/server/src/world_inputs.rs | Runtime owns world and applies queue | Two-client inputs, duplicate profile rejection, snapshot ordering and full/delta/removal passed. |
 | Lifecycle and transport | apps/server/src, apps/client/src/connector.rs | Bounded I/O and owned/attached cleanup paths | Timeouts, cancellation/reconnect, live byte backpressure, EOF and Owned/Attached process ownership passed; OS-level TCP WriteZero remains unobserved. |
