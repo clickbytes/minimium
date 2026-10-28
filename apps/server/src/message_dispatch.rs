@@ -1,5 +1,5 @@
 use crate::{
-    connection::{queue_close_response, queue_message, Client},
+    connection::{queue_close_response, queue_message, Client, CloseReason},
     metrics::RuntimeMetrics,
     storage::PlayerStore,
     world_inputs::WorldInput,
@@ -50,11 +50,11 @@ pub(crate) fn dispatch_messages(context: DispatchContext<'_>) {
     for (index, message, decoded_at) in messages.drain(..) {
         if index >= clients.len()
             || disconnected.contains(&index)
-            || clients[index].close_deadline.is_some()
+            || clients[index].close_deadline().is_some()
         {
             continue;
         }
-        let player_id = clients[index].player_id;
+        let player_id = clients[index].player_id();
         match message {
             ClientMessage::Identify(profile_id) if player_id.is_none() => {
                 if player_store.active_players.len() >= max_players
@@ -96,8 +96,7 @@ pub(crate) fn dispatch_messages(context: DispatchContext<'_>) {
                         continue;
                     }
                 };
-                clients[index].player_id = Some(player.id);
-                clients[index].profile_id = Some(profile_id);
+                clients[index].activate(player.id, profile_id);
                 client_indices_by_player.insert(player.id, index);
                 pending_world_inputs.push((
                     WorldInput::Join(
@@ -118,12 +117,16 @@ pub(crate) fn dispatch_messages(context: DispatchContext<'_>) {
                     },
                 ) {
                     metrics.dropped_messages = metrics.dropped_messages.saturating_add(1);
+                    clients[index].disconnect_reason = Some(CloseReason::Backpressure);
                     disconnected.push(index);
                 } else {
                     println!("player {} connected", player.id);
                 }
             }
-            ClientMessage::Identify(_) => disconnected.push(index),
+            ClientMessage::Identify(_) => {
+                clients[index].disconnect_reason = Some(CloseReason::InvalidSequence);
+                disconnected.push(index);
+            }
             ClientMessage::Ping if player_id.is_some() => {
                 if !queue_message(&mut clients[index], metrics, ServerMessage::Pong) {
                     metrics.dropped_messages = metrics.dropped_messages.saturating_add(1);
@@ -234,7 +237,10 @@ pub(crate) fn dispatch_messages(context: DispatchContext<'_>) {
                     disconnected.push(index);
                 }
             }
-            _ => disconnected.push(index),
+            _ => {
+                clients[index].disconnect_reason = Some(CloseReason::InvalidSequence);
+                disconnected.push(index);
+            }
         }
     }
 }
