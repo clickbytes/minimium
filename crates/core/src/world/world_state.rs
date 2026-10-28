@@ -64,6 +64,11 @@ impl World {
     }
 
     pub fn join_at_with_health(&mut self, id: u64, name: String, position: [f32; 3], health: u16) {
+        // Replacing an existing ID must first remove its old spatial-cell membership.
+        // Otherwise one player may remain indexed in multiple cells.
+        if self.players.contains_key(&id) {
+            self.leave(id);
+        }
         self.next_id = self.next_id.max(id);
         let position = if position.iter().all(|value| value.is_finite())
             && self

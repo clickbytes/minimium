@@ -2,6 +2,7 @@ use crate::{
     connection::{queue_close_response, queue_message, Client},
     metrics::RuntimeMetrics,
     storage::PlayerStore,
+    world_inputs::WorldInput,
     CHAT_COOLDOWN, GLOBAL_CHAT_COOLDOWN, MAX_PENDING_WORLD_INPUTS, SHOT_COOLDOWN,
 };
 use minimium_core::{
@@ -15,15 +16,6 @@ use std::{
     collections::{HashMap, HashSet},
     time::Instant,
 };
-
-pub(crate) enum WorldInput {
-    Join(u64, String, [f32; 3], u16),
-    Leave(u64),
-    Move(u64, CharacterInput),
-    Fire(u64, [f32; 3]),
-    Chat(u64, String),
-    Rename(u64, String),
-}
 
 pub(crate) struct DispatchContext<'a> {
     pub(crate) clients: &'a mut Vec<Client>,

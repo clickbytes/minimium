@@ -1,6 +1,5 @@
 use crate::{
     connection::{queue_encoded_frame, queue_message, Client},
-    message_dispatch::WorldInput,
     metrics::RuntimeMetrics,
     storage::PlayerStore,
 };
@@ -13,6 +12,15 @@ use std::{
     collections::{HashMap, HashSet},
     time::{Duration, Instant},
 };
+
+pub(crate) enum WorldInput {
+    Join(u64, String, [f32; 3], u16),
+    Leave(u64),
+    Move(u64, CharacterInput),
+    Fire(u64, [f32; 3]),
+    Chat(u64, String),
+    Rename(u64, String),
+}
 
 const INPUT_IDLE_TIMEOUT: Duration = Duration::from_millis(250);
 

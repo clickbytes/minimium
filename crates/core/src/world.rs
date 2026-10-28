@@ -1,4 +1,3 @@
-pub const SAMPLE_MAP: &str = include_str!("../../../games/sample/maps/demo.map");
 const CELL_SIZE: f32 = 32.0;
 const VISIBILITY_RADIUS: f32 = 72.0;
 const PLAYER_RADIUS: f32 = 0.3;

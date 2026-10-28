@@ -16,10 +16,11 @@ mod terminal;
 mod world_inputs;
 use config::{DEFAULT_AUTOSAVE_SECONDS, MAX_PLAYERS};
 use connection::{Client, CLIENT_CLOSE_TIMEOUT};
-use message_dispatch::{DispatchContext, WorldInput};
+use message_dispatch::DispatchContext;
 use metrics::RuntimeMetrics;
 use minimium_telemetry::allocations::{self, Phase};
 use storage::{PersistenceWorker, PlayerStore, SAVE_VERSION};
+use world_inputs::WorldInput;
 #[cfg(feature = "allocation-metrics")]
 #[global_allocator]
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
