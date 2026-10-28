@@ -1,15 +1,21 @@
-use super::*;
-use std::borrow::Cow;
+use super::{GpuResources, Vertex, UI_VERTEX_CAPACITY};
+use crate::console::{font_atlas_pixels, UiVertex};
+use std::{borrow::Cow, error::Error, sync::Arc};
 use wgpu::util::DeviceExt;
+use winit::{dpi::PhysicalSize, window::Window};
 
-impl Renderer {
+impl GpuResources {
+    pub(super) fn update_remote_vertices(&mut self, vertices: &[Vertex]) {
+        self.remote_vertex_count = vertices.len() as u32;
+        if self.remote_vertex_count > 0 {
+            self.queue
+                .write_buffer(&self.player_buffer, 0, bytemuck::cast_slice(vertices));
+        }
+    }
+
     pub(super) async fn new(
         window: Arc<Window>,
-        map: WorldMap,
-        profile_id: PlayerProfileId,
-        data_dir: PathBuf,
-        map_path: Option<PathBuf>,
-        threads: crate::options::ThreadLane,
+        vertices: &[Vertex],
     ) -> Result<Self, Box<dyn Error>> {
         let size = window.inner_size();
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
@@ -110,12 +116,9 @@ impl Renderer {
         });
         let (ui_pipeline, ui_bind_group, ui_vertex_buffer) =
             create_ui_resources(&device, &queue, config.format);
-        let vertices = map_geometry(&map);
-        let map_fingerprint = map.fingerprint();
-        let collision_index = map.collision_index();
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("sample-world-geometry"),
-            contents: bytemuck::cast_slice(&vertices),
+            contents: bytemuck::cast_slice(vertices),
             usage: wgpu::BufferUsages::VERTEX,
         });
         let player_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -130,12 +133,6 @@ impl Renderer {
             + player_buffer.size()
             + ui_vertex_buffer.size()
             + (crate::console::ATLAS_WIDTH * crate::console::ATLAS_HEIGHT) as u64;
-        let mut frame_stats = crate::stats::FrameStats::default();
-        frame_stats.set_gpu_bytes(
-            fixed_gpu_bytes + u64::from(size.width.max(1)) * u64::from(size.height.max(1)) * 4,
-        );
-        let mut console = Console::new();
-        console.push_line("F1 opens the command console. Type help for commands.");
         Ok(Self {
             surface,
             device,
@@ -146,49 +143,15 @@ impl Renderer {
             ui_bind_group,
             ui_vertex_buffer,
             ui_vertex_count: 0,
-            console,
             vertex_buffer,
             vertex_count: vertices.len() as u32,
             player_buffer,
             remote_vertex_count: 0,
-            remote_vertices: Vec::with_capacity(16 * 36),
-            remote_players: [None; MAX_VISIBLE_PLAYERS],
-            last_remote_snapshot_time_ms: None,
-            last_remote_snapshot_received_at: None,
-            remote_geometry_dirty: false,
             camera_buffer,
             camera_bind_group,
             depth_view,
             size,
-            character: CharacterState::at_spawn(map.spawn()),
-            health: PLAYER_MAX_HEALTH,
-            collision_index,
-            collision_query: CollisionQuery::default(),
-            yaw: -std::f32::consts::FRAC_PI_2,
-            pitch: 0.0,
-            keys: HashSet::new(),
-            last_cursor: None,
-            cursor_locked: false,
-            last_frame: Instant::now(),
-            fps_time: Instant::now(),
-            fps_frames: 0,
-            frame_stats,
             fixed_gpu_bytes,
-            previous_bytes_sent: 0,
-            previous_bytes_received: 0,
-            last_redraw: Instant::now(),
-            remote_player_count: 0,
-            connection: ConnectionController::new(profile_id, map_fingerprint),
-            session_events: Vec::with_capacity(16),
-            last_shot_sent_at: None,
-            hit_confirmation_until: None,
-            data_dir,
-            map_path,
-            threads,
-            physics_accumulator: 0.0,
-            jump_pending: false,
-            input_keepalive: 0.0,
-            last_sent_direction: [0.0; 2],
         })
     }
 
@@ -201,9 +164,6 @@ impl Renderer {
         self.config.height = size.height;
         self.surface.configure(&self.device, &self.config);
         self.depth_view = create_depth_view(&self.device, size);
-        self.frame_stats.set_gpu_bytes(
-            self.fixed_gpu_bytes + u64::from(size.width) * u64::from(size.height) * 4,
-        );
     }
 }
 
