@@ -51,3 +51,9 @@ Granice pozostające dla E002-02: `ClientMessage::Identify` używa 16 bajtów; `
 ## E002-02 — kodek v8
 
 Modele protokołu używają `PlayerId`, `PlayerProfileId` i `ServerErrorCode`; konwersje do bajtów są w kodeku. `ClientKind` i `ServerKind` określają rodzaje ramek, nieznany kind nadal daje `UnknownMessage` po odebraniu pełnej ramki. Nieznany kod błędu jest zachowywany jako `Unknown(u8)`. Wspólne predykaty walidują nazwy, chat i składowe kierunku; dotychczasowa asymetria zdrowia `ShotResult` pozostała opisana w dokumentacji protokołu. Protocol nie używa telemetry bezpośrednio, ale obecna zależność protocol → core → telemetry pozostaje do E002-05; nie należy uznawać docelowego grafu za już osiągnięty. Scenariusze round-trip wszystkich kodów, ramek częściowych i zgodności bajtów są odroczone.
+
+## E002-03 — platform
+
+`minimium-platform` przejmuje admin_client, commands, endpoint, files, server_lock oraz operacje profilu w identity_store; core zachowuje typ i konwersję hex. Konsumenci korzystają z nowych ścieżek. Ładowanie map i OBJ nadal wykonuje I/O w core i zostaje przeniesione w E002-04, więc warunek całkowitego braku I/O w core nie jest jeszcze spełniony. Executor i telemetry pozostają do E002-05.
+
+Przegląd unsafe: `MoveFileExW` otrzymuje żyjące podczas wywołania, zakończone zerem bufory UTF-16, sprawdza wynik i zwraca błąd OS; `BCryptGenRandom` zapisuje do poprawnego bufora, używa systemowego RNG i sprawdza status. Istniejące rzutowanie długości `usize` na `u32` dotyczy obecnych wywołań o rozmiarach 16 i 32; publiczny interfejs generyczny dla większych buforów wymaga osobnej ostrożności. Redakcja tokenu w Debug, lock i kolejność publikacji nie zostały zmienione. Runtime oraz współbieżne tworzenie profilu pozostają odroczone.

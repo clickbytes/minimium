@@ -3,11 +3,11 @@ use crate::{
     connection::Client,
     storage::{compact_error, PersistenceWorker, PlayerStore},
 };
-use minimium_core::{
+use minimium_core::world::World;
+use minimium_platform::{
     admin_client::{SHUTDOWN_FILE, SHUTDOWN_OWNER_FILE},
     endpoint::ServerEndpoint,
     files::atomic_replace_file,
-    world::World,
 };
 use std::{
     fs::{self, File},

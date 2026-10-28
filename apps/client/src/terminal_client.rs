@@ -36,7 +36,7 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
     };
     let fingerprint = map.fingerprint();
     let (profile_dir, data_dir) = options.paths(fingerprint);
-    let profile_id = PlayerProfileId::load_or_create(&profile_dir)?;
+    let profile_id = minimium_platform::identity_store::load_or_create(&profile_dir)?;
 
     println!("{}", Text::TerminalIntro);
     let (sender, receiver) = mpsc::sync_channel(INPUT_QUEUE_CAPACITY);

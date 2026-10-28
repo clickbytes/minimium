@@ -1,4 +1,4 @@
-use minimium_core::{admin_client, endpoint::ServerEndpoint};
+use minimium_platform::{admin_client, endpoint::ServerEndpoint};
 use std::{
     net::{Ipv4Addr, SocketAddr},
     path::Path,

@@ -227,7 +227,7 @@ pub fn run(options: crate::options::ClientOptions) -> Result<(), Box<dyn Error>>
             .map_err(|error| Text::BundledMapInvalid(error.to_string()).to_string())?
     };
     let (profile_dir, data_dir) = options.paths(map.fingerprint());
-    let profile_id = PlayerProfileId::load_or_create(&profile_dir)?;
+    let profile_id = minimium_platform::identity_store::load_or_create(&profile_dir)?;
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
         Instant::now() + Duration::from_millis(16),

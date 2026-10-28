@@ -768,6 +768,7 @@ dependencies = [
  "bytemuck",
  "glam",
  "minimium-core",
+ "minimium-platform",
  "minimium-protocol",
  "minimium-telemetry",
  "pollster",
@@ -787,8 +788,16 @@ name = "minimium-loadtest"
 version = "0.1.0"
 dependencies = [
  "minimium-core",
+ "minimium-platform",
  "minimium-protocol",
  "minimium-telemetry",
+]
+
+[[package]]
+name = "minimium-platform"
+version = "0.1.0"
+dependencies = [
+ "minimium-core",
 ]
 
 [[package]]
@@ -803,6 +812,7 @@ name = "minimium-server"
 version = "0.1.0"
 dependencies = [
  "minimium-core",
+ "minimium-platform",
  "minimium-protocol",
  "minimium-telemetry",
 ]
@@ -816,6 +826,7 @@ name = "minimiumctl"
 version = "0.1.0"
 dependencies = [
  "minimium-core",
+ "minimium-platform",
 ]
 
 [[package]]

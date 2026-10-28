@@ -1,0 +1,8 @@
+[package]
+name = "minimium-platform"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+minimium-core = { path = "../core" }

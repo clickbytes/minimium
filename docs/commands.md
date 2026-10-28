@@ -11,6 +11,8 @@ minimium-server --version
 
 The defaults are one execution lane, 512 active players, loopback bind (`127.0.0.1`), an OS-selected game port (`0`), data directory `.minimium`, bundled map, and autosave every 300 seconds. `--threads` accepts 1 through 64 lanes or `auto` (host parallelism, subject to the 64-lane limit). `--max-players` accepts 1 through 512. `--autosave-seconds` accepts 0 through 604800; zero disables periodic saves. `--headless` leaves the server in the foreground but disables terminal commands. Without it, terminal commands use the same command registry as the admin CLI. Game traffic binds to the selected IP; the administrative listener is loopback-only.
 
+The shared server command parser is owned by `minimium-platform`; terminal and admin control use the same schema.
+
 `--map PATH` loads and validates the map before binding. `--game-port 0` asks the OS for an available port; a fixed port is useful when connecting explicitly. The server writes its selected game/admin endpoint into its data directory. Keep the directory private to one server process; an exclusive OS file lock prevents a second server from owning the same directory.
 
 To include allocation counters in `metrics show`, enable the server feature at build/run time:

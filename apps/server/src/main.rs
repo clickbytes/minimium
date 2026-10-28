@@ -26,11 +26,11 @@ use world_inputs::WorldInput;
 #[global_allocator]
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 use minimium_core::{
-    commands::ServerCommand,
     executor::Executor,
     identity::PlayerProfileId,
     world::{CharacterInput, World},
 };
+use minimium_platform::commands::ServerCommand;
 use minimium_protocol::{ClientMessage, PROTOCOL_VERSION};
 use std::{
     collections::{HashMap, HashSet, VecDeque},
