@@ -1,5 +1,5 @@
 use messages::ClientText as Text;
-pub(crate) use minimium_core::world::SAMPLE_MAP;
+pub(crate) const SAMPLE_MAP: &str = include_str!("../../../games/sample/maps/demo.map");
 use std::{
     io::{self, BufRead},
     sync::mpsc,

@@ -7,13 +7,15 @@ use minimium_core::{
     admin_client::{SHUTDOWN_FILE, SHUTDOWN_OWNER_FILE},
     endpoint::{new_admin_token, ServerEndpoint},
     server_lock::ServerDataLock,
-    world::{WorldMap, SAMPLE_MAP},
+    world::WorldMap,
 };
 use std::{
     env, io,
     net::{TcpListener, ToSocketAddrs},
     path::{Path, PathBuf},
 };
+
+const SAMPLE_MAP: &str = include_str!("../../../games/sample/maps/demo.map");
 
 pub(crate) struct Startup {
     pub(crate) map: WorldMap,
