@@ -33,3 +33,5 @@ Windows x86_64-pc-windows-msvc, rustc 1.99.0 (b940084d7 2026-09-28). Na bazie 53
 Przegląd: leave usuwa wpis gracza i jego komórki przed replacement; sample map pozostaje jednym plikiem włączanym przez oba binaria, WorldInput należy do modułu aplikacji wejść. Zgodność runtime pozostaje nieweryfikowana.
 
 Graf lokalnych zależności z cargo metadata --no-deps --locked --offline: core → telemetry; protocol i telemetry bez lokalnych zależności; server, client i loadtest → core, protocol, telemetry; ctl → core. Client dodatkowo zależy od bytemuck, glam, pollster, wgpu i winit.
+
+Aktywne przestrzenie publiczne bibliotek na tej bazie: core: commands, endpoint, executor, identity, world, admin_client, files, server_lock, ENGINE_NAME; telemetry: allocations, duration, process; protocol: funkcje encode/decode, limity i stałe oraz modele reexportowane z lib.rs. Aplikacje są binariami, nie bibliotekami publicznymi.
