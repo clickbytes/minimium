@@ -5,6 +5,10 @@ The load-test executable prints one JSON object per run with
 server metadata as key/value fields; absent optional values appear as `n/a`.
 No benchmark result is recorded here.
 
+Report data is assembled independently of the JSON and text writers. Optional
+non-finite numbers are also represented as `null` in JSON and `n/a` in text;
+they are not valid measured values or JSON numbers.
+
 ## Top-level fields
 
 The report preserves the prior generator result fields:

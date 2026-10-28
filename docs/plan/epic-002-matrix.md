@@ -93,3 +93,7 @@ Renderer składa właścicieli GPU, gameplay, input, UI, metryk, ustawień i kon
 ## E002-12 — konfiguracje i komendy
 
 Katalog klienta przypisuje typowany identyfikator do każdej nazwy i aliasu; parser, help i completion korzystają z tej samej tabeli. `ServerCommand::ALL` i `name` są źródłem parsera i tekstu help serwera/ctl. Typy lane pozostają osobne: zakres i znaczenie server, client i generator różnią się; tabela flag, domyślnych wartości, duplicate i konfliktów znajduje się w commands.md. Istniejący nieprecyzyjny komunikat serwera o niepoprawnym `--threads` opisano bez zmiany zachowania. Nie uruchamiano CLI; scenariusze parserów, help, aliasów i błędów są odroczone.
+
+## E002-13 — telemetria i raport
+
+Inwentaryzacja metryk, granice histogramów, opcjonalna instrumentacja i potencjalne koszty alokacji znajdują się w performance.md; format v2 i ograniczenia identyfikacji endpointu w scenarios/report-v2.md. Ranga percentyla używa szerszej arytmetyki, a niefinitywna opcjonalna liczba jest zapisywana jako brak wartości. Statycznie sprawdzono 18 manifestów; pomiary, bezpieczeństwo próbek, zgodność lane i poprawność działania pozostają do końcowej fazy.
