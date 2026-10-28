@@ -1,6 +1,8 @@
+use crate::cube_sphere::append_cube_sphere;
 use crate::obj::{load_obj_triangles, parse_map_vec3, parse_mesh_asset_path, ObjMeshOptions};
 use minimium_core::world::{
-    triangle_area_squared, MapBox, MapTriangle, WorldMap, MAX_MAP_BOXES, MAX_MAP_TRIANGLES,
+    triangle_area_squared, CubeSphere, MapBox, MapTriangle, WorldMap, WorldPortal, MAX_MAP_BOXES,
+    MAX_MAP_TRIANGLES,
 };
 use std::{
     fs::File,
@@ -46,14 +48,17 @@ fn parse_with_base(source: &str, base_dir: Option<&Path>) -> Result<WorldMap, St
     let format_version = match header {
         "MINIMIUM_MAP 1" => 1,
         "MINIMIUM_MAP 2" => 2,
+        "MINIMIUM_MAP 3" => 3,
         _ => {
             return Err(format!(
-                "line {header_line}: expected `MINIMIUM_MAP 1` or `MINIMIUM_MAP 2`"
+                "line {header_line}: expected `MINIMIUM_MAP 1`, `MINIMIUM_MAP 2` or `MINIMIUM_MAP 3`"
             ))
         }
     };
 
     let mut spawn = None;
+    let mut planet = None;
+    let mut portals = Vec::new();
     let mut boxes = Vec::new();
     let mut triangles = Vec::new();
     let mut mesh_count = 0usize;
@@ -66,6 +71,39 @@ fn parse_with_base(source: &str, base_dir: Option<&Path>) -> Result<WorldMap, St
                     return Err(format!("line {line_number}: duplicate spawn"));
                 }
                 spawn = Some(parse_map_vec3(&fields[1..4], line_number, "spawn")?);
+            }
+            Some("planet") if format_version >= 3 && fields.len() == 9 => {
+                if planet.is_some() {
+                    return Err(format!("line {line_number}: duplicate planet"));
+                }
+                let center = parse_map_vec3(&fields[1..4], line_number, "planet center")?;
+                let radius = fields[4]
+                    .parse::<f32>()
+                    .map_err(|_| format!("line {line_number}: invalid planet radius"))?;
+                let divisions = fields[5]
+                    .parse::<usize>()
+                    .map_err(|_| format!("line {line_number}: invalid planet divisions"))?;
+                let color = parse_map_vec3(&fields[6..9], line_number, "planet color")?;
+                if !radius.is_finite() || !(5.0..=1000.0).contains(&radius)
+                    || color.iter().any(|value| !(0.0..=1.0).contains(value))
+                {
+                    return Err(format!("line {line_number}: invalid planet parameters"));
+                }
+                let sphere = CubeSphere { center, radius };
+                append_cube_sphere(&mut triangles, sphere, divisions, color)
+                    .map_err(|error| format!("line {line_number}: {error}"))?;
+                planet = Some(sphere);
+            }
+            Some("portal") if format_version >= 3 && fields.len() == 8 => {
+                let at = parse_map_vec3(&fields[1..4], line_number, "portal trigger")?;
+                let destination = parse_map_vec3(&fields[4..7], line_number, "portal destination")?;
+                let radius = fields[7]
+                    .parse::<f32>()
+                    .map_err(|_| format!("line {line_number}: invalid portal radius"))?;
+                if !radius.is_finite() || !(0.5..=8.0).contains(&radius) {
+                    return Err(format!("line {line_number}: invalid portal radius"));
+                }
+                portals.push(WorldPortal { at, destination, radius });
             }
             Some("box") if fields.len() == 11 => {
                 if boxes.len() >= MAX_MAP_BOXES {
@@ -212,5 +250,5 @@ fn parse_with_base(source: &str, base_dir: Option<&Path>) -> Result<WorldMap, St
     if boxes.is_empty() && triangles.is_empty() {
         return Err("map must contain at least one box or triangle".into());
     }
-    WorldMap::from_parts(spawn, boxes, triangles)
+    WorldMap::with_regions(spawn, boxes, triangles, planet, portals)
 }
