@@ -20,6 +20,8 @@ Integers and IEEE-754 `f32` values use little-endian encoding. Movement and posi
 
 Before sending any other game message, a client must send message type `5` (`Identify`) with its 16-byte profile ID. The server sends `Welcome` only after the profile is accepted.
 
+For `SetName`, `Accepted` acknowledges admission to the ordered world-input queue, not completion of the later world mutation or persistence. An output queue may drop this acknowledgement even when the input was admitted.
+
 | Direction | Type | Payload |
 | --- | ---: | --- |
 | Client -> server | `5` Identify | 16-byte persistent client profile ID; must be the first message |

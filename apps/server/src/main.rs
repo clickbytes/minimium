@@ -5,7 +5,6 @@ mod config;
 mod connection;
 mod executor;
 mod lifecycle;
-mod message_dispatch;
 mod metrics;
 mod network;
 mod receive;

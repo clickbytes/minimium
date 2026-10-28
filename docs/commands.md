@@ -13,6 +13,8 @@ The defaults are one execution lane, 512 active players, loopback bind (`127.0.0
 
 The shared server command parser is owned by `minimium-platform`; terminal and admin control use the same schema.
 
+Up to eight queued server commands execute at a tick boundary before world inputs and simulation. `world save` acknowledges queuing, not completion of the disk write; `stop` enters controlled shutdown after the current tick.
+
 `--map PATH` loads and validates the map before binding. `--game-port 0` asks the OS for an available port; a fixed port is useful when connecting explicitly. The server writes its selected game/admin endpoint into its data directory. Keep the directory private to one server process; an exclusive OS file lock prevents a second server from owning the same directory.
 
 To include allocation counters in `metrics show`, enable the server feature at build/run time:
