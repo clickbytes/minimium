@@ -1,0 +1,162 @@
+use super::limits::{MAX_VISIBLE_PLAYERS, PLAYER_PROFILE_ID_BYTES};
+use std::{error::Error, fmt, sync::Arc};
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ClientMessage {
+    Identify([u8; PLAYER_PROFILE_ID_BYTES]),
+    Ping,
+    SetName(String),
+    Move { direction: [f32; 2], jump: bool },
+    Fire { direction: [f32; 3] },
+    Chat(String),
+    Quit,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RemotePlayer {
+    pub id: u64,
+    pub name: Arc<str>,
+    pub position: [f32; 3],
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RemotePlayers {
+    entries: [Option<RemotePlayer>; MAX_VISIBLE_PLAYERS],
+    len: usize,
+}
+
+impl Default for RemotePlayers {
+    fn default() -> Self {
+        Self {
+            entries: std::array::from_fn(|_| None),
+            len: 0,
+        }
+    }
+}
+
+impl RemotePlayers {
+    pub fn push(&mut self, player: RemotePlayer) -> bool {
+        if self.len == MAX_VISIBLE_PLAYERS || self.get(player.id).is_some() {
+            return false;
+        }
+        self.entries[self.len] = Some(player);
+        self.len += 1;
+        true
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    pub fn get(&self, id: u64) -> Option<&RemotePlayer> {
+        self.iter().find(|player| player.id == id)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &RemotePlayer> {
+        self.entries[..self.len].iter().filter_map(Option::as_ref)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemotePlayerIds {
+    entries: [Option<u64>; MAX_VISIBLE_PLAYERS],
+    len: usize,
+}
+
+impl Default for RemotePlayerIds {
+    fn default() -> Self {
+        Self {
+            entries: [None; MAX_VISIBLE_PLAYERS],
+            len: 0,
+        }
+    }
+}
+
+impl RemotePlayerIds {
+    pub fn push(&mut self, id: u64) -> bool {
+        if self.len == MAX_VISIBLE_PLAYERS || self.contains(id) {
+            return false;
+        }
+        self.entries[self.len] = Some(id);
+        self.len += 1;
+        true
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    pub fn contains(&self, id: u64) -> bool {
+        self.iter().any(|candidate| *candidate == id)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &u64> {
+        self.entries[..self.len].iter().filter_map(Option::as_ref)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ServerMessage {
+    Welcome {
+        id: u64,
+        map_fingerprint: u64,
+        health: u16,
+    },
+    Pong,
+    Accepted,
+    Bye,
+    Error(u8),
+    ShotResult {
+        target_id: Option<u64>,
+        remaining_health: Option<u16>,
+        killed: bool,
+    },
+    HealthUpdate(u16),
+    Chat {
+        sender_id: u64,
+        sender_name: String,
+        text: String,
+    },
+    Snapshot {
+        server_time_ms: u64,
+        full_snapshot: bool,
+        self_position: [f32; 3],
+        self_velocity: [f32; 3],
+        self_grounded: bool,
+        players: RemotePlayers,
+        removed_players: RemotePlayerIds,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProtocolError {
+    UnsupportedVersion(u8),
+    UnknownMessage(u8),
+    PayloadTooLarge,
+    InvalidPayload,
+    InvalidName,
+}
+
+impl fmt::Display for ProtocolError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnsupportedVersion(version) => {
+                write!(formatter, "unsupported protocol version {version}")
+            }
+            Self::UnknownMessage(kind) => write!(formatter, "unknown message type {kind}"),
+            Self::PayloadTooLarge => formatter.write_str("protocol payload exceeds limit"),
+            Self::InvalidPayload => formatter.write_str("invalid protocol payload"),
+            Self::InvalidName => formatter.write_str("invalid player name"),
+        }
+    }
+}
+
+impl Error for ProtocolError {}

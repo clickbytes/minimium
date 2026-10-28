@@ -16,7 +16,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         );
         return Ok(());
     }
-    let mut data_dir = PathBuf::from(".minimium");
+    let mut data_dir = PathBuf::from(minimium_core::files::DEFAULT_SERVER_DATA_DIR);
     if let Some(index) = args.iter().position(|arg| arg == "--data-dir") {
         if index + 1 >= args.len() {
             return Err("--data-dir requires a path".into());

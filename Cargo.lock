@@ -788,6 +788,7 @@ version = "0.1.0"
 dependencies = [
  "minimium-core",
  "minimium-protocol",
+ "minimium-telemetry",
 ]
 
 [[package]]

@@ -4,6 +4,8 @@ use std::{
     path::Path,
 };
 
+const LOCK_FILE: &str = "server.lock";
+
 /// Holds the exclusive lock for a server data directory for its lifetime.
 ///
 /// The lock file is deliberately left in place when the handle is dropped;
@@ -35,7 +37,7 @@ pub fn is_locked(data_dir: &Path) -> io::Result<bool> {
     let file = OpenOptions::new()
         .read(true)
         .write(true)
-        .open(data_dir.join("server.lock"))?;
+        .open(data_dir.join(LOCK_FILE))?;
     match file.try_lock() {
         Ok(()) => Ok(false),
         Err(std::fs::TryLockError::WouldBlock) => Ok(true),
@@ -49,5 +51,5 @@ fn open_lock_file(data_dir: &Path) -> io::Result<File> {
         .write(true)
         .create(true)
         .truncate(false)
-        .open(data_dir.join("server.lock"))
+        .open(data_dir.join(LOCK_FILE))
 }

@@ -2,6 +2,9 @@
 use std::fs;
 use std::io;
 
+/// Default server data directory used by the server and its control client.
+pub const DEFAULT_SERVER_DATA_DIR: &str = ".minimium";
+
 #[cfg(windows)]
 pub fn atomic_replace_file(
     source: &std::path::Path,

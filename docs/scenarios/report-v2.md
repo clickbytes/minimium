@@ -33,8 +33,15 @@ The report preserves the prior generator result fields:
   `rtt_max_ms`
 
 Their values come from the simulated generator's `WorkerStats`, elapsed wall
-time, or Rust's OS and architecture constants. RTT percentiles are estimates
-from the generator's fixed histogram buckets. Existing `application_bytes_*`
+time, or Rust's OS and architecture constants. RTT samples are monotonic elapsed
+time from sending a workload ping until receiving its pong; setup pings do not
+contribute. `rtt_samples` is zero when there are no samples. RTT min/average/
+percentile/max values are JSON `null` with zero samples and `n/a` in text output.
+RTT percentiles use a fixed histogram with microsecond upper bounds
+50, 100, 250, 500, 1,000, 2,000, 5,000, 10,000, 20,000, 50,000, 100,000,
+250,000, 500,000, 1,000,000, 2,500,000, and 5,000,000, followed by overflow.
+The percentile is the upper bound of the bucket containing the nearest-rank
+sample; overflow reports the observed maximum. Existing `application_bytes_*`
 fields remain total application bytes for the complete run, including setup.
 The new setup and measurement byte fields split those totals at the shared
 measurement start.
@@ -61,8 +68,17 @@ acknowledgements, immediately before the shared workload start; `after` is
 captured after all workers finish. These are the server's returned text, not
 generator estimates.
 If a sample is unavailable, the corresponding object is JSON `null`. A sample
-is rejected if the endpoint identity changes between its two requests. The
-endpoint token and data directory are never serialized.
+is rejected if the endpoint identity changes between its two requests. Samples
+are accepted only when the explicitly configured generator address is a literal
+`127.0.0.1:PORT`, the status `game_address` matches it, and that port matches
+the endpoint's game port. The endpoint identity, including its token, must also
+remain the same across every accepted sample. An address mismatch, endpoint
+identity inconsistency, failed requested capture, or response containing the
+token makes all three server samples `null`. Diagnostics never include admin
+error details or the token. The token is held only in process memory and the
+data directory is never serialized. This loopback address check associates
+samples with the local game listener; it is not cryptographic identity
+verification.
 
 `clients_connected` counts clients that received Welcome. A client is
 `clients_connected_at_start` only if it also received the SetName acknowledgement

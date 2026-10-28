@@ -2,8 +2,8 @@ use minimium_telemetry::duration::DurationStats;
 use minimium_telemetry::process::ProcessSampler;
 use std::time::{Duration, Instant};
 
-/// Fixed-cost client frame metrics. Recording a frame does not allocate.
-#[derive(Default)]
+/// Fixed-storage frame histograms; periodic process sampling may allocate on
+/// platforms that read process data from files.
 pub struct FrameStats {
     frame_intervals: DurationStats,
     cpu_work: DurationStats,
@@ -14,6 +14,22 @@ pub struct FrameStats {
     gpu_bytes: Option<u64>,
     process: ProcessSampler,
     process_cpu_time: Option<Duration>,
+}
+
+impl Default for FrameStats {
+    fn default() -> Self {
+        Self {
+            frame_intervals: DurationStats::frames(),
+            cpu_work: DurationStats::frames(),
+            sample_count: 0,
+            elapsed_nanoseconds: 0,
+            presented_frames: 0,
+            total_draw_calls: 0,
+            gpu_bytes: None,
+            process: ProcessSampler::default(),
+            process_cpu_time: None,
+        }
+    }
 }
 
 impl FrameStats {
@@ -42,22 +58,25 @@ impl FrameStats {
     /// Formats the accumulated frame and CPU-work timing summaries.
     pub fn summary(&self) -> String {
         let elapsed_seconds = self.elapsed_nanoseconds as f64 / 1_000_000_000.0;
-        let fps = if elapsed_seconds > 0.0 {
-            self.presented_frames as f64 / elapsed_seconds
+        let fps = if self.sample_count > 0 && elapsed_seconds > 0.0 {
+            format!("{:.1}", self.presented_frames as f64 / elapsed_seconds)
         } else {
-            0.0
+            "n/a".to_owned()
         };
         let draws_per_presented_frame = if self.presented_frames > 0 {
-            self.total_draw_calls as f64 / self.presented_frames as f64
+            format!(
+                "{:.2}",
+                self.total_draw_calls as f64 / self.presented_frames as f64
+            )
         } else {
-            0.0
+            "n/a".to_owned()
         };
-        let frame_average_ms = micros_to_millis(self.frame_intervals.average_microseconds());
-        let frame_p95_ms = micros_to_millis(self.frame_intervals.percentile_microseconds(95));
-        let frame_p99_ms = micros_to_millis(self.frame_intervals.percentile_microseconds(99));
-        let cpu_average_ms = micros_to_millis(self.cpu_work.average_microseconds());
-        let cpu_p95_ms = micros_to_millis(self.cpu_work.percentile_microseconds(95));
-        let cpu_p99_ms = micros_to_millis(self.cpu_work.percentile_microseconds(99));
+        let frame_average_ms = format_duration_ms(self.frame_intervals.average_microseconds());
+        let frame_p95_ms = format_duration_ms(self.frame_intervals.percentile_microseconds(95));
+        let frame_p99_ms = format_duration_ms(self.frame_intervals.percentile_microseconds(99));
+        let cpu_average_ms = format_duration_ms(self.cpu_work.average_microseconds());
+        let cpu_p95_ms = format_duration_ms(self.cpu_work.percentile_microseconds(95));
+        let cpu_p99_ms = format_duration_ms(self.cpu_work.percentile_microseconds(99));
         let gpu_estimate = self
             .gpu_bytes
             .map_or_else(|| "unavailable".to_string(), |bytes| format!("{bytes} B"));
@@ -66,12 +85,15 @@ impl FrameStats {
             .process_cpu_time
             .map_or_else(|| "n/a".to_owned(), |time| time.as_millis().to_string());
         format!(
-            "frames={} presented={} presented_FPS_avg={fps:.1} frame_ms(avg/p95/p99)={frame_average_ms:.3}/{frame_p95_ms:.3}/{frame_p99_ms:.3} cpu_work_ms(avg/p95/p99)={cpu_average_ms:.3}/{cpu_p95_ms:.3}/{cpu_p99_ms:.3} draw_calls_per_presented_frame={draws_per_presented_frame:.2} process_cpu_time_ms={process_cpu} engine_GPU_estimate={gpu_estimate}",
+            "frames={} presented={} presented_FPS_avg={fps} frame_ms(avg/p95/p99)={frame_average_ms}/{frame_p95_ms}/{frame_p99_ms} cpu_work_ms(avg/p95/p99)={cpu_average_ms}/{cpu_p95_ms}/{cpu_p99_ms} draw_calls_per_presented_frame={draws_per_presented_frame} process_cpu_time_ms={process_cpu} engine_GPU_estimate={gpu_estimate}",
             self.sample_count, self.presented_frames
         )
     }
 }
 
-fn micros_to_millis(microseconds: u64) -> f64 {
-    microseconds as f64 / 1_000.0
+fn format_duration_ms(microseconds: Option<u64>) -> String {
+    microseconds.map_or_else(
+        || "n/a".to_owned(),
+        |value| format!("{:.3}", value as f64 / 1_000.0),
+    )
 }

@@ -1,5 +1,34 @@
 use std::path::PathBuf;
 
+const DEFAULT_LOCAL_DATA_DIR: &str = ".minimium-local";
+
+/// Server worker lane selection accepted by the client.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ThreadLane {
+    One,
+    Two,
+    Auto,
+}
+
+impl ThreadLane {
+    pub fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "1" => Ok(Self::One),
+            "2" => Ok(Self::Two),
+            "auto" => Ok(Self::Auto),
+            _ => Err("--threads must be 1, 2, or auto".to_owned()),
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::One => "1",
+            Self::Two => "2",
+            Self::Auto => "auto",
+        }
+    }
+}
+
 /// Command-line options shared by the desktop and text clients.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClientOptions {
@@ -8,7 +37,7 @@ pub struct ClientOptions {
     pub demo: bool,
     pub console: bool,
     pub help: bool,
-    pub threads: String,
+    pub threads: ThreadLane,
     pub profile_dir: Option<PathBuf>,
     pub server_data_dir: Option<PathBuf>,
 }
@@ -22,7 +51,7 @@ impl ClientOptions {
             demo: false,
             console: false,
             help: false,
-            threads: "1".to_owned(),
+            threads: ThreadLane::One,
             profile_dir: None,
             server_data_dir: None,
         };
@@ -61,10 +90,7 @@ impl ClientOptions {
                 "--threads" => {
                     reject_duplicate(&mut seen_threads, "--threads")?;
                     let value = required_value(&mut args, "--threads")?;
-                    if !matches!(value.as_str(), "1" | "2" | "auto") {
-                        return Err("--threads must be 1, 2, or auto".to_owned());
-                    }
-                    options.threads = value;
+                    options.threads = ThreadLane::parse(&value)?;
                 }
                 "--demo" => {
                     reject_duplicate(&mut seen_demo, "--demo")?;
@@ -82,15 +108,22 @@ impl ClientOptions {
             }
         }
 
+        if options.demo && options.connect.is_some() {
+            return Err("--demo cannot be used with --connect".to_owned());
+        }
+        if options.demo && options.console {
+            return Err("--demo cannot be used with --console".to_owned());
+        }
+
         Ok(options)
     }
 
     /// Resolve independent profile and server storage directories.
     pub fn paths(&self, map_fingerprint: u64) -> (PathBuf, PathBuf) {
         let default_dir = if self.map_path.is_some() {
-            PathBuf::from(".minimium-local").join(format!("map-{map_fingerprint:016x}"))
+            PathBuf::from(DEFAULT_LOCAL_DATA_DIR).join(format!("map-{map_fingerprint:016x}"))
         } else {
-            PathBuf::from(".minimium-local")
+            PathBuf::from(DEFAULT_LOCAL_DATA_DIR)
         };
         (
             self.profile_dir

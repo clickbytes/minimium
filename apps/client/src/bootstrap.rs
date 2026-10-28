@@ -1,3 +1,4 @@
+use crate::options::ThreadLane;
 use minimium_core::{
     admin_client,
     endpoint::{new_admin_token, ServerEndpoint},
@@ -6,7 +7,7 @@ use minimium_core::{
 use std::{
     error::Error,
     io,
-    net::{TcpStream, ToSocketAddrs},
+    net::TcpStream,
     path::{Path, PathBuf},
     process::{Child, Command, ExitStatus, Stdio},
     thread,
@@ -167,15 +168,14 @@ impl Drop for OwnedServer {
 
 /// Connects to a validated local server or starts and owns one.
 /// The returned game stream has not sent an identity and remains blocking.
-pub fn connect_or_start(
+/// Starts or attaches without exceeding the caller's connection deadline.
+pub fn connect_or_start_until(
     data_dir: &Path,
     map_path: Option<&Path>,
-    threads: &str,
+    threads: ThreadLane,
+    deadline: Instant,
 ) -> Result<(TcpStream, LocalServer), Box<dyn Error>> {
-    if !matches!(threads, "1" | "2" | "auto") {
-        return Err("threads must be 1, 2, or auto".into());
-    }
-    let deadline = Instant::now() + STARTUP_TIMEOUT;
+    let deadline = deadline.min(Instant::now() + STARTUP_TIMEOUT);
 
     if let Ok(endpoint) = ServerEndpoint::read(data_dir) {
         if validate_live_endpoint(data_dir, &endpoint, deadline).unwrap_or(false) {
@@ -276,15 +276,6 @@ pub fn connect_or_start(
     }
 }
 
-/// Connects to an explicit server address without sending a client identity.
-pub fn connect(address: &str) -> io::Result<TcpStream> {
-    let socket = address
-        .to_socket_addrs()?
-        .next()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid server address"))?;
-    TcpStream::connect_timeout(&socket, CONNECT_TIMEOUT)
-}
-
 fn validate_live_endpoint(
     data_dir: &Path,
     endpoint: &ServerEndpoint,
@@ -308,15 +299,7 @@ fn same_endpoint(left: &ServerEndpoint, right: &ServerEndpoint) -> bool {
 }
 
 fn connect_game(endpoint: &ServerEndpoint, timeout: Duration) -> io::Result<TcpStream> {
-    let address = ("127.0.0.1", endpoint.game_port)
-        .to_socket_addrs()?
-        .next()
-        .ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::AddrNotAvailable,
-                "local game endpoint unavailable",
-            )
-        })?;
+    let address = std::net::SocketAddr::from(([127, 0, 0, 1], endpoint.game_port));
     TcpStream::connect_timeout(&address, timeout.min(CONNECT_TIMEOUT))
 }
 
@@ -335,7 +318,7 @@ fn remaining(deadline: Instant) -> io::Result<Duration> {
 fn start_local_server(
     data_dir: &Path,
     map_path: Option<&Path>,
-    threads: &str,
+    threads: ThreadLane,
     token: &str,
 ) -> io::Result<Child> {
     let current = std::env::current_exe()?;
@@ -356,7 +339,7 @@ fn start_local_server(
         .arg("run")
         .arg("--headless")
         .arg("--threads")
-        .arg(threads)
+        .arg(threads.as_str())
         .arg("--bind")
         .arg("127.0.0.1")
         .arg("--data-dir")

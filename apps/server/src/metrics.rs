@@ -120,23 +120,23 @@ impl RuntimeMetrics {
             self.bytes_in, self.bytes_out, self.frames_in, self.frames_out,
             self.dropped_messages, self.dropped_snapshots, self.rejected_inputs,
             self.idle_timeouts, self.handshake_timeouts, self.shots_fired, self.shots_hit,
-            self.player_kills, self.last_tick.as_micros(),
-            self.tick.average_microseconds(), self.tick.percentile_microseconds(95),
-            self.tick.percentile_microseconds(99),
-            self.loop_work.average_microseconds(), self.loop_work.percentile_microseconds(95),
-            self.loop_work.percentile_microseconds(99),
-            self.network_io.average_microseconds(), self.network_io.percentile_microseconds(95),
-            self.network_io.percentile_microseconds(99),
-            self.input_apply.average_microseconds(), self.input_apply.percentile_microseconds(95),
-            self.input_apply.percentile_microseconds(99),
-            self.simulation.average_microseconds(), self.simulation.percentile_microseconds(95),
-            self.simulation.percentile_microseconds(99),
-            self.snapshot_prep.average_microseconds(), self.snapshot_prep.percentile_microseconds(95),
-            self.snapshot_prep.percentile_microseconds(99),
-            self.encoding.average_microseconds(), self.encoding.percentile_microseconds(95),
-            self.encoding.percentile_microseconds(99),
-            self.input_wait.average_microseconds(), self.input_wait.percentile_microseconds(95),
-            self.input_wait.percentile_microseconds(99), self.oldest_output_age.as_micros(),
+            self.player_kills, format_duration_us((self.ticks > 0).then(|| self.last_tick.as_micros().min(u128::from(u64::MAX)) as u64)),
+            format_duration_us(self.tick.average_microseconds()), format_duration_us(self.tick.percentile_microseconds(95)),
+            format_duration_us(self.tick.percentile_microseconds(99)),
+            format_duration_us(self.loop_work.average_microseconds()), format_duration_us(self.loop_work.percentile_microseconds(95)),
+            format_duration_us(self.loop_work.percentile_microseconds(99)),
+            format_duration_us(self.network_io.average_microseconds()), format_duration_us(self.network_io.percentile_microseconds(95)),
+            format_duration_us(self.network_io.percentile_microseconds(99)),
+            format_duration_us(self.input_apply.average_microseconds()), format_duration_us(self.input_apply.percentile_microseconds(95)),
+            format_duration_us(self.input_apply.percentile_microseconds(99)),
+            format_duration_us(self.simulation.average_microseconds()), format_duration_us(self.simulation.percentile_microseconds(95)),
+            format_duration_us(self.simulation.percentile_microseconds(99)),
+            format_duration_us(self.snapshot_prep.average_microseconds()), format_duration_us(self.snapshot_prep.percentile_microseconds(95)),
+            format_duration_us(self.snapshot_prep.percentile_microseconds(99)),
+            format_duration_us(self.encoding.average_microseconds()), format_duration_us(self.encoding.percentile_microseconds(95)),
+            format_duration_us(self.encoding.percentile_microseconds(99)),
+            format_duration_us(self.input_wait.average_microseconds()), format_duration_us(self.input_wait.percentile_microseconds(95)),
+            format_duration_us(self.input_wait.percentile_microseconds(99)), self.oldest_output_age.as_micros(),
             self.collision_queries, self.collision_cell_visits,
             self.collision_cell_visits as f64 / collision_query_count,
             self.collision_max_cell_visits, self.collision_aabb_candidates,
@@ -175,4 +175,8 @@ impl RuntimeMetrics {
 
 fn format_optional_bytes(value: Option<u64>) -> String {
     value.map_or_else(|| "n/a".to_owned(), |bytes| bytes.to_string())
+}
+
+fn format_duration_us(value: Option<u64>) -> String {
+    value.map_or_else(|| "n/a".to_owned(), |duration| duration.to_string())
 }

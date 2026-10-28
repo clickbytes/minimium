@@ -5,7 +5,7 @@ This page documents the current parsers and dispatchers. For operational sequenc
 ## Server
 
 ~~~text
-minimium-server run [--threads 1|2|auto] [--max-players N] [--bind IP] [--game-port PORT] [--data-dir PATH] [--map PATH] [--autosave-seconds N] [--headless]
+minimium-server run [--threads 1..64|auto] [--max-players N] [--bind IP] [--game-port PORT] [--data-dir PATH] [--map PATH] [--autosave-seconds N] [--headless]
 minimium-server --version
 ~~~
 
@@ -50,17 +50,19 @@ minimium-client [--connect HOST:PORT] [--map PATH] [--profile-dir PATH] [--serve
 
 Each option may appear once. Unknown options and missing values are errors. `--threads` accepts `1`, `2`, or `auto`; it controls a server started by local play and defaults to `1`. `--connect` connects to an explicit game address and does not start or own a server. Without `--connect` or `--demo`, the desktop client starts a local server if needed and connects through the normal game protocol. `--demo` renders without a game connection. `--console` selects the text client instead of the desktop renderer.
 
-`--profile-dir PATH` selects this client's durable local player profile. `--server-data-dir PATH` selects the shared local server's storage and discovery directory. They are independent: use separate profile directories for separate local players and the same server data directory when they should share one server. If omitted, the default is `.minimium-local`; with `--map`, it is `.minimium-local/map-<map-fingerprint>`.
+`--profile-dir PATH` selects this client's durable local player profile. `--server-data-dir PATH` selects the shared local server's storage and discovery directory. They are independent: use separate profile directories for separate local players and the same server data directory when they should share one server. If omitted, both resolve to `.minimium-local`; with `--map`, both default to `.minimium-local/map-<map-fingerprint>`. The persisted profile ID is a reconnect identifier, not account authentication.
 
 The bundled map is used unless `--map PATH` is supplied. A custom map must be provided to every client and the server. The welcome fingerprint detects an accidental map mismatch; it is not authentication.
 
+The client starts a background connector worker for DNS, sequential remote address attempts, or local server startup. The timeout bounds when the front end accepts the result; blocking resolver or startup work cannot always be cancelled, so a timed-out/cancelled attempt remains busy until its worker exits. After the connector returns a socket, the foreground client loop polls a shared nonblocking session; the session itself does not own a thread. The session sends Identify first, requires Welcome with the expected map fingerprint, queues app messages only when connected, and handles heartbeat timers. The initial Identify/Welcome exchange has a five-second client timeout; connected clients send pings every 10 seconds, disconnect after 20 seconds without a pong, and the server drops a client after 30 seconds without a valid game message.
+
 ### Text-client commands
 
-The text client accepts `host local [--threads 1|2|auto]`, `connect HOST:PORT`, `help`, `ping`, `move X Z`, `jump`, `fire`, `say TEXT`, `name NAME`, `state`, `disconnect`, `fps show`, and `quit`/`exit`. `host local` starts or attaches to the local server configured by startup paths. It stores an owned server guard before later connection setup; only an owned child is stopped on exit. An attached server is left running.
+The text client and in-window console use the same command catalog and parser. Both accept `help`, `host local [--threads 1|2|auto]`, `connect HOST:PORT`, `disconnect`, `fps show`, `net stats`, `ping`, `move X Z`, `jump`, `fire`, `say TEXT` (alias `chat`), `name NAME`, `state`, `clear`, and `quit` (alias `exit`). `host local` starts or attaches to the local server configured by startup paths. It stores an owned server guard before later connection setup; only an owned child is stopped on exit. An attached server is left running. The terminal frontend renders state/events as text; the desktop frontend provides F1 console history and tab completion from the same catalog.
 
 ### In-window console commands
 
-Press F1 to open or close the console. It accepts `help`, `connect HOST:PORT`, `disconnect`, `fps show`, `net stats`, `ping`, `say TEXT`, `name NAME`, `state`, `clear`, and `quit`. Arrow keys browse history and Tab suggests commands. Lock the mouse and left-click to fire. `fps show` reports frame interval and render-loop work summaries; `net stats` reports application bytes, latest round-trip time, and nearby-player count.
+Press F1 to open or close the console. It uses the shared command catalog above. Arrow keys browse history and Tab suggests canonical commands and aliases. Lock the mouse and left-click to fire. `fps show` reports frame interval and render-loop work summaries; `net stats` reports application bytes, latest round-trip time, and nearby-player count.
 
 ## Load generator
 
@@ -68,7 +70,7 @@ Press F1 to open or close the console. It accepts `help`, `connect HOST:PORT`, `
 minimium-loadtest --address HOST:PORT [--scenario heartbeat|movement|combat|chat|clustered|dispersed] [--clients N] [--seconds N] [--threads 1|2|auto] [--format text|json] [--scenario-id TEXT] [--cpu-label TEXT] [--cpu-mhz N] [--server-data-dir PATH]
 ~~~
 
-`--address` is required. Client count is 1 through 10000; duration is 1 through 86400 seconds. Generator `--threads` chooses 1, 2, or up to 2 workers for `auto`; this is separate from server `--threads`. `--format` is `text` or `json`. The optional CPU fields are user-supplied labels and clock values, not machine probes. `--server-data-dir` requests authenticated server status and metrics samples before and after the run; capture failures are reported as unavailable samples. It does not sample the server on every tick.
+`--address` is required. Client count is 1 through 10000; duration is 1 through 86400 seconds. Generator `--threads` chooses 1, 2, or up to 2 workers for `auto`; this is separate from server `--threads`. `--format` is `text` or `json`. The optional CPU fields are user-supplied labels and clock values, not machine probes. `--server-data-dir` requests authenticated `status` and `metrics show` samples before setup, at measurement start, and after the run. Accepted samples require the configured literal loopback address to match the server-reported game address and endpoint game port, and require one stable endpoint identity (including token) across captures; capture or identity failure clears all three samples. The private token and detailed admin errors are not serialized. This check associates the sample with a local listener, not a cryptographic identity proof. Sampling is at run boundaries, not every tick.
 
 - `heartbeat` sends a heartbeat every second.
 - `movement` sends movement input at 20 Hz and uses heartbeat traffic for RTT sampling.
@@ -76,4 +78,4 @@ minimium-loadtest --address HOST:PORT [--scenario heartbeat|movement|combat|chat
 - `chat` staggers chat traffic at 25-second intervals.
 - `clustered` and `dispersed` use deterministic movement directions by simulated-client index; they are intended for the final spatial-distribution scenarios.
 
-The JSON output is schema version 2. Field definitions and the prepared scenario manifest belong in [report-v2.md](scenarios/report-v2.md). Reports contain application protocol bytes, not TCP/IP framing or retransmissions.
+The JSON output is schema version 2. Field definitions and the prepared scenario manifest belong in [report-v2.md](scenarios/report-v2.md). Reports contain application protocol bytes, not TCP/IP framing or retransmissions. The load generator is implementation scaffolding; prepared workloads are not runtime results, and no gameplay correctness, capacity, or performance claim follows from a static code review.

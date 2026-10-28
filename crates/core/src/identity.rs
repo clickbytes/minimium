@@ -3,9 +3,11 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, Read, Write},
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 pub const PLAYER_PROFILE_ID_BYTES: usize = 16;
+static NEXT_TEMP_FILE_ID: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct PlayerProfileId([u8; PLAYER_PROFILE_ID_BYTES]);
@@ -52,27 +54,36 @@ impl PlayerProfileId {
             Err(error) => return Err(error),
         }
 
-        let identity = Self(new_random_bytes()?);
-        let mut file = match OpenOptions::new().write(true).create_new(true).open(&path) {
-            Ok(file) => file,
-            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => return Self::read(&path),
+        // Serialize first-time creation while leaving the profile path absent
+        // until a complete file is ready to publish.
+        let lock = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(data_dir.join("player.profile.lock"))?;
+        lock.lock()?;
+        match Self::read(&path) {
+            Ok(identity) => return Ok(identity),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => return Err(error),
-        };
-        let result = (|| {
-            writeln!(file, "MINIMIUM_PLAYER 1")?;
-            writeln!(file, "{}", identity.to_hex())?;
-            file.sync_all()?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                fs::set_permissions(&path, fs::Permissions::from_mode(0o600))?;
-            }
-            Ok(())
-        })();
-        if let Err(error) = result {
-            let _ = fs::remove_file(path);
-            return Err(error);
         }
+
+        let identity = Self(new_random_bytes()?);
+        let (temporary_path, mut file) = create_temporary_profile_file(data_dir)?;
+        let mut temporary_file = TemporaryProfileFile::new(temporary_path);
+        writeln!(file, "MINIMIUM_PLAYER 1")?;
+        writeln!(file, "{}", identity.to_hex())?;
+        file.sync_all()?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&temporary_file.path, fs::Permissions::from_mode(0o600))?;
+        }
+        drop(file);
+
+        crate::files::atomic_replace_file(&temporary_file.path, &path)?;
+        temporary_file.disarm();
         Ok(identity)
     }
 
@@ -104,6 +115,49 @@ fn hex_digit(byte: u8) -> Option<u8> {
         b'a'..=b'f' => Some(byte - b'a' + 10),
         b'A'..=b'F' => Some(byte - b'A' + 10),
         _ => None,
+    }
+}
+
+struct TemporaryProfileFile {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl TemporaryProfileFile {
+    fn new(path: PathBuf) -> Self {
+        Self { path, armed: true }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+impl Drop for TemporaryProfileFile {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+}
+
+fn create_temporary_profile_file(data_dir: &Path) -> io::Result<(PathBuf, File)> {
+    loop {
+        let id = NEXT_TEMP_FILE_ID.fetch_add(1, Ordering::Relaxed);
+        let path = data_dir.join(format!(".player.profile.{}.{}.tmp", std::process::id(), id));
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        match options.open(&path) {
+            Ok(file) => return Ok((path, file)),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
     }
 }
 

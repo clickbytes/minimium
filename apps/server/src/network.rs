@@ -10,7 +10,12 @@ pub struct FlushResult {
 }
 
 /// Writes queued output while retaining all bytes not yet sent.
-pub fn flush(stream: &mut TcpStream, output: &[u8], offset: &mut usize) -> FlushResult {
+pub fn flush(
+    stream: &mut TcpStream,
+    output: &[u8],
+    offset: &mut usize,
+    budget: usize,
+) -> FlushResult {
     let mut written = 0;
     if *offset > output.len() {
         return FlushResult {
@@ -22,8 +27,9 @@ pub fn flush(stream: &mut TcpStream, output: &[u8], offset: &mut usize) -> Flush
         };
     }
 
-    while *offset < output.len() {
-        match stream.write(&output[*offset..]) {
+    while *offset < output.len() && written < budget {
+        let end = output.len().min(offset.saturating_add(budget - written));
+        match stream.write(&output[*offset..end]) {
             Ok(0) => {
                 return FlushResult {
                     written,

@@ -8,6 +8,8 @@ use std::{
 };
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+pub const SHUTDOWN_FILE: &str = "server.shutdown";
+pub const SHUTDOWN_OWNER_FILE: &str = "server.shutdown.owner";
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(3);
 const STOP_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
@@ -109,7 +111,7 @@ pub fn shutdown_completed(data_dir: &Path, endpoint: &ServerEndpoint) -> io::Res
     if !data_dir.is_dir() {
         return Ok(false);
     }
-    let status_path = data_dir.join("server.shutdown");
+    let status_path = data_dir.join(SHUTDOWN_FILE);
     let Some(status) = read_shutdown_status(&status_path)? else {
         return Ok(false);
     };
@@ -121,7 +123,7 @@ pub fn shutdown_completed(data_dir: &Path, endpoint: &ServerEndpoint) -> io::Res
         Err(error) if error.kind() == io::ErrorKind::WouldBlock => return Ok(false),
         Err(error) => return Err(error),
     };
-    let owner = read_shutdown_status(&data_dir.join("server.shutdown.owner"))?;
+    let owner = read_shutdown_status(&data_dir.join(SHUTDOWN_OWNER_FILE))?;
     if owner.as_deref().map(str::trim_end) != Some(endpoint.token.as_str()) {
         return Err(io::Error::new(
             io::ErrorKind::Interrupted,
@@ -180,7 +182,7 @@ fn write_before_deadline(
 /// Waits for the captured server instance to report successful shutdown and release its data lock.
 pub fn stop_and_wait(data_dir: &Path, endpoint: &ServerEndpoint) -> io::Result<()> {
     let deadline = Instant::now() + STOP_TIMEOUT;
-    let status_path = data_dir.join("server.shutdown");
+    let status_path = data_dir.join(SHUTDOWN_FILE);
     if !data_dir.is_dir() {
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
@@ -206,7 +208,7 @@ pub fn stop_and_wait(data_dir: &Path, endpoint: &ServerEndpoint) -> io::Result<(
                         match ServerDataLock::acquire(data_dir) {
                             Ok(lock) => {
                                 let owner =
-                                    read_shutdown_status(&data_dir.join("server.shutdown.owner"))?;
+                                    read_shutdown_status(&data_dir.join(SHUTDOWN_OWNER_FILE))?;
                                 if owner.as_deref().map(str::trim_end)
                                     != Some(endpoint.token.as_str())
                                 {
