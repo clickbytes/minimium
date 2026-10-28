@@ -1,6 +1,6 @@
-use super::*;
+use super::GpuResources;
 
-impl Renderer {
+impl GpuResources {
     pub(super) fn render(&mut self) -> Result<u32, wgpu::CurrentSurfaceTexture> {
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) => frame,
