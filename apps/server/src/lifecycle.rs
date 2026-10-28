@@ -54,13 +54,34 @@ pub(crate) fn shutdown(mut context: ShutdownContext<'_>) -> io::Result<()> {
         .save_snapshot(context.world, context.map_fingerprint)
     {
         Ok(snapshot) => context.persistence.shutdown(Some(snapshot)),
-        Err(error) => context.persistence.shutdown(None).and(Err(error)),
+        Err(error) => {
+            if let Err(cleanup_error) = context.persistence.shutdown(None) {
+                eprintln!("storage shutdown after snapshot failure: {cleanup_error}");
+            }
+            Err(error)
+        }
     };
     let endpoint_result = context.endpoint.remove_if_owned(context.data_dir);
-    let shutdown_result = save_result
-        .and(endpoint_result)
-        .and(context.runtime_error.map_or(Ok(()), Err));
+    let mut primary_error = context.runtime_error;
+    for (operation, result) in [
+        ("final save", save_result),
+        ("endpoint cleanup", endpoint_result),
+    ] {
+        if let Err(error) = result {
+            if primary_error.is_some() {
+                eprintln!("{operation} also failed: {error}");
+            } else {
+                primary_error = Some(error);
+            }
+        }
+    }
+    let shutdown_result = primary_error.map_or(Ok(()), Err);
     let status_result = write_shutdown_status(context.data_dir, context.endpoint, &shutdown_result);
+    if let Err(error) = &status_result {
+        if shutdown_result.is_err() {
+            eprintln!("shutdown status write also failed: {error}");
+        }
+    }
     shutdown_result?;
     status_result?;
     println!("server stopped cleanly");

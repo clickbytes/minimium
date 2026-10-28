@@ -77,3 +77,7 @@ Executor i przypisanie faz telemetrii należą do serwera; core nie ma zależno�
 ## E002-08 — pipeline wejść
 
 Admission jest metodą runtime i nie mutuje świata. Jedna kolejka `WorldInput` zachowuje rezerwację miejsca na Leave; faza apply przetwarza elementy kolejno i natychmiast przekazuje typowane `WorldEvent` do outbound przed następnym wejściem. Bufor kolejki jest odzyskiwany, a Move nie tworzy zdarzenia ani nowej alokacji. Outbound sprawdza zgodność ID z indeksem połączenia; w razie niespójnego indeksu pomija adresata zamiast wysłać wiadomość innemu graczowi. `Accepted` dla nazwy oznacza przyjęcie do kolejki, nie zastosowanie lub zapis. Usunięto szerokie `DispatchContext` i `WorldInputsContext`; cooldowny i liczniki pozostają w dotychczasowych fazach. Scenariusze kolejności, reconnect i potwierdzeń są odroczone.
+
+## E002-09 — zapis graczy
+
+Indeksy i aktywne claims `PlayerStore` są dostępne przez metody; worker przechowuje typowany status z zachowaniem tekstu CLI. Rozłączenie kanału completion przy oczekującym zapisie staje się widocznym błędem. Przy shutdown błąd runtime pozostaje główny, a błędy finalnego zapisu i cleanup są zgłaszane dodatkowo; jeśli runtime nie zawiódł, pierwszy błąd shutdown staje się wynikiem. Format v3/v2, 256 shardów, kanał o pojemności 1, sortowanie na workerze i atomowe replace nie zostały zmienione. Awaria dysku, worker panic, migracja, utrata procesu i spójność zapisu pozostają scenariuszami odroczonymi.

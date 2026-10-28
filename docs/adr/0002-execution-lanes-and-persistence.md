@@ -27,3 +27,5 @@ Lane-equivalent authoritative outcomes are a requirement to verify, not a result
 ## Evidence boundary
 
 The current code contains an executor, thresholded movement batches, and a persistence worker. This ADR does not claim deterministic equivalence across lane counts, a particular save latency, or a performance gain. Those require deferred runtime verification and measurement.
+
+The persistence worker uses a bounded request channel and typed save status, preserving the existing status text. A disconnected completion channel with a pending save is reported as failure. Final shutdown waits for the worker and propagates failure; a prior runtime error remains primary and subsequent cleanup errors are reported separately. An interrupted or unfinished save may still be lost on a crash.

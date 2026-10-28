@@ -48,9 +48,9 @@ impl StoredName {
 }
 
 pub(crate) struct PlayerStore {
-    pub(crate) players: Vec<Arc<HashMap<PlayerProfileId, StoredPlayer>>>,
-    pub(crate) profile_by_player: HashMap<PlayerId, PlayerProfileId>,
-    pub(crate) active_players: HashSet<PlayerId>,
+    pub(super) players: Vec<Arc<HashMap<PlayerProfileId, StoredPlayer>>>,
+    pub(super) profile_by_player: HashMap<PlayerId, PlayerProfileId>,
+    active_players: HashSet<PlayerId>,
 }
 
 pub(crate) struct SaveSnapshot {
@@ -75,6 +75,21 @@ fn player_store_shard(profile_id: PlayerProfileId) -> usize {
 }
 
 impl PlayerStore {
+    pub(crate) fn reserve_active(&mut self, capacity: usize) {
+        self.active_players.reserve(capacity);
+    }
+
+    pub(crate) fn active_count(&self) -> usize {
+        self.active_players.len()
+    }
+
+    pub(crate) fn is_active(&self, player: PlayerId) -> bool {
+        self.active_players.contains(&player)
+    }
+
+    pub(crate) fn profile_for_player(&self, player: PlayerId) -> Option<PlayerProfileId> {
+        self.profile_by_player.get(&player).copied()
+    }
     pub(crate) fn load(data_dir: &Path, map: &WorldMap) -> io::Result<Self> {
         format::load(data_dir, map)
     }
