@@ -46,6 +46,7 @@ const MAX_QUEUED_OUTPUT_BYTES: usize = 64 * 1024;
 const MAX_QUEUED_OUTPUT_FRAMES: usize = 256;
 const CLIENT_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const CLIENT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
+const CLIENT_CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
 const SHOT_COOLDOWN: Duration = Duration::from_millis(250);
 const CHAT_COOLDOWN: Duration = Duration::from_secs(1);
 const GLOBAL_CHAT_COOLDOWN: Duration = Duration::from_millis(50);
@@ -74,6 +75,7 @@ struct Client {
     replication_initialized: bool,
     connected_at: Instant,
     last_message_at: Instant,
+    close_deadline: Option<Instant>,
     last_fire_at: Option<Instant>,
     last_chat_at: Option<Instant>,
     pending_health_update: Option<u16>,
@@ -961,6 +963,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         replication_initialized: false,
                         connected_at,
                         last_message_at: connected_at,
+                        close_deadline: None,
                         last_fire_at: None,
                         last_chat_at: None,
                         pending_health_update: None,
@@ -976,6 +979,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         for (index, client) in clients.iter_mut().enumerate() {
+            if client.close_deadline.is_some() {
+                continue;
+            }
             let mut buffer = [0u8; 2048];
             let mut bytes_this_poll = 0usize;
             let mut messages_this_poll = 0usize;
@@ -1036,7 +1042,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         for (index, message, decoded_at) in messages.drain(..) {
-            if index >= clients.len() || disconnected.contains(&index) {
+            if index >= clients.len()
+                || disconnected.contains(&index)
+                || clients[index].close_deadline.is_some()
+            {
                 continue;
             }
             let player_id = clients[index].player_id;
@@ -1045,34 +1054,40 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     if player_store.active_players.len() >= max_players
                         || pending_world_inputs.len() + clients.len() >= MAX_PENDING_WORLD_INPUTS
                     {
-                        let _ = queue_message(
+                        if !queue_close_response(
                             &mut clients[index],
                             &mut metrics,
                             ServerMessage::Error(ERROR_SERVER_FULL),
-                        );
-                        disconnected.push(index);
+                            Instant::now(),
+                        ) {
+                            disconnected.push(index);
+                        }
                         continue;
                     }
                     let profile_id = PlayerProfileId::from_bytes(bytes);
                     if pending_departures.contains(&profile_id) {
-                        let _ = queue_message(
+                        if !queue_close_response(
                             &mut clients[index],
                             &mut metrics,
                             ServerMessage::Error(ERROR_BUSY),
-                        );
-                        disconnected.push(index);
+                            Instant::now(),
+                        ) {
+                            disconnected.push(index);
+                        }
                         continue;
                     }
                     let player = match player_store.claim(profile_id, &mut next_player, map.spawn) {
                         Ok(player) => player,
                         Err(error) => {
                             eprintln!("could not claim player profile: {error}");
-                            let _ = queue_message(
+                            if !queue_close_response(
                                 &mut clients[index],
                                 &mut metrics,
                                 ServerMessage::Error(ERROR_BUSY),
-                            );
-                            disconnected.push(index);
+                                Instant::now(),
+                            ) {
+                                disconnected.push(index);
+                            }
                             continue;
                         }
                     };
@@ -1214,14 +1229,23 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 ClientMessage::Quit if player_id.is_some() => {
-                    let _ = queue_message(&mut clients[index], &mut metrics, ServerMessage::Bye);
-                    disconnected.push(index);
+                    if !queue_close_response(
+                        &mut clients[index],
+                        &mut metrics,
+                        ServerMessage::Bye,
+                        Instant::now(),
+                    ) {
+                        disconnected.push(index);
+                    }
                 }
                 _ => disconnected.push(index),
             }
         }
         let activity_check_at = Instant::now();
         for (index, client) in clients.iter().enumerate() {
+            if client.close_deadline.is_some() {
+                continue;
+            }
             let handshake_timed_out = client.player_id.is_none()
                 && activity_check_at.duration_since(client.connected_at)
                     >= CLIENT_HANDSHAKE_TIMEOUT;
@@ -1237,11 +1261,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         for (index, client) in clients.iter_mut().enumerate() {
-            if let Some(health) = client.pending_health_update {
-                if !queue_message(client, &mut metrics, ServerMessage::HealthUpdate(health)) {
-                    metrics.dropped_messages = metrics.dropped_messages.saturating_add(1);
-                } else {
-                    client.pending_health_update = None;
+            if client.close_deadline.is_none() {
+                if let Some(health) = client.pending_health_update {
+                    if !queue_message(client, &mut metrics, ServerMessage::HealthUpdate(health)) {
+                        metrics.dropped_messages = metrics.dropped_messages.saturating_add(1);
+                    } else {
+                        client.pending_health_update = None;
+                    }
                 }
             }
             metrics.max_client_input_bytes = metrics.max_client_input_bytes.max(client.input.len());
@@ -1256,7 +1282,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             metrics.bytes_out += flushed.written as u64;
             client.bytes_out += flushed.written as u64;
             account_output(client, flushed.written);
-            if flushed.error.is_some() {
+            if flushed.error.is_some()
+                || client.close_deadline.is_some_and(|deadline| {
+                    client.output_offset >= client.output.len() || Instant::now() >= deadline
+                })
+            {
                 disconnected.push(index);
             }
         }
@@ -1491,7 +1521,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let recipients: Vec<_> = clients
                 .iter()
                 .enumerate()
-                .filter_map(|(index, client)| client.player_id.map(|id| (index, id)))
+                .filter_map(|(index, client)| {
+                    (client.close_deadline.is_none())
+                        .then(|| client.player_id.map(|id| (index, id)))
+                        .flatten()
+                })
                 .collect();
             if !recipients.is_empty() {
                 let snapshot = world.network_snapshot();
@@ -1605,11 +1639,28 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn queue_close_response(
+    client: &mut Client,
+    metrics: &mut RuntimeMetrics,
+    message: ServerMessage,
+    now: Instant,
+) -> bool {
+    if !queue_message(client, metrics, message) {
+        metrics.dropped_messages = metrics.dropped_messages.saturating_add(1);
+        return false;
+    }
+    client.close_deadline = Some(now + CLIENT_CLOSE_TIMEOUT);
+    true
+}
+
 fn queue_message(
     client: &mut Client,
     metrics: &mut RuntimeMetrics,
     message: ServerMessage,
 ) -> bool {
+    if client.close_deadline.is_some() {
+        return false;
+    }
     if client.output_frames.len() >= MAX_QUEUED_OUTPUT_FRAMES {
         return false;
     }
@@ -1648,6 +1699,9 @@ fn queue_message(
 }
 
 fn queue_encoded_frame(client: &mut Client, frame: &[u8], metrics: &mut RuntimeMetrics) -> bool {
+    if client.close_deadline.is_some() {
+        return false;
+    }
     if client.output_frames.len() >= MAX_QUEUED_OUTPUT_FRAMES {
         return false;
     }
