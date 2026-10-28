@@ -12,6 +12,17 @@ Maps use a validated, versioned text format shared by the client and server. The
 
 Game traffic uses binary protocol v8 over prototype TCP. A client sends its 16-byte local profile ID first; this lets the server restore that profile's character but is not account authentication. World snapshot format v3 stores the profile ID, name, position, health, and static-map fingerprint. Controlled shutdown requests a final save; the server autosaves every 300 seconds by default (`--autosave-seconds 0` disables periodic saves). Manual saves queue an immutable snapshot for a storage worker and complete asynchronously; a crash or power loss can still lose changes since the last completed save. Public-game authentication and encryption, durable inventory and full world state, advanced physics, audio, browser clients, and multi-zone hosting remain future work. The 500 connected player / Pentium-class 500 MHz target is a research target, not a measured result; no gameplay or load results are claimed here.
 
+## Experimental planet and dungeon
+
+A new procedural [cube-sphere + dungeon walkthrough](docs/worlds.md) is available as a separate map; the existing default demo is unchanged.
+
+```sh
+cargo build --workspace
+cargo run -p minimium-client -- --map games/sample/maps/planet_dungeon.map
+```
+
+Start on the planet, walk toward the orange portal, explore the flat-gravity dungeon and use the blue exit to return. This is one shared-world prototype, not yet instanced or streaming.
+
 ## Build and run
 
 Requires Rust and Cargo.

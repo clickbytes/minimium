@@ -94,7 +94,7 @@ impl GameplayView {
             .unwrap_or(glam::Vec3::Y)
     }
 
-    fn look_direction(&self, yaw: f32, pitch: f32) -> glam::Vec3 {
+    pub(super) fn look_direction(&self, yaw: f32, pitch: f32) -> glam::Vec3 {
         let local = glam::Vec3::new(
             yaw.cos() * pitch.cos(),
             pitch.sin(),

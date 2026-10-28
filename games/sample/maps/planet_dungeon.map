@@ -1,0 +1,28 @@
+MINIMIUM_MAP 3
+# A small cube-sphere planet, spawned at its north pole.
+# The procedural triangles are visual-only; the surface has radial gravity.
+spawn 0 0 0
+planet 0 -48 0 48 12 0.27 0.59 0.39
+
+# The glowing arch is a walk-through trigger near the spawn, facing -Z.
+box -1.65 0.72 -8 0.30 2.8 0.45 0.97 0.65 0.20 visual
+box 1.65 0.72 -8 0.30 2.8 0.45 0.97 0.65 0.20 visual
+box 0 2.11 -8 3.6 0.35 0.45 0.97 0.65 0.20 visual
+portal 0 -0.67 -8 0 0 600 1.4
+
+# A distinct flat-gravity dungeon region, far from the spherical surface.
+# All coordinates are in a single shared world for this prototype.
+box 0 -0.2 600 28 0.4 28 0.26 0.27 0.31 solid
+box -14 2 600 0.5 4 28 0.39 0.37 0.41 solid
+box 14 2 600 0.5 4 28 0.39 0.37 0.41 solid
+box 0 2 586 28 4 0.5 0.39 0.37 0.41 solid
+box 0 2 614 28 4 0.5 0.39 0.37 0.41 solid
+box 0 4.3 600 28 0.6 28 0.23 0.24 0.29 solid
+
+# Obstacles and a visible exit arch near +Z.
+box -4 0.8 603 1.2 1.6 3 0.45 0.34 0.27 solid
+box 4 0.8 603 1.2 1.6 3 0.45 0.34 0.27 solid
+box -1.6 0.80 607 0.3 2.3 0.45 0.20 0.72 0.82 visual
+box 1.6 0.80 607 0.3 2.3 0.45 0.20 0.72 0.82 visual
+box 0 1.98 607 3.5 0.35 0.45 0.20 0.72 0.82 visual
+portal 0 0 607 0 0 4 1.4

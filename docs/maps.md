@@ -45,3 +45,18 @@ games/sample/maps/demo.map uses these axis-aligned bounds (center plus half-size
 - Step n (1 through 8): X [n-10, n-9], Y [0, 0.5n], Z [4, 6].
 
 The ground meets the first step at Y 0. Adjacent steps meet at their X boundaries and rise by 0.5 each. Step 8 reaches Y 4 and meets the deck over X [-2, -1]; the deck meets the bridge at Z 2, and the bridge meets the platform at Z -2. The platform, bridge, and deck meet edge-to-edge at Y 4; step 8 meets the deck at Y 4, and the eight steps descend in 0.5 increments to the ground. The bridge underside is at Y 3.6, leaving 3.6 units of clearance above the ground. The ramp and triangle examples lie at X greater than 5, beyond the elevated route and staircase. This layout changes the default map fingerprint; clients and server must load the same map to pass the fingerprint check.
+
+
+## Experimental map v3: planetary surface and portals
+
+Map v3 preserves v1/v2 box, triangle and mesh records while adding procedural `planet` geometry and teleport `portal` records. The loader keeps the same limits and canonical fingerprint for old v1/v2 maps; new maps fingerprint their planet and portal configuration as well. See [world prototype](worlds.md) and [sample map](../games/sample/maps/planet_dungeon.map).
+
+```text
+MINIMIUM_MAP 3
+spawn 0 0 0
+planet 0 -48 0 48 12 0.27 0.59 0.39
+portal 0 -0.67 -8 0 0 600 1.4
+portal 0 0 607 0 0 4 1.4
+```
+
+The generated cube-sphere has 12×N² visual triangles and analytic radial ground; dungeons use existing planar solid boxes. Portals have an entry trigger, an exit feet position and a radius. This version's planet and dungeon occupy disjoint parts of one world; it is not yet a cross-server/instanced realm transition.
