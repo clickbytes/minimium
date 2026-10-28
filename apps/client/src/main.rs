@@ -425,10 +425,16 @@ fn send_command(
     };
     let message = match command.split_whitespace().collect::<Vec<_>>().as_slice() {
         ["PING"] => ClientMessage::Ping,
-        ["MOVE", x, z] => ClientMessage::Move {
-            direction: [x.parse::<f32>()?, z.parse::<f32>()?],
-            jump: false,
-        },
+        ["MOVE", x, z] => {
+            let (Ok(x), Ok(z)) = (x.parse::<f32>(), z.parse::<f32>()) else {
+                println!("invalid movement coordinates; use move X Z");
+                return Ok(());
+            };
+            ClientMessage::Move {
+                direction: [x, z],
+                jump: false,
+            }
+        }
         ["JUMP"] => ClientMessage::Move {
             direction: [0.0; 2],
             jump: true,
@@ -439,9 +445,19 @@ fn send_command(
         ["CHAT", text @ ..] if !text.is_empty() => ClientMessage::Chat(text.join(" ")),
         ["NAME", name] => ClientMessage::SetName((*name).to_owned()),
         ["QUIT"] => ClientMessage::Quit,
-        _ => return Err("invalid client command".into()),
+        _ => {
+            println!("invalid client command");
+            return Ok(());
+        }
     };
-    if let Err(error) = stream.write_all(&encode_client(&message)?) {
+    let frame = match encode_client(&message) {
+        Ok(frame) => frame,
+        Err(error) => {
+            println!("invalid client command: {error}");
+            return Ok(());
+        }
+    };
+    if let Err(error) = stream.write_all(&frame) {
         *connection = None;
         *connection_state = ConnectionState::Disconnected;
         receive_buffer.clear();
