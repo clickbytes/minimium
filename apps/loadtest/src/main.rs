@@ -53,6 +53,8 @@ struct LoadClient {
     chat_due: bool,
     pending_output: Option<PendingOutput>,
     ping_sent_at: Option<Instant>,
+    measurement_bytes_sent: u64,
+    measurement_bytes_received: u64,
     movement_seed: usize,
     movement_sequence: u64,
     disconnected: bool,
@@ -152,7 +154,16 @@ struct WorkerStats {
     bytes_received: u64,
     setup_bytes_sent: u64,
     setup_bytes_received: u64,
+    per_client: Vec<ClientMeasurement>,
     rtt: RttStats,
+}
+
+#[derive(Clone)]
+struct ClientMeasurement {
+    generator_id: usize,
+    bytes_sent: u64,
+    bytes_received: u64,
+    disconnected: bool,
 }
 
 #[derive(Default)]
@@ -265,6 +276,7 @@ impl WorkerStats {
         self.setup_bytes_received = self
             .setup_bytes_received
             .saturating_add(other.setup_bytes_received);
+        self.per_client.extend(other.per_client);
         self.rtt.merge(other.rtt);
     }
 }
@@ -727,6 +739,8 @@ fn prepare_client(
         chat_due: false,
         pending_output: None,
         ping_sent_at: None,
+        measurement_bytes_sent: 0,
+        measurement_bytes_received: 0,
         movement_seed: client_id % movement_frames.len(),
         movement_sequence: 0,
         disconnected: false,
@@ -927,6 +941,13 @@ fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> WorkerStats {
         }
         if let Some(client) = prepare_client(client_id, &setup_config, &mut clients, &mut stats) {
             clients.push(client);
+        } else {
+            stats.per_client.push(ClientMeasurement {
+                generator_id: client_id,
+                bytes_sent: 0,
+                bytes_received: 0,
+                disconnected: true,
+            });
         }
     }
 
@@ -1041,6 +1062,9 @@ fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> WorkerStats {
                 };
             }
             if let Some(pending) = client.pending_output {
+                if Instant::now() >= until {
+                    continue;
+                }
                 let frame = match pending.kind {
                     OutboundKind::Ping => &ping_frame,
                     OutboundKind::Movement(index) => &movement_frames[index],
@@ -1059,6 +1083,8 @@ fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> WorkerStats {
                     }
                     Ok(written) => {
                         stats.bytes_sent = stats.bytes_sent.saturating_add(written as u64);
+                        client.measurement_bytes_sent =
+                            client.measurement_bytes_sent.saturating_add(written as u64);
                         let next_offset = pending.offset + written;
                         if next_offset < frame.len() {
                             client.pending_output = Some(PendingOutput {
@@ -1099,6 +1125,9 @@ fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> WorkerStats {
             }
 
             loop {
+                if Instant::now() >= until {
+                    break;
+                }
                 match client.stream.read(&mut input) {
                     Ok(0) => {
                         client.disconnected = true;
@@ -1107,6 +1136,9 @@ fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> WorkerStats {
                     }
                     Ok(count) => {
                         stats.bytes_received = stats.bytes_received.saturating_add(count as u64);
+                        client.measurement_bytes_received = client
+                            .measurement_bytes_received
+                            .saturating_add(count as u64);
                         client.receive_buffer.extend_from_slice(&input[..count]);
                         if client.receive_buffer.len() > MAX_RECEIVE_BUFFER_BYTES {
                             client.disconnected = true;
@@ -1205,6 +1237,15 @@ fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> WorkerStats {
     stats.connected_at_end = stats
         .ready
         .saturating_sub(stats.disconnects_during_measurement);
+    stats.per_client.reserve(clients.len().min(10_000));
+    stats
+        .per_client
+        .extend(clients.iter().map(|client| ClientMeasurement {
+            generator_id: client.client_id,
+            bytes_sent: client.measurement_bytes_sent,
+            bytes_received: client.measurement_bytes_received,
+            disconnected: client.disconnected,
+        }));
     stats
 }
 

@@ -21,6 +21,12 @@ The report preserves the prior generator result fields:
   `disconnects_during_measurement`, `clients_connected_at_end`
 - `setup_application_bytes_sent`, `setup_application_bytes_received`,
   `measurement_application_bytes_sent`, `measurement_application_bytes_received`
+- `client_measurements`: up to 10,000 records sorted by numeric generator ID,
+  with successful measurement-window application bytes sent and received and
+  `connected`/`disconnected` status. Setup failures have zero measurement bytes.
+  `connected` means no disconnect was observed before the window ended; it is
+  not proof that the socket was still live after the last observation. No
+  profile identifier or administrative token is included.
 - `rtt_samples`, `rtt_min_ms`, `rtt_avg_ms`, `rtt_p95_ms`, `rtt_p99_ms`,
   `rtt_max_ms`
 
