@@ -3,6 +3,7 @@ use crate::{
     metrics::RuntimeMetrics,
     storage::PlayerStore,
 };
+use minimium_core::ids::PlayerId;
 use minimium_core::{
     identity::PlayerProfileId,
     world::{CharacterInput, World},
@@ -14,19 +15,19 @@ use std::{
 };
 
 pub(crate) enum WorldInput {
-    Join(u64, String, [f32; 3], u16),
-    Leave(u64),
-    Move(u64, CharacterInput),
-    Fire(u64, [f32; 3]),
-    Chat(u64, String),
-    Rename(u64, String),
+    Join(PlayerId, String, [f32; 3], u16),
+    Leave(PlayerId),
+    Move(PlayerId, CharacterInput),
+    Fire(PlayerId, [f32; 3]),
+    Chat(PlayerId, String),
+    Rename(PlayerId, String),
 }
 
 const INPUT_IDLE_TIMEOUT: Duration = Duration::from_millis(250);
 
 pub(crate) fn expire_stale_inputs(
-    active_inputs: &mut HashMap<u64, CharacterInput>,
-    input_last_received: &HashMap<u64, Instant>,
+    active_inputs: &mut HashMap<PlayerId, CharacterInput>,
+    input_last_received: &HashMap<PlayerId, Instant>,
     now: Instant,
 ) {
     for (id, last_received) in input_last_received {
@@ -41,11 +42,11 @@ pub(crate) fn expire_stale_inputs(
 pub(crate) struct WorldInputsContext<'a> {
     pub(crate) pending_world_inputs: &'a mut Vec<(WorldInput, Option<Instant>)>,
     pub(crate) world: &'a mut World,
-    pub(crate) active_inputs: &'a mut HashMap<u64, CharacterInput>,
-    pub(crate) input_last_received: &'a mut HashMap<u64, Instant>,
+    pub(crate) active_inputs: &'a mut HashMap<PlayerId, CharacterInput>,
+    pub(crate) input_last_received: &'a mut HashMap<PlayerId, Instant>,
     pub(crate) player_store: &'a mut PlayerStore,
     pub(crate) pending_departures: &'a mut HashSet<PlayerProfileId>,
-    pub(crate) client_indices_by_player: &'a HashMap<u64, usize>,
+    pub(crate) client_indices_by_player: &'a HashMap<PlayerId, usize>,
     pub(crate) clients: &'a mut Vec<Client>,
     pub(crate) metrics: &'a mut RuntimeMetrics,
 }
@@ -112,7 +113,7 @@ pub(crate) fn apply_world_inputs(context: WorldInputsContext<'_>) {
                 }
                 if let Some(shooter_index) = client_indices_by_player.get(&id).copied() {
                     let message = ServerMessage::ShotResult {
-                        target_id: outcome.target_id,
+                        target_id: outcome.target_id.map(PlayerId::get),
                         remaining_health: outcome.remaining_health,
                         killed: outcome.killed,
                     };
@@ -129,7 +130,7 @@ pub(crate) fn apply_world_inputs(context: WorldInputsContext<'_>) {
                     continue;
                 };
                 let message = ServerMessage::Chat {
-                    sender_id: id,
+                    sender_id: id.get(),
                     sender_name: sender_name.to_owned(),
                     text,
                 };

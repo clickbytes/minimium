@@ -2,18 +2,19 @@ use super::collision_index::{Aabb, Cell, CollisionIndex};
 use super::geometry::cell_for;
 use super::map::MapTriangle;
 use super::{CELL_SIZE, MAX_RAY_CELL_CROSSINGS};
+use crate::ids::PlayerId;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Default)]
 pub(super) struct PlayerRayQuery {
-    pub(super) candidates: Vec<u64>,
-    pub(super) seen: HashSet<u64>,
+    pub(super) candidates: Vec<PlayerId>,
+    pub(super) seen: HashSet<PlayerId>,
 }
 
 impl PlayerRayQuery {
     pub(super) fn fill(
         &mut self,
-        cells: &HashMap<Cell, Vec<u64>>,
+        cells: &HashMap<Cell, Vec<PlayerId>>,
         origin: [f32; 3],
         direction: [f32; 3],
         maximum_distance: f32,

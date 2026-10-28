@@ -10,19 +10,20 @@ use super::{
     PLAYER_MAX_HEALTH,
 };
 use crate::executor::Executor;
+use crate::ids::PlayerId;
 use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Clone, Copy)]
 pub(super) struct PlayerStepInput {
-    pub(super) id: u64,
+    pub(super) id: PlayerId,
     pub(super) state: CharacterState,
     pub(super) input: CharacterInput,
 }
 
 #[derive(Clone, Copy)]
 pub(super) struct PlayerStepResult {
-    pub(super) id: u64,
+    pub(super) id: PlayerId,
     pub(super) state: CharacterState,
 }
 
@@ -36,9 +37,9 @@ pub(super) struct SimulationBatch {
 
 #[derive(Default)]
 pub struct World {
-    pub(super) players: Arc<HashMap<u64, Player>>,
-    pub(super) cells: Arc<HashMap<Cell, Vec<u64>>>,
-    pub(super) player_cells: Arc<HashMap<u64, Cell>>,
+    pub(super) players: Arc<HashMap<PlayerId, Player>>,
+    pub(super) cells: Arc<HashMap<Cell, Vec<PlayerId>>>,
+    pub(super) player_cells: Arc<HashMap<PlayerId, Cell>>,
     pub(super) collision_index: Arc<CollisionIndex>,
     pub(super) collision_query: CollisionQuery,
     pub(super) combat_player_query: PlayerRayQuery,
@@ -49,27 +50,34 @@ pub struct World {
 }
 
 impl World {
-    pub fn join(&mut self, name: String) -> u64 {
+    pub fn join(&mut self, name: String) -> PlayerId {
         self.next_id += 1;
-        self.join_as(self.next_id, name);
-        self.next_id
+        let id = PlayerId::new(self.next_id);
+        self.join_as(id, name);
+        id
     }
 
-    pub fn join_as(&mut self, id: u64, name: String) {
+    pub fn join_as(&mut self, id: PlayerId, name: String) {
         self.join_at(id, name, self.spawn);
     }
 
-    pub fn join_at(&mut self, id: u64, name: String, position: [f32; 3]) {
+    pub fn join_at(&mut self, id: PlayerId, name: String, position: [f32; 3]) {
         self.join_at_with_health(id, name, position, PLAYER_MAX_HEALTH);
     }
 
-    pub fn join_at_with_health(&mut self, id: u64, name: String, position: [f32; 3], health: u16) {
+    pub fn join_at_with_health(
+        &mut self,
+        id: PlayerId,
+        name: String,
+        position: [f32; 3],
+        health: u16,
+    ) {
         // Replacing an existing ID must first remove its old spatial-cell membership.
         // Otherwise one player may remain indexed in multiple cells.
         if self.players.contains_key(&id) {
             self.leave(id);
         }
-        self.next_id = self.next_id.max(id);
+        self.next_id = self.next_id.max(id.get());
         let position = if position.iter().all(|value| value.is_finite())
             && self
                 .collision_index
@@ -98,7 +106,7 @@ impl World {
         Arc::make_mut(&mut self.players).insert(id, player);
     }
 
-    pub fn leave(&mut self, id: u64) {
+    pub fn leave(&mut self, id: PlayerId) {
         Arc::make_mut(&mut self.players).remove(&id);
         if let Some(cell) = Arc::make_mut(&mut self.player_cells).remove(&id) {
             let cells = Arc::make_mut(&mut self.cells);
@@ -116,7 +124,7 @@ impl World {
 
     pub fn step_players(
         &mut self,
-        inputs: &HashMap<u64, CharacterInput>,
+        inputs: &HashMap<PlayerId, CharacterInput>,
         delta_seconds: f32,
     ) -> CollisionQueryStats {
         let Self {
@@ -156,7 +164,7 @@ impl World {
 
     pub fn step_players_parallel(
         &mut self,
-        inputs: &HashMap<u64, CharacterInput>,
+        inputs: &HashMap<PlayerId, CharacterInput>,
         delta_seconds: f32,
         executor: &Executor,
     ) -> CollisionQueryStats {
@@ -245,7 +253,7 @@ impl World {
         collision_stats
     }
 
-    pub fn set_position(&mut self, id: u64, position: [f32; 3]) -> bool {
+    pub fn set_position(&mut self, id: PlayerId, position: [f32; 3]) -> bool {
         if !position.iter().all(|value| value.is_finite()) {
             return false;
         }
@@ -259,15 +267,15 @@ impl World {
         true
     }
 
-    pub fn player_health(&self, id: u64) -> Option<u16> {
+    pub fn player_health(&self, id: PlayerId) -> Option<u16> {
         self.players.get(&id).map(|player| player.health)
     }
 
-    pub fn player(&self, id: u64) -> Option<&Player> {
+    pub fn player(&self, id: PlayerId) -> Option<&Player> {
         self.players.get(&id)
     }
 
-    fn update_player_cell(&mut self, id: u64, position: [f32; 3]) {
+    fn update_player_cell(&mut self, id: PlayerId, position: [f32; 3]) {
         update_cell_index(
             Arc::make_mut(&mut self.cells),
             Arc::make_mut(&mut self.player_cells),
@@ -276,7 +284,7 @@ impl World {
         );
     }
 
-    pub fn rename_player(&mut self, id: u64, name: String) -> bool {
+    pub fn rename_player(&mut self, id: PlayerId, name: String) -> bool {
         let Some(player) = Arc::make_mut(&mut self.players).get_mut(&id) else {
             return false;
         };

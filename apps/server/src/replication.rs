@@ -50,7 +50,7 @@ pub(crate) fn replicate_snapshots(
                 MAX_VISIBLE_PLAYERS,
                 |player| {
                     let _ = players.push(RemotePlayer {
-                        id: player.id,
+                        id: player.id.get(),
                         name: player.name.clone(),
                         position: player.position,
                     });

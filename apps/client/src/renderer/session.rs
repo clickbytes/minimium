@@ -65,8 +65,7 @@ impl Renderer {
                 if let Some(server) = local_server {
                     crate::retain_local_server(&mut self.local_server, server);
                 }
-                match ClientSession::new(stream, *self.profile_id.as_bytes(), self.map_fingerprint)
-                {
+                match ClientSession::new(stream, self.profile_id, self.map_fingerprint) {
                     Ok(session) => {
                         self.session = Some(session);
                         self.reset_remote_gameplay();

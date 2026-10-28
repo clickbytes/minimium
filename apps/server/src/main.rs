@@ -1,3 +1,4 @@
+use minimium_core::ids::PlayerId;
 mod accept;
 mod admin;
 mod commands;
@@ -121,12 +122,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let max_client_connections = max_players + MAX_PENDING_HANDSHAKES;
     let mut clients: Vec<Client> = Vec::with_capacity(max_client_connections);
     let mut first_write_client = 0usize;
-    let mut client_indices_by_player: HashMap<u64, usize> = HashMap::with_capacity(max_players);
+    let mut client_indices_by_player: HashMap<PlayerId, usize> =
+        HashMap::with_capacity(max_players);
     // A disconnected profile cannot rejoin until its queued Leave is applied.
     // The set is bounded by the reserved pending-world-input capacity.
     let mut pending_departures: HashSet<PlayerProfileId> = HashSet::new();
-    let mut active_inputs: HashMap<u64, CharacterInput> = HashMap::with_capacity(max_players);
-    let mut input_last_received: HashMap<u64, Instant> = HashMap::with_capacity(max_players);
+    let mut active_inputs: HashMap<PlayerId, CharacterInput> = HashMap::with_capacity(max_players);
+    let mut input_last_received: HashMap<PlayerId, Instant> = HashMap::with_capacity(max_players);
     let mut pending_world_inputs = Vec::new();
     let mut messages: Vec<(usize, ClientMessage, Instant)> =
         Vec::with_capacity(max_client_connections);

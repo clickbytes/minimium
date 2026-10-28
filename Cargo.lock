@@ -794,6 +794,9 @@ dependencies = [
 [[package]]
 name = "minimium-protocol"
 version = "0.1.0"
+dependencies = [
+ "minimium-core",
+]
 
 [[package]]
 name = "minimium-server"

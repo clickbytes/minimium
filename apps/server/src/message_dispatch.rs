@@ -5,6 +5,7 @@ use crate::{
     world_inputs::WorldInput,
     CHAT_COOLDOWN, GLOBAL_CHAT_COOLDOWN, MAX_PENDING_WORLD_INPUTS, SHOT_COOLDOWN,
 };
+use minimium_core::ids::PlayerId;
 use minimium_core::{
     identity::PlayerProfileId,
     world::{CharacterInput, WorldMap},
@@ -26,7 +27,7 @@ pub(crate) struct DispatchContext<'a> {
     pub(crate) pending_departures: &'a HashSet<PlayerProfileId>,
     pub(crate) next_player: &'a mut u64,
     pub(crate) map: &'a WorldMap,
-    pub(crate) client_indices_by_player: &'a mut HashMap<u64, usize>,
+    pub(crate) client_indices_by_player: &'a mut HashMap<PlayerId, usize>,
     pub(crate) metrics: &'a mut RuntimeMetrics,
     pub(crate) last_global_chat_at: &'a mut Option<Instant>,
     pub(crate) messages: &'a mut Vec<(usize, ClientMessage, Instant)>,
@@ -114,7 +115,7 @@ pub(crate) fn dispatch_messages(context: DispatchContext<'_>) {
                     &mut clients[index],
                     metrics,
                     ServerMessage::Welcome {
-                        id: player.id,
+                        id: player.id.get(),
                         map_fingerprint: map.fingerprint(),
                         health: player.health,
                     },
