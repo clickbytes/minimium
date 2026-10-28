@@ -32,6 +32,8 @@ cargo run -p minimium-client -- --map games/sample/maps/demo.map --server-data-d
 
 The second client authenticates the local admin endpoint and verifies the server lock before attaching. It does not stop the server when it exits. The first client owns the child and requests controlled shutdown on exit; graceful stop can take up to 120 seconds, after which the owner may kill and reap only its own child if necessary. Do not close the owner while the attached client still needs the server.
 
+Terminal and desktop clients share the same connection controller and session. Ownership, cancellation, late-result cleanup and timeout behavior remain scenarios for final verification.
+
 Both clients can be text clients by adding `--console`. In that mode, type `host local` in each terminal; the first starts the server and the second attaches. `--threads` applies when a local child is started.
 
 The two `--profile-dir` paths create distinct local player IDs while `--server-data-dir` shares one server and one save store. Omitting explicit profile directories makes clients use the same default profile path, so use distinct paths for independent players.

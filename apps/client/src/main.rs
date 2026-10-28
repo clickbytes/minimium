@@ -117,48 +117,12 @@ fn main() {
     }
 }
 
-fn retain_local_server(
-    current: &mut Option<bootstrap::LocalServer>,
-    new_server: bootstrap::LocalServer,
-) {
-    match new_server {
-        owned @ bootstrap::LocalServer::Owned(_) => {
-            if let Some(mut old) = current.replace(owned) {
-                if let Err(error) = old.shutdown() {
-                    eprintln!("{}", Text::LocalServerGuardCleanupFailed(error.to_string()));
-                }
-            }
-        }
-        attached @ bootstrap::LocalServer::Attached => {
-            let replace = match current.as_mut() {
-                Some(server @ bootstrap::LocalServer::Owned(_)) => {
-                    match server.is_owned_process_running() {
-                        Ok(true) => false,
-                        Ok(false) => true,
-                        Err(error) => {
-                            eprintln!("{}", Text::LocalServerCheckFailed(error.to_string()));
-                            false
-                        }
-                    }
-                }
-                _ => true,
-            };
-            if replace {
-                if let Some(mut old) = current.replace(attached) {
-                    if let Err(error) = old.shutdown() {
-                        eprintln!("{}", Text::LocalServerGuardCleanupFailed(error.to_string()));
-                    }
-                }
-            }
-        }
-    }
-}
-
 mod console;
 mod renderer;
 
 mod bootstrap;
 mod client_commands;
+mod connection_controller;
 mod connector;
 mod messages;
 mod options;

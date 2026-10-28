@@ -23,7 +23,7 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
     let result = client_commands::execute(
         command,
         &mut CommandContext {
-            session: &mut renderer.session,
+            connection: &mut renderer.connection,
             fire_direction: direction,
         },
     );
@@ -52,7 +52,7 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
                 .push_line(Text::ConsoleHistoryHelp.to_string());
         }
         FrontendAction::Connect(address) => {
-            if renderer.session.is_some() || renderer.active_attempt.is_some() {
+            if renderer.connection.busy() {
                 renderer
                     .console
                     .push_error(Text::DisconnectOrWait.to_string());
@@ -61,7 +61,7 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
             }
         }
         FrontendAction::HostLocal(lane) => {
-            if renderer.session.is_some() || renderer.active_attempt.is_some() {
+            if renderer.connection.busy() {
                 renderer
                     .console
                     .push_error(Text::DisconnectOrWait.to_string());
@@ -70,17 +70,15 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
             }
         }
         FrontendAction::Disconnect => {
-            if let Some(id) = renderer.active_attempt.take() {
-                renderer.connector.cancel(id);
-            }
+            renderer.connection.cancel();
             renderer.clear_connection();
             renderer.console.push_line(Text::Disconnected.to_string());
         }
         FrontendAction::FpsShow => renderer.console.push_line(renderer.frame_stats.summary()),
         FrontendAction::NetStats => {
             let metrics = renderer
-                .session
-                .as_ref()
+                .connection
+                .session()
                 .map(ClientSession::metrics)
                 .unwrap_or_default();
             renderer.console.push_line(format!(
