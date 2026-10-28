@@ -76,6 +76,12 @@ Foreground server input and minimiumctl use the same server command registry. De
 
 Initial server commands: help, status, players list, metrics show, world save, stop. Initial client commands: help, connect, disconnect, fps show, net stats, quit.
 
+## Experimental world topology (prototype)
+
+The feature branch for a cube-sphere and dungeon extends map format v3 without changing protocol v8 or existing v1/v2 fingerprints. Core exposes `CubeSphere`, `WorldKind` and `WorldPortal`; assets generates tessellated cube-sphere visual geometry. The authoritative server uses radial gravity near the planet and ordinary Y-down movement inside the separated planar dungeon region. After each simulation tick, world portal triggers teleport player feet to a safe destination, with client prediction and normal snapshot correction.
+
+**Scope limit:** the sample planet and dungeon occupy different coordinates inside one `World`; they are not independently instanced zones, and the world kind is currently inferred from the spherical region. The next stage needs a stable `WorldId`/`InstanceId`, per-instance state/storage and explicit transition messaging if several maps/instances can reuse coordinates. Analytic planet ground does not yet collide with arbitrary planetary structures, nor does it provide spherical combat hitboxes, terrain streaming or LOD. See [worlds](worlds.md).
+
 ## Current implementation
 
 The following describes implemented paths, not executed gameplay or performance verification. Tests and measurements remain a separate final phase.
