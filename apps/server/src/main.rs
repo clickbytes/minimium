@@ -406,9 +406,10 @@ impl SaveSnapshot {
             }
             file.sync_all()?;
             atomic_replace_file(&temporary_path, &path)?;
-            if let Ok(directory) = File::open(data_dir) {
-                let _ = directory.sync_all();
-            }
+            // On Unix the rename is not durable until the parent directory is
+            // synced. Windows replacement uses MOVEFILE_WRITE_THROUGH instead.
+            #[cfg(unix)]
+            File::open(data_dir)?.sync_all()?;
             Ok(())
         })();
         if result.is_err() {
@@ -831,6 +832,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let max_client_connections = max_players + MAX_PENDING_HANDSHAKES;
     let mut clients: Vec<Client> = Vec::with_capacity(max_client_connections);
     let mut client_indices_by_player: HashMap<u64, usize> = HashMap::with_capacity(max_players);
+    // A disconnected profile cannot rejoin until its queued Leave is applied.
+    // The set is bounded by the reserved pending-world-input capacity.
+    let mut pending_departures: HashSet<PlayerProfileId> = HashSet::new();
     let mut active_inputs: HashMap<u64, CharacterInput> = HashMap::with_capacity(max_players);
     let mut input_last_received: HashMap<u64, Instant> = HashMap::with_capacity(max_players);
     let mut pending_world_inputs = Vec::new();
@@ -1050,6 +1054,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         continue;
                     }
                     let profile_id = PlayerProfileId::from_bytes(bytes);
+                    if pending_departures.contains(&profile_id) {
+                        let _ = queue_message(
+                            &mut clients[index],
+                            &mut metrics,
+                            ServerMessage::Error(ERROR_BUSY),
+                        );
+                        disconnected.push(index);
+                        continue;
+                    }
                     let player = match player_store.claim(profile_id, &mut next_player, map.spawn) {
                         Ok(player) => player,
                         Err(error) => {
@@ -1257,16 +1270,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         for index in disconnected.drain(..).rev() {
             if index < clients.len() {
                 let client = clients.swap_remove(index);
-                if let (Some(player_id), Some(_profile_id)) = (client.player_id, client.profile_id)
-                {
+                if let (Some(player_id), Some(profile_id)) = (client.player_id, client.profile_id) {
                     client_indices_by_player.remove(&player_id);
-                    // Capture the last committed position before releasing the profile:
-                    // a reconnect may arrive before the queued Leave reaches the next tick.
+                    // Release the active claim immediately, but reject a rejoin
+                    // until Leave has applied all preceding queued inputs.
                     if let Some(player) = world.player(player_id) {
                         if let Err(error) = player_store.update_from_player(player) {
                             eprintln!("could not capture disconnect state: {error}");
                         }
                     }
+                    pending_departures.insert(profile_id);
                     player_store.release(player_id);
                     pending_world_inputs.push((WorldInput::Leave(player_id), None));
                     println!("player {player_id} disconnected bytes_in={} bytes_out={} decoded_frames={} queued_frames={} encoding_us={}", client.bytes_in, client.bytes_out, client.frames_in, client.frames_out, client.encoding_us);
@@ -1366,6 +1379,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         world.leave(id);
                         active_inputs.remove(&id);
                         input_last_received.remove(&id);
+                        if let Some(profile_id) = player_store.profile_by_player.get(&id) {
+                            pending_departures.remove(profile_id);
+                        }
                     }
                     WorldInput::Move(id, input) => {
                         let current = active_inputs.entry(id).or_default();
