@@ -14,7 +14,7 @@ Minimium is a Rust engine for networked first-person games in full 3D, with an M
 
 Local play launches the server as a child process and connects through the normal game protocol. The admin endpoint is separate, binds to loopback, and uses an OS-generated secret stored in an endpoint file. `minimium-server run --headless` disables stdin commands for a service manager; `minimiumctl` still connects to the same command registry. The server stays in the foreground so the service manager can own its lifetime.
 
-## Workspace layout
+## Target future layout
 
 ~~~text
 apps/client/       client executable and platform shell
@@ -39,7 +39,7 @@ tests/integration/ process-level client/server/admin scenarios
 
 This is the target ownership map, not a reason to create empty crates. Add a crate when it contains real code and enforces a useful dependency boundary. Keep the binaries thin.
 
-## Dependency rules
+## Target future dependency rules
 
 1. Server depends on world simulation, protocol, transport, storage, commands and telemetry. It has no renderer, audio, or window dependency.
 2. Client depends on protocol, transport, assets, renderer, commands and telemetry.
@@ -80,6 +80,8 @@ Initial server commands: help, status, players list, metrics show, world save, s
 
 The following describes implemented paths, not executed gameplay or performance verification. Tests and measurements remain a separate final phase.
 
+The implemented Cargo graph has five libraries: core has no dependencies; assets, platform and protocol each depend on core; telemetry is independent. Server uses all five libraries; client uses all five plus its graphics dependencies; ctl uses core and platform; loadtest uses core, platform, protocol and telemetry. Storage remains a server module because its current persistence worker and lifecycle are specific to the server; a separate package is not needed to enforce the existing boundary. The future layout above is aspirational, not a list of existing packages. Run `python scripts/check_architecture.py` for the selected Cargo graph restrictions and `python scripts/check_file_lengths.py` for source length. The former follows workspace dependencies from Cargo metadata, but does not inspect transitive dependencies of external crates or prove the absence of I/O.
+
 The current workspace contains the packages `minimium-core`, `minimium-assets`, `minimium-platform`, `minimium-protocol`, `minimium-telemetry`, `minimium-server`, `minimium-client`, `minimiumctl`, and `minimium-loadtest`; the broader crate map above is a target ownership map, not the current repository layout. Platform owns profile file creation, atomic file replacement, server locks, endpoint and admin client, and the shared server command schema. Assets loads and parses maps and OBJ into validated core geometry. The server owns the executor and dispatches core movement batches against immutable geometry; core has no telemetry dependency. The desktop client uses wgpu/winit to render the parsed first-person 3D map with WASD and mouse look. Its renderer is split across Rust modules for window lifecycle, GPU setup, drawing, geometry, camera/input, command handling, and session events. `renderer/world.wgsl` supplies the world pipeline and `renderer/ui.wgsl` supplies the console/HUD pipeline; both are embedded at compile time. It can launch a distinct local server process or connect to a supplied address. Press F1 for the in-window command console; `--console` remains a separate text client prototype. Both client and server accept `--map PATH`; local client-launched servers receive the same path. The server supports a configured `--game-port`; zero asks the OS for an ephemeral port.
 
 Connection establishment and an established session have separate owners. `Connector` runs DNS resolution, sequential address attempts, and local server bootstrap on one worker thread. Its timeout is a common result deadline; cancellation or timeout discards a late result, but cannot interrupt a blocking resolver or startup call, so the connector remains busy until its worker exits. Once a socket is returned, `ClientSession` owns a nonblocking TCP stream and bounded read/write buffers but no thread. The desktop redraw loop and text-client loop poll it, handle typed events, and retain their own lifecycle state. The session sends Identify first, accepts ordinary client messages only after Welcome and map-fingerprint validation, and maintains heartbeat timers and RTT state.
@@ -96,8 +98,8 @@ Game traffic uses protocol v8 over prototype TCP. A client identifies its local 
 
 | Boundary | Input and output | Ownership / integration |
 | --- | --- | --- |
-| WorldMap::parse / load_file | Bounded text or file to validated map, or an error | Both client and server use the same canonical fingerprint; maps and OBJ source are the current data extension surface. |
-| World::step_players_parallel | Player input map, fixed delta, Executor to collision query counters and updated world | Main lane owns mutations; jobs read immutable collision geometry and return results merged in input order. |
+| assets::parse_map / load_map | Bounded text or file to validated map, or an error | Both client and server use the same canonical fingerprint; maps and OBJ source are the current data extension surface. |
+| World::step_players_with | Player input map, fixed delta and dispatch function to collision query counters and updated world | Main lane owns mutations; jobs read immutable collision geometry and return results merged in input order. |
 | World::network_snapshot / visit_nearby | Immutable snapshot and recipient to bounded nearest player records | No socket/GPU dependency; server builds full/delta output only for recipients. |
 | protocol codecs | Typed messages to byte buffers; byte slice to complete decoded frame + consumed length, incomplete, or error | v8 framing/limits are independent of TCP. Transport adapters own partial buffers. |
 | ServerCommand::parse / server commands::execute | Text to six typed commands; context to success/text/stop reply | Terminal and authenticated IPC enqueue; one dispatcher executes up to 8 commands before simulation. |
