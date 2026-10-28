@@ -101,3 +101,7 @@ Inwentaryzacja metryk, granice histogramów, opcjonalna instrumentacja i potencj
 ## E002-14 — granice architektury
 
 Rzeczywisty graf i przyszły układ rozdzielono w architecture.md, decyzje opisano w ADR 0004, a dowody i odroczone scenariusze w epic-002-review.md. Checker analizuje krawędzie pakietów workspace i zgłasza zakazane zależności core oraz serwera od grafiki; nie bada tranzytywnych zależności zewnętrznych. Scoped search nie wykazał I/O ani unsafe w core. Przegląd statyczny nie dowodzi nieobecności wszystkich martwych API ani poprawności runtime.
+
+## E002-15 — integracja przed testami
+
+Wyniki bramek statycznych dla 8043f24 oraz lista scenariuszy znajdują się w epic-002-verification.md. Main był przodkiem gałęzi epica. Przeglądy zadań i macierz kontraktów nie zastępują końcowej weryfikacji wykonania. PR #31 pozostaje draftem, a #30 i #14 otwarte do osobnego polecenia rozpoczęcia testów, ich pozytywnego wyniku i scalenia do main.
