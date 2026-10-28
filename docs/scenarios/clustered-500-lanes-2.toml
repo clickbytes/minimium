@@ -1,0 +1,13 @@
+[scenario]
+name = "clustered"
+clients = 500
+duration_seconds = 60
+server_lanes = "2"
+generator_threads = 1
+map = "games/sample/maps/performance.map"
+bind = "127.0.0.1"
+game_port = 47108
+data_dir = ".minimium-loadtest/clustered-500-lanes-2"
+server_command = "minimium-server run --headless --max-players 500 --threads 2 --bind 127.0.0.1 --game-port 47108 --data-dir .minimium-loadtest/clustered-500-lanes-2 --map games/sample/maps/performance.map"
+generator_args = ["--address", "127.0.0.1:47108", "--scenario", "clustered", "--clients", "500", "--seconds", "60", "--threads", "1", "--format", "json", "--scenario-id", "clustered-500-lanes-2", "--server-data-dir", ".minimium-loadtest/clustered-500-lanes-2"]
+loadtest_command = "minimium-loadtest --address 127.0.0.1:47108 --scenario clustered --clients 500 --seconds 60 --threads 1 --format json --scenario-id clustered-500-lanes-2 --server-data-dir .minimium-loadtest/clustered-500-lanes-2"

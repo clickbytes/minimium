@@ -1,10 +1,13 @@
 use std::collections::VecDeque;
+use std::time::{Duration, Instant};
 
 const CELL: usize = 8;
 const COLUMNS: usize = 16;
 const ATLAS_WIDTH: usize = CELL * COLUMNS;
 const ATLAS_HEIGHT: usize = CELL * 8;
 const MAX_LINES: usize = 128;
+const MAX_CHAT_LINES: usize = 8;
+const CHAT_VISIBLE_DURATION: Duration = Duration::from_secs(6);
 const MAX_INPUT: usize = 128;
 const MAX_VERTICES: usize = 8192;
 
@@ -24,26 +27,33 @@ pub enum ClientCommand {
     FpsShow,
     NetStats,
     Ping,
-    Say(String),
+    Chat(String),
+    SetName(String),
     State,
     Clear,
     Quit,
 }
 
 pub fn parse_command(input: &str) -> Result<Option<ClientCommand>, String> {
-    let words: Vec<_> = input.split_whitespace().collect();
-    let command = match words.as_slice() {
-        [] => return Ok(None),
-        ["help"] => ClientCommand::Help,
-        ["connect", address] => ClientCommand::Connect((*address).to_owned()),
-        ["disconnect"] => ClientCommand::Disconnect,
-        ["fps", "show"] => ClientCommand::FpsShow,
-        ["net", "stats"] => ClientCommand::NetStats,
-        ["ping"] => ClientCommand::Ping,
-        ["say", name] => ClientCommand::Say((*name).to_owned()),
-        ["state"] => ClientCommand::State,
-        ["clear"] => ClientCommand::Clear,
-        ["quit"] | ["exit"] => ClientCommand::Quit,
+    let trimmed = input.trim();
+    if let Some(text) = trimmed.strip_prefix("say ").map(str::trim) {
+        if !text.is_empty() {
+            return Ok(Some(ClientCommand::Chat(text.to_owned())));
+        }
+    }
+    let mut words = input.split_whitespace();
+    let command = match (words.next(), words.next(), words.next()) {
+        (None, None, None) => return Ok(None),
+        (Some("help"), None, None) => ClientCommand::Help,
+        (Some("connect"), Some(address), None) => ClientCommand::Connect(address.to_owned()),
+        (Some("disconnect"), None, None) => ClientCommand::Disconnect,
+        (Some("fps"), Some("show"), None) => ClientCommand::FpsShow,
+        (Some("net"), Some("stats"), None) => ClientCommand::NetStats,
+        (Some("ping"), None, None) => ClientCommand::Ping,
+        (Some("name"), Some(name), None) => ClientCommand::SetName(name.to_owned()),
+        (Some("state"), None, None) => ClientCommand::State,
+        (Some("clear"), None, None) => ClientCommand::Clear,
+        (Some("quit"), None, None) | (Some("exit"), None, None) => ClientCommand::Quit,
         _ => return Err("unknown command; press Tab for suggestions or type help".into()),
     };
     Ok(Some(command))
@@ -54,12 +64,18 @@ struct ConsoleLine {
     color: [f32; 3],
 }
 
+struct ChatLine {
+    text: String,
+    received_at: Instant,
+}
+
 pub struct Console {
     pub open: bool,
     input: String,
     history: Vec<String>,
     history_cursor: Option<usize>,
     lines: VecDeque<ConsoleLine>,
+    chat_lines: VecDeque<ChatLine>,
     vertices: Vec<UiVertex>,
 }
 
@@ -71,6 +87,7 @@ impl Console {
             history: Vec::with_capacity(32),
             history_cursor: None,
             lines: VecDeque::with_capacity(MAX_LINES),
+            chat_lines: VecDeque::with_capacity(MAX_CHAT_LINES),
             vertices: Vec::with_capacity(MAX_VERTICES),
         }
     }
@@ -84,26 +101,36 @@ impl Console {
     }
 
     fn push_colored(&mut self, text: &str, color: [f32; 3]) {
-        let mut clean = String::with_capacity(text.len().min(192));
-        for character in text.chars().take(192) {
-            clean.push(if character.is_control() {
-                ' '
-            } else {
-                character
-            });
-        }
+        let clean = clean_line(text);
+        self.push_cleaned(clean, color);
+    }
+
+    fn push_cleaned(&mut self, clean: String, color: [f32; 3]) {
         if self.lines.len() == MAX_LINES {
             self.lines.pop_front();
         }
         self.lines.push_back(ConsoleLine { text: clean, color });
     }
 
+    pub fn push_chat_line(&mut self, text: &str) {
+        let clean = clean_line(text);
+        self.push_cleaned(clean.clone(), [0.76, 0.88, 0.96]);
+        if self.chat_lines.len() == MAX_CHAT_LINES {
+            self.chat_lines.pop_front();
+        }
+        self.chat_lines.push_back(ChatLine {
+            text: clean,
+            received_at: Instant::now(),
+        });
+    }
+
     pub fn append_text(&mut self, text: &str) {
         for character in text.chars() {
-            if self.input.len() >= MAX_INPUT {
+            let encoded_length = character.len_utf8();
+            if self.input.len() + encoded_length > MAX_INPUT {
                 break;
             }
-            if character.is_ascii_graphic() || character == ' ' {
+            if !character.is_control() {
                 self.input.push(character);
             }
         }
@@ -159,12 +186,13 @@ impl Console {
     }
 
     pub fn complete_input(&mut self) {
-        const COMMANDS: [&str; 10] = [
+        const COMMANDS: [&str; 11] = [
             "clear",
             "connect",
             "disconnect",
             "fps show",
             "help",
+            "name",
             "net stats",
             "ping",
             "quit",
@@ -196,13 +224,55 @@ impl Console {
         self.lines.clear();
     }
 
-    pub fn build_vertices(&mut self, width: u32, height: u32) -> &[UiVertex] {
+    pub fn build_vertices(
+        &mut self,
+        width: u32,
+        height: u32,
+        health: u16,
+        show_crosshair: bool,
+        hit_feedback: bool,
+    ) -> &[UiVertex] {
         self.vertices.clear();
-        if !self.open || width < 120 || height < 100 {
+        if width < 120 || height < 100 {
             return &self.vertices;
         }
         let width = width as f32;
         let height = height as f32;
+        append_hud(
+            &mut self.vertices,
+            width,
+            height,
+            health,
+            show_crosshair,
+            hit_feedback,
+        );
+        if !self.open {
+            let now = Instant::now();
+            while self
+                .chat_lines
+                .front()
+                .is_some_and(|line| now.duration_since(line.received_at) >= CHAT_VISIBLE_DURATION)
+            {
+                self.chat_lines.pop_front();
+            }
+            let visible_lines = self.chat_lines.len().min(4);
+            let first_line = self.chat_lines.len().saturating_sub(visible_lines);
+            let max_chars = ((width - 32.0) / (CELL as f32 * 2.0)) as usize;
+            for (row, line) in self.chat_lines.iter().skip(first_line).enumerate() {
+                append_text(
+                    &mut self.vertices,
+                    width,
+                    height,
+                    16.0,
+                    height - 82.0 - (visible_lines - row - 1) as f32 * 20.0,
+                    &line.text,
+                    [0.76, 0.88, 0.96],
+                    max_chars,
+                    2.0,
+                );
+            }
+            return &self.vertices;
+        }
         let panel_height = 260.0f32.min(height - 20.0);
         let panel_top = height - panel_height - 10.0;
         append_quad(
@@ -259,6 +329,142 @@ impl Console {
             scale,
         );
         &self.vertices
+    }
+}
+
+fn clean_line(text: &str) -> String {
+    let mut clean = String::with_capacity(text.len().min(192));
+    for character in text.chars().take(192) {
+        clean.push(if character.is_control() {
+            ' '
+        } else {
+            character
+        });
+    }
+    clean
+}
+
+fn append_hud(
+    vertices: &mut Vec<UiVertex>,
+    width: f32,
+    height: f32,
+    health: u16,
+    show_crosshair: bool,
+    hit_feedback: bool,
+) {
+    let health_ratio = health.min(100) as f32 / 100.0;
+    let health_color = if health_ratio > 0.5 {
+        [0.20, 0.85, 0.38]
+    } else if health_ratio > 0.25 {
+        [0.96, 0.72, 0.20]
+    } else {
+        [0.95, 0.24, 0.20]
+    };
+    let mut health_label = *b"HP 000/100";
+    let health_digits = health.min(100);
+    if health_digits == 100 {
+        health_label[3..6].copy_from_slice(b"100");
+    } else if health_digits >= 10 {
+        health_label[4] = b'0' + (health_digits / 10) as u8;
+        health_label[5] = b'0' + (health_digits % 10) as u8;
+    } else {
+        health_label[4] = b' ';
+        health_label[5] = b'0' + health_digits as u8;
+    }
+    append_text(
+        vertices,
+        width,
+        height,
+        16.0,
+        height - 58.0,
+        std::str::from_utf8(&health_label).unwrap_or("HP"),
+        [0.90, 0.95, 0.98],
+        12,
+        2.0,
+    );
+    append_quad(
+        vertices,
+        width,
+        height,
+        16.0,
+        height - 34.0,
+        164.0,
+        10.0,
+        [0.025, 0.035, 0.050],
+        white_uv(),
+        white_uv(),
+    );
+    if health_ratio > 0.0 {
+        append_quad(
+            vertices,
+            width,
+            height,
+            18.0,
+            height - 32.0,
+            160.0 * health_ratio,
+            6.0,
+            health_color,
+            white_uv(),
+            white_uv(),
+        );
+    }
+
+    if show_crosshair {
+        let center_x = width * 0.5;
+        let center_y = height * 0.5;
+        let color = if hit_feedback {
+            [1.0, 0.36, 0.18]
+        } else {
+            [0.90, 0.95, 0.98]
+        };
+        append_quad(
+            vertices,
+            width,
+            height,
+            center_x - 8.0,
+            center_y - 1.0,
+            6.0,
+            2.0,
+            color,
+            white_uv(),
+            white_uv(),
+        );
+        append_quad(
+            vertices,
+            width,
+            height,
+            center_x + 2.0,
+            center_y - 1.0,
+            6.0,
+            2.0,
+            color,
+            white_uv(),
+            white_uv(),
+        );
+        append_quad(
+            vertices,
+            width,
+            height,
+            center_x - 1.0,
+            center_y - 8.0,
+            2.0,
+            6.0,
+            color,
+            white_uv(),
+            white_uv(),
+        );
+        append_quad(
+            vertices,
+            width,
+            height,
+            center_x - 1.0,
+            center_y + 2.0,
+            2.0,
+            6.0,
+            color,
+            white_uv(),
+            white_uv(),
+        );
     }
 }
 

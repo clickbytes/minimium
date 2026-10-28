@@ -1,27 +1,34 @@
 use std::{error::Error, fmt, sync::Arc};
 
-pub const PROTOCOL_VERSION: u8 = 4;
+pub const PROTOCOL_VERSION: u8 = 8;
 pub const HEADER_BYTES: usize = 4;
 pub const MAX_PAYLOAD_BYTES: usize = 4096;
 pub const MAX_FRAME_BYTES: usize = HEADER_BYTES + MAX_PAYLOAD_BYTES;
 pub const MAX_VISIBLE_PLAYERS: usize = 16;
 pub const PLAYER_PROFILE_ID_BYTES: usize = 16;
+pub const MAX_CHAT_BYTES: usize = 128;
 
 const CLIENT_PING: u8 = 1;
 const CLIENT_SET_NAME: u8 = 2;
 const CLIENT_MOVE: u8 = 3;
 const CLIENT_QUIT: u8 = 4;
 const CLIENT_IDENTIFY: u8 = 5;
+const CLIENT_FIRE: u8 = 6;
+const CLIENT_CHAT: u8 = 7;
 const SERVER_WELCOME: u8 = 0x81;
 const SERVER_PONG: u8 = 0x82;
 const SERVER_ACCEPTED: u8 = 0x83;
 const SERVER_BYE: u8 = 0x84;
 const SERVER_ERROR: u8 = 0x85;
 const SERVER_SNAPSHOT: u8 = 0x86;
+const SERVER_SHOT_RESULT: u8 = 0x87;
+const SERVER_HEALTH_UPDATE: u8 = 0x88;
+const SERVER_CHAT: u8 = 0x89;
 
 pub const ERROR_PROTOCOL: u8 = 1;
 pub const ERROR_BUSY: u8 = 2;
 pub const ERROR_SERVER_FULL: u8 = 3;
+pub const ERROR_RATE_LIMIT: u8 = 4;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClientMessage {
@@ -29,6 +36,8 @@ pub enum ClientMessage {
     Ping,
     SetName(String),
     Move { direction: [f32; 2], jump: bool },
+    Fire { direction: [f32; 3] },
+    Chat(String),
     Quit,
 }
 
@@ -56,7 +65,7 @@ impl Default for RemotePlayers {
 
 impl RemotePlayers {
     pub fn push(&mut self, player: RemotePlayer) -> bool {
-        if self.len == MAX_VISIBLE_PLAYERS {
+        if self.len == MAX_VISIBLE_PLAYERS || self.get(player.id).is_some() {
             return false;
         }
         self.entries[self.len] = Some(player);
@@ -72,7 +81,53 @@ impl RemotePlayers {
         self.len == 0
     }
 
+    pub fn get(&self, id: u64) -> Option<&RemotePlayer> {
+        self.iter().find(|player| player.id == id)
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = &RemotePlayer> {
+        self.entries[..self.len].iter().filter_map(Option::as_ref)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemotePlayerIds {
+    entries: [Option<u64>; MAX_VISIBLE_PLAYERS],
+    len: usize,
+}
+
+impl Default for RemotePlayerIds {
+    fn default() -> Self {
+        Self {
+            entries: [None; MAX_VISIBLE_PLAYERS],
+            len: 0,
+        }
+    }
+}
+
+impl RemotePlayerIds {
+    pub fn push(&mut self, id: u64) -> bool {
+        if self.len == MAX_VISIBLE_PLAYERS || self.contains(id) {
+            return false;
+        }
+        self.entries[self.len] = Some(id);
+        self.len += 1;
+        true
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    pub fn contains(&self, id: u64) -> bool {
+        self.iter().any(|candidate| *candidate == id)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &u64> {
         self.entries[..self.len].iter().filter_map(Option::as_ref)
     }
 }
@@ -82,16 +137,31 @@ pub enum ServerMessage {
     Welcome {
         id: u64,
         map_fingerprint: u64,
+        health: u16,
     },
     Pong,
     Accepted,
     Bye,
     Error(u8),
+    ShotResult {
+        target_id: Option<u64>,
+        remaining_health: Option<u16>,
+        killed: bool,
+    },
+    HealthUpdate(u16),
+    Chat {
+        sender_id: u64,
+        sender_name: String,
+        text: String,
+    },
     Snapshot {
+        server_time_ms: u64,
+        full_snapshot: bool,
         self_position: [f32; 3],
         self_velocity: [f32; 3],
         self_grounded: bool,
         players: RemotePlayers,
+        removed_players: RemotePlayerIds,
     },
 }
 
@@ -137,6 +207,14 @@ pub fn encode_client(message: &ClientMessage) -> Result<Vec<u8>, ProtocolError> 
             payload.push(u8::from(*jump));
             CLIENT_MOVE
         }
+        ClientMessage::Fire { direction } => {
+            write_unit_direction(*direction, &mut payload)?;
+            CLIENT_FIRE
+        }
+        ClientMessage::Chat(text) => {
+            write_chat_text(text, &mut payload)?;
+            CLIENT_CHAT
+        }
         ClientMessage::Quit => CLIENT_QUIT,
     };
     encode_frame(kind, &payload)
@@ -160,9 +238,14 @@ pub fn encode_server_into(
             ServerMessage::Welcome {
                 id,
                 map_fingerprint,
+                health,
             } => {
+                if *health > 100 {
+                    return Err(ProtocolError::InvalidPayload);
+                }
                 frame.extend_from_slice(&id.to_le_bytes());
                 frame.extend_from_slice(&map_fingerprint.to_le_bytes());
+                frame.extend_from_slice(&health.to_le_bytes());
                 SERVER_WELCOME
             }
             ServerMessage::Pong => SERVER_PONG,
@@ -172,20 +255,71 @@ pub fn encode_server_into(
                 frame.push(*code);
                 SERVER_ERROR
             }
+            ServerMessage::ShotResult {
+                target_id,
+                remaining_health,
+                killed,
+            } => {
+                if target_id.is_some() != remaining_health.is_some()
+                    || (*killed && target_id.is_none())
+                {
+                    return Err(ProtocolError::InvalidPayload);
+                }
+                frame.push(u8::from(target_id.is_some()));
+                if let (Some(id), Some(health)) = (target_id, remaining_health) {
+                    frame.extend_from_slice(&id.to_le_bytes());
+                    frame.extend_from_slice(&health.to_le_bytes());
+                }
+                frame.push(u8::from(*killed));
+                SERVER_SHOT_RESULT
+            }
+            ServerMessage::HealthUpdate(health) => {
+                if *health > 100 {
+                    return Err(ProtocolError::InvalidPayload);
+                }
+                frame.extend_from_slice(&health.to_le_bytes());
+                SERVER_HEALTH_UPDATE
+            }
+            ServerMessage::Chat {
+                sender_id,
+                sender_name,
+                text,
+            } => {
+                frame.extend_from_slice(&sender_id.to_le_bytes());
+                write_name(sender_name, frame)?;
+                write_chat_text(text, frame)?;
+                SERVER_CHAT
+            }
             ServerMessage::Snapshot {
+                server_time_ms,
+                full_snapshot,
                 self_position,
                 self_velocity,
                 self_grounded,
                 players,
+                removed_players,
             } => {
+                if (*full_snapshot && !removed_players.is_empty())
+                    || players
+                        .iter()
+                        .any(|player| removed_players.contains(player.id))
+                {
+                    return Err(ProtocolError::InvalidPayload);
+                }
+                frame.extend_from_slice(&server_time_ms.to_le_bytes());
                 write_vector(*self_position, frame)?;
                 write_vector(*self_velocity, frame)?;
                 frame.push(u8::from(*self_grounded));
+                frame.push(u8::from(*full_snapshot));
                 frame.push(players.len() as u8);
+                frame.push(removed_players.len() as u8);
                 for player in players.iter() {
                     frame.extend_from_slice(&player.id.to_le_bytes());
                     write_name(&player.name, frame)?;
                     write_vector(player.position, frame)?;
+                }
+                for id in removed_players.iter() {
+                    frame.extend_from_slice(&id.to_le_bytes());
                 }
                 SERVER_SNAPSHOT
             }
@@ -225,6 +359,14 @@ pub fn decode_client(input: &[u8]) -> Result<Option<(ClientMessage, usize)>, Pro
             direction: reader.direction()?,
             jump: reader.boolean()?,
         },
+        CLIENT_FIRE => {
+            let direction = reader.vector()?;
+            if !is_unit_direction(direction) {
+                return Err(ProtocolError::InvalidPayload);
+            }
+            ClientMessage::Fire { direction }
+        }
+        CLIENT_CHAT => ClientMessage::Chat(reader.chat_text()?.to_owned()),
         CLIENT_QUIT => ClientMessage::Quit,
         other => return Err(ProtocolError::UnknownMessage(other)),
     };
@@ -238,20 +380,69 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
     };
     let mut reader = Reader::new(payload);
     let message = match kind {
-        SERVER_WELCOME => ServerMessage::Welcome {
-            id: reader.u64()?,
-            map_fingerprint: reader.u64()?,
-        },
+        SERVER_WELCOME => {
+            let id = reader.u64()?;
+            let map_fingerprint = reader.u64()?;
+            let health = reader.u16()?;
+            if health > 100 {
+                return Err(ProtocolError::InvalidPayload);
+            }
+            ServerMessage::Welcome {
+                id,
+                map_fingerprint,
+                health,
+            }
+        }
         SERVER_PONG => ServerMessage::Pong,
         SERVER_ACCEPTED => ServerMessage::Accepted,
         SERVER_BYE => ServerMessage::Bye,
         SERVER_ERROR => ServerMessage::Error(reader.byte()?),
+        SERVER_SHOT_RESULT => {
+            let hit = reader.boolean()?;
+            let (target_id, remaining_health) = if hit {
+                let id = reader.u64()?;
+                let health = reader.u16()?;
+                if health > 100 {
+                    return Err(ProtocolError::InvalidPayload);
+                }
+                (Some(id), Some(health))
+            } else {
+                (None, None)
+            };
+            let killed = reader.boolean()?;
+            if killed && !hit {
+                return Err(ProtocolError::InvalidPayload);
+            }
+            ServerMessage::ShotResult {
+                target_id,
+                remaining_health,
+                killed,
+            }
+        }
+        SERVER_HEALTH_UPDATE => {
+            let health = reader.u16()?;
+            if health > 100 {
+                return Err(ProtocolError::InvalidPayload);
+            }
+            ServerMessage::HealthUpdate(health)
+        }
+        SERVER_CHAT => ServerMessage::Chat {
+            sender_id: reader.u64()?,
+            sender_name: reader.name()?,
+            text: reader.chat_text()?.to_owned(),
+        },
         SERVER_SNAPSHOT => {
+            let server_time_ms = reader.u64()?;
             let self_position = reader.vector()?;
             let self_velocity = reader.vector()?;
             let self_grounded = reader.boolean()?;
+            let full_snapshot = reader.boolean()?;
             let count = reader.byte()? as usize;
-            if count > MAX_VISIBLE_PLAYERS {
+            let removed_count = reader.byte()? as usize;
+            if count > MAX_VISIBLE_PLAYERS
+                || removed_count > MAX_VISIBLE_PLAYERS
+                || (full_snapshot && removed_count > 0)
+            {
                 return Err(ProtocolError::InvalidPayload);
             }
             let mut players = RemotePlayers::default();
@@ -264,11 +455,26 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
                     return Err(ProtocolError::InvalidPayload);
                 }
             }
+            let mut removed_players = RemotePlayerIds::default();
+            for _ in 0..removed_count {
+                if !removed_players.push(reader.u64()?) {
+                    return Err(ProtocolError::InvalidPayload);
+                }
+            }
+            if players
+                .iter()
+                .any(|player| removed_players.contains(player.id))
+            {
+                return Err(ProtocolError::InvalidPayload);
+            }
             ServerMessage::Snapshot {
+                server_time_ms,
+                full_snapshot,
                 self_position,
                 self_velocity,
                 self_grounded,
                 players,
+                removed_players,
             }
         }
         other => return Err(ProtocolError::UnknownMessage(other)),
@@ -325,6 +531,15 @@ fn write_name(name: &str, output: &mut Vec<u8>) -> Result<(), ProtocolError> {
     Ok(())
 }
 
+fn write_chat_text(text: &str, output: &mut Vec<u8>) -> Result<(), ProtocolError> {
+    if text.is_empty() || text.len() > MAX_CHAT_BYTES || text.chars().any(char::is_control) {
+        return Err(ProtocolError::InvalidPayload);
+    }
+    output.push(text.len() as u8);
+    output.extend_from_slice(text.as_bytes());
+    Ok(())
+}
+
 fn write_vector(vector: [f32; 3], output: &mut Vec<u8>) -> Result<(), ProtocolError> {
     if !vector.iter().all(|value| value.is_finite()) {
         return Err(ProtocolError::InvalidPayload);
@@ -346,6 +561,21 @@ fn write_direction(direction: [f32; 2], output: &mut Vec<u8>) -> Result<(), Prot
         output.extend_from_slice(&value.to_le_bytes());
     }
     Ok(())
+}
+
+fn write_unit_direction(direction: [f32; 3], output: &mut Vec<u8>) -> Result<(), ProtocolError> {
+    if !is_unit_direction(direction) {
+        return Err(ProtocolError::InvalidPayload);
+    }
+    write_vector(direction, output)
+}
+
+fn is_unit_direction(direction: [f32; 3]) -> bool {
+    if direction.iter().any(|value| !value.is_finite()) {
+        return false;
+    }
+    let length_squared = direction.iter().map(|value| value * value).sum::<f32>();
+    (0.99..=1.01).contains(&length_squared)
 }
 
 struct Reader<'a> {
@@ -387,6 +617,14 @@ impl<'a> Reader<'a> {
             .try_into()
             .map_err(|_| ProtocolError::InvalidPayload)?;
         Ok(u64::from_le_bytes(bytes))
+    }
+
+    fn u16(&mut self) -> Result<u16, ProtocolError> {
+        let bytes: [u8; 2] = self
+            .take(2)?
+            .try_into()
+            .map_err(|_| ProtocolError::InvalidPayload)?;
+        Ok(u16::from_le_bytes(bytes))
     }
 
     fn vector(&mut self) -> Result<[f32; 3], ProtocolError> {
@@ -446,6 +684,19 @@ impl<'a> Reader<'a> {
             return Err(ProtocolError::InvalidName);
         }
         Ok(name)
+    }
+
+    fn chat_text(&mut self) -> Result<&'a str, ProtocolError> {
+        let byte_count = self.byte()? as usize;
+        if byte_count == 0 || byte_count > MAX_CHAT_BYTES {
+            return Err(ProtocolError::InvalidPayload);
+        }
+        let bytes = self.take(byte_count)?;
+        let text = std::str::from_utf8(bytes).map_err(|_| ProtocolError::InvalidPayload)?;
+        if text.chars().any(char::is_control) {
+            return Err(ProtocolError::InvalidPayload);
+        }
+        Ok(text)
     }
 
     fn finish(&self) -> Result<(), ProtocolError> {

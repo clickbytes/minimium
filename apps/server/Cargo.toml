@@ -7,3 +7,8 @@ license.workspace = true
 [dependencies]
 minimium-core = { path = "../../crates/core" }
 minimium-protocol = { path = "../../crates/protocol" }
+minimium-telemetry = { path = "../../crates/telemetry" }
+
+[features]
+default = []
+allocation-metrics = ["minimium-telemetry/allocation-metrics"]

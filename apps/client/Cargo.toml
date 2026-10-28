@@ -7,6 +7,7 @@ license.workspace = true
 [dependencies]
 minimium-core = { path = "../../crates/core" }
 minimium-protocol = { path = "../../crates/protocol" }
+minimium-telemetry = { path = "../../crates/telemetry" }
 bytemuck = { version = "1.25", features = ["derive"] }
 glam = "0.30"
 pollster = "0.4"

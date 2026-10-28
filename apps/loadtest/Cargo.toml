@@ -6,3 +6,4 @@ license.workspace = true
 
 [dependencies]
 minimium-protocol = { path = "../../crates/protocol" }
+minimium-core = { path = "../../crates/core" }

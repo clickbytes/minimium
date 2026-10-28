@@ -769,6 +769,7 @@ dependencies = [
  "glam",
  "minimium-core",
  "minimium-protocol",
+ "minimium-telemetry",
  "pollster",
  "wgpu",
  "winit",
@@ -777,11 +778,15 @@ dependencies = [
 [[package]]
 name = "minimium-core"
 version = "0.1.0"
+dependencies = [
+ "minimium-telemetry",
+]
 
 [[package]]
 name = "minimium-loadtest"
 version = "0.1.0"
 dependencies = [
+ "minimium-core",
  "minimium-protocol",
 ]
 
@@ -795,7 +800,12 @@ version = "0.1.0"
 dependencies = [
  "minimium-core",
  "minimium-protocol",
+ "minimium-telemetry",
 ]
+
+[[package]]
+name = "minimium-telemetry"
+version = "0.1.0"
 
 [[package]]
 name = "minimiumctl"

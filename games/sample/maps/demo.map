@@ -1,33 +1,26 @@
 MINIMIUM_MAP 2
 spawn 0 0 0
 
-# center xyz, size xyz, display rgb, collision mode
+# Ground and a continuous upper route: platform, bridge, deck, and rising steps.
 box 0 -0.15 0 20 0.3 20 0.26 0.29 0.32 solid
-box 0 4.1 -4 10 0.35 12 0.32 0.36 0.40 solid
-box 0 3.8 5 12 0.35 3 0.44 0.34 0.22 solid
-box -9.5 1.7 0 1 3.4 20 0.30 0.42 0.52 solid
-box 9.5 1.7 0 1 3.4 20 0.30 0.42 0.52 solid
-box 0 1.7 -9.5 20 3.4 1 0.30 0.42 0.52 solid
-box -3.5 0.22 1.7 1.15 0.45 1.5 0.56 0.40 0.24 solid
-box -2.5 0.70 2.42 1.15 0.45 1.5 0.56 0.40 0.24 solid
-box -1.5 1.18 3.14 1.15 0.45 1.5 0.56 0.40 0.24 solid
-box -0.5 1.66 3.86 1.15 0.45 1.5 0.56 0.40 0.24 solid
-box 0.5 2.14 4.58 1.15 0.45 1.5 0.56 0.40 0.24 solid
-box 1.5 2.62 5.3 1.15 0.45 1.5 0.56 0.40 0.24 solid
-box 2.5 3.1 6.02 1.15 0.45 1.5 0.56 0.40 0.24 solid
-box 3.5 3.58 6.74 1.15 0.45 1.5 0.56 0.40 0.24 solid
-box -5.5 4.7 5 0.25 1.2 3 0.72 0.45 0.18 solid
-box 5.5 4.7 5 0.25 1.2 3 0.72 0.45 0.18 solid
-box -6 1.5 -5 0.7 3 0.7 0.58 0.60 0.54 solid
-box -6 1.5 2 0.7 3 0.7 0.58 0.60 0.54 solid
-box 6 1.5 -5 0.7 3 0.7 0.58 0.60 0.54 solid
-box 6 1.5 2 0.7 3 0.7 0.58 0.60 0.54 solid
-box 2 0.65 -1 1.2 1.3 1.2 0.75 0.18 0.12 solid
-box -1 0.45 -4 0.9 0.9 0.9 0.16 0.55 0.28 solid
+box 0 3.8 -5 10 0.4 6 0.32 0.36 0.40 solid
+box 0 3.8 0 2 0.4 4 0.32 0.36 0.40 solid
+box 0 3.8 3 4 0.4 2 0.44 0.34 0.22 solid
 
-# A lightweight pair of collidable triangles forms a shallow walkable ramp.
-triangle -4 0.05 -2 -4 0.05 0 -2 0.75 0 0.48 0.34 0.2 solid
-triangle -4 0.05 -2 -2 0.75 0 -2 0.75 -2 0.48 0.34 0.2 solid
+# Each step is 1 wide, 2 deep, and rises by 0.5; the top step meets the deck.
+box -8.5 0.25 5 1 0.5 2 0.56 0.40 0.24 solid
+box -7.5 0.5 5 1 1 2 0.56 0.40 0.24 solid
+box -6.5 0.75 5 1 1.5 2 0.56 0.40 0.24 solid
+box -5.5 1 5 1 2 2 0.56 0.40 0.24 solid
+box -4.5 1.25 5 1 2.5 2 0.56 0.40 0.24 solid
+box -3.5 1.5 5 1 3 2 0.56 0.40 0.24 solid
+box -2.5 1.75 5 1 3.5 2 0.56 0.40 0.24 solid
+box -1.5 2 5 1 4 2 0.56 0.40 0.24 solid
 
-# Visual-only triangular badge on the front of the red collidable block.
-triangle 2.45 0.25 -0.39 1.55 0.25 -0.39 2 1.05 -0.39 0.95 0.62 0.1
+# Collision examples are kept beyond the route's x range (x > 5).
+triangle 6 0.05 6 6 0.05 8 8 0.75 8 0.48 0.34 0.2 solid
+triangle 6 0.05 6 8 0.75 8 8 0.75 6 0.48 0.34 0.2 solid
+triangle 6.5 0 -2 8.5 0 -2 7.5 2.5 -2 0.18 0.52 0.62 solid
+
+# Visual-only triangular badge outside the route.
+triangle 6.45 0.25 -0.39 5.55 0.25 -0.39 6 1.05 -0.39 0.95 0.62 0.1

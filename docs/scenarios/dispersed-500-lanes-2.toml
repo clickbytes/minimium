@@ -1,0 +1,13 @@
+[scenario]
+name = "dispersed"
+clients = 500
+duration_seconds = 60
+server_lanes = "2"
+generator_threads = 1
+map = "games/sample/maps/performance.map"
+bind = "127.0.0.1"
+game_port = 47117
+data_dir = ".minimium-loadtest/dispersed-500-lanes-2"
+server_command = "minimium-server run --headless --max-players 500 --threads 2 --bind 127.0.0.1 --game-port 47117 --data-dir .minimium-loadtest/dispersed-500-lanes-2 --map games/sample/maps/performance.map"
+generator_args = ["--address", "127.0.0.1:47117", "--scenario", "dispersed", "--clients", "500", "--seconds", "60", "--threads", "1", "--format", "json", "--scenario-id", "dispersed-500-lanes-2", "--server-data-dir", ".minimium-loadtest/dispersed-500-lanes-2"]
+loadtest_command = "minimium-loadtest --address 127.0.0.1:47117 --scenario dispersed --clients 500 --seconds 60 --threads 1 --format json --scenario-id dispersed-500-lanes-2 --server-data-dir .minimium-loadtest/dispersed-500-lanes-2"

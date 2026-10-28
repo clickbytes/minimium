@@ -1,22 +1,24 @@
-use crate::console::{font_atlas_pixels, parse_command, ClientCommand, Console, UiVertex};
+use crate::{
+    console::{font_atlas_pixels, parse_command, ClientCommand, Console, UiVertex},
+    server_error_text, ConnectionState, WELCOME_TIMEOUT,
+};
 use minimium_core::{
-    endpoint::ServerEndpoint,
     identity::PlayerProfileId,
     world::{
         step_character, CharacterInput, CharacterState, CollisionIndex, CollisionQuery, WorldMap,
+        PLAYER_MAX_HEALTH,
     },
 };
-use minimium_protocol::{decode_server, encode_client, ClientMessage, ServerMessage};
+use minimium_protocol::{
+    decode_server, encode_client, ClientMessage, ServerMessage, MAX_VISIBLE_PLAYERS,
+};
 use std::{
     borrow::Cow,
     collections::HashSet,
     error::Error,
     io::{Read, Write},
-    net::{TcpStream, ToSocketAddrs},
-    path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
+    net::TcpStream,
     sync::Arc,
-    thread,
     time::{Duration, Instant},
 };
 use wgpu::util::DeviceExt;
@@ -32,6 +34,10 @@ use winit::{
 const MAX_NETWORK_BYTES_PER_FRAME: usize = 16 * 1024;
 const MAX_NETWORK_FRAME_BYTES: usize = 64 * 1024;
 const UI_VERTEX_CAPACITY: usize = 8192;
+const REMOTE_INTERPOLATION_DELAY: Duration = Duration::from_millis(100);
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
+const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(20);
+const SHOT_LOCAL_COOLDOWN: Duration = Duration::from_millis(300);
 const SAMPLE_MAP: &str = include_str!("../../../games/sample/maps/demo.map");
 
 const SHADER: &str = r#"
@@ -102,6 +108,17 @@ impl Vertex {
     }
 }
 
+#[derive(Clone, Copy)]
+struct RemotePlayerTrack {
+    id: u64,
+    previous_position: [f32; 3],
+    current_position: [f32; 3],
+    displayed_position: [f32; 3],
+    previous_time_ms: u64,
+    current_time_ms: u64,
+    displayed_time_ms: u64,
+}
+
 impl UiVertex {
     const ATTRIBUTES: [wgpu::VertexAttribute; 3] =
         wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float32x3];
@@ -130,11 +147,16 @@ struct Renderer {
     player_buffer: wgpu::Buffer,
     remote_vertex_count: u32,
     remote_vertices: Vec<Vertex>,
+    remote_players: [Option<RemotePlayerTrack>; MAX_VISIBLE_PLAYERS],
+    last_remote_snapshot_time_ms: Option<u64>,
+    last_remote_snapshot_received_at: Option<Instant>,
+    remote_geometry_dirty: bool,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     depth_view: wgpu::TextureView,
     size: PhysicalSize<u32>,
     character: CharacterState,
+    health: u16,
     collision_index: CollisionIndex,
     collision_query: CollisionQuery,
     yaw: f32,
@@ -145,13 +167,21 @@ struct Renderer {
     last_frame: Instant,
     fps_time: Instant,
     fps_frames: u32,
-    display_fps: u32,
+    frame_stats: crate::stats::FrameStats,
+    last_redraw: Instant,
+    fixed_gpu_bytes: u64,
     bytes_sent: u64,
     bytes_received: u64,
     remote_player_count: usize,
     map_fingerprint: u64,
     profile_id: PlayerProfileId,
     connection: Option<TcpStream>,
+    connection_state: ConnectionState,
+    last_heartbeat_sent_at: Instant,
+    pending_ping_sent_at: Option<Instant>,
+    round_trip_ms: Option<u32>,
+    last_shot_sent_at: Option<Instant>,
+    hit_confirmation_until: Option<Instant>,
     receive_buffer: Vec<u8>,
     send_buffer: Vec<u8>,
     send_offset: usize,
@@ -164,10 +194,14 @@ struct Renderer {
 impl Renderer {
     async fn new(
         window: Arc<Window>,
-        connection: Option<TcpStream>,
+        connection: Option<(TcpStream, Instant)>,
         map: WorldMap,
         profile_id: PlayerProfileId,
     ) -> Result<Self, Box<dyn Error>> {
+        let (connection, connection_state) = match connection {
+            Some((stream, since)) => (Some(stream), ConnectionState::AwaitingWelcome { since }),
+            None => (None, ConnectionState::Disconnected),
+        };
         let size = window.inner_size();
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let surface = instance.create_surface(window)?;
@@ -282,6 +316,15 @@ impl Renderer {
             mapped_at_creation: false,
         });
         let depth_view = create_depth_view(&device, size);
+        let fixed_gpu_bytes = camera_buffer.size()
+            + vertex_buffer.size()
+            + player_buffer.size()
+            + ui_vertex_buffer.size()
+            + 128 * 64;
+        let mut frame_stats = crate::stats::FrameStats::default();
+        frame_stats.set_gpu_bytes(
+            fixed_gpu_bytes + u64::from(size.width.max(1)) * u64::from(size.height.max(1)) * 4,
+        );
         let mut console = Console::new();
         console.push_line("F1 opens the command console. Type help for commands.");
         Ok(Self {
@@ -300,11 +343,16 @@ impl Renderer {
             player_buffer,
             remote_vertex_count: 0,
             remote_vertices: Vec::with_capacity(16 * 36),
+            remote_players: [None; MAX_VISIBLE_PLAYERS],
+            last_remote_snapshot_time_ms: None,
+            last_remote_snapshot_received_at: None,
+            remote_geometry_dirty: false,
             camera_buffer,
             camera_bind_group,
             depth_view,
             size,
             character: CharacterState::at_spawn(map.spawn),
+            health: PLAYER_MAX_HEALTH,
             collision_index,
             collision_query: CollisionQuery::default(),
             yaw: -std::f32::consts::FRAC_PI_2,
@@ -315,13 +363,21 @@ impl Renderer {
             last_frame: Instant::now(),
             fps_time: Instant::now(),
             fps_frames: 0,
-            display_fps: 0,
+            frame_stats,
+            fixed_gpu_bytes,
+            last_redraw: Instant::now(),
             bytes_sent: 0,
             bytes_received: 0,
             remote_player_count: 0,
             map_fingerprint,
             profile_id,
             connection,
+            connection_state,
+            last_heartbeat_sent_at: Instant::now(),
+            pending_ping_sent_at: None,
+            round_trip_ms: None,
+            last_shot_sent_at: None,
+            hit_confirmation_until: None,
             receive_buffer: Vec::with_capacity(8192),
             send_buffer: Vec::with_capacity(256),
             send_offset: 0,
@@ -341,9 +397,12 @@ impl Renderer {
         self.config.height = size.height;
         self.surface.configure(&self.device, &self.config);
         self.depth_view = create_depth_view(&self.device, size);
+        self.frame_stats.set_gpu_bytes(
+            self.fixed_gpu_bytes + u64::from(size.width) * u64::from(size.height) * 4,
+        );
     }
 
-    fn update(&mut self, window: &Window) {
+    fn update(&mut self) {
         let now = Instant::now();
         let dt = now.duration_since(self.last_frame).as_secs_f32().min(0.05);
         self.last_frame = now;
@@ -388,7 +447,8 @@ impl Renderer {
             self.input_keepalive += 0.05;
             let moving = input.direction != [0.0, 0.0];
             let input_changed = input.direction != self.last_sent_direction;
-            if self.connection.is_some()
+            if self.connection_state == ConnectionState::Connected
+                && self.connection.is_some()
                 && (input.jump || input_changed || (moving && self.input_keepalive >= 0.1))
             {
                 if let Ok(frame) = encode_client(&ClientMessage::Move {
@@ -402,8 +462,10 @@ impl Renderer {
             }
             self.physics_accumulator -= 0.05;
         }
+        self.queue_heartbeat(now);
         self.flush_network_commands();
         self.receive_network_state();
+        self.update_remote_player_rendering(Instant::now());
 
         let direction = glam::Vec3::new(
             self.yaw.cos() * self.pitch.cos(),
@@ -429,20 +491,15 @@ impl Renderer {
             bytemuck::cast_slice(&[(projection * view).to_cols_array_2d()]),
         );
 
-        self.fps_frames += 1;
-        if now.duration_since(self.fps_time).as_secs_f32() >= 1.0 {
-            let fps = self.fps_frames;
-            self.display_fps = fps;
-            self.fps_frames = 0;
-            self.fps_time = now;
-            window.set_title(&format!(
-                "Minimium | {fps} FPS | WASD move, Space jump, mouse look, Esc release"
-            ));
-        }
         let vertex_count = {
-            let vertices = self
-                .console
-                .build_vertices(self.size.width, self.size.height);
+            let vertices = self.console.build_vertices(
+                self.size.width,
+                self.size.height,
+                self.health,
+                self.cursor_locked && !self.console.open,
+                self.hit_confirmation_until
+                    .is_some_and(|until| Instant::now() < until),
+            );
             let count = vertices.len() as u32;
             if count > 0 {
                 self.queue
@@ -453,7 +510,7 @@ impl Renderer {
         self.ui_vertex_count = vertex_count;
     }
 
-    fn render(&mut self) -> Result<(), wgpu::CurrentSurfaceTexture> {
+    fn render(&mut self) -> Result<u32, wgpu::CurrentSurfaceTexture> {
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) => frame,
             wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
@@ -461,10 +518,10 @@ impl Renderer {
                 frame
             }
             error @ (wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost) => {
-                return Err(error)
+                return Err(error);
             }
             wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
-                return Ok(())
+                return Ok(0);
             }
             error @ wgpu::CurrentSurfaceTexture::Validation => return Err(error),
         };
@@ -476,6 +533,7 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("frame-encoder"),
             });
+        let mut draw_calls = 0;
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("main-pass"),
@@ -509,9 +567,11 @@ impl Renderer {
             pass.set_bind_group(0, &self.camera_bind_group, &[]);
             pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             pass.draw(0..self.vertex_count, 0..1);
+            draw_calls += 1;
             if self.remote_vertex_count > 0 {
                 pass.set_vertex_buffer(0, self.player_buffer.slice(..));
                 pass.draw(0..self.remote_vertex_count, 0..1);
+                draw_calls += 1;
             }
         }
         if self.ui_vertex_count > 0 {
@@ -535,16 +595,51 @@ impl Renderer {
             pass.set_bind_group(0, &self.ui_bind_group, &[]);
             pass.set_vertex_buffer(0, self.ui_vertex_buffer.slice(..));
             pass.draw(0..self.ui_vertex_count, 0..1);
+            draw_calls += 1;
         }
         self.queue.submit(Some(encoder.finish()));
         self.queue.present(frame);
-        Ok(())
+        Ok(draw_calls)
+    }
+
+    fn clear_connection(&mut self) {
+        self.connection = None;
+        self.connection_state = ConnectionState::Disconnected;
+        self.pending_ping_sent_at = None;
+        self.round_trip_ms = None;
+        self.last_shot_sent_at = None;
+        self.receive_buffer.clear();
+        self.send_buffer.clear();
+        self.send_offset = 0;
+        self.remote_vertex_count = 0;
+        self.remote_player_count = 0;
+        self.remote_vertices.clear();
+        self.remote_players = [None; MAX_VISIBLE_PLAYERS];
+        self.last_remote_snapshot_time_ms = None;
+        self.last_remote_snapshot_received_at = None;
+        self.remote_geometry_dirty = false;
+        self.health = PLAYER_MAX_HEALTH;
+        self.hit_confirmation_until = None;
+    }
+
+    fn fail_connection(&mut self, message: impl Into<String>) {
+        let message = message.into();
+        eprintln!("{message}");
+        self.console.push_error(message);
+        self.clear_connection();
     }
 
     fn receive_network_state(&mut self) {
-        let Some(stream) = self.connection.as_mut() else {
+        if let ConnectionState::AwaitingWelcome { since } = self.connection_state {
+            if Instant::now().saturating_duration_since(since) >= WELCOME_TIMEOUT {
+                self.fail_connection("server welcome timed out; you can reconnect");
+                return;
+            }
+        }
+        if self.connection.is_none() {
+            self.connection_state = ConnectionState::Disconnected;
             return;
-        };
+        }
         let mut chunk = [0u8; 4096];
         let mut total_read = 0;
         loop {
@@ -552,12 +647,13 @@ impl Renderer {
             if available == 0 {
                 break;
             }
-            match stream.read(&mut chunk[..available]) {
+            let read_result = match self.connection.as_mut() {
+                Some(stream) => stream.read(&mut chunk[..available]),
+                None => return,
+            };
+            match read_result {
                 Ok(0) => {
-                    self.connection = None;
-                    self.remote_vertex_count = 0;
-                    self.remote_player_count = 0;
-                    self.remote_vertices.clear();
+                    self.fail_connection("server disconnected; you can reconnect");
                     return;
                 }
                 Ok(count) => {
@@ -567,21 +663,14 @@ impl Renderer {
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => break,
                 Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
-                Err(_) => {
-                    self.connection = None;
-                    self.remote_vertex_count = 0;
-                    self.remote_player_count = 0;
-                    self.remote_vertices.clear();
+                Err(error) => {
+                    self.fail_connection(format!("connection lost ({error}); you can reconnect"));
                     return;
                 }
             }
         }
         if self.receive_buffer.len() > MAX_NETWORK_FRAME_BYTES {
-            self.connection = None;
-            self.receive_buffer.clear();
-            self.remote_vertex_count = 0;
-            self.remote_player_count = 0;
-            self.remote_vertices.clear();
+            self.fail_connection("server frame exceeds protocol limits; you can reconnect");
             return;
         }
         loop {
@@ -589,89 +678,327 @@ impl Renderer {
             match decoded {
                 Ok(Some((message, frame_bytes))) => {
                     self.receive_buffer.drain(..frame_bytes);
+                    if !matches!(
+                        &message,
+                        ServerMessage::Welcome { .. } | ServerMessage::Error(_)
+                    ) && self.connection_state != ConnectionState::Connected
+                    {
+                        self.fail_connection("server sent data before welcome; connection closed");
+                        return;
+                    }
                     match message {
                         ServerMessage::Welcome {
                             id,
                             map_fingerprint,
+                            health,
                         } => {
+                            if !matches!(
+                                self.connection_state,
+                                ConnectionState::AwaitingWelcome { .. }
+                            ) {
+                                self.fail_connection(
+                                    "unexpected server welcome; connection closed",
+                                );
+                                return;
+                            }
                             if map_fingerprint != self.map_fingerprint {
                                 let error = format!(
                                     "map mismatch: client={:016x} server={map_fingerprint:016x}",
                                     self.map_fingerprint
                                 );
                                 eprintln!("{error}");
-                                self.console.push_error(error);
-                                self.connection = None;
-                                self.remote_vertex_count = 0;
-                                self.remote_player_count = 0;
-                                self.remote_vertices.clear();
+                                self.fail_connection(error);
                                 return;
                             }
+                            self.connection_state = ConnectionState::Connected;
+                            self.last_heartbeat_sent_at = Instant::now();
+                            self.health = health;
                             if self.console.open {
-                                self.console.push_line(format!("connected as player {id}"));
+                                self.console.push_line(format!(
+                                    "connected as player {id} with {health} HP"
+                                ));
                             }
                         }
-                        ServerMessage::Pong if self.console.open => {
-                            self.console.push_line("PONG");
+                        ServerMessage::Pong => {
+                            if let Some(sent_at) = self.pending_ping_sent_at.take() {
+                                let rtt_ms = u32::try_from(
+                                    Instant::now().duration_since(sent_at).as_millis(),
+                                )
+                                .unwrap_or(u32::MAX);
+                                self.round_trip_ms = Some(rtt_ms);
+                                if self.console.open {
+                                    self.console.push_line(format!("PONG {rtt_ms} ms"));
+                                }
+                            } else if self.console.open {
+                                self.console.push_line("PONG");
+                            }
                         }
                         ServerMessage::Accepted if self.console.open => {
                             self.console.push_line("server accepted command");
                         }
                         ServerMessage::Error(code) => {
-                            self.console.push_error(format!("server error code {code}"));
+                            let message = server_error_text(code);
+                            if self.connection_state != ConnectionState::Connected {
+                                self.fail_connection(format!(
+                                    "server rejected connection: {message}"
+                                ));
+                                return;
+                            }
+                            self.console.push_error(format!("server error: {message}"));
                         }
-                        ServerMessage::Bye if self.console.open => {
-                            self.console.push_line("server closed the session");
+                        ServerMessage::ShotResult {
+                            target_id,
+                            remaining_health,
+                            killed,
+                        } => {
+                            if target_id.is_some() {
+                                self.hit_confirmation_until =
+                                    Some(Instant::now() + Duration::from_millis(180));
+                            }
+                            if self.console.open {
+                                match (target_id, remaining_health, killed) {
+                                    (Some(target_id), Some(health), true) => {
+                                        self.console.push_line(format!(
+                                            "hit player {target_id}; target respawned ({health} HP)"
+                                        ))
+                                    }
+                                    (Some(target_id), Some(health), false) => self
+                                        .console
+                                        .push_line(format!("hit player {target_id} ({health} HP)")),
+                                    _ => self.console.push_line("shot missed"),
+                                }
+                            }
+                        }
+                        ServerMessage::HealthUpdate(health) => {
+                            self.health = health;
+                            if self.console.open {
+                                self.console.push_line(format!("health: {health} HP"));
+                            }
+                        }
+                        ServerMessage::Chat {
+                            sender_id,
+                            sender_name,
+                            text,
+                        } => self
+                            .console
+                            .push_chat_line(&format!("[{sender_name}#{sender_id}] {text}")),
+                        ServerMessage::Bye => {
+                            if self.console.open {
+                                self.console.push_line("server closed the session");
+                            }
+                            self.clear_connection();
+                            return;
                         }
                         ServerMessage::Snapshot {
+                            server_time_ms,
+                            full_snapshot,
                             self_position,
                             self_velocity,
                             self_grounded,
                             players,
+                            removed_players,
                         } => {
-                            self.remote_player_count = players.len();
+                            let server_time_ms = self
+                                .last_remote_snapshot_time_ms
+                                .map_or(server_time_ms, |previous| previous.max(server_time_ms));
+                            self.last_remote_snapshot_time_ms = Some(server_time_ms);
+                            self.last_remote_snapshot_received_at = Some(Instant::now());
+                            if full_snapshot {
+                                self.remote_players = [None; MAX_VISIBLE_PLAYERS];
+                            }
+                            for id in removed_players.iter() {
+                                if let Some(slot) = self
+                                    .remote_players
+                                    .iter_mut()
+                                    .find(|slot| slot.is_some_and(|track| track.id == *id))
+                                {
+                                    *slot = None;
+                                }
+                            }
+                            for player in players.iter() {
+                                let existing_slot = self.remote_players.iter().position(|slot| {
+                                    slot.is_some_and(|track| track.id == player.id)
+                                });
+                                let slot = existing_slot.or_else(|| {
+                                    self.remote_players.iter().position(Option::is_none)
+                                });
+                                let Some(slot) = slot else {
+                                    eprintln!("server exceeded the visible-player snapshot limit");
+                                    self.fail_connection(
+                                        "server exceeded the visible-player snapshot limit",
+                                    );
+                                    return;
+                                };
+                                let existing = self.remote_players[slot];
+                                let previous_position = existing
+                                    .map(|track| track.current_position)
+                                    .unwrap_or(player.position);
+                                let previous_time_ms = existing
+                                    .map(|track| track.current_time_ms.min(server_time_ms))
+                                    .unwrap_or(server_time_ms);
+                                self.remote_players[slot] = Some(RemotePlayerTrack {
+                                    id: player.id,
+                                    previous_position,
+                                    current_position: player.position,
+                                    displayed_position: previous_position,
+                                    previous_time_ms,
+                                    current_time_ms: server_time_ms,
+                                    displayed_time_ms: previous_time_ms,
+                                });
+                            }
+                            self.remote_player_count = self.remote_players.iter().flatten().count();
+                            self.remote_geometry_dirty = true;
                             let predicted = glam::Vec3::from_array(self.character.position);
                             let authoritative = glam::Vec3::from_array(self_position);
                             self.character.position =
                                 predicted.lerp(authoritative, 0.25).to_array();
                             self.character.velocity = self_velocity;
                             self.character.grounded = self_grounded;
-                            self.remote_vertices.clear();
-                            for player in players.iter() {
-                                cube(
-                                    &mut self.remote_vertices,
-                                    [
-                                        player.position[0],
-                                        player.position[1] + 0.85,
-                                        player.position[2],
-                                    ],
-                                    [0.6, 1.7, 0.6],
-                                    [0.82, 0.16, 0.12],
-                                );
-                            }
-                            self.remote_vertex_count = self.remote_vertices.len() as u32;
-                            if !self.remote_vertices.is_empty() {
-                                self.queue.write_buffer(
-                                    &self.player_buffer,
-                                    0,
-                                    bytemuck::cast_slice(&self.remote_vertices),
-                                );
-                            }
                         }
                         _ => {}
                     }
                 }
                 Ok(None) => break,
                 Err(error) => {
-                    eprintln!("invalid game protocol data: {error}");
-                    self.connection = None;
-                    self.receive_buffer.clear();
-                    self.remote_vertex_count = 0;
-                    self.remote_player_count = 0;
-                    self.remote_vertices.clear();
+                    self.fail_connection(format!("invalid game protocol data: {error}"));
                     return;
                 }
             }
+        }
+    }
+
+    fn update_remote_player_rendering(&mut self, now: Instant) {
+        if self.connection.is_none() {
+            self.connection_state = ConnectionState::Disconnected;
+            self.remote_players = [None; MAX_VISIBLE_PLAYERS];
+            self.last_remote_snapshot_time_ms = None;
+            self.last_remote_snapshot_received_at = None;
+            self.pending_ping_sent_at = None;
+            self.round_trip_ms = None;
+            self.last_shot_sent_at = None;
+            self.remote_player_count = 0;
+            self.remote_vertex_count = 0;
+            self.remote_vertices.clear();
+            self.remote_geometry_dirty = false;
+            return;
+        }
+
+        let estimated_server_time_ms = match (
+            self.last_remote_snapshot_time_ms,
+            self.last_remote_snapshot_received_at,
+        ) {
+            (Some(server_time_ms), Some(received_at)) => {
+                let elapsed_ms =
+                    u64::try_from(now.saturating_duration_since(received_at).as_millis())
+                        .unwrap_or(u64::MAX);
+                server_time_ms.saturating_add(elapsed_ms)
+            }
+            _ => 0,
+        };
+        let render_time_ms =
+            estimated_server_time_ms.saturating_sub(REMOTE_INTERPOLATION_DELAY.as_millis() as u64);
+
+        let mut moved = false;
+        for track in self.remote_players.iter_mut().flatten() {
+            let interval_ms = track.current_time_ms.saturating_sub(track.previous_time_ms);
+            let interpolation = if interval_ms == 0 {
+                1.0
+            } else {
+                (render_time_ms.saturating_sub(track.previous_time_ms) as f64 / interval_ms as f64)
+                    .clamp(0.0, 1.0) as f32
+            };
+            let position = glam::Vec3::from_array(track.previous_position)
+                .lerp(
+                    glam::Vec3::from_array(track.current_position),
+                    interpolation,
+                )
+                .to_array();
+            if position != track.displayed_position {
+                track.displayed_position = position;
+                moved = true;
+            }
+            track.displayed_time_ms = render_time_ms.clamp(
+                track.previous_time_ms,
+                track.current_time_ms.max(track.previous_time_ms),
+            );
+        }
+        if !moved && !self.remote_geometry_dirty {
+            return;
+        }
+
+        self.remote_vertices.clear();
+        for track in self.remote_players.iter().flatten() {
+            let position = track.displayed_position;
+            cube(
+                &mut self.remote_vertices,
+                [position[0], position[1] + 0.85, position[2]],
+                [0.6, 1.7, 0.6],
+                [0.82, 0.16, 0.12],
+            );
+        }
+        self.remote_vertex_count = self.remote_vertices.len() as u32;
+        if self.remote_vertex_count > 0 {
+            self.queue.write_buffer(
+                &self.player_buffer,
+                0,
+                bytemuck::cast_slice(&self.remote_vertices),
+            );
+        }
+        self.remote_geometry_dirty = false;
+    }
+
+    fn queue_heartbeat(&mut self, now: Instant) {
+        if self.connection.is_none() || self.connection_state != ConnectionState::Connected {
+            return;
+        }
+        if let Some(sent_at) = self.pending_ping_sent_at {
+            if now.duration_since(sent_at) >= HEARTBEAT_TIMEOUT {
+                self.fail_connection("server heartbeat timed out; you can reconnect");
+            }
+            return;
+        }
+        if now.duration_since(self.last_heartbeat_sent_at) < HEARTBEAT_INTERVAL {
+            return;
+        }
+        if let Ok(frame) = encode_client(&ClientMessage::Ping) {
+            self.queue_network_command(&frame);
+            if self.connection.is_some() {
+                self.last_heartbeat_sent_at = now;
+                self.pending_ping_sent_at = Some(now);
+            }
+        }
+    }
+
+    fn queue_fire(&mut self) {
+        if self.connection.is_none() || self.connection_state != ConnectionState::Connected {
+            return;
+        }
+        let now = Instant::now();
+        if self
+            .last_shot_sent_at
+            .is_some_and(|last_shot| now.saturating_duration_since(last_shot) < SHOT_LOCAL_COOLDOWN)
+        {
+            return;
+        }
+        let direction = glam::Vec3::new(
+            self.yaw.cos() * self.pitch.cos(),
+            self.pitch.sin(),
+            self.yaw.sin() * self.pitch.cos(),
+        )
+        .normalize()
+        .to_array();
+        match encode_client(&ClientMessage::Fire { direction }) {
+            Ok(frame) => {
+                self.queue_network_command(&frame);
+                if self.connection.is_some() {
+                    self.last_shot_sent_at = Some(now);
+                }
+                if self.console.open {
+                    self.console.push_line("shot fired");
+                }
+            }
+            Err(error) if self.console.open => self.console.push_error(error.to_string()),
+            Err(_) => {}
         }
     }
 
@@ -689,46 +1016,69 @@ impl Renderer {
             ClientCommand::Help => {
                 self.console
                     .push_line("help | connect HOST:PORT | disconnect | quit");
-                self.console
-                    .push_line("fps show | net stats | ping | say NAME | state | clear");
+                self.console.push_line(
+                    "fps show | net stats | ping | say TEXT | name NAME | state | clear",
+                );
                 self.console
                     .push_line("F1 closes the console. Arrow keys browse command history.");
+                self.console
+                    .push_line("Lock the mouse and left-click to fire the hitscan weapon.");
             }
-            ClientCommand::Connect(address) => match connect_game(&address, self.profile_id) {
-                Ok(stream) => {
-                    self.connection = Some(stream);
-                    self.receive_buffer.clear();
-                    self.send_buffer.clear();
-                    self.send_offset = 0;
-                    self.remote_vertex_count = 0;
-                    self.remote_player_count = 0;
-                    self.console.push_line(format!("connected to {address}"));
+            ClientCommand::Connect(address) => {
+                if self.connection_state != ConnectionState::Disconnected {
+                    self.console
+                        .push_error("disconnect or wait for the current connection attempt first");
+                } else {
+                    match connect_game(&address, self.profile_id) {
+                        Ok((stream, since)) => {
+                            self.connection = Some(stream);
+                            self.connection_state = ConnectionState::AwaitingWelcome { since };
+                            self.last_heartbeat_sent_at = Instant::now();
+                            self.receive_buffer.clear();
+                            self.send_buffer.clear();
+                            self.send_offset = 0;
+                            self.remote_vertex_count = 0;
+                            self.remote_player_count = 0;
+                            self.remote_players = [None; MAX_VISIBLE_PLAYERS];
+                            self.last_remote_snapshot_time_ms = None;
+                            self.last_remote_snapshot_received_at = None;
+                            self.remote_geometry_dirty = false;
+                            self.health = PLAYER_MAX_HEALTH;
+                            self.console
+                                .push_line(format!("awaiting welcome from {address}"));
+                        }
+                        Err(error) => self.console.push_error(format!("connect failed: {error}")),
+                    }
                 }
-                Err(error) => self.console.push_error(format!("connect failed: {error}")),
-            },
+            }
             ClientCommand::Disconnect => {
-                self.connection = None;
-                self.receive_buffer.clear();
-                self.send_buffer.clear();
-                self.send_offset = 0;
-                self.remote_vertex_count = 0;
-                self.remote_player_count = 0;
+                self.clear_connection();
                 self.console.push_line("disconnected");
             }
-            ClientCommand::FpsShow => self.console.push_line(format!("{} FPS", self.display_fps)),
-            ClientCommand::NetStats => self.console.push_line(format!(
-                "tx={} bytes rx={} bytes nearby_players={}",
-                self.bytes_sent, self.bytes_received, self.remote_player_count
-            )),
+            ClientCommand::FpsShow => self.console.push_line(self.frame_stats.summary()),
+            ClientCommand::NetStats => {
+                let round_trip = self.round_trip_ms.map_or_else(
+                    || "n/a".to_owned(),
+                    |milliseconds| format!("{milliseconds} ms"),
+                );
+                self.console.push_line(format!(
+                    "tx={} bytes rx={} bytes rtt={} nearby_players={}",
+                    self.bytes_sent, self.bytes_received, round_trip, self.remote_player_count
+                ));
+            }
             ClientCommand::Ping => self.queue_console_message(ClientMessage::Ping, "ping sent"),
-            ClientCommand::Say(name) => {
+            ClientCommand::Chat(text) => {
+                self.queue_console_message(ClientMessage::Chat(text), "chat sent")
+            }
+            ClientCommand::SetName(name) => {
                 self.queue_console_message(ClientMessage::SetName(name), "name sent")
             }
             ClientCommand::State => self.console.push_line(format!(
-                "position=({:.2},{:.2},{:.2}) nearby_players={}",
+                "position=({:.2},{:.2},{:.2}) health={} HP nearby_players={}",
                 self.character.position[0],
                 self.character.position[1],
                 self.character.position[2],
+                self.health,
                 self.remote_player_count
             )),
             ClientCommand::Clear => self.console.clear_lines(),
@@ -738,36 +1088,62 @@ impl Renderer {
     }
 
     fn queue_console_message(&mut self, message: ClientMessage, description: &str) {
-        if self.connection.is_none() {
-            self.console.push_error("not connected to a server");
+        if self.connection_state != ConnectionState::Connected || self.connection.is_none() {
+            if matches!(
+                self.connection_state,
+                ConnectionState::AwaitingWelcome { .. }
+            ) {
+                self.console.push_error("waiting for server welcome");
+            } else {
+                self.console.push_error("not connected to a server");
+            }
+            return;
+        }
+        let is_ping = matches!(&message, ClientMessage::Ping);
+        if is_ping && self.pending_ping_sent_at.is_some() {
+            self.console
+                .push_error("a ping is already waiting for a response");
             return;
         }
         match encode_client(&message) {
             Ok(frame) => {
+                let sent_at = Instant::now();
                 self.queue_network_command(&frame);
-                self.console.push_line(description);
+                if is_ping && self.connection.is_some() {
+                    self.last_heartbeat_sent_at = sent_at;
+                    self.pending_ping_sent_at = Some(sent_at);
+                }
+                if self.connection.is_some() {
+                    self.console.push_line(description);
+                }
             }
             Err(error) => self.console.push_error(error.to_string()),
         }
     }
 
     fn queue_network_command(&mut self, command: &[u8]) {
+        if self.connection.is_none() || self.connection_state != ConnectionState::Connected {
+            return;
+        }
         if self.send_offset > 0 {
             self.send_buffer.drain(..self.send_offset);
             self.send_offset = 0;
         }
         if self.send_buffer.len() + command.len() > MAX_NETWORK_FRAME_BYTES {
-            self.connection = None;
-            self.send_buffer.clear();
+            self.fail_connection("outgoing server frame exceeds protocol limits");
             return;
         }
         self.send_buffer.extend_from_slice(command);
     }
 
     fn flush_network_commands(&mut self) {
-        let Some(stream) = self.connection.as_mut() else {
+        if self.connection_state != ConnectionState::Connected {
             self.send_buffer.clear();
             self.send_offset = 0;
+            return;
+        }
+        let Some(stream) = self.connection.as_mut() else {
+            self.clear_connection();
             return;
         };
         let mut disconnected = false;
@@ -787,12 +1163,7 @@ impl Renderer {
             }
         }
         if disconnected {
-            self.connection = None;
-            self.send_buffer.clear();
-            self.send_offset = 0;
-            self.remote_vertex_count = 0;
-            self.remote_player_count = 0;
-            self.remote_vertices.clear();
+            self.fail_connection("connection lost while sending; you can reconnect");
         } else if self.send_offset == self.send_buffer.len() {
             self.send_buffer.clear();
             self.send_offset = 0;
@@ -958,9 +1329,10 @@ fn create_depth_view(device: &wgpu::Device, size: PhysicalSize<u32>) -> wgpu::Te
 struct App {
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
-    connection: Option<TcpStream>,
+    connection: Option<(TcpStream, Instant)>,
     world_map: Option<WorldMap>,
     profile_id: PlayerProfileId,
+    startup_error: Option<String>,
 }
 
 impl ApplicationHandler for App {
@@ -971,11 +1343,14 @@ impl ApplicationHandler for App {
         let attributes = WindowAttributes::default()
             .with_title("Minimium 3D client")
             .with_inner_size(PhysicalSize::new(1280, 720));
-        let window = Arc::new(
-            event_loop
-                .create_window(attributes)
-                .expect("window creation failed"),
-        );
+        let window = match event_loop.create_window(attributes) {
+            Ok(window) => Arc::new(window),
+            Err(error) => {
+                self.startup_error = Some(format!("window creation failed: {error}"));
+                event_loop.exit();
+                return;
+            }
+        };
         let world_map = self
             .world_map
             .take()
@@ -991,7 +1366,7 @@ impl ApplicationHandler for App {
                 self.renderer = Some(renderer);
             }
             Err(error) => {
-                eprintln!("graphics initialization failed: {error}");
+                self.startup_error = Some(format!("graphics initialization failed: {error}"));
                 event_loop.exit();
             }
         }
@@ -1059,13 +1434,16 @@ impl ApplicationHandler for App {
                 button: MouseButton::Left,
                 ..
             } => {
-                if !renderer.console.open
-                    && (window.set_cursor_grab(CursorGrabMode::Locked).is_ok()
-                        || window.set_cursor_grab(CursorGrabMode::Confined).is_ok())
-                {
-                    window.set_cursor_visible(false);
-                    renderer.cursor_locked = true;
-                    renderer.last_cursor = None;
+                if !renderer.console.open {
+                    if renderer.cursor_locked {
+                        renderer.queue_fire();
+                    } else if window.set_cursor_grab(CursorGrabMode::Locked).is_ok()
+                        || window.set_cursor_grab(CursorGrabMode::Confined).is_ok()
+                    {
+                        window.set_cursor_visible(false);
+                        renderer.cursor_locked = true;
+                        renderer.last_cursor = None;
+                    }
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
@@ -1079,13 +1457,35 @@ impl ApplicationHandler for App {
                 renderer.last_cursor = Some((position.x, position.y));
             }
             WindowEvent::RedrawRequested => {
-                renderer.update(window);
-                match renderer.render() {
-                    Ok(()) => {}
+                let started = Instant::now();
+                let interval = started.saturating_duration_since(renderer.last_redraw);
+                renderer.last_redraw = started;
+                renderer.update();
+                let draws = match renderer.render() {
+                    Ok(draws) => draws,
                     Err(
                         wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated,
-                    ) => renderer.resize(window.inner_size()),
-                    Err(error) => eprintln!("render error: {error:?}"),
+                    ) => {
+                        renderer.resize(window.inner_size());
+                        0
+                    }
+                    Err(error) => {
+                        eprintln!("render error: {error:?}");
+                        0
+                    }
+                };
+                renderer
+                    .frame_stats
+                    .record_frame(interval, started.elapsed(), draws);
+                if draws > 0 {
+                    renderer.fps_frames += 1;
+                }
+                let sample_time = renderer.fps_time.elapsed().as_secs_f64();
+                if sample_time >= 1.0 {
+                    let fps = renderer.fps_frames as f64 / sample_time;
+                    renderer.fps_frames = 0;
+                    renderer.fps_time = Instant::now();
+                    window.set_title(&format!("Minimium | {fps:.1} FPS | {} HP | WASD move, Space jump, left click fire, Esc release", renderer.health));
                 }
             }
             _ => {}
@@ -1119,57 +1519,26 @@ impl ApplicationHandler for App {
     }
 }
 
-pub fn run() -> Result<(), Box<dyn Error>> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let mut demo_only = false;
-    let mut remote = None;
-    let mut map_path = None;
-    let mut index = 0;
-    while index < args.len() {
-        match args[index].as_str() {
-            "--demo" => demo_only = true,
-            "--connect" => {
-                index += 1;
-                remote = Some(
-                    args.get(index)
-                        .ok_or("--connect requires HOST:PORT")?
-                        .clone(),
-                );
-            }
-            "--map" => {
-                index += 1;
-                map_path = Some(PathBuf::from(
-                    args.get(index).ok_or("--map requires a path")?,
-                ));
-            }
-            "--console" => {}
-            other => return Err(format!("unknown client option `{other}` (try --help)").into()),
-        }
-        index += 1;
-    }
+pub fn run(options: crate::options::ClientOptions) -> Result<(), Box<dyn Error>> {
+    let map_path = options.map_path.clone();
     let map = if let Some(path) = map_path.as_deref() {
         WorldMap::load_file(path)
             .map_err(|error| format!("could not load map {}: {error}", path.display()))?
     } else {
         WorldMap::parse(SAMPLE_MAP).map_err(|error| format!("invalid bundled map: {error}"))?
     };
-    let mut data_dir = PathBuf::from(".minimium-local");
-    if map_path.is_some() {
-        data_dir.push(format!("map-{:016x}", map.fingerprint()));
-    }
-    let profile_id = PlayerProfileId::load_or_create(&data_dir)?;
-    let mut child = None;
-    let connection = if demo_only {
+    let (profile_dir, data_dir) = options.paths(map.fingerprint());
+    let profile_id = PlayerProfileId::load_or_create(&profile_dir)?;
+    let mut local_server = None;
+    let connection = if options.demo {
         None
-    } else if let Some(address) = remote {
-        Some(connect_game(&address, profile_id)?)
+    } else if let Some(address) = &options.connect {
+        Some(connect_game(address, profile_id)?)
     } else {
-        Some(local_connection(
-            &data_dir,
-            &mut child,
-            map_path.as_deref(),
-            profile_id,
-        )?)
+        let (stream, server) =
+            crate::bootstrap::connect_or_start(&data_dir, map_path.as_deref(), &options.threads)?;
+        local_server = Some(server);
+        Some(identify_game(stream, profile_id)?)
     };
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
@@ -1181,126 +1550,37 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         connection,
         world_map: Some(map),
         profile_id,
+        startup_error: None,
     };
     event_loop.run_app(&mut app)?;
-    if let Some(mut child) = child {
-        if let Ok(endpoint) = ServerEndpoint::read(&data_dir) {
-            let _ = stop_local_server(&endpoint);
-        }
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while Instant::now() < deadline {
-            if child.try_wait()?.is_some() {
-                return Ok(());
-            }
-            thread::sleep(Duration::from_millis(25));
-        }
-        let _ = child.kill();
+    if let Some(mut server) = local_server.take() {
+        server.shutdown()?;
+    }
+    if let Some(error) = app.startup_error {
+        return Err(error.into());
     }
     Ok(())
 }
 
-fn connect_game(address: &str, profile_id: PlayerProfileId) -> Result<TcpStream, Box<dyn Error>> {
-    let socket = address
-        .to_socket_addrs()?
-        .next()
-        .ok_or("invalid server address")?;
-    let mut stream = TcpStream::connect_timeout(&socket, Duration::from_secs(3))?;
+fn connect_game(
+    address: &str,
+    profile_id: PlayerProfileId,
+) -> Result<(TcpStream, Instant), Box<dyn Error>> {
+    identify_game(crate::bootstrap::connect(address)?, profile_id)
+}
+
+fn identify_game(
+    mut stream: TcpStream,
+    profile_id: PlayerProfileId,
+) -> Result<(TcpStream, Instant), Box<dyn Error>> {
     stream.set_nodelay(true)?;
+    stream.set_write_timeout(Some(Duration::from_secs(3)))?;
     stream.write_all(&encode_client(&ClientMessage::Identify(
         *profile_id.as_bytes(),
     ))?)?;
+    let since = Instant::now();
     stream.set_nonblocking(true)?;
-    Ok(stream)
-}
-
-fn local_connection(
-    data_dir: &Path,
-    child: &mut Option<Child>,
-    map_path: Option<&Path>,
-    profile_id: PlayerProfileId,
-) -> Result<TcpStream, Box<dyn Error>> {
-    if let Ok(endpoint) = ServerEndpoint::read(data_dir) {
-        if let Ok(stream) = connect_game(&format!("127.0.0.1:{}", endpoint.game_port), profile_id) {
-            return Ok(stream);
-        }
-    }
-    let mut process = start_local_server(data_dir, map_path)?;
-    let endpoint = match wait_endpoint(data_dir, &mut process) {
-        Ok(endpoint) => endpoint,
-        Err(error) => {
-            let _ = process.kill();
-            return Err(error);
-        }
-    };
-    let stream = match connect_game(&format!("127.0.0.1:{}", endpoint.game_port), profile_id) {
-        Ok(stream) => stream,
-        Err(error) => {
-            let _ = stop_local_server(&endpoint);
-            let _ = process.kill();
-            return Err(error);
-        }
-    };
-    *child = Some(process);
-    Ok(stream)
-}
-
-fn start_local_server(data_dir: &Path, map_path: Option<&Path>) -> Result<Child, Box<dyn Error>> {
-    let current = std::env::current_exe()?;
-    let name = if cfg!(windows) {
-        "minimium-server.exe"
-    } else {
-        "minimium-server"
-    };
-    let path = current.with_file_name(name);
-    if !path.exists() {
-        return Err(format!(
-            "{} is missing; build the workspace before starting the desktop client",
-            path.display()
-        )
-        .into());
-    }
-    let mut command = Command::new(path);
-    command
-        .arg("run")
-        .arg("--headless")
-        .arg("--threads")
-        .arg("1")
-        .arg("--bind")
-        .arg("127.0.0.1")
-        .arg("--data-dir")
-        .arg(data_dir);
-    if let Some(map_path) = map_path {
-        command.arg("--map").arg(map_path);
-    }
-    Ok(command
-        .stdin(Stdio::null())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn()?)
-}
-
-fn wait_endpoint(
-    data_dir: &std::path::Path,
-    child: &mut Child,
-) -> Result<ServerEndpoint, Box<dyn Error>> {
-    let deadline = Instant::now() + Duration::from_secs(8);
-    while Instant::now() < deadline {
-        if let Ok(endpoint) = ServerEndpoint::read(data_dir) {
-            return Ok(endpoint);
-        }
-        if let Some(status) = child.try_wait()? {
-            return Err(format!("local server exited during startup: {status}").into());
-        }
-        thread::sleep(Duration::from_millis(20));
-    }
-    Err("timed out waiting for local server".into())
-}
-
-fn stop_local_server(endpoint: &ServerEndpoint) -> Result<(), Box<dyn Error>> {
-    let mut stream = TcpStream::connect(("127.0.0.1", endpoint.admin_port))?;
-    writeln!(stream, "AUTH {}", endpoint.token)?;
-    writeln!(stream, "stop")?;
-    Ok(())
+    Ok((stream, since))
 }
 
 fn map_geometry(map: &WorldMap) -> Vec<Vertex> {

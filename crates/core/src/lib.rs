@@ -5,3 +5,6 @@ pub mod identity;
 pub mod world;
 
 pub const ENGINE_NAME: &str = "Minimium";
+pub mod admin_client;
+pub mod files;
+pub mod server_lock;

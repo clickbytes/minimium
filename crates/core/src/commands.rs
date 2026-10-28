@@ -10,17 +10,21 @@ pub enum ServerCommand {
 
 impl ServerCommand {
     pub fn parse(line: &str) -> Result<Self, String> {
-        let words: Vec<_> = line.split_whitespace().collect();
-        match words.as_slice() {
-            ["help"] => Ok(Self::Help),
-            ["status"] => Ok(Self::Status),
-            ["players", "list"] => Ok(Self::Players),
-            ["metrics", "show"] => Ok(Self::Metrics),
-            ["world", "save"] => Ok(Self::Save),
-            ["stop"] => Ok(Self::Stop),
-            [] => Err("empty command".into()),
-            _ => Err("unknown command; use `help`".into()),
+        let mut words = line.split_whitespace();
+        let command = match (words.next(), words.next(), words.next()) {
+            (None, None, None) => return Err("empty command".into()),
+            (Some("help"), None, None) => Self::Help,
+            (Some("status"), None, None) => Self::Status,
+            (Some("players"), Some("list"), None) => Self::Players,
+            (Some("metrics"), Some("show"), None) => Self::Metrics,
+            (Some("world"), Some("save"), None) => Self::Save,
+            (Some("stop"), None, None) => Self::Stop,
+            _ => return Err("unknown command; use `help`".into()),
+        };
+        if words.next().is_some() {
+            return Err("unknown command; use `help`".into());
         }
+        Ok(command)
     }
 }
 

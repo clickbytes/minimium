@@ -1,0 +1,3 @@
+MINIMIUM_MAP 1
+spawn 0 0 0
+box 0 -0.15 0 4096 0.3 4096 0.26 0.29 0.32 solid

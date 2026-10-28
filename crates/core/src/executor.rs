@@ -1,3 +1,4 @@
+use minimium_telemetry::allocations;
 use std::{
     sync::{
         mpsc::{self, SyncSender},
@@ -47,18 +48,50 @@ impl Executor {
         }
     }
 
+    pub fn lane_count(&self) -> usize {
+        self.workers.len() + 1
+    }
+
     pub fn map<T, R, F>(&self, items: Vec<T>, operation: F) -> Vec<R>
     where
         T: Send + 'static,
         R: Send + 'static,
         F: Fn(T) -> R + Send + Sync + 'static,
     {
+        let phase = allocations::current_phase();
         let Some(sender) = &self.sender else {
             return items.into_iter().map(operation).collect();
         };
         let count = items.len();
         if count <= 1 {
             return items.into_iter().map(operation).collect();
+        }
+        if count <= self.lane_count() {
+            let operation = Arc::new(operation);
+            let (result_sender, result_receiver) = mpsc::sync_channel(count - 1);
+            let mut items = items.into_iter();
+            let first_item = items.next().expect("non-empty item list");
+            for (index, item) in (1..count).zip(items) {
+                let operation = Arc::clone(&operation);
+                let result_sender = result_sender.clone();
+                sender
+                    .send(Box::new(move || {
+                        let _phase = allocations::enter(phase);
+                        let result = operation(item);
+                        let _ = result_sender.send((index, result));
+                    }))
+                    .expect("worker pool stopped unexpectedly");
+            }
+            drop(result_sender);
+            let mut results: Vec<Option<R>> = (0..count).map(|_| None).collect();
+            results[0] = Some(operation(first_item));
+            for (index, result) in result_receiver {
+                results[index] = Some(result);
+            }
+            return results
+                .into_iter()
+                .map(|result| result.expect("worker omitted a result"))
+                .collect();
         }
 
         // Schedule one batch per lane instead of allocating and dispatching one
@@ -79,6 +112,7 @@ impl Executor {
             let result_sender = result_sender.clone();
             sender
                 .send(Box::new(move || {
+                    let _phase = allocations::enter(phase);
                     let results: Vec<_> = batch
                         .into_iter()
                         .map(|(index, item)| (index, operation(item)))
