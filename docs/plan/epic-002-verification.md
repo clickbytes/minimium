@@ -25,7 +25,7 @@ Forced storage and recovery checks passed: an injected `world.snapshot.tmp` dire
 
 Admin request bounds passed: an incomplete authentication line was closed after 2.4 seconds, a 513-byte command line received `ERR admin request line exceeds size limit`, and the server then stopped cleanly. The token was read from the isolated endpoint file only by the harness and was not included in output. Evidence is in `D:\Temp\minimium-epic002-admin-limits`.
 
-Backpressure attempt: 64 raw clients used a 4 KiB receive-buffer request, never read snapshots, and sent periodic pings. After 30 seconds with short names and 45 seconds with maximum-length test names, metrics showed `dropped_snapshots=0` and `max_client_output_bytes=748`. This did not fill the OS or server queue and is inconclusive for sustained backpressure; evidence is in `D:\Temp\minimium-epic002-backpressure-run2`.
+Backpressure attempt: 64 raw clients used a 4 KiB receive-buffer request, never read snapshots, and sent periodic pings. Runs of 30, 45, and 150 seconds recorded `dropped_snapshots=0`; the longest run with maximum-length test names recorded `max_client_output_bytes=748`. These runs did not fill the OS or server queue and are inconclusive for sustained backpressure; the longest-run evidence is in `D:\Temp\minimium-epic002-backpressure-run3`.
 
 The demo-map collision route passed: after approaching from beyond the stair end, the raw client climbed each step to `y=4.0`, crossed the upper deck, bridge and far platform, stopped at a vertical triangle near `z=-2.5`, then climbed the walkable triangle ramp to about `y=0.8`. Position samples are in `D:\Temp\minimium-epic002-geometry\geometry.csv`.
 
