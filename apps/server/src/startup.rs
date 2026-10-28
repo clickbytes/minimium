@@ -3,11 +3,11 @@ use crate::{
     lifecycle::{remove_if_exists, EndpointGuard},
     storage::{PersistenceWorker, PlayerStore},
 };
-use minimium_core::{
+use minimium_core::world::WorldMap;
+use minimium_platform::{
     admin_client::{SHUTDOWN_FILE, SHUTDOWN_OWNER_FILE},
     endpoint::{new_admin_token, ServerEndpoint},
     server_lock::ServerDataLock,
-    world::WorldMap,
 };
 use std::{
     env, io,

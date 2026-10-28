@@ -1,4 +1,4 @@
-use minimium_core::commands::ServerCommand;
+use minimium_platform::commands::ServerCommand;
 use std::{
     io::{self, Read, Write},
     net::{TcpListener, TcpStream},

@@ -4,10 +4,10 @@ use super::{
 };
 use minimium_core::ids::PlayerId;
 use minimium_core::{
-    files::atomic_replace_file,
     identity::PlayerProfileId,
     world::{WorldMap, PLAYER_MAX_HEALTH},
 };
+use minimium_platform::files::atomic_replace_file;
 use std::{
     fs::{self, File},
     io::{self, Read, Write},

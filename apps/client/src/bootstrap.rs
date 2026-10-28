@@ -1,5 +1,5 @@
 use crate::options::ThreadLane;
-use minimium_core::{
+use minimium_platform::{
     admin_client,
     endpoint::{new_admin_token, ServerEndpoint},
     server_lock,

@@ -39,7 +39,7 @@ impl ServerConfig {
         }
         let mut config = Self {
             lanes: LaneSelection::Fixed(1),
-            data_dir: PathBuf::from(minimium_core::files::DEFAULT_SERVER_DATA_DIR),
+            data_dir: PathBuf::from(minimium_platform::files::DEFAULT_SERVER_DATA_DIR),
             map_path: None,
             bind_address: String::from("127.0.0.1"),
             game_port: 0,
