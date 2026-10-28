@@ -700,6 +700,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     thread::available_parallelism()
                         .map(usize::from)
                         .unwrap_or(1)
+                        .min(64)
                 } else {
                     value
                         .parse::<usize>()
