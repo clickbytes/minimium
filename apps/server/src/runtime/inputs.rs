@@ -48,8 +48,8 @@ impl ServerRuntime {
                 self.game.world.leave(id);
                 self.game.active_inputs.remove(&id);
                 self.game.input_last_received.remove(&id);
-                if let Some(profile) = self.operations.player_store.profile_by_player.get(&id) {
-                    self.game.pending_departures.remove(profile);
+                if let Some(profile) = self.operations.player_store.profile_for_player(id) {
+                    self.game.pending_departures.remove(&profile);
                 }
             }
             WorldInput::Move(id, input) => {
@@ -77,7 +77,7 @@ impl ServerRuntime {
                 });
             }
             WorldInput::Chat(id, text) => {
-                if !self.operations.player_store.active_players.contains(&id) {
+                if !self.operations.player_store.is_active(id) {
                     return None;
                 }
                 let name = self.operations.player_store.name_for_player(id)?.to_owned();

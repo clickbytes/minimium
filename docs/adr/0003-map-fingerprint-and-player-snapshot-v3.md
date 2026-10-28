@@ -15,6 +15,8 @@ Map and OBJ parsing and file access belong to `minimium-assets`. The validated c
 
 World snapshot format v3 records the map fingerprint and durable player profile ID, name, position, and health. The client stores a local profile ID and presents it during the protocol v8 handshake. It is a public identifier, not proof of account ownership. Version 2 snapshots migrate with full health. Protocol v8 and snapshot v3 remain fixed for the current implementation scope; any future format change needs an explicit compatibility and migration decision.
 
+Snapshots use 256 copy-on-write profile shards. Capture holds immutable shard views; the worker sorts and writes the existing temporary file before atomic replacement. A crash can lose a save that has not completed, and neither migration nor failure recovery is claimed verified until the deferred scenarios run.
+
 ## Consequences
 
 - Whitespace and line-ending differences in equivalent parsed map records do not by themselves change the fingerprint.

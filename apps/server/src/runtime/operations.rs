@@ -11,7 +11,7 @@ impl ServerRuntime {
         {
             self.scheduler.next_autosave =
                 Some(autosave_check_at + self.scheduler.autosave_interval);
-            if self.operations.persistence.pending_saves == 0 {
+            if !self.operations.persistence.has_pending_save() {
                 if let Err(error) = self.operations.persistence.queue_world_save(
                     &mut self.operations.player_store,
                     &self.game.world,

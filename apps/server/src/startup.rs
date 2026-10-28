@@ -58,7 +58,7 @@ pub(crate) fn initialize(
     remove_if_exists(&data_dir.join(SHUTDOWN_FILE))?;
     remove_if_exists(&data_dir.join(SHUTDOWN_OWNER_FILE))?;
     let mut player_store = PlayerStore::load(data_dir, &map)?;
-    player_store.active_players.reserve(max_players);
+    player_store.reserve_active(max_players);
     let persistence = PersistenceWorker::spawn(data_dir.to_path_buf())?;
     let next_player = player_store.next_player_id()?;
     let game_listener = TcpListener::bind(bind_addresses.as_slice())?;

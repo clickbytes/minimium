@@ -18,7 +18,7 @@ impl ServerRuntime {
             let player_id = self.connections.clients[index].player_id();
             match message {
                 ClientMessage::Identify(profile_id) if player_id.is_none() => {
-                    if self.operations.player_store.active_players.len() >= self.max_players
+                    if self.operations.player_store.active_count() >= self.max_players
                         || self.game.pending_world_inputs.len() + self.connections.clients.len()
                             >= MAX_PENDING_WORLD_INPUTS
                     {
