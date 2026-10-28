@@ -81,3 +81,7 @@ Admission jest metodą runtime i nie mutuje świata. Jedna kolejka `WorldInput` 
 ## E002-09 — zapis graczy
 
 Indeksy i aktywne claims `PlayerStore` są dostępne przez metody; worker przechowuje typowany status z zachowaniem tekstu CLI. Rozłączenie kanału completion przy oczekującym zapisie staje się widocznym błędem. Przy shutdown błąd runtime pozostaje główny, a błędy finalnego zapisu i cleanup są zgłaszane dodatkowo; jeśli runtime nie zawiódł, pierwszy błąd shutdown staje się wynikiem. Format v3/v2, 256 shardów, kanał o pojemności 1, sortowanie na workerze i atomowe replace nie zostały zmienione. Awaria dysku, worker panic, migracja, utrata procesu i spójność zapisu pozostają scenariuszami odroczonymi.
+
+## E002-10 — kontroler klienta
+
+Terminal i renderer używają `ConnectionController`, który posiada connector, sesję, attempt i guard lokalnego serwera. `ClientSession` zachowuje handshake, bufory i heartbeat; oba frontendy pozostają adapterami zdarzeń. Spóźniony wynik lokalnego workera wraca do niego w celu sprzątania, a zastępowany owned guard jest sprzątany przez śledzony worker; następna próba czeka na zakończenie sprzątania. Attached nie zatrzymuje cudzego procesu. DNS/cancel, mismatch, heartbeat, rehost, błędy okna i cleanup są odroczone do końcowej fazy.

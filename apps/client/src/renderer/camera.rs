@@ -48,12 +48,12 @@ impl Renderer {
             let moving = input.direction != [0.0, 0.0];
             let input_changed = input.direction != self.last_sent_direction;
             if self
-                .session
-                .as_ref()
+                .connection
+                .session()
                 .is_some_and(|session| session.state() == SessionState::Connected)
                 && (input.jump || input_changed || (moving && self.input_keepalive >= 0.1))
             {
-                if let Some(session) = self.session.as_mut() {
+                if let Some(session) = self.connection.session_mut() {
                     let result = session.queue(&ClientMessage::Move {
                         direction: input.direction,
                         jump: input.jump,

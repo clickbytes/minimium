@@ -1,7 +1,7 @@
 use crate::{
-    bootstrap::LocalServer,
     client_commands::{self, CommandContext, CommandResult, FrontendAction},
-    connector::{AttemptId, Connector, PollEvent, StartError},
+    connection_controller::{ConnectionController, ConnectionEvent},
+    connector::StartError,
     console::{font_atlas_pixels, Console, UiVertex},
     session::{ClientSession, DisconnectReason, SessionEvent, SessionState},
     SAMPLE_MAP,
@@ -43,7 +43,6 @@ use geometry::{cube, map_geometry, Vertex};
 const UI_VERTEX_CAPACITY: usize = 8192;
 const REMOTE_INTERPOLATION_DELAY: Duration = Duration::from_millis(100);
 const SHOT_LOCAL_COOLDOWN: Duration = Duration::from_millis(300);
-const CONNECT_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Copy)]
 pub(super) struct RemotePlayerTrack {
@@ -97,13 +96,8 @@ struct Renderer {
     pub(super) previous_bytes_sent: u64,
     pub(super) previous_bytes_received: u64,
     pub(super) remote_player_count: usize,
-    pub(super) map_fingerprint: u64,
-    pub(super) profile_id: PlayerProfileId,
-    pub(super) connector: Connector,
-    pub(super) active_attempt: Option<AttemptId>,
-    pub(super) session: Option<ClientSession>,
+    pub(super) connection: ConnectionController,
     pub(super) session_events: Vec<SessionEvent>,
-    pub(super) local_server: Option<LocalServer>,
     pub(super) last_shot_sent_at: Option<Instant>,
     pub(super) hit_confirmation_until: Option<Instant>,
     pub(super) data_dir: PathBuf,

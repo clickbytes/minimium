@@ -3,31 +3,22 @@ use crate::messages::ClientText as Text;
 
 impl Renderer {
     pub(crate) fn start_remote_attempt(&mut self, address: &str) {
-        match self
-            .connector
-            .start(address.to_owned(), CONNECT_ATTEMPT_TIMEOUT)
-        {
-            Ok(id) => {
-                self.active_attempt = Some(id);
-                self.console
-                    .push_line(Text::ConnectingTo(address.to_owned()).to_string());
-            }
+        match self.connection.start_remote(address.to_owned()) {
+            Ok(()) => self
+                .console
+                .push_line(Text::ConnectingTo(address.to_owned()).to_string()),
             Err(error) => self.report_start_error(error),
         }
     }
 
     pub(crate) fn start_local_attempt(&mut self, threads: crate::options::ThreadLane) {
-        match self.connector.start_local(
-            self.data_dir.clone(),
-            self.map_path.clone(),
-            threads,
-            CONNECT_ATTEMPT_TIMEOUT,
-        ) {
-            Ok(id) => {
-                self.active_attempt = Some(id);
-                self.console
-                    .push_line(Text::StartingLocalServer.to_string());
-            }
+        match self
+            .connection
+            .start_local(self.data_dir.clone(), self.map_path.clone(), threads)
+        {
+            Ok(()) => self
+                .console
+                .push_line(Text::StartingLocalServer.to_string()),
             Err(error) => self.report_start_error(error),
         }
     }
@@ -47,40 +38,18 @@ impl Renderer {
     }
 
     pub(super) fn poll_connector(&mut self) {
-        match self.connector.poll() {
-            PollEvent::Idle => self.active_attempt = None,
-            PollEvent::InProgress { attempt_id, .. } => self.active_attempt = Some(attempt_id),
-            PollEvent::TimedOut { attempt_id } if self.active_attempt == Some(attempt_id) => {
-                self.console.push_error(Text::AttemptTimedOut.to_string());
+        match self.connection.poll_connector() {
+            ConnectionEvent::TimedOut => self.console.push_error(Text::AttemptTimedOut.to_string()),
+            ConnectionEvent::SessionStarted => {
+                self.reset_remote_gameplay();
+                self.console.push_line(Text::AwaitingWelcome.to_string());
             }
-            PollEvent::Cancelled { attempt_id } if self.active_attempt == Some(attempt_id) => {
-                self.active_attempt = None;
-            }
-            PollEvent::Connected {
-                attempt_id,
-                stream,
-                local_server,
-            } if self.active_attempt == Some(attempt_id) => {
-                self.active_attempt = None;
-                if let Some(server) = local_server {
-                    crate::retain_local_server(&mut self.local_server, server);
-                }
-                match ClientSession::new(stream, self.profile_id, self.map_fingerprint) {
-                    Ok(session) => {
-                        self.session = Some(session);
-                        self.reset_remote_gameplay();
-                        self.console.push_line(Text::AwaitingWelcome.to_string());
-                    }
-                    Err(error) => self
-                        .console
-                        .push_error(Text::ConnectionSetupFailed(error.to_string()).to_string()),
-                }
-            }
-            PollEvent::Failed { attempt_id, error } if self.active_attempt == Some(attempt_id) => {
-                self.active_attempt = None;
-                self.console
-                    .push_error(Text::ConnectFailed(error.to_string()).to_string());
-            }
+            ConnectionEvent::SetupFailed(error) => self
+                .console
+                .push_error(Text::ConnectionSetupFailed(error.to_string()).to_string()),
+            ConnectionEvent::Failed(error) => self
+                .console
+                .push_error(Text::ConnectFailed(error.to_string()).to_string()),
             _ => {}
         }
     }
@@ -99,19 +68,13 @@ impl Renderer {
     }
 
     pub(crate) fn finish_on_exit(&mut self) -> Result<(), Box<dyn Error>> {
-        if let Some(id) = self.active_attempt.take() {
-            self.connector.cancel(id);
-        }
-        self.connector.finish_on_exit();
         self.clear_connection();
-        if let Some(mut server) = self.local_server.take() {
-            server.shutdown()?;
-        }
+        self.connection.finish()?;
         Ok(())
     }
 
     pub(super) fn clear_connection(&mut self) {
-        if let Some(mut session) = self.session.take() {
+        if let Some(mut session) = self.connection.take_session() {
             let metrics = session.metrics();
             self.previous_bytes_sent = self.previous_bytes_sent.saturating_add(metrics.bytes_sent);
             self.previous_bytes_received = self
@@ -139,9 +102,9 @@ impl Renderer {
     }
 
     pub(super) fn poll_session(&mut self) {
-        if let Some(session) = self.session.as_mut() {
+        if self.connection.session().is_some() {
             self.session_events.clear();
-            session.poll(&mut self.session_events);
+            self.connection.poll_session(&mut self.session_events);
         }
         let mut events = std::mem::take(&mut self.session_events);
         for event in events.drain(..) {
@@ -169,15 +132,15 @@ impl Renderer {
                 }
                 SessionEvent::Message(message) => {
                     self.handle_server_message(message);
-                    if self.session.is_none() {
+                    if self.connection.session().is_none() {
                         break;
                     }
                 }
             }
         }
         if self
-            .session
-            .as_ref()
+            .connection
+            .session()
             .is_some_and(|session| session.state() == SessionState::Disconnected)
         {
             self.clear_connection();
@@ -323,8 +286,8 @@ impl Renderer {
 
     pub(super) fn queue_fire(&mut self) {
         if !self
-            .session
-            .as_ref()
+            .connection
+            .session()
             .is_some_and(|session| session.state() == SessionState::Connected)
         {
             return;
@@ -343,7 +306,7 @@ impl Renderer {
         )
         .normalize()
         .to_array();
-        if let Some(session) = self.session.as_mut() {
+        if let Some(session) = self.connection.session_mut() {
             match session.queue(&ClientMessage::Fire { direction }) {
                 Ok(()) => {
                     self.last_shot_sent_at = Some(now);
@@ -360,7 +323,7 @@ impl Renderer {
     }
 
     pub(super) fn update_remote_player_rendering(&mut self, now: Instant) {
-        if self.session.is_none() {
+        if self.connection.session().is_none() {
             self.remote_players = [None; MAX_VISIBLE_PLAYERS];
             self.last_remote_snapshot_time_ms = None;
             self.last_remote_snapshot_received_at = None;

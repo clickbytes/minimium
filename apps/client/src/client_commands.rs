@@ -5,10 +5,7 @@
 //! queues protocol messages directly and reports UI/process work as a typed
 //! [`FrontendAction`], leaving each front end in control of its own event loop.
 
-use crate::{
-    options::ThreadLane,
-    session::{ClientSession, QueueError},
-};
+use crate::{options::ThreadLane, session::QueueError};
 use minimium_protocol::ClientMessage;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -211,7 +208,7 @@ fn parse_coordinate(value: &str) -> Result<f32, ParseError> {
 }
 
 pub(crate) struct CommandContext<'a> {
-    pub session: &'a mut Option<ClientSession>,
+    pub connection: &'a mut crate::connection_controller::ConnectionController,
     /// Direction used for `fire`; terminal callers pass [1, 0, 0].
     pub fire_direction: [f32; 3],
 }
@@ -266,11 +263,8 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
         ClientCommand::Clear => return CommandResult::Action(FrontendAction::Clear),
         ClientCommand::Quit => return CommandResult::Action(FrontendAction::Quit),
     };
-    match context.session.as_mut() {
-        Some(session) => match session.queue(&message) {
-            Ok(()) => CommandResult::Sent,
-            Err(error) => CommandResult::QueueError(error),
-        },
-        None => CommandResult::QueueError(QueueError::Disconnected),
+    match context.connection.queue(&message) {
+        Ok(()) => CommandResult::Sent,
+        Err(error) => CommandResult::QueueError(error),
     }
 }
