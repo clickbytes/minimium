@@ -6,13 +6,17 @@ use std::{
     env,
     io::{Read, Write},
     net::{SocketAddr, TcpStream, ToSocketAddrs},
-    sync::{Arc, Barrier},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc,
+    },
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 const PING_INTERVAL: Duration = Duration::from_secs(1);
 const PING_TIMEOUT: Duration = Duration::from_secs(10);
+const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 const MOVEMENT_INTERVAL: Duration = Duration::from_millis(50);
 const FIRE_INTERVAL: Duration = Duration::from_millis(300);
 const CHAT_INTERVAL: Duration = Duration::from_secs(25);
@@ -34,6 +38,7 @@ const RTT_BUCKETS_MICROS: [u64; 16] = [
 ];
 
 struct LoadClient {
+    client_id: usize,
     stream: TcpStream,
     receive_buffer: Vec<u8>,
     next_ping_at: Instant,
@@ -51,6 +56,9 @@ struct LoadClient {
     movement_seed: usize,
     movement_sequence: u64,
     disconnected: bool,
+    disconnected_before_start: bool,
+    next_setup_ping_at: Instant,
+    setup_ping_offset: Option<usize>,
 }
 
 #[derive(Clone, Copy)]
@@ -69,7 +77,9 @@ struct WorkerConfig {
     movement_frames: Vec<Vec<u8>>,
     fire_frames: Vec<Vec<u8>>,
     chat_frame: Vec<u8>,
-    barrier: Arc<Barrier>,
+    ready_sender: mpsc::Sender<()>,
+    start_receiver: mpsc::Receiver<Instant>,
+    abort_setup: Arc<AtomicBool>,
 }
 
 #[derive(Clone, Copy)]
@@ -122,6 +132,11 @@ impl Scenario {
 #[derive(Default)]
 struct WorkerStats {
     connected: u64,
+    ready: u64,
+    handshake_failures: u64,
+    disconnects_before_start: u64,
+    disconnects_during_measurement: u64,
+    connected_at_end: u64,
     pongs: u64,
     errors: u64,
     timeouts: u64,
@@ -135,6 +150,8 @@ struct WorkerStats {
     snapshots_received: u64,
     bytes_sent: u64,
     bytes_received: u64,
+    setup_bytes_sent: u64,
+    setup_bytes_received: u64,
     rtt: RttStats,
 }
 
@@ -218,6 +235,17 @@ impl RttStats {
 impl WorkerStats {
     fn merge(&mut self, other: Self) {
         self.connected = self.connected.saturating_add(other.connected);
+        self.ready = self.ready.saturating_add(other.ready);
+        self.handshake_failures = self
+            .handshake_failures
+            .saturating_add(other.handshake_failures);
+        self.disconnects_before_start = self
+            .disconnects_before_start
+            .saturating_add(other.disconnects_before_start);
+        self.disconnects_during_measurement = self
+            .disconnects_during_measurement
+            .saturating_add(other.disconnects_during_measurement);
+        self.connected_at_end = self.connected_at_end.saturating_add(other.connected_at_end);
         self.pongs = self.pongs.saturating_add(other.pongs);
         self.errors = self.errors.saturating_add(other.errors);
         self.timeouts = self.timeouts.saturating_add(other.timeouts);
@@ -233,6 +261,10 @@ impl WorkerStats {
             .saturating_add(other.snapshots_received);
         self.bytes_sent = self.bytes_sent.saturating_add(other.bytes_sent);
         self.bytes_received = self.bytes_received.saturating_add(other.bytes_received);
+        self.setup_bytes_sent = self.setup_bytes_sent.saturating_add(other.setup_bytes_sent);
+        self.setup_bytes_received = self
+            .setup_bytes_received
+            .saturating_add(other.setup_bytes_received);
         self.rtt.merge(other.rtt);
     }
 }
@@ -408,12 +440,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .into_iter()
         .collect::<Result<Vec<_>, _>>()?;
     let chat_frame = encode_client(&ClientMessage::Chat(String::from("load test message")))?;
-    let barrier = Arc::new(Barrier::new(worker_count + 1));
+    let (ready_sender, ready_receiver) = mpsc::channel();
+    let abort_setup = Arc::new(AtomicBool::new(false));
+    let setup_started_at = Instant::now();
     let mut workers = Vec::with_capacity(worker_count);
+    let mut start_senders = Vec::with_capacity(worker_count);
 
     for worker_id in 0..worker_count {
         let client_ids = (worker_id..clients).step_by(worker_count).collect();
-        let barrier = Arc::clone(&barrier);
+        let ready_sender = ready_sender.clone();
+        let abort_setup = Arc::clone(&abort_setup);
+        let (start_sender, start_receiver) = mpsc::channel();
+        start_senders.push(start_sender);
         let ping_frame = ping_frame.clone();
         let movement_frames = movement_frames.clone();
         let fire_frames = fire_frames.clone();
@@ -431,14 +469,81 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     movement_frames,
                     fire_frames,
                     chat_frame,
-                    barrier,
+                    ready_sender,
+                    start_receiver,
+                    abort_setup,
                 },
             )
         }));
     }
+    drop(ready_sender);
 
-    barrier.wait();
-    let start = Instant::now();
+    let mut ready_workers = 0;
+    let mut setup_failed = false;
+    while ready_workers < worker_count {
+        match ready_receiver.recv_timeout(POLL_INTERVAL) {
+            Ok(()) => ready_workers += 1,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if workers.iter().any(thread::JoinHandle::is_finished) {
+                    setup_failed = true;
+                    break;
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                setup_failed = true;
+                break;
+            }
+        }
+    }
+    if workers.iter().any(thread::JoinHandle::is_finished) {
+        setup_failed = true;
+    }
+    if setup_failed {
+        abort_setup.store(true, Ordering::Release);
+        drop(start_senders);
+        let mut stats = WorkerStats::default();
+        for worker in workers {
+            match worker.join() {
+                Ok(worker_stats) => stats.merge(worker_stats),
+                Err(_) => stats.errors = stats.errors.saturating_add(1),
+            }
+        }
+        return Err(format!(
+            "load worker failed during setup (ready workers: {ready_workers}/{worker_count}, handshakes: {})",
+            stats.connected
+        )
+        .into());
+    }
+
+    if let Some(path) = &server_data_dir {
+        match report::capture_server(path) {
+            Ok(sample) => metadata.server_measurement_start = Some(sample),
+            Err(error) => eprintln!("server sample at measurement start unavailable: {error}"),
+        }
+    }
+    if workers.iter().any(thread::JoinHandle::is_finished) {
+        abort_setup.store(true, Ordering::Release);
+        drop(start_senders);
+        for worker in workers {
+            let _ = worker.join();
+        }
+        return Err("load worker exited after setup and before measurement".into());
+    }
+    let start = Instant::now() + Duration::from_millis(100);
+    metadata.setup_elapsed_seconds = Some(start.duration_since(setup_started_at).as_secs_f64());
+    for sender in start_senders {
+        if sender.send(start).is_err() {
+            setup_failed = true;
+        }
+    }
+    if setup_failed {
+        abort_setup.store(true, Ordering::Release);
+        for worker in workers {
+            let _ = worker.join();
+        }
+        return Err("load worker exited before measurement start".into());
+    }
+
     let mut stats = WorkerStats::default();
     for worker in workers {
         match worker.join() {
@@ -465,6 +570,332 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+enum SetupExpectation {
+    Welcome,
+    Accepted,
+}
+
+#[derive(Clone, Copy)]
+struct SetupConfig<'a> {
+    socket: SocketAddr,
+    process_salt: [u8; 16],
+    scenario: Scenario,
+    total_clients: usize,
+    movement_frames: &'a [Vec<u8>],
+    ping_frame: &'a [u8],
+}
+
+fn prepare_client(
+    client_id: usize,
+    config: &SetupConfig<'_>,
+    existing_clients: &mut [LoadClient],
+    stats: &mut WorkerStats,
+) -> Option<LoadClient> {
+    let SetupConfig {
+        socket,
+        process_salt,
+        scenario,
+        total_clients,
+        movement_frames,
+        ping_frame,
+    } = *config;
+    let connect_deadline = Instant::now() + HANDSHAKE_TIMEOUT;
+    let mut stream = loop {
+        let now = Instant::now();
+        if now >= connect_deadline {
+            stats.errors = stats.errors.saturating_add(1);
+            stats.timeouts = stats.timeouts.saturating_add(1);
+            stats.handshake_failures = stats.handshake_failures.saturating_add(1);
+            return None;
+        }
+        service_setup_clients(existing_clients, ping_frame, None, stats);
+        match TcpStream::connect_timeout(
+            &socket,
+            connect_deadline
+                .saturating_duration_since(now)
+                .min(Duration::from_millis(100)),
+        ) {
+            Ok(stream) => break stream,
+            Err(error) if error.kind() == std::io::ErrorKind::TimedOut => continue,
+            Err(_) => {
+                stats.errors = stats.errors.saturating_add(1);
+                stats.handshake_failures = stats.handshake_failures.saturating_add(1);
+                return None;
+            }
+        }
+    };
+    if stream.set_nonblocking(true).is_err() || stream.set_nodelay(true).is_err() {
+        stats.errors = stats.errors.saturating_add(1);
+        stats.handshake_failures = stats.handshake_failures.saturating_add(1);
+        return None;
+    }
+
+    let mut profile_id = [0u8; 16];
+    profile_id[..8].copy_from_slice(&(client_id as u64).to_le_bytes());
+    profile_id[8..].copy_from_slice(&process_salt[..8]);
+    let identity_frame = match encode_client(&ClientMessage::Identify(profile_id)) {
+        Ok(frame) => frame,
+        Err(_) => {
+            stats.errors = stats.errors.saturating_add(1);
+            stats.handshake_failures = stats.handshake_failures.saturating_add(1);
+            return None;
+        }
+    };
+    let mut receive_buffer = Vec::with_capacity(2048);
+    let deadline = Instant::now() + HANDSHAKE_TIMEOUT;
+    if write_setup_frame(&mut stream, &identity_frame, deadline, stats).is_err()
+        || wait_for_setup_message(
+            &mut stream,
+            &mut receive_buffer,
+            deadline,
+            SetupExpectation::Welcome,
+            existing_clients,
+            ping_frame,
+            stats,
+        )
+        .is_err()
+    {
+        stats.errors = stats.errors.saturating_add(1);
+        stats.handshake_failures = stats.handshake_failures.saturating_add(1);
+        if Instant::now() >= deadline {
+            stats.timeouts = stats.timeouts.saturating_add(1);
+        }
+        return None;
+    }
+    stats.connected = stats.connected.saturating_add(1);
+
+    let name_frame = match encode_client(&ClientMessage::SetName(format!("Bot{client_id}"))) {
+        Ok(frame) => frame,
+        Err(_) => {
+            stats.errors = stats.errors.saturating_add(1);
+            stats.handshake_failures = stats.handshake_failures.saturating_add(1);
+            return None;
+        }
+    };
+    let name_deadline = Instant::now() + HANDSHAKE_TIMEOUT;
+    if write_setup_frame(&mut stream, &name_frame, name_deadline, stats).is_err()
+        || wait_for_setup_message(
+            &mut stream,
+            &mut receive_buffer,
+            name_deadline,
+            SetupExpectation::Accepted,
+            existing_clients,
+            ping_frame,
+            stats,
+        )
+        .is_err()
+    {
+        stats.errors = stats.errors.saturating_add(1);
+        stats.handshake_failures = stats.handshake_failures.saturating_add(1);
+        if Instant::now() >= name_deadline {
+            stats.timeouts = stats.timeouts.saturating_add(1);
+        }
+        return None;
+    }
+
+    let dispersed_movement_frame = if matches!(scenario, Scenario::Dispersed) {
+        let angle = std::f64::consts::TAU * client_id as f64 / total_clients as f64;
+        let direction = [angle.cos() as f32, angle.sin() as f32];
+        match encode_client(&ClientMessage::Move {
+            direction,
+            jump: false,
+        }) {
+            Ok(frame) => Some(frame),
+            Err(_) => {
+                stats.errors = stats.errors.saturating_add(1);
+                return None;
+            }
+        }
+    } else {
+        None
+    };
+
+    Some(LoadClient {
+        client_id,
+        stream,
+        receive_buffer,
+        next_ping_at: Instant::now(),
+        ping_due: false,
+        next_movement_at: Instant::now(),
+        pending_movement_index: None,
+        pending_dispersed_movement: false,
+        dispersed_movement_frame,
+        next_fire_at: Instant::now(),
+        pending_fire_index: None,
+        next_chat_at: Instant::now(),
+        chat_due: false,
+        pending_output: None,
+        ping_sent_at: None,
+        movement_seed: client_id % movement_frames.len(),
+        movement_sequence: 0,
+        disconnected: false,
+        disconnected_before_start: false,
+        next_setup_ping_at: Instant::now() + PING_INTERVAL,
+        setup_ping_offset: None,
+    })
+}
+
+fn write_setup_frame(
+    stream: &mut TcpStream,
+    frame: &[u8],
+    deadline: Instant,
+    stats: &mut WorkerStats,
+) -> std::io::Result<()> {
+    let mut offset = 0;
+    while offset < frame.len() {
+        if Instant::now() >= deadline {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "setup write timed out",
+            ));
+        }
+        match stream.write(&frame[offset..]) {
+            Ok(0) => return Err(std::io::ErrorKind::WriteZero.into()),
+            Ok(count) => {
+                offset += count;
+                stats.bytes_sent = stats.bytes_sent.saturating_add(count as u64);
+                stats.setup_bytes_sent = stats.setup_bytes_sent.saturating_add(count as u64);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                thread::sleep(
+                    POLL_INTERVAL.min(deadline.saturating_duration_since(Instant::now())),
+                );
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
+}
+
+fn wait_for_setup_message(
+    stream: &mut TcpStream,
+    receive_buffer: &mut Vec<u8>,
+    deadline: Instant,
+    expected: SetupExpectation,
+    existing_clients: &mut [LoadClient],
+    ping_frame: &[u8],
+    stats: &mut WorkerStats,
+) -> std::io::Result<()> {
+    let mut chunk = [0u8; 4096];
+    loop {
+        service_setup_clients(existing_clients, ping_frame, None, stats);
+        loop {
+            match decode_server(receive_buffer) {
+                Ok(Some((message, frame_bytes))) => {
+                    receive_buffer.drain(..frame_bytes);
+                    match (expected, message) {
+                        (SetupExpectation::Welcome, ServerMessage::Welcome { .. })
+                        | (SetupExpectation::Accepted, ServerMessage::Accepted) => return Ok(()),
+                        (_, ServerMessage::Error(_)) => {
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::ConnectionRefused,
+                                "server rejected load client setup",
+                            ));
+                        }
+                        (SetupExpectation::Welcome, _) => {
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                "server sent data before Welcome",
+                            ));
+                        }
+                        (SetupExpectation::Accepted, ServerMessage::Welcome { .. }) => {
+                            return Err(std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                "server sent duplicate Welcome",
+                            ));
+                        }
+                        (SetupExpectation::Accepted, _) => {}
+                    }
+                }
+                Ok(None) => break,
+                Err(error) => {
+                    return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, error));
+                }
+            }
+        }
+        if receive_buffer.len() > MAX_RECEIVE_BUFFER_BYTES {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "setup response exceeds receive buffer limit",
+            ));
+        }
+        if Instant::now() >= deadline {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "setup response timed out",
+            ));
+        }
+        match stream.read(&mut chunk) {
+            Ok(0) => return Err(std::io::ErrorKind::UnexpectedEof.into()),
+            Ok(count) => {
+                stats.bytes_received = stats.bytes_received.saturating_add(count as u64);
+                stats.setup_bytes_received =
+                    stats.setup_bytes_received.saturating_add(count as u64);
+                receive_buffer.extend_from_slice(&chunk[..count]);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                thread::sleep(
+                    POLL_INTERVAL.min(deadline.saturating_duration_since(Instant::now())),
+                );
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+fn service_setup_clients(
+    clients: &mut [LoadClient],
+    ping_frame: &[u8],
+    deadline: Option<Instant>,
+    stats: &mut WorkerStats,
+) {
+    let now = Instant::now();
+    for client in clients.iter_mut().filter(|client| !client.disconnected) {
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            break;
+        }
+        if client.setup_ping_offset.is_none() && now >= client.next_setup_ping_at {
+            client.setup_ping_offset = Some(0);
+            client.next_setup_ping_at = now + PING_INTERVAL;
+        }
+        if let Some(offset) = client.setup_ping_offset {
+            match client.stream.write(&ping_frame[offset..]) {
+                Ok(0) => {
+                    client.disconnected = true;
+                    client.disconnected_before_start = true;
+                    stats.errors = stats.errors.saturating_add(1);
+                    stats.disconnects_before_start =
+                        stats.disconnects_before_start.saturating_add(1);
+                    stats.ready = stats.ready.saturating_sub(1);
+                    continue;
+                }
+                Ok(count) => {
+                    stats.bytes_sent = stats.bytes_sent.saturating_add(count as u64);
+                    stats.setup_bytes_sent = stats.setup_bytes_sent.saturating_add(count as u64);
+                    let next_offset = offset + count;
+                    client.setup_ping_offset =
+                        (next_offset < ping_frame.len()).then_some(next_offset);
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+                Err(_) => {
+                    client.disconnected = true;
+                    client.disconnected_before_start = true;
+                    stats.errors = stats.errors.saturating_add(1);
+                    stats.disconnects_before_start =
+                        stats.disconnects_before_start.saturating_add(1);
+                    stats.ready = stats.ready.saturating_sub(1);
+                    continue;
+                }
+            }
+        }
+        drain_setup_traffic_until(client, stats, deadline);
+    }
+}
+
 fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> WorkerStats {
     let WorkerConfig {
         socket,
@@ -476,83 +907,63 @@ fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> WorkerStats {
         movement_frames,
         fire_frames,
         chat_frame,
-        barrier,
+        ready_sender,
+        start_receiver,
+        abort_setup,
     } = config;
     let mut stats = WorkerStats::default();
     let mut clients = Vec::with_capacity(client_ids.len());
+    let setup_config = SetupConfig {
+        socket,
+        process_salt,
+        scenario,
+        total_clients,
+        movement_frames: &movement_frames,
+        ping_frame: &ping_frame,
+    };
     for client_id in client_ids {
-        let Ok(mut stream) = TcpStream::connect_timeout(&socket, Duration::from_secs(5)) else {
-            stats.errors = stats.errors.saturating_add(1);
-            continue;
-        };
-        let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
-        let _ = stream.set_nodelay(true);
-
-        let mut profile_id = [0u8; 16];
-        profile_id[..8].copy_from_slice(&(client_id as u64).to_le_bytes());
-        profile_id[8..].copy_from_slice(&process_salt[..8]);
-        let identity_frame = encode_client(&ClientMessage::Identify(profile_id));
-        let name_frame = encode_client(&ClientMessage::SetName(format!("Bot{client_id}")));
-        let (Ok(identity_frame), Ok(name_frame)) = (identity_frame, name_frame) else {
-            stats.errors = stats.errors.saturating_add(1);
-            continue;
-        };
-        let dispersed_movement_frame = if matches!(scenario, Scenario::Dispersed) {
-            let angle = std::f64::consts::TAU * client_id as f64 / total_clients as f64;
-            let direction = [angle.cos() as f32, angle.sin() as f32];
-            match encode_client(&ClientMessage::Move {
-                direction,
-                jump: false,
-            }) {
-                Ok(frame) => Some(frame),
-                Err(_) => {
-                    stats.errors = stats.errors.saturating_add(1);
-                    continue;
-                }
-            }
-        } else {
-            None
-        };
-        if stream.write_all(&identity_frame).is_err() {
-            stats.errors = stats.errors.saturating_add(1);
-            continue;
+        if abort_setup.load(Ordering::Acquire) {
+            return stats;
         }
-        stats.bytes_sent = stats.bytes_sent.saturating_add(identity_frame.len() as u64);
-        if stream.write_all(&name_frame).is_err() {
-            stats.errors = stats.errors.saturating_add(1);
-            continue;
+        if let Some(client) = prepare_client(client_id, &setup_config, &mut clients, &mut stats) {
+            clients.push(client);
         }
-        stats.bytes_sent = stats.bytes_sent.saturating_add(name_frame.len() as u64);
-        if stream.set_nonblocking(true).is_err() {
-            stats.errors = stats.errors.saturating_add(1);
-            continue;
-        }
-        stats.connected = stats.connected.saturating_add(1);
-        clients.push(LoadClient {
-            stream,
-            receive_buffer: Vec::with_capacity(2048),
-            next_ping_at: Instant::now(),
-            ping_due: false,
-            next_movement_at: Instant::now(),
-            pending_movement_index: None,
-            pending_dispersed_movement: false,
-            dispersed_movement_frame,
-            next_fire_at: Instant::now(),
-            pending_fire_index: None,
-            next_chat_at: Instant::now() + Duration::from_millis(((client_id % 500) * 50) as u64),
-            chat_due: false,
-            pending_output: None,
-            ping_sent_at: None,
-            movement_seed: client_id % movement_frames.len(),
-            movement_sequence: 0,
-            disconnected: false,
-        });
     }
 
-    barrier.wait();
-    let until = Instant::now() + Duration::from_secs(seconds);
+    stats.ready = clients.iter().filter(|client| !client.disconnected).count() as u64;
+    if ready_sender.send(()).is_err() {
+        return stats;
+    }
+    let start = loop {
+        match start_receiver.recv_timeout(POLL_INTERVAL) {
+            Ok(start) => break start,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                service_setup_clients(&mut clients, &ping_frame, None, &mut stats);
+                if abort_setup.load(Ordering::Acquire) {
+                    return stats;
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => return stats,
+        }
+    };
+    let until = start + Duration::from_secs(seconds);
+    while Instant::now() < start {
+        service_setup_clients(&mut clients, &ping_frame, Some(start), &mut stats);
+        thread::sleep(
+            start
+                .saturating_duration_since(Instant::now())
+                .min(POLL_INTERVAL),
+        );
+    }
+    for client in &mut clients {
+        let client_id = client.client_id;
+        client.next_ping_at = start;
+        client.next_movement_at = start;
+        client.next_fire_at = start;
+        client.next_chat_at = start + Duration::from_millis(((client_id % 500) * 50) as u64);
+    }
     let mut input = [0u8; 2048];
-    while Instant::now() < until {
+    while Instant::now() < until && !abort_setup.load(Ordering::Acquire) {
         let now = Instant::now();
         for client in &mut clients {
             if client.disconnected {
@@ -787,5 +1198,86 @@ fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> WorkerStats {
             stats.timeouts = stats.timeouts.saturating_add(1);
         }
     }
+    stats.disconnects_during_measurement = clients
+        .iter()
+        .filter(|client| client.disconnected && !client.disconnected_before_start)
+        .count() as u64;
+    stats.connected_at_end = stats
+        .ready
+        .saturating_sub(stats.disconnects_during_measurement);
     stats
+}
+
+fn drain_setup_traffic_until(
+    client: &mut LoadClient,
+    stats: &mut WorkerStats,
+    deadline: Option<Instant>,
+) {
+    let mut chunk = [0u8; 4096];
+    loop {
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            return;
+        }
+        match client.stream.read(&mut chunk) {
+            Ok(0) => {
+                client.disconnected = true;
+                client.disconnected_before_start = true;
+                stats.errors = stats.errors.saturating_add(1);
+                stats.disconnects_before_start = stats.disconnects_before_start.saturating_add(1);
+                stats.ready = stats.ready.saturating_sub(1);
+                return;
+            }
+            Ok(count) => {
+                stats.bytes_received = stats.bytes_received.saturating_add(count as u64);
+                stats.setup_bytes_received =
+                    stats.setup_bytes_received.saturating_add(count as u64);
+                client.receive_buffer.extend_from_slice(&chunk[..count]);
+                if client.receive_buffer.len() > MAX_RECEIVE_BUFFER_BYTES {
+                    client.disconnected = true;
+                    client.disconnected_before_start = true;
+                    stats.errors = stats.errors.saturating_add(1);
+                    stats.disconnects_before_start =
+                        stats.disconnects_before_start.saturating_add(1);
+                    stats.ready = stats.ready.saturating_sub(1);
+                    return;
+                }
+                loop {
+                    match decode_server(&client.receive_buffer) {
+                        Ok(Some((message, frame_bytes))) => {
+                            client.receive_buffer.drain(..frame_bytes);
+                            if matches!(message, ServerMessage::Error(_)) {
+                                client.disconnected = true;
+                                client.disconnected_before_start = true;
+                                stats.errors = stats.errors.saturating_add(1);
+                                stats.disconnects_before_start =
+                                    stats.disconnects_before_start.saturating_add(1);
+                                stats.ready = stats.ready.saturating_sub(1);
+                                return;
+                            }
+                        }
+                        Ok(None) => break,
+                        Err(_) => {
+                            client.disconnected = true;
+                            client.disconnected_before_start = true;
+                            stats.errors = stats.errors.saturating_add(1);
+                            stats.disconnects_before_start =
+                                stats.disconnects_before_start.saturating_add(1);
+                            stats.ready = stats.ready.saturating_sub(1);
+                            return;
+                        }
+                    }
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => return,
+            Err(_) => {
+                client.disconnected = true;
+                client.disconnected_before_start = true;
+                stats.errors = stats.errors.saturating_add(1);
+                stats.disconnects_before_start = stats.disconnects_before_start.saturating_add(1);
+                stats.ready = stats.ready.saturating_sub(1);
+                return;
+            }
+        }
+    }
 }
