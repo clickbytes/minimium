@@ -89,3 +89,7 @@ Terminal i renderer używają `ConnectionController`, który posiada connector, 
 ## E002-11 — renderer
 
 Renderer składa właścicieli GPU, gameplay, input, UI, metryk, ustawień i kontrolera połączenia. Konstrukcja, resize i draw GPU nie obsługują connectora ani komend; predykcja, snapshot i interpolacja należą do gameplay, a kierunek ruchu do input. Orkiestracja klatki i adapter zdarzeń pozostają w Renderer. Geometria zdalnych graczy jest aktualizowana po zmianie/interpolacji, bufory i atlas pozostają ponownie używane. Ocena wizualna, glyphs, resize, predykcja i scenariusze dwóch klientów są odroczone.
+
+## E002-12 — konfiguracje i komendy
+
+Katalog klienta przypisuje typowany identyfikator do każdej nazwy i aliasu; parser, help i completion korzystają z tej samej tabeli. `ServerCommand::ALL` i `name` są źródłem parsera i tekstu help serwera/ctl. Typy lane pozostają osobne: zakres i znaczenie server, client i generator różnią się; tabela flag, domyślnych wartości, duplicate i konfliktów znajduje się w commands.md. Istniejący nieprecyzyjny komunikat serwera o niepoprawnym `--threads` opisano bez zmiany zachowania. Nie uruchamiano CLI; scenariusze parserów, help, aliasów i błędów są odroczone.

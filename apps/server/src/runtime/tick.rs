@@ -39,7 +39,7 @@ impl ServerRuntime {
                 continue;
             }
             let mut reply = commands::execute(
-                command.clone(),
+                command,
                 commands::CommandContext {
                     world: &self.game.world,
                     player_store: &mut self.operations.player_store,
