@@ -19,9 +19,13 @@ pub(super) fn json_string(value: &str) -> String {
 }
 
 pub(super) fn json_number(value: Option<f64>) -> String {
-    value.map_or_else(|| "null".to_owned(), |number| format!("{number:.3}"))
+    value
+        .filter(|number| number.is_finite())
+        .map_or_else(|| "null".to_owned(), |number| format!("{number:.3}"))
 }
 
 pub(super) fn display_number(value: Option<f64>) -> String {
-    value.map_or_else(|| "n/a".to_owned(), |number| format!("{number:.3}"))
+    value
+        .filter(|number| number.is_finite())
+        .map_or_else(|| "n/a".to_owned(), |number| format!("{number:.3}"))
 }
