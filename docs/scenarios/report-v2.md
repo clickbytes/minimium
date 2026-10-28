@@ -26,7 +26,9 @@ The report preserves the prior generator result fields:
   `connected`/`disconnected` status. Setup failures have zero measurement bytes.
   `connected` means no disconnect was observed before the window ended; it is
   not proof that the socket was still live after the last observation. No
-  profile identifier or administrative token is included.
+  profile identifier or administrative token is included. A nonblocking socket
+  operation begun just before the deadline may complete just after it; its
+  returned bytes are attributed to the measurement window.
 - `rtt_samples`, `rtt_min_ms`, `rtt_avg_ms`, `rtt_p95_ms`, `rtt_p99_ms`,
   `rtt_max_ms`
 
