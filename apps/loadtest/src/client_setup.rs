@@ -73,7 +73,7 @@ pub(super) fn prepare_client(
     profile_id[..8].copy_from_slice(&(client_id as u64).to_le_bytes());
     profile_id[8..].copy_from_slice(&process_salt[..8]);
     let profile_id = PlayerProfileId::from_bytes(profile_id);
-    let identity_frame = match encode_client(&ClientMessage::Identify(*profile_id.as_bytes())) {
+    let identity_frame = match encode_client(&ClientMessage::Identify(profile_id)) {
         Ok(frame) => frame,
         Err(_) => {
             stats.errors = stats.errors.saturating_add(1);

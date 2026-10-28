@@ -3,7 +3,7 @@ use super::{
     scenarios::Scenario,
     stats::{ClientMeasurement, WorkerStats},
 };
-use minimium_protocol::{decode_server, ServerMessage, ERROR_RATE_LIMIT};
+use minimium_protocol::{decode_server, ServerErrorCode, ServerMessage};
 use std::{
     io::{Read, Write},
     net::{SocketAddr, TcpStream},
@@ -338,7 +338,7 @@ pub(super) fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> Worker
                                                 );
                                             }
                                         }
-                                        ServerMessage::Error(ERROR_RATE_LIMIT) => {
+                                        ServerMessage::Error(ServerErrorCode::RateLimit) => {
                                             stats.rate_limited =
                                                 stats.rate_limited.saturating_add(1);
                                         }

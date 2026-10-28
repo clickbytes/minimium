@@ -40,7 +40,7 @@ pub enum DisconnectReason {
     HeartbeatTimeout,
     Protocol(ProtocolError),
     UnexpectedMessage,
-    Rejected(u8),
+    Rejected(minimium_protocol::ServerErrorCode),
     MapMismatch { expected: u64, actual: u64 },
     Io(io::ErrorKind),
     BufferLimit,
@@ -112,7 +112,7 @@ impl ClientSession {
             metrics: SessionMetrics::default(),
         };
         session
-            .append_encoded(&ClientMessage::Identify(*profile_id.as_bytes()))
+            .append_encoded(&ClientMessage::Identify(profile_id))
             .expect("Identify frame is within protocol limits");
         Ok(session)
     }

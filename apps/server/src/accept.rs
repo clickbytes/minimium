@@ -1,7 +1,5 @@
 use crate::{connection::Client, MAX_PENDING_HANDSHAKES, MAX_PENDING_WORLD_INPUTS};
-use minimium_protocol::{
-    encode_server, RemotePlayers, ServerMessage, ERROR_BUSY, ERROR_SERVER_FULL,
-};
+use minimium_protocol::{encode_server, RemotePlayers, ServerErrorCode, ServerMessage};
 use std::{
     collections::VecDeque,
     io::{self, Write},
@@ -32,14 +30,14 @@ pub(crate) fn accept_clients(
                 let rejection = if clients.len() >= max_client_connections
                     || pending_world_input_count + clients.len() >= MAX_PENDING_WORLD_INPUTS
                 {
-                    Some(ERROR_SERVER_FULL)
+                    Some(ServerErrorCode::ServerFull)
                 } else if clients
                     .iter()
                     .filter(|client| client.player_id.is_none())
                     .count()
                     >= MAX_PENDING_HANDSHAKES
                 {
-                    Some(ERROR_BUSY)
+                    Some(ServerErrorCode::Busy)
                 } else {
                     None
                 };

@@ -47,7 +47,7 @@ const CONNECT_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Copy)]
 pub(super) struct RemotePlayerTrack {
-    pub(super) id: u64,
+    pub(super) id: minimium_core::ids::PlayerId,
     pub(super) previous_position: [f32; 3],
     pub(super) current_position: [f32; 3],
     pub(super) displayed_position: [f32; 3],
