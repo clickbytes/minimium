@@ -1,5 +1,5 @@
 use super::*;
-use crate::{commands, replication, simulation, world_inputs};
+use crate::{commands, replication, simulation};
 use minimium_protocol::PROTOCOL_VERSION;
 use minimium_telemetry::allocations::{self, Phase};
 
@@ -95,22 +95,7 @@ impl ServerRuntime {
     fn apply_world_inputs(&mut self) {
         let input_phase = allocations::enter(Phase::Input);
         let input_apply_started = Instant::now();
-        world_inputs::apply_world_inputs(world_inputs::WorldInputsContext {
-            pending_world_inputs: &mut self.game.pending_world_inputs,
-            world: &mut self.game.world,
-            active_inputs: &mut self.game.active_inputs,
-            input_last_received: &mut self.game.input_last_received,
-            player_store: &mut self.operations.player_store,
-            pending_departures: &mut self.game.pending_departures,
-            client_indices_by_player: &self.connections.client_indices_by_player,
-            clients: &mut self.connections.clients,
-            metrics: &mut self.metrics,
-        });
-        world_inputs::expire_stale_inputs(
-            &mut self.game.active_inputs,
-            &self.game.input_last_received,
-            Instant::now(),
-        );
+        self.apply_inputs();
         self.metrics
             .input_apply
             .record(input_apply_started.elapsed());

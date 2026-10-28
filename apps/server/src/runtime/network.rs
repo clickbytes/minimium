@@ -1,11 +1,5 @@
 use super::*;
-use crate::{
-    accept,
-    connection::CloseReason,
-    message_dispatch::{self, DispatchContext},
-    receive, send,
-    world_inputs::WorldInput,
-};
+use crate::{accept, connection::CloseReason, receive, send, world_inputs::WorldInput};
 use minimium_telemetry::allocations::{self, Phase};
 
 impl ServerRuntime {
@@ -25,20 +19,7 @@ impl ServerRuntime {
             &mut self.connections.messages,
             &mut self.connections.disconnected,
         );
-        message_dispatch::dispatch_messages(DispatchContext {
-            clients: &mut self.connections.clients,
-            disconnected: &mut self.connections.disconnected,
-            player_store: &mut self.operations.player_store,
-            max_players: self.max_players,
-            pending_world_inputs: &mut self.game.pending_world_inputs,
-            pending_departures: &self.game.pending_departures,
-            next_player: &mut self.operations.next_player,
-            map: &self.map,
-            client_indices_by_player: &mut self.connections.client_indices_by_player,
-            metrics: &mut self.metrics,
-            last_global_chat_at: &mut self.game.last_global_chat_at,
-            messages: &mut self.connections.messages,
-        });
+        self.admit_messages();
         let eof_close_at = Instant::now();
         for client in &mut self.connections.clients {
             if client.peer_eof && client.close_deadline().is_none() {
