@@ -75,6 +75,7 @@ struct Client {
     replication_initialized: bool,
     connected_at: Instant,
     last_message_at: Instant,
+    peer_eof: bool,
     close_deadline: Option<Instant>,
     last_fire_at: Option<Instant>,
     last_chat_at: Option<Instant>,
@@ -963,6 +964,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         replication_initialized: false,
                         connected_at,
                         last_message_at: connected_at,
+                        peer_eof: false,
                         close_deadline: None,
                         last_fire_at: None,
                         last_chat_at: None,
@@ -979,7 +981,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         for (index, client) in clients.iter_mut().enumerate() {
-            if client.close_deadline.is_some() {
+            if client.close_deadline.is_some() || client.peer_eof {
                 continue;
             }
             let mut buffer = [0u8; 2048];
@@ -993,7 +995,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 match client.stream.read(&mut buffer[..available]) {
                     Ok(0) => {
-                        disconnected.push(index);
+                        // TCP half-close is legal: dispatch complete frames already
+                        // decoded from this stream, then drain queued replies.
+                        client.peer_eof = true;
                         break;
                     }
                     Ok(count) => {
@@ -1239,6 +1243,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 _ => disconnected.push(index),
+            }
+        }
+        let eof_close_at = Instant::now();
+        for client in &mut clients {
+            if client.peer_eof && client.close_deadline.is_none() {
+                client.close_deadline = Some(eof_close_at + CLIENT_CLOSE_TIMEOUT);
             }
         }
         let activity_check_at = Instant::now();
