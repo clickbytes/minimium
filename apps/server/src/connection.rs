@@ -1,4 +1,4 @@
-use crate::metrics::RuntimeMetrics;
+use crate::{metrics::RuntimeMetrics, network};
 use minimium_core::identity::PlayerProfileId;
 use minimium_core::ids::PlayerId;
 use minimium_protocol::{encode_server_into, RemotePlayers, ServerMessage, MAX_SERVER_FRAME_BYTES};
@@ -12,14 +12,45 @@ pub(crate) const MAX_QUEUED_OUTPUT_BYTES: usize = 64 * 1024;
 pub(crate) const MAX_QUEUED_OUTPUT_FRAMES: usize = 256;
 pub(crate) const CLIENT_CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum CloseReason {
+    Quit,
+    Rejected,
+    PeerEof,
+    HandshakeTimeout,
+    IdleTimeout,
+    InvalidFrame,
+    ReadError,
+    WriteError,
+    Backpressure,
+    InvalidSequence,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct Identity {
+    pub(crate) player: PlayerId,
+    pub(crate) profile: PlayerProfileId,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum ConnectionPhase {
+    AwaitIdentify,
+    Active(Identity),
+    Draining {
+        identity: Option<Identity>,
+        deadline: Instant,
+        reason: CloseReason,
+    },
+}
+
 pub(crate) struct Client {
-    pub(crate) player_id: Option<PlayerId>,
-    pub(crate) profile_id: Option<PlayerProfileId>,
+    phase: ConnectionPhase,
+    pub(crate) disconnect_reason: Option<CloseReason>,
     pub(crate) stream: TcpStream,
     pub(crate) input: Vec<u8>,
-    pub(crate) output: Vec<u8>,
-    pub(crate) output_offset: usize,
-    pub(crate) output_frames: VecDeque<(usize, Instant)>,
+    output: Vec<u8>,
+    output_offset: usize,
+    output_frames: VecDeque<(usize, Instant)>,
     pub(crate) bytes_in: u64,
     pub(crate) bytes_out: u64,
     pub(crate) frames_in: u64,
@@ -30,10 +61,95 @@ pub(crate) struct Client {
     pub(crate) connected_at: Instant,
     pub(crate) last_message_at: Instant,
     pub(crate) peer_eof: bool,
-    pub(crate) close_deadline: Option<Instant>,
     pub(crate) last_fire_at: Option<Instant>,
     pub(crate) last_chat_at: Option<Instant>,
     pub(crate) pending_health_update: Option<u16>,
+}
+
+impl Client {
+    pub(crate) fn new(stream: TcpStream, connected_at: Instant) -> Self {
+        Self {
+            phase: ConnectionPhase::AwaitIdentify,
+            disconnect_reason: None,
+            stream,
+            input: Vec::with_capacity(512),
+            output: Vec::new(),
+            output_offset: 0,
+            output_frames: VecDeque::new(),
+            bytes_in: 0,
+            bytes_out: 0,
+            frames_in: 0,
+            frames_out: 0,
+            encoding_us: 0,
+            replicated_players: RemotePlayers::default(),
+            replication_initialized: false,
+            connected_at,
+            last_message_at: connected_at,
+            peer_eof: false,
+            last_fire_at: None,
+            last_chat_at: None,
+            pending_health_update: None,
+        }
+    }
+
+    pub(crate) fn pending_output_bytes(&self) -> usize {
+        self.output.len().saturating_sub(self.output_offset)
+    }
+
+    pub(crate) fn oldest_output_age(&self) -> Option<Duration> {
+        self.output_frames.front().map(|(_, at)| at.elapsed())
+    }
+    pub(crate) fn identity(&self) -> Option<Identity> {
+        match self.phase {
+            ConnectionPhase::AwaitIdentify => None,
+            ConnectionPhase::Active(identity) => Some(identity),
+            ConnectionPhase::Draining { identity, .. } => identity,
+        }
+    }
+
+    pub(crate) fn player_id(&self) -> Option<PlayerId> {
+        self.identity().map(|identity| identity.player)
+    }
+
+    pub(crate) fn activate(&mut self, player: PlayerId, profile: PlayerProfileId) {
+        debug_assert!(matches!(self.phase, ConnectionPhase::AwaitIdentify));
+        self.phase = ConnectionPhase::Active(Identity { player, profile });
+    }
+
+    pub(crate) fn close_deadline(&self) -> Option<Instant> {
+        match self.phase {
+            ConnectionPhase::Draining { deadline, .. } => Some(deadline),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn begin_close(&mut self, now: Instant, reason: CloseReason) {
+        if self.close_deadline().is_none() {
+            self.phase = ConnectionPhase::Draining {
+                identity: self.identity(),
+                deadline: now + CLIENT_CLOSE_TIMEOUT,
+                reason,
+            };
+        }
+    }
+
+    pub(crate) fn reason(&self) -> Option<CloseReason> {
+        self.disconnect_reason.or(match self.phase {
+            ConnectionPhase::Draining { reason, .. } => Some(reason),
+            _ => None,
+        })
+    }
+
+    pub(crate) fn flush(&mut self, budget: usize) -> network::FlushResult {
+        let result = network::flush(
+            &mut self.stream,
+            &self.output,
+            &mut self.output_offset,
+            budget,
+        );
+        account_output(self, result.written);
+        result
+    }
 }
 
 pub(crate) fn queue_close_response(
@@ -42,11 +158,17 @@ pub(crate) fn queue_close_response(
     message: ServerMessage,
     now: Instant,
 ) -> bool {
+    let reason = if matches!(message, ServerMessage::Bye) {
+        CloseReason::Quit
+    } else {
+        CloseReason::Rejected
+    };
     if !queue_message(client, metrics, message) {
         metrics.dropped_messages = metrics.dropped_messages.saturating_add(1);
+        client.disconnect_reason = Some(CloseReason::Backpressure);
         return false;
     }
-    client.close_deadline = Some(now + CLIENT_CLOSE_TIMEOUT);
+    client.begin_close(now, reason);
     true
 }
 
@@ -55,7 +177,7 @@ pub(crate) fn queue_message(
     metrics: &mut RuntimeMetrics,
     message: ServerMessage,
 ) -> bool {
-    if client.close_deadline.is_some() {
+    if client.close_deadline().is_some() {
         return false;
     }
     if client.output_frames.len() >= MAX_QUEUED_OUTPUT_FRAMES {
@@ -100,7 +222,7 @@ pub(crate) fn queue_encoded_frame(
     frame: &[u8],
     metrics: &mut RuntimeMetrics,
 ) -> bool {
-    if client.close_deadline.is_some() {
+    if client.close_deadline().is_some() {
         return false;
     }
     if client.output_frames.len() >= MAX_QUEUED_OUTPUT_FRAMES {
@@ -120,7 +242,7 @@ pub(crate) fn queue_encoded_frame(
     true
 }
 
-pub(crate) fn prepare_output(client: &mut Client) {
+fn prepare_output(client: &mut Client) {
     if client.output_offset > 0 {
         let pending = client.output.len() - client.output_offset;
         client.output.copy_within(client.output_offset.., 0);
@@ -129,7 +251,7 @@ pub(crate) fn prepare_output(client: &mut Client) {
     }
 }
 
-pub(crate) fn account_output(client: &mut Client, mut written: usize) {
+fn account_output(client: &mut Client, mut written: usize) {
     while written > 0 {
         let Some((remaining, _)) = client.output_frames.front_mut() else {
             break;

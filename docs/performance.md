@@ -70,6 +70,8 @@ The prepared 18-run matrix is `clustered` and `dispersed` movement × 2/100/500 
 
 The current movement path uses inline work for one lane and dispatches player movement in batches at 32 or more active players. This threshold and batch size (16 players per batch) are current implementation details, not a claim that parallel execution improves throughput.
 
+The TCP sender rotates its starting client, limits each client to 16 KiB per poll and limits the iteration to 256 KiB; the receiver limits each client to 1024 bytes and 32 frames. Slow-consumer, partial-write, EOF and fairness behavior requires the deferred network scenarios; these budgets alone do not establish fairness under load.
+
 Final verification must also compare authoritative outcomes under lanes 1, 2, and `auto` with at least 32 active players, exercise the demo route and snapshot full/delta/removal behavior, and record high-percentile latency alongside averages. The 500 MHz target remains research work until measurements on specified hardware and repeatable scenarios support a conclusion.
 
 ## Measurement rules

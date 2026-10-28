@@ -1,4 +1,7 @@
-use crate::{connection::Client, metrics::RuntimeMetrics};
+use crate::{
+    connection::{Client, CloseReason},
+    metrics::RuntimeMetrics,
+};
 use minimium_protocol::{decode_client, ClientMessage, MAX_FRAME_BYTES};
 use std::{
     io::{self, Read},
@@ -15,7 +18,7 @@ pub(crate) fn poll_clients(
     disconnected: &mut Vec<usize>,
 ) {
     for (index, client) in clients.iter_mut().enumerate() {
-        if client.close_deadline.is_some() || client.peer_eof {
+        if client.close_deadline().is_some() || client.peer_eof {
             continue;
         }
         let mut buffer = [0u8; 2048];
@@ -39,6 +42,7 @@ pub(crate) fn poll_clients(
                     }
                     Ok(None) => break,
                     Err(_) => {
+                        client.disconnect_reason = Some(CloseReason::InvalidFrame);
                         disconnected.push(index);
                         break;
                     }
@@ -50,6 +54,7 @@ pub(crate) fn poll_clients(
                 break;
             }
             if client.input.len() > MAX_FRAME_BYTES {
+                client.disconnect_reason = Some(CloseReason::InvalidFrame);
                 disconnected.push(index);
                 break;
             }
@@ -74,6 +79,7 @@ pub(crate) fn poll_clients(
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
                 Err(_) => {
+                    client.disconnect_reason = Some(CloseReason::ReadError);
                     disconnected.push(index);
                     break;
                 }

@@ -69,3 +69,7 @@ Executor i przypisanie faz telemetrii należą do serwera; core nie ma zależno�
 ## E002-06 — runtime serwera
 
 `ServerRuntime` posiada `GameState`, `ConnectionState`, `OperationsState` i `Scheduler`; fazy i kolejność udokumentowano w architecture.md. Świat pozostaje mutowany tylko w runtime na głównej lane. Błędy poll admin i accept przechodzą przez istniejące kontrolowane shutdown, guard endpointu jest zwalniany przed blokadą katalogu. `DispatchContext` i `WorldInputsContext` nadal istnieją na granicach faz; ich zawężenie i pipeline wejść pozostają do E002-08, więc pełny odbiór tego kryterium jest otwarty. Scenariusze shutdown i kolejności nie były uruchamiane.
+
+## E002-07 — połączenia
+
+`ConnectionPhase` obejmuje AwaitIdentify, Active z nierozdzielną parą ID/profil oraz Draining z zachowaną opcjonalną tożsamością, terminem i powodem. Przejściowa flaga EOF pozwala najpierw zastosować już odczytane ramki; `begin_close` jest idempotentne. `Client` posiada bufor wyjścia i rozlicza zapis częściowy; limity read/write i rotacja pozostały niezmienione. `swap_remove` nadal usuwa stary indeks i aktualizuje przeniesionego gracza, a Leave blokuje rejoin do zastosowania. Baseline repliki zmienia się po sukcesie kolejki. EOF, backpressure, powolny klient, partial write i reconnect wymagają odroczonej weryfikacji runtime.

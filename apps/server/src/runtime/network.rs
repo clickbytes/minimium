@@ -1,7 +1,7 @@
 use super::*;
 use crate::{
     accept,
-    connection::CLIENT_CLOSE_TIMEOUT,
+    connection::CloseReason,
     message_dispatch::{self, DispatchContext},
     receive, send,
     world_inputs::WorldInput,
@@ -41,28 +41,30 @@ impl ServerRuntime {
         });
         let eof_close_at = Instant::now();
         for client in &mut self.connections.clients {
-            if client.peer_eof && client.close_deadline.is_none() {
-                client.close_deadline = Some(eof_close_at + CLIENT_CLOSE_TIMEOUT);
+            if client.peer_eof && client.close_deadline().is_none() {
+                client.begin_close(eof_close_at, CloseReason::PeerEof);
             }
         }
         let activity_check_at = Instant::now();
-        for (index, client) in self.connections.clients.iter().enumerate() {
-            if client.close_deadline.is_some() {
+        for (index, client) in self.connections.clients.iter_mut().enumerate() {
+            if client.close_deadline().is_some() {
                 continue;
             }
-            let handshake_timed_out = client.player_id.is_none()
+            let handshake_timed_out = client.player_id().is_none()
                 && activity_check_at.duration_since(client.connected_at)
                     >= CLIENT_HANDSHAKE_TIMEOUT;
-            let idle_timed_out = client.player_id.is_some()
+            let idle_timed_out = client.player_id().is_some()
                 && activity_check_at.duration_since(client.last_message_at) >= CLIENT_IDLE_TIMEOUT;
             if (handshake_timed_out || idle_timed_out)
                 && !self.connections.disconnected.contains(&index)
             {
                 self.connections.disconnected.push(index);
                 if handshake_timed_out {
+                    client.disconnect_reason = Some(CloseReason::HandshakeTimeout);
                     self.metrics.handshake_timeouts =
                         self.metrics.handshake_timeouts.saturating_add(1);
                 } else {
+                    client.disconnect_reason = Some(CloseReason::IdleTimeout);
                     self.metrics.idle_timeouts = self.metrics.idle_timeouts.saturating_add(1);
                 }
             }
@@ -77,7 +79,7 @@ impl ServerRuntime {
             .connections
             .clients
             .iter()
-            .filter_map(|client| client.output_frames.front().map(|(_, at)| at.elapsed()))
+            .filter_map(Client::oldest_output_age)
             .max()
             .unwrap_or_default();
         self.connections.disconnected.sort_unstable();
@@ -85,7 +87,9 @@ impl ServerRuntime {
         for index in self.connections.disconnected.drain(..).rev() {
             if index < self.connections.clients.len() {
                 let client = self.connections.clients.swap_remove(index);
-                if let (Some(player_id), Some(profile_id)) = (client.player_id, client.profile_id) {
+                if let Some(identity) = client.identity() {
+                    let player_id = identity.player;
+                    let profile_id = identity.profile;
                     self.connections.client_indices_by_player.remove(&player_id);
                     // Release the active claim immediately, but reject a rejoin
                     // until Leave has applied all preceding queued inputs.
@@ -100,10 +104,15 @@ impl ServerRuntime {
                     self.game
                         .pending_world_inputs
                         .push((WorldInput::Leave(player_id), None));
-                    println!("player {player_id} disconnected bytes_in={} bytes_out={} decoded_frames={} queued_frames={} encoding_us={}", client.bytes_in, client.bytes_out, client.frames_in, client.frames_out, client.encoding_us);
+                    println!("player {player_id} disconnected reason={:?} bytes_in={} bytes_out={} decoded_frames={} queued_frames={} encoding_us={}", client.reason(), client.bytes_in, client.bytes_out, client.frames_in, client.frames_out, client.encoding_us);
+                } else {
+                    println!(
+                        "unidentified client disconnected reason={:?}",
+                        client.reason()
+                    );
                 }
                 if index < self.connections.clients.len() {
-                    if let Some(moved_player_id) = self.connections.clients[index].player_id {
+                    if let Some(moved_player_id) = self.connections.clients[index].player_id() {
                         self.connections
                             .client_indices_by_player
                             .insert(moved_player_id, index);

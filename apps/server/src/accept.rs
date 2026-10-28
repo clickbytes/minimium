@@ -1,7 +1,6 @@
 use crate::{connection::Client, MAX_PENDING_HANDSHAKES, MAX_PENDING_WORLD_INPUTS};
-use minimium_protocol::{encode_server, RemotePlayers, ServerErrorCode, ServerMessage};
+use minimium_protocol::{encode_server, ServerErrorCode, ServerMessage};
 use std::{
-    collections::VecDeque,
     io::{self, Write},
     net::TcpListener,
     time::Instant,
@@ -33,7 +32,7 @@ pub(crate) fn accept_clients(
                     Some(ServerErrorCode::ServerFull)
                 } else if clients
                     .iter()
-                    .filter(|client| client.player_id.is_none())
+                    .filter(|client| client.player_id().is_none())
                     .count()
                     >= MAX_PENDING_HANDSHAKES
                 {
@@ -57,30 +56,7 @@ pub(crate) fn accept_clients(
                     continue;
                 }
                 let connected_at = Instant::now();
-                let client = Client {
-                    player_id: None,
-                    profile_id: None,
-                    stream,
-                    input: Vec::with_capacity(512),
-                    output: Vec::new(),
-                    output_offset: 0,
-                    output_frames: VecDeque::new(),
-                    bytes_in: 0,
-                    bytes_out: 0,
-                    frames_in: 0,
-                    frames_out: 0,
-                    encoding_us: 0,
-                    replicated_players: RemotePlayers::default(),
-                    replication_initialized: false,
-                    connected_at,
-                    last_message_at: connected_at,
-                    peer_eof: false,
-                    close_deadline: None,
-                    last_fire_at: None,
-                    last_chat_at: None,
-                    pending_health_update: None,
-                };
-                clients.push(client);
+                clients.push(Client::new(stream, connected_at));
             }
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
             Err(error) => return Err(error),

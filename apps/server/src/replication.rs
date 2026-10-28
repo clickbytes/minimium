@@ -36,8 +36,8 @@ pub(crate) fn replicate_snapshots(
         .iter()
         .enumerate()
         .filter_map(|(index, client)| {
-            (client.close_deadline.is_none())
-                .then(|| client.player_id.map(|id| (index, id)))
+            (client.close_deadline().is_none())
+                .then(|| client.player_id().map(|id| (index, id)))
                 .flatten()
         })
         .collect();

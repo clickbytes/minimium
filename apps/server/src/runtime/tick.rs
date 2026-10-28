@@ -57,7 +57,7 @@ impl ServerRuntime {
                 use std::fmt::Write as _;
                 reply.text.push_str(" client_traffic=id:bytes_in:bytes_out:decoded_frames:queued_frames:encoding_us:connected_ms");
                 for client in &self.connections.clients {
-                    if let Some(id) = client.player_id {
+                    if let Some(id) = client.player_id() {
                         let _ = write!(
                             reply.text,
                             " {id}:{}:{}:{}:{}:{}:{}",
