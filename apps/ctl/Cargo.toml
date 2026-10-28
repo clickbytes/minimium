@@ -1,0 +1,8 @@
+[package]
+name = "minimiumctl"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+minimium-core = { path = "../../crates/core" }

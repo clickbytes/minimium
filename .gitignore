@@ -1,0 +1,4 @@
+/target/
+/.minimium/
+/.minimium-local/
+*.log

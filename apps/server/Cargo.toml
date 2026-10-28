@@ -1,0 +1,9 @@
+[package]
+name = "minimium-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+minimium-core = { path = "../../crates/core" }
+minimium-protocol = { path = "../../crates/protocol" }

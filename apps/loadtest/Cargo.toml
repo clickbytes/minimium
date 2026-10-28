@@ -1,0 +1,8 @@
+[package]
+name = "minimium-loadtest"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+minimium-protocol = { path = "../../crates/protocol" }
