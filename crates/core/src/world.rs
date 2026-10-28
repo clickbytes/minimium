@@ -23,7 +23,6 @@ mod collision_queries;
 mod combat;
 mod geometry;
 mod map;
-mod obj;
 mod raycast;
 mod rules;
 mod snapshot;
@@ -31,7 +30,10 @@ mod world_state;
 
 pub use collision_index::{Aabb, CollisionIndex};
 pub use collision_queries::{CollisionQuery, CollisionQueryStats};
-pub use map::{MapBox, MapTriangle, WorldMap};
+pub use geometry::triangle_area_squared;
+pub use map::{
+    MapBox, MapTriangle, WorldMap, MAX_MAP_BOXES, MAX_MAP_COORDINATE, MAX_MAP_TRIANGLES,
+};
 pub use rules::{step_character, CharacterInput, CharacterState, Player, ShotOutcome};
 pub use snapshot::WorldSnapshot;
 pub use world_state::World;

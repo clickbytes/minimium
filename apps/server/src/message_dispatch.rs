@@ -81,7 +81,7 @@ pub(crate) fn dispatch_messages(context: DispatchContext<'_>) {
                     }
                     continue;
                 }
-                let player = match player_store.claim(profile_id, next_player, map.spawn) {
+                let player = match player_store.claim(profile_id, next_player, map.spawn()) {
                     Ok(player) => player,
                     Err(error) => {
                         eprintln!("could not claim player profile: {error}");

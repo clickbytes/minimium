@@ -2,6 +2,8 @@
 
 Minimium maps use a bounded UTF-8 text format. Both versions support axis-aligned boxes. Version 2 adds flat-color triangles and static OBJ meshes that can be visual-only or solid collision geometry. Imported OBJ faces are expanded into the same triangle list used by the renderer and by server and local-client collision.
 
+Client and server use `minimium_assets::load_map(path)` for file-backed maps and `minimium_assets::parse_map(source)` for embedded maps. The latter rejects mesh records because it has no base directory. The core `WorldMap` owns validated geometry and its fingerprint; it performs no file loading.
+
 ```text
 MINIMIUM_MAP 2
 spawn 0 0 0

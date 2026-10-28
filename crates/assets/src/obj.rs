@@ -1,8 +1,8 @@
-use super::geometry::triangle_area_squared;
 use super::map::{
-    MapTriangle, MAX_MAP_COORDINATE, MAX_MAP_TOTAL_MESH_BYTES, MAX_MAP_TRIANGLES, MAX_MESH_BYTES,
-    MAX_MESH_VERTICES, MAX_OBJ_FACE_VERTICES,
+    MAX_MAP_TOTAL_MESH_BYTES, MAX_MESH_BYTES, MAX_MESH_VERTICES, MAX_OBJ_FACE_VERTICES,
 };
+use minimium_core::world::triangle_area_squared;
+use minimium_core::world::{MapTriangle, MAX_MAP_COORDINATE, MAX_MAP_TRIANGLES};
 use std::fs::File;
 use std::io::Read;
 use std::path::{Component, Path};
@@ -399,14 +399,6 @@ pub(super) fn triangulate_obj_face(
     }
     result.push(last);
     Ok(result)
-}
-
-pub(super) fn canonical_float_bits(value: f32) -> u32 {
-    if value == 0.0 {
-        0.0f32.to_bits()
-    } else {
-        value.to_bits()
-    }
 }
 
 pub(super) fn parse_map_vec3(

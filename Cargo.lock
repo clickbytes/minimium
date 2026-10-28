@@ -762,11 +762,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "minimium-assets"
+version = "0.1.0"
+dependencies = [
+ "minimium-core",
+]
+
+[[package]]
 name = "minimium-client"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
  "glam",
+ "minimium-assets",
  "minimium-core",
  "minimium-platform",
  "minimium-protocol",
@@ -811,6 +819,7 @@ dependencies = [
 name = "minimium-server"
 version = "0.1.0"
 dependencies = [
+ "minimium-assets",
  "minimium-core",
  "minimium-platform",
  "minimium-protocol",
