@@ -2,6 +2,15 @@
 
 This page documents the current parsers and dispatchers. For operational sequences, see [prototype procedures](prototype.md); for metric meaning and limitations, see [performance policy](performance.md).
 
+| Program | Options and commands | Defaults and parsing |
+| --- | --- | --- |
+| Server | `run`, `--threads`, `--max-players`, `--bind`, `--game-port`, `--data-dir`, `--map`, `--autosave-seconds`, `--headless`, `--help`/`-h`, `--version` | One lane, 512 players, loopback, port 0, `.minimium`, bundled map, 300 s autosave. Repeated value options use the last value; help/version are handled before normal parsing. |
+| Control | `--data-dir`, `--help`/`-h`, and the six server commands below | `.minimium`; help is handled before command parsing. Only the first `--data-dir` is consumed. |
+| Client | `--connect`, `--map`, `--profile-dir`, `--server-data-dir`, `--threads`, `--demo`, `--console`, `--help`/`-h` | One local-server lane, bundled map and `.minimium-local` paths; repeated options are errors. Demo conflicts with connect and console. |
+| Load generator | `--address`, `--scenario`, `--clients`, `--seconds`, `--threads`, `--format`, `--scenario-id`, `--cpu-label`, `--cpu-mhz`, `--server-data-dir`, `--help`/`-h` | Address required; 100 clients, 10 s, heartbeat, auto workers and text output. Repeated option names are errors. |
+
+Lane types remain application-owned: the server accepts `1..=64` or `auto`, the client accepts `1`, `2` or `auto` for a locally started server, and the generator accepts `1`, `2` or `auto` with at most two workers. Their different meanings and limits do not justify a shared policy type. The server's existing invalid-value message mentions `1, 2, or auto` even though values through 64 are accepted; the range check and its separate error remain unchanged.
+
 ## Server
 
 ~~~text
@@ -52,7 +61,7 @@ The data directory defaults to `.minimium`. `minimiumctl stop` waits up to 120 s
 minimium-client [--connect HOST:PORT] [--map PATH] [--profile-dir PATH] [--server-data-dir PATH] [--threads 1|2|auto] [--demo] [--console]
 ~~~
 
-Each option may appear once. Unknown options and missing values are errors. `--threads` accepts `1`, `2`, or `auto`; it controls a server started by local play and defaults to `1`. `--connect` connects to an explicit game address and does not start or own a server. Without `--connect` or `--demo`, the desktop client starts a local server if needed and connects through the normal game protocol. `--demo` renders without a game connection. `--console` selects the text client instead of the desktop renderer.
+Each option may appear once. Unknown options and missing values are errors. `--threads` accepts `1`, `2`, or `auto`; it controls a server started by local play and defaults to `1`. `--connect` connects to an explicit game address and does not start or own a server. Without `--connect` or `--demo`, the desktop client starts a local server if needed and connects through the normal game protocol. `--demo` renders without a game connection and cannot be combined with `--connect` or `--console`. `--console` selects the text client instead of the desktop renderer.
 
 `--profile-dir PATH` selects this client's durable local player profile. `--server-data-dir PATH` selects the shared local server's storage and discovery directory. They are independent: use separate profile directories for separate local players and the same server data directory when they should share one server. If omitted, both resolve to `.minimium-local`; with `--map`, both default to `.minimium-local/map-<map-fingerprint>`. The persisted profile ID is a reconnect identifier, not account authentication.
 
@@ -63,6 +72,8 @@ Both frontends use one connection controller. It starts a background connector w
 ### Text-client commands
 
 The text client and in-window console use the same command catalog and parser. Both accept `help`, `host local [--threads 1|2|auto]`, `connect HOST:PORT`, `disconnect`, `fps show`, `net stats`, `ping`, `move X Z`, `jump`, `fire`, `say TEXT` (alias `chat`), `name NAME`, `state`, `clear`, and `quit` (alias `exit`). `host local` starts or attaches to the local server configured by startup paths. It stores an owned server guard before later connection setup; only an owned child is stopped on exit. An attached server is left running. The terminal frontend renders state/events as text; the desktop frontend provides F1 console history and tab completion from the same catalog.
+
+`fps show` reports that frame statistics are unavailable in the text client.
 
 ### In-window console commands
 
