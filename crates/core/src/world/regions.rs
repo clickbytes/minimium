@@ -56,7 +56,7 @@ impl CubeSphere {
         position
             .iter()
             .zip(self.center)
-            .map(|(a, b)| (a - b) * (a - b))
+            .map(|(a, b)| (*a - b) * (*a - b))
             .sum::<f32>()
             <= limit * limit
     }
@@ -76,7 +76,7 @@ pub fn portal_destination(position: [f32; 3], portals: &[WorldPortal]) -> Option
         let distance_squared = position
             .iter()
             .zip(portal.at)
-            .map(|(a, b)| (a - b) * (a - b))
+            .map(|(a, b)| (*a - b) * (*a - b))
             .sum::<f32>();
         (distance_squared <= portal.radius * portal.radius).then_some(portal.destination)
     })

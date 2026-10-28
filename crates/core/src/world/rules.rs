@@ -262,7 +262,7 @@ pub fn step_character_on_planet(
             .velocity
             .iter()
             .zip(up)
-            .map(|(a, b)| a * b)
+            .map(|(a, b)| *a * b)
             .sum::<f32>()
     };
     vertical = (vertical - GRAVITY * delta_seconds).max(-MAX_FALL_SPEED);
@@ -275,7 +275,7 @@ pub fn step_character_on_planet(
     let distance = next
         .iter()
         .zip(planet.center)
-        .map(|(a, b)| (a - b) * (a - b))
+        .map(|(a, b)| (*a - b) * (*a - b))
         .sum::<f32>()
         .sqrt();
     if distance <= planet.radius && vertical <= 0.0 {
@@ -284,7 +284,7 @@ pub fn step_character_on_planet(
             planet.center[1] + next_up[1] * planet.radius,
             planet.center[2] + next_up[2] * planet.radius,
         ];
-        let normal_speed = tangent.iter().zip(next_up).map(|(a, b)| a * b).sum::<f32>();
+        let normal_speed = tangent.iter().zip(next_up).map(|(a, b)| *a * b).sum::<f32>();
         state.velocity = [
             tangent[0] - normal_speed * next_up[0],
             tangent[1] - normal_speed * next_up[1],

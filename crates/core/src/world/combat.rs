@@ -22,6 +22,7 @@ impl World {
         }
         let inverse_length = length_squared.sqrt().recip();
         let direction = direction.map(|value| value * inverse_length);
+        let planet = self.planet;
         let World {
             players,
             cells,
@@ -34,10 +35,14 @@ impl World {
         } = self;
         let players = Arc::make_mut(players);
         let attacker = players.get(&attacker_id)?;
+        let up = planet
+            .filter(|sphere| sphere.contains(attacker.position))
+            .map(|sphere| sphere.up_at(attacker.position))
+            .unwrap_or([0.0, 1.0, 0.0]);
         let origin = [
-            attacker.position[0],
-            attacker.position[1] + PLAYER_HEIGHT * 0.9,
-            attacker.position[2],
+            attacker.position[0] + up[0] * PLAYER_HEIGHT * 0.9,
+            attacker.position[1] + up[1] * PLAYER_HEIGHT * 0.9,
+            attacker.position[2] + up[2] * PLAYER_HEIGHT * 0.9,
         ];
         combat_player_query.fill(cells, origin, direction, HITSCAN_RANGE);
         combat_map_query.fill(collision_index, origin, direction, HITSCAN_RANGE);
