@@ -35,3 +35,7 @@ Pełny zakres, implementacja krok po kroku, kryteria odbioru i blokery są w iss
 ## Bramka końcowa
 
 [#30](https://github.com/clickbytes/minimium/issues/30) wymaga kompletnego przeglądu wszystkich tasków i finalnej weryfikacji po jawnym poleceniu użytkownika zgodnie z AGENTS.md. Dopiero po tym wykonujemy końcowy MERGE epic branch do main, aktualizujemy merge SHA i zamykamy Epic #14.
+
+## E002-00 — odbiór
+
+PR #13 scalono jako a3cba16f232a7967505376f84497350667f5c38e; zmienione pliki: apps/client/src/main.rs, apps/server/src/{main,message_dispatch,startup,world_inputs}.rs, crates/core/src/world.rs, crates/core/src/world/world_state.rs, docs/plan/architecture-review-2026-10-28.md. Przegląd i kontrole opisano w baseline; scenariusze runtime odroczone. Dokumentacja baseline i macierz uzupełnione w PR #32; wykonano przegląd zmian.
