@@ -32,6 +32,8 @@ impl Renderer {
                 health: PLAYER_MAX_HEALTH,
                 collision_index,
                 collision_query: CollisionQuery::default(),
+                planet: map.planet(),
+                portals: map.portals().to_vec(),
                 remote_player_count: 0,
                 last_shot_sent_at: None,
                 hit_confirmation_until: None,

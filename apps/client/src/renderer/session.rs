@@ -279,13 +279,7 @@ impl Renderer {
         {
             return;
         }
-        let direction = glam::Vec3::new(
-            self.input.yaw.cos() * self.input.pitch.cos(),
-            self.input.pitch.sin(),
-            self.input.yaw.sin() * self.input.pitch.cos(),
-        )
-        .normalize()
-        .to_array();
+        let direction = self.game.look_direction(self.input.yaw, self.input.pitch).to_array();
         if let Some(session) = self.connection.session_mut() {
             match session.queue(&ClientMessage::Fire { direction }) {
                 Ok(()) => {

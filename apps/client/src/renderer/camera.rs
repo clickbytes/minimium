@@ -46,18 +46,10 @@ impl Renderer {
         self.poll_session();
         self.update_remote_player_rendering(Instant::now());
 
-        let direction = glam::Vec3::new(
-            self.input.yaw.cos() * self.input.pitch.cos(),
-            self.input.pitch.sin(),
-            self.input.yaw.sin() * self.input.pitch.cos(),
-        )
-        .normalize();
-        let camera_position = glam::Vec3::new(
-            self.game.character.position[0],
-            self.game.character.position[1] + 1.7,
-            self.game.character.position[2],
-        );
-        let view = glam::Mat4::look_to_rh(camera_position, direction, glam::Vec3::Y);
+        let direction = self.game.look_direction(self.input.yaw, self.input.pitch);
+        let up = self.game.up_direction();
+        let camera_position = glam::Vec3::from_array(self.game.character.position) + up * 1.7;
+        let view = glam::Mat4::look_to_rh(camera_position, direction, up);
         let projection = glam::Mat4::perspective_rh(
             70f32.to_radians(),
             self.gpu.size.width as f32 / self.gpu.size.height as f32,
@@ -95,16 +87,49 @@ impl Renderer {
 }
 
 impl GameplayView {
-    fn predict(&mut self, input: CharacterInput) {
-        self.collision_query
-            .fill(&self.collision_index, self.character, 0.05);
-        step_character(
-            &mut self.character,
-            input,
-            self.collision_query.candidates(),
-            self.collision_query.surface_candidates(),
-            0.05,
+    fn up_direction(&self) -> glam::Vec3 {
+        self.planet
+            .filter(|sphere| sphere.contains(self.character.position))
+            .map(|sphere| glam::Vec3::from_array(sphere.up_at(self.character.position)))
+            .unwrap_or(glam::Vec3::Y)
+    }
+
+    fn look_direction(&self, yaw: f32, pitch: f32) -> glam::Vec3 {
+        let local = glam::Vec3::new(
+            yaw.cos() * pitch.cos(),
+            pitch.sin(),
+            yaw.sin() * pitch.cos(),
         );
+        if let Some(sphere) = self.planet.filter(|sphere| sphere.contains(self.character.position)) {
+            let (east, up, north) = sphere.frame_at(self.character.position);
+            (glam::Vec3::from_array(east) * local.x
+                + glam::Vec3::from_array(up) * local.y
+                + glam::Vec3::from_array(north) * local.z)
+                .normalize()
+        } else {
+            local.normalize()
+        }
+    }
+
+    fn predict(&mut self, input: CharacterInput) {
+        if let Some(sphere) = self.planet.filter(|sphere| sphere.contains(self.character.position)) {
+            step_character_on_planet(&mut self.character, input, sphere, 0.05);
+        } else {
+            self.collision_query
+                .fill(&self.collision_index, self.character, 0.05);
+            step_character(
+                &mut self.character,
+                input,
+                self.collision_query.candidates(),
+                self.collision_query.surface_candidates(),
+                0.05,
+            );
+        }
+        if let Some(destination) = portal_destination(self.character.position, &self.portals) {
+            self.character.position = destination;
+            self.character.velocity = [0.0; 3];
+            self.character.grounded = false;
+        }
     }
 }
 

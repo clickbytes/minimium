@@ -9,7 +9,8 @@ use crate::{
 use minimium_core::{
     identity::PlayerProfileId,
     world::{
-        step_character, CharacterInput, CharacterState, CollisionIndex, CollisionQuery, WorldMap,
+        portal_destination, step_character, step_character_on_planet, CharacterInput,
+        CharacterState, CollisionIndex, CollisionQuery, CubeSphere, WorldMap, WorldPortal,
         PLAYER_MAX_HEALTH,
     },
 };
@@ -86,6 +87,8 @@ struct GameplayView {
     health: u16,
     collision_index: CollisionIndex,
     collision_query: CollisionQuery,
+    planet: Option<CubeSphere>,
+    portals: Vec<WorldPortal>,
     remote_player_count: usize,
     last_shot_sent_at: Option<Instant>,
     hit_confirmation_until: Option<Instant>,

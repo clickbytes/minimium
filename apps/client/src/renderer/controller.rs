@@ -14,13 +14,7 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
             return false;
         }
     };
-    let direction = glam::Vec3::new(
-        renderer.input.yaw.cos() * renderer.input.pitch.cos(),
-        renderer.input.pitch.sin(),
-        renderer.input.yaw.sin() * renderer.input.pitch.cos(),
-    )
-    .normalize()
-    .to_array();
+    let direction = renderer.game.look_direction(renderer.input.yaw, renderer.input.pitch).to_array();
     let result = client_commands::execute(
         command,
         &mut CommandContext {
