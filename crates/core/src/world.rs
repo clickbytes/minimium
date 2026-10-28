@@ -36,4 +36,4 @@ pub use map::{
 };
 pub use rules::{step_character, CharacterInput, CharacterState, Player, ShotOutcome};
 pub use snapshot::WorldSnapshot;
-pub use world_state::World;
+pub use world_state::{step_batch, SimulationBatch, World};

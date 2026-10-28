@@ -61,3 +61,7 @@ Przegląd unsafe: `MoveFileExW` otrzymuje żyjące podczas wywołania, zakończo
 ## E002-04 — assets
 
 `minimium-assets::{load_map, parse_map}` jest jedynym parserem; zależy od core, które posiada walidowany model `WorldMap::from_parts`, geometrię i niezmieniony algorytm fingerprintu. `spawn()` zastępuje publiczne pole zapobiegając zmianie danych bez przeliczenia hash. Parser zachowuje limity i kolejność rekordów, kanonikalizację ścieżek OBJ oraz algorytm triangulacji. Core nie zawiera już plikowego I/O ani ścieżek map; executor/telemetry pozostaje do E002-05. Porównanie wartości fingerprintu i scenariusze błędnych ścieżek, symlinków, geometrii i limitów odroczono do końcowej fazy.
+
+## E002-05 — symulacja i executor
+
+Executor i przypisanie faz telemetrii należą do serwera; core nie ma zależności telemetry. `World::step_players_with` utrzymuje wyłączny dostęp do świata przez przygotowanie, dispatch i zastosowanie wyników; `step_batch` otrzymuje niemutowalny indeks kolizji. Dispatcher musi zwrócić wszystkie batche w kolejności wejściowej; serwerowy executor odtwarza tę kolejność po zakończeniu workerów. Próg 32, rozmiar batcha 16, copy-on-write przed dispatch i ponowne użycie buforów zachowano. Porządek HashMap nie jest gwarantowany między uruchomieniami; lane equivalence i koszty alokacji pozostają nieweryfikowane do końcowych scenariuszy.
