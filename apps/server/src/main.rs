@@ -4,6 +4,7 @@ mod admin;
 mod commands;
 mod config;
 mod connection;
+mod executor;
 mod lifecycle;
 mod message_dispatch;
 mod metrics;
@@ -11,12 +12,14 @@ mod network;
 mod receive;
 mod replication;
 mod send;
+mod simulation;
 mod startup;
 mod storage;
 mod terminal;
 mod world_inputs;
 use config::{DEFAULT_AUTOSAVE_SECONDS, MAX_PLAYERS};
 use connection::{Client, CLIENT_CLOSE_TIMEOUT};
+use executor::Executor;
 use message_dispatch::DispatchContext;
 use metrics::RuntimeMetrics;
 use minimium_telemetry::allocations::{self, Phase};
@@ -26,7 +29,6 @@ use world_inputs::WorldInput;
 #[global_allocator]
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 use minimium_core::{
-    executor::Executor,
     identity::PlayerProfileId,
     world::{CharacterInput, World},
 };
@@ -369,7 +371,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let simulation_phase = allocations::enter(Phase::Simulation);
             let simulation_started = Instant::now();
             let collision_stats =
-                world.step_players_parallel(&active_inputs, TICK.as_secs_f32(), &executor);
+                simulation::step_players(&mut world, &active_inputs, TICK.as_secs_f32(), &executor);
             metrics.record_collision_queries(collision_stats);
             metrics.simulation.record(simulation_started.elapsed());
             drop(simulation_phase);

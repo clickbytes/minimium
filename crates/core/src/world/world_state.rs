@@ -9,7 +9,6 @@ use super::{
     MAX_PLAYER_NAME_CHARS, PARALLEL_SIMULATION_MIN_PLAYERS, PLAYERS_PER_SIMULATION_BATCH,
     PLAYER_MAX_HEALTH,
 };
-use crate::executor::Executor;
 use crate::ids::PlayerId;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -28,7 +27,7 @@ pub(super) struct PlayerStepResult {
 }
 
 #[derive(Default)]
-pub(super) struct SimulationBatch {
+pub struct SimulationBatch {
     pub(super) inputs: Vec<PlayerStepInput>,
     pub(super) results: Vec<PlayerStepResult>,
     pub(super) collision_query: CollisionQuery,
@@ -162,29 +161,36 @@ impl World {
         collision_stats
     }
 
-    pub fn step_players_parallel(
+    /// Runs movement on the authoritative owner, delegating only independent batches.
+    /// The dispatcher must return every processed batch in input order.
+    pub fn step_players_with(
         &mut self,
         inputs: &HashMap<PlayerId, CharacterInput>,
         delta_seconds: f32,
-        executor: &Executor,
+        lanes: usize,
+        dispatch: impl FnOnce(Vec<SimulationBatch>, Arc<CollisionIndex>, f32) -> Vec<SimulationBatch>,
     ) -> CollisionQueryStats {
-        if executor.lane_count() <= 1 || self.players.len() < PARALLEL_SIMULATION_MIN_PLAYERS {
+        let Some((geometry, batches)) = self.prepare_movement_batches(inputs, lanes) else {
             return self.step_players(inputs, delta_seconds);
-        }
+        };
+        let results = dispatch(batches, geometry, delta_seconds);
+        self.apply_step_results(results)
+    }
 
-        let World {
-            players,
-            cells,
-            player_cells,
-            collision_index,
-            simulation_batches,
-            ..
-        } = self;
-        let players = Arc::make_mut(players);
-        let cells = Arc::make_mut(cells);
-        let player_cells = Arc::make_mut(player_cells);
-        let batch_count = executor
-            .lane_count()
+    fn prepare_movement_batches(
+        &mut self,
+        inputs: &HashMap<PlayerId, CharacterInput>,
+        lanes: usize,
+    ) -> Option<(Arc<CollisionIndex>, Vec<SimulationBatch>)> {
+        if lanes <= 1 || self.players.len() < PARALLEL_SIMULATION_MIN_PLAYERS {
+            return None;
+        }
+        let players = Arc::make_mut(&mut self.players);
+        // Preserve the original copy-on-write timing before worker execution.
+        Arc::make_mut(&mut self.cells);
+        Arc::make_mut(&mut self.player_cells);
+        let simulation_batches = &mut self.simulation_batches;
+        let batch_count = lanes
             .min(players.len().div_ceil(PLAYERS_PER_SIMULATION_BATCH))
             .max(2);
         simulation_batches.resize_with(batch_count, SimulationBatch::default);
@@ -215,28 +221,19 @@ impl World {
                 });
         }
 
-        let collision_index = Arc::clone(collision_index);
-        let batches = std::mem::take(simulation_batches);
-        let processed_batches = executor.map(batches, move |mut batch| {
-            for step in batch.inputs.drain(..) {
-                let mut state = step.state;
-                batch.collision_stats.accumulate(batch.collision_query.fill(
-                    &collision_index,
-                    state,
-                    delta_seconds,
-                ));
-                step_character(
-                    &mut state,
-                    step.input,
-                    batch.collision_query.candidates(),
-                    batch.collision_query.surface_candidates(),
-                    delta_seconds,
-                );
-                batch.results.push(PlayerStepResult { id: step.id, state });
-            }
-            batch
-        });
+        Some((
+            Arc::clone(&self.collision_index),
+            std::mem::take(simulation_batches),
+        ))
+    }
 
+    fn apply_step_results(
+        &mut self,
+        processed_batches: Vec<SimulationBatch>,
+    ) -> CollisionQueryStats {
+        let players = Arc::make_mut(&mut self.players);
+        let cells = Arc::make_mut(&mut self.cells);
+        let player_cells = Arc::make_mut(&mut self.player_cells);
         let mut collision_stats = CollisionQueryStats::default();
         for batch in &processed_batches {
             collision_stats.accumulate(batch.collision_stats);
@@ -249,7 +246,7 @@ impl World {
                 }
             }
         }
-        *simulation_batches = processed_batches;
+        self.simulation_batches = processed_batches;
         collision_stats
     }
 
@@ -319,4 +316,29 @@ impl World {
         self.combat_map_query = MapRayQuery::default();
         self.simulation_batches.clear();
     }
+}
+
+/// Advances a batch using immutable collision geometry; it never mutates a world.
+pub fn step_batch(
+    mut batch: SimulationBatch,
+    collision_index: &CollisionIndex,
+    delta_seconds: f32,
+) -> SimulationBatch {
+    for step in batch.inputs.drain(..) {
+        let mut state = step.state;
+        batch.collision_stats.accumulate(batch.collision_query.fill(
+            collision_index,
+            state,
+            delta_seconds,
+        ));
+        step_character(
+            &mut state,
+            step.input,
+            batch.collision_query.candidates(),
+            batch.collision_query.surface_candidates(),
+            delta_seconds,
+        );
+        batch.results.push(PlayerStepResult { id: step.id, state });
+    }
+    batch
 }

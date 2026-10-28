@@ -11,6 +11,8 @@ Optional parallel work must not create competing owners of mutable world state. 
 
 The main server lane owns and mutates the authoritative world. The configured lane count includes that main lane: one lane executes work inline, while additional lanes are persistent workers for selected independent jobs. Work is joined at explicit merge points; worker threads do not directly own mutable world state.
 
+The executor belongs to the server. Core prepares reusable movement batches and immutable collision geometry through `World::step_players_with`; the dispatcher returns processed batches in input order and core applies them before releasing the mutable world borrow. The server executor preserves submission order when collecting worker results. One lane or fewer than 32 players uses the existing inline path; parallel batches target 16 players each.
+
 Player snapshot work is sent through a bounded request channel to a dedicated persistence worker. The worker serializes and writes captured snapshots outside the simulation loop. Manual save, autosave, and controlled shutdown use this persistence path. Controlled shutdown reports the final save outcome.
 
 Lane-equivalent authoritative outcomes are a requirement to verify, not a result established by this decision. Parallel work should be retained only when repeatable measurements show its benefit and account for synchronization cost.

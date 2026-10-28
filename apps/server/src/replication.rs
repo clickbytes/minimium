@@ -1,8 +1,9 @@
+use crate::executor::Executor;
 use crate::{
     connection::{queue_message, Client},
     metrics::RuntimeMetrics,
 };
-use minimium_core::{executor::Executor, world::World};
+use minimium_core::world::World;
 use minimium_protocol::{
     RemotePlayer, RemotePlayerIds, RemotePlayers, ServerMessage, MAX_VISIBLE_PLAYERS,
 };
