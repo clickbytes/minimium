@@ -1,5 +1,7 @@
 # Epic 002 — verification ledger
 
+The workspace and current CLI smoke checks use the source state at `f0033459075ad0ef07bd6b6b4b2dcdc1f5955314`; later commits `a8c6db9` and `d1afe42` changed documentation only.
+
 Runtime phase executed on 2026-10-28 after the user's completion instruction. Environment: Windows 10 IoT Enterprise LTSC build 19044, x86_64-pc-windows-msvc, rustc 1.99.0 (b940084d7 2026-09-28), 12th Gen Intel Core i5-12600K, 10 cores / 16 logical processors, 128 GiB visible memory. Release workloads used binaries built at integration head `df83342f677f970c82a6c5ab64c55a95692622dc`. Main was `53314514dac1456744af909aa4a1ea910458d111` and an ancestor of that head.
 
 | Gate | Command | Result |
@@ -19,6 +21,8 @@ Runtime phase executed on 2026-10-28 after the user's completion instruction. En
 | Network byte-cap pressure probe | `python D:\Temp\run_byte_cap_pressure.py` against release server | INCONCLUSIVE for the byte guard: 512 clients, one non-reader, 18 seconds shared movement, 0 dropped snapshots and max app queue 616 bytes. Loopback accepted the traffic without building queue pressure. |
 | Targeted network byte-cap pressure | `python D:\Temp\run_snapshot_byte_pressure_v2.py` against release server | PASS: 17 clients with 24-byte names, one non-reader with requested/reported 1 KiB receive buffer, 90 seconds of shared movement; 725 snapshots dropped and max pending output reached 65,360 B. Target accepted 180 frames total before drops, below the 256-frame limit, demonstrating byte-guard rejection. Evidence: `D:\Temp\minimium-epic002-byte-pressure-v2\result.json` and server logs. |
 | Workspace tests | `cargo test --workspace --locked --offline` | PASS, 5 server unit tests; all other unit and doc-test targets contain zero tests |
+| CLI help smoke | Four release programs with `--help` | PASS: server, desktop client, load generator and control CLI printed the documented usage. |
+| CLI range smoke | Server `run --threads 65`; client `--threads 3 --demo`; loadtest `--clients 10001` | PASS: each parser exited 1 with the expected range error before startup. |
 | Integration diff | `git diff --check origin/main` | PASS at final working tree |
 
 The 18 release load runs used `games/sample/maps/performance.map`, 60 seconds each, generator lane 1, server lanes 1/2/auto. Both `clustered` and `dispersed` completed at 2, 100 and 500 requested clients. All 18 reports were schema v2, recorded all requested clients connected at start, had `errors=0`, exit code 0, and contained all three server samples. The reports counted 2,167,200 received snapshots total; each recorded RTT p99 of 20 ms on this host. A raw scan found no `admin_token`, `nonce` or `server_token` strings. Raw reports and process logs remain under `D:\Temp\minimium-epic002-matrix\20261028T160924Z-151e92bd`.
