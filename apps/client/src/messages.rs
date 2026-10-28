@@ -3,9 +3,7 @@ use crate::{
     client_commands::ParseError,
     session::{DisconnectReason, QueueError},
 };
-use minimium_protocol::{
-    ProtocolError, ERROR_BUSY, ERROR_PROTOCOL, ERROR_RATE_LIMIT, ERROR_SERVER_FULL,
-};
+use minimium_protocol::{ProtocolError, ServerErrorCode};
 use std::fmt;
 
 /// A display message with typed values supplied by the client event.
@@ -80,10 +78,10 @@ pub enum ClientText {
     PeerDisconnected,
     ServerClosed,
     Rejected {
-        code: u8,
+        code: ServerErrorCode,
     },
     ServerError {
-        code: u8,
+        code: ServerErrorCode,
     },
     MapMismatch {
         expected: u64,
@@ -91,7 +89,7 @@ pub enum ClientText {
     },
     ConnectionLost(String),
     Connected {
-        id: u64,
+        id: minimium_core::ids::PlayerId,
         health: u16,
     },
     Ping {
@@ -110,16 +108,16 @@ pub enum ClientText {
     },
     ShotMissed,
     Hit {
-        target_id: u64,
+        target_id: minimium_core::ids::PlayerId,
         health: u16,
     },
     TargetRespawned {
-        target_id: u64,
+        target_id: minimium_core::ids::PlayerId,
         health: u16,
     },
     Chat {
         sender_name: String,
-        sender_id: u64,
+        sender_id: minimium_core::ids::PlayerId,
         text: String,
     },
 }
@@ -162,12 +160,12 @@ impl From<DisconnectReason> for ClientText {
     }
 }
 
-fn server_error_text(code: u8) -> &'static str {
+fn server_error_text(code: ServerErrorCode) -> &'static str {
     match code {
-        ERROR_PROTOCOL => "server rejected the protocol handshake",
-        ERROR_BUSY => "server is busy; this can include a duplicate active profile",
-        ERROR_SERVER_FULL => "server is full",
-        ERROR_RATE_LIMIT => "request was rate-limited",
+        ServerErrorCode::Protocol => "server rejected the protocol handshake",
+        ServerErrorCode::Busy => "server is busy; this can include a duplicate active profile",
+        ServerErrorCode::ServerFull => "server is full",
+        ServerErrorCode::RateLimit => "request was rate-limited",
         _ => "server rejected the request",
     }
 }

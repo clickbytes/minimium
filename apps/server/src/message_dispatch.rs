@@ -10,9 +10,7 @@ use minimium_core::{
     identity::PlayerProfileId,
     world::{CharacterInput, WorldMap},
 };
-use minimium_protocol::{
-    ClientMessage, ServerMessage, ERROR_BUSY, ERROR_RATE_LIMIT, ERROR_SERVER_FULL,
-};
+use minimium_protocol::{ClientMessage, ServerErrorCode, ServerMessage};
 use std::{
     collections::{HashMap, HashSet},
     time::Instant,
@@ -58,26 +56,25 @@ pub(crate) fn dispatch_messages(context: DispatchContext<'_>) {
         }
         let player_id = clients[index].player_id;
         match message {
-            ClientMessage::Identify(bytes) if player_id.is_none() => {
+            ClientMessage::Identify(profile_id) if player_id.is_none() => {
                 if player_store.active_players.len() >= max_players
                     || pending_world_inputs.len() + clients.len() >= MAX_PENDING_WORLD_INPUTS
                 {
                     if !queue_close_response(
                         &mut clients[index],
                         metrics,
-                        ServerMessage::Error(ERROR_SERVER_FULL),
+                        ServerMessage::Error(ServerErrorCode::ServerFull),
                         Instant::now(),
                     ) {
                         disconnected.push(index);
                     }
                     continue;
                 }
-                let profile_id = PlayerProfileId::from_bytes(bytes);
                 if pending_departures.contains(&profile_id) {
                     if !queue_close_response(
                         &mut clients[index],
                         metrics,
-                        ServerMessage::Error(ERROR_BUSY),
+                        ServerMessage::Error(ServerErrorCode::Busy),
                         Instant::now(),
                     ) {
                         disconnected.push(index);
@@ -91,7 +88,7 @@ pub(crate) fn dispatch_messages(context: DispatchContext<'_>) {
                         if !queue_close_response(
                             &mut clients[index],
                             metrics,
-                            ServerMessage::Error(ERROR_BUSY),
+                            ServerMessage::Error(ServerErrorCode::Busy),
                             Instant::now(),
                         ) {
                             disconnected.push(index);
@@ -115,7 +112,7 @@ pub(crate) fn dispatch_messages(context: DispatchContext<'_>) {
                     &mut clients[index],
                     metrics,
                     ServerMessage::Welcome {
-                        id: player.id.get(),
+                        id: player.id,
                         map_fingerprint: map.fingerprint(),
                         health: player.health,
                     },
@@ -146,7 +143,7 @@ pub(crate) fn dispatch_messages(context: DispatchContext<'_>) {
                     let _ = queue_message(
                         &mut clients[index],
                         metrics,
-                        ServerMessage::Error(ERROR_BUSY),
+                        ServerMessage::Error(ServerErrorCode::Busy),
                     );
                 }
             }
@@ -161,7 +158,7 @@ pub(crate) fn dispatch_messages(context: DispatchContext<'_>) {
                     let _ = queue_message(
                         &mut clients[index],
                         metrics,
-                        ServerMessage::Error(ERROR_BUSY),
+                        ServerMessage::Error(ServerErrorCode::Busy),
                     );
                 }
             }
@@ -174,7 +171,7 @@ pub(crate) fn dispatch_messages(context: DispatchContext<'_>) {
                     if !queue_message(
                         &mut clients[index],
                         metrics,
-                        ServerMessage::Error(ERROR_RATE_LIMIT),
+                        ServerMessage::Error(ServerErrorCode::RateLimit),
                     ) {
                         metrics.dropped_messages = metrics.dropped_messages.saturating_add(1);
                     }
@@ -189,7 +186,7 @@ pub(crate) fn dispatch_messages(context: DispatchContext<'_>) {
                     if !queue_message(
                         &mut clients[index],
                         metrics,
-                        ServerMessage::Error(ERROR_BUSY),
+                        ServerMessage::Error(ServerErrorCode::Busy),
                     ) {
                         metrics.dropped_messages = metrics.dropped_messages.saturating_add(1);
                     }
@@ -207,7 +204,7 @@ pub(crate) fn dispatch_messages(context: DispatchContext<'_>) {
                     if !queue_message(
                         &mut clients[index],
                         metrics,
-                        ServerMessage::Error(ERROR_RATE_LIMIT),
+                        ServerMessage::Error(ServerErrorCode::RateLimit),
                     ) {
                         metrics.dropped_messages = metrics.dropped_messages.saturating_add(1);
                     }
@@ -221,7 +218,7 @@ pub(crate) fn dispatch_messages(context: DispatchContext<'_>) {
                     if !queue_message(
                         &mut clients[index],
                         metrics,
-                        ServerMessage::Error(ERROR_BUSY),
+                        ServerMessage::Error(ServerErrorCode::Busy),
                     ) {
                         metrics.dropped_messages = metrics.dropped_messages.saturating_add(1);
                     }

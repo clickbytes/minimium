@@ -113,7 +113,7 @@ pub(crate) fn apply_world_inputs(context: WorldInputsContext<'_>) {
                 }
                 if let Some(shooter_index) = client_indices_by_player.get(&id).copied() {
                     let message = ServerMessage::ShotResult {
-                        target_id: outcome.target_id.map(PlayerId::get),
+                        target_id: outcome.target_id,
                         remaining_health: outcome.remaining_health,
                         killed: outcome.killed,
                     };
@@ -130,7 +130,7 @@ pub(crate) fn apply_world_inputs(context: WorldInputsContext<'_>) {
                     continue;
                 };
                 let message = ServerMessage::Chat {
-                    sender_id: id.get(),
+                    sender_id: id,
                     sender_name: sender_name.to_owned(),
                     text,
                 };

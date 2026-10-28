@@ -39,6 +39,18 @@ Before sending any other game message, a client must send message type `5` (`Ide
 | Server → client | `0x88` HealthUpdate | current local-player health (`u16`, `0..=100`) |
 | Server → client | `0x89` Chat | sender ID (`u64`), one-byte sender name length and name, then one-byte UTF-8 text length and text |
 
+Error payload codes are one byte. Unknown values are preserved by the typed API and can be encoded again unchanged.
+
+| Error | Byte |
+| --- | ---: |
+| Protocol | `1` |
+| Busy | `2` |
+| ServerFull | `3` |
+| RateLimit | `4` |
+| Unknown | Any other byte |
+
+Player and profile IDs use domain types in the API; their wire representations remain `u64` and 16 bytes respectively. The historical ShotResult encoder accepts any `u16` remaining health, while the decoder rejects values above 100; this asymmetry is preserved for v8 compatibility.
+
 A snapshot begins with the server's monotonic time in milliseconds since process start (`u64`), the local position and velocity as three `f32` values each, and a one-byte grounded flag. A one-byte `full snapshot` flag is followed by one-byte player update and removal counts. A full snapshot replaces the client's remote-player set; later snapshots upsert changed records and remove the listed player IDs. Each update contains player ID (`u64`), one-byte name length and name, then three position values. Each removal contains a player ID (`u64`). Both lists are bounded to 16 entries. The server sends a full snapshot first for each connection. It advances its per-client baseline only after successfully queuing a snapshot, so a snapshot dropped by the output-queue limit is included in a later delta. Movement messages carry normalized horizontal input; jump is an edge-triggered flag. The server integrates gravity, collision and movement at its fixed 20 Hz tick. The client uses the server timestamp and local elapsed receive time to interpolate remote players with a 100 ms presentation delay.
 
 Fire uses an authoritative hitscan query from the attacker's eye, with a 60-unit range and 34 damage. Solid boxes and triangles block shots; the nearest visible player hit takes damage. Players have 100 health and respawn at the map spawn after health reaches zero. The server rate-limits fire to one shot every 250 ms. It sends shot results to the shooter and coalesces health updates for the victim. Player health is stored in world snapshot version 3 and restored when the profile reconnects. Version 2 snapshots migrate with full health. Manual saves capture current health; controlled shutdown writes a final save, while a crash can lose changes since the most recent save.

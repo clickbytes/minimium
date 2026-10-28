@@ -1,7 +1,9 @@
 use super::{
-    limits::{MAX_CHAT_BYTES, MAX_PLAYER_NAME_BYTES, PLAYER_PROFILE_ID_BYTES},
+    limits::{MAX_CHAT_BYTES, PLAYER_PROFILE_ID_BYTES},
     models::ProtocolError,
+    validation::{valid_chat, valid_direction_component, valid_name},
 };
+use minimium_core::identity::PlayerProfileId;
 use std::sync::Arc;
 
 pub(crate) struct Reader<'a> {
@@ -76,16 +78,17 @@ impl<'a> Reader<'a> {
                 .try_into()
                 .map_err(|_| ProtocolError::InvalidPayload)?;
             *value = f32::from_le_bytes(bytes);
-            if !value.is_finite() || !(-1.0..=1.0).contains(value) {
+            if !valid_direction_component(*value) {
                 return Err(ProtocolError::InvalidPayload);
             }
         }
         Ok(direction)
     }
 
-    pub(crate) fn profile_id(&mut self) -> Result<[u8; PLAYER_PROFILE_ID_BYTES], ProtocolError> {
+    pub(crate) fn profile_id(&mut self) -> Result<PlayerProfileId, ProtocolError> {
         self.take(PLAYER_PROFILE_ID_BYTES)?
             .try_into()
+            .map(PlayerProfileId::from_bytes)
             .map_err(|_| ProtocolError::InvalidPayload)
     }
 
@@ -101,12 +104,7 @@ impl<'a> Reader<'a> {
         let byte_count = self.byte()? as usize;
         let bytes = self.take(byte_count)?;
         let name = std::str::from_utf8(bytes).map_err(|_| ProtocolError::InvalidName)?;
-        if name.is_empty()
-            || name.len() > MAX_PLAYER_NAME_BYTES
-            || !name
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-        {
+        if !valid_name(name) {
             return Err(ProtocolError::InvalidName);
         }
         Ok(name)
@@ -119,7 +117,7 @@ impl<'a> Reader<'a> {
         }
         let bytes = self.take(byte_count)?;
         let text = std::str::from_utf8(bytes).map_err(|_| ProtocolError::InvalidPayload)?;
-        if text.chars().any(char::is_control) {
+        if !valid_chat(text) {
             return Err(ProtocolError::InvalidPayload);
         }
         Ok(text)
