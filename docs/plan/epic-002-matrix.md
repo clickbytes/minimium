@@ -94,7 +94,7 @@ Renderer składa właścicieli GPU, gameplay, input, UI, metryk, ustawień i kon
 
 ## E002-12 — konfiguracje i komendy
 
-Katalog klienta przypisuje typowany identyfikator do każdej nazwy i aliasu; parser, help i completion korzystają z tej samej tabeli. `ServerCommand::ALL` i `name` są źródłem parsera i tekstu help serwera/ctl. Typy lane pozostają osobne: zakres i znaczenie server, client i generator różnią się; tabela flag, domyślnych wartości, duplicate i konfliktów znajduje się w commands.md. Istniejący nieprecyzyjny komunikat serwera o niepoprawnym `--threads` opisano bez zmiany zachowania. CLI smoke: wszystkie cztery programy wyświetliły `--help`; serwer odrzucił `--threads 65`, klient `--threads 3`, a generator `--clients 10001` odpowiednim błędem i kodem 1. Pełna macierz aliasów i kombinacji flag nie była uruchomiona.
+Katalog klienta przypisuje typowany identyfikator do każdej nazwy i aliasu; parser, help i completion korzystają z tej samej tabeli. `ServerCommand::ALL` i `name` są źródłem parsera i tekstu help serwera/ctl. Typy lane pozostają osobne: zakres i znaczenie server, client i generator różnią się; tabela flag, domyślnych wartości, duplicate i konfliktów znajduje się w commands.md. Istniejący nieprecyzyjny komunikat serwera o niepoprawnym `--threads` opisano bez zmiany zachowania. CLI smoke: wszystkie cztery programy wyświetliły `--help`; serwer odrzucił `--threads 65`, klient `--threads 3`, a generator `--clients 10001` odpowiednim błędem i kodem 1. W teście dwóch tekstowych klientów aliasy `chat` i `exit` wykonały odpowiednio wysłanie wiadomości i poprawne zamknięcie klienta. Pełna macierz kombinacji flag nie była uruchomiona; dowody: `D:\Temp\minimium-epic002-cli-aliases\result.json`.
 
 ## E002-13 — telemetria i raport
 

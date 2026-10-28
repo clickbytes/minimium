@@ -23,6 +23,7 @@ Runtime phase executed on 2026-10-28 after the user's completion instruction. En
 | Workspace tests | `cargo test --workspace --locked --offline` | PASS, 5 server unit tests; all other unit and doc-test targets contain zero tests |
 | CLI help smoke | Four release programs with `--help` | PASS: server, desktop client, load generator and control CLI printed the documented usage. |
 | CLI range smoke | Server `run --threads 65`; client `--threads 3 --demo`; loadtest `--clients 10001` | PASS: each parser exited 1 with the expected range error before startup. |
+| Client command aliases | `python D:\Temp\run_cli_alias_smoke.py` | PASS: two text clients exchanged chat using the `chat` alias; `exit` and canonical `quit` both exited with code 0. Evidence: `D:\Temp\minimium-epic002-cli-aliases\result.json` and server logs. |
 | Integration diff | `git diff --check origin/main` | PASS at final working tree |
 
 The 18 release load runs used `games/sample/maps/performance.map`, 60 seconds each, generator lane 1, server lanes 1/2/auto. Both `clustered` and `dispersed` completed at 2, 100 and 500 requested clients. All 18 reports were schema v2, recorded all requested clients connected at start, had `errors=0`, exit code 0, and contained all three server samples. The reports counted 2,167,200 received snapshots total; each recorded RTT p99 of 20 ms on this host. A raw scan found no `admin_token`, `nonce` or `server_token` strings. Raw reports and process logs remain under `D:\Temp\minimium-epic002-matrix\20261028T160924Z-151e92bd`.
