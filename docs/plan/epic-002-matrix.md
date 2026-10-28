@@ -106,4 +106,6 @@ Rzeczywisty graf i przyszły układ rozdzielono w architecture.md, decyzje opisa
 
 ## E002-15 — końcowa integracja i weryfikacja
 
+Końcowy przebieg runtime potwierdził też replikację snapshotów: klient obserwujący dostał pełny snapshot początkowy, deltę dołączenia drugiego klienta i deltę usunięcia go po Quit. Drugi klient otrzymał Bye. Log i wynik: `D:\Temp\minimium-epic002-snapshot-transitions-final\result.json`.
+
 Wyniki bramek statycznych i końcowe scenariusze runtime opisuje epic-002-verification.md. Wszystkie 18 manifestów obciążenia, dwa klienty, ownership Attached/Owned, lock, zapis/restart, migracja v2, wymuszony błąd zapisu z odzyskaniem poprzedniego snapshotu, limity i wolna odpowiedź admina oraz przejście po geometrii demo przeszły na hoście x86_64. Test symulacji i kontrolowany test sieciowy 32 graczy porównały lane 1/2/auto; pozycje, prędkości i grounded były bitowo identyczne w próbce końcowej. Wolni klienci wywołali 732 snapshot drops przy maksymalnej kolejce 36 776 B. Dwa testy jednostkowe wymuszają niezależnie limity 64 KiB i 256 ramek; rzeczywiste obciążenie sieciowe nie dotarło do limitu bajtów. Testy writer-a pokrywają partial write i WriteZero bez wymuszania syscall-a TCP. Nie wykonano pełnego testu wizualnego, a sprzęt Pentium 500 MHz pozostaje niedostępny. PR #31 nadal wymaga końcowego review przed merge.
