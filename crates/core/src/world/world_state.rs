@@ -3,8 +3,8 @@ use super::collision_queries::{CollisionQuery, CollisionQueryStats};
 use super::geometry::{cell_for, intersects_player, update_cell_index};
 use super::map::WorldMap;
 use super::raycast::{MapRayQuery, PlayerRayQuery};
-use super::rules::{step_character, step_character_on_planet, CharacterInput, CharacterState, Player};
 use super::regions::{portal_destination, CubeSphere, WorldPortal};
+use super::rules::{step_character, step_character_on_planet, CharacterInput, CharacterState, Player};
 use super::snapshot::WorldSnapshot;
 use super::{
     MAX_PLAYER_NAME_CHARS, PARALLEL_SIMULATION_MIN_PLAYERS, PLAYERS_PER_SIMULATION_BATCH,
@@ -198,6 +198,7 @@ impl World {
         // Preserve the original copy-on-write timing before worker execution.
         Arc::make_mut(&mut self.cells);
         Arc::make_mut(&mut self.player_cells);
+        let planet = self.planet;
         let simulation_batches = &mut self.simulation_batches;
         let batch_count = lanes
             .min(players.len().div_ceil(PLAYERS_PER_SIMULATION_BATCH))
@@ -208,7 +209,7 @@ impl World {
             batch.inputs.clear();
             batch.results.clear();
             batch.collision_stats = CollisionQueryStats::default();
-            batch.planet = self.planet;
+            batch.planet = planet;
             if batch.inputs.capacity() < inputs_per_batch {
                 batch.inputs.reserve(inputs_per_batch);
             }

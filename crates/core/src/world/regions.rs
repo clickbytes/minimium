@@ -32,23 +32,20 @@ impl CubeSphere {
     /// Stable local east/up/north frame: at the north pole it is world X/Y/Z.
     pub fn frame_at(self, position: [f32; 3]) -> ([f32; 3], [f32; 3], [f32; 3]) {
         let up = self.up_at(position);
-        let reference = if up[0].abs() < 0.9 {
-            [1.0, 0.0, 0.0]
-        } else {
-            [0.0, 0.0, 1.0]
-        };
-        let dot = up.iter().zip(reference).map(|(a, b)| a * b).sum::<f32>();
-        let mut east = [
-            reference[0] - up[0] * dot,
-            reference[1] - up[1] * dot,
-            reference[2] - up[2] * dot,
+        // Shortest-arc rotation from +Y to radial up; no cube-face seam.
+        if up[1] <= -0.999 {
+            return ([-1.0, 0.0, 0.0], up, [0.0, 0.0, 1.0]);
+        }
+        let inv = (1.0 + up[1]).recip();
+        let east = [
+            1.0 - up[0] * up[0] * inv,
+            -up[0],
+            -up[0] * up[2] * inv,
         ];
-        let length = east.iter().map(|x| x * x).sum::<f32>().sqrt();
-        east = east.map(|value| value / length);
         let north = [
-            east[1] * up[2] - east[2] * up[1],
-            east[2] * up[0] - east[0] * up[2],
-            east[0] * up[1] - east[1] * up[0],
+            -up[0] * up[2] * inv,
+            -up[2],
+            1.0 - up[2] * up[2] * inv,
         ];
         (east, up, north)
     }

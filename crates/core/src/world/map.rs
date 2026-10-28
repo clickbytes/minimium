@@ -94,6 +94,28 @@ impl WorldMap {
         {
             return Err("spawn overlaps solid map geometry".into());
         }
+        // Prevent invalid destinations and immediate portal bounce loops.
+        for portal in &portals {
+            let blocked = boxes.iter().filter(|item| item.solid).any(|item| {
+                intersects_player(
+                    portal.destination,
+                    Aabb::from_center_size(item.center, item.size),
+                )
+            }) || triangles.iter().filter(|item| item.solid).any(|item| {
+                triangle_intersects_player(portal.destination, *item)
+            });
+            let within_trigger = portals.iter().any(|other| {
+                let distance = portal.destination
+                    .iter()
+                    .zip(other.at)
+                    .map(|(a, b)| (*a - b) * (*a - b))
+                    .sum::<f32>();
+                distance <= other.radius * other.radius
+            });
+            if blocked || within_trigger {
+                return Err("portal destination intersects geometry or another trigger".into());
+            }
+        }
         let fingerprint = map_fingerprint(spawn, &boxes, &triangles, planet, &portals);
         Ok(Self {
             spawn,
