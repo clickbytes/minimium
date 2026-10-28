@@ -42,6 +42,8 @@ Core = czysty model i reguły świata, typowane ID, collision, physics i domain 
 
 Kontrole bez testów: cargo fmt/check/clippy/build, release, allocations feature, git diff --check, scripts/check_file_lengths.py, docelowo scripts/check_architecture.py. Faktyczne wyniki notować w epic-002-verification.md; nieudowodnione pozostaje NOT RUN.
 
+Aktualizacja: użytkownik rozpoczął końcową fazę runtime 2026-10-28. Wyniki wykonanych scenariuszy oraz pozostałe ograniczenia są w [rejestrze weryfikacji](epic-002-verification.md); początkowe NOT RUN powyżej opisuje wyłącznie stan sprzed tej fazy.
+
 AGENTS.md odracza wszystkie testy i uruchamianie aplikacji/generatora do końcowej fazy wyraźnie rozpoczętej przez użytkownika. E002-15 ma wykonać finalną weryfikację dopiero po tej decyzji. Bez niej końcowy PR pozostaje DRAFT/BLOCKED. Epic #14 zamykamy dopiero po MERGE jednego końcowego PR integracyjnego do main oraz zapisaniu merge SHA.
 
 Wcześniejszy PR #13 (https://github.com/clickbytes/minimium/pull/13) należy do E002-00, bazą ma być epic branch, wymaga compile/static review przed merge.

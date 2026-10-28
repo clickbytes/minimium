@@ -2,6 +2,8 @@
 
 Pełny zakres, implementacja krok po kroku, kryteria odbioru i blokery są w issues #15–#30 pod Epic #14. Ten plik rejestruje wzajemne granice i kolejność, a nie duplikuje całej specyfikacji.
 
+Końcowa faza runtime została wykonana 2026-10-28; aktualne wyniki i dowody są w [rejestrze weryfikacji](epic-002-verification.md), który ma pierwszeństwo przed niższymi notatkami „odroczone” zapisanymi podczas implementacji. Uruchomione scenariusze potwierdziły między innymi lane 1/2/auto dla 32 klientów, zapis/odzyskiwanie, lifecycle, mapę i wszystkie 18 workloadów. Nadal nierozstrzygnięte są kontrola wizualna, zerowy zapis, wolna odpowiedź admina, limit odrzucający kolejkę oraz cel Pentium 500 MHz.
+
 | Issue | Właściciel główny | Obszar / output |
 | --- | --- | --- |
 | #15 E002-00 | docs/plan/epic-002*, PR #13 | baseline, working branch, statyczny przegląd |
@@ -64,7 +66,7 @@ Przegląd unsafe: `MoveFileExW` otrzymuje żyjące podczas wywołania, zakończo
 
 ## E002-05 — symulacja i executor
 
-Executor i przypisanie faz telemetrii należą do serwera; core nie ma zależności telemetry. `World::step_players_with` utrzymuje wyłączny dostęp do świata przez przygotowanie, dispatch i zastosowanie wyników; `step_batch` otrzymuje niemutowalny indeks kolizji. Dispatcher musi zwrócić wszystkie batche w kolejności wejściowej; serwerowy executor odtwarza tę kolejność po zakończeniu workerów. Próg 32, rozmiar batcha 16, copy-on-write przed dispatch i ponowne użycie buforów zachowano. Porządek HashMap nie jest gwarantowany między uruchomieniami; lane equivalence i koszty alokacji pozostają nieweryfikowane do końcowych scenariuszy.
+Executor i przypisanie faz telemetrii należą do serwera; core nie ma zależności telemetry. `World::step_players_with` utrzymuje wyłączny dostęp do świata przez przygotowanie, dispatch i zastosowanie wyników; `step_batch` otrzymuje niemutowalny indeks kolizji. Dispatcher musi zwrócić wszystkie batche w kolejności wejściowej; serwerowy executor odtwarza tę kolejność po zakończeniu workerów. Próg 32, rozmiar batcha 16, copy-on-write przed dispatch i ponowne użycie buforów zachowano. Porządek HashMap nie jest gwarantowany między uruchomieniami. Deterministyczna symulacja oraz kontrolowany test sieciowy 32 graczy, 100 zmian wejścia i lane 1/2/auto dały bitowo identyczne pozycje, prędkości i grounded; koszty alokacji pozostają nieweryfikowane.
 
 ## E002-06 — runtime serwera
 
@@ -72,7 +74,7 @@ Executor i przypisanie faz telemetrii należą do serwera; core nie ma zależno�
 
 ## E002-07 — połączenia
 
-`ConnectionPhase` obejmuje AwaitIdentify, Active z nierozdzielną parą ID/profil oraz Draining z zachowaną opcjonalną tożsamością, terminem i powodem. Przejściowa flaga EOF pozwala najpierw zastosować już odczytane ramki; `begin_close` jest idempotentne. `Client` posiada bufor wyjścia i rozlicza zapis częściowy; limity read/write i rotacja pozostały niezmienione. `swap_remove` nadal usuwa stary indeks i aktualizuje przeniesionego gracza, a Leave blokuje rejoin do zastosowania. Baseline repliki zmienia się po sukcesie kolejki. EOF, backpressure, powolny klient, partial write i reconnect wymagają odroczonej weryfikacji runtime.
+`ConnectionPhase` obejmuje AwaitIdentify, Active z nierozdzielną parą ID/profil oraz Draining z zachowaną opcjonalną tożsamością, terminem i powodem. Przejściowa flaga EOF pozwala najpierw zastosować już odczytane ramki; `begin_close` jest idempotentne. `Client` posiada bufor wyjścia i rozlicza zapis częściowy; limity read/write i rotacja pozostały niezmienione. `swap_remove` nadal usuwa stary indeks i aktualizuje przeniesionego gracza, a Leave blokuje rejoin do zastosowania. Baseline repliki zmienia się po sukcesie kolejki. EOF, reconnect i backpressure ze zmieniającymi pozycje 64 klientami przeszły runtime; przy maksymalnej kolejce 36 776 B serwer odrzucił 732 snapshoty. Nie określono, czy wcześniej zadziałał limit 256 ramek, czy limit bajtów 64 KiB. Zero-byte writes i dedykowany scenariusz partial write pozostają do potwierdzenia.
 
 ## E002-08 — pipeline wejść
 
@@ -96,7 +98,7 @@ Katalog klienta przypisuje typowany identyfikator do każdej nazwy i aliasu; par
 
 ## E002-13 — telemetria i raport
 
-Inwentaryzacja metryk, granice histogramów, opcjonalna instrumentacja i potencjalne koszty alokacji znajdują się w performance.md; format v2 i ograniczenia identyfikacji endpointu w scenarios/report-v2.md. Ranga percentyla używa szerszej arytmetyki, a niefinitywna opcjonalna liczba jest zapisywana jako brak wartości. Statycznie sprawdzono 18 manifestów; pomiary, bezpieczeństwo próbek, zgodność lane i poprawność działania pozostają do końcowej fazy.
+Inwentaryzacja metryk, granice histogramów, opcjonalna instrumentacja i potencjalne koszty alokacji znajdują się w performance.md; format v2 i ograniczenia identyfikacji endpointu w scenarios/report-v2.md. Ranga percentyla używa szerszej arytmetyki, a niefinitywna opcjonalna liczba jest zapisywana jako brak wartości. Statycznie sprawdzono i uruchomiono 18 manifestów; raporty v2, pola tokenów i rezultaty lane zostały sprawdzone. Kontrola sieciowa 32 graczy dała identyczny stan dla lane 1/2/auto. Koszty alokacji nadal wymagają odrębnego pomiaru.
 
 ## E002-14 — granice architektury
 
@@ -104,4 +106,4 @@ Rzeczywisty graf i przyszły układ rozdzielono w architecture.md, decyzje opisa
 
 ## E002-15 — integracja przed testami
 
-Wyniki bramek statycznych i końcowe scenariusze runtime opisuje epic-002-verification.md. Wszystkie 18 manifestów obciążenia, dwa klienty, ownership Attached/Owned, lock, zapis/restart, migracja v2, wymuszony błąd zapisu z odzyskaniem poprzedniego snapshotu, ograniczenia admin I/O oraz przejście po geometrii demo przeszły na hoście x86_64. Test symulacji porównał stałe wejścia 32 graczy dla lane 1/2/auto. Wolni klienci wywołali snapshot drops przy maksymalnej kolejce 36 776 B; nie potwierdzono, czy limit bajtów 64 KiB został osiągnięty przed limitem 256 ramek. Nie wykonano pełnego testu wizualnego; lane equivalence przez rzeczywistą sieć i sprzęt Pentium 500 MHz nie są potwierdzone. PR #31 nadal wymaga końcowego review przed merge.
+Wyniki bramek statycznych i końcowe scenariusze runtime opisuje epic-002-verification.md. Wszystkie 18 manifestów obciążenia, dwa klienty, ownership Attached/Owned, lock, zapis/restart, migracja v2, wymuszony błąd zapisu z odzyskaniem poprzedniego snapshotu, ograniczenia admin I/O oraz przejście po geometrii demo przeszły na hoście x86_64. Test symulacji i kontrolowany test sieciowy 32 graczy porównały lane 1/2/auto; pozycje, prędkości i grounded były bitowo identyczne w próbce końcowej. Wolni klienci wywołali 732 snapshot drops przy maksymalnej kolejce 36 776 B; nie potwierdzono, czy limit bajtów 64 KiB został osiągnięty przed limitem 256 ramek. Nie wykonano pełnego testu wizualnego; zero-byte writes, wolna odpowiedź admina i sprzęt Pentium 500 MHz nie są potwierdzone. PR #31 nadal wymaga końcowego review przed merge.
