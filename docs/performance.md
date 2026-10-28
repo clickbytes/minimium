@@ -47,6 +47,17 @@ Field definitions and the prepared scenario manifest are maintained in [scenario
 
 ## Deferred measurement matrix
 
+### Initial research budgets
+
+The following are proposed acceptance thresholds for a future, explicitly authorized measurement, not results or claims about the current prototype. They make the research target falsifiable and can be revised with recorded rationale when hardware and workload evidence is available.
+
+- Server tick: p95 at most 50 ms and no missed ticks during the measured interval, with a fixed 20 Hz simulation. Record p99 and maximum as well.
+- Process CPU: at most one logical CPU on average over the interval in the single-lane run, calculated as the change in `process_cpu_time_ms` divided by elapsed wall time. Report actual OS thread count separately; cumulative CPU time is not utilization by itself.
+- Server memory: peak RSS at most 512 MiB during the interval, including fixed overhead and helper threads. Record the starting RSS and current-player count alongside the peak.
+- Game traffic: average at most 8 KiB/s per connected player in each direction, calculated from server application-byte counter deltas divided by elapsed seconds and the mean connected-player count. Report the per-client distribution as well; this budget excludes TCP/IP headers and retransmissions.
+
+For the 500 MHz research case, use a documented Pentium-class 500 MHz machine, record its exact model, memory, OS/kernel, compiler and target configuration, and put the load generator on a separate documented machine. Run the 500-client `clustered` and `dispersed` manifests on `performance.map`, 60 seconds each, server lane 1, generator worker count and all server settings recorded. Record successful handshakes and disconnects, and apply the thresholds only when all 500 clients remain connected throughout the measured interval. Capture server metrics before and after and retain the report and hardware description. The other 2/100/500 and 1/2/auto combinations remain comparison scenarios; none are measurements until run. Suitable historical hardware and a compatible Rust target have not yet been established.
+
 The prepared 18-run matrix is `clustered` and `dispersed` movement × 2/100/500 clients × server lanes 1/2/`auto` × 60 seconds. Run the load generator's worker threads independently from server lanes and record both. It has not been run.
 
 The current movement path uses inline work for one lane and dispatches player movement in batches at 32 or more active players. This threshold and batch size (16 players per batch) are current implementation details, not a claim that parallel execution improves throughput.

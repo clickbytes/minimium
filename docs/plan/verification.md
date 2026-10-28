@@ -8,6 +8,10 @@
 | rtk cargo check --workspace --locked --offline | PASS,0 błędów/ostrzeżeń kodu |
 | rtk cargo clippy --workspace --locked --offline | PASS,4 istniejące uwagi bazowe |
 | rtk cargo build --workspace --release --locked --offline | PASS, wszystkie4 binaria |
+| rtk cargo build -p minimium-client --release --locked --offline | PASS |
+| rtk cargo build -p minimium-server --release --locked --offline | PASS |
+| rtk cargo build -p minimiumctl --release --locked --offline | PASS |
+| rtk cargo build -p minimium-loadtest --release --locked --offline | PASS |
 | rtk cargo check -p minimium-server --features allocation-metrics --locked --offline | PASS |
 | rtk cargo build -p minimium-server --release --features allocation-metrics --locked --offline | PASS |
 | rtk git diff --check | PASS |
