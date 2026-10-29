@@ -196,5 +196,7 @@ testowej.
   TCP/GPU ani reconnectu procesu z zapisanym profilem.
 - `origin/epic/002-architecture-stabilization` nadal jest bazą PR #31, który
   pozostaje otwartym draftem do `main` bez decyzji recenzenckiej i kontroli CI.
-  Gałąź tego epica nie ma jeszcze PR; dlatego scalanie końcowe i zamknięcie
-  epica są nadal zablokowane przez wymagany przegląd/integrację.
+  PR #50 jest otwartym draftem tego epica na gałęzi bazowej E002. Zawiera
+  skonsolidowany przyrost E003, nie osobne PR-y każdego etapu. Scalanie końcowe
+  i zamknięcie epica czekają na przegląd, ręczną kontrolę renderowanego
+  transferu/reconnectu oraz integrację bazowego E002.
