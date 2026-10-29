@@ -28,4 +28,4 @@ The research target is 500 connected players on a Pentium-class 500 MHz server u
 
 ## Evidence and verification
 
-Implementation review and compilation can establish that code meets local structural and build requirements. They do not establish gameplay behavior, lane-equivalent outcomes, performance, or production readiness. Runtime scenarios, integration tests, and load measurements are deferred until the project is explicitly ready for its final verification phase. No deferred scenario or performance target is described here as completed evidence.
+Implementation review and compilation can establish that code meets local structural and build requirements. They do not establish gameplay behavior, lane-equivalent outcomes, performance, or production readiness. The user explicitly started Epic 003's final verification phase: its workspace tests and wire-level planet → dungeon → planet restart/reconnect scenario passed. Performance measurements and the rendered-client transfer review remain open; no capacity claim is made.

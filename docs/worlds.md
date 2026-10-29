@@ -130,5 +130,5 @@ Planet movement derives local up from the radial direction, uses a tangent
 movement frame and substeps collision checks. Dungeon movement keeps fixed Y-up.
 Collision bounds use the corresponding capsule orientation. Workspace tests now
 exercise the generated planet-to-dungeon route, portal return, save migration,
-and restoration of the saved player profile. The rendered client transfer and a
-restart/reconnect demo still need manual review.
+and restoration of the saved player profile. A wire-level restart/reconnect demo
+also passed. A visual review of the rendered client transfer remains outstanding.

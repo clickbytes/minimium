@@ -97,5 +97,7 @@ rejected before replacing the previous snapshot.
 
 The current TCP adapter has no public-game authentication or encryption. The
 profile ID is a reconnect identifier, not proof of account ownership. Gameplay,
-transfer, migration and reconnect scenarios remain in the deferred final
-verification phase and must not be inferred from compilation alone.
+transfer, migration and reconnect have workspace coverage. A wire-level v9
+demonstration also completed planet → dungeon → planet and restored the profile
+after a graceful server restart. These results do not verify the rendered GPU
+scene; that transfer still needs visual review.

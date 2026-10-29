@@ -35,5 +35,6 @@ results seekable. Sector-address hashing maps a larger logical address space int
 the 128-bit Philox counter; it is a deterministic address encoding, not a
 cryptographic identity or security boundary. Origin-ID collisions are possible in
 principle and must be handled as a data-integrity failure by the world owner.
-Known-answer and cross-platform generation checks remain in the deferred final
-test phase.
+The Philox known-answer vector passed on Windows in the final Epic 003 phase.
+Cross-platform generation equivalence remains unverified and requires the same
+vectors on each supported target.
