@@ -203,7 +203,8 @@ testowej.
   Nie wykonano wizualnego przeglądu renderowanej sceny podczas transferu.
 - `origin/epic/002-architecture-stabilization` nadal jest bazą PR #31, który
   pozostaje otwartym draftem do `main` bez decyzji recenzenckiej i kontroli CI.
-  PR #50 jest otwartym draftem tego epica na gałęzi bazowej E002. Zawiera
-  skonsolidowany przyrost E003, nie osobne PR-y każdego etapu. Scalanie końcowe
-  i zamknięcie epica czekają na integrację bazowego E002 oraz przegląd PR-ów;
-  pozostał również wizualny przegląd renderowanego transferu klienta.
+  PR #50 jest gotowy do recenzji na bazie E002, ale nie ma jeszcze decyzji
+  recenzenckiej ani kontroli CI. Zawiera skonsolidowany przyrost E003; issue ani
+  osobnych PR-ów etapów nie utworzono. Scalanie końcowe i zamknięcie epica czekają
+  na integrację bazowego E002 oraz przegląd PR-ów; nie wykonano też wizualnego
+  przeglądu renderowanego transferu klienta.
