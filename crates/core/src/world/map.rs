@@ -1,5 +1,9 @@
 use super::collision_index::{Aabb, CollisionIndex};
-use super::geometry::{intersects_player, triangle_area_squared, triangle_intersects_player};
+use super::geometry::{
+    intersects_player, oriented_capsule_intersects, oriented_capsule_intersects_triangle,
+    triangle_area_squared, triangle_intersects_player,
+};
+use super::rules::{character_frame, CharacterGravity};
 
 pub const MAX_MAP_BOXES: usize = 4096;
 pub const MAX_MAP_TRIANGLES: usize = 8192;
@@ -123,6 +127,33 @@ impl WorldMap {
                 .iter()
                 .filter(|triangle| triangle.solid)
                 .all(|triangle| !triangle_intersects_player(position, *triangle))
+    }
+
+    /// Checks saved or target positions with the world's local up direction.
+    pub fn can_place_player_with_gravity(
+        &self,
+        position: [f32; 3],
+        gravity: CharacterGravity,
+    ) -> bool {
+        if position.iter().any(|value| !value.is_finite()) {
+            return false;
+        }
+        let up = character_frame(gravity, position).0;
+        self.boxes
+            .iter()
+            .filter(|map_box| map_box.solid)
+            .all(|map_box| {
+                !oriented_capsule_intersects(
+                    position,
+                    up,
+                    Aabb::from_center_size(map_box.center, map_box.size),
+                )
+            })
+            && self
+                .triangles
+                .iter()
+                .filter(|triangle| triangle.solid)
+                .all(|triangle| !oriented_capsule_intersects_triangle(position, up, *triangle))
     }
 
     pub fn fingerprint(&self) -> u64 {

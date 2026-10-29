@@ -14,7 +14,7 @@ impl ServerRuntime {
             if !self.operations.persistence.has_pending_save() {
                 if let Err(error) = self.operations.persistence.queue_world_save(
                     &mut self.operations.player_store,
-                    &self.game.world,
+                    &self.game.worlds,
                     self.map.fingerprint(),
                 ) {
                     eprintln!("could not queue automatic world save: {error}");

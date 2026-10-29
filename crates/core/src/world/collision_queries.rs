@@ -3,8 +3,8 @@ use super::geometry::cell_for;
 use super::map::MapTriangle;
 use super::rules::CharacterState;
 use super::{
-    GRAVITY, MAX_FALL_SPEED, MAX_QUERY_CELLS, MAX_STEP_UP, PLAYER_HEIGHT, PLAYER_JUMP_SPEED,
-    PLAYER_MOVE_SPEED, PLAYER_RADIUS,
+    CharacterGravity, GRAVITY, MAX_FALL_SPEED, MAX_QUERY_CELLS, MAX_STEP_UP, PLAYER_HEIGHT,
+    PLAYER_JUMP_SPEED, PLAYER_MOVE_SPEED, PLAYER_RADIUS,
 };
 
 #[derive(Default)]
@@ -29,6 +29,10 @@ pub struct CollisionQueryStats {
 }
 
 impl CollisionQueryStats {
+    pub fn merge(&mut self, other: Self) {
+        self.accumulate(other);
+    }
+
     pub(super) fn accumulate(&mut self, other: Self) {
         self.queries = self.queries.saturating_add(other.queries);
         self.cell_visits = self.cell_visits.saturating_add(other.cell_visits);
@@ -91,16 +95,28 @@ impl CollisionQuery {
         let rise_reach = PLAYER_JUMP_SPEED * delta_seconds
             + GRAVITY * delta_seconds * delta_seconds
             + MAX_STEP_UP;
-        let min = [
-            state.position[0] - horizontal_reach,
-            state.position[1] - fall_reach,
-            state.position[2] - horizontal_reach,
-        ];
-        let max = [
-            state.position[0] + horizontal_reach,
-            state.position[1] + PLAYER_HEIGHT + rise_reach,
-            state.position[2] + horizontal_reach,
-        ];
+        let (min, max) = if matches!(state.gravity, CharacterGravity::Radial { .. }) {
+            let reach = PLAYER_MOVE_SPEED * delta_seconds
+                + MAX_FALL_SPEED * delta_seconds
+                + PLAYER_HEIGHT
+                + PLAYER_RADIUS;
+            (
+                state.position.map(|value| value - reach),
+                state.position.map(|value| value + reach),
+            )
+        } else {
+            let min = [
+                state.position[0] - horizontal_reach,
+                state.position[1] - fall_reach,
+                state.position[2] - horizontal_reach,
+            ];
+            let max = [
+                state.position[0] + horizontal_reach,
+                state.position[1] + PLAYER_HEIGHT + rise_reach,
+                state.position[2] + horizontal_reach,
+            ];
+            (min, max)
+        };
 
         if min.iter().chain(max.iter()).any(|value| !value.is_finite()) {
             stats.fallback_queries = 1;

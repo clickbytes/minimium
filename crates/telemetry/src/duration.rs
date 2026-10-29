@@ -156,7 +156,7 @@ impl DurationStats {
             return None;
         }
         let percentile = percentile.clamp(1, 100);
-        let rank = ((u128::from(self.samples) * u128::from(percentile) + 99) / 100) as u64;
+        let rank = (u128::from(self.samples) * u128::from(percentile)).div_ceil(100) as u64;
         let mut cumulative = 0u64;
         for (index, count) in self.buckets.iter().enumerate() {
             cumulative = cumulative.saturating_add(*count);

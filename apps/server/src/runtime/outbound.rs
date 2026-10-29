@@ -9,6 +9,7 @@ impl ServerRuntime {
     pub(super) fn emit_world_event(&mut self, event: WorldEvent) {
         match event {
             WorldEvent::Shot {
+                instance,
                 shooter,
                 outcome,
                 target_health,
@@ -20,11 +21,12 @@ impl ServerRuntime {
                         .get(&target)
                         .copied()
                     {
-                        if let Some(client) = self
-                            .connections
-                            .clients
-                            .get_mut(index)
-                            .filter(|client| client.player_id() == Some(target))
+                        if let Some(client) =
+                            self.connections.clients.get_mut(index).filter(|client| {
+                                client.player_id() == Some(target)
+                                    && self.game.worlds.instance_for_player(target)
+                                        == Some(instance)
+                            })
                         {
                             client.pending_health_update = Some(health);
                         }
@@ -41,12 +43,10 @@ impl ServerRuntime {
                         remaining_health: outcome.remaining_health,
                         killed: outcome.killed,
                     };
-                    if let Some(client) = self
-                        .connections
-                        .clients
-                        .get_mut(index)
-                        .filter(|client| client.player_id() == Some(shooter))
-                    {
+                    if let Some(client) = self.connections.clients.get_mut(index).filter(|client| {
+                        client.player_id() == Some(shooter)
+                            && self.game.worlds.instance_for_player(shooter) == Some(instance)
+                    }) {
                         if !queue_message(client, &mut self.metrics, message) {
                             self.metrics.dropped_messages =
                                 self.metrics.dropped_messages.saturating_add(1);
@@ -54,7 +54,12 @@ impl ServerRuntime {
                     }
                 }
             }
-            WorldEvent::Chat { sender, name, text } => {
+            WorldEvent::Chat {
+                instance,
+                sender,
+                name,
+                text,
+            } => {
                 let message = ServerMessage::Chat {
                     sender_id: sender,
                     sender_name: name,
@@ -68,6 +73,11 @@ impl ServerRuntime {
                     return;
                 };
                 for client in &mut self.connections.clients {
+                    if client.player_id().is_none_or(|player| {
+                        self.game.worlds.instance_for_player(player) != Some(instance)
+                    }) {
+                        continue;
+                    }
                     if !queue_encoded_frame(client, &frame, &mut self.metrics) {
                         self.metrics.dropped_messages =
                             self.metrics.dropped_messages.saturating_add(1);

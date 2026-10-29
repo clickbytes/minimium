@@ -56,9 +56,22 @@ impl GpuResources {
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            pass.draw(0..self.vertex_count, 0..1);
-            draw_calls += 1;
+            if self.active_sector_keys.is_empty() {
+                pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+                pass.draw(0..self.vertex_count, 0..1);
+                draw_calls += 1;
+            } else {
+                for key in &self.active_sector_keys {
+                    if let Some((buffer, vertex_count)) = self
+                        .world_vertex_catalog
+                        .get(&(self.active_world_instance, *key))
+                    {
+                        pass.set_vertex_buffer(0, buffer.slice(..));
+                        pass.draw(0..*vertex_count, 0..1);
+                        draw_calls += 1;
+                    }
+                }
+            }
             if self.remote_vertex_count > 0 {
                 pass.set_vertex_buffer(0, self.player_buffer.slice(..));
                 pass.draw(0..self.remote_vertex_count, 0..1);

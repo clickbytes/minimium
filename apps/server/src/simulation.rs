@@ -3,8 +3,9 @@ use minimium_core::{
     ids::PlayerId,
     world::{step_batch, CharacterInput, CollisionQueryStats, World},
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
+#[cfg(test)]
 pub(crate) fn step_players(
     world: &mut World,
     inputs: &HashMap<PlayerId, CharacterInput>,
@@ -13,6 +14,24 @@ pub(crate) fn step_players(
 ) -> CollisionQueryStats {
     world.step_players_with(
         inputs,
+        delta_seconds,
+        executor.lane_count(),
+        |batches, geometry, delta| {
+            executor.map(batches, move |batch| step_batch(batch, &geometry, delta))
+        },
+    )
+}
+
+pub(crate) fn step_ready_players(
+    world: &mut World,
+    inputs: &HashMap<PlayerId, CharacterInput>,
+    ready_players: &HashSet<PlayerId>,
+    delta_seconds: f32,
+    executor: &Executor,
+) -> CollisionQueryStats {
+    world.step_players_with_selected(
+        inputs,
+        Some(ready_players),
         delta_seconds,
         executor.lane_count(),
         |batches, geometry, delta| {

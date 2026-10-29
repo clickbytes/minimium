@@ -89,6 +89,7 @@ enum WorkerOperation {
     Local {
         data_dir: PathBuf,
         map_path: Option<PathBuf>,
+        world_definition_path: Option<PathBuf>,
         threads: ThreadLane,
     },
 }
@@ -141,6 +142,7 @@ impl Connector {
         &mut self,
         data_dir: PathBuf,
         map_path: Option<PathBuf>,
+        world_definition_path: Option<PathBuf>,
         threads: ThreadLane,
         timeout: Duration,
     ) -> Result<AttemptId, StartError> {
@@ -148,6 +150,7 @@ impl Connector {
             WorkerOperation::Local {
                 data_dir,
                 map_path,
+                world_definition_path,
                 threads,
             },
             timeout,
@@ -420,11 +423,13 @@ fn run_operation(operation: WorkerOperation, deadline: Instant) -> io::Result<Co
         WorkerOperation::Local {
             data_dir,
             map_path,
+            world_definition_path,
             threads,
         } => {
             let (stream, local_server) = bootstrap::connect_or_start_until(
                 &data_dir,
                 map_path.as_deref(),
+                world_definition_path.as_deref(),
                 threads,
                 deadline,
             )

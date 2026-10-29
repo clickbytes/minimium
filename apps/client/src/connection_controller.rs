@@ -6,8 +6,10 @@ use crate::{
     session::{ClientSession, QueueError, SessionEvent},
 };
 use minimium_core::identity::PlayerProfileId;
+use minimium_core::world::WorldInstanceId;
 use minimium_protocol::ClientMessage;
 use std::{
+    collections::HashMap,
     io,
     path::PathBuf,
     thread::{self, JoinHandle},
@@ -35,6 +37,7 @@ pub(crate) struct ConnectionController {
     cleanup: Option<JoinHandle<Result<(), String>>>,
     profile: PlayerProfileId,
     fingerprint: u64,
+    world_fingerprints: HashMap<WorldInstanceId, u64>,
 }
 
 impl ConnectionController {
@@ -47,7 +50,15 @@ impl ConnectionController {
             cleanup: None,
             profile,
             fingerprint,
+            world_fingerprints: HashMap::from([(
+                WorldInstanceId::new(1).expect("primary ID is nonzero"),
+                fingerprint,
+            )]),
         }
+    }
+
+    pub(crate) fn set_world_fingerprints(&mut self, fingerprints: HashMap<WorldInstanceId, u64>) {
+        self.world_fingerprints = fingerprints;
     }
 
     pub(crate) fn busy(&self) -> bool {
@@ -73,6 +84,12 @@ impl ConnectionController {
             .queue(message)
     }
 
+    pub(crate) fn cancel_transition(&mut self) -> bool {
+        self.session
+            .as_mut()
+            .is_some_and(ClientSession::cancel_pending_transition)
+    }
+
     pub(crate) fn start_remote(&mut self, address: String) -> Result<(), StartError> {
         self.active = Some(self.connector.start(address, ATTEMPT_TIMEOUT)?);
         Ok(())
@@ -82,13 +99,16 @@ impl ConnectionController {
         &mut self,
         data_dir: PathBuf,
         map_path: Option<PathBuf>,
+        world_definition_path: Option<PathBuf>,
         lanes: ThreadLane,
     ) -> Result<(), StartError> {
-        self.active =
-            Some(
-                self.connector
-                    .start_local(data_dir, map_path, lanes, ATTEMPT_TIMEOUT)?,
-            );
+        self.active = Some(self.connector.start_local(
+            data_dir,
+            map_path,
+            world_definition_path,
+            lanes,
+            ATTEMPT_TIMEOUT,
+        )?);
         Ok(())
     }
 
@@ -134,7 +154,8 @@ impl ConnectionController {
                     self.retain_local_server(server);
                 }
                 match ClientSession::new(stream, self.profile, self.fingerprint) {
-                    Ok(session) => {
+                    Ok(mut session) => {
+                        session.set_world_fingerprints(self.world_fingerprints.clone());
                         self.session = Some(session);
                         ConnectionEvent::SessionStarted
                     }

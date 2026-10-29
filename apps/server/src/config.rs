@@ -25,6 +25,7 @@ pub struct ServerConfig {
     pub lanes: LaneSelection,
     pub data_dir: PathBuf,
     pub map_path: Option<PathBuf>,
+    pub world_definition_path: Option<PathBuf>,
     pub bind_address: String,
     pub game_port: u16,
     pub max_players: usize,
@@ -41,6 +42,7 @@ impl ServerConfig {
             lanes: LaneSelection::Fixed(1),
             data_dir: PathBuf::from(minimium_platform::files::DEFAULT_SERVER_DATA_DIR),
             map_path: None,
+            world_definition_path: None,
             bind_address: String::from("127.0.0.1"),
             game_port: 0,
             max_players: MAX_PLAYERS,
@@ -88,6 +90,13 @@ impl ServerConfig {
                         args.get(index).ok_or("--map requires a path")?,
                     ));
                 }
+                "--world-definition" => {
+                    index += 1;
+                    config.world_definition_path = Some(PathBuf::from(
+                        args.get(index)
+                            .ok_or("--world-definition requires a path")?,
+                    ));
+                }
                 "--bind" => {
                     index += 1;
                     config.bind_address = args
@@ -116,6 +125,9 @@ impl ServerConfig {
                 other => return Err(format!("unknown option `{other}` (try --help)").into()),
             }
             index += 1;
+        }
+        if config.map_path.is_some() && config.world_definition_path.is_some() {
+            return Err("--map and --world-definition cannot be used together".into());
         }
         Ok(config)
     }

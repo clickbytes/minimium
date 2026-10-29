@@ -7,6 +7,10 @@ mod limits;
 mod models;
 mod reading;
 mod validation;
+mod world_context;
+
+#[cfg(test)]
+mod tests;
 
 pub use decoding::{decode_client, decode_server};
 pub use encoding::{encode_client, encode_server, encode_server_into};
@@ -16,5 +20,7 @@ pub use limits::{
     MAX_SERVER_FRAME_BYTES, MAX_VISIBLE_PLAYERS, PLAYER_PROFILE_ID_BYTES, PROTOCOL_VERSION,
 };
 pub use models::{
-    ClientMessage, ProtocolError, RemotePlayer, RemotePlayerIds, RemotePlayers, ServerMessage,
+    ClientMessage, ClientWorldInput, ProtocolError, RemotePlayer, RemotePlayerIds, RemotePlayers,
+    ServerMessage,
 };
+pub use world_context::WorldContext;

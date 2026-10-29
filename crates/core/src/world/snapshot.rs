@@ -1,6 +1,6 @@
 use super::collision_index::Cell;
 use super::geometry::cell_for;
-use super::rules::{CharacterState, Player};
+use super::rules::{CharacterGravity, CharacterState, Player};
 use super::VISIBILITY_RADIUS;
 use crate::ids::PlayerId;
 use std::collections::HashMap;
@@ -11,6 +11,7 @@ use std::sync::Arc;
 pub struct WorldSnapshot {
     pub(super) players: Arc<HashMap<PlayerId, Player>>,
     pub(super) cells: Arc<HashMap<Cell, Vec<PlayerId>>>,
+    pub(super) gravity: CharacterGravity,
 }
 
 #[derive(Clone, Copy)]
@@ -29,6 +30,7 @@ impl WorldSnapshot {
             position: player.position,
             velocity: player.velocity,
             grounded: player.grounded,
+            gravity: self.gravity,
         })
     }
 

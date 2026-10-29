@@ -1,4 +1,4 @@
-pub const PROTOCOL_VERSION: u8 = 8;
+pub const PROTOCOL_VERSION: u8 = 9;
 pub const MAX_PLAYER_NAME_BYTES: usize = 24;
 pub const HEADER_BYTES: usize = 4;
 pub const MAX_PAYLOAD_BYTES: usize = 4096;

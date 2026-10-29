@@ -9,6 +9,8 @@ minimium-assets = { path = "../../crates/assets" }
 minimium-platform = { path = "../../crates/platform" }
 minimium-core = { path = "../../crates/core" }
 minimium-protocol = { path = "../../crates/protocol" }
+minimium-procgen = { path = "../../crates/procgen" }
+minimium-sectors = { path = "../../crates/sectors" }
 minimium-telemetry = { path = "../../crates/telemetry" }
 
 [features]

@@ -1,3 +1,4 @@
+use crate::world_registry::WorldRegistry;
 use crate::{
     metrics::RuntimeMetrics,
     storage::{PersistenceWorker, PlayerStore},
@@ -7,6 +8,7 @@ use minimium_platform::commands::{server_help, ServerCommand};
 
 pub struct CommandContext<'a> {
     pub world: &'a World,
+    pub worlds: &'a WorldRegistry,
     pub player_store: &'a mut PlayerStore,
     pub persistence: &'a mut PersistenceWorker,
     pub map_fingerprint: u64,
@@ -23,6 +25,7 @@ pub struct CommandReply {
 pub fn execute(command: ServerCommand, context: CommandContext<'_>) -> CommandReply {
     let CommandContext {
         world,
+        worlds,
         player_store,
         persistence,
         map_fingerprint,
@@ -77,7 +80,7 @@ pub fn execute(command: ServerCommand, context: CommandContext<'_>) -> CommandRe
             stop: false,
         },
         ServerCommand::Save => {
-            match persistence.queue_world_save(player_store, world, map_fingerprint) {
+            match persistence.queue_world_save(player_store, worlds, map_fingerprint) {
                 Ok(()) => CommandReply {
                     success: true,
                     text: "world save queued; use status to check completion".to_owned(),

@@ -1,4 +1,5 @@
 use super::*;
+use crate::connection::queue_message;
 use crate::world_inputs::{WorldEvent, WorldInput};
 
 const INPUT_IDLE_TIMEOUT: Duration = Duration::from_millis(250);
@@ -30,22 +31,42 @@ impl ServerRuntime {
 
     fn apply_input(&mut self, input: WorldInput) -> Option<WorldEvent> {
         match input {
-            WorldInput::Join(id, name, position, health) => {
-                self.game
-                    .world
-                    .join_at_with_health(id, name, position, health);
+            WorldInput::Join {
+                id,
+                instance,
+                name,
+                position,
+                health,
+            } => {
+                if let Err(error) = self
+                    .game
+                    .worlds
+                    .join_at(instance, id, name, position, health)
+                {
+                    eprintln!("could not add player {id} to instance {instance}: {error:?}");
+                    return None;
+                }
                 self.game
                     .active_inputs
                     .insert(id, CharacterInput::default());
                 self.game.input_last_received.insert(id, Instant::now());
             }
             WorldInput::Leave(id) => {
-                if let Some(player) = self.game.world.player(id) {
-                    if let Err(error) = self.operations.player_store.update_from_player(player) {
-                        eprintln!("could not capture player {} before leave: {error}", id);
+                if let Some(instance_id) = self.game.worlds.instance_for_player(id) {
+                    if let Some(instance) = self.game.worlds.get(instance_id) {
+                        let gravity = instance.world.gravity();
+                        if let Some(player) = instance.world.player(id) {
+                            if let Err(error) = self.operations.player_store.update_from_player(
+                                player,
+                                instance_id,
+                                gravity,
+                            ) {
+                                eprintln!("could not capture player {} before leave: {error}", id);
+                            }
+                        }
                     }
                 }
-                self.game.world.leave(id);
+                self.game.worlds.leave(id);
                 self.game.active_inputs.remove(&id);
                 self.game.input_last_received.remove(&id);
                 if let Some(profile) = self.operations.player_store.profile_for_player(id) {
@@ -60,10 +81,12 @@ impl ServerRuntime {
             }
             WorldInput::Fire(id, direction) => {
                 self.metrics.shots_fired = self.metrics.shots_fired.saturating_add(1);
-                let outcome = self.game.world.fire_hitscan(id, direction)?;
+                let instance = self.game.worlds.instance_for_player(id)?;
+                let world = &mut self.game.worlds.get_mut(instance)?.world;
+                let outcome = world.fire_hitscan(id, direction)?;
                 let target_health = outcome
                     .target_id
-                    .and_then(|target| self.game.world.player_health(target));
+                    .and_then(|target| world.player_health(target));
                 if outcome.target_id.is_some() {
                     self.metrics.shots_hit = self.metrics.shots_hit.saturating_add(1);
                     if outcome.killed {
@@ -71,6 +94,7 @@ impl ServerRuntime {
                     }
                 }
                 return Some(WorldEvent::Shot {
+                    instance,
                     shooter: id,
                     outcome,
                     target_health,
@@ -80,16 +104,52 @@ impl ServerRuntime {
                 if !self.operations.player_store.is_active(id) {
                     return None;
                 }
+                let instance = self.game.worlds.instance_for_player(id)?;
                 let name = self.operations.player_store.name_for_player(id)?.to_owned();
                 return Some(WorldEvent::Chat {
+                    instance,
                     sender: id,
                     name,
                     text,
                 });
             }
             WorldInput::Rename(id, name) => {
-                self.game.world.rename_player(id, name.clone());
+                self.game
+                    .worlds
+                    .for_player_mut(id)?
+                    .world
+                    .rename_player(id, name.clone());
                 self.operations.player_store.rename(id, name);
+            }
+            WorldInput::UsePortal(id, source_context) => {
+                let offer = self.game.worlds.prepare_portal_transfer(
+                    id,
+                    source_context,
+                    self.operations.player_store.return_location_for(id),
+                )?;
+                let Some(index) = self.connections.client_indices_by_player.get(&id).copied()
+                else {
+                    self.game.worlds.cancel_transfer(id, offer.transition_id);
+                    return None;
+                };
+                if let Some(client) = self.connections.clients.get_mut(index) {
+                    if !queue_message(
+                        client,
+                        &mut self.metrics,
+                        minimium_protocol::ServerMessage::TransitionPrepare {
+                            transition_id: offer.transition_id,
+                            source_context: offer.source_context,
+                            target_context: offer.target_context,
+                            map_fingerprint: offer.map_fingerprint,
+                            destination: offer.destination,
+                            manifest: offer.manifest,
+                        },
+                    ) {
+                        self.game.worlds.cancel_transfer(id, offer.transition_id);
+                        self.metrics.dropped_messages =
+                            self.metrics.dropped_messages.saturating_add(1);
+                    }
+                }
             }
         }
         None

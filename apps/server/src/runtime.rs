@@ -12,16 +12,18 @@ use crate::{
     executor::Executor,
     lifecycle::{self, EndpointGuard},
     metrics::RuntimeMetrics,
+    sector_streaming::SectorPayload,
     startup::Startup,
     storage::{PersistenceWorker, PlayerStore, SAVE_VERSION},
     terminal,
     world_inputs::WorldInput,
+    world_registry::WorldRegistry,
     CLIENT_HANDSHAKE_TIMEOUT, CLIENT_IDLE_TIMEOUT, MAX_PENDING_HANDSHAKES, SNAPSHOT_INTERVAL, TICK,
 };
 use minimium_core::{
     identity::PlayerProfileId,
     ids::PlayerId,
-    world::{CharacterInput, World, WorldMap},
+    world::{CharacterInput, CollisionQueryStats, WorldMap},
 };
 use minimium_platform::{
     commands::ServerCommand, endpoint::ServerEndpoint, server_lock::ServerDataLock,
@@ -38,7 +40,10 @@ use std::{
 };
 
 struct GameState {
-    world: World,
+    worlds: WorldRegistry,
+    sectors: minimium_sectors::SectorManager<SectorPayload>,
+    active_sector_tickets: HashMap<PlayerId, Vec<minimium_sectors::SectorTicket>>,
+    transfer_sector_tickets: HashMap<PlayerId, Vec<minimium_sectors::SectorTicket>>,
     pending_world_inputs: Vec<(WorldInput, Option<Instant>)>,
     pending_departures: HashSet<PlayerProfileId>,
     active_inputs: HashMap<PlayerId, CharacterInput>,
@@ -94,6 +99,7 @@ impl ServerRuntime {
         let lanes = config.lanes.count();
         let Startup {
             map,
+            generated_worlds,
             player_store,
             persistence,
             next_player,
@@ -116,11 +122,24 @@ impl ServerRuntime {
             None
         };
         let executor = Executor::new(lanes);
-        let mut world = World::default();
-        world.load_map(&map);
+        let mut worlds = generated_worlds
+            .map(WorldRegistry::from_generated_worlds)
+            .unwrap_or_else(|| WorldRegistry::legacy_primary(map.clone()));
+        worlds
+            .restore_sector_states(player_store.sector_states())
+            .map_err(|error| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("saved sector state is incompatible with loaded worlds: {error:?}"),
+                )
+            })?;
         let max_client_connections = config.max_players + MAX_PENDING_HANDSHAKES;
         let game = GameState {
-            world,
+            worlds,
+            sectors: minimium_sectors::SectorManager::new(32_768, 32_768)
+                .expect("sector cache and queue capacities are valid"),
+            active_sector_tickets: HashMap::with_capacity(config.max_players),
+            transfer_sector_tickets: HashMap::with_capacity(config.max_players),
             pending_world_inputs: Vec::new(),
             pending_departures: HashSet::new(),
             active_inputs: HashMap::with_capacity(config.max_players),
@@ -198,7 +217,7 @@ impl ServerRuntime {
             clients: &mut self.connections.clients,
             player_store: &mut self.operations.player_store,
             persistence: &mut self.operations.persistence,
-            world: &self.game.world,
+            worlds: &self.game.worlds,
             map_fingerprint: self.map.fingerprint(),
             endpoint: &self.endpoint,
             data_dir: &self.data_dir,

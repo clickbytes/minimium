@@ -1,18 +1,68 @@
 use super::*;
 
+pub(super) struct RendererSetup {
+    pub(super) window: Arc<Window>,
+    pub(super) map: WorldMap,
+    pub(super) world_catalog:
+        std::collections::HashMap<minimium_core::world::WorldInstanceId, WorldMap>,
+    pub(super) world_manifests:
+        std::collections::HashMap<minimium_core::world::WorldInstanceId, WorldManifest>,
+    pub(super) profile_id: PlayerProfileId,
+    pub(super) data_dir: PathBuf,
+    pub(super) map_path: Option<PathBuf>,
+    pub(super) world_definition_path: Option<PathBuf>,
+    pub(super) threads: crate::options::ThreadLane,
+}
+
 impl Renderer {
-    pub(super) async fn new(
-        window: Arc<Window>,
-        map: WorldMap,
-        profile_id: PlayerProfileId,
-        data_dir: PathBuf,
-        map_path: Option<PathBuf>,
-        threads: crate::options::ThreadLane,
-    ) -> Result<Self, Box<dyn Error>> {
-        let vertices = map_geometry(&map);
+    pub(super) async fn new(setup: RendererSetup) -> Result<Self, Box<dyn Error>> {
+        let RendererSetup {
+            window,
+            map,
+            world_catalog,
+            world_manifests,
+            profile_id,
+            data_dir,
+            map_path,
+            world_definition_path,
+            threads,
+        } = setup;
         let map_fingerprint = map.fingerprint();
-        let collision_index = map.collision_index();
-        let gpu = GpuResources::new(window, &vertices).await?;
+        let current_instance = world_catalog
+            .iter()
+            .find_map(|(instance, candidate)| {
+                (candidate.fingerprint() == map_fingerprint).then_some(*instance)
+            })
+            .unwrap_or_else(|| {
+                minimium_core::world::WorldInstanceId::new(1)
+                    .expect("primary world identifier is nonzero")
+            });
+        let current_manifest = world_manifests
+            .get(&current_instance)
+            .copied()
+            .ok_or("initial world has no generation manifest")?;
+        let mut sector_cache = sector_scene::ClientSectorCache::new();
+        let initial_scene = sector_cache
+            .ensure_scene(
+                current_instance,
+                current_manifest,
+                map.spawn(),
+                &world_catalog,
+                &world_manifests,
+            )
+            .ok_or("initial world sectors could not be installed")?;
+        let vertices: Vec<_> = initial_scene
+            .sectors
+            .iter()
+            .flat_map(|(_, geometry)| sector_geometry(geometry))
+            .collect();
+        let mut gpu = GpuResources::new(window, &vertices).await?;
+        if !gpu.cache_sector_scene(current_instance, &initial_scene)
+            || !gpu.activate_sector_scene(current_instance, &initial_scene)
+        {
+            return Err("initial world GPU sectors could not be installed".into());
+        }
+        let collision_index = initial_scene.collision.clone();
         let mut frame_stats = crate::stats::FrameStats::default();
         frame_stats.set_gpu_bytes(
             gpu.fixed_gpu_bytes
@@ -20,6 +70,17 @@ impl Renderer {
         );
         let mut console = Console::new();
         console.push_line("F1 opens the command console. Type help for commands.");
+        let fingerprints = world_catalog
+            .iter()
+            .map(|(instance, map)| (*instance, map.fingerprint()))
+            .collect();
+        let gravity = if map_path.is_none() && world_definition_path.is_none() {
+            CharacterGravity::Radial { center: [0.0; 3] }
+        } else {
+            CharacterGravity::FixedY
+        };
+        let mut connection = ConnectionController::new(profile_id, map_fingerprint);
+        connection.set_world_fingerprints(fingerprints);
         Ok(Self {
             gpu,
             game: GameplayView {
@@ -28,7 +89,7 @@ impl Renderer {
                 last_remote_snapshot_time_ms: None,
                 last_remote_snapshot_received_at: None,
                 remote_geometry_dirty: false,
-                character: CharacterState::at_spawn(map.spawn()),
+                character: CharacterState::at_spawn_with_gravity(map.spawn(), gravity),
                 health: PLAYER_MAX_HEALTH,
                 collision_index,
                 collision_query: CollisionQuery::default(),
@@ -36,6 +97,7 @@ impl Renderer {
                 last_shot_sent_at: None,
                 hit_confirmation_until: None,
                 physics_accumulator: 0.0,
+                sectors_ready: true,
             },
             input: InputState {
                 yaw: -std::f32::consts::FRAC_PI_2,
@@ -63,9 +125,16 @@ impl Renderer {
             settings: ClientSettings {
                 data_dir,
                 map_path,
+                world_definition_path,
                 threads,
             },
-            connection: ConnectionController::new(profile_id, map_fingerprint),
+            connection,
+            world_catalog,
+            world_manifests,
+            sector_cache,
+            active_sector_keys: initial_scene.keys,
+            pending_sector_transitions: std::collections::HashMap::new(),
+            current_instance,
         })
     }
 

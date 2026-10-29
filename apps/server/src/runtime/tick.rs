@@ -41,7 +41,8 @@ impl ServerRuntime {
             let mut reply = commands::execute(
                 command,
                 commands::CommandContext {
-                    world: &self.game.world,
+                    world: &self.game.worlds.primary().world,
+                    worlds: &self.game.worlds,
                     player_store: &mut self.operations.player_store,
                     persistence: &mut self.operations.persistence,
                     map_fingerprint: self.map.fingerprint(),
@@ -101,15 +102,84 @@ impl ServerRuntime {
             .record(input_apply_started.elapsed());
         drop(input_phase);
     }
+
+    fn commit_ready_transfers(
+        &mut self,
+        sector_ready: &HashSet<minimium_core::ids::PlayerId>,
+    ) -> HashSet<minimium_core::ids::PlayerId> {
+        let committed = self.game.worlds.commit_ready_transfers(sector_ready);
+        let mut committed_players = HashSet::with_capacity(committed.len());
+        if !committed.is_empty() {
+            self.scheduler.next_snapshot = Instant::now();
+        }
+        for transfer in committed {
+            committed_players.insert(transfer.player);
+            self.operations
+                .player_store
+                .set_return_location(transfer.player, transfer.source_location);
+            self.game.active_inputs.insert(
+                transfer.player,
+                minimium_core::world::CharacterInput::default(),
+            );
+            self.game
+                .input_last_received
+                .insert(transfer.player, Instant::now());
+            let Some(index) = self
+                .connections
+                .client_indices_by_player
+                .get(&transfer.player)
+                .copied()
+            else {
+                continue;
+            };
+            let Some(client) = self.connections.clients.get_mut(index) else {
+                continue;
+            };
+            client.replicated_players = minimium_protocol::RemotePlayers::default();
+            client.replication_initialized = false;
+            let queued = crate::connection::queue_message(
+                client,
+                &mut self.metrics,
+                minimium_protocol::ServerMessage::TransitionCommitted {
+                    transition_id: transfer.transition_id,
+                    context: transfer.context,
+                    map_fingerprint: transfer.map_fingerprint,
+                    destination: transfer.destination,
+                    health: transfer.health,
+                    manifest: transfer.manifest,
+                },
+            );
+            if !queued {
+                self.metrics.dropped_messages = self.metrics.dropped_messages.saturating_add(1);
+                client.disconnect_reason = Some(crate::connection::CloseReason::Backpressure);
+                self.connections.disconnected.push(index);
+            }
+        }
+        committed_players
+    }
     fn simulate_tick(&mut self) {
         let simulation_phase = allocations::enter(Phase::Simulation);
         let simulation_started = Instant::now();
-        let collision_stats = simulation::step_players(
-            &mut self.game.world,
-            &self.game.active_inputs,
-            TICK.as_secs_f32(),
-            &self.executor,
+        let ready_transfers = crate::sector_streaming::update(
+            &mut self.game.worlds,
+            &mut self.game.sectors,
+            &mut self.game.active_sector_tickets,
+            &mut self.game.transfer_sector_tickets,
         );
+        let committed_players = self.commit_ready_transfers(&ready_transfers.transfers);
+        let mut ready_players = ready_transfers.players;
+        ready_players.extend(committed_players);
+        let (worlds, active_inputs) = (&mut self.game.worlds, &self.game.active_inputs);
+        let mut collision_stats = CollisionQueryStats::default();
+        for (_, instance) in worlds.iter_mut() {
+            collision_stats.merge(simulation::step_ready_players(
+                &mut instance.world,
+                active_inputs,
+                &ready_players,
+                TICK.as_secs_f32(),
+                &self.executor,
+            ));
+        }
         self.metrics.record_collision_queries(collision_stats);
         self.metrics.simulation.record(simulation_started.elapsed());
         drop(simulation_phase);
@@ -128,7 +198,7 @@ impl ServerRuntime {
                 .as_millis()
                 .min(u64::MAX as u128) as u64;
             replication::replicate_snapshots(
-                &self.game.world,
+                &self.game.worlds,
                 &self.executor,
                 &mut self.connections.clients,
                 &mut self.metrics,

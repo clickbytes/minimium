@@ -2,12 +2,16 @@ use crate::executor::Executor;
 use crate::{
     connection::{queue_message, Client},
     metrics::RuntimeMetrics,
+    world_registry::WorldRegistry,
 };
-use minimium_core::world::World;
+use minimium_core::{ids::PlayerId, world::WorldInstanceId};
 use minimium_protocol::{
     RemotePlayer, RemotePlayerIds, RemotePlayers, ServerMessage, MAX_VISIBLE_PLAYERS,
 };
-use std::time::{Duration, Instant};
+use std::{
+    collections::BTreeMap,
+    time::{Duration, Instant},
+};
 
 pub(crate) fn advance_deadline(
     next: &mut Instant,
@@ -26,24 +30,38 @@ pub(crate) fn advance_deadline(
 }
 
 pub(crate) fn replicate_snapshots(
-    world: &World,
+    worlds: &WorldRegistry,
     executor: &Executor,
     clients: &mut [Client],
     metrics: &mut RuntimeMetrics,
     server_time_ms: u64,
 ) {
-    let recipients: Vec<_> = clients
-        .iter()
-        .enumerate()
-        .filter_map(|(index, client)| {
-            (client.close_deadline().is_none())
-                .then(|| client.player_id().map(|id| (index, id)))
-                .flatten()
-        })
-        .collect();
-    if !recipients.is_empty() {
+    let mut recipients: BTreeMap<
+        WorldInstanceId,
+        Vec<(usize, PlayerId, minimium_protocol::WorldContext)>,
+    > = BTreeMap::new();
+    for (index, client) in clients.iter().enumerate() {
+        if client.close_deadline().is_some() {
+            continue;
+        }
+        if let Some(player) = client.player_id() {
+            if let (Some(instance), Some(context)) = (
+                worlds.instance_for_player(player),
+                worlds.context_for_player(player),
+            ) {
+                recipients
+                    .entry(instance)
+                    .or_default()
+                    .push((index, player, context));
+            }
+        }
+    }
+    for (instance, world_recipients) in recipients {
+        let Some(world) = worlds.get(instance).map(|owner| &owner.world) else {
+            continue;
+        };
         let snapshot = world.network_snapshot();
-        let snapshots = executor.map(recipients, move |(index, recipient)| {
+        let snapshots = executor.map(world_recipients, move |(index, recipient, context)| {
             let character_state = snapshot.character_state(recipient).unwrap_or_default();
             let mut players = RemotePlayers::default();
             snapshot.visit_nearby::<MAX_VISIBLE_PLAYERS>(
@@ -57,9 +75,9 @@ pub(crate) fn replicate_snapshots(
                     });
                 },
             );
-            (index, character_state, players)
+            (index, context, character_state, players)
         });
-        for (recipient, character_state, current_players) in snapshots {
+        for (recipient, context, character_state, current_players) in snapshots {
             if let Some(client) = clients.get_mut(recipient) {
                 let full_snapshot = !client.replication_initialized;
                 let (players, removed_players) = if full_snapshot {
@@ -69,6 +87,7 @@ pub(crate) fn replicate_snapshots(
                 };
                 let message = ServerMessage::Snapshot {
                     server_time_ms,
+                    context,
                     full_snapshot,
                     self_position: character_state.position,
                     self_velocity: character_state.velocity,

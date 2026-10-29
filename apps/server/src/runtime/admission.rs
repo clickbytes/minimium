@@ -4,7 +4,7 @@ use crate::{
     world_inputs::WorldInput,
     CHAT_COOLDOWN, GLOBAL_CHAT_COOLDOWN, MAX_PENDING_WORLD_INPUTS, SHOT_COOLDOWN,
 };
-use minimium_protocol::{ClientMessage, ServerErrorCode, ServerMessage};
+use minimium_protocol::{ClientMessage, ClientWorldInput, ServerErrorCode, ServerMessage};
 
 impl ServerRuntime {
     pub(super) fn admit_messages(&mut self) {
@@ -16,6 +16,91 @@ impl ServerRuntime {
                 continue;
             }
             let player_id = self.connections.clients[index].player_id();
+            let message = match message {
+                ClientMessage::WorldInput {
+                    context,
+                    input: ClientWorldInput::UsePortal,
+                } => {
+                    let Some(player) = player_id else {
+                        self.connections.clients[index].disconnect_reason =
+                            Some(CloseReason::InvalidSequence);
+                        self.connections.disconnected.push(index);
+                        continue;
+                    };
+                    if self
+                        .game
+                        .worlds
+                        .world_input_context_is_current(player, context)
+                    {
+                        self.game
+                            .pending_world_inputs
+                            .push((WorldInput::UsePortal(player, context), Some(decoded_at)));
+                    } else {
+                        self.metrics.rejected_inputs =
+                            self.metrics.rejected_inputs.saturating_add(1);
+                    }
+                    continue;
+                }
+                ClientMessage::TransitionReady {
+                    transition_id,
+                    target_context,
+                } => {
+                    let accepted = player_id.is_some_and(|player| {
+                        self.game
+                            .worlds
+                            .mark_transfer_ready(player, transition_id, target_context)
+                    });
+                    if !accepted {
+                        self.metrics.rejected_inputs =
+                            self.metrics.rejected_inputs.saturating_add(1);
+                    }
+                    continue;
+                }
+                ClientMessage::CancelTransition(transition_id) => {
+                    if let Some(player) = player_id {
+                        if self.game.worlds.cancel_transfer(player, transition_id) {
+                            if let Some(context) = self.game.worlds.context_for_player(player) {
+                                let _ = queue_message(
+                                    &mut self.connections.clients[index],
+                                    &mut self.metrics,
+                                    ServerMessage::TransitionCancelled {
+                                        transition_id,
+                                        context,
+                                    },
+                                );
+                            }
+                        }
+                    }
+                    continue;
+                }
+                ClientMessage::WorldInput { context, input } => {
+                    let Some(player) = player_id else {
+                        self.connections.clients[index].disconnect_reason =
+                            Some(CloseReason::InvalidSequence);
+                        self.connections.disconnected.push(index);
+                        continue;
+                    };
+                    if !self
+                        .game
+                        .worlds
+                        .world_input_context_is_current(player, context)
+                    {
+                        self.metrics.rejected_inputs =
+                            self.metrics.rejected_inputs.saturating_add(1);
+                        continue;
+                    }
+                    match input {
+                        ClientWorldInput::SetName(name) => ClientMessage::SetName(name),
+                        ClientWorldInput::Move { direction, jump } => {
+                            ClientMessage::Move { direction, jump }
+                        }
+                        ClientWorldInput::Fire { direction } => ClientMessage::Fire { direction },
+                        ClientWorldInput::Chat(text) => ClientMessage::Chat(text),
+                        ClientWorldInput::UsePortal => unreachable!("portal branch handled above"),
+                    }
+                }
+                other => other,
+            };
             match message {
                 ClientMessage::Identify(profile_id) if player_id.is_none() => {
                     if self.operations.player_store.active_count() >= self.max_players
@@ -47,6 +132,8 @@ impl ServerRuntime {
                         profile_id,
                         &mut self.operations.next_player,
                         self.map.spawn(),
+                        self.game.worlds.primary_id(),
+                        self.game.worlds.primary().world.gravity(),
                     ) {
                         Ok(player) => player,
                         Err(error) => {
@@ -66,13 +153,23 @@ impl ServerRuntime {
                     self.connections
                         .client_indices_by_player
                         .insert(player.id, index);
+                    let instance = player.location.instance();
+                    let context = match self.game.worlds.reserve_membership(instance, player.id) {
+                        Ok(context) => context,
+                        Err(error) => {
+                            eprintln!("could not reserve world membership: {error:?}");
+                            self.connections.disconnected.push(index);
+                            continue;
+                        }
+                    };
                     self.game.pending_world_inputs.push((
-                        WorldInput::Join(
-                            player.id,
-                            player.name.as_str().to_owned(),
-                            player.position,
-                            player.health,
-                        ),
+                        WorldInput::Join {
+                            id: player.id,
+                            instance,
+                            name: player.name.as_str().to_owned(),
+                            position: player.position,
+                            health: player.health,
+                        },
                         Some(decoded_at),
                     ));
                     if !queue_message(
@@ -80,8 +177,20 @@ impl ServerRuntime {
                         &mut self.metrics,
                         ServerMessage::Welcome {
                             id: player.id,
-                            map_fingerprint: self.map.fingerprint(),
+                            map_fingerprint: self
+                                .game
+                                .worlds
+                                .map_fingerprint_for_instance(instance)
+                                .expect("reserved membership references a loaded world"),
                             health: player.health,
+                            position: player.position,
+                            context,
+                            manifest: self
+                                .game
+                                .worlds
+                                .manifest_for_player(player.id)
+                                .expect("reserved membership has a manifest"),
+                            transition_id: None,
                         },
                     ) {
                         self.metrics.dropped_messages =

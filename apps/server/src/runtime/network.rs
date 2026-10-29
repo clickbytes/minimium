@@ -74,10 +74,18 @@ impl ServerRuntime {
                     self.connections.client_indices_by_player.remove(&player_id);
                     // Release the active claim immediately, but reject a rejoin
                     // until Leave has applied all preceding queued inputs.
-                    if let Some(player) = self.game.world.player(player_id) {
-                        if let Err(error) = self.operations.player_store.update_from_player(player)
-                        {
-                            eprintln!("could not capture disconnect state: {error}");
+                    if let Some(instance_id) = self.game.worlds.instance_for_player(player_id) {
+                        if let Some(instance) = self.game.worlds.get(instance_id) {
+                            let gravity = instance.world.gravity();
+                            if let Some(player) = instance.world.player(player_id) {
+                                if let Err(error) = self.operations.player_store.update_from_player(
+                                    player,
+                                    instance_id,
+                                    gravity,
+                                ) {
+                                    eprintln!("could not capture disconnect state: {error}");
+                                }
+                            }
                         }
                     }
                     self.game.pending_departures.insert(profile_id);

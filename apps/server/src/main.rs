@@ -9,12 +9,14 @@ mod metrics;
 mod network;
 mod receive;
 mod replication;
+mod sector_streaming;
 mod send;
 mod simulation;
 mod startup;
 mod storage;
 mod terminal;
 mod world_inputs;
+mod world_registry;
 use config::{DEFAULT_AUTOSAVE_SECONDS, MAX_PLAYERS};
 #[cfg(feature = "allocation-metrics")]
 use minimium_telemetry::allocations;
@@ -44,7 +46,7 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().skip(1).collect();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
-        println!("minimium-server run [--threads 1..64|auto] [--max-players N] [--bind IP] [--game-port PORT] [--data-dir PATH] [--map PATH] [--autosave-seconds N] [--headless]\nminimium-server --version\n--max-players defaults to {MAX_PLAYERS}; --game-port 0 selects an available port (default); --autosave-seconds 0 disables periodic saves (default: {DEFAULT_AUTOSAVE_SECONDS}); --headless disables stdin commands; administer with minimiumctl.");
+        println!("minimium-server run [--threads 1..64|auto] [--max-players N] [--bind IP] [--game-port PORT] [--data-dir PATH] [--map PATH | --world-definition PATH] [--autosave-seconds N] [--headless]\nminimium-server --version\n--max-players defaults to {MAX_PLAYERS}; --game-port 0 selects an available port (default); --autosave-seconds 0 disables periodic saves (default: {DEFAULT_AUTOSAVE_SECONDS}); --headless disables stdin commands; administer with minimiumctl.");
         return Ok(());
     }
     if args.iter().any(|arg| arg == "--version") {
@@ -55,6 +57,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let startup = startup::initialize(
         &config.data_dir,
         config.map_path.as_deref(),
+        config.world_definition_path.as_deref(),
         &config.bind_address,
         config.game_port,
         config.max_players,

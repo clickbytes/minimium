@@ -1,66 +1,190 @@
 use super::{
     invalid_world_snapshot,
-    player_store::{PlayerStore, SaveSnapshot, StoredName, StoredPlayer},
+    player_store::{PlayerStore, SaveSnapshot, SavedWorldManifest, StoredName, StoredPlayer},
 };
-use minimium_core::ids::PlayerId;
 use minimium_core::{
     identity::PlayerProfileId,
-    world::{WorldMap, PLAYER_MAX_HEALTH},
+    ids::PlayerId,
+    world::{
+        GenerationRevision, GenerationSpec, GeneratorDigest, Position3Mm, SectorKey,
+        WorldContentRevision, WorldDefinitionId, WorldInstanceId, WorldLocation, WorldManifest,
+        WorldMap, WorldOrientationQ30, WorldSeed, WorldTopology, MAX_PERSISTED_WORLD_OBJECT_STATES,
+        MAX_PERSISTED_WORLD_OBJECT_STATE_BYTES, MAX_PERSISTED_WORLD_SECTORS, PLAYER_MAX_HEALTH,
+    },
 };
-use minimium_platform::files::atomic_replace_file;
+mod locations;
+mod sectors;
+mod worlds;
+
+#[cfg(test)]
+mod tests;
+use locations::{legacy_location, parse_location, position_from_location, write_location};
+use sectors::{parse_saved_sector, write_saved_sector};
+use worlds::{parse_saved_world, validate_saved_world, write_manifest, write_saved_world};
+
 use std::{
-    fs::{self, File},
-    io::{self, Read, Write},
+    collections::HashSet,
+    io::{self, Write},
     path::Path,
     sync::Arc,
 };
 
-pub(crate) const SAVE_VERSION: u8 = 3;
+pub(crate) const SAVE_VERSION: u8 = 6;
 pub(super) const MAX_STORED_PLAYERS: usize = 100_000;
 const MAX_WORLD_SNAPSHOT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_SAVED_COORDINATE: f32 = 1_000_000.0;
+const MAX_SAVED_POSITION_MM: u64 = 1_000_000_000;
 pub(super) const PLAYER_STORE_SHARDS: usize = 256;
 
-pub(super) fn load(data_dir: &Path, map: &WorldMap) -> io::Result<PlayerStore> {
+pub(super) fn load(
+    data_dir: &Path,
+    worlds: &[(WorldInstanceId, WorldMap, WorldManifest)],
+) -> io::Result<PlayerStore> {
     let path = data_dir.join("world.snapshot");
-    let mut source = String::new();
-    match File::open(path) {
-        Ok(file) => {
-            file.take((MAX_WORLD_SNAPSHOT_BYTES + 1) as u64)
-                .read_to_string(&mut source)?;
-        }
+    let bytes = match minimium_platform::files::read_bounded_file(&path, MAX_WORLD_SNAPSHOT_BYTES) {
+        Ok(bytes) => bytes,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(PlayerStore::default()),
         Err(error) => return Err(error),
-    }
-    if source.len() > MAX_WORLD_SNAPSHOT_BYTES {
-        return Err(invalid_world_snapshot("snapshot exceeds size limit"));
-    }
+    };
+    let source = String::from_utf8(bytes)
+        .map_err(|_| invalid_world_snapshot("snapshot is not valid UTF-8"))?;
     let mut lines = source.lines();
     let header = lines
         .next()
         .ok_or_else(|| invalid_world_snapshot("snapshot is empty"))?;
     let mut header_fields = header.split('\t');
-    let expected_fingerprint = format!("{:016x}", map.fingerprint());
     let signature = header_fields.next();
     let version = header_fields.next();
-    let fingerprint = header_fields.next();
-    if signature != Some("MINIMIUM_WORLD") || header_fields.next().is_some() {
+    let fingerprint = header_fields
+        .next()
+        .ok_or_else(|| invalid_world_snapshot("missing snapshot map fingerprint"))?;
+    let fingerprint = u64::from_str_radix(fingerprint, 16)
+        .map_err(|_| invalid_world_snapshot("invalid snapshot map fingerprint"))?;
+    if signature != Some("MINIMIUM_WORLD") {
         return Err(invalid_world_snapshot("invalid snapshot header"));
     }
     if version == Some("1") {
         return Err(invalid_world_snapshot("snapshot version 1 has no client profile IDs; back up or remove the old snapshot before starting"));
     }
-    if version != Some("2") && version != Some("3") {
+    if !matches!(version, Some("2" | "3" | "4" | "5" | "6")) {
         return Err(invalid_world_snapshot("unsupported snapshot version"));
     }
-    if fingerprint != Some(expected_fingerprint.as_str()) {
-        return Err(invalid_world_snapshot(
-            "snapshot map fingerprint does not match",
-        ));
+    let legacy_world = worlds
+        .iter()
+        .find(|(_, map, _)| map.fingerprint() == fingerprint)
+        .ok_or_else(|| {
+            invalid_world_snapshot(
+                "snapshot map fingerprint does not match any loaded legacy world",
+            )
+        })?;
+    match version {
+        Some("4" | "5" | "6") => {
+            let saved_manifest = parse_manifest(&mut header_fields)?;
+            let Some((_, primary_map, primary_manifest)) = worlds.first() else {
+                return Err(invalid_world_snapshot("no primary world is loaded"));
+            };
+            if header_fields.next().is_some()
+                || primary_map.fingerprint() != fingerprint
+                || *primary_manifest != saved_manifest
+            {
+                return Err(invalid_world_snapshot(
+                    "snapshot primary world manifest or fingerprint does not match",
+                ));
+            }
+        }
+        Some("2" | "3") if header_fields.next().is_some() => {
+            return Err(invalid_world_snapshot("invalid legacy snapshot header"));
+        }
+        Some("2" | "3") => {}
+        _ => return Err(invalid_world_snapshot("invalid snapshot header")),
     }
 
     let mut store = PlayerStore::default();
-    for line in lines {
+    let mut saved_world_instances = HashSet::new();
+    if matches!(version, Some("5" | "6")) {
+        let (primary_instance, _, _) = worlds
+            .first()
+            .ok_or_else(|| invalid_world_snapshot("no primary world is loaded"))?;
+        saved_world_instances.insert(*primary_instance);
+    }
+    let mut player_records_started = false;
+    let mut sector_records_started = false;
+    let mut saved_sector_addresses = std::collections::HashSet::new();
+    let mut saved_object_count = 0_usize;
+    let mut saved_object_bytes = 0_usize;
+    let mut lines = lines.peekable();
+    while let Some(line) = lines.next() {
+        if matches!(version, Some("5" | "6")) && line.starts_with("WORLD\t") {
+            if player_records_started || sector_records_started {
+                return Err(invalid_world_snapshot(
+                    "world manifest appears after state records",
+                ));
+            }
+            let saved_world = parse_saved_world(line)?;
+            validate_saved_world(&saved_world, worlds)?;
+            if !saved_world_instances.insert(saved_world.instance) {
+                return Err(invalid_world_snapshot("duplicate saved world instance"));
+            }
+            continue;
+        }
+        if version == Some("6") && line.starts_with("SECTOR\t") {
+            if player_records_started {
+                return Err(invalid_world_snapshot(
+                    "sector state appears after player records",
+                ));
+            }
+            sector_records_started = true;
+            let (instance, state) = parse_saved_sector(line, &mut lines)?;
+            if !saved_world_instances.contains(&instance) {
+                return Err(invalid_world_snapshot(
+                    "sector state references an unrecorded world instance",
+                ));
+            }
+            let Some((_, _, manifest)) = worlds
+                .iter()
+                .find(|(candidate, _, _)| *candidate == instance)
+            else {
+                return Err(invalid_world_snapshot(
+                    "sector state references an unloaded world instance",
+                ));
+            };
+            let key_matches = matches!(
+                (manifest.topology(), state.key()),
+                (WorldTopology::Planet, SectorKey::Planet(_))
+                    | (WorldTopology::Dungeon, SectorKey::Dungeon(_))
+            );
+            if !key_matches {
+                return Err(invalid_world_snapshot(
+                    "sector address does not match its world topology",
+                ));
+            }
+            if store.sector_states.len() >= MAX_PERSISTED_WORLD_SECTORS {
+                return Err(invalid_world_snapshot(
+                    "snapshot has too many sector states",
+                ));
+            }
+            if !saved_sector_addresses.insert((instance, state.key())) {
+                return Err(invalid_world_snapshot("duplicate saved sector state"));
+            }
+            saved_object_count = saved_object_count.saturating_add(state.objects().len());
+            saved_object_bytes = saved_object_bytes.saturating_add(
+                state
+                    .objects()
+                    .iter()
+                    .map(|object| object.data().len())
+                    .sum::<usize>(),
+            );
+            if saved_object_count > MAX_PERSISTED_WORLD_OBJECT_STATES
+                || saved_object_bytes > MAX_PERSISTED_WORLD_OBJECT_STATE_BYTES
+            {
+                return Err(invalid_world_snapshot(
+                    "snapshot has too much persisted sector object state",
+                ));
+            }
+            store.sector_states.push((instance, state));
+            continue;
+        }
+        player_records_started = true;
         if store.profile_by_player.len() >= MAX_STORED_PLAYERS {
             return Err(invalid_world_snapshot("snapshot has too many players"));
         }
@@ -77,21 +201,67 @@ pub(super) fn load(data_dir: &Path, map: &WorldMap) -> io::Result<PlayerStore> {
             .ok_or_else(|| invalid_world_snapshot("missing player name"))?;
         let name = StoredName::new(name)
             .ok_or_else(|| invalid_world_snapshot("invalid saved player name"))?;
-        let position = [
-            parse_saved_coordinate(fields.next())?,
-            parse_saved_coordinate(fields.next())?,
-            parse_saved_coordinate(fields.next())?,
-        ];
-        let health = if version == Some("3") {
-            parse_saved_health(fields.next())?
+        let (location, return_location, health) = if matches!(version, Some("4" | "5" | "6")) {
+            let location = parse_location(&mut fields)?;
+            let health = parse_saved_health(fields.next())?;
+            let return_location = parse_location(&mut fields)?;
+            (location, return_location, health)
         } else {
-            PLAYER_MAX_HEALTH
+            let position = [
+                parse_saved_coordinate(fields.next())?,
+                parse_saved_coordinate(fields.next())?,
+                parse_saved_coordinate(fields.next())?,
+            ];
+            let health = if version == Some("3") {
+                parse_saved_health(fields.next())?
+            } else {
+                PLAYER_MAX_HEALTH
+            };
+            let location = legacy_location(legacy_world.0, position);
+            (location, location, health)
         };
-        if fields.next().is_some() || !map.can_place_player(position) {
+        if version == Some("4") {
+            let primary_instance = worlds
+                .first()
+                .map(|(instance, _, _)| *instance)
+                .ok_or_else(|| invalid_world_snapshot("no primary world is loaded"))?;
+            if location.instance() != primary_instance
+                || return_location.instance() != primary_instance
+            {
+                return Err(invalid_world_snapshot(
+                    "snapshot version 4 does not pin target world manifests",
+                ));
+            }
+        }
+        if matches!(version, Some("5" | "6"))
+            && (!saved_world_instances.contains(&location.instance())
+                || !saved_world_instances.contains(&return_location.instance()))
+        {
+            return Err(invalid_world_snapshot(
+                "player location references an unrecorded world instance",
+            ));
+        }
+        if fields.next().is_some() {
+            return Err(invalid_world_snapshot("player record has extra fields"));
+        }
+        let position = position_from_location(location);
+        let current_map = map_for_world(worlds, location.instance())?;
+        let current_gravity = gravity_for_world(worlds, location.instance())?;
+        if !current_map.can_place_player_with_gravity(position, current_gravity) {
             return Err(invalid_world_snapshot(
                 "saved player position overlaps map geometry",
             ));
         }
+        let return_map = map_for_world(worlds, return_location.instance())?;
+        let return_gravity = gravity_for_world(worlds, return_location.instance())?;
+        if !return_map
+            .can_place_player_with_gravity(position_from_location(return_location), return_gravity)
+        {
+            return Err(invalid_world_snapshot(
+                "saved return point overlaps map geometry",
+            ));
+        }
+
         let shard = usize::from(profile_id.as_bytes()[0]);
         let duplicate_profile = Arc::make_mut(&mut store.players[shard])
             .insert(
@@ -101,6 +271,8 @@ pub(super) fn load(data_dir: &Path, map: &WorldMap) -> io::Result<PlayerStore> {
                     name,
                     position,
                     health,
+                    location,
+                    return_location,
                 },
             )
             .is_some();
@@ -125,34 +297,143 @@ pub(super) fn write(snapshot: SaveSnapshot, data_dir: &Path) -> io::Result<()> {
     players.sort_unstable_by_key(|(id, _, _)| *id);
     let path = data_dir.join("world.snapshot");
     let temporary_path = data_dir.join("world.snapshot.tmp");
-    let result = (|| {
-        let mut file = File::create(&temporary_path)?;
-        writeln!(
-            file,
+    let mut bytes = Vec::new();
+    {
+        write!(
+            bytes,
             "MINIMIUM_WORLD\t{SAVE_VERSION}\t{:016x}",
             snapshot.map_fingerprint
         )?;
+        write_manifest(&mut bytes, snapshot.manifest)?;
+        writeln!(bytes)?;
+        for world in snapshot
+            .world_manifests
+            .iter()
+            .filter(|world| world.instance != snapshot.primary_instance)
+        {
+            write_saved_world(&mut bytes, world)?;
+            writeln!(bytes)?;
+        }
+        for (instance, state) in &snapshot.sector_states {
+            write_saved_sector(&mut bytes, *instance, state)?;
+        }
         for (_, profile_id, player) in players {
-            writeln!(
-                file,
-                "{}\t{}\t{}\t{:.6}\t{:.6}\t{:.6}\t{}",
+            write!(
+                bytes,
+                "{}\t{}\t{}",
                 player.id,
                 profile_id.to_hex(),
-                player.name.as_str(),
-                player.position[0],
-                player.position[1],
-                player.position[2],
-                player.health
+                player.name.as_str()
             )?;
+            write_location(&mut bytes, player.location)?;
+            write!(bytes, "\t{}", player.health)?;
+            write_location(&mut bytes, player.return_location)?;
+            writeln!(bytes)?;
         }
-        file.sync_all()?;
-        atomic_replace_file(&temporary_path, &path)?;
-        #[cfg(unix)]
-        File::open(data_dir)?.sync_all()?;
-        Ok(())
-    })();
-    if result.is_err() {
-        let _ = fs::remove_file(temporary_path);
+    }
+    if bytes.len() > MAX_WORLD_SNAPSHOT_BYTES {
+        return Err(invalid_world_snapshot("snapshot exceeds size limit"));
+    }
+    minimium_platform::files::atomic_write_file(&temporary_path, &path, &bytes)
+}
+
+fn map_for_world(
+    worlds: &[(WorldInstanceId, WorldMap, WorldManifest)],
+    instance: WorldInstanceId,
+) -> io::Result<&WorldMap> {
+    worlds
+        .iter()
+        .find(|(candidate, _, _)| *candidate == instance)
+        .map(|(_, map, _)| map)
+        .ok_or_else(|| invalid_world_snapshot("snapshot references an unloaded world instance"))
+}
+
+fn gravity_for_world(
+    worlds: &[(WorldInstanceId, WorldMap, WorldManifest)],
+    instance: WorldInstanceId,
+) -> io::Result<minimium_core::world::CharacterGravity> {
+    let manifest = worlds
+        .iter()
+        .find(|(candidate, _, _)| *candidate == instance)
+        .map(|(_, _, manifest)| manifest)
+        .ok_or_else(|| invalid_world_snapshot("snapshot references an unloaded world instance"))?;
+    Ok(match manifest.topology() {
+        WorldTopology::Planet => {
+            minimium_core::world::CharacterGravity::Radial { center: [0.0; 3] }
+        }
+        WorldTopology::Dungeon => minimium_core::world::CharacterGravity::FixedY,
+    })
+}
+
+fn parse_manifest(fields: &mut std::str::Split<'_, char>) -> io::Result<WorldManifest> {
+    let definition = fields
+        .next()
+        .ok_or_else(|| invalid_world_snapshot("missing saved world definition"))?
+        .parse::<u128>()
+        .ok()
+        .and_then(WorldDefinitionId::new)
+        .ok_or_else(|| invalid_world_snapshot("invalid saved world definition"))?;
+    let topology = match fields.next() {
+        Some("0") => WorldTopology::Planet,
+        Some("1") => WorldTopology::Dungeon,
+        _ => return Err(invalid_world_snapshot("invalid saved world topology")),
+    };
+    let seed = fields
+        .next()
+        .ok_or_else(|| invalid_world_snapshot("missing saved world seed"))?
+        .parse::<u128>()
+        .map_err(|_| invalid_world_snapshot("invalid saved world seed"))?;
+    let revision = fields
+        .next()
+        .ok_or_else(|| invalid_world_snapshot("missing saved generation revision"))?
+        .parse::<u32>()
+        .ok()
+        .and_then(GenerationRevision::new)
+        .ok_or_else(|| invalid_world_snapshot("invalid saved generation revision"))?;
+    let quantum = fields
+        .next()
+        .ok_or_else(|| invalid_world_snapshot("missing saved position quantum"))?
+        .parse::<u32>()
+        .map_err(|_| invalid_world_snapshot("invalid saved position quantum"))?;
+    let generation = GenerationSpec::new(WorldSeed::new(seed), revision, quantum)
+        .ok_or_else(|| invalid_world_snapshot("invalid saved generation settings"))?;
+    let content_revision = fields
+        .next()
+        .ok_or_else(|| invalid_world_snapshot("missing saved content revision"))?
+        .parse::<u64>()
+        .ok()
+        .and_then(WorldContentRevision::new)
+        .ok_or_else(|| invalid_world_snapshot("invalid saved content revision"))?;
+    let digest = fields
+        .next()
+        .ok_or_else(|| invalid_world_snapshot("missing saved generator digest"))?;
+    if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(invalid_world_snapshot("invalid saved generator digest"));
+    }
+    let mut digest_bytes = [0_u8; 32];
+    for (byte, pair) in digest_bytes
+        .iter_mut()
+        .zip(digest.as_bytes().as_chunks::<2>().0.iter())
+    {
+        let pair = std::str::from_utf8(pair)
+            .map_err(|_| invalid_world_snapshot("invalid saved generator digest"))?;
+        *byte = u8::from_str_radix(pair, 16)
+            .map_err(|_| invalid_world_snapshot("invalid saved generator digest"))?;
+    }
+    Ok(WorldManifest::new(
+        definition,
+        topology,
+        generation,
+        content_revision,
+        GeneratorDigest::new(digest_bytes),
+    ))
+}
+
+fn hex_digest(bytes: &[u8; 32]) -> String {
+    let mut result = String::with_capacity(64);
+    for byte in bytes {
+        use std::fmt::Write as _;
+        let _ = write!(result, "{byte:02x}");
     }
     result
 }

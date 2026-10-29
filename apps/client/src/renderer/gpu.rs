@@ -1,10 +1,100 @@
-use super::{GpuResources, Vertex, UI_VERTEX_CAPACITY};
+use super::{
+    sector_geometry, sector_scene::ClientSectorScene, GpuResources, Vertex, UI_VERTEX_CAPACITY,
+};
 use crate::console::{font_atlas_pixels, UiVertex};
 use std::{borrow::Cow, error::Error, sync::Arc};
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
 
 impl GpuResources {
+    pub(super) fn cache_sector_scene(
+        &mut self,
+        instance: minimium_core::world::WorldInstanceId,
+        scene: &ClientSectorScene,
+    ) -> bool {
+        let version = (scene.generation, scene.content_revision);
+        if self
+            .world_sector_versions
+            .get(&instance)
+            .is_some_and(|cached| *cached != version)
+        {
+            self.release_world_sectors(instance);
+        }
+        self.world_sector_versions.insert(instance, version);
+        let required: std::collections::HashSet<_> = scene.keys.iter().copied().collect();
+        for (key, geometry) in &scene.sectors {
+            if self.world_vertex_catalog.contains_key(&(instance, *key)) {
+                continue;
+            }
+            let vertices = sector_geometry(geometry);
+            let empty_vertices = [0.0_f32; 6];
+            let contents = if vertices.is_empty() {
+                bytemuck::cast_slice(&empty_vertices)
+            } else {
+                bytemuck::cast_slice(&vertices)
+            };
+            let buffer = self
+                .device
+                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some("world-sector-geometry"),
+                    contents,
+                    usage: wgpu::BufferUsages::VERTEX,
+                });
+            self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_add(buffer.size());
+            self.world_vertex_catalog
+                .insert((instance, *key), (buffer, vertices.len() as u32));
+        }
+        self.world_vertex_catalog
+            .retain(|(owner, key), (buffer, _)| {
+                if *owner != instance || required.contains(key) {
+                    true
+                } else {
+                    self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_sub(buffer.size());
+                    false
+                }
+            });
+        if scene
+            .keys
+            .iter()
+            .any(|key| !self.world_vertex_catalog.contains_key(&(instance, *key)))
+        {
+            return false;
+        }
+        true
+    }
+
+    pub(super) fn activate_sector_scene(
+        &mut self,
+        instance: minimium_core::world::WorldInstanceId,
+        scene: &ClientSectorScene,
+    ) -> bool {
+        if scene
+            .keys
+            .iter()
+            .any(|key| !self.world_vertex_catalog.contains_key(&(instance, *key)))
+        {
+            return false;
+        }
+        self.active_sector_keys.clone_from(&scene.keys);
+        self.active_world_instance = instance;
+        true
+    }
+
+    pub(super) fn release_world_sectors(
+        &mut self,
+        instance: minimium_core::world::WorldInstanceId,
+    ) {
+        self.world_vertex_catalog.retain(|(owner, _), (buffer, _)| {
+            if *owner != instance {
+                true
+            } else {
+                self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_sub(buffer.size());
+                false
+            }
+        });
+        self.world_sector_versions.remove(&instance);
+    }
+
     pub(super) fn update_remote_vertices(&mut self, vertices: &[Vertex]) {
         self.remote_vertex_count = vertices.len() as u32;
         if self.remote_vertex_count > 0 {
@@ -152,6 +242,11 @@ impl GpuResources {
             depth_view,
             size,
             fixed_gpu_bytes,
+            world_vertex_catalog: std::collections::HashMap::new(),
+            world_sector_versions: std::collections::HashMap::new(),
+            active_sector_keys: Vec::new(),
+            active_world_instance: minimium_core::world::WorldInstanceId::new(1)
+                .expect("primary world ID is nonzero"),
         })
     }
 

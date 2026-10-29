@@ -1,9 +1,15 @@
+use super::world_context::WorldContext;
 use super::{
     limits::{MAX_CHAT_BYTES, PLAYER_PROFILE_ID_BYTES},
     models::ProtocolError,
     validation::{valid_chat, valid_direction_component, valid_name},
 };
 use minimium_core::identity::PlayerProfileId;
+use minimium_core::world::{
+    GenerationRevision, GenerationSpec, GeneratorDigest, MembershipEpoch, TransitionId,
+    WorldContentRevision, WorldDefinitionId, WorldInstanceId, WorldManifest, WorldSeed,
+    WorldTopology,
+};
 use std::sync::Arc;
 
 pub(crate) struct Reader<'a> {
@@ -45,6 +51,61 @@ impl<'a> Reader<'a> {
             .try_into()
             .map_err(|_| ProtocolError::InvalidPayload)?;
         Ok(u64::from_le_bytes(bytes))
+    }
+
+    pub(crate) fn u128(&mut self) -> Result<u128, ProtocolError> {
+        let bytes: [u8; 16] = self
+            .take(16)?
+            .try_into()
+            .map_err(|_| ProtocolError::InvalidPayload)?;
+        Ok(u128::from_le_bytes(bytes))
+    }
+
+    pub(crate) fn u32(&mut self) -> Result<u32, ProtocolError> {
+        let bytes: [u8; 4] = self
+            .take(4)?
+            .try_into()
+            .map_err(|_| ProtocolError::InvalidPayload)?;
+        Ok(u32::from_le_bytes(bytes))
+    }
+
+    pub(crate) fn fixed<const N: usize>(&mut self) -> Result<[u8; N], ProtocolError> {
+        self.take(N)?
+            .try_into()
+            .map_err(|_| ProtocolError::InvalidPayload)
+    }
+
+    pub(crate) fn world_context(&mut self) -> Result<WorldContext, ProtocolError> {
+        let instance = WorldInstanceId::new(self.u128()?).ok_or(ProtocolError::InvalidPayload)?;
+        let content =
+            WorldContentRevision::new(self.u64()?).ok_or(ProtocolError::InvalidPayload)?;
+        let epoch = MembershipEpoch::new(self.u64()?).ok_or(ProtocolError::InvalidPayload)?;
+        Ok(WorldContext::new(instance, content, epoch))
+    }
+
+    pub(crate) fn world_manifest(&mut self) -> Result<WorldManifest, ProtocolError> {
+        let definition =
+            WorldDefinitionId::new(self.u128()?).ok_or(ProtocolError::InvalidPayload)?;
+        let topology = match self.byte()? {
+            0 => WorldTopology::Planet,
+            1 => WorldTopology::Dungeon,
+            _ => return Err(ProtocolError::InvalidPayload),
+        };
+        let seed = WorldSeed::new(self.u128()?);
+        let revision = GenerationRevision::new(self.u32()?).ok_or(ProtocolError::InvalidPayload)?;
+        let quantum = self.u32()?;
+        let generation =
+            GenerationSpec::new(seed, revision, quantum).ok_or(ProtocolError::InvalidPayload)?;
+        let content =
+            WorldContentRevision::new(self.u64()?).ok_or(ProtocolError::InvalidPayload)?;
+        let digest = GeneratorDigest::new(self.fixed::<32>()?);
+        Ok(WorldManifest::new(
+            definition, topology, generation, content, digest,
+        ))
+    }
+
+    pub(crate) fn transition_id(&mut self) -> Result<TransitionId, ProtocolError> {
+        TransitionId::new(self.u128()?).ok_or(ProtocolError::InvalidPayload)
     }
 
     pub(crate) fn u16(&mut self) -> Result<u16, ProtocolError> {

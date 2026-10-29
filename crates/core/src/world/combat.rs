@@ -26,7 +26,7 @@ impl World {
             players,
             cells,
             player_cells,
-            collision_index,
+            combat_index,
             combat_player_query,
             combat_map_query,
             spawn,
@@ -40,7 +40,7 @@ impl World {
             attacker.position[2],
         ];
         combat_player_query.fill(cells, origin, direction, HITSCAN_RANGE);
-        combat_map_query.fill(collision_index, origin, direction, HITSCAN_RANGE);
+        combat_map_query.fill(combat_index, origin, direction, HITSCAN_RANGE);
 
         let mut nearest_player: Option<(PlayerId, f32)> = None;
         for candidate_id in &combat_player_query.candidates {
@@ -74,7 +74,7 @@ impl World {
         }
 
         let nearest_blocker =
-            combat_map_query.nearest_blocker(collision_index, origin, direction, HITSCAN_RANGE);
+            combat_map_query.nearest_blocker(combat_index, origin, direction, HITSCAN_RANGE);
         if nearest_player.is_none_or(|(_, player_distance)| {
             nearest_blocker.is_some_and(|blocker_distance| blocker_distance <= player_distance)
         }) {

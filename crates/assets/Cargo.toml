@@ -6,3 +6,4 @@ license.workspace = true
 
 [dependencies]
 minimium-core = { path = "../core" }
+minimium-procgen = { path = "../procgen" }

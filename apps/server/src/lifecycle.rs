@@ -2,8 +2,8 @@ use crate::{
     admin::AdminServer,
     connection::Client,
     storage::{compact_error, PersistenceWorker, PlayerStore},
+    world_registry::WorldRegistry,
 };
-use minimium_core::world::World;
 use minimium_platform::{
     admin_client::{SHUTDOWN_FILE, SHUTDOWN_OWNER_FILE},
     endpoint::ServerEndpoint,
@@ -22,7 +22,7 @@ pub(crate) struct ShutdownContext<'a> {
     pub clients: &'a mut [Client],
     pub player_store: &'a mut PlayerStore,
     pub persistence: &'a mut PersistenceWorker,
-    pub world: &'a World,
+    pub worlds: &'a WorldRegistry,
     pub map_fingerprint: u64,
     pub endpoint: &'a ServerEndpoint,
     pub data_dir: &'a Path,
@@ -51,7 +51,7 @@ pub(crate) fn shutdown(mut context: ShutdownContext<'_>) -> io::Result<()> {
     }
     let save_result = match context
         .player_store
-        .save_snapshot(context.world, context.map_fingerprint)
+        .save_snapshot(context.worlds, context.map_fingerprint)
     {
         Ok(snapshot) => context.persistence.shutdown(Some(snapshot)),
         Err(error) => {
