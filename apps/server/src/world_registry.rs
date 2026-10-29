@@ -1,11 +1,11 @@
+use crate::world_location::world_location;
 use minimium_core::world::WorldMap;
 use minimium_core::{
     ids::PlayerId,
     world::{
-        GenerationRevision, GenerationSpec, GeneratorDigest, MembershipEpoch, Position3Mm,
-        TransitionId, World, WorldContentRevision, WorldDefinitionId, WorldInstanceId,
-        WorldLocation, WorldManifest, WorldOrientationQ30, WorldSectorState, WorldSeed,
-        WorldTopology,
+        GenerationRevision, GenerationSpec, GeneratorDigest, MembershipEpoch, TransitionId, World,
+        WorldContentRevision, WorldDefinitionId, WorldInstanceId, WorldLocation, WorldManifest,
+        WorldSectorState, WorldSeed, WorldTopology,
     },
 };
 use minimium_procgen::{DemoPortal, GeneratedWorld};
@@ -251,14 +251,10 @@ impl WorldRegistry {
                 context: offer.target_context,
                 map_fingerprint: offer.map_fingerprint,
                 destination: offer.destination,
-                source_location: WorldLocation::new(
+                source_location: world_location(
                     source_instance,
-                    Position3Mm(
-                        player_state
-                            .position
-                            .map(|value| (f64::from(value) * 1000.0).round() as i64),
-                    ),
-                    orientation_for_gravity(source_gravity, player_state.position),
+                    player_state.position,
+                    source_gravity,
                 ),
                 health: player_state.health,
                 manifest: offer.manifest,
@@ -456,24 +452,4 @@ fn gravity_for(topology: WorldTopology) -> minimium_core::world::CharacterGravit
         }
         WorldTopology::Dungeon => minimium_core::world::CharacterGravity::FixedY,
     }
-}
-
-fn orientation_for_gravity(
-    gravity: minimium_core::world::CharacterGravity,
-    position: [f32; 3],
-) -> WorldOrientationQ30 {
-    let up = minimium_core::world::character_frame(gravity, position).0;
-    let denominator = (2.0 * (1.0 + up[1])).sqrt();
-    let quaternion = if denominator <= 1.0e-6 {
-        [0.0, 0.0, 0.0, 1.0]
-    } else {
-        [
-            ((1.0 + up[1]) * 0.5).sqrt(),
-            up[2] / denominator,
-            0.0,
-            -up[0] / denominator,
-        ]
-    };
-    let fixed = quaternion.map(|value| (f64::from(value) * (1_i64 << 30) as f64).round() as i32);
-    WorldOrientationQ30::new(fixed).unwrap_or(WorldOrientationQ30::IDENTITY)
 }

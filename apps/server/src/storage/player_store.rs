@@ -6,8 +6,8 @@ use minimium_core::ids::PlayerId;
 use minimium_core::{
     identity::PlayerProfileId,
     world::{
-        CharacterGravity, Player, Position3Mm, WorldInstanceId, WorldLocation, WorldManifest,
-        WorldMap, WorldOrientationQ30, WorldSectorState, WorldTopology, PLAYER_MAX_HEALTH,
+        CharacterGravity, Player, WorldInstanceId, WorldLocation, WorldManifest, WorldMap,
+        WorldSectorState, WorldTopology, PLAYER_MAX_HEALTH,
     },
 };
 use minimium_protocol::MAX_PLAYER_NAME_BYTES;
@@ -160,8 +160,16 @@ impl PlayerStore {
                 name,
                 position: spawn,
                 health: PLAYER_MAX_HEALTH,
-                location: world_location(spawn_instance, spawn, spawn_gravity),
-                return_location: world_location(spawn_instance, spawn, spawn_gravity),
+                location: crate::world_location::world_location(
+                    spawn_instance,
+                    spawn,
+                    spawn_gravity,
+                ),
+                return_location: crate::world_location::world_location(
+                    spawn_instance,
+                    spawn,
+                    spawn_gravity,
+                ),
             };
             Arc::make_mut(&mut self.players[shard]).insert(profile_id, player);
             self.profile_by_player.insert(PlayerId::new(id), profile_id);
@@ -206,7 +214,7 @@ impl PlayerStore {
             .ok_or_else(|| invalid_world_snapshot("active player has an invalid name"))?;
         stored.position = player.position;
         stored.health = player.health;
-        stored.location = world_location(instance, player.position, gravity);
+        stored.location = crate::world_location::world_location(instance, player.position, gravity);
         Ok(())
     }
 
@@ -286,41 +294,11 @@ impl PlayerStore {
     }
 }
 
-fn world_location(
-    instance: WorldInstanceId,
-    position: [f32; 3],
-    gravity: CharacterGravity,
-) -> WorldLocation {
-    let quantized = position.map(|value| (f64::from(value) * 1000.0).round() as i64);
-    WorldLocation::new(
-        instance,
-        Position3Mm(quantized),
-        orientation_for_gravity(gravity, position),
-    )
-}
-
 fn gravity_for(topology: WorldTopology) -> CharacterGravity {
     match topology {
         WorldTopology::Planet => CharacterGravity::Radial { center: [0.0; 3] },
         WorldTopology::Dungeon => CharacterGravity::FixedY,
     }
-}
-
-fn orientation_for_gravity(gravity: CharacterGravity, position: [f32; 3]) -> WorldOrientationQ30 {
-    let up = minimium_core::world::character_frame(gravity, position).0;
-    let denominator = (2.0 * (1.0 + up[1])).sqrt();
-    let quaternion = if denominator <= 1.0e-6 {
-        [0.0, 0.0, 0.0, 1.0]
-    } else {
-        [
-            ((1.0 + up[1]) * 0.5).sqrt(),
-            up[2] / denominator,
-            0.0,
-            -up[0] / denominator,
-        ]
-    };
-    let fixed = quaternion.map(|value| (f64::from(value) * (1_i64 << 30) as f64).round() as i32);
-    WorldOrientationQ30::new(fixed).unwrap_or(WorldOrientationQ30::IDENTITY)
 }
 
 impl SaveSnapshot {

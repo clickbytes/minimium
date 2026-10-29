@@ -16,6 +16,7 @@ mod startup;
 mod storage;
 mod terminal;
 mod world_inputs;
+mod world_location;
 mod world_registry;
 use config::{DEFAULT_AUTOSAVE_SECONDS, MAX_PLAYERS};
 #[cfg(feature = "allocation-metrics")]

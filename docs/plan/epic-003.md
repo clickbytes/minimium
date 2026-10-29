@@ -97,7 +97,7 @@ testowej.
 | E003-10 | Dodano `prepare → ready → commit` na granicy ticka, anulowanie przed commit, reset predykcji i wymuszenie pełnego snapshotu celu. | Test sprawdza anulowanie, gotowość celu, commit i powrót do punktu zapisanego w transferze. |
 | E003-11 | Zapis v6 utrwala manifesty i fingerprinty światów, lokalizacje i punkty powrotu graczy oraz rewizjonowane zestawy stanu obiektów w sektorach. Rejestr serwera waliduje topologię, rewizję monotoniczną i limity; v2/v3 migrują wyłącznie po fingerprintcie legacy. | Testy sprawdzają v6 save → load → claim profilu, migrację v2/v3, limit odczytu i atomowy zapis. Bieżący demonstrator nie ma interakcji zmieniającej stan obiektów; zmiany geometrii pozostają poza modelem. |
 | E003-12 | Renderer utrzymuje bufory GPU dla sektorów aktywnego otoczenia. Transfer przygotowuje sektory docelowe i potwierdza gotowość dopiero po instalacji danych, kolizji i buforów GPU; scena przełącza się bez odtwarzania okna, urządzenia GPU ani TCP. | Źródłowe mapy pozostają w pamięci CPU do lokalnego wycinania sektorów. Płynność przejść i odbudowę zasobów sprawdzić w fazie testowej. |
-| E003-13 | Domyślne manifesty generują osobną planetę i dungeon połączone portalami; powrót wykorzystuje punkt zapisany przy commit. Welcome przesyła zapisaną pozycję reconnectu. | Końcowy test serwerowy przechodzi wygenerowaną trasę planety, transfer, wszystkie sale i powrót przez ticketowane sektory. Pełny scenariusz sieciowy z restartem serwera nie został jeszcze wykonany. |
+| E003-13 | Domyślne manifesty generują osobną planetę i dungeon połączone portalami; powrót wykorzystuje punkt zapisany przy commit. Welcome przesyła zapisaną pozycję reconnectu. | Demonstrator v9 po TCP przeszedł od planetarnego spawnu przez portal, wszystkie wygenerowane sale i portal powrotny. Po graceful stop i restarcie tego samego serwera profil wrócił do zapisanej pozycji planety. |
 | E003-14 | Dodano ADR, kontrakty świata, parser ręcznego dungeonu i kontrolę grafu zależności. Uzupełniono wynikami fazy testowej. | Kontrole statyczne przechodzą. Recenzje i integracja do gałęzi epica/main pozostają otwarte. |
 
 ## Przegląd i ograniczenia bieżącego przyrostu
@@ -120,8 +120,9 @@ testowej.
   obiektów na sektor; rejestr odrzuca starsze rewizje, niezgodną topologię i
   przekroczenie limitów. Demonstrator nie tworzy zmian obiektów. Źródłowe mapy
   klienta pozostają w pamięci CPU do lokalnego wycinania sektorów.
-- Zmiany są lokalne na gałęzi epica. Nie utworzono commitów, osobnych PR-ów ani
-  merge'a do `main`; baza PR #31 nadal wymaga integracji architektury 002.
+- Przyrost jest commitowany na gałęzi epica i zgłoszony w PR #50 jako jeden
+  skonsolidowany przegląd; osobnych PR-ów dla etapów nie utworzono. PR #50 bazuje
+  na otwartym PR #31 dla E002 i nie jest jeszcze scalony do `main`.
 
 ## Kontynuacja implementacji
 
@@ -156,6 +157,10 @@ testowej.
   w module storage serwera.
 - Welcome przesyła serwerową pozycję odtworzoną z zapisu; klient instaluje scenę
   i sektory startowe od tej pozycji przy reconnect.
+- Odtworzenie wykazało, że kwantyzacja milimetrowa planetarnego kontaktu z
+  powierzchnią mogła umieścić kapsułę kilka milimetrów w geometrii. Zapis
+  przesuwa radialną pozycję o 10 mm na zewnątrz przed kwantyzacją; test v6
+  odtwarza pozycję z rzeczywistej trasy i sprawdza kolizję po wczytaniu.
 - Pliki przekraczające limit 500 linii podzielono na moduły tematyczne. Test
   geometrii kapsuły wydzielono do `geometry/triangle_distance.rs`; kontrola
   długości plików przechodzi dla wszystkich 137 plików źródłowych.
@@ -164,20 +169,22 @@ testowej.
   przechodzą. Pozostałe ostrzeżenia Clippy są stylistyczne lub dotyczą dużych
   wariantów enum; kompilacja zgłasza kopiowanie cache inkrementalnego, ponieważ
   filesystem nie obsługuje wymaganych hardlinków.
-- Pełny test workspace przeszedł: 32 testy jednostkowe, 0 błędów; wszystkie
+- Pełny test workspace przeszedł: 33 testy jednostkowe, 0 błędów; wszystkie
   doc-testy również przeszły. Test obejmuje Philox KAT, kolejność żądań,
   kanoniczne krawędzie cube-sphere, spójność dungeonowych sektorów, limity i
   odrzucenie spóźnionego ticketu, izolację instancji, digest klienta, epoch,
   transfer anulowany i zatwierdzony, fizyczną trasę przez sale dungeonu, zapis
-  v6, migrację v2/v3, limity odczytu i atomowy zapis.
-- Ręczne uruchomienie klienta tekstowego i serwera potwierdziło handshake v9,
-  załadowanie manifestu i zapis przy zamykaniu. Nie wykonano pełnego transferu
-  przez sieć ani reconnectu po restarcie; E003-13 wymaga jeszcze takiego
-  przeglądu demonstratora przed uznaniem jego bramki operacyjnej za zamkniętą.
+  v6, migrację v2/v3, limity odczytu, atomowy zapis i odtworzenie radialnego
+  kontaktu z powierzchnią po kwantyzacji.
+- Ręczny klient protokołu v9 wykonał po TCP planetarny marsz do portalu,
+  prepare/ready/commit, traversal wszystkich 100 komórek trasy przez sale,
+  powrót do planety oraz reconnect po graceful stop i restarcie serwera. Digesty
+  manifestów zostały zweryfikowane; profil po restarcie wrócił do zapisanej
+  planety. Próba ujawniła i pomogła naprawić kwantyzację lokalizacji radialnej.
 
 ## Wyniki końcowej fazy testowej
 
-- `cargo test --workspace --locked --offline --message-format short`: 32 testy
+- `cargo test --workspace --locked --offline --message-format short`: 33 testy
   jednostkowych przeszło; wszystkie doc-testy przeszły.
 - `cargo fmt --all -- --check`, `cargo check --workspace --locked --offline`,
   Clippy, `scripts/check_architecture.py`, `scripts/check_file_lengths.py` oraz
@@ -191,12 +198,12 @@ testowej.
   wygenerowane sale/korytarze oraz powrót do zapisanej pozycji. Osobny test
   formatu sprawdza odtworzenie lokalizacji z v6, a test sesji sprawdza kontekst
   Welcome i odmowę nieznanego digestu.
-- Ręczny przebieg aplikacji potwierdził połączenie tekstowego klienta z serwerem
-  v9 i graceful save przy zamknięciu. Nie sprawdzał transferu na żywo przez
-  TCP/GPU ani reconnectu procesu z zapisanym profilem.
+- Sieciowy demonstrator v9 przeszedł planetę, transfer do dungeonu, wszystkie
+  sale, powrót i reconnect po zatrzymaniu oraz ponownym uruchomieniu serwera.
+  Nie wykonano wizualnego przeglądu renderowanej sceny podczas transferu.
 - `origin/epic/002-architecture-stabilization` nadal jest bazą PR #31, który
   pozostaje otwartym draftem do `main` bez decyzji recenzenckiej i kontroli CI.
   PR #50 jest otwartym draftem tego epica na gałęzi bazowej E002. Zawiera
   skonsolidowany przyrost E003, nie osobne PR-y każdego etapu. Scalanie końcowe
-  i zamknięcie epica czekają na przegląd, ręczną kontrolę renderowanego
-  transferu/reconnectu oraz integrację bazowego E002.
+  i zamknięcie epica czekają na integrację bazowego E002 oraz przegląd PR-ów;
+  pozostał również wizualny przegląd renderowanego transferu klienta.
