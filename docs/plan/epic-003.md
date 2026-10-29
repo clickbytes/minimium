@@ -121,8 +121,8 @@ testowej.
   przekroczenie limitów. Demonstrator nie tworzy zmian obiektów. Źródłowe mapy
   klienta pozostają w pamięci CPU do lokalnego wycinania sektorów.
 - Przyrost jest commitowany na gałęzi epica i zgłoszony w PR #50 jako jeden
-  skonsolidowany przegląd; osobnych PR-ów dla etapów nie utworzono. PR #50 bazuje
-  na otwartym PR #31 dla E002 i nie jest jeszcze scalony do `main`.
+  skonsolidowany przegląd; osobnych PR-ów ani issue dla etapów nie utworzono.
+  PR #50 bazuje na otwartym PR #31 dla E002 i nie jest jeszcze scalony do `main`.
 
 ## Kontynuacja implementacji
 
@@ -163,7 +163,7 @@ testowej.
   odtwarza pozycję z rzeczywistej trasy i sprawdza kolizję po wczytaniu.
 - Pliki przekraczające limit 500 linii podzielono na moduły tematyczne. Test
   geometrii kapsuły wydzielono do `geometry/triangle_distance.rs`; kontrola
-  długości plików przechodzi dla wszystkich 137 plików źródłowych.
+  długości plików przechodzi dla wszystkich 138 plików źródłowych.
 - `cargo fmt --all -- --check`, `cargo check --workspace --locked --offline`,
   Clippy, kontrola grafu architektury, limitu linii i `git diff --check`
   przechodzą. Pozostałe ostrzeżenia Clippy są stylistyczne lub dotyczą dużych
