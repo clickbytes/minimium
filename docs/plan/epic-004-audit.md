@@ -51,6 +51,49 @@ historyczny brak `cl.exe` w PATH od wykonanej kompilacji Windows.
 
 ## Weryfikacja końcowa
 
+## Wyniki przeglądu domen
+
+Pełne raporty źródłowe i dokładne kontrole wykonane przed integracją:
+[A2 — czas/sieć/zapis](evidence/epic-004/e004-15-static-20261030/a2-audit.md),
+[A3 — astronomia/FFI/dane](evidence/epic-004/e004-15-static-20261030/a3-audit.md),
+[A4 — renderer/metryki](evidence/epic-004/e004-15-static-20261030/a4-audit.md).
+Raporty zachowują SHA gałęzi roboczych; cherry-picki integracyjne to odpowiednio
+`2faa178`, `190fa3e`, `3e39b4f`. Reguły LF wymagane przez raport A3 są już w
+`.gitattributes`; vendor, piny i wygenerowane assety nie mają zmian zawartości.
+
+| Defekt | Właściciel i poprawka | Statyczny wynik / późniejszy odbiór |
+| --- | --- | --- |
+| Niezależne kalkulatory mogą równolegle zmieniać `_CalcMoonCount` C | A3: jeden procesowy mutex, cztery wejścia, poison recovery, zachowane !Send/!Sync | Naprawiony w źródle; concurrency/ABI V11–V12 NOT RUN. |
+| C `rot[input][output]` kopiowane jak rustowe wiersze | A3: transpozycja na bridge | Naprawiony; V11–V17 wymagają odbioru poprawionej orientacji. |
+| Poprawna ramka world z determinant −1 odrzucana jako zła rotacja | A3: osobna walidacja rotacji +1 i transformacji world −1 | Naprawiony; bez rozluźniania ortonormalności/finite; V11–V17 NOT RUN. |
+| Commit portalu ucina resztę częściowo wysłanej ramki TCP | A2: zachowanie bufora, offsetu i inflight Ping/probe | Naprawiony; stare wejścia świata nadal odrzucane przez context; V03/V06/V07/V19 NOT RUN. |
+| Portal bez limitu kolejki, teleport bez rezerwy na Leave | A2: wspólny limit 4096 z rezerwą liczby klientów | Naprawiony; V03/V07/V19 NOT RUN. |
+| Helper `environment` zasłaniany w istniejącym teście | A2: `environment_fixture` | Istniejący test skompilowany przez cargo check --tests, nie uruchomiony; V03 NOT RUN. |
+| Przygotowanie i upload łączone w metryce CPU; brak p50/próbek/caster bytes | A4: prepared frame, osobny upload i disjoint shadow scope, diagnostyka v2 | Naprawiony; V18/V20 NOT RUN, GPU elapsed n/a. |
+| Windows autocrlf zmienia bajty przypiętych tekstów i ich SHA-256 | A1/A3: dziewięć jawnych reguł LF | Hashe źródeł/blobów zgodne; odtworzenie katalogu pozostaje w #68. |
+| Checker nie widzi zewnętrznych zależności przechodnich ani pełnych zakazów | A1: pełny graf Cargo normal/build | Bieżący graf PASS; źródła błędu wskazywane pełną ścieżką. |
+
+Zegar serwera → Welcome/EnvironmentSync → ClientSession → EnvironmentFrameInput
+ma spójne POSIX/monotonic ms i ppm; fizyka, cooldowny, heartbeat i autosave pozostają
+w realnym czasie. Prepare nie przełącza aktywnego profilu, commit wiąże profil
+z nowym context, cancel pozostawia źródło, reconnect odrzuca stary nonce. Snapshot
+save v8 przechwytuje zegar na owner thread przed workerem i zachowuje migracje
+v2–v7 oraz atomowy zapis. Szczegóły i limity są w raporcie A2.
+
+Jednostki astronomii pozostają f64, UTC→J2000, UT→TT przez przypięty model ΔT,
+AU→m i oddzielna fizyczna wysokość oka. Geocentryczne Sun zasila globus,
+geometryczne lokalne Sun/Moon światło i cienie, pozorne kierunki tarcze. Cache ma
+dwa końce przedziału 300 s bez pętli nadrabiania lat, gwiazdy najwyżej 500 rekordów.
+Raport A3 zawiera zmierzone SHA-256 vendor/MIT, HYG/CC BY-SA i 500 unikalnych ID.
+
+Wyszukanie `0\\.46\\s*,\\s*0\\.82\\s*,\\s*0\\.34` w rendererze: brak wyników.
+Przegląd world/globe/water nie wykazał dawnego minimalnego światła planetarnego.
+Kolory atmosfery, parametry radiancji i ambient Interior są celowym modelem wyglądu.
+Raport A4 rozlicza uniformy 208/320/128 B, odbicie Earth, brak translacji gwiazd,
+fallback, bounded caster resources oraz pomiary v2. Wygląd i GPU nie są zaliczone.
+
+## Następna bramka
+
 Właściciele, scenariusze i format artefaktów: [ledger](epic-004-verification.md).
 Kompletne instrukcje przed przyszłym uruchomieniem: [procedura](epic-004-final-verification.md).
 Zamknięcie #67 potwierdza wyłącznie statyczny odbiór integracji; #68 i #69
