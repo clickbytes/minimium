@@ -4,6 +4,7 @@ mod inputs;
 mod network;
 mod operations;
 mod outbound;
+pub(crate) mod schedule;
 mod tick;
 
 use crate::{
@@ -78,6 +79,7 @@ struct Scheduler {
 }
 pub(crate) struct ServerRuntime {
     executor: Executor,
+    schedule: schedule::ServerSchedule,
     game: GameState,
     environment_clock: EnvironmentClock,
     connections: ConnectionState,
@@ -132,7 +134,14 @@ impl ServerRuntime {
         };
         let executor = Executor::new(lanes);
         let mut worlds = generated_worlds
-            .map(WorldRegistry::from_generated_worlds)
+            .map(WorldRegistry::try_from_generated_worlds)
+            .transpose()
+            .map_err(|error| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("generated world registry is invalid: {error:?}"),
+                )
+            })?
             .unwrap_or_else(|| WorldRegistry::legacy_primary(map.clone()));
         worlds
             .restore_sector_states(player_store.sector_states())
@@ -181,9 +190,12 @@ impl ServerRuntime {
                     )
                 },
             )?;
+        let mut schedule = crate::commands::build_schedule();
+        schedule.run_stage(minimium_platform::modules::Stage::Startup, &game.worlds);
         let autosave_interval = Duration::from_secs(config.autosave_seconds);
         Ok(Self {
             game,
+            schedule,
             environment_clock,
             connections,
             operations,
@@ -229,6 +241,10 @@ impl ServerRuntime {
                 break;
             }
             self.tick();
+            self.schedule.run_stage(
+                minimium_platform::modules::Stage::RenderPreparation,
+                &self.game.worlds,
+            );
             self.replicate();
             self.metrics.loop_work.record(loop_started.elapsed());
             self.plan_sleep();

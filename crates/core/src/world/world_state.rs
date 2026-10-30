@@ -23,6 +23,7 @@ use std::sync::Arc;
 pub(super) struct PlayerStepInput {
     pub(super) id: PlayerId,
     pub(super) state: CharacterState,
+    pub(super) position_mm: Option<Position3Mm>,
     pub(super) input: CharacterInput,
 }
 
@@ -30,6 +31,7 @@ pub(super) struct PlayerStepInput {
 pub(super) struct PlayerStepResult {
     pub(super) id: PlayerId,
     pub(super) state: CharacterState,
+    pub(super) position_mm: Option<Position3Mm>,
 }
 
 #[derive(Default)]
@@ -56,6 +58,7 @@ pub struct World {
     pub(super) spawn_mm: Option<Position3Mm>,
     pub(super) gravity: CharacterGravity,
     pub(super) precise_positions: bool,
+    last_precise_batch_count: Option<usize>,
 }
 
 impl World {
@@ -235,15 +238,20 @@ impl World {
         lanes: usize,
         dispatch: impl FnOnce(Vec<SimulationBatch>, Arc<CollisionIndex>, f32) -> Vec<SimulationBatch>,
     ) -> CollisionQueryStats {
-        if self.precise_positions {
-            return self.step_players_selected(inputs, selected, delta_seconds);
-        }
         let Some((geometry, batches)) = self.prepare_movement_batches(inputs, selected, lanes)
         else {
+            self.last_precise_batch_count = self.precise_positions.then_some(0);
             return self.step_players_selected(inputs, selected, delta_seconds);
         };
+        self.last_precise_batch_count = self.precise_positions.then_some(batches.len());
         let results = dispatch(batches, geometry, delta_seconds);
         self.apply_step_results(results)
+    }
+
+    /// Returns whether precise movement used workers and how many batches were dispatched.
+    pub fn precise_dispatch_stats(&self) -> Option<(bool, usize)> {
+        self.last_precise_batch_count
+            .map(|batches| (batches > 0, batches))
     }
 
     fn prepare_movement_batches(
@@ -297,6 +305,7 @@ impl World {
                         grounded: player.grounded,
                         gravity: self.gravity,
                     },
+                    position_mm: player.position_mm,
                     input: inputs.get(id).copied().unwrap_or_default(),
                 });
         }
@@ -305,29 +314,6 @@ impl World {
             Arc::clone(&self.collision_index),
             std::mem::take(simulation_batches),
         ))
-    }
-
-    fn apply_step_results(
-        &mut self,
-        processed_batches: Vec<SimulationBatch>,
-    ) -> CollisionQueryStats {
-        let players = Arc::make_mut(&mut self.players);
-        let cells = Arc::make_mut(&mut self.cells);
-        let player_cells = Arc::make_mut(&mut self.player_cells);
-        let mut collision_stats = CollisionQueryStats::default();
-        for batch in &processed_batches {
-            collision_stats.accumulate(batch.collision_stats);
-            for result in &batch.results {
-                if let Some(player) = players.get_mut(&result.id) {
-                    player.position = result.state.position;
-                    player.velocity = result.state.velocity;
-                    player.grounded = result.state.grounded;
-                    update_cell_index(cells, player_cells, result.id, player.position);
-                }
-            }
-        }
-        self.simulation_batches = processed_batches;
-        collision_stats
     }
 
     pub fn set_position(&mut self, id: PlayerId, position: [f32; 3]) -> bool {
@@ -478,14 +464,30 @@ pub fn step_batch(
             state,
             delta_seconds,
         ));
-        step_character(
-            &mut state,
-            step.input,
-            batch.collision_query.candidates(),
-            batch.collision_query.surface_candidates(),
-            delta_seconds,
-        );
-        batch.results.push(PlayerStepResult { id: step.id, state });
+        let mut position_mm = step.position_mm;
+        if let Some(position_mm) = &mut position_mm {
+            precise_step::step_character_mm(
+                &mut state,
+                position_mm,
+                step.input,
+                batch.collision_query.candidates(),
+                batch.collision_query.surface_candidates(),
+                delta_seconds,
+            );
+        } else {
+            step_character(
+                &mut state,
+                step.input,
+                batch.collision_query.candidates(),
+                batch.collision_query.surface_candidates(),
+                delta_seconds,
+            );
+        }
+        batch.results.push(PlayerStepResult {
+            id: step.id,
+            state,
+            position_mm,
+        });
     }
     batch
 }

@@ -18,11 +18,17 @@ const MAX_QUERY_CELLS: u64 = 512;
 const PARALLEL_SIMULATION_MIN_PLAYERS: usize = 32;
 const PLAYERS_PER_SIMULATION_BATCH: usize = 16;
 
+/// Fixed authoritative and predictive simulation step in milliseconds.
+pub const SIMULATION_STEP_MILLISECONDS: u64 = 50;
+/// Fixed simulation step in seconds, derived from the millisecond contract.
+pub const SIMULATION_STEP_SECONDS: f32 = SIMULATION_STEP_MILLISECONDS as f32 / 1000.0;
+
 mod addressing;
 mod collision_index;
 mod collision_queries;
 mod combat;
 mod geometry;
+mod gravity_policy;
 mod map;
 mod model;
 mod precise_step;
@@ -40,12 +46,13 @@ pub use addressing::{
 pub use collision_index::{Aabb, CollisionIndex};
 pub use collision_queries::{CollisionQuery, CollisionQueryStats};
 pub use geometry::triangle_area_squared;
+pub use gravity_policy::GravityPolicy;
 pub use map::{
     MapBox, MapTriangle, WorldMap, MAX_MAP_BOXES, MAX_MAP_COORDINATE, MAX_MAP_TRIANGLES,
 };
 pub use model::{
     GenerationRevision, GenerationSpec, GeneratorDigest, MembershipEpoch, ObjectOriginId,
-    PlanetDefinition, Position3Mm, SectorRevision, TransitionId, WorldContentRevision,
+    PlanetDefinition, PlanetKind, Position3Mm, SectorRevision, TransitionId, WorldContentRevision,
     WorldDefinitionId, WorldInstanceId, WorldLocation, WorldManifest, WorldObjectState,
     WorldOrientationQ30, WorldSectorState, WorldSeed, WorldTopology, MAX_OBJECT_STATE_BYTES,
     MAX_PERSISTED_WORLD_OBJECT_STATES, MAX_PERSISTED_WORLD_OBJECT_STATE_BYTES,

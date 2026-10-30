@@ -1,13 +1,13 @@
 use super::super::environment_gpu::{camera_uniform, EnvironmentUniform};
 use super::{
     EnvironmentFrame, EnvironmentFrameDiagnostics, EnvironmentFrameStatus, EnvironmentSettings,
-    GlobalSunFrame, RenderViewFrame,
+    GlobalSunFrame, RenderViewFrame, SkyFrameInput,
 };
 use bytemuck::Zeroable;
 use minimium_astronomy::{SkyState, ASTRONOMY_MODEL_REVISION};
 use minimium_core::{
     environment::{EnvironmentDescriptor, EnvironmentProfile},
-    sky::{ObserverFrame, SkyModel},
+    sky::SkyModel,
     time::{ClockId, ClockRevision},
 };
 use minimium_protocol::WorldContext;
@@ -37,13 +37,17 @@ impl Error for EnvironmentFrameError {}
 
 pub(super) fn from_sky_state(
     sky: &SkyState,
-    observer: ObserverFrame,
-    context: WorldContext,
-    clock_revision: ClockRevision,
-    descriptor: EnvironmentDescriptor,
-    render_view: RenderViewFrame,
-    settings: EnvironmentSettings,
+    input: SkyFrameInput,
 ) -> Result<EnvironmentFrame, EnvironmentFrameError> {
+    let SkyFrameInput {
+        observer,
+        context,
+        clock_revision,
+        descriptor,
+        render_view,
+        observed_bodies,
+        settings,
+    } = input;
     if descriptor.profile() == EnvironmentProfile::Interior
         || descriptor.astronomy_model_revision().get() != ASTRONOMY_MODEL_REVISION
         || descriptor.validate_clock(ClockId::MVP).is_err()
@@ -59,7 +63,7 @@ pub(super) fn from_sky_state(
         return Err(EnvironmentFrameError::ObserverMismatch);
     }
     if !render_view.is_finite()
-        || !valid_settings(settings)
+        || settings.validate().is_err()
         || !valid_body(sky.sun)
         || !valid_body(sky.moon.body)
         || !sky.moon.illuminated_fraction.is_finite()
@@ -85,12 +89,12 @@ pub(super) fn from_sky_state(
 
     let (observer_up, horizon_cos, below_radius) = view_horizon(render_view);
     let horizon_altitude = horizon_cos.asin();
-    let sun_visible = visible_disk_fraction(
+    let sun_visible = super::halo::visible_disk_fraction(
         sky.sun.apparent_altitude_rad,
         sky.sun.angular_radius_rad,
         horizon_altitude,
     );
-    let moon_visible = visible_disk_fraction(
+    let moon_visible = super::halo::visible_disk_fraction(
         sky.moon.body.apparent_altitude_rad,
         sky.moon.body.angular_radius_rad,
         horizon_altitude,
@@ -99,7 +103,7 @@ pub(super) fn from_sky_state(
         super::super::lighting::evaluate_clear_sky_parameters(sky, &observer, &settings);
     let disk_sun = super::body_frame(
         sky.sun,
-        settings.local_sun_rgb,
+        settings.sunlight.local_rgb,
         clear_sky.direct_sun_factor,
         sun_visible,
     );
@@ -110,12 +114,12 @@ pub(super) fn from_sky_state(
         sky.moon.body.apparent_altitude_rad,
         sky.moon.body.angular_radius_rad,
         observer.geographic.height_m(),
-        settings.moon_full_phase_strength,
+        settings.moonlight.full_phase_strength,
     )
     .ok_or(EnvironmentFrameError::SkyStateInvalid)?;
     let disk_moon = super::body_frame(
         sky.moon.body,
-        settings.local_moon_rgb,
+        settings.moonlight.local_rgb,
         moon_scale,
         moon_visible,
     );
@@ -133,10 +137,18 @@ pub(super) fn from_sky_state(
     .ok_or(EnvironmentFrameError::SkyStateInvalid)?;
     let global_sun = GlobalSunFrame {
         direction_world: sky.geocentric_sun_direction_world,
-        linear_rgb: settings.global_sun_rgb,
-        strength: settings.global_sun_strength,
+        linear_rgb: settings.sunlight.global_rgb,
+        strength: settings.sunlight.global_strength,
     };
-    let moon_orbit_world = super::orbit::moon_orbit_world(sky, render_view)?;
+    let (halo_sources, halo_count, moon_orbit_world) = super::halo::prepare_halos(
+        sky,
+        render_view,
+        disk_sun,
+        disk_moon,
+        moon_to_sun,
+        &observed_bodies,
+        settings,
+    )?;
     let environment_uniform = EnvironmentUniform {
         sun_geometric_world: direction_altitude(
             sky.sun.geometric_direction_world,
@@ -167,8 +179,9 @@ pub(super) fn from_sky_state(
         global_sun_direction: direction_zero(sky.geocentric_sun_direction_world)?,
         global_sun_rgb: color_zero(
             settings
-                .global_sun_rgb
-                .map(|channel| channel * settings.global_sun_strength),
+                .sunlight
+                .global_rgb
+                .map(|channel| channel * settings.sunlight.global_strength),
         )?,
         ambient_rgb_exposure: color_exposure(clear_sky.ambient_rgb, clear_sky.exposure)?,
         sky_zenith_rgb_sun_altitude: color_altitude(
@@ -190,12 +203,17 @@ pub(super) fn from_sky_state(
         moon_disk_radiance: super::super::moon_lighting::moon_disk_radiance(moon_flux),
         star_animation: [0.0; 4],
         moon_orbit_world,
+        halo_count: [halo_count, 0, 0, 0],
+        halo_sources,
     };
     Ok(EnvironmentFrame {
         context: Some(context),
         descriptor: Some(descriptor),
         clock_revision: Some(clock_revision),
         sky: Some(*sky),
+        observed_bodies,
+        halo_sources,
+        halo_count,
         observer: Some(observer),
         render_view,
         global_sun: Some(global_sun),
@@ -231,6 +249,9 @@ pub(super) fn interior(
         descriptor: Some(descriptor),
         clock_revision: Some(clock_revision),
         sky: None,
+        observed_bodies: Vec::new(),
+        halo_sources: [super::HaloSource::zeroed(); super::MAX_HALO_BODIES],
+        halo_count: 0,
         observer: None,
         render_view,
         global_sun: None,
@@ -244,7 +265,7 @@ pub(super) fn interior(
         status: EnvironmentFrameStatus::Interior,
         camera_uniform: camera_uniform(render_view),
         environment_uniform: EnvironmentUniform {
-            ambient_rgb_exposure: color_exposure(settings.ambient_rgb, settings.exposure)?,
+            ambient_rgb_exposure: color_exposure(settings.ambient, settings.exposure)?,
             observer_up_horizon_cos: direction_fraction(observer_up, horizon_cos)?,
             flags: [
                 EnvironmentProfile::Interior as u32,
@@ -263,6 +284,9 @@ pub(super) fn unavailable(render_view: RenderViewFrame) -> EnvironmentFrame {
         descriptor: None,
         clock_revision: None,
         sky: None,
+        observed_bodies: Vec::new(),
+        halo_sources: [super::HaloSource::zeroed(); super::MAX_HALO_BODIES],
+        halo_count: 0,
         observer: None,
         render_view,
         global_sun: None,
@@ -277,25 +301,6 @@ pub(super) fn unavailable(render_view: RenderViewFrame) -> EnvironmentFrame {
             ..EnvironmentUniform::zeroed()
         },
     }
-}
-
-pub(super) fn visible_disk_fraction(
-    altitude_rad: f64,
-    angular_radius_rad: f64,
-    horizon_altitude_rad: f64,
-) -> f32 {
-    if !altitude_rad.is_finite() || !angular_radius_rad.is_finite() || angular_radius_rad <= 0.0 {
-        return 0.0;
-    }
-    let elevation = altitude_rad - horizon_altitude_rad;
-    if elevation <= -angular_radius_rad {
-        return 0.0;
-    }
-    if elevation >= angular_radius_rad {
-        return 1.0;
-    }
-    let x = (elevation / angular_radius_rad).clamp(-1.0, 1.0);
-    (0.5 + (x.asin() + x * (1.0 - x * x).max(0.0).sqrt()) / PI) as f32
 }
 
 fn view_horizon(view: RenderViewFrame) -> ([f64; 3], f64, bool) {
@@ -337,22 +342,6 @@ fn rotate_shortest_arc(from: [f64; 3], to: [f64; 3], vector: [f64; 3]) -> Option
     let first = cross(axis, vector);
     let second = cross(axis, first);
     normalize(add(add(vector, first), scale(second, 1.0 / (1.0 + cosine))))
-}
-
-fn valid_settings(settings: EnvironmentSettings) -> bool {
-    settings
-        .global_sun_rgb
-        .iter()
-        .chain(settings.local_sun_rgb.iter())
-        .chain(settings.local_moon_rgb.iter())
-        .chain(settings.ambient_rgb.iter())
-        .all(|value| value.is_finite() && *value >= 0.0)
-        && settings.global_sun_strength.is_finite()
-        && settings.global_sun_strength >= 0.0
-        && settings.moon_full_phase_strength.is_finite()
-        && settings.moon_full_phase_strength >= 0.0
-        && settings.exposure.is_finite()
-        && settings.exposure > 0.0
 }
 
 fn valid_body(body: minimium_astronomy::CelestialBodyState) -> bool {
@@ -492,7 +481,6 @@ fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 fn scale(vector: [f64; 3], factor: f64) -> [f64; 3] {
     vector.map(|value| value * factor)
 }
-
 fn add(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     std::array::from_fn(|axis| a[axis] + b[axis])
 }

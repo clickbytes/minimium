@@ -1,4 +1,4 @@
-use super::environment::EnvironmentSettings;
+use super::environment::{ClearSkyNode, EnvironmentSettings};
 use minimium_astronomy::SkyState;
 use minimium_core::sky::ObserverFrame;
 
@@ -14,73 +14,13 @@ pub(super) struct ClearSkyParameters {
     pub(super) direct_sun_factor: f32,
 }
 
-#[derive(Clone, Copy)]
-struct Node {
-    altitude_rad: f64,
-    zenith_rgb: [f32; 3],
-    horizon_rgb: [f32; 3],
-    ambient_rgb: [f32; 3],
-    exposure: f32,
-    stars: f32,
-    direct: f32,
-}
-
-// Relative linear RGB in unit-sun renderer space; values are appearance controls, not SI.
-const NODES: [Node; 5] = [
-    Node {
-        altitude_rad: -18.0_f64.to_radians(),
-        zenith_rgb: [0.0008, 0.0012, 0.0040],
-        horizon_rgb: [0.0018, 0.0026, 0.0070],
-        ambient_rgb: [0.0010, 0.0012, 0.0028],
-        exposure: 1.25,
-        stars: 1.0,
-        direct: 0.0,
-    },
-    Node {
-        altitude_rad: -12.0_f64.to_radians(),
-        zenith_rgb: [0.0025, 0.0040, 0.0130],
-        horizon_rgb: [0.0090, 0.0080, 0.0200],
-        ambient_rgb: [0.0060, 0.0050, 0.0090],
-        exposure: 1.15,
-        stars: 0.5,
-        direct: 0.0,
-    },
-    Node {
-        altitude_rad: -6.0_f64.to_radians(),
-        zenith_rgb: [0.0120, 0.0260, 0.0800],
-        horizon_rgb: [0.2500, 0.0700, 0.0250],
-        ambient_rgb: [0.0450, 0.0300, 0.0220],
-        exposure: 1.05,
-        stars: 0.0,
-        direct: 0.0,
-    },
-    Node {
-        altitude_rad: 0.0,
-        zenith_rgb: [0.0750, 0.1500, 0.3200],
-        horizon_rgb: [0.8500, 0.3000, 0.1000],
-        ambient_rgb: [0.1200, 0.1050, 0.0900],
-        exposure: 1.0,
-        stars: 0.0,
-        direct: 0.18,
-    },
-    Node {
-        altitude_rad: 15.0_f64.to_radians(),
-        zenith_rgb: [0.1500, 0.3600, 0.7800],
-        horizon_rgb: [0.4800, 0.6900, 0.8800],
-        ambient_rgb: [0.2300, 0.2650, 0.3000],
-        exposure: 0.95,
-        stars: 0.0,
-        direct: 1.0,
-    },
-];
-
 pub(super) fn evaluate_clear_sky_parameters(
     sky: &SkyState,
     observer: &ObserverFrame,
     settings: &EnvironmentSettings,
 ) -> ClearSkyParameters {
     let altitude = sky.sun.apparent_altitude_rad;
-    let node = interpolate(altitude);
+    let node = interpolate(altitude, &settings.clear_sky.nodes);
     let upper_limb_altitude = altitude + sky.sun.angular_radius_rad;
     let transmittance = if upper_limb_altitude <= -1.0_f64.to_radians() {
         0.0
@@ -92,7 +32,7 @@ pub(super) fn evaluate_clear_sky_parameters(
         .unwrap_or(f32::NAN)
     };
     ClearSkyParameters {
-        ambient_rgb: multiply(node.ambient_rgb, settings.ambient_rgb),
+        ambient_rgb: multiply(node.ambient_rgb, settings.ambient),
         exposure: node.exposure * settings.exposure,
         zenith_rgb: node.zenith_rgb,
         horizon_rgb: node.horizon_rgb,
@@ -101,20 +41,20 @@ pub(super) fn evaluate_clear_sky_parameters(
     }
 }
 
-fn interpolate(altitude: f64) -> Node {
-    let altitude = altitude.clamp(NODES[0].altitude_rad, NODES[4].altitude_rad);
-    let upper = NODES
+fn interpolate(altitude: f64, nodes: &[ClearSkyNode; 5]) -> ClearSkyNode {
+    let altitude = altitude.clamp(nodes[0].altitude_rad, nodes[4].altitude_rad);
+    let upper = nodes
         .iter()
         .position(|node| node.altitude_rad >= altitude)
-        .unwrap_or(NODES.len() - 1);
+        .unwrap_or(nodes.len() - 1);
     if upper == 0 {
-        return NODES[0];
+        return nodes[0];
     }
-    let a = NODES[upper - 1];
-    let b = NODES[upper];
+    let a = nodes[upper - 1];
+    let b = nodes[upper];
     let linear = ((altitude - a.altitude_rad) / (b.altitude_rad - a.altitude_rad)).clamp(0.0, 1.0);
     let t = linear * linear * (3.0 - 2.0 * linear);
-    Node {
+    ClearSkyNode {
         altitude_rad: altitude,
         zenith_rgb: mix(a.zenith_rgb, b.zenith_rgb, t),
         horizon_rgb: mix(a.horizon_rgb, b.horizon_rgb, t),

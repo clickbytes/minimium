@@ -1,15 +1,6 @@
 use super::*;
 use crate::environment::profile_for_manifest;
 
-fn gravity_for(topology: WorldTopology) -> minimium_core::world::CharacterGravity {
-    match topology {
-        WorldTopology::Planet => {
-            minimium_core::world::CharacterGravity::Radial { center: [0.0; 3] }
-        }
-        WorldTopology::Dungeon => minimium_core::world::CharacterGravity::FixedY,
-    }
-}
-
 impl WorldRegistry {
     pub(crate) fn legacy_primary(map: WorldMap) -> Self {
         let definition = WorldDefinitionId::new(1).expect("legacy definition ID is nonzero");
@@ -41,6 +32,7 @@ impl WorldRegistry {
                 manifest,
                 map,
                 world,
+                entities: minimium_core::entity::EntityStore::default(),
                 portal: None,
             },
         );
@@ -52,6 +44,9 @@ impl WorldRegistry {
             transfers: HashMap::new(),
             next_transition: 1,
             sector_states: BTreeMap::new(),
+            persisted_totals: super::sector_state::PersistedTotals::default(),
+            entity_sectors: BTreeMap::new(),
+            entity_origins: BTreeMap::new(),
         }
     }
 
@@ -66,7 +61,9 @@ impl WorldRegistry {
         }
         let mut world = World::default();
         world.load_map_streamed(&map);
-        world.set_gravity(gravity_for(manifest.topology()));
+        world.set_gravity(
+            minimium_core::world::GravityPolicy::for_manifest(manifest).character_gravity(),
+        );
         world.set_precise_positions(manifest.planet().is_some());
         let map = Arc::new(map);
         let environment_profile = profile_for_manifest(manifest);
@@ -78,30 +75,39 @@ impl WorldRegistry {
                 manifest,
                 map,
                 world,
+                entities: minimium_core::entity::EntityStore::default(),
                 portal: None,
             },
         );
         Ok(())
     }
 
-    pub(crate) fn from_generated_worlds(mut worlds: Vec<GeneratedWorld>) -> Self {
-        let primary = worlds.remove(0);
+    pub(crate) fn try_from_generated_worlds(
+        worlds: Vec<GeneratedWorld>,
+    ) -> Result<Self, RegistryError> {
+        let mut worlds = worlds.into_iter();
+        let primary = worlds.next().ok_or(RegistryError::EmptyWorlds)?;
         let primary_id = primary.instance;
         let mut registry = Self::from_generated(primary);
         for world in worlds {
-            registry
-                .register_generated(world)
-                .expect("generated world instance IDs are unique");
+            registry.register_generated(world)?;
         }
         registry.primary = primary_id;
-        registry
+        Ok(registry)
+    }
+
+    pub(crate) fn from_generated_worlds(worlds: Vec<GeneratedWorld>) -> Self {
+        Self::try_from_generated_worlds(worlds)
+            .expect("checked generated worlds are nonempty and have unique IDs")
     }
 
     fn from_generated(world: GeneratedWorld) -> Self {
         let map = Arc::new(world.map);
         let mut simulation = World::default();
         simulation.load_map_streamed(&map);
-        simulation.set_gravity(gravity_for(world.manifest.topology()));
+        simulation.set_gravity(
+            minimium_core::world::GravityPolicy::for_manifest(world.manifest).character_gravity(),
+        );
         simulation.set_precise_positions(world.manifest.planet().is_some());
         let mut instances = BTreeMap::new();
         instances.insert(
@@ -112,6 +118,7 @@ impl WorldRegistry {
                 manifest: world.manifest,
                 map,
                 world: simulation,
+                entities: minimium_core::entity::EntityStore::default(),
                 portal: world.portal,
             },
         );
@@ -123,6 +130,9 @@ impl WorldRegistry {
             transfers: HashMap::new(),
             next_transition: 1,
             sector_states: BTreeMap::new(),
+            persisted_totals: super::sector_state::PersistedTotals::default(),
+            entity_sectors: BTreeMap::new(),
+            entity_origins: BTreeMap::new(),
         }
     }
 

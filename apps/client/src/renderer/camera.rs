@@ -3,7 +3,7 @@ use crate::messages::ClientText as Text;
 
 impl Renderer {
     pub(super) fn update(&mut self) -> environment::PreparedEnvironmentFrame {
-        if self.overview_open && self.overview_instance != Some(self.current_instance) {
+        if self.overview_open && self.overview_instance != Some(self.game.current_instance) {
             self.overview_open = false;
             self.gpu.overview_active = false;
         }
@@ -11,7 +11,7 @@ impl Renderer {
         let dt = now
             .duration_since(self.metrics.last_frame)
             .as_secs_f32()
-            .min(0.05);
+            .min(minimium_core::world::SIMULATION_STEP_SECONDS);
         self.metrics.last_frame = now;
         let direction = if self.game.sectors_ready && !self.overview_open {
             self.input.movement(
@@ -22,51 +22,37 @@ impl Renderer {
         } else {
             [0.0; 2]
         };
-        self.game.physics_accumulator += dt;
-        while self.game.physics_accumulator >= 0.05 {
-            let mut input = CharacterInput {
-                direction: if self.game.sectors_ready && !self.overview_open {
-                    direction
-                } else {
-                    [0.0; 2]
-                },
-                jump: self.input.jump_pending && self.game.sectors_ready && !self.overview_open,
-            };
+        self.game.accumulate_prediction_time(dt);
+        let manifest = self
+            .game
+            .world_manifests
+            .get(&self.game.current_instance)
+            .copied();
+        while let Some(predicted) = self.game.predict_next(
+            direction,
+            self.input.jump_pending,
+            self.game.sectors_ready && !self.overview_open,
+            manifest,
+        ) {
+            let mut input = predicted.input;
             self.input.jump_pending = false;
-            let previous_state = self.game.character;
-            let previous_mm = self.game.position_mm;
-            self.game.predict(input);
-            if self
-                .world_manifests
-                .get(&self.current_instance)
-                .and_then(|manifest| manifest.planet())
-                .is_some_and(|definition| {
-                    definition.mode == 1
-                        && !minimium_procgen::earth_is_land(
-                            self.game.character.position,
-                            definition.height_scale_permille,
-                            definition.sea_level_mm,
-                        )
-                })
-            {
-                self.game.character = previous_state;
-                self.game.position_mm = previous_mm;
-                self.game.character.velocity = [0.0; 3];
-                input = CharacterInput::default();
-            }
             if !self.refresh_active_sector_scene() {
-                self.game.character = previous_state;
-                self.game.position_mm = previous_mm;
+                self.game.character = predicted.previous_state;
+                self.game.position_mm = predicted.previous_mm;
                 input = CharacterInput::default();
             }
-            self.input.input_keepalive += 0.05;
+            self.input.input_keepalive += minimium_core::world::SIMULATION_STEP_SECONDS;
             let moving = input.direction != [0.0, 0.0];
             let input_changed = input.direction != self.input.last_sent_direction;
             if self
                 .connection
                 .session()
                 .is_some_and(|session| session.state() == SessionState::Connected)
-                && (input.jump || input_changed || (moving && self.input.input_keepalive >= 0.1))
+                && (input.jump
+                    || input_changed
+                    || (moving
+                        && self.input.input_keepalive
+                            >= 2.0 * minimium_core::world::SIMULATION_STEP_SECONDS))
             {
                 if let Some(session) = self.connection.session_mut() {
                     let result = session.queue(&ClientMessage::Move {
@@ -81,11 +67,11 @@ impl Renderer {
                     }
                 }
             }
-            self.game.physics_accumulator -= 0.05;
         }
         let origin = if self
+            .game
             .world_manifests
-            .get(&self.current_instance)
+            .get(&self.game.current_instance)
             .is_some_and(|manifest| manifest.planet().is_some())
         {
             self.game
@@ -122,13 +108,15 @@ impl Renderer {
             );
             let camera_position = glam::Vec3::from_array(self.game.character.position) + up * 1.7;
             let far = if self
+                .game
                 .world_manifests
-                .get(&self.current_instance)
+                .get(&self.game.current_instance)
                 .is_some_and(|manifest| manifest.topology() == WorldTopology::Planet)
             {
                 let radius = self
+                    .game
                     .world_manifests
-                    .get(&self.current_instance)
+                    .get(&self.game.current_instance)
                     .map(|manifest| {
                         minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0
                     })
@@ -162,13 +150,15 @@ impl Renderer {
         // near plane rounds its depth to 1.0 in f32 and hides the surface.
         let near = if self.overview_open
             && self
+                .game
                 .world_manifests
-                .get(&self.current_instance)
+                .get(&self.game.current_instance)
                 .is_some_and(|manifest| manifest.topology() == WorldTopology::Planet)
         {
             let radius = self
+                .game
                 .world_manifests
-                .get(&self.current_instance)
+                .get(&self.game.current_instance)
                 .map(|manifest| {
                     minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0
                 })
@@ -189,8 +179,9 @@ impl Renderer {
             far,
         );
         let game_planet_radius_m = self
+            .game
             .world_manifests
-            .get(&self.current_instance)
+            .get(&self.game.current_instance)
             .filter(|manifest| manifest.topology() == WorldTopology::Planet)
             .map(|manifest| {
                 manifest
@@ -228,7 +219,10 @@ impl Renderer {
             None => {
                 self.render_environment_frame =
                     EnvironmentFrame::unavailable(RenderViewFrame::default());
-                environment::PreparedEnvironmentFrame::new(self.render_environment_frame, None)
+                environment::PreparedEnvironmentFrame::new(
+                    self.render_environment_frame.clone(),
+                    None,
+                )
             }
         };
 
@@ -261,31 +255,6 @@ impl Renderer {
         };
         self.gpu.ui_vertex_count = vertex_count;
         prepared_environment
-    }
-}
-
-impl GameplayView {
-    fn predict(&mut self, input: CharacterInput) {
-        self.collision_query
-            .fill(&self.collision_index, self.character, 0.05);
-        if let Some(position_mm) = &mut self.position_mm {
-            minimium_core::world::step_character_mm(
-                &mut self.character,
-                position_mm,
-                input,
-                self.collision_query.candidates(),
-                self.collision_query.surface_candidates(),
-                0.05,
-            );
-        } else {
-            step_character(
-                &mut self.character,
-                input,
-                self.collision_query.candidates(),
-                self.collision_query.surface_candidates(),
-                0.05,
-            );
-        }
     }
 }
 
@@ -337,8 +306,5 @@ pub(super) fn camera_direction(character: CharacterState, yaw: f32, pitch: f32) 
 }
 
 pub(super) fn gravity_for_manifest(manifest: WorldManifest) -> CharacterGravity {
-    match manifest.topology() {
-        WorldTopology::Planet => CharacterGravity::Radial { center: [0.0; 3] },
-        WorldTopology::Dungeon => CharacterGravity::FixedY,
-    }
+    minimium_core::world::GravityPolicy::for_manifest(manifest).character_gravity()
 }

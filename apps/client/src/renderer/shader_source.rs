@@ -75,6 +75,7 @@ pub(super) fn marker() -> String {
     combine(&[
         include_str!("frame.wgsl"),
         include_str!("output_color.wgsl"),
+        include_str!("sky_common.wgsl"),
         include_str!("marker.wgsl"),
     ])
 }
@@ -87,6 +88,16 @@ pub(super) fn encode_output() -> String {
     combine(&[
         include_str!("output_color.wgsl"),
         include_str!("encode_output.wgsl"),
+    ])
+}
+
+pub(super) fn ui_output(surface_is_srgb: bool) -> String {
+    combine(&[
+        include_str!("output_color.wgsl"),
+        &include_str!("ui_output.wgsl").replace(
+            "OUTPUT_SURFACE_IS_SRGB",
+            if surface_is_srgb { "true" } else { "false" },
+        ),
     ])
 }
 

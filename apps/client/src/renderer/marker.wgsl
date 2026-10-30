@@ -16,6 +16,5 @@ struct MarkerOutput {
 }
 
 @fragment fn fs_main(input: MarkerOutput) -> @location(0) vec4<f32> {
-    let linear = srgb_to_linear(input.color) * environment.ambient_rgb_exposure.w;
-    return vec4<f32>(tone_map_color(linear), 1.0);
+    return vec4<f32>(tone_map_linear(srgb_to_linear(input.color)), 1.0);
 }

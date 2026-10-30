@@ -2,9 +2,11 @@
 """Check selected Cargo dependency boundaries without running the programs."""
 
 import json
+import re
 import subprocess
 import sys
 from collections import deque
+from pathlib import Path
 
 
 def production_graph(metadata: dict) -> dict:
@@ -34,6 +36,27 @@ def forbidden_paths(root: str, targets: set, graph: dict, names: dict) -> list:
             if names[dependency] in targets:
                 violations.append(next_path)
             pending.append((dependency, next_path))
+    return violations
+
+
+def source_boundary_violations(repository: Path) -> list[str]:
+    """Catch domain FFI/GPU references that Cargo package edges cannot express."""
+    violations = []
+    roots = (repository / "crates" / "core", repository / "apps" / "server")
+    forbidden = re.compile(
+        r'\b(?:wgpu|winit|ash|glow)::|\bminimium_astronomy::|'
+        r'\bunsafe\s+(?:extern\s+"C"|extern\s+"C")|'
+        r'^\s*#\s*\[\s*link\s*\(',
+        re.MULTILINE,
+    )
+    for root in roots:
+        for source in sorted(root.rglob("*.rs")):
+            if "target" in source.parts:
+                continue
+            text = source.read_text(encoding="utf-8")
+            for match in forbidden.finditer(text):
+                line = text.count("\n", 0, match.start()) + 1
+                violations.append(f"{source.relative_to(repository).as_posix()}:{line}: forbidden FFI/GPU/astronomy source reference")
     return violations
 
 
@@ -69,6 +92,7 @@ def main() -> int:
     violations = []
     for root, targets in forbidden.items():
         violations.extend(forbidden_paths(workspace[root], targets, graph, names))
+    violations.extend(source_boundary_violations(Path(__file__).resolve().parents[1]))
     if violations:
         print("Architecture violations:\n" + "\n".join(violations), file=sys.stderr)
         return 1

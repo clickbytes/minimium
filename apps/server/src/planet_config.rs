@@ -3,11 +3,13 @@
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
-    fs, io,
+    io,
     path::{Path, PathBuf},
 };
 
 const MAX_EXTENDS_DEPTH: usize = 8;
+const MAX_PRESET_BYTES: usize = 64 * 1024;
+const MAX_PRESET_CHAIN_BYTES: usize = (MAX_EXTENDS_DEPTH + 1) * MAX_PRESET_BYTES;
 const EARTH_RADIUS_MM: u64 = 6_371_000_000;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -217,11 +219,17 @@ impl ResolvedPlanetConfig {
 
 pub fn load(path: &Path, seed: u128) -> io::Result<ResolvedPlanetConfig> {
     let mut active = HashSet::new();
-    let preset = load_preset(path, 0, &mut active)?;
+    let mut total_bytes = 0;
+    let preset = load_preset(path, 0, &mut active, &mut total_bytes)?;
     ResolvedPlanetConfig::from_preset(preset, seed)
 }
 
-fn load_preset(path: &Path, depth: usize, active: &mut HashSet<PathBuf>) -> io::Result<Preset> {
+fn load_preset(
+    path: &Path,
+    depth: usize,
+    active: &mut HashSet<PathBuf>,
+    total_bytes: &mut usize,
+) -> io::Result<Preset> {
     if depth > MAX_EXTENDS_DEPTH {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -235,7 +243,18 @@ fn load_preset(path: &Path, depth: usize, active: &mut HashSet<PathBuf>) -> io::
             "planet preset inheritance cycle",
         ));
     }
-    let source = fs::read_to_string(&path)?;
+    let bytes = minimium_platform::files::read_bounded_file(&path, MAX_PRESET_BYTES)?;
+    *total_bytes = total_bytes
+        .checked_add(bytes.len())
+        .filter(|total| *total <= MAX_PRESET_CHAIN_BYTES)
+        .ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "planet preset chain exceeds size limit",
+            )
+        })?;
+    let source = String::from_utf8(bytes)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     let child: Preset = ron::from_str(&source).map_err(|error| {
         io::Error::new(
             io::ErrorKind::InvalidData,
@@ -250,6 +269,7 @@ fn load_preset(path: &Path, depth: usize, active: &mut HashSet<PathBuf>) -> io::
                 .join(parent),
             depth + 1,
             active,
+            total_bytes,
         )?
     } else {
         Preset::default()

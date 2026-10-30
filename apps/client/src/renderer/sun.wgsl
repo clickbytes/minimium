@@ -46,6 +46,6 @@ struct SunVertexOutput {
         radiance = radiance * atmosphere.transmittance
             + atmosphere.scattering_rgb * SOLAR_HALO_FACTOR;
     }
-    let color = tone_map_linear(radiance * environment.ambient_rgb_exposure.w);
+    let color = tone_map_linear(radiance);
     return vec4<f32>(color, coverage * visibility);
 }

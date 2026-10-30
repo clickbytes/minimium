@@ -1,19 +1,35 @@
 mod adapter;
+mod catalogue;
 mod clock;
+mod halo;
 pub mod observer;
 mod orbit;
 mod prepared;
+mod profiles;
 mod runtime;
 #[allow(dead_code)]
 pub mod stars;
 
 use super::environment_gpu::{CameraUniform, EnvironmentUniform};
-use minimium_astronomy::{CelestialBodyState, SkyState};
+use bytemuck::{Pod, Zeroable};
+use minimium_astronomy::{CelestialBodyState, ObservedBody, SkyState};
 use minimium_core::{environment::EnvironmentDescriptor, sky::ObserverFrame, time::ClockRevision};
 use minimium_protocol::WorldContext;
 
+pub(crate) const MAX_HALO_BODIES: usize = 8;
+
+#[repr(C, align(16))]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Pod, Zeroable)]
+pub(crate) struct HaloSource {
+    pub(crate) direction_extent: [f32; 4],
+    pub(crate) linear_rgb_visibility: [f32; 4],
+    pub(crate) source_direction: [f32; 4],
+    pub(crate) parameters: [f32; 4],
+}
+
 pub(crate) use adapter::EnvironmentFrameError;
 pub(super) use prepared::{PreparedEnvironmentFrame, PreparedStarUpload};
+pub(crate) use profiles::{ClearSkyNode, LightingProfile as EnvironmentSettings};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
@@ -46,6 +62,16 @@ pub(crate) struct RenderViewInput {
     pub(crate) game_planet_radius_m: f64,
     pub(crate) kind: EnvironmentViewKind,
     pub(crate) srgb_surface: bool,
+}
+
+pub(crate) struct SkyFrameInput {
+    pub(crate) observer: ObserverFrame,
+    pub(crate) context: WorldContext,
+    pub(crate) clock_revision: ClockRevision,
+    pub(crate) descriptor: EnvironmentDescriptor,
+    pub(crate) render_view: RenderViewFrame,
+    pub(crate) observed_bodies: Vec<ObservedBody>,
+    pub(crate) settings: EnvironmentSettings,
 }
 
 impl Default for RenderViewFrame {
@@ -125,45 +151,6 @@ impl RenderViewFrame {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct EnvironmentSettings {
-    /// Linear RGB values in the renderer's relative, unit-sun scale.
-    pub(crate) global_sun_rgb: [f32; 3],
-    pub(crate) global_sun_strength: f32,
-    pub(crate) local_sun_rgb: [f32; 3],
-    pub(crate) local_moon_rgb: [f32; 3],
-    /// Full-Moon illumination coefficient relative to unit-sun irradiance.
-    pub(crate) moon_full_phase_strength: f32,
-    pub(crate) ambient_rgb: [f32; 3],
-    pub(crate) exposure: f32,
-}
-
-impl EnvironmentSettings {
-    pub(crate) const fn planetary() -> Self {
-        Self {
-            global_sun_rgb: [1.0, 0.97, 0.90],
-            global_sun_strength: 1.0,
-            local_sun_rgb: [1.0, 0.97, 0.90],
-            local_moon_rgb: [0.25, 0.32, 0.50],
-            moon_full_phase_strength: 2.0e-6,
-            ambient_rgb: [1.0, 1.0, 1.0],
-            exposure: 1.0,
-        }
-    }
-
-    pub(crate) const fn interior() -> Self {
-        Self {
-            global_sun_rgb: [0.0; 3],
-            global_sun_strength: 0.0,
-            local_sun_rgb: [0.0; 3],
-            local_moon_rgb: [0.0; 3],
-            moon_full_phase_strength: 0.0,
-            ambient_rgb: [0.32, 0.32, 0.32],
-            exposure: 1.0,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct GlobalSunFrame {
     pub(crate) direction_world: [f64; 3],
     pub(crate) linear_rgb: [f32; 3],
@@ -204,12 +191,15 @@ pub(crate) struct StarFrameStamp {
     pub(crate) epoch_revision: u64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct EnvironmentFrame {
     pub(crate) context: Option<WorldContext>,
     pub(crate) descriptor: Option<EnvironmentDescriptor>,
     pub(crate) clock_revision: Option<ClockRevision>,
     pub(crate) sky: Option<SkyState>,
+    pub(crate) observed_bodies: Vec<ObservedBody>,
+    pub(crate) halo_sources: [HaloSource; MAX_HALO_BODIES],
+    pub(crate) halo_count: u32,
     pub(crate) observer: Option<ObserverFrame>,
     pub(crate) render_view: RenderViewFrame,
     pub(crate) global_sun: Option<GlobalSunFrame>,
@@ -224,22 +214,9 @@ pub(crate) struct EnvironmentFrame {
 impl EnvironmentFrame {
     pub(crate) fn from_sky_state(
         sky: &SkyState,
-        observer: ObserverFrame,
-        context: WorldContext,
-        clock_revision: ClockRevision,
-        descriptor: EnvironmentDescriptor,
-        render_view: RenderViewFrame,
-        settings: EnvironmentSettings,
+        input: SkyFrameInput,
     ) -> Result<Self, EnvironmentFrameError> {
-        adapter::from_sky_state(
-            sky,
-            observer,
-            context,
-            clock_revision,
-            descriptor,
-            render_view,
-            settings,
-        )
+        adapter::from_sky_state(sky, input)
     }
 
     pub(crate) fn interior(

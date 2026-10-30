@@ -296,25 +296,26 @@ impl ApplicationHandler for App {
                     || renderer.game.character.position.map(f64::from),
                     |position| position.0.map(|value| value as f64 / 1000.0),
                 );
-                let world_map = renderer.world_catalog.get(&renderer.current_instance);
-                let draws =
-                    match renderer
-                        .gpu
-                        .render(&prepared_environment, world_map, player_position_m)
-                    {
-                        Ok(draws) => draws,
-                        Err(
-                            wgpu::CurrentSurfaceTexture::Lost
-                            | wgpu::CurrentSurfaceTexture::Outdated,
-                        ) => {
-                            renderer.resize(window.inner_size());
-                            0
-                        }
-                        Err(error) => {
-                            eprintln!("{}", Text::RenderFailed(format!("{error:?}")));
-                            0
-                        }
-                    };
+                let scene = super::scene_bridge::RenderSceneSnapshot::new(
+                    &prepared_environment,
+                    renderer.world_catalog.get(&renderer.game.current_instance),
+                    player_position_m,
+                    renderer.game.current_instance,
+                    renderer.gpu.active_sector_keys.clone(),
+                );
+                let draws = match renderer.gpu.render(&scene) {
+                    Ok(draws) => draws,
+                    Err(
+                        wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated,
+                    ) => {
+                        renderer.resize(window.inner_size());
+                        0
+                    }
+                    Err(error) => {
+                        eprintln!("{}", Text::RenderFailed(format!("{error:?}")));
+                        0
+                    }
+                };
                 renderer.update_gpu_memory_metric();
                 renderer.record_environment_render_metrics(draws > 0);
                 renderer

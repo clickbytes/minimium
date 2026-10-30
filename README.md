@@ -99,6 +99,10 @@ cargo run -p minimiumctl -- --data-dir .minimium-epic001/server stop
 
 `world save` queues a snapshot; check `status` for completion and final result. `stop` waits for the final snapshot and server termination and returns an error if saving or shutdown failed. See [the command reference](docs/commands.md).
 
+## Server module extension point
+
+Server modules are registered in compiled Rust code. Implement `EngineModule` from `minimium-platform::modules`, declare its dependencies, and register typed commands or systems with a `ModuleRegistrar`; then install the module alongside the built-in `WorldCommands` registration in `apps/server/src/commands.rs`. Choose a command scope explicitly and attach systems to a named stage. The current built-in `world` module exposes `world list`, `world inspect ID`, and `entity list`. There is no runtime module-loading flag, dynamic-library ABI, or automatic network exposure. Component descriptors are server-only by default, and the current replication candidate API is staging-only.
+
 ## Load generator and verification
 
 Build and run the load generator against the server's game address:

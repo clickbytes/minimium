@@ -51,6 +51,8 @@ uses that package automatically; a client elsewhere sets
 
 The shared server command parser is owned by `minimium-platform`; terminal and admin control use the same schema.
 
+Server extensions use `EngineModule` registration in the compiled server. Each command declares a `CommandScope` (`ServerAdmin` for the built-in world diagnostics); the host selects the matching handler and context. The current `world` module registers `world list`, `world inspect ID`, and `entity list`, plus a startup diagnostic system. This is source-level registration, not a command that loads modules at runtime. Client commands use a separate parser registry whose connection, gameplay, interface and environment modules own their command specs and parsing.
+
 Up to eight queued server commands execute at a tick boundary before world inputs and simulation. `world save` acknowledges queuing, not completion of the disk write; `stop` enters controlled shutdown after the current tick.
 
 `--map PATH` loads a static map; `--world-definition PATH` loads a versioned manifest and authored dungeon blueprint. They cannot be combined. The server validates either file before binding. See [world contracts](worlds.md) for the authored definition format. `--game-port 0` asks the OS for an available port; a fixed port is useful when connecting explicitly. The server writes its selected game/admin endpoint into its data directory. Keep the directory private to one server process; an exclusive OS file lock prevents a second server from owning the same directory.

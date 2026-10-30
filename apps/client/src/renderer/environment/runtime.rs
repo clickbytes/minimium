@@ -1,7 +1,7 @@
 use super::super::Renderer;
 use super::{
     EnvironmentFrame, EnvironmentSettings, PreparedEnvironmentFrame, PreparedStarUpload,
-    RenderViewFrame, StarFrameStamp,
+    RenderViewFrame, SkyFrameInput, StarFrameStamp,
 };
 use minimium_astronomy::{SkyInvalidation, SkySampleContext};
 use minimium_core::{
@@ -19,7 +19,7 @@ impl Renderer {
     ) -> PreparedEnvironmentFrame {
         let started = std::time::Instant::now();
         let stars = self.update_render_environment_inner(render_view);
-        let prepared = PreparedEnvironmentFrame::new(self.render_environment_frame, stars);
+        let prepared = PreparedEnvironmentFrame::new(self.render_environment_frame.clone(), stars);
         self.metrics
             .frame_stats
             .record_environment_cpu(started.elapsed());
@@ -72,11 +72,16 @@ impl Renderer {
             self.publish_unavailable(render_view, "world UTC is outside the astronomy range");
             return None;
         };
-        let Some(manifest) = self.world_manifests.get(&self.current_instance).copied() else {
+        let Some(manifest) = self
+            .game
+            .world_manifests
+            .get(&self.game.current_instance)
+            .copied()
+        else {
             self.publish_unavailable(render_view, "world manifest is unavailable");
             return None;
         };
-        if context.instance() != self.current_instance
+        if context.instance() != self.game.current_instance
             || context.content_revision() != manifest.content_revision()
         {
             self.publish_unavailable(
@@ -207,14 +212,26 @@ impl Renderer {
         } else {
             None
         };
+        let demo_catalogue = self
+            .demo_universe_enabled
+            .then(super::catalogue::demo_catalogue);
+        let catalog_observer =
+            super::catalogue::observer_epoch_position(&sky, observer.game_eye_world_m);
+        let time_seconds = utc_ms.get() as f64 / 1000.0;
+        let catalog_input =
+            demo_catalogue.map(|demo| (&demo.catalog, demo.system, catalog_observer, time_seconds));
+        let observations = minimium_astronomy::observed_bodies(&sky, catalog_input);
         match EnvironmentFrame::from_sky_state(
             &sky,
-            observer,
-            context,
-            revision,
-            descriptor,
-            render_view,
-            EnvironmentSettings::planetary(),
+            SkyFrameInput {
+                observer,
+                context,
+                clock_revision: revision,
+                descriptor,
+                render_view,
+                observed_bodies: observations,
+                settings: EnvironmentSettings::planetary(),
+            },
         ) {
             Ok(mut frame) => {
                 frame.diagnostics.star_frame = Some(star_stamp);

@@ -196,7 +196,9 @@ impl Renderer {
         if let Some(receiver) = &self.globe_detail_loading {
             match receiver.try_recv() {
                 Ok((region, pixels)) => {
-                    if let Some(manifest) = self.world_manifests.get(&self.current_instance) {
+                    if let Some(manifest) =
+                        self.game.world_manifests.get(&self.game.current_instance)
+                    {
                         let radius = minimium_procgen::planet_surface_for(*manifest).radius_mm()
                             as f32
                             / 1000.0;
@@ -224,8 +226,9 @@ impl Renderer {
             return;
         }
         let Some(planet) = self
+            .game
             .world_manifests
-            .get(&self.current_instance)
+            .get(&self.game.current_instance)
             .and_then(|manifest| manifest.planet())
         else {
             return;

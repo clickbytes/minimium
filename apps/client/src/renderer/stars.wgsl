@@ -99,11 +99,13 @@ fn star_hash(id: u32) -> f32 {
         0.7 * sin(time * (5.0 + 5.0 * seed) + 6.2831853 * second_seed)
         + 0.3 * sin(time * (10.0 + 7.0 * second_seed) + 6.2831853 * seed)
     );
-    let exposure = environment.ambient_rgb_exposure.w;
-    let base = tone_map_linear(background * exposure);
+    let base = tone_map_linear(background);
     let star_radiance = input.color_linear * relative_flux * STAR_RADIANCE_SCALE
         * inverse_area * profile * visibility * twinkle;
-    let with_star = tone_map_linear((background + star_radiance) * exposure);
+    if environment.flags.w != 0u {
+        return vec4<f32>(star_radiance * visibility * twinkle, 0.0);
+    }
+    let with_star = tone_map_linear(background + star_radiance);
     let linear_delta = max(with_star - base, vec3<f32>(0.0));
     return vec4<f32>(linear_delta, 0.0);
 }

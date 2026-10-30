@@ -61,7 +61,7 @@ struct MoonSphereFragment {
         discard;
     }
     var output: MoonSphereFragment;
-    output.color = vec4<f32>(tone_map_linear(linear * environment.ambient_rgb_exposure.w), 1.0);
+    output.color = vec4<f32>(tone_map_linear(linear), 1.0);
     output.depth = clamp(projected.z / projected.w, 0.0, 1.0);
     return output;
 }

@@ -1,4 +1,48 @@
 mod time;
+mod world;
+
+use crate::runtime::schedule::{ScheduleDiagnostics, ServerSchedule, SystemFn};
+use minimium_platform::modules::{CommandScope, ModuleRegistry};
+use std::sync::OnceLock;
+
+type ModuleHandler = fn(&mut CommandContext<'_>, &[&str]) -> CommandReply;
+
+fn extensions() -> &'static ModuleRegistry<ModuleHandler, SystemFn> {
+    static REGISTRY: OnceLock<ModuleRegistry<ModuleHandler, SystemFn>> = OnceLock::new();
+    REGISTRY.get_or_init(|| {
+        let mut registry = ModuleRegistry::default();
+        registry
+            .install(&world::WorldCommands)
+            .expect("built-in world commands register without collisions");
+        registry
+    })
+}
+
+pub fn initialize_modules() {
+    let _ = extensions();
+}
+
+pub(crate) fn build_schedule() -> ServerSchedule {
+    ServerSchedule::from_systems(extensions().systems())
+}
+
+fn execute_registered(line: &str, context: &mut CommandContext<'_>) -> CommandReply {
+    match extensions().resolve(line) {
+        Some((command, args)) if command.definition.scope == CommandScope::ServerAdmin => {
+            (command.definition.handler)(context, &args)
+        }
+        Some(_) => CommandReply {
+            success: false,
+            text: "command not permitted in the server admin console".into(),
+            stop: false,
+        },
+        None => CommandReply {
+            success: false,
+            text: "unknown command; use `help`".into(),
+            stop: false,
+        },
+    }
+}
 
 use crate::{environment::EnvironmentClock, world_registry::WorldRegistry};
 use crate::{
@@ -19,6 +63,7 @@ pub struct CommandContext<'a> {
     pub metrics: &'a RuntimeMetrics,
     pub environment_clock: &'a mut EnvironmentClock,
     pub monotonic_ms: MonotonicMs,
+    pub schedule_diagnostics: ScheduleDiagnostics,
 }
 
 pub struct CommandReply {
@@ -27,9 +72,12 @@ pub struct CommandReply {
     pub stop: bool,
 }
 
-pub fn execute(command: ServerCommand, context: CommandContext<'_>) -> CommandReply {
+pub fn execute(command: &ServerCommand, mut context: CommandContext<'_>) -> CommandReply {
+    if let ServerCommand::Registered(line) = command {
+        return execute_registered(line, &mut context);
+    }
     let CommandContext {
-        world,
+        world: _,
         worlds,
         player_store,
         persistence,
@@ -38,37 +86,41 @@ pub fn execute(command: ServerCommand, context: CommandContext<'_>) -> CommandRe
         metrics,
         environment_clock,
         monotonic_ms,
+        schedule_diagnostics,
     } = context;
     match command {
         ServerCommand::Help => CommandReply {
             success: true,
-            text: server_help(),
+            text: format!("{} | {}", server_help(), extensions().commands().iter()
+                .map(|command| command.definition.usage).collect::<Vec<_>>().join(" | ")),
             stop: false,
         },
         ServerCommand::Status => CommandReply {
             success: true,
             text: format!(
-                "running players={} lanes={lanes} ticks={} clock_probe_requests={} clock_probe_accepted={} clock_probe_rejected={} environment_sync_messages={} {}",
-                world.player_count(),
+                "running players={} lanes={lanes} ticks={} clock_probe_requests={} clock_probe_accepted={} clock_probe_rejected={} environment_sync_messages={} scheduled_world_instances={} startup_system_runs={} {}",
+                worlds.total_players(),
                 metrics.ticks,
                 metrics.clock_probe_requests,
                 metrics.clock_probe_accepted,
                 metrics.clock_probe_rejected,
                 metrics.environment_sync_messages,
+                schedule_diagnostics.world_instance_count,
+                schedule_diagnostics.startup_system_runs,
                 persistence.summary()
             ),
             stop: false,
         },
         ServerCommand::Players => {
-            let players = world.snapshot();
+            let players = worlds.player_snapshots();
             let text = if players.is_empty() {
                 "no players".to_owned()
             } else {
                 players
                     .iter()
-                    .map(|player| {
+                    .map(|(instance_id, player)| {
                         format!(
-                            "{}:{}@{:.1},{:.1},{:.1}",
+                            "{}:{}:world={instance_id}@{:.1},{:.1},{:.1}",
                             player.id,
                             player.name,
                             player.position[0],
@@ -87,7 +139,7 @@ pub fn execute(command: ServerCommand, context: CommandContext<'_>) -> CommandRe
         }
         ServerCommand::Metrics => CommandReply {
             success: true,
-            text: metrics.summary(world.player_count()),
+            text: metrics.summary(worlds.total_players()),
             stop: false,
         },
         ServerCommand::Save => {
@@ -116,6 +168,7 @@ pub fn execute(command: ServerCommand, context: CommandContext<'_>) -> CommandRe
             text: "stopping".to_owned(),
             stop: true,
         },
-        ServerCommand::Time(command) => time::execute(command, environment_clock, monotonic_ms),
+        ServerCommand::Time(command) => time::execute(*command, environment_clock, monotonic_ms),
+        ServerCommand::Registered(_) => unreachable!("registered commands dispatched above"),
     }
 }

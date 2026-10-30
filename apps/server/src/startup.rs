@@ -368,7 +368,13 @@ fn migrate_legacy_demo(
     let mut players = PlayerStore::load(data_dir, &old_maps)?.player_store;
     players.migrate_legacy_planet_positions();
     let mut registry =
-        crate::world_registry::WorldRegistry::from_generated_worlds(generated_worlds.to_vec());
+        crate::world_registry::WorldRegistry::try_from_generated_worlds(generated_worlds.to_vec())
+            .map_err(|error| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("generated world registry is invalid: {error:?}"),
+                )
+            })?;
     registry
         .restore_sector_states(players.sector_states())
         .map_err(|error| {

@@ -100,6 +100,6 @@ fn lambert_phase_fraction(cos_phase: f32) -> f32 {
         linear_color = atmosphere.scattering_rgb + atmosphere.transmittance * lunar_radiance;
     }
     let alpha = coverage * horizon;
-    let output_color = tone_map_linear(linear_color * environment.ambient_rgb_exposure.w);
+    let output_color = tone_map_linear(linear_color);
     return vec4<f32>(output_color * alpha, alpha);
 }

@@ -1,12 +1,13 @@
 use minimium_core::world::WorldMap;
 use minimium_core::{
+    entity::{ComponentError, ComponentTypeId, EntityId},
     environment::EnvironmentProfile,
     ids::PlayerId,
     time::ClockId,
     world::{
-        GenerationRevision, GenerationSpec, GeneratorDigest, MembershipEpoch, Position3Mm,
-        TransitionId, World, WorldContentRevision, WorldDefinitionId, WorldInstanceId,
-        WorldLocation, WorldManifest, WorldSectorState, WorldSeed, WorldTopology,
+        GenerationRevision, GenerationSpec, GeneratorDigest, MembershipEpoch, ObjectOriginId,
+        Position3Mm, SectorKey, TransitionId, World, WorldContentRevision, WorldDefinitionId,
+        WorldInstanceId, WorldLocation, WorldManifest, WorldSectorState, WorldSeed, WorldTopology,
     },
 };
 use minimium_procgen::{DemoPortal, GeneratedWorld};
@@ -16,7 +17,10 @@ use std::{
     sync::Arc,
 };
 
+mod accessors;
 mod constructors;
+mod diagnostics;
+mod entity_state;
 mod environment;
 mod sector_state;
 
@@ -29,17 +33,24 @@ pub(crate) struct WorldInstance {
     pub(crate) manifest: WorldManifest,
     pub(crate) map: Arc<WorldMap>,
     pub(crate) world: World,
+    /// Optional per-instance component state (legacy world simulation remains authoritative).
+    pub(crate) entities: minimium_core::entity::EntityStore,
     pub(crate) portal: Option<DemoPortal>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum RegistryError {
+    EmptyWorlds,
     DuplicateInstance,
     UnknownInstance,
     EpochSpaceExhausted,
     InvalidSectorState,
     StaleSectorRevision,
     SectorStateCapacity,
+    Component(ComponentError),
+    EntitySectorConflict,
+    EntityOriginConflict,
+    SectorRevisionExhausted,
 }
 
 /// Server-owned collection of isolated simulation owners and memberships.
@@ -51,6 +62,9 @@ pub(crate) struct WorldRegistry {
     transfers: HashMap<PlayerId, PendingTransfer>,
     next_transition: u128,
     sector_states: BTreeMap<(WorldInstanceId, minimium_core::world::SectorKey), WorldSectorState>,
+    persisted_totals: sector_state::PersistedTotals,
+    entity_sectors: BTreeMap<(WorldInstanceId, EntityId), SectorKey>,
+    entity_origins: BTreeMap<(WorldInstanceId, EntityId, ComponentTypeId), ObjectOriginId>,
 }
 
 #[derive(Clone, Copy)]
@@ -414,43 +428,6 @@ impl WorldRegistry {
         self.memberships
             .get(&id)
             .map(|membership| membership.instance)
-    }
-
-    pub(crate) fn primary_id(&self) -> WorldInstanceId {
-        self.primary
-    }
-
-    pub(crate) fn primary(&self) -> &WorldInstance {
-        self.instances
-            .get(&self.primary)
-            .expect("primary world remains registered")
-    }
-
-    pub(crate) fn get(&self, instance: WorldInstanceId) -> Option<&WorldInstance> {
-        self.instances.get(&instance)
-    }
-
-    pub(crate) fn get_mut(&mut self, instance: WorldInstanceId) -> Option<&mut WorldInstance> {
-        self.instances.get_mut(&instance)
-    }
-
-    pub(crate) fn for_player(&self, id: PlayerId) -> Option<&WorldInstance> {
-        self.instances.get(&self.instance_for_player(id)?)
-    }
-
-    pub(crate) fn for_player_mut(&mut self, id: PlayerId) -> Option<&mut WorldInstance> {
-        let instance = self.instance_for_player(id)?;
-        self.instances.get_mut(&instance)
-    }
-
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (WorldInstanceId, &WorldInstance)> {
-        self.instances.iter().map(|(id, world)| (*id, world))
-    }
-
-    pub(crate) fn iter_mut(
-        &mut self,
-    ) -> impl Iterator<Item = (WorldInstanceId, &mut WorldInstance)> {
-        self.instances.iter_mut().map(|(id, world)| (*id, world))
     }
 
     pub(crate) fn world_input_context_is_current(

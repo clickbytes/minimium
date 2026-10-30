@@ -13,10 +13,12 @@ impl Renderer {
         {
             let frame = session.environment_frame();
             let context_matches = frame.context.is_some_and(|context| {
-                context.instance() == self.current_instance
+                Some(context) == self.game.session_context
+                    && context.instance() == self.game.current_instance
                     && self
+                        .game
                         .world_manifests
-                        .get(&self.current_instance)
+                        .get(&self.game.current_instance)
                         .is_some_and(|manifest| {
                             context.content_revision() == manifest.content_revision()
                         })
@@ -30,12 +32,16 @@ impl Renderer {
         }
 
         if self.settings.demo {
-            let manifest = self.world_manifests.get(&self.current_instance).copied();
+            let manifest = self
+                .game
+                .world_manifests
+                .get(&self.game.current_instance)
+                .copied();
             self.environment_frame = match (self.demo_environment.as_ref(), manifest) {
                 (Some(demo), Some(manifest)) => demo.frame(
                     manifest,
                     Some(WorldContext::new(
-                        self.current_instance,
+                        self.game.current_instance,
                         manifest.content_revision(),
                         MembershipEpoch::new(1).expect("local demo membership epoch is nonzero"),
                     )),

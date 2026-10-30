@@ -9,7 +9,15 @@ impl ServerRuntime {
             let tick_started = Instant::now();
             self.apply_commands();
             self.apply_world_inputs();
+            self.schedule.run_stage(
+                minimium_platform::modules::Stage::FixedUpdate,
+                &self.game.worlds,
+            );
             self.simulate_tick();
+            self.schedule.run_stage(
+                minimium_platform::modules::Stage::Environment,
+                &self.game.worlds,
+            );
             self.metrics.ticks = self.metrics.ticks.saturating_add(1);
             self.metrics.last_tick = tick_started.elapsed();
             self.metrics.tick.record(self.metrics.last_tick);
@@ -39,9 +47,10 @@ impl ServerRuntime {
                 continue;
             }
             let monotonic_ms = self.monotonic_ms(Instant::now());
+            let schedule_diagnostics = self.schedule.diagnostics();
             let mut reply = match monotonic_ms {
                 Ok(monotonic_ms) => commands::execute(
-                    command,
+                    &command,
                     commands::CommandContext {
                         world: &self.game.worlds.primary().world,
                         worlds: &self.game.worlds,
@@ -52,6 +61,7 @@ impl ServerRuntime {
                         metrics: &self.metrics,
                         environment_clock: &mut self.environment_clock,
                         monotonic_ms,
+                        schedule_diagnostics,
                     },
                 ),
                 Err(error) => commands::CommandReply {
@@ -208,11 +218,12 @@ impl ServerRuntime {
         let (worlds, active_inputs) = (&mut self.game.worlds, &self.game.active_inputs);
         let mut collision_stats = CollisionQueryStats::default();
         for (_, instance) in worlds.iter_mut() {
-            let earth = instance
-                .manifest
-                .planet()
-                .filter(|definition| definition.mode == 1);
-            let previous = earth.map(|_| instance.world.snapshot());
+            let manifest = instance.manifest;
+            let has_surface_policy = manifest.planet().is_some_and(|planet| {
+                manifest.topology() == minimium_core::world::WorldTopology::Planet
+                    && planet.kind() == minimium_core::world::PlanetKind::Earth
+            });
+            let previous = has_surface_policy.then(|| instance.world.snapshot());
             collision_stats.merge(simulation::step_ready_players(
                 &mut instance.world,
                 active_inputs,
@@ -220,14 +231,20 @@ impl ServerRuntime {
                 TICK.as_secs_f32(),
                 &self.executor,
             ));
-            if let (Some(definition), Some(previous)) = (earth, previous) {
+            if let Some((batched, batches)) = instance.world.precise_dispatch_stats() {
+                self.metrics.record_precise_dispatch(batched, batches);
+            }
+            if let Some(previous) = previous {
                 for player in previous {
                     if let Some(current) = instance.world.player(player.id) {
-                        if !minimium_procgen::earth_is_land(
-                            current.position,
-                            definition.height_scale_permille,
-                            definition.sea_level_mm,
-                        ) {
+                        let position_mm = current.position_mm.unwrap_or_else(|| {
+                            minimium_core::world::Position3Mm(
+                                current
+                                    .position
+                                    .map(|value| (f64::from(value) * 1000.0).round() as i64),
+                            )
+                        });
+                        if !minimium_procgen::can_traverse_surface(manifest, position_mm) {
                             instance.world.set_position(player.id, player.position);
                             if let Some(position_mm) = player.position_mm {
                                 instance.world.restore_position_mm(player.id, position_mm);

@@ -9,9 +9,9 @@ use crate::{
 use minimium_core::{
     identity::PlayerProfileId,
     world::{
-        character_frame, step_character, CharacterGravity, CharacterInput, CharacterState,
-        CollisionIndex, CollisionQuery, GenerationRevision, SectorKey, WorldContentRevision,
-        WorldManifest, WorldMap, WorldTopology, PLAYER_MAX_HEALTH,
+        character_frame, CharacterGravity, CharacterInput, CharacterState, CollisionIndex,
+        CollisionQuery, GenerationRevision, SectorKey, WorldContentRevision, WorldManifest,
+        WorldMap, WorldTopology, PLAYER_MAX_HEALTH,
     },
 };
 use minimium_protocol::{ClientMessage, ServerMessage, MAX_VISIBLE_PLAYERS};
@@ -33,6 +33,7 @@ use winit::{
 
 mod camera;
 mod celestial_halo_gpu;
+mod client_game;
 mod console_events;
 mod controller;
 mod diagnostics;
@@ -53,6 +54,7 @@ mod overview;
 mod planet_visibility;
 mod quality;
 mod render;
+mod scene_bridge;
 mod sector_scene;
 mod session;
 mod shader_source;
@@ -91,6 +93,7 @@ struct GpuResources {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     scene_color_format: wgpu::TextureFormat,
+    hdr_enabled: bool,
     pipeline: wgpu::RenderPipeline,
     shadow_gpu: shadow_gpu::ShadowGpu,
     shadow_state: shadows::ShadowState,
@@ -100,6 +103,7 @@ struct GpuResources {
     moon: moon_gpu::MoonGpu,
     moon_sphere: moon_sphere_gpu::MoonSphereGpu,
     ui_pipeline: wgpu::RenderPipeline,
+    ui_output_pipeline: Option<wgpu::RenderPipeline>,
     ui_bind_group: wgpu::BindGroup,
     ui_vertex_buffer: wgpu::Buffer,
     ui_vertex_count: u32,
@@ -201,11 +205,12 @@ struct ClientSettings {
 
 struct Renderer {
     gpu: GpuResources,
-    game: GameplayView,
+    game: client_game::ClientGameState,
     input: InputState,
     ui: UiState,
     metrics: FrameMetrics,
     settings: ClientSettings,
+    demo_universe_enabled: bool,
     sky_quality: crate::environment::quality::SkyQualityState,
     connection: ConnectionController,
     environment_frame: EnvironmentFrameInput,
@@ -216,14 +221,11 @@ struct Renderer {
     environment_error: Option<String>,
     demo_environment: Option<LocalDemoEnvironment>,
     world_catalog: std::collections::HashMap<minimium_core::world::WorldInstanceId, WorldMap>,
-    world_manifests:
-        std::collections::HashMap<minimium_core::world::WorldInstanceId, WorldManifest>,
     sector_cache: sector_scene::ClientSectorCache,
     active_sector_keys: Vec<SectorKey>,
     last_render_position: [f32; 3],
     pending_sector_transitions:
         std::collections::HashMap<minimium_core::world::TransitionId, PendingSectorTransition>,
-    current_instance: minimium_core::world::WorldInstanceId,
     overview_open: bool,
     overview_instance: Option<minimium_core::world::WorldInstanceId>,
     connection_status: String,

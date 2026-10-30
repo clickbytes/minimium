@@ -28,7 +28,7 @@ use minimium_telemetry::allocations;
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 use std::{env, time::Duration};
 
-const TICK: Duration = Duration::from_millis(50);
+const TICK: Duration = Duration::from_millis(minimium_core::world::SIMULATION_STEP_MILLISECONDS);
 const SNAPSHOT_INTERVAL: Duration = Duration::from_millis(100);
 const MAX_PENDING_HANDSHAKES: usize = 64;
 const MAX_PENDING_WORLD_INPUTS: usize = 4096;
@@ -67,6 +67,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let config = config::ServerConfig::parse(&args)?;
+    commands::initialize_modules();
     let startup = startup::initialize(&config)?;
     runtime::ServerRuntime::new(config, startup)?.run()?;
     Ok(())
