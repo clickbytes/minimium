@@ -2,10 +2,13 @@
 
 ## Status i źródło prawdy
 
-Specyfikacja planowanej implementacji, oparta na `main@aad2c8298606a46dc3a286b4eac7f1de45759851`.
-Zatwierdzenie kontraktów i ADR jest zadaniem E004-00. Sam ten dokument nie stanowi dowodu implementacji.
-Pełne instrukcje wykonawcze, błędy i kryteria są w powiązanych issues z [indeksu epica](epic-004.md).
-Zmiana wspólnego kontraktu musi aktualizować ten dokument, ADR i wszystkie dotknięte issues w jednym przyroście.
+Kontrakty zatwierdzone w E004-00 i zapisane w [ADR 0006](../adr/0006-world-time-and-sky.md).
+Stan bazowy kodu: `main@30ff278f9a0020f93d2567b2ca5c05a290bc605e`; gałąź integracyjna została zsynchronizowana
+przez merge commit `cd816c2d32bd4b1447f14ac04a9ec99e44c0e4af` (`epic/004-realistic-sky-time`). Dokument określa
+docelową implementację, nie dowodzi, że funkcje już istnieją.
+Pełne instrukcje wykonawcze, błędy i kryteria są w issues z [indeksu epica](epic-004.md).
+Zmiana wspólnego kontraktu wymaga aktualizacji tego dokumentu, ADR i wszystkich
+dotkniętych issues w jednym przyroście.
 
 ## 1. Właściciele danych i granice zależności
 

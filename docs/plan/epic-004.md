@@ -9,7 +9,7 @@ Dodać do Minimium wspólny czas świata, płynny dzień/noc, podstawowe niebo, 
 
 **Stan: PLANNED.** Ta karta i zadania wykonawcze opisują przyszłą implementację. Utworzenie planu, branchu i draft PR nie oznacza wdrożenia funkcji ani rozpoczęcia końcowych testów.
 
-Baza analizy: [`main@aad2c82`](https://github.com/clickbytes/minimium/commit/aad2c8298606a46dc3a286b4eac7f1de45759851). Plan uwzględnia nowy rejestr poleceń konsoli i zmiany szczegółowości globusa z tego commita. Obecne punkty wyjścia: protokół v11, save v7, statyczne światło w world/globe shaderach i brak kalendarzowego zegara.
+Baza planu: [`main@aad2c82`](https://github.com/clickbytes/minimium/commit/aad2c8298606a46dc3a286b4eac7f1de45759851). Przed implementacją gałąź integracyjna została porównana i zsynchronizowana z [`main@30ff278`](https://github.com/clickbytes/minimium/commit/30ff278f9a0020f93d2567b2ca5c05a290bc605e) przez `cd816c2`. Zachowuje to nowszą konsolę, suwak zoomu i kafelkowany LOD globusa. Baseline potwierdza protokół v11 i save v7; kalendarzowego zegara i dynamicznego oświetlenia nadal brak.
 
 ## Zakres obowiązkowy
 
@@ -117,10 +117,11 @@ Branch integracyjny: `epic/004-realistic-sky-time`. Każdy task ma osobny branch
 
 - [Wspólne kontrakty](epic-004-contracts.md).
 - [Plan i rejestr weryfikacji](epic-004-verification.md).
-- ADR `docs/adr/0006-world-time-and-sky.md` ma powstać i zostać odebrany w E004-00; nie jest jeszcze zaakceptowaną implementacją.
+- ADR `docs/adr/0006-world-time-and-sky.md` zatwierdza kontrakty E004. Jest decyzją architektoniczną, nie dowodem implementacji funkcji.
 
 ## Stan przygotowania
 
-Utworzono rodzica i 18 pełnych issues z linkami do aktualnych plików, krokami, kontraktami, zależnościami i kryteriami.
-Sprawdzono strukturę opisów, acykliczność grafu i odnośniki bazowe. Nie wykonano implementacji E004,
-kompilacji ani testów projektu. Wszystkie zadania implementacyjne pozostają PLANNED; wyniki runtime są NOT RUN.
+E004-00 zatwierdza [ADR 0006](../adr/0006-world-time-and-sky.md), wspólne kontrakty
+i baseline w [rejestrze weryfikacji](epic-004-verification.md). Wykonano formatowanie
+kontrolne, kompilację workspace, Clippy i kontrole statyczne bez testów i uruchamiania
+aplikacji. Implementacja funkcji E004-01..14 pozostaje PLANNED; wyniki runtime są NOT RUN.
