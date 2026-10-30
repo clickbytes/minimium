@@ -208,11 +208,12 @@ impl ServerRuntime {
         let (worlds, active_inputs) = (&mut self.game.worlds, &self.game.active_inputs);
         let mut collision_stats = CollisionQueryStats::default();
         for (_, instance) in worlds.iter_mut() {
-            let earth = instance
-                .manifest
-                .planet()
-                .filter(|definition| definition.mode == 1);
-            let previous = earth.map(|_| instance.world.snapshot());
+            let manifest = instance.manifest;
+            let has_surface_policy = manifest.planet().is_some_and(|planet| {
+                manifest.topology() == minimium_core::world::WorldTopology::Planet
+                    && planet.kind() == minimium_core::world::PlanetKind::Earth
+            });
+            let previous = has_surface_policy.then(|| instance.world.snapshot());
             collision_stats.merge(simulation::step_ready_players(
                 &mut instance.world,
                 active_inputs,
@@ -220,14 +221,17 @@ impl ServerRuntime {
                 TICK.as_secs_f32(),
                 &self.executor,
             ));
-            if let (Some(definition), Some(previous)) = (earth, previous) {
+            if let Some(previous) = previous {
                 for player in previous {
                     if let Some(current) = instance.world.player(player.id) {
-                        if !minimium_procgen::earth_is_land(
-                            current.position,
-                            definition.height_scale_permille,
-                            definition.sea_level_mm,
-                        ) {
+                        let position_mm = current.position_mm.unwrap_or_else(|| {
+                            minimium_core::world::Position3Mm(
+                                current
+                                    .position
+                                    .map(|value| (f64::from(value) * 1000.0).round() as i64),
+                            )
+                        });
+                        if !minimium_procgen::can_traverse_surface(manifest, position_mm) {
                             instance.world.set_position(player.id, player.position);
                             if let Some(position_mm) = player.position_mm {
                                 instance.world.restore_position_mm(player.id, position_mm);

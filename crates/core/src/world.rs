@@ -45,7 +45,7 @@ pub use map::{
 };
 pub use model::{
     GenerationRevision, GenerationSpec, GeneratorDigest, MembershipEpoch, ObjectOriginId,
-    PlanetDefinition, Position3Mm, SectorRevision, TransitionId, WorldContentRevision,
+    PlanetDefinition, PlanetKind, Position3Mm, SectorRevision, TransitionId, WorldContentRevision,
     WorldDefinitionId, WorldInstanceId, WorldLocation, WorldManifest, WorldObjectState,
     WorldOrientationQ30, WorldSectorState, WorldSeed, WorldTopology, MAX_OBJECT_STATE_BYTES,
     MAX_PERSISTED_WORLD_OBJECT_STATES, MAX_PERSISTED_WORLD_OBJECT_STATE_BYTES,

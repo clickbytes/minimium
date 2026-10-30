@@ -39,14 +39,16 @@ impl Renderer {
             if self
                 .world_manifests
                 .get(&self.current_instance)
-                .and_then(|manifest| manifest.planet())
-                .is_some_and(|definition| {
-                    definition.mode == 1
-                        && !minimium_procgen::earth_is_land(
-                            self.game.character.position,
-                            definition.height_scale_permille,
-                            definition.sea_level_mm,
+                .is_some_and(|manifest| {
+                    let position_mm = self.game.position_mm.unwrap_or_else(|| {
+                        minimium_core::world::Position3Mm(
+                            self.game
+                                .character
+                                .position
+                                .map(|value| (f64::from(value) * 1000.0).round() as i64),
                         )
+                    });
+                    !minimium_procgen::can_traverse_surface(*manifest, position_mm)
                 })
             {
                 self.game.character = previous_state;
