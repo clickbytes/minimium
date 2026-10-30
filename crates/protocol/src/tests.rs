@@ -16,7 +16,7 @@ use minimium_core::{
     },
 };
 
-fn environment(
+fn environment_fixture(
     profile: EnvironmentProfile,
     monotonic_ms: u64,
 ) -> (ClockSample, EnvironmentDescriptor) {
@@ -68,7 +68,7 @@ fn context(instance: u128, epoch: u64) -> WorldContext {
 
 #[test]
 fn welcome_and_transition_frames_round_trip_full_world_context() {
-    let (clock_sample, environment) = environment(EnvironmentProfile::EarthLike, 10);
+    let (clock_sample, environment) = environment_fixture(EnvironmentProfile::EarthLike, 10);
     let welcome = ServerMessage::Welcome {
         id: PlayerId::new(42),
         map_fingerprint: 0x1234,
@@ -86,7 +86,7 @@ fn welcome_and_transition_frames_round_trip_full_world_context() {
     assert_eq!(decoded, welcome);
     assert_eq!(consumed, frame.len());
 
-    let (clock_sample, environment) = environment(EnvironmentProfile::Interior, 11);
+    let (clock_sample, environment) = environment_fixture(EnvironmentProfile::Interior, 11);
     let transition = ServerMessage::TransitionPrepare {
         transition_id: TransitionId::new(17).unwrap(),
         source_context: context(1, 9),

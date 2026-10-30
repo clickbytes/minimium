@@ -60,7 +60,6 @@ impl ClientSession {
         self.environment_descriptor = Some(descriptor);
         self.pending_environment = None;
         self.clock.note_sample(sample);
-        self.clock.cancel_inflight_for_transition();
         Ok(())
     }
 

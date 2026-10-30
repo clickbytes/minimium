@@ -32,6 +32,8 @@ impl ServerRuntime {
                         .game
                         .worlds
                         .world_input_context_is_current(player, context)
+                        && self.game.pending_world_inputs.len() + self.connections.clients.len()
+                            < MAX_PENDING_WORLD_INPUTS
                     {
                         self.game
                             .pending_world_inputs
@@ -51,7 +53,8 @@ impl ServerRuntime {
                             .game
                             .worlds
                             .world_input_context_is_current(player, context)
-                            && self.game.pending_world_inputs.len() < MAX_PENDING_WORLD_INPUTS
+                            && self.game.pending_world_inputs.len() + self.connections.clients.len()
+                                < MAX_PENDING_WORLD_INPUTS
                         {
                             self.game.pending_world_inputs.push((
                                 WorldInput::MapTeleport(player, context, direction),
