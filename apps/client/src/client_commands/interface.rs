@@ -44,13 +44,17 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 }
 
 fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
-    match words {
-        ["help"] => Ok(ClientCommand::Help),
-        ["fps", "show"] => Ok(ClientCommand::FpsShow),
-        ["net", "stats"] => Ok(ClientCommand::NetStats),
-        ["state"] => Ok(ClientCommand::State),
-        ["clear"] => Ok(ClientCommand::Clear),
-        ["quit"] | ["exit"] => Ok(ClientCommand::Quit),
-        _ => Err(ParseError::UnknownCommand),
-    }
+    let [command, arguments] = words else {
+        return Err(ParseError::UnknownCommand);
+    };
+    let result = match (*command, *arguments) {
+        ("help", "") => Some(ClientCommand::Help),
+        ("fps show", "") => Some(ClientCommand::FpsShow),
+        ("net stats", "") => Some(ClientCommand::NetStats),
+        ("state", "") => Some(ClientCommand::State),
+        ("clear", "") => Some(ClientCommand::Clear),
+        ("quit", "") => Some(ClientCommand::Quit),
+        _ => None,
+    };
+    result.ok_or(ParseError::UnknownCommand)
 }

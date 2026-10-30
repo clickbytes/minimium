@@ -50,26 +50,29 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 }
 
 fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
-    match words {
-        ["move", x, z] => Ok(ClientCommand::Move([
+    let [command, raw_arguments] = words else {
+        return Err(ParseError::UnknownCommand);
+    };
+    if *command == "say" {
+        return if raw_arguments.is_empty() {
+            Err(ParseError::MissingChat)
+        } else {
+            Ok(ClientCommand::Chat((*raw_arguments).to_owned()))
+        };
+    }
+    let arguments = raw_arguments.split_whitespace().collect::<Vec<_>>();
+    match (*command, arguments.as_slice()) {
+        ("move", [x, z]) => Ok(ClientCommand::Move([
             parse_coordinate(x)?,
             parse_coordinate(z)?,
         ])),
-        ["move", ..] => Err(ParseError::MoveUsage),
-        ["jump"] => Ok(ClientCommand::Jump),
-        ["portal"] => Ok(ClientCommand::UsePortal),
-        ["map_telepo"] => Ok(ClientCommand::MapTeleport),
-        ["fire"] => Ok(ClientCommand::Fire),
-        ["say", text @ ..] | ["chat", text @ ..] => {
-            let message = text.join(" ");
-            if message.is_empty() {
-                Err(ParseError::MissingChat)
-            } else {
-                Ok(ClientCommand::Chat(message))
-            }
-        }
-        ["name", name] => Ok(ClientCommand::SetName((*name).to_owned())),
-        ["name", ..] => Err(ParseError::NameUsage),
+        ("move", _) => Err(ParseError::MoveUsage),
+        ("jump", []) => Ok(ClientCommand::Jump),
+        ("portal", []) => Ok(ClientCommand::UsePortal),
+        ("map_telepo", []) => Ok(ClientCommand::MapTeleport),
+        ("fire", []) => Ok(ClientCommand::Fire),
+        ("name", [name]) => Ok(ClientCommand::SetName((*name).to_owned())),
+        ("name", _) => Err(ParseError::NameUsage),
         _ => Err(ParseError::UnknownCommand),
     }
 }

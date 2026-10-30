@@ -34,18 +34,22 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 }
 
 fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
-    match words {
-        ["sky", "quality", value] => Ok(ClientCommand::SkyQuality(
+    let [command, raw_arguments] = words else {
+        return Err(ParseError::UnknownCommand);
+    };
+    let arguments = raw_arguments.split_whitespace().collect::<Vec<_>>();
+    match (*command, arguments.as_slice()) {
+        ("sky quality", [value]) => Ok(ClientCommand::SkyQuality(
             SkyQuality::parse(value).map_err(|_| ParseError::SkyQualityUsage)?,
         )),
-        ["sky", "quality", ..] => Err(ParseError::SkyQualityUsage),
-        ["sky", "info"] => Ok(ClientCommand::SkyInfo),
-        ["time", "status"] => Ok(ClientCommand::TimeStatus),
-        ["time", "scale", value] | ["timescale", value] => {
+        ("sky quality", _) => Err(ParseError::SkyQualityUsage),
+        ("sky info", []) => Ok(ClientCommand::SkyInfo),
+        ("time status", []) => Ok(ClientCommand::TimeStatus),
+        ("time scale", [value]) => {
             parse_scale_ppm(value).map_err(|_| ParseError::TimeScaleUsage)?;
             Ok(ClientCommand::TimeScale((*value).to_owned()))
         }
-        ["time", "scale", ..] | ["timescale", ..] => Err(ParseError::TimeScaleUsage),
+        ("time scale", _) => Err(ParseError::TimeScaleUsage),
         _ => Err(ParseError::UnknownCommand),
     }
 }

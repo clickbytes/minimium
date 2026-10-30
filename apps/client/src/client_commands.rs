@@ -68,7 +68,7 @@ impl CommandRegistry {
         }
     }
 
-    fn parse(&self, words: &[&str]) -> Option<Result<ClientCommand, ParseError>> {
+    fn parse(&self, input: &str, words: &[&str]) -> Option<Result<ClientCommand, ParseError>> {
         self.commands
             .iter()
             .filter_map(|spec| {
@@ -81,8 +81,21 @@ impl CommandRegistry {
                 Some((spec, matched.len()))
             })
             .max_by_key(|(_, length)| *length)
-            .map(|(spec, _)| (spec.parser)(words))
+            .map(|(spec, command_length)| {
+                let arguments = [spec.name, tail_after_tokens(input, command_length)];
+                (spec.parser)(&arguments)
+            })
     }
+}
+
+fn tail_after_tokens(input: &str, count: usize) -> &str {
+    let mut tail = input;
+    for _ in 0..count {
+        tail = tail.trim_start();
+        let end = tail.find(char::is_whitespace).unwrap_or(tail.len());
+        tail = &tail[end..];
+    }
+    tail.trim()
 }
 
 static REGISTRY: OnceLock<CommandRegistry> = OnceLock::new();
@@ -134,7 +147,7 @@ pub(crate) fn parse_command(input: &str) -> Result<Option<ClientCommand>, ParseE
     }
     let words = trimmed.split_whitespace().collect::<Vec<_>>();
     registry()
-        .parse(&words)
+        .parse(trimmed, &words)
         .unwrap_or(Err(ParseError::UnknownCommand))
         .map(Some)
 }

@@ -33,16 +33,20 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 }
 
 fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
-    match words {
-        ["host", "local"] => Ok(ClientCommand::HostLocal(None)),
-        ["host", "local", "--threads", lane] => Ok(ClientCommand::HostLocal(Some(
+    let [command, raw_arguments] = words else {
+        return Err(ParseError::UnknownCommand);
+    };
+    let arguments = raw_arguments.split_whitespace().collect::<Vec<_>>();
+    match (*command, arguments.as_slice()) {
+        ("host local", []) => Ok(ClientCommand::HostLocal(None)),
+        ("host local", ["--threads", lane]) => Ok(ClientCommand::HostLocal(Some(
             ThreadLane::parse(lane).map_err(|_| ParseError::InvalidLane)?,
         ))),
-        ["host", "local", ..] => Err(ParseError::HostUsage),
-        ["connect", address] => Ok(ClientCommand::Connect((*address).to_owned())),
-        ["connect", ..] => Err(ParseError::ConnectUsage),
-        ["disconnect"] => Ok(ClientCommand::Disconnect),
-        ["ping"] => Ok(ClientCommand::Ping),
+        ("host local", _) => Err(ParseError::HostUsage),
+        ("connect", [address]) => Ok(ClientCommand::Connect((*address).to_owned())),
+        ("connect", _) => Err(ParseError::ConnectUsage),
+        ("disconnect", []) => Ok(ClientCommand::Disconnect),
+        ("ping", []) => Ok(ClientCommand::Ping),
         _ => Err(ParseError::UnknownCommand),
     }
 }
