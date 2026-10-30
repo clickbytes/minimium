@@ -13,6 +13,7 @@ mod random_address;
 mod sector_geometry;
 mod sector_neighborhood;
 mod terrain_color;
+mod traversal;
 
 #[cfg(test)]
 mod tests;
@@ -45,3 +46,4 @@ pub use planet_teleport::planet_collision_position_at_direction;
 pub use random_address::{AddressedRandom, GenerationChannel};
 pub use sector_geometry::{materialize_world_sector, slice_sector_geometry, SectorGeometry};
 pub use sector_neighborhood::{sector_neighborhood, sector_neighborhood_for, DUNGEON_SECTOR_EDGE};
+pub use traversal::can_traverse_surface;

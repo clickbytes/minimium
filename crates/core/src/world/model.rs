@@ -177,7 +177,22 @@ pub struct PlanetDefinition {
     pub package_digest: [u8; 32],
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum PlanetKind {
+    Procedural,
+    Earth,
+    Other(u8),
+}
+
 impl PlanetDefinition {
+    pub const fn kind(self) -> PlanetKind {
+        match self.mode {
+            0 => PlanetKind::Procedural,
+            1 => PlanetKind::Earth,
+            mode => PlanetKind::Other(mode),
+        }
+    }
+
     pub const fn is_valid(self) -> bool {
         self.mode <= 1
             && self.radius_mm >= 318_550_000
