@@ -5,13 +5,13 @@ use super::{identity, CatalogError, InvalidRecordReason};
 
 const HEADER_BYTES: usize = 96;
 const RECORD_BYTES: usize = 64;
-const RECORD_COUNT: usize = 500;
+const RECORD_COUNT: usize = 1000;
 
 pub(super) fn decode(bytes: &[u8]) -> Result<StarCatalogue, CatalogError> {
     if bytes.len() != HEADER_BYTES + RECORD_COUNT * RECORD_BYTES {
         return Err(CatalogError::Length);
     }
-    if bytes.get(0..8) != Some(b"MNSKY500") {
+    if bytes.get(0..8) != Some(b"MNSKY1K0") {
         return Err(CatalogError::Magic);
     }
     if read_u16(bytes, 8)? != 1

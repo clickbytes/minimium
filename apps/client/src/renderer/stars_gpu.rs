@@ -21,7 +21,7 @@ impl StarGpu {
         format: wgpu::TextureFormat,
     ) -> Self {
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("hyg-500-star-instance-buffer"),
+            label: Some("hyg-1000-star-instance-buffer"),
             contents: bytemuck::cast_slice(&vec![
                 StarInstanceGpu::default();
                 STAR_GPU_RECORD_COUNT

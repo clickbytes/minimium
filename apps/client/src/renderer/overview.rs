@@ -224,7 +224,8 @@ impl Renderer {
             view = glam::Mat4::from_scale(glam::Vec3::new(-1.0, 1.0, 1.0)) * view;
         }
         let near = radius * ((self.overview_zoom - 1.0) * 0.08).max(0.001);
-        let projection = glam::Mat4::perspective_rh(70_f32.to_radians(), width / height, near, far);
+        let projection =
+            glam::Mat4::perspective_rh(self.fov_degrees.to_radians(), width / height, near, far);
         let inverse = (projection * view).inverse();
         let ndc = glam::Vec2::new(2.0 * x as f32 / width - 1.0, 1.0 - 2.0 * y as f32 / height);
         let near_point = inverse.project_point3(glam::Vec3::new(ndc.x, ndc.y, 0.0));

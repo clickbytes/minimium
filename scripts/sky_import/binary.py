@@ -27,7 +27,9 @@ from .source import (
 )
 
 SCHEMA_VERSION = 1
-CATALOGUE_ID = 1
+CATALOGUE_ID = 2
+MAGIC = b"MNSKY1K0"
+LABELS_PATH = "crates/assets/data/sky/star-labels-v1.tsv"
 HEADER_BYTES = 96
 RECORD_BYTES = 64
 EPOCH_JYEAR = 2000.0
@@ -38,13 +40,14 @@ Source: HYG Database v4.1 by Astronexus / David Nash, archived at
 <https://github.com/astronexus/HYG-Database>.
 
 Pinned input: `hyg/CURRENT/hygdata_v41.csv` at commit
-`c7f7f883fe678cc7680169a50ccd7dcc49b060ce`. This asset selects the 500
+`c7f7f883fe678cc7680169a50ccd7dcc49b060ce`. This asset selects the 1000
 valid records with the lowest apparent visual magnitude, breaking exact ties
 by HYG id. It excludes the Sun, removes unused columns, and converts the
 selected records to the documented little-endian `stars-v1.bin` format.
 Missing color index values use the documented neutral value 0.65; missing
-proper-motion vectors are zero-filled. Names are omitted from the asset;
-selected numeric source coordinates are retained.
+proper-motion vectors are zero-filled. Numeric source coordinates are retained.
+The aligned label asset uses HYG proper names where printable in the bundled
+font, with HIP/HR/HYG identifiers as fallbacks.
 
 The HYG data and this derived catalogue are licensed under
 [Creative Commons Attribution-ShareAlike 4.0 International](https://creativecommons.org/licenses/by-sa/4.0/).
@@ -73,11 +76,12 @@ def build_outputs(
             "HYG source license notice does not match its pinned digest"
         )
     payload = b"".join(_pack_record(star) for star in report.selected)
+    labels = "".join(_label_line(star) for star in report.selected).encode("utf-8")
     payload_sha = hashlib.sha256(payload).digest()
     source_sha = bytes.fromhex(report.source_sha256)
     header = struct.pack(
         "<8sHHIIId32s32s",
-        b"MNSKY500",
+        MAGIC,
         SCHEMA_VERSION,
         RECORD_BYTES,
         CATALOGUE_ID,
@@ -89,12 +93,13 @@ def build_outputs(
     )
     asset = header + payload
     asset_sha = hashlib.sha256(asset).digest()
-    manifest = _manifest(report, asset, payload, license_digest)
+    manifest = _manifest(report, asset, payload, labels, license_digest)
     identity = _identity_source(asset_sha, source_sha)
-    _validate_products(asset, manifest, identity, license_text, source_license_notice)
+    _validate_products(asset, manifest, labels, identity, license_text, source_license_notice)
     return {
         "crates/assets/data/sky/stars-v1.bin": asset,
         "crates/assets/data/sky/stars-v1.manifest.json": manifest,
+        LABELS_PATH: labels,
         LICENSE_NAME: license_text,
         SOURCE_LICENSE_NOTICE_PATH: source_license_notice,
         "crates/assets/data/sky/ATTRIBUTION.md": ATTRIBUTION.encode("utf-8"),
@@ -186,7 +191,7 @@ def _finite_f32(value: float, field: str, hyg_id: int) -> float:
 
 
 def _manifest(
-    report: ImportReport, asset: bytes, payload: bytes, license_digest: str
+    report: ImportReport, asset: bytes, payload: bytes, labels: bytes, license_digest: str
 ) -> bytes:
     selected = report.selected
     repeated_hip = _repeated_catalogue_ids(selected, "hip_id")
@@ -200,7 +205,7 @@ def _manifest(
         "epoch_jyear": EPOCH_JYEAR,
         "format": {
             "header_bytes": HEADER_BYTES,
-            "magic": "MNSKY500",
+            "magic": MAGIC.decode("ascii"),
             "record_bytes": RECORD_BYTES,
             "record_count": len(selected),
             "schema_version": SCHEMA_VERSION,
@@ -228,6 +233,7 @@ def _manifest(
             "url": "https://creativecommons.org/licenses/by-sa/4.0/",
         },
         "payload_sha256": payload_sha,
+        "labels": {"path": LABELS_PATH, "sha256": hashlib.sha256(labels).hexdigest(), "count": len(selected)},
         "selection": {
             "policy_version": 1,
             "rule": "lowest Decimal(apparent visual magnitude), then ascending HYG id; exclude id 0",
@@ -267,6 +273,19 @@ def _identity_source(asset_sha: bytes, source_sha: bytes) -> bytes:
     return text.encode("utf-8")
 
 
+def _label_line(star: HYGStar) -> str:
+    proper = star.proper_name
+    if proper and proper.isascii() and proper.isprintable() and len(proper) <= 30:
+        label = proper
+    elif star.hip_id:
+        label = f"HIP {star.hip_id}"
+    elif star.hr_id:
+        label = f"HR {star.hr_id}"
+    else:
+        label = f"HYG {star.hyg_id}"
+    return f"{star.hyg_id}\t{label}\n"
+
+
 def _repeated_catalogue_ids(selected: tuple[HYGStar, ...], field: str) -> list[int]:
     counts: dict[int, int] = {}
     for star in selected:
@@ -288,6 +307,7 @@ def _repeated_positions(selected: tuple[HYGStar, ...]) -> list[list[int]]:
 def _validate_products(
     asset: bytes,
     manifest: bytes,
+    labels: bytes,
     identity: bytes,
     license_text: bytes,
     source_license_notice: bytes,
@@ -296,7 +316,7 @@ def _validate_products(
         raise ImportFailure("generated asset has an invalid total length")
     header = struct.unpack("<8sHHIIId32s32s", asset[:HEADER_BYTES])
     if header[:6] != (
-        b"MNSKY500",
+        MAGIC,
         SCHEMA_VERSION,
         RECORD_BYTES,
         CATALOGUE_ID,
@@ -323,6 +343,14 @@ def _validate_products(
         raise ImportFailure("binary payload digest does not match its header")
     if parsed_manifest.get("source_csv_sha256") != header[7].hex():
         raise ImportFailure("manifest source digest does not match binary header")
+    label_lines = labels.decode("utf-8").splitlines()
+    selected_ids = parsed_manifest.get("selection", {}).get("selected_ids", [])
+    if len(label_lines) != MAX_STARS or [line.split("\t", 1)[0] for line in label_lines] != [str(value) for value in selected_ids]:
+        raise ImportFailure("labels do not align with selected star IDs")
+    if any("\t" not in line or not line.split("\t", 1)[1] for line in label_lines):
+        raise ImportFailure("a generated star label is empty")
+    if parsed_manifest.get("labels") != {"path": LABELS_PATH, "sha256": hashlib.sha256(labels).hexdigest(), "count": MAX_STARS}:
+        raise ImportFailure("manifest labels digest or count does not match")
     if (
         parsed_manifest.get("license", {}).get("full_text_sha256")
         != hashlib.sha256(license_text).hexdigest()
@@ -349,7 +377,7 @@ def _validate_products(
         selected.get("selected_count") != MAX_STARS
         or len(selected.get("selected_ids", [])) != MAX_STARS
     ):
-        raise ImportFailure("manifest does not describe exactly 500 selected IDs")
+        raise ImportFailure(f"manifest does not describe exactly {MAX_STARS} selected IDs")
     expected_identity = _identity_source(hashlib.sha256(asset).digest(), asset[32:64])
     if identity != expected_identity:
         raise ImportFailure(
@@ -360,9 +388,10 @@ def _validate_products(
 def _validate_staged(staged: dict[str, Path]) -> None:
     asset = staged["crates/assets/data/sky/stars-v1.bin"].read_bytes()
     manifest = staged["crates/assets/data/sky/stars-v1.manifest.json"].read_bytes()
+    labels = staged[LABELS_PATH].read_bytes()
     identity = staged[
         "crates/assets/src/sky_catalog/identity.generated.rs"
     ].read_bytes()
     license_text = staged[LICENSE_NAME].read_bytes()
     source_license_notice = staged[SOURCE_LICENSE_NOTICE_PATH].read_bytes()
-    _validate_products(asset, manifest, identity, license_text, source_license_notice)
+    _validate_products(asset, manifest, labels, identity, license_text, source_license_notice)

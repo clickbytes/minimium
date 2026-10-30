@@ -237,6 +237,8 @@ impl fmt::Display for ClientText {
                 ParseError::MoveUsage => "usage: move X Z",
                 ParseError::NameUsage => "usage: name NAME",
                 ParseError::SkyQualityUsage => "usage: sky quality low|standard",
+                ParseError::FovUsage => "usage: fov [30..110] (degrees)",
+                ParseError::CelestialNamesUsage => "usage: show_celestial_names true|false",
                 ParseError::TimeScaleUsage => {
                     "usage: time scale DECIMAL (or timescale DECIMAL; 0.1-1000000 or 0 to pause, at most 6 fractional digits)"
                 }

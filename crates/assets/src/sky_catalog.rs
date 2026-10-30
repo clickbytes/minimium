@@ -11,6 +11,8 @@ pub use record::{StarCatalogue, StarRecord};
 
 static EMBEDDED_CATALOGUE: OnceLock<Result<StarCatalogue, CatalogError>> = OnceLock::new();
 static EMBEDDED_BYTES: &[u8] = include_bytes!("../data/sky/stars-v1.bin");
+static EMBEDDED_LABELS: &str = include_str!("../data/sky/star-labels-v1.tsv");
+static PARSED_LABELS: OnceLock<Result<Box<[&'static str]>, CatalogError>> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SkyCatalogIdentity {
@@ -30,6 +32,7 @@ pub enum CatalogError {
         reason: InvalidRecordReason,
     },
     InvalidCount,
+    InvalidLabels,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -59,7 +62,10 @@ impl fmt::Display for CatalogError {
                 )
             }
             Self::InvalidCount => {
-                formatter.write_str("sky catalogue must contain exactly 500 records")
+                formatter.write_str("sky catalogue must contain exactly 1000 records")
+            }
+            Self::InvalidLabels => {
+                formatter.write_str("sky catalogue labels do not match its records")
             }
         }
     }
@@ -77,6 +83,31 @@ pub fn embedded_sky_catalog_identity() -> SkyCatalogIdentity {
 pub fn embedded_sky_catalog() -> Result<&'static StarCatalogue, CatalogError> {
     match EMBEDDED_CATALOGUE.get_or_init(|| format::decode(EMBEDDED_BYTES)) {
         Ok(catalogue) => Ok(catalogue),
+        Err(error) => Err(*error),
+    }
+}
+
+pub fn embedded_star_labels() -> Result<&'static [&'static str], CatalogError> {
+    match PARSED_LABELS.get_or_init(|| {
+        let catalogue = embedded_sky_catalog()?;
+        let labels = EMBEDDED_LABELS.lines().collect::<Vec<_>>();
+        if labels.len() != catalogue.records().len() {
+            return Err(CatalogError::InvalidLabels);
+        }
+        labels
+            .into_iter()
+            .zip(catalogue.records())
+            .map(|(line, record)| {
+                let (id, label) = line.split_once('\t').ok_or(CatalogError::InvalidLabels)?;
+                if id.parse::<u32>().ok() != Some(record.hyg_id) || label.is_empty() {
+                    return Err(CatalogError::InvalidLabels);
+                }
+                Ok(label)
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(Vec::into_boxed_slice)
+    }) {
+        Ok(labels) => Ok(labels),
         Err(error) => Err(*error),
     }
 }

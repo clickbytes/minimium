@@ -13,6 +13,9 @@ use minimium_core::{
 use minimium_protocol::WorldContext;
 use std::{error::Error, f64::consts::PI, fmt};
 
+// Presentation scale for sky disks; physical angular radii still drive lighting and visibility.
+const SKY_DISK_DISPLAY_SCALE: f64 = 1.8;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum EnvironmentFrameError {
     DescriptorMismatch,
@@ -156,7 +159,7 @@ pub(super) fn from_sky_state(
         )?,
         sun_apparent_world: direction_radius(
             sky.sun.apparent_direction_world,
-            sky.sun.angular_radius_rad,
+            sky.sun.angular_radius_rad * SKY_DISK_DISPLAY_SCALE,
         )?,
         moon_geometric_world: direction_altitude(
             sky.moon.body.geometric_direction_world,
@@ -164,7 +167,7 @@ pub(super) fn from_sky_state(
         )?,
         moon_apparent_world: direction_radius(
             sky.moon.body.apparent_direction_world,
-            sky.moon.body.angular_radius_rad,
+            sky.moon.body.angular_radius_rad * SKY_DISK_DISPLAY_SCALE,
         )?,
         moon_light_world_phase: direction_fraction(moon_to_sun, sky.moon.illuminated_fraction)?,
         moon_pole_world: direction_zero(moon_pole)?,

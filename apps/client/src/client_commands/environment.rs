@@ -28,6 +28,18 @@ const COMMANDS: &[CommandSpec] = &[
         parser: parse,
     },
     CommandSpec {
+        name: "fov",
+        alias: None,
+        usage: "fov [30..110] (vertical field of view in degrees; default 70)",
+        parser: parse,
+    },
+    CommandSpec {
+        name: "show_celestial_names",
+        alias: None,
+        usage: "show_celestial_names true|false",
+        parser: parse,
+    },
+    CommandSpec {
         name: "time status",
         alias: None,
         usage: "time status",
@@ -59,6 +71,18 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
         ("sky bodies", []) => Ok(ClientCommand::SkyBodies),
         ("sky demo", ["on"]) => Ok(ClientCommand::SkyDemo(true)),
         ("sky demo", ["off"]) => Ok(ClientCommand::SkyDemo(false)),
+        ("fov", []) => Ok(ClientCommand::Fov(None)),
+        ("fov", [value]) => {
+            let degrees = value.parse::<f32>().map_err(|_| ParseError::FovUsage)?;
+            if !degrees.is_finite() || !(30.0..=110.0).contains(&degrees) {
+                return Err(ParseError::FovUsage);
+            }
+            Ok(ClientCommand::Fov(Some(degrees)))
+        }
+        ("fov", _) => Err(ParseError::FovUsage),
+        ("show_celestial_names", ["true"]) => Ok(ClientCommand::ShowCelestialNames(true)),
+        ("show_celestial_names", ["false"]) => Ok(ClientCommand::ShowCelestialNames(false)),
+        ("show_celestial_names", _) => Err(ParseError::CelestialNamesUsage),
         ("time status", []) => Ok(ClientCommand::TimeStatus),
         ("time scale", [value]) => {
             parse_scale_ppm(value).map_err(|_| ParseError::TimeScaleUsage)?;

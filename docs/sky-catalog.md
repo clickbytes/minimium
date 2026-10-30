@@ -1,6 +1,6 @@
 # Katalog gwiazd HYG 4.1
 
-`minimium-assets` dostarcza stały katalog 500 gwiazd przez
+`minimium-assets` dostarcza stały katalog 1000 gwiazd przez
 `embedded_sky_catalog()` oraz lekką tożsamość
 `embedded_sky_catalog_identity()`. Wybór jest globalny i nie zmienia się
 z czasem, położeniem gracza ani widocznością. Renderer filtruje widoczne gwiazdy
@@ -43,8 +43,8 @@ limity wejścia to 64 MiB, 200 000 rekordów i 16 KiB na rekord. CSV jest dekodo
 jako UTF-8, a liczby parsowane bez ustawień locale.
 
 Wynik bieżącego importu: 119 626 wierszy źródła, 119 625 poprawnych kandydatów
-po wykluczeniu Słońca, 0 odrzuconych kandydatów i dokładnie 500 wybranych gwiazd.
-Próg selekcji to katalogowa wartość `mag` 3.96. Cztery wybrane rekordy nie mają
+po wykluczeniu Słońca, 0 odrzuconych kandydatów i dokładnie 1000 wybranych gwiazd.
+Próg selekcji to katalogowa wartość `mag` 4.58. Cztery wybrane rekordy nie mają
 `ci`; otrzymują neutralne 0.65 i są wymienione w manifeście. Wszystkie wybrane
 rekordy mają kompletny wektor prędkości. Brak wymaganej wartości `mag`, `ra`,
 `dec` lub współrzędnej kartezjańskiej odrzuca rekord i zapisuje jego HYG id.
@@ -52,15 +52,15 @@ Nieparsowalna, NaN/Inf lub przepełniona wartość, częściowo brakująca pręd
 niepoprawne ID albo duplikat ID przerywa import bez publikacji nowych plików.
 
 Wynikowy asset ma SHA-256
-`81c8d6e0d01455f3416ab40b671831886e8b6dc60b872f504dbc85621dbee3db`, payload
-`846c3194af1d5f3cff83a5e8ff30537aed6bb1145490e61b2c4dcc654a5995d6`, a pełny
+`8804e57b7e1e6740814a3177f37bcf0b5d1a384230aead56a3dfe035e3b1b09e`, payload
+`a0c107236de7ffe485c53ff203a94714049a7823e324932182c20e262b33c26f`, a pełny
 tekst CC BY-SA 4.0 ma SHA-256
 `28a9529c7d0bb4dc51f4bf5c116a3d16ef247a052f7591466768ddf563fd1cf5`. Skróty
 źródła i licencji HYG są zapisane w manifeście.
 
 ## Membership i rekord
 
-Importer wybiera 500 rekordów rosnąco po `(Decimal(mag), HYG id)`. Wyklucza
+Importer wybiera 1000 rekordów rosnąco po `(Decimal(mag), HYG id)`. Wyklucza
 `id=0` (Słońce). Nie używa `absmag`, odległości, nazw ani warunków lokalnej
 widoczności. Dokładny remis jest rozstrzygany ID. Późniejsza zmiana HYG lub
 selekcji wymaga nowego `catalogue_id`/schematu, a nie automatycznej aktualizacji.
@@ -75,17 +75,17 @@ mapowanie koloru należy do E004-11.
 
 ## Format `stars-v1.bin`
 
-Plik ma dokładnie 32 096 bajtów: 96-bajtowy nagłówek i 500 rekordów po 64 bajty.
+Plik ma dokładnie 64 096 bajtów: 96-bajtowy nagłówek i 1000 rekordów po 64 bajty.
 Wszystkie pola wielobajtowe są little-endian; format nie używa `repr(C)` ani
 paddingu Rust.
 
 | Offset nagłówka | Pole |
 | --- | --- |
-| 0–7 | ASCII `MNSKY500` |
+| 0–7 | ASCII `MNSKY1K0` |
 | 8–9 | schema `u16 = 1` |
 | 10–11 | rozmiar rekordu `u16 = 64` |
-| 12–15 | `catalogue_id = 1` (`u32`) |
-| 16–19 | count `u32 = 500` |
+| 12–15 | `catalogue_id = 2` (`u32`) |
+| 16–19 | count `u32 = 1000` |
 | 20–23 | flags `u32 = 0` |
 | 24–31 | epoka `f64 = 2000.0` |
 | 32–63 | SHA-256 źródłowego CSV |
@@ -96,8 +96,12 @@ Każdy rekord zawiera `hyg_id:u32`, `hip_id:u32` (0 oznacza brak),
 `velocity_eqj_pc_per_jyear:[f64;3]`. Magnitudo i B−V są ponownie sprawdzane po
 konwersji do f32. Asset SHA-256 obejmuje nagłówek i payload.
 
+`star-labels-v1.tsv` zawiera 1000 nazw w tej samej kolejności co rekordy binarne.
+Każdy wiersz ma HYG ID, tabulator i nazwę własną z HYG albo identyfikator
+HIP/HR/HYG. Reader sprawdza zgodność ID. Manifest zapisuje SHA-256 tego pliku.
+
 Plik `stars-v1.manifest.json` ma posortowane klucze, UTF-8, LF i końcowy newline.
-Zawiera pin źródła i licencji, SHA-256, regułę selekcji, uporządkowane 500 ID,
+Zawiera pin źródła i licencji, SHA-256, regułę selekcji, uporządkowane 1000 ID,
 próg `Decimal`, liczniki/listy odrzuceń i fallbacków, powtarzające się HIP/HR,
 grupy identycznych pozycji, wymiary formatu i hash assetu. Nie zawiera ścieżek
 lokalnych, czasu generowania ani losowych identyfikatorów.
