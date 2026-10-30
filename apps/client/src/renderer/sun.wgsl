@@ -15,8 +15,12 @@ struct SunVertexOutput {
     let radius = max(environment.sun_apparent_world.w, 0.0);
     let direction = normalize(sun + (right * corner.x + up * corner.y) * tan(radius));
     var output: SunVertexOutput;
-    output.clip_position = camera.sky_view_projection * vec4<f32>(direction, 0.0);
-    output.clip_position.z = output.clip_position.w;
+    let clip = camera.sky_view_projection * vec4<f32>(direction, 0.0);
+    if clip.w <= 0.00001 {
+        output.clip_position = vec4<f32>(2.0, 2.0, 2.0, 1.0);
+    } else {
+        output.clip_position = vec4<f32>(clip.xy, clip.w, clip.w);
+    }
     return output;
 }
 
@@ -36,9 +40,12 @@ struct SunVertexOutput {
     if coverage <= 0.0 || visibility <= 0.0 {
         discard;
     }
-    let atmosphere = sample_clear_sky(ray_world);
-    let solar_radiance = SOLAR_DISK_RADIANCE * atmosphere.transmittance;
-    let halo = atmosphere.scattering_rgb * SOLAR_HALO_FACTOR;
-    let color = tone_map_linear((solar_radiance + halo) * environment.ambient_rgb_exposure.w);
+    var radiance = SOLAR_DISK_RADIANCE;
+    if environment.flags.y == 0u {
+        let atmosphere = sample_clear_sky(ray_world);
+        radiance = radiance * atmosphere.transmittance
+            + atmosphere.scattering_rgb * SOLAR_HALO_FACTOR;
+    }
+    let color = tone_map_linear(radiance * environment.ambient_rgb_exposure.w);
     return vec4<f32>(color, coverage * visibility);
 }
