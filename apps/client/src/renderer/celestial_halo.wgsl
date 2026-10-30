@@ -11,6 +11,14 @@ fn halo_direction(body: u32) -> vec3<f32> {
     return normalize(halo_source(body).direction_extent.xyz);
 }
 
+fn finite_scalar(value: f32) -> bool {
+    return abs(value) <= 3.402823e38;
+}
+
+fn finite_vec3(value: vec3<f32>) -> bool {
+    return all(abs(value) <= vec3<f32>(3.402823e38));
+}
+
 @vertex fn vs_main(@builtin(vertex_index) index: u32, @builtin(instance_index) body: u32) -> HaloVertex {
     let corners = array<vec2<f32>, 6>(
         vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0),
@@ -41,10 +49,10 @@ fn halo_direction(body: u32) -> vec3<f32> {
     let source = halo_source(input.body);
     let extent = source.direction_extent.w;
     let visibility = source.linear_rgb_visibility.w;
-    if !isFinite(extent) || !isFinite(visibility)
-        || !all(isFinite(source.direction_extent.xyz))
-        || !all(isFinite(source.linear_rgb_visibility.xyz))
-        || !all(isFinite(source.source_direction.xyz))
+    if !finite_scalar(extent) || !finite_scalar(visibility)
+        || !finite_vec3(source.direction_extent.xyz)
+        || !finite_vec3(source.linear_rgb_visibility.xyz)
+        || !finite_vec3(source.source_direction.xyz)
         || extent <= 0.0 || visibility <= 0.0 {
         discard;
     }
