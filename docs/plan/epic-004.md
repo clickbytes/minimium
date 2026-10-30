@@ -49,7 +49,7 @@ Pomniejszony glob i relief zmieniają widoczny horyzont; pozycje astronomiczne i
 Każde poniższe issue ma własny cel, konkretne istniejące i nowe pliki, kontrakty, kolejność zmian, walidację i błędy, przypadki brzegowe, kryteria odbioru, wyłączenia zakresu oraz sposób dostarczenia PR. Zależności odnoszą się do zakończonej integracji blokera w branchu epica.
 
 - [x] #52 — **E004-00**: Zamrożenie kontraktów czasu i nieba, ADR oraz baseline integracji
-- [ ] #53 — **E004-01**: Wprowadzić czyste typy czasu świata i kontrakt środowiska w minimium-core
+- [x] #53 — **E004-01**: Wprowadzić czyste typy czasu świata i kontrakt środowiska w minimium-core
 - [ ] #54 — **E004-02**: Uruchomić autorytatywny zegar serwera i parametryczne polecenia administracyjne czasu
 - [ ] #55 — **E004-03**: Zapisywać zegar świata w save v8 i zachować dane podczas migracji oraz restartu
 - [ ] #59 — **E004-04**: Rozszerzyć protokół do v12 o stan środowiska i synchronizację czasu we wszystkich aplikacjach
@@ -72,7 +72,7 @@ Każde poniższe issue ma własny cel, konkretne istniejące i nowe pliki, kontr
 | Zadanie | Blokery przed rozpoczęciem | Status implementacji |
 | --- | --- | --- |
 | [E004-00 / #52](https://github.com/clickbytes/minimium/issues/52) | brak | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#71](https://github.com/clickbytes/minimium/pull/71), merge `12f84a7`) |
-| [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53) | [E004-00 / #52](https://github.com/clickbytes/minimium/issues/52) | PLANNED |
+| [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53) | [E004-00 / #52](https://github.com/clickbytes/minimium/issues/52) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#73](https://github.com/clickbytes/minimium/pull/73), commit `a8577b4`) |
 | [E004-02 / #54](https://github.com/clickbytes/minimium/issues/54) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53) | PLANNED |
 | [E004-03 / #55](https://github.com/clickbytes/minimium/issues/55) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53), [E004-02 / #54](https://github.com/clickbytes/minimium/issues/54) | PLANNED |
 | [E004-04 / #59](https://github.com/clickbytes/minimium/issues/59) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53), [E004-02 / #54](https://github.com/clickbytes/minimium/issues/54), [E004-03 / #55](https://github.com/clickbytes/minimium/issues/55), [E004-08 / #58](https://github.com/clickbytes/minimium/issues/58) | PLANNED |
@@ -125,4 +125,5 @@ E004-00 / #52 zostało scalone przez PR [#71](https://github.com/clickbytes/mini
 do gałęzi integracyjnej (`12f84a7`). Zatwierdza [ADR 0006](../adr/0006-world-time-and-sky.md),
 wspólne kontrakty i baseline w [rejestrze weryfikacji](epic-004-verification.md). Wykonano formatowanie
 kontrolne, kompilację workspace, Clippy i kontrole statyczne bez testów i uruchamiania
-aplikacji. Implementacja funkcji E004-01..14 pozostaje PLANNED; wyniki runtime są NOT RUN.
+aplikacji. E004-01 dostarcza czysty kontrakt core przez PR [#73](https://github.com/clickbytes/minimium/pull/73);
+E004-02..14 pozostaje PLANNED. Wyniki runtime są NOT RUN.
