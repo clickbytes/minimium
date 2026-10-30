@@ -15,6 +15,10 @@ impl SolarSystemId {
             Some(Self(value))
         }
     }
+
+    pub const fn get(self) -> u64 {
+        self.0
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -119,6 +123,7 @@ pub enum CatalogError {
     DuplicateBody,
     MissingParent,
     CrossSystemParent,
+    ParentCycle,
     InvalidBody,
     InvalidTime,
 }
@@ -190,6 +195,9 @@ impl UniverseCatalog {
         if !self.systems.contains_key(&body.system) {
             return Err(CatalogError::UnknownSystem);
         }
+        if body.parent == Some(body.id) {
+            return Err(CatalogError::ParentCycle);
+        }
         if let Some(parent) = body.parent {
             let parent_body = self
                 .bodies
@@ -239,6 +247,15 @@ impl UniverseCatalog {
             .filter_map(|id| self.body(*id))
     }
 
+    /// Returns system identifiers in stable numeric order.
+    pub fn systems(&self) -> impl Iterator<Item = SolarSystemId> + '_ {
+        self.systems.keys().copied()
+    }
+
+    pub fn body_count(&self) -> usize {
+        self.bodies.len()
+    }
+
     pub fn position_at(
         &self,
         id: CelestialBodyId,
@@ -249,15 +266,20 @@ impl UniverseCatalog {
         }
         let body = self.bodies.get(&id).ok_or(CatalogError::InvalidBody)?;
         let offset = body.orbit.position_at(time_seconds);
-        if let Some(parent) = body.parent {
+        let position = if let Some(parent) = body.parent {
             let center = self.position_at(parent, time_seconds)?;
-            Ok([
+            [
                 center[0] + offset[0],
                 center[1] + offset[1],
                 center[2] + offset[2],
-            ])
+            ]
         } else {
-            Ok(offset)
+            offset
+        };
+        if position.iter().all(|value| value.is_finite()) {
+            Ok(position)
+        } else {
+            Err(CatalogError::InvalidBody)
         }
     }
 
@@ -285,6 +307,9 @@ impl UniverseCatalog {
             let target = positions[index];
             let to_body = sub(target, observer_m);
             let distance = length(to_body);
+            if !distance.is_finite() {
+                return Err(CatalogError::InvalidBody);
+            }
             let visible = !definitions.iter().enumerate().any(|(j, occluder)| {
                 j != index
                     && length(sub(positions[j], observer_m)) < distance
@@ -349,11 +374,22 @@ impl UniverseCatalog {
             let reflected = if visible { reflected } else { [0.0; 3] };
             let emitted = if visible { emitted } else { [0.0; 3] };
             let atmosphere_limb_rgb = scale_rgb(reflected, body.optics.atmosphere_scattering);
+            if !emitted
+                .iter()
+                .chain(reflected.iter())
+                .chain(atmosphere_limb_rgb.iter())
+                .all(|value| value.is_finite())
+            {
+                return Err(CatalogError::InvalidBody);
+            }
             let illuminated_fraction = if illumination_weight > 0.0 {
                 illuminated_sum / illumination_weight
             } else {
                 0.0
             };
+            if !illuminated_fraction.is_finite() {
+                return Err(CatalogError::InvalidBody);
+            }
             observations.push(BodyObservation {
                 id: body.id,
                 kind: body.kind,

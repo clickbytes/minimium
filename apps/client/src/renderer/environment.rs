@@ -1,4 +1,5 @@
 mod adapter;
+mod catalogue;
 mod clock;
 mod halo;
 pub mod observer;
@@ -61,6 +62,16 @@ pub(crate) struct RenderViewInput {
     pub(crate) game_planet_radius_m: f64,
     pub(crate) kind: EnvironmentViewKind,
     pub(crate) srgb_surface: bool,
+}
+
+pub(crate) struct SkyFrameInput {
+    pub(crate) observer: ObserverFrame,
+    pub(crate) context: WorldContext,
+    pub(crate) clock_revision: ClockRevision,
+    pub(crate) descriptor: EnvironmentDescriptor,
+    pub(crate) render_view: RenderViewFrame,
+    pub(crate) observed_bodies: Vec<ObservedBody>,
+    pub(crate) settings: EnvironmentSettings,
 }
 
 impl Default for RenderViewFrame {
@@ -203,22 +214,9 @@ pub(crate) struct EnvironmentFrame {
 impl EnvironmentFrame {
     pub(crate) fn from_sky_state(
         sky: &SkyState,
-        observer: ObserverFrame,
-        context: WorldContext,
-        clock_revision: ClockRevision,
-        descriptor: EnvironmentDescriptor,
-        render_view: RenderViewFrame,
-        settings: EnvironmentSettings,
+        input: SkyFrameInput,
     ) -> Result<Self, EnvironmentFrameError> {
-        adapter::from_sky_state(
-            sky,
-            observer,
-            context,
-            clock_revision,
-            descriptor,
-            render_view,
-            settings,
-        )
+        adapter::from_sky_state(sky, input)
     }
 
     pub(crate) fn interior(

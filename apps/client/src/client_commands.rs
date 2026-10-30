@@ -35,6 +35,8 @@ pub(crate) enum ClientCommand {
     Quit,
     SkyQuality(SkyQuality),
     SkyInfo,
+    SkyBodies,
+    SkyDemo(bool),
     TimeStatus,
     TimeScale(String),
 }
@@ -172,6 +174,8 @@ pub(crate) enum FrontendAction {
     Quit,
     SkyQuality(SkyQuality),
     SkyInfo,
+    SkyBodies,
+    SkyDemo(bool),
     TimeStatus,
     TimeScale(String),
 }
@@ -218,6 +222,10 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
             return CommandResult::Action(FrontendAction::SkyQuality(quality))
         }
         ClientCommand::SkyInfo => return CommandResult::Action(FrontendAction::SkyInfo),
+        ClientCommand::SkyBodies => return CommandResult::Action(FrontendAction::SkyBodies),
+        ClientCommand::SkyDemo(enabled) => {
+            return CommandResult::Action(FrontendAction::SkyDemo(enabled))
+        }
         ClientCommand::TimeStatus => return CommandResult::Action(FrontendAction::TimeStatus),
         ClientCommand::TimeScale(value) => {
             return CommandResult::Action(FrontendAction::TimeScale(value))

@@ -278,6 +278,12 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
                         FrontendAction::SkyInfo => {
                             println!("sky info unavailable: desktop renderer required");
                         }
+                        FrontendAction::SkyBodies => {
+                            println!("sky bodies unavailable: desktop renderer required");
+                        }
+                        FrontendAction::SkyDemo(_) => {
+                            println!("sky demo unavailable: desktop renderer required");
+                        }
                         FrontendAction::TimeStatus => {
                             let unavailable =
                                 crate::environment::EnvironmentFrameInput::unavailable();
