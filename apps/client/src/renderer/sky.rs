@@ -17,6 +17,12 @@ pub(super) fn should_draw_surface_sky(frame: &EnvironmentFrame) -> bool {
         && frame.sky.is_some()
 }
 
+pub(super) fn should_draw_overview_sky(frame: &EnvironmentFrame) -> bool {
+    frame.status == EnvironmentFrameStatus::Available
+        && frame.render_view.kind == EnvironmentViewKind::Overview
+        && frame.sky.is_some()
+}
+
 pub(super) fn should_draw_sun(frame: &EnvironmentFrame) -> bool {
     should_draw_surface_sky(frame)
         && frame

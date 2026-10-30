@@ -130,6 +130,13 @@ impl GpuResources {
                 pass.set_pipeline(&self.pipeline);
                 pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
                 pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
+                if super::sky::should_draw_overview_sky(environment) {
+                    pass.set_pipeline(&self.environment_pipelines.sky);
+                    pass.set_bind_group(1, &self.milky_way.bind_group, &[]);
+                    pass.draw(0..3, 0..1);
+                    draw_calls += 1;
+                    self.environment_draw_calls.sky += 1;
+                }
                 // Draw distant stars and disks before the globe so its surface
                 // covers whichever body is on the far side as the camera rotates.
                 if super::sky::should_draw_overview_stars(environment)
@@ -176,10 +183,10 @@ impl GpuResources {
                         pass.draw(0..detail.vertex_count, 0..1);
                         draw_calls += 1;
                     }
-                    pass.set_pipeline(&self.pipeline);
-                    pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
-                    pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
                 }
+                pass.set_pipeline(&self.pipeline);
+                pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
+                pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
                 if let Some((buffer, count)) = &self.overview_buffer {
                     pass.set_vertex_buffer(0, buffer.slice(..));
                     pass.draw(0..*count, 0..1);
@@ -196,6 +203,7 @@ impl GpuResources {
                 if super::sky::should_draw_surface_sky(environment) {
                     pass.set_pipeline(&self.environment_pipelines.sky);
                     pass.set_bind_group(0, &self.camera_bind_group, &[]);
+                    pass.set_bind_group(1, &self.milky_way.bind_group, &[]);
                     pass.draw(0..3, 0..1);
                     draw_calls += 1;
                     self.environment_draw_calls.sky += 1;
@@ -238,6 +246,7 @@ impl GpuResources {
                 if super::sky::should_draw_surface_sky(environment) {
                     pass.set_pipeline(&self.environment_pipelines.sky);
                     pass.set_bind_group(0, &self.camera_bind_group, &[]);
+                    pass.set_bind_group(1, &self.milky_way.bind_group, &[]);
                     pass.draw(0..3, 0..1);
                     draw_calls += 1;
                     self.environment_draw_calls.sky += 1;

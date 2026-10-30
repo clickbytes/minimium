@@ -221,9 +221,11 @@ impl GpuResources {
                 )
             });
         let frame_bindings = super::environment_gpu::EnvironmentGpuBindings::create(&device);
+        let milky_way = super::milky_way_gpu::MilkyWayGpu::new(&device, &queue);
         let environment_pipelines = super::sky_gpu::EnvironmentPipelines::new(
             &device,
             &frame_bindings.layout,
+            &milky_way.layout,
             scene_color_format,
         );
         let celestial_halo = super::celestial_halo_gpu::CelestialHaloGpu::new(
@@ -287,6 +289,7 @@ impl GpuResources {
             + shadow_gpu.gpu_bytes()
             + ui_vertex_buffer.size()
             + stars.buffer.size()
+            + super::milky_way_gpu::MilkyWayGpu::BYTES
             + output_encoder
                 .as_ref()
                 .map_or(0, |output| output.size_bytes())
@@ -302,6 +305,7 @@ impl GpuResources {
             shadow_gpu,
             shadow_state: super::shadows::ShadowState::default(),
             environment_pipelines,
+            milky_way,
             celestial_halo,
             stars,
             moon,

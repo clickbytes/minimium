@@ -20,6 +20,7 @@ impl EnvironmentPipelines {
     pub(super) fn new(
         device: &wgpu::Device,
         frame_layout: &wgpu::BindGroupLayout,
+        milky_way_layout: &wgpu::BindGroupLayout,
         format: wgpu::TextureFormat,
     ) -> Self {
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -27,9 +28,14 @@ impl EnvironmentPipelines {
             bind_group_layouts: &[Some(frame_layout)],
             immediate_size: 0,
         });
+        let sky_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("sky-with-milky-way-pipeline-layout"),
+            bind_group_layouts: &[Some(frame_layout), Some(milky_way_layout)],
+            immediate_size: 0,
+        });
         let sky = create_pipeline(
             device,
-            &layout,
+            &sky_layout,
             Cow::Owned(super::shader_source::sky()),
             PipelineConfig {
                 format,
