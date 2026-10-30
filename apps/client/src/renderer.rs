@@ -33,6 +33,7 @@ use winit::{
 
 mod camera;
 mod celestial_halo_gpu;
+mod celestial_labels;
 mod client_game;
 mod console_events;
 mod controller;
@@ -211,6 +212,8 @@ struct Renderer {
     metrics: FrameMetrics,
     settings: ClientSettings,
     demo_universe_enabled: bool,
+    fov_degrees: f32,
+    show_celestial_names: bool,
     sky_quality: crate::environment::quality::SkyQualityState,
     connection: ConnectionController,
     environment_frame: EnvironmentFrameInput,

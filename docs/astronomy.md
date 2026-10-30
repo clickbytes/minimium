@@ -151,7 +151,7 @@ normalizuje po interpolacji. Lokalna rotacja, paralaksa i kierunki topocentryczn
 są przeliczane dla bieżącego czasu i miejsca obserwatora. Skok czasu lub zmiana
 rewizji/świata unieważnia cache; kod wylicza tylko aktualny przedział.
 
-`update_star_epoch` przyjmuje do 500 ogólnych rekordów `StarAstrometry`, bez
+`update_star_epoch` przyjmuje do 1000 ogólnych rekordów `StarAstrometry`, bez
 zależności od formatu assetu. Uwzględnia ruch własny w przestrzeni EQJ od epoki
 J2000 TT, zwraca osobny wynik z `star_epoch_revision` i buforuje go jako `Arc`.
 Aktualizacja następuje przy zmianie doby, cofnięciu/skoku czasu, zmianie danych

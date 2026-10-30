@@ -136,6 +136,8 @@ The desktop client requests a 1920×1080 physical-pixel window by default; the w
 
 `sky quality low|standard` changes only local rendering quality: `low` disables shadows and `standard` enables one 1024×1024 local shadow map. If the adapter refuses that resource, the client uses `low` and `sky info` shows requested/effective quality and the fallback reason. `sky info` prints a versioned, on-demand snapshot of clock synchronization, observer and celestial values, CPU timings, actual environment draw calls, shadow coverage, and estimated environment GPU bytes. `time status` prints the current session's read-only clock sample and synchronization state. `time scale` uses the owned server's private administrative endpoint and is unavailable for attached or remote sessions.
 
+The desktop console accepts `fov` to display the current vertical field of view and `fov DEGREES` to set it from 30 to 110 degrees (default: 70). `show_celestial_names true|false` toggles on-screen labels for the Sun, Moon, visible catalog bodies, and up to 32 bright stars (default: false). The star display uses a fixed 1000-star HYG catalog. Both settings are local to the current client session.
+
 ## Load generator
 
 ~~~text

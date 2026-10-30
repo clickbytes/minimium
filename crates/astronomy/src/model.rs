@@ -6,7 +6,7 @@ use minimium_core::{
 };
 
 pub const ASTRONOMY_MODEL_REVISION: u32 = 1;
-pub const MAX_STAR_RECORDS: usize = 500;
+pub const MAX_STAR_RECORDS: usize = 1000;
 pub const EPHEMERIS_REVISION: u32 = 1;
 pub const SUN_RADIUS_M: f64 = 695_700_000.0;
 pub const MOON_MEAN_RADIUS_M: f64 = 1_737_400.0;

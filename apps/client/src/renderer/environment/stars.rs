@@ -1,11 +1,11 @@
 use minimium_assets::{
-    embedded_sky_catalog, embedded_sky_catalog_identity, CatalogError, SkyCatalogIdentity,
-    StarRecord,
+    embedded_sky_catalog, embedded_sky_catalog_identity, embedded_star_labels, CatalogError,
+    SkyCatalogIdentity, StarRecord,
 };
 use minimium_astronomy::{CorrectedStarDirections, StarAstrometry};
 use std::{error::Error, fmt};
 
-pub const STAR_GPU_RECORD_COUNT: usize = 500;
+pub const STAR_GPU_RECORD_COUNT: usize = 1000;
 pub const STAR_GPU_RECORD_BYTES: usize = 32;
 pub const STAR_COLOR_MODEL_REVISION: u32 = 1;
 
@@ -73,6 +73,7 @@ impl Error for StarPrepareError {}
 pub struct StarCatalogueAdapter {
     identity: SkyCatalogIdentity,
     records: &'static [StarRecord],
+    labels: &'static [&'static str],
     astrometry: Box<[StarAstrometry]>,
 }
 
@@ -93,6 +94,7 @@ impl StarCatalogueAdapter {
         Ok(Self {
             identity: embedded_sky_catalog_identity(),
             records: catalogue.records(),
+            labels: embedded_star_labels()?,
             astrometry,
         })
     }
@@ -103,6 +105,10 @@ impl StarCatalogueAdapter {
 
     pub fn records(&self) -> &'static [StarRecord] {
         self.records
+    }
+
+    pub fn labels(&self) -> &'static [&'static str] {
+        self.labels
     }
 
     pub fn astrometry(&self) -> &[StarAstrometry] {

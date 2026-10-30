@@ -37,6 +37,8 @@ pub(crate) enum ClientCommand {
     SkyInfo,
     SkyBodies,
     SkyDemo(bool),
+    Fov(Option<f32>),
+    ShowCelestialNames(bool),
     TimeStatus,
     TimeScale(String),
 }
@@ -138,6 +140,8 @@ pub(crate) enum ParseError {
     InvalidCoordinate,
     NonFiniteCoordinate,
     SkyQualityUsage,
+    FovUsage,
+    CelestialNamesUsage,
     TimeScaleUsage,
     UnknownCommand,
 }
@@ -176,6 +180,8 @@ pub(crate) enum FrontendAction {
     SkyInfo,
     SkyBodies,
     SkyDemo(bool),
+    Fov(Option<f32>),
+    ShowCelestialNames(bool),
     TimeStatus,
     TimeScale(String),
 }
@@ -225,6 +231,10 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
         ClientCommand::SkyBodies => return CommandResult::Action(FrontendAction::SkyBodies),
         ClientCommand::SkyDemo(enabled) => {
             return CommandResult::Action(FrontendAction::SkyDemo(enabled))
+        }
+        ClientCommand::Fov(degrees) => return CommandResult::Action(FrontendAction::Fov(degrees)),
+        ClientCommand::ShowCelestialNames(enabled) => {
+            return CommandResult::Action(FrontendAction::ShowCelestialNames(enabled))
         }
         ClientCommand::TimeStatus => return CommandResult::Action(FrontendAction::TimeStatus),
         ClientCommand::TimeScale(value) => {

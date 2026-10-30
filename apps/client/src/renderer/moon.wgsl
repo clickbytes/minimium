@@ -87,7 +87,11 @@ fn lambert_phase_fraction(cos_phase: f32) -> f32 {
     let lambert = max(dot(surface_normal, input.moon_to_sun), 0.0);
     let moon_to_observer = -input.moon_direction;
     let phase_fraction = lambert_phase_fraction(dot(input.moon_to_sun, moon_to_observer));
-    let normalized_lambert = lambert / phase_fraction;
+    // Near opposition, the Moon's illuminated limb remains visible rather
+    // than fading into a grey sphere. Keep the terminator geometry intact.
+    let fullness = smoothstep(0.90, 0.995, environment.moon_light_world_phase.w);
+    let lit_surface = select(0.0, mix(lambert, max(lambert, 0.45), fullness), lambert > 0.0);
+    let normalized_lambert = lit_surface / phase_fraction;
     let disk_color = environment.moon_disk_radiance.xyz;
     let relative_flux = environment.moon_disk_radiance.w;
     // The overview has a black space background, so use a separate display

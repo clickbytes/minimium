@@ -1,4 +1,4 @@
-"""Pinned HYG input validation and deterministic top-500 selection."""
+"""Pinned HYG input validation and deterministic top-1000 selection."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ SOURCE_LICENSE_NOTICE_PATH = "crates/assets/data/sky/HYG-LICENSE-NOTICE.txt"
 MAX_SOURCE_BYTES = 64 * 1024 * 1024
 MAX_SOURCE_ROWS = 200_000
 MAX_RECORD_BYTES = 16 * 1024
-MAX_STARS = 500
+MAX_STARS = 1000
 U32_MAX = (1 << 32) - 1
 
 _NUMBER = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?\Z")
@@ -34,6 +34,7 @@ _REQUIRED_COLUMNS = (
     "id",
     "hip",
     "hr",
+    "proper",
     "ra",
     "dec",
     "mag",
@@ -56,6 +57,7 @@ class HYGStar:
     hyg_id: int
     hip_id: int
     hr_id: int
+    proper_name: str
     magnitude: Decimal
     color_index: float
     source_position: tuple[str, str, str]
@@ -215,7 +217,7 @@ def load_top_stars(path: Path) -> ImportReport:
 
         if eligible_count < MAX_STARS:
             raise ImportFailure(
-                f"only {eligible_count} eligible stars; exactly 500 are required"
+                f"only {eligible_count} eligible stars; exactly {MAX_STARS} are required"
             )
         selected = tuple(
             sorted(
@@ -302,6 +304,7 @@ def _parse_star(row: dict[str, str], hyg_id: int) -> tuple[HYGStar | None, bool]
         hyg_id=hyg_id,
         hip_id=hip_id,
         hr_id=hr_id,
+        proper_name=row["proper"].strip(),
         magnitude=magnitude,
         color_index=color_index,
         source_position=tuple(row[key].strip() for key in ("x", "y", "z")),

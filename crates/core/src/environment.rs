@@ -98,10 +98,10 @@ impl TryFrom<u32> for AstronomyModelRevision {
 pub struct CatalogueId(u32);
 
 impl CatalogueId {
-    pub const CURRENT: Self = Self(1);
+    pub const CURRENT: Self = Self(2);
 
     pub const fn new(value: u32) -> Result<Self, EnvironmentError> {
-        if value == 1 {
+        if value == 2 {
             Ok(Self::CURRENT)
         } else {
             Err(EnvironmentError::UnsupportedCatalogueId(value))

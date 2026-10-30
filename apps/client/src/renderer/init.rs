@@ -163,6 +163,8 @@ impl Renderer {
                 demo,
             },
             demo_universe_enabled: false,
+            fov_degrees: 70.0,
+            show_celestial_names: false,
             sky_quality: sky_quality_state,
             connection,
             environment_frame: EnvironmentFrameInput::unavailable(),

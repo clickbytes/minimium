@@ -22,6 +22,13 @@ pub(super) struct ChatLine {
 pub struct Overlay<'a> {
     pub status: Option<&'a str>,
     pub overview_zoom: Option<f32>,
+    pub celestial_labels: &'a [CelestialLabel],
+}
+
+pub struct CelestialLabel {
+    pub x: f32,
+    pub y: f32,
+    pub text: String,
 }
 
 pub struct Console {
@@ -174,6 +181,22 @@ impl Console {
         }
         if let Some(zoom) = overlay.overview_zoom {
             zoom::draw(&mut self.vertices, context, zoom);
+        }
+        if !self.open {
+            for label in overlay.celestial_labels {
+                text::append_text(
+                    &mut self.vertices,
+                    context,
+                    TextDraw {
+                        x: label.x,
+                        y: label.y,
+                        text: &label.text,
+                        color: [0.92, 0.93, 0.82],
+                        max_chars: 30,
+                        scale: 0.75,
+                    },
+                );
+            }
         }
         if !self.open {
             self.append_chat(context);

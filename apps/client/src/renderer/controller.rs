@@ -174,6 +174,23 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
                 "local sky demo disabled"
             });
         }
+        FrontendAction::Fov(degrees) => {
+            if let Some(degrees) = degrees {
+                renderer.fov_degrees = degrees;
+            }
+            renderer
+                .ui
+                .console
+                .push_line(format!("vertical FOV: {:.1}°", renderer.fov_degrees));
+        }
+        FrontendAction::ShowCelestialNames(enabled) => {
+            renderer.show_celestial_names = enabled;
+            renderer.ui.console.push_line(if enabled {
+                "celestial names enabled"
+            } else {
+                "celestial names disabled"
+            });
+        }
         FrontendAction::TimeStatus => renderer
             .ui
             .console

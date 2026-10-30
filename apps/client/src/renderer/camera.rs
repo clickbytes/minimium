@@ -173,7 +173,7 @@ impl Renderer {
             view
         };
         let projection = glam::Mat4::perspective_rh(
-            70f32.to_radians(),
+            self.fov_degrees.to_radians(),
             self.gpu.size.width as f32 / self.gpu.size.height as f32,
             near,
             far,
@@ -226,6 +226,11 @@ impl Renderer {
             }
         };
 
+        let celestial_labels = if self.show_celestial_names {
+            celestial_labels::prepare(&prepared_environment.frame, self.sky_catalogue.as_ref())
+        } else {
+            Vec::new()
+        };
         let vertex_count = {
             let vertices = self.ui.console.build_vertices(
                 self.gpu.size.width,
@@ -241,6 +246,7 @@ impl Renderer {
                         .require_earth
                         .then_some(self.connection_status.as_str()),
                     overview_zoom: self.overview_uses_zoom().then_some(self.overview_zoom),
+                    celestial_labels: &celestial_labels,
                 },
             );
             let count = vertices.len() as u32;

@@ -62,7 +62,7 @@ separate halo draw-call counter. Each CPU scope exposes
 
 | Prefix | Scope |
 | --- | --- |
-| `environment_cpu` | Observer, astronomy, immutable frame/uniform construction and optional bounded 500-star CPU preparation; no queue writes. |
+| `environment_cpu` | Observer, astronomy, immutable frame/uniform construction and optional bounded 1000-star CPU preparation; no queue writes. |
 | `environment_upload_cpu` | CPU time in queue writes for stars, camera and environment uniforms after a surface frame is acquired. |
 | `shadow_prepare_cpu` | Local caster selection/build/allocation/upload and shadow uniform upload; excludes remote-player geometry preparation performed earlier in renderer update. |
 
@@ -81,7 +81,7 @@ quality changes reset all three environment histograms and astronomy baselines;
 general `fps show` counters remain cumulative. These CPU scopes cannot be
 compared directly with the former combined environment timing.
 
-`environment_GPU_estimate_bytes` sums the 500-star instance buffer,
+`environment_GPU_estimate_bytes` sums the 1000-star instance buffer,
 camera/environment/shadow uniforms (224/352/128 B), shadow texture and dedicated
 map/player caster buffers. Breakdown keys are `environment_GPU_star_instance_buffer_bytes`,
 `environment_GPU_uniform_bytes`, `environment_GPU_shadow_texture_bytes`,
