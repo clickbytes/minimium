@@ -44,6 +44,10 @@ saves and snapshots; collision queries retain coarse `f32` broadphase cells.
   can contain players at the same coordinates without sharing state.
 - `WorldManifest` binds definition ID, topology, generation settings, content
   revision and a 32-byte generator digest.
+- Mutable time and sky configuration lives in `EnvironmentDescriptor`, outside
+  the immutable manifest. The planet and interior instances share `ClockId=1`;
+  each instance selects an `Interior`, `Earth` or `EarthLike` profile without
+  changing generation, content revision or map fingerprints.
 - `WorldLocation` carries an instance ID, signed integer millimeter position and
   canonical Q1.30 unit-quaternion orientation. Equivalent `q` and `-q` values
   canonicalize to one value.
@@ -129,6 +133,13 @@ generation settings. The parser bounds input to 1 MiB and validates dimensions,
 room bounds, centers, origin IDs and connectivity before materialization.
 
 ## Runtime ownership and transfer
+
+Epic 004's clock contract is independent of the fixed simulation step and sector
+lifecycle. `RealTime` follows server UTC; `TimeScale` advances from an explicit
+UTC anchor at a nonnegative rate, with zero pausing the environment. Both modes
+use the same clock evaluation and astronomical model. Physics, cooldowns and
+network deadlines continue on real time. Interior instances retain the shared
+clock identity even when their profile does not render the planetary sky.
 
 The server's `WorldRegistry` owns isolated simulation state, memberships,
 membership epochs and pending transfers. Portal transfer follows prepare, target

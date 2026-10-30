@@ -56,6 +56,17 @@ Runtime RealTime porównuje SystemTime co 5 s; różnica ≥250 ms tworzy nową 
 Naturalne dojście do granicy zakresu daje jawny fault i pauzę TimeScale=0 na ostatniej poprawnej próbce.
 Błąd startup/odtwarzania blokuje start bez nadpisania save. Wyczerpanie revision jest błędem, nie wrap.
 
+API core: `evaluate_clock` liczy wyłącznie od kotwicy; `sample_clock` tworzy próbkę
+dla dokładnie podanego czasu monotonicznego, a `validate_sample_after` porównuje
+ten czas tylko w ramach tego samego nonce. `set_world_time`, `set_time_scale`,
+`set_clock_mode` i `set_offline_policy` zwracają nową kotwicę i zwiększają revision
+atomowo. Zmiana na RealTime używa UTC adaptera i może przeskoczyć do bieżącej daty;
+zmiana na TimeScale zachowuje datę. `save_clock_state` zapisuje wyliczoną datę,
+a `restore_clock_state` zachowuje zapisaną revision, ponieważ nonce rozdziela
+sesje monotoniczne. Oba zapisane pola UTC podlegają zakresowi `WorldTimeMs`.
+`EnvironmentDescriptor` waliduje kody profilu, modelu i katalogu; digest jest
+opaque, bez wymyślonej wartości zastępczej.
+
 ## 3. Konfiguracja i polecenia
 
 Mutacje są dostępne przez istniejący uwierzytelniony kanał admin/terminal:

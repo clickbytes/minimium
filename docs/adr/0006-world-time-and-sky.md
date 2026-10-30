@@ -35,20 +35,56 @@ derives inward-facing normals. E004-09 owns correcting those normals.
   `[2000-01-01T00:00:00Z, 2101-01-01T00:00:00Z)`. Scales use parts per million:
   1x is 1,000,000 and the maximum 1440x is 1,440,000,000. Arithmetic is checked
   in `i128`; absolute dates are not sent to GPU as `f32`.
-- Clock mode, rate and date changes establish a new anchor at the currently
-  evaluated world time, preserving continuity unless an explicit date is set.
-  Clock revision, model revision, server session nonce and catalogue identity
-  are distinct values. Physical simulation, cooldowns and real-time deadlines
-  remain unscaled.
+- Rate changes and switches into `TimeScale` establish a new anchor at the
+  currently evaluated world time. Setting a date is explicit. Switching into
+  `RealTime` anchors to the adapter's current UTC and can therefore jump to the
+  present by design. Clock revision, model revision, server session nonce and
+  catalogue identity are distinct values. Physical simulation, cooldowns and
+  real-time deadlines remain unscaled.
 - Offline policy is explicit. The default is pause. Advancing offline applies
   only to `TimeScale`, uses nonnegative wall-clock elapsed time, and reports a
   backwards wall-clock observation rather than wrapping or saturating.
 
+### Core time API and exact semantics
+
+`minimium-core::time` exposes validated `ClockId`, `WorldTimeMs`,
+`ClockRevision`, `SessionNonce`, `MonotonicMs`, `TimeScalePpm`, `ClockMode`,
+`OfflinePolicy`, `ClockAnchor`, `ClockSample` and `SavedClockState`. Their raw
+fields stay private; constructors and `TryFrom` reject unsupported codes and
+values. MVP accepts only clock id 1, mode codes 0/1, policy codes 0/1, model
+revision 1 and catalogue id 1. A real-time anchor must carry the effective 1x
+rate. Catalogue SHA-256 remains opaque: core does not reject or manufacture a
+digest based on its byte pattern.
+
+`evaluate_clock(anchor, monotonic_ms)` checks monotonic order before subtracting,
+then computes `world_utc_ms + floor(delta_ms * rate_ppm / 1_000_000)` from the
+original anchor using checked `i128` arithmetic. `sample_clock` binds the
+resulting UTC to the exact monotonic timestamp and session nonce;
+`validate_sample_after` compares monotonic values only within one nonce.
+`set_world_time`, `set_time_scale`, `set_clock_mode` and
+`set_offline_policy` return a complete replacement anchor. They first evaluate
+the previous anchor, increment its revision with checked addition, and leave
+the original unchanged on error. Repeating a mutating command still increments
+the revision. A new clock starts at revision 1. Switching to RealTime requires
+current UTC from the adapter; switching to TimeScale preserves the current date
+and existing scale, or uses 1x when coming from RealTime. Setting a date switches
+to TimeScale, preserves an existing TimeScale rate, and otherwise selects 1x.
+
+`save_clock_state` stores the evaluated world date, mode, rate, policy and
+revision. Both saved UTC fields use the same supported `WorldTimeMs` range.
+Restore preserves the saved revision; the new process nonce distinguishes the
+new monotonic domain. RealTime restore uses supplied current UTC, TimeScale/Pause
+uses the saved world date, and TimeScale/Advance adds only nonnegative wall-clock
+elapsed time at the saved rate. A backwards wall clock is reported in the
+restore result and contributes zero elapsed time. POSIX values do not represent
+leap seconds; parsing and civil-time conversion remain outside core.
+
 ### Data ownership and dependencies
 
 - `minimium-core` owns validated, platform-neutral time and environment types
-  plus pure anchor evaluation. It has no clock I/O, randomness, protocol, GPU,
-  logging or astronomy backend dependency.
+  plus pure anchor evaluation, mutations and restore. It has no clock I/O,
+  randomness, protocol, GPU, logging or astronomy backend dependency. The
+  concrete API and rounding/revision semantics are recorded above.
 - The server owns UTC/monotonic adapters, the authoritative anchor, admin
   mutations, persistence snapshots and synchronization samples. It never
   scales simulation time.
