@@ -20,8 +20,13 @@ fn star_prominence(visual_magnitude: f32) -> f32 {
     return clamp((5.0 - visual_magnitude) / 6.5, 0.0, 1.0);
 }
 
-fn star_radius_pixels(visual_magnitude: f32) -> f32 {
+fn star_core_radius_pixels(visual_magnitude: f32) -> f32 {
     return mix(1.4, 6.5, pow(star_prominence(visual_magnitude), 1.1));
+}
+
+fn star_radius_pixels(visual_magnitude: f32) -> f32 {
+    return star_core_radius_pixels(visual_magnitude)
+        + mix(1.5, 3.5, star_prominence(visual_magnitude));
 }
 
 fn star_hash(id: u32) -> f32 {
@@ -84,15 +89,21 @@ fn star_hash(id: u32) -> f32 {
         discard;
     }
     let prominence = star_prominence(input.visual_magnitude);
-    let core = exp(-9.0 * radius_squared);
-    let glow = prominence * 0.34 * exp(-3.5 * radius_squared);
-    let glint = pow(prominence, 4.0) * 0.28
-        * exp(-42.0 * min(abs(input.local_position.x), abs(input.local_position.y)))
-        * exp(-3.0 * radius_squared);
-    let profile = (core + glow + glint)
-        * (1.0 - smoothstep(0.72, 1.0, radius_squared));
+    let core_radius_pixels = star_core_radius_pixels(input.visual_magnitude);
     let radius_pixels = star_radius_pixels(input.visual_magnitude);
-    let area_compensation = inverseSqrt(radius_pixels * 0.5);
+    let inner_position = input.local_position * (radius_pixels / core_radius_pixels);
+    let inner_radius_squared = dot(inner_position, inner_position);
+    let core = exp(-9.0 * inner_radius_squared);
+    let glow = prominence * 0.34 * exp(-3.5 * inner_radius_squared);
+    let glint = pow(prominence, 4.0) * 0.28
+        * exp(-42.0 * min(abs(inner_position.x), abs(inner_position.y)))
+        * exp(-3.0 * inner_radius_squared);
+    let inner_profile = (core + glow + glint)
+        * (1.0 - smoothstep(0.72, 1.0, inner_radius_squared));
+    let micro_halo = 0.055 * prominence * prominence * exp(-3.0 * radius_squared)
+        * (1.0 - smoothstep(0.75, 1.0, radius_squared));
+    let profile = inner_profile + micro_halo;
+    let area_compensation = inverseSqrt(core_radius_pixels * 0.5);
     let relative_flux = pow(10.0, -0.4 * (input.visual_magnitude - STAR_REFERENCE_MAGNITUDE));
     let seed = star_hash(input.catalog_star_id);
     let second_seed = star_hash(input.catalog_star_id ^ 0x68bc21ebu);
