@@ -35,9 +35,9 @@ w [epic-004-verification.md](epic-004-verification.md); poniżej są instrukcje,
 | V-ID | Właściciel | Zakres i wymagany dowód |
 | --- | --- | --- |
 | V01–V02 | A2 | Czysta logika czasu oraz adapter; wstrzyknięte UTC/monotonic, bez zmiany zegara hosta. |
-| V03–V06 | A2 | Wire i rzeczywisty serwer loopback z kontrolowanymi klientami/proxy; desktop, terminal i loadtest v12. |
+| V03–V06 | A2 | Wire i rzeczywisty serwer loopback z kontrolowanymi klientami/proxy; desktop, terminal i loadtest v13. |
 | V07 | A2 + A4 | Lifecycle przejść z zapisanym śladem sieciowym oraz potwierdzeniem obrazu. |
-| V08–V10 | A2 | Snapshoty i każdy legacy v2–v7, opóźniony worker, błędy atomowego zapisu. |
+| V08–V10 | A2 | Snapshoty v9 oraz każdy legacy v2–v8, opóźniony worker, błędy atomowego zapisu. |
 | V11–V12 | A3 | Niezależne zamrożone referencje, jednostki, FFI/ABI/concurrency, cache i katalog. |
 | V13–V18 | A4 | Produkcyjne pipeline'y na GPU oraz obraz uruchomionego klienta, obie jakości. |
 | V19 | A2 + A4 | Admin/lifecycle + CLI/F1/help/completion; wspólny manifest. |
@@ -45,7 +45,7 @@ w [epic-004-verification.md](epic-004-verification.md); poniżej są instrukcje,
 
 ## A2 — czas, transport, zapis
 
-- V01: 0/1/60/240/1440× i dziesiętne ppm; ciągłość zmiany skali, set, RealTime vs
+- V01: 0/0.1/1/60/240/1440/1000000× i dziesiętne ppm; ciągłość zmiany skali, set, RealTime vs
   TimeScale1, granice dat/overflow. Ta sama delta monotoniczna daje wynik niezależny
   od liczby ticków. V02: pominięte ticki, długa pauza, pusty serwer, wall-clock
   korekty w obu kierunkach; sprawdzić okres 5 s i próg 250 ms z kontraktu.
@@ -62,7 +62,7 @@ w [epic-004-verification.md](epic-004-verification.md); poniżej są instrukcje,
   i teleport; środowisko zmienia
   się z aktywnym światem, czas biegnie w Interior.
 - V08–V10: manual/autosave/final, pause/advance offline, cofnięty wall clock,
-  granice dat, opóźniony worker; osobny fixture każdej wersji v2–v7. Uszkodzenia,
+  granice dat, opóźniony worker; osobny fixture każdej wersji v2–v8. Uszkodzenia,
   duplikat CLOCK, limit rozmiaru i odmowa zapisu zachowują poprzedni snapshot.
 - V19: tylko istniejący admin lub konsola klienta posiadającego lokalny proces serwera może mutować czas; połączenie attached/remote oraz niepełne polecenia nie mutują.
   Owned server zatrzymywany przez właściciela, attached pozostaje uruchomiony.
@@ -88,7 +88,7 @@ w [epic-004-verification.md](epic-004-verification.md); poniżej są instrukcje,
   0,1–0,9 z prawidłową jasną stroną; gwiazdy ≤0,1°. Biegun/horyzont/zenit bez
   NaN, skoków i błędów orientacji. Sprawdzić transpozycję C/Rust i determinant −1
   ramki world; dodatnia ortonormalna rotacja EQJ→HOR pozostaje wymagana.
-- V12: cache vs direct przy skalach 0/1/60/240/1440, początek/środek/koniec
+- V12: cache vs direct przy skalach 0/0.1/1/60/240/1440/1000000, początek/środek/koniec
   300 s i ±1 ms na granicach; revision, teleport, powrót i skok 2000→2100.
   Błąd interpolacji ≤0,001°; najwyżej dwa nowe końce, bez odrabiania przedziałów.
 - Odtworzyć katalog do katalogu tymczasowego; porównać dokładny hash, 500 ID
@@ -140,7 +140,7 @@ w [epic-004-verification.md](epic-004-verification.md); poniżej są instrukcje,
 
 ## V20 i bramka zamknięcia
 
-Klient: dzień/noc × low/standard × skale 0/1/60/240/1440, identyczna scena/kamera,
+Klient: dzień/noc × low/standard × skale 0/0.1/1/60/240/1440/1000000, identyczna scena/kamera,
 30 s rozgrzewki i 60 s pomiaru każdego przebiegu. Raportować p50/p95/p99/max,
 liczbę próbek całej klatki, CPU przygotowania środowiska, CPU uploadu oraz
 przygotowania cieni (jawny zakres); draw calls/skips, pamięć silnika i adapter.

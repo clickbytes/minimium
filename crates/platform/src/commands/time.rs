@@ -111,10 +111,10 @@ pub fn parse_scale_ppm(value: &str) -> Result<TimeScalePpm, String> {
         })
     {
         return Err(String::from(
-            "rate must be a decimal from 0 to 1440 with at most 6 fractional digits",
+            "rate must be 0 (pause) or a decimal from 0.1 to 1000000 with at most 6 fractional digits",
         ));
     }
-    let whole = whole_text.parse::<u32>().map_err(|_| invalid_scale())?;
+    let whole = whole_text.parse::<u64>().map_err(|_| invalid_scale())?;
     let mut fraction = fraction_text.unwrap_or_default().to_owned();
     while fraction.len() < 6 {
         fraction.push('0');
@@ -122,12 +122,15 @@ pub fn parse_scale_ppm(value: &str) -> Result<TimeScalePpm, String> {
     let fractional_ppm = if fraction.is_empty() {
         0
     } else {
-        fraction.parse::<u32>().map_err(|_| invalid_scale())?
+        fraction.parse::<u64>().map_err(|_| invalid_scale())?
     };
     let ppm = whole
         .checked_mul(1_000_000)
         .and_then(|value| value.checked_add(fractional_ppm))
         .ok_or_else(invalid_scale)?;
+    if ppm != 0 && ppm < 100_000 {
+        return Err(invalid_scale());
+    }
     TimeScalePpm::new(ppm).map_err(|_| invalid_scale())
 }
 
@@ -177,5 +180,7 @@ fn invalid_utc() -> String {
 }
 
 fn invalid_scale() -> String {
-    String::from("rate must be between 0 and 1440 with at most 6 fractional digits")
+    String::from(
+        "rate must be 0 (pause) or between 0.1 and 1000000 with at most 6 fractional digits",
+    )
 }

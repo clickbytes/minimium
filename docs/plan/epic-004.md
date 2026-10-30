@@ -9,15 +9,15 @@ Dodać do Minimium wspólny czas świata, płynny dzień/noc, podstawowe niebo, 
 
 **Stan: W REALIZACJI.** E004-00..14 są zintegrowane, ostatni PR #86 ma merge `93b1264502e33f01a9769901fbbc72697bf904e0`. E004-15 ma kompletny audyt i STATIC PASS na 8a0a33d; E004-16 oczekuje na osobną zgodę użytkownika, a E004-17 na wynik E004-16. Funkcje czasu i nieba czekają na końcowy odbiór runtime w E004-16.
 
-Baza planu: [`main@aad2c82`](https://github.com/clickbytes/minimium/commit/aad2c8298606a46dc3a286b4eac7f1de45759851). Przed implementacją gałąź integracyjna została porównana i zsynchronizowana z [`main@30ff278`](https://github.com/clickbytes/minimium/commit/30ff278f9a0020f93d2567b2ca5c05a290bc605e) przez `cd816c2`. Zachowuje to nowszą konsolę, suwak zoomu i kafelkowany LOD globusa. Historyczny baseline miał protokół v11, save v7 i statyczne światło. Obecna integracja ma v12/v8 oraz implementację zegara i nieba; jej runtime pozostaje NOT RUN.
+Baza planu: [`main@aad2c82`](https://github.com/clickbytes/minimium/commit/aad2c8298606a46dc3a286b4eac7f1de45759851). Przed implementacją gałąź integracyjna została porównana i zsynchronizowana z [`main@30ff278`](https://github.com/clickbytes/minimium/commit/30ff278f9a0020f93d2567b2ca5c05a290bc605e) przez `cd816c2`. Zachowuje to nowszą konsolę, suwak zoomu i kafelkowany LOD globusa. Historyczny baseline miał protokół v11, save v7 i statyczne światło. Obecna integracja ma v13/v9 oraz implementację zegara i nieba; jej runtime pozostaje NOT RUN.
 
 ## Zakres obowiązkowy
 
 | Obszar | Wymagany rezultat |
 | --- | --- |
-| Czas | `real_time` = UTC serwera; `time_scale` = wybrana data i tempo 0..1440×. Pauza środowiska przez 0×. Fizyka, cooldowny i deadline nadal używają realnego czasu. |
-| Autorytet i trwałość | Jeden ClockId dla planety i dungeon; admin commands; zapis v8; migracje v2–v7; jawne pause/advance podczas offline; brak utraty istniejących danych. |
-| Multiplayer | Protokół v12, stan w join/prepare/commit, okresowa i zdarzeniowa synchronizacja, pomiar t1–t4, kompletny lifecycle portali/reconnectu. |
+| Czas | `real_time` = UTC serwera; `time_scale` = wybrana data i tempo 0.1..1 000 000× (lub 0× dla pauzy). Pauza środowiska przez 0×. Fizyka, cooldowny i deadline nadal używają realnego czasu. |
+| Autorytet i trwałość | Jeden ClockId dla planety i dungeon; admin commands; zapis v9; migracje v2–v7; jawne pause/advance podczas offline; brak utraty istniejących danych. |
+| Multiplayer | Protokół v13, stan w join/prepare/commit, okresowa i zdarzeniowa synchronizacja, pomiar t1–t4, kompletny lifecycle portali/reconnectu. |
 | Obserwator | Szerokość/długość z Position3Mm, jawna fizyczna wysokość i jedna konwersja osi; Earth 650 km pozostaje skalą geometrii, nie modelem fizycznej Ziemi dla paralaksy. |
 | Astronomia | Przypięty Astronomy Engine C za safe Rust API; obliczenia f64 offline; Słońce, Księżyc, precesja/obrót gwiazd i ograniczony cache według czasu symulowanego. |
 | Gwiazdy | Dokładnie 500 globalnych rekordów HYG 4.1 wybranych według apparent V magnitude i HYG id. Odtwarzalny importer, prawdziwy hash, ruch własny, kolory, jeden batch GPU. |
@@ -29,7 +29,7 @@ Baza planu: [`main@aad2c82`](https://github.com/clickbytes/minimium/commit/aad2c
 
 ## Główne decyzje wykonawcze
 
-- Daty: `[2000-01-01T00:00:00Z,2101-01-01T00:00:00Z)`, POSIX UTC ms w `i64`. Skala w ppm `u32`, 1× = 1 000 000, obliczenia checked `i128`. Absolutna data nie trafia do GPU jako `f32`.
+- Daty: `[2000-01-01T00:00:00Z,2101-01-01T00:00:00Z)`, POSIX UTC ms w `i64`. Skala w ppm `u64`, 1× = 1 000 000, obliczenia checked `i128`. Absolutna data nie trafia do GPU jako `f32`.
 - Jeden zegar `ClockId=1`; `ClockRevision` i 16-bajtowy nonce uruchomienia są odrębne od rewizji modelu, hasha katalogu oraz world content revision. Zmiana daty nie zmienia seedów ani geometrii.
 - Profile `Interior/Earth/EarthLike` są osobnym opisem środowiska. Dungeon zachowuje czas, choć nie rysuje ziemskiego nieba. Proceduralna planeta używa jawnie nazwanego mapowania ziemskiego nieba.
 - Astronomy Engine `v2.1.19` przypinamy do commita `61dc07020aaa6885d2c7f688a4d82beaf6edb9ef`. C/FFI występuje wyłącznie w ścieżce klienta; server/core/protocol nie zyskują tej zależności.

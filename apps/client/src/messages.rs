@@ -238,7 +238,7 @@ impl fmt::Display for ClientText {
                 ParseError::NameUsage => "usage: name NAME",
                 ParseError::SkyQualityUsage => "usage: sky quality low|standard",
                 ParseError::TimeScaleUsage => {
-                    "usage: time scale DECIMAL (or timescale DECIMAL; 0-1440, at most 6 fractional digits)"
+                    "usage: time scale DECIMAL (or timescale DECIMAL; 0.1-1000000 or 0 to pause, at most 6 fractional digits)"
                 }
                 ParseError::InvalidCoordinate => "coordinates must be numbers",
                 ParseError::NonFiniteCoordinate => "coordinates must be finite",

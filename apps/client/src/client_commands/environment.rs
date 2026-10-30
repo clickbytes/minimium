@@ -23,7 +23,7 @@ const COMMANDS: &[CommandSpec] = &[
         id: CommandId::TimeScale,
         name: "time scale",
         alias: Some("timescale"),
-        usage: "time scale DECIMAL (alias timescale; owned local server; 0-1440x)",
+        usage: "time scale DECIMAL (alias timescale; owned local server; 0.1-1000000x or 0)",
     },
 ];
 

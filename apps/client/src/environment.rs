@@ -37,7 +37,7 @@ pub(crate) struct EnvironmentFrameInput {
     pub(crate) descriptor: Option<EnvironmentDescriptor>,
     pub(crate) context: Option<WorldContext>,
     pub(crate) revision: Option<u64>,
-    pub(crate) rate_ppm: Option<u32>,
+    pub(crate) rate_ppm: Option<u64>,
     pub(crate) quality: SynchronizationQuality,
     pub(crate) clock_diagnostics: Option<ClockDiagnostics>,
 }
@@ -56,7 +56,7 @@ impl EnvironmentFrameInput {
         }
     }
 
-    pub(crate) fn status_signature(self) -> (SynchronizationQuality, Option<u64>, Option<u32>) {
+    pub(crate) fn status_signature(self) -> (SynchronizationQuality, Option<u64>, Option<u64>) {
         (self.quality, self.revision, self.rate_ppm)
     }
 
