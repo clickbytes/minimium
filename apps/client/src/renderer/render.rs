@@ -65,6 +65,12 @@ impl GpuResources {
                     pass.set_vertex_buffer(0, globe.vertices.slice(..));
                     pass.draw(0..globe.vertex_count, 0..1);
                     draw_calls += 1;
+                    if let Some(detail) = &globe.detail {
+                        pass.set_bind_group(1, &detail.bind_group, &[]);
+                        pass.set_vertex_buffer(0, detail.vertices.slice(..));
+                        pass.draw(0..detail.vertex_count, 0..1);
+                        draw_calls += 1;
+                    }
                     pass.set_pipeline(&self.pipeline);
                 }
                 if let Some((buffer, count)) = &self.overview_buffer {

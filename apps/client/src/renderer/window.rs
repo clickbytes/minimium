@@ -175,6 +175,20 @@ impl ApplicationHandler for App {
                     return;
                 }
                 if renderer.overview_open && !renderer.ui.console.open {
+                    if renderer.overview_uses_zoom() {
+                        if let Some((x, y)) = renderer.input.last_cursor {
+                            let size = window.inner_size();
+                            if crate::console::slider_hit(size.width, size.height, x, y) {
+                                renderer.overview_slider_dragging = true;
+                                renderer.overview_dragged = true;
+                                renderer.set_overview_zoom(crate::console::slider_value_at_y(
+                                    size.height,
+                                    y,
+                                ));
+                                return;
+                            }
+                        }
+                    }
                     renderer.overview_dragging = true;
                     renderer.overview_dragged = false;
                     renderer.overview_drag_distance = 0.0;
@@ -198,7 +212,11 @@ impl ApplicationHandler for App {
                 ..
             } => {
                 renderer.ui.console.editor.dragging = false;
-                if renderer.overview_open && !renderer.ui.console.open && !renderer.overview_dragged
+                let slider_dragged = std::mem::take(&mut renderer.overview_slider_dragging);
+                if renderer.overview_open
+                    && !renderer.ui.console.open
+                    && !renderer.overview_dragged
+                    && !slider_dragged
                 {
                     renderer.click_map_teleport();
                 }
@@ -220,12 +238,17 @@ impl ApplicationHandler for App {
                         position.y as f32 / 80.0
                     }
                 };
-                renderer.overview_zoom =
-                    (renderer.overview_zoom * (1.0 - amount * 0.1)).clamp(1.08, 8.0);
-                renderer.refresh_earth_marker();
-                renderer.refresh_earth_globe_lod();
+                if renderer.overview_uses_zoom() {
+                    renderer.set_overview_zoom(renderer.overview_zoom * (1.0 - amount * 0.1));
+                }
             }
             WindowEvent::CursorMoved { position, .. } => {
+                if renderer.overview_slider_dragging {
+                    renderer.set_overview_zoom(crate::console::slider_value_at_y(
+                        window.inner_size().height,
+                        position.y,
+                    ));
+                }
                 if renderer.ui.console.open && renderer.ui.console.editor.dragging {
                     let size = window.inner_size();
                     renderer.ui.console.input_hit(

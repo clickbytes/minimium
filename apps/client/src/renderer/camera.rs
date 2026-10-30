@@ -102,6 +102,7 @@ impl Renderer {
         self.poll_connector();
         self.poll_session();
         self.poll_globe();
+        self.update_globe_detail();
         if self.refresh_active_sector_scene() && self.teleport_loading {
             self.teleport_loading = false;
             self.gpu.scene_visible = true;
@@ -194,9 +195,13 @@ impl Renderer {
                 self.game
                     .hit_confirmation_until
                     .is_some_and(|until| Instant::now() < until),
-                self.settings
-                    .require_earth
-                    .then_some(self.connection_status.as_str()),
+                crate::console::Overlay {
+                    status: self
+                        .settings
+                        .require_earth
+                        .then_some(self.connection_status.as_str()),
+                    overview_zoom: self.overview_uses_zoom().then_some(self.overview_zoom),
+                },
             );
             let count = vertices.len() as u32;
             if count > 0 {
