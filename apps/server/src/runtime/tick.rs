@@ -52,7 +52,6 @@ impl ServerRuntime {
                 Ok(monotonic_ms) => commands::execute(
                     &command,
                     commands::CommandContext {
-                        world: &self.game.worlds.primary().world,
                         worlds: &self.game.worlds,
                         player_store: &mut self.operations.player_store,
                         persistence: &mut self.operations.persistence,

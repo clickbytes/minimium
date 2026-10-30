@@ -20,6 +20,8 @@ use std::{
 mod accessors;
 mod constructors;
 mod diagnostics;
+// Component persistence and replication staging are opt-in until a module uses them.
+#[expect(dead_code, reason = "component state API is staged for opt-in modules")]
 mod entity_state;
 mod environment;
 mod sector_state;
@@ -39,6 +41,10 @@ pub(crate) struct WorldInstance {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(
+    dead_code,
+    reason = "component error cases are staged with the opt-in API"
+)]
 pub(crate) enum RegistryError {
     EmptyWorlds,
     DuplicateInstance,
@@ -63,7 +69,12 @@ pub(crate) struct WorldRegistry {
     next_transition: u128,
     sector_states: BTreeMap<(WorldInstanceId, minimium_core::world::SectorKey), WorldSectorState>,
     persisted_totals: sector_state::PersistedTotals,
+    #[allow(
+        dead_code,
+        reason = "component sector ownership is staged for opt-in modules"
+    )]
     entity_sectors: BTreeMap<(WorldInstanceId, EntityId), SectorKey>,
+    #[allow(dead_code, reason = "component origins are staged for opt-in modules")]
     entity_origins: BTreeMap<(WorldInstanceId, EntityId, ComponentTypeId), ObjectOriginId>,
 }
 

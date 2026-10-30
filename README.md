@@ -43,6 +43,14 @@ not a recorded build result.
 cargo build --workspace --locked
 ~~~
 
+On Windows, a running release client or server locks its executable. Stop the
+running processes before rebuilding `target/release`, or build a separate copy
+without interrupting a session:
+
+~~~powershell
+cargo build --workspace --release --locked --target-dir "$env:LOCALAPPDATA\Minimium\build-staging"
+~~~
+
 Run the desktop client with its default local server behavior:
 
 ~~~text

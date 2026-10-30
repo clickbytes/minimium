@@ -20,6 +20,14 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 version = "0.1.0"
 
+# The development workspace is also used on exFAT, which cannot hard-link
+# rustc's incremental cache files and otherwise emits a warning per crate.
+[profile.dev]
+incremental = false
+
+[profile.test]
+incremental = false
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

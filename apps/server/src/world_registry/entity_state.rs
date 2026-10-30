@@ -53,8 +53,7 @@ impl WorldRegistry {
         origin: ObjectOriginId,
         registry: &ComponentRegistry,
         kind: ComponentTypeId,
-        schema: minimium_core::entity::SchemaVersion,
-        payload: &[u8],
+        blob: &ComponentBlob,
     ) -> Result<EntityId, RegistryError> {
         if !self.instances.contains_key(&instance) {
             return Err(RegistryError::UnknownInstance);
@@ -63,7 +62,7 @@ impl WorldRegistry {
         let mut candidate = store.clone();
         let entity = candidate.spawn().map_err(RegistryError::Component)?;
         candidate
-            .insert(registry, entity, kind, schema, payload)
+            .insert(registry, entity, kind, blob.schema, &blob.bytes)
             .map_err(RegistryError::Component)?;
         if self
             .sector_states

@@ -50,11 +50,9 @@ use crate::{
     storage::{PersistenceWorker, PlayerStore},
 };
 use minimium_core::time::MonotonicMs;
-use minimium_core::world::World;
 use minimium_platform::commands::{server_help, ServerCommand};
 
 pub struct CommandContext<'a> {
-    pub world: &'a World,
     pub worlds: &'a WorldRegistry,
     pub player_store: &'a mut PlayerStore,
     pub persistence: &'a mut PersistenceWorker,
@@ -77,7 +75,6 @@ pub fn execute(command: &ServerCommand, mut context: CommandContext<'_>) -> Comm
         return execute_registered(line, &mut context);
     }
     let CommandContext {
-        world: _,
         worlds,
         player_store,
         persistence,
