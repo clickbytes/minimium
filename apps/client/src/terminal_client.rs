@@ -96,6 +96,12 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
     }
 
     loop {
+        if let Some(result) = connection.poll_time_scale_result() {
+            match result {
+                Ok(response) => println!("{}", response.trim()),
+                Err(error) => println!("time scale: {error}"),
+            }
+        }
         match connection.poll_connector() {
             ConnectionEvent::InProgress {
                 waiting_for_cleanup: true,
@@ -280,6 +286,12 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
                                 .map(|session| session.environment_frame().time_status_line())
                                 .unwrap_or_else(|| unavailable.time_status_line());
                             println!("{status}");
+                        }
+                        FrontendAction::TimeScale(value) => {
+                            match connection.request_time_scale(value) {
+                                Ok(()) => println!("time scale request sent"),
+                                Err(error) => println!("time scale: {error}"),
+                            }
                         }
                     },
                 }

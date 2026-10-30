@@ -59,6 +59,12 @@ impl Renderer {
     }
 
     pub(super) fn poll_connector(&mut self) {
+        if let Some(result) = self.connection.poll_time_scale_result() {
+            match result {
+                Ok(response) => self.ui.console.push_line(response.trim()),
+                Err(error) => self.ui.console.push_error(format!("time scale: {error}")),
+            }
+        }
         match self.connection.poll_connector() {
             ConnectionEvent::TimedOut => {
                 self.connection_status = "Błąd połączenia: przekroczono czas".into();

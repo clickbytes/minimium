@@ -6,6 +6,7 @@
 //! [`FrontendAction`], leaving each front end in control of its own event loop.
 
 use crate::{environment::quality::SkyQuality, options::ThreadLane, session::QueueError};
+use minimium_platform::commands::parse_scale_ppm;
 use minimium_protocol::ClientMessage;
 use std::sync::OnceLock;
 
@@ -36,6 +37,7 @@ pub(crate) enum ClientCommand {
     SkyQuality(SkyQuality),
     SkyInfo,
     TimeStatus,
+    TimeScale(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -60,6 +62,7 @@ pub(super) enum CommandId {
     SkyQuality,
     SkyInfo,
     TimeStatus,
+    TimeScale,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -125,7 +128,7 @@ fn command_id(first: &str, second: Option<&str>) -> Option<CommandId> {
         .iter()
         .find(|spec| {
             if let Some((verb, subcommand)) = spec.name.split_once(' ') {
-                first == verb && second == Some(subcommand)
+                (first == verb && second == Some(subcommand)) || spec.alias == Some(first)
             } else {
                 first == spec.name || spec.alias == Some(first)
             }
@@ -144,6 +147,7 @@ pub(crate) enum ParseError {
     InvalidCoordinate,
     NonFiniteCoordinate,
     SkyQualityUsage,
+    TimeScaleUsage,
     UnknownCommand,
 }
 
@@ -204,11 +208,20 @@ pub(crate) fn parse_command(input: &str) -> Result<Option<ClientCommand>, ParseE
         }
         (Some(CommandId::SkyInfo), (_, _, None, None, None)) => ClientCommand::SkyInfo,
         (Some(CommandId::TimeStatus), (_, _, None, None, None)) => ClientCommand::TimeStatus,
+        (Some(CommandId::TimeScale), (_, _, Some(value), None, None)) => {
+            parse_scale_ppm(value).map_err(|_| ParseError::TimeScaleUsage)?;
+            ClientCommand::TimeScale(value.to_owned())
+        }
+        (Some(CommandId::TimeScale), (Some("timescale"), Some(value), None, None, None)) => {
+            parse_scale_ppm(value).map_err(|_| ParseError::TimeScaleUsage)?;
+            ClientCommand::TimeScale(value.to_owned())
+        }
         (Some(CommandId::HostLocal), _) => return Err(ParseError::HostUsage),
         (Some(CommandId::Connect), _) => return Err(ParseError::ConnectUsage),
         (Some(CommandId::Move), _) => return Err(ParseError::MoveUsage),
         (Some(CommandId::SetName), _) => return Err(ParseError::NameUsage),
         (Some(CommandId::SkyQuality), _) => return Err(ParseError::SkyQualityUsage),
+        (Some(CommandId::TimeScale), _) => return Err(ParseError::TimeScaleUsage),
         (Some(CommandId::Chat), _) => return Err(ParseError::MissingChat),
         _ => return Err(ParseError::UnknownCommand),
     };
@@ -246,6 +259,7 @@ pub(crate) enum FrontendAction {
     SkyQuality(SkyQuality),
     SkyInfo,
     TimeStatus,
+    TimeScale(String),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -291,6 +305,9 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
         }
         ClientCommand::SkyInfo => return CommandResult::Action(FrontendAction::SkyInfo),
         ClientCommand::TimeStatus => return CommandResult::Action(FrontendAction::TimeStatus),
+        ClientCommand::TimeScale(value) => {
+            return CommandResult::Action(FrontendAction::TimeScale(value))
+        }
     };
     match context.connection.queue(&message) {
         Ok(()) => CommandResult::Sent,

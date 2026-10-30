@@ -64,7 +64,7 @@ w [epic-004-verification.md](epic-004-verification.md); poniżej są instrukcje,
 - V08–V10: manual/autosave/final, pause/advance offline, cofnięty wall clock,
   granice dat, opóźniony worker; osobny fixture każdej wersji v2–v7. Uszkodzenia,
   duplikat CLOCK, limit rozmiaru i odmowa zapisu zachowują poprzedni snapshot.
-- V19: tylko istniejący admin może mutować czas; niepełne polecenia nie mutują.
+- V19: tylko istniejący admin lub konsola klienta posiadającego lokalny proces serwera może mutować czas; połączenie attached/remote oraz niepełne polecenia nie mutują.
   Owned server zatrzymywany przez właściciela, attached pozostaje uruchomiony.
 
 ## A3 — referencje, FFI i katalog
@@ -119,7 +119,7 @@ w [epic-004-verification.md](epic-004-verification.md); poniżej są instrukcje,
   przygotowanego celu; stale Cancel nie może zwolnić aktywnego świata.
   Błędy alokacji/loss wymuszać hookiem/adapterem bez wyczerpywania RAM hosta;
   syntetyczny fallback nie zastępuje realnego pipeline'u GPU.
-- V19: CLI wartości/duplikaty, F1/help/completion/time status/sky info/profile,
+- V19: CLI wartości/duplikaty, F1/help/completion/time status/time scale 0.1|1|1000/sky info/profile, odpowiedź serwera i odrzucenie attached/remote,
   UTF-8 i poprzedni model konsoli. Regresja globusa: limit tekstury 2048, duży
   zoom, kierunek scrolla, slider, zmiana LOD, wybór teleportu; bez nowego systemu map.
 - Zapisać screenshots/capture, manifest scen i ocenę obrazu uruchomionego klienta.
