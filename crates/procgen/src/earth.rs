@@ -3,6 +3,7 @@ use memmap2::Mmap;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::{
+    fmt,
     fs::{self, File},
     path::Path,
     sync::OnceLock,
@@ -37,6 +38,25 @@ struct EarthPackage {
     width: usize,
     height: usize,
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EarthSampleError {
+    PackageUnavailable,
+    PackageMismatch,
+    InvalidDirection,
+}
+
+impl fmt::Display for EarthSampleError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::PackageUnavailable => "GEBCO package is not installed",
+            Self::PackageMismatch => "installed GEBCO package does not match the planet",
+            Self::InvalidDirection => "Earth sample direction is zero or non-finite",
+        })
+    }
+}
+
+impl std::error::Error for EarthSampleError {}
 
 pub fn install_earth_package(path: &Path, expected: Option<[u8; 32]>) -> Result<[u8; 32], String> {
     if let Some(package) = EARTH.get() {
@@ -147,14 +167,22 @@ fn decode_sha256(hex: &str) -> Result<[u8; 32], String> {
 }
 
 pub fn earth_elevation_mm(direction: [f64; 3], height_scale_permille: u32) -> i64 {
-    let package = EARTH
-        .get()
-        .expect("GEBCO package must be installed before Earth generation");
+    let height_m = try_earth_elevation_m(direction)
+        .expect("GEBCO package and sample direction must be valid before Earth generation");
+    (height_m * f64::from(height_scale_permille)).round() as i64
+}
+
+/// Samples unscaled, bilinearly interpolated GEBCO meters without panicking.
+pub fn try_earth_elevation_m(direction: [f64; 3]) -> Result<f64, EarthSampleError> {
+    let package = EARTH.get().ok_or(EarthSampleError::PackageUnavailable)?;
     let length = direction
         .iter()
         .map(|value| value * value)
         .sum::<f64>()
         .sqrt();
+    if !length.is_finite() || length == 0.0 || !direction.iter().all(|value| value.is_finite()) {
+        return Err(EarthSampleError::InvalidDirection);
+    }
     let latitude = (direction[1] / length).asin().to_degrees();
     let longitude = direction[2].atan2(direction[0]).to_degrees();
     let samples_per_degree = package.width as f64 / 360.0;
@@ -171,7 +199,22 @@ pub fn earth_elevation_mm(direction: [f64; 3], height_scale_permille: u32) -> i6
     let h01 = f64::from(package.pixel(x0, y0 + 1));
     let h11 = f64::from(package.pixel(x0 + 1, y0 + 1));
     let height_m = (h00 * (1.0 - fx) + h10 * fx) * (1.0 - fy) + (h01 * (1.0 - fx) + h11 * fx) * fy;
-    (height_m * f64::from(height_scale_permille)).round() as i64
+    if height_m.is_finite() {
+        Ok(height_m)
+    } else {
+        Err(EarthSampleError::InvalidDirection)
+    }
+}
+
+pub fn try_earth_elevation_m_for_package(
+    direction: [f64; 3],
+    expected_package_digest: [u8; 32],
+) -> Result<f64, EarthSampleError> {
+    let package = EARTH.get().ok_or(EarthSampleError::PackageUnavailable)?;
+    if package.package_digest != expected_package_digest {
+        return Err(EarthSampleError::PackageMismatch);
+    }
+    try_earth_elevation_m(direction)
 }
 
 pub fn earth_is_land(position: [f32; 3], height_scale_permille: u32, sea_level_mm: i64) -> bool {

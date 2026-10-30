@@ -3,6 +3,7 @@
 mod demo;
 mod dungeon;
 mod earth;
+mod earth_observer;
 mod materialize;
 mod philox;
 mod planet;
@@ -26,7 +27,9 @@ pub use dungeon::{
 };
 pub use earth::{
     earth_elevation_mm, earth_is_land, ensure_earth_from_manifest, install_earth_package,
+    try_earth_elevation_m, try_earth_elevation_m_for_package, EarthSampleError,
 };
+pub use earth_observer::earth_height_reference;
 use materialize::materialize_legacy_planet_map;
 pub use materialize::{
     materialize_dungeon_map, materialize_planet_map, materialize_planet_overview,
