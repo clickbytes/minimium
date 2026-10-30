@@ -76,6 +76,7 @@ impl Renderer {
         let mut console = Console::new();
         console.push_line("F1 opens the command console. Type help for commands.");
         console.push_line("M toggles the world overview.");
+        let sky_catalogue = environment::stars::StarCatalogueAdapter::load_embedded().ok();
         let fingerprints = world_catalog
             .iter()
             .map(|(instance, map)| (*instance, map.fingerprint()))
@@ -139,6 +140,11 @@ impl Renderer {
             },
             connection,
             environment_frame: EnvironmentFrameInput::unavailable(),
+            render_environment_frame: EnvironmentFrame::unavailable(RenderViewFrame::default()),
+            environment_observer: environment::observer::ObserverAdapter::default(),
+            sky_calculator: minimium_astronomy::SkyCalculator::default(),
+            sky_catalogue,
+            environment_error: None,
             demo_environment: demo.then(LocalDemoEnvironment::new).flatten(),
             world_catalog,
             world_manifests,

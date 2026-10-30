@@ -1,6 +1,3 @@
-struct Camera { view_projection: mat4x4<f32> };
-@group(0) @binding(0) var<uniform> camera: Camera;
-
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) color: vec3<f32>,
@@ -19,9 +16,20 @@ struct VertexOutput {
     return out;
 }
 @fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let light = normalize(vec3<f32>(0.46, 0.82, 0.34));
-    let diffuse = max(dot(normalize(input.normal), light), 0.0);
     let water = input.color.b > input.color.r * 1.5 && input.color.b > input.color.g * 1.25;
+    let normal = normalize(input.normal);
+    if environment.flags.z == 1u {
+        if environment.flags.x == 0u {
+            return vec4<f32>(input.color * environment.ambient_rgb_exposure.xyz, 1.0);
+        }
+        let diffuse = max(dot(normal, normalize(environment.sun_geometric_world.xyz)), 0.0);
+        let direct = environment.local_sun_rgb_visibility.xyz * diffuse;
+        let ambient = environment.ambient_rgb_exposure.xyz;
+        let water_scale = select(1.0, 0.85, water);
+        return vec4<f32>(input.color * (ambient + direct) * water_scale, 1.0);
+    }
+    let light = normalize(vec3<f32>(0.46, 0.82, 0.34));
+    let diffuse = max(dot(normal, light), 0.0);
     let intensity = select(0.28 + 0.72 * diffuse, 0.68 + 0.22 * diffuse, water);
     return vec4<f32>(input.color * intensity, 1.0);
 }

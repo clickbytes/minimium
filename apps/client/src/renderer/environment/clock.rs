@@ -1,5 +1,7 @@
 use super::super::Renderer;
 use crate::{environment::EnvironmentFrameInput, session::SessionState};
+use minimium_core::world::MembershipEpoch;
+use minimium_protocol::WorldContext;
 
 impl Renderer {
     /// Publish one immutable clock/context tuple for every consumer this frame.
@@ -30,7 +32,14 @@ impl Renderer {
         if self.settings.demo {
             let manifest = self.world_manifests.get(&self.current_instance).copied();
             self.environment_frame = match (self.demo_environment.as_ref(), manifest) {
-                (Some(demo), Some(manifest)) => demo.frame(manifest, None),
+                (Some(demo), Some(manifest)) => demo.frame(
+                    manifest,
+                    Some(WorldContext::new(
+                        self.current_instance,
+                        manifest.content_revision(),
+                        MembershipEpoch::new(1).expect("local demo membership epoch is nonzero"),
+                    )),
+                ),
                 _ => EnvironmentFrameInput::unavailable(),
             };
         } else {

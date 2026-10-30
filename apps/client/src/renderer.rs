@@ -35,18 +35,22 @@ mod camera;
 mod console_events;
 mod controller;
 mod environment;
+mod environment_gpu;
 mod geometry;
 mod globe;
 mod globe_detail;
 mod gpu;
 mod init;
+mod output;
 mod overview;
 mod planet_visibility;
 mod render;
 mod sector_scene;
 mod session;
+mod shader_source;
 mod window;
 
+use environment::{EnvironmentFrame, RenderViewFrame, RenderViewInput};
 use geometry::{cube, sector_geometry, Vertex};
 
 const UI_VERTEX_CAPACITY: usize = 8192;
@@ -68,6 +72,7 @@ struct GpuResources {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
+    scene_color_format: wgpu::TextureFormat,
     pipeline: wgpu::RenderPipeline,
     ui_pipeline: wgpu::RenderPipeline,
     ui_bind_group: wgpu::BindGroup,
@@ -78,6 +83,7 @@ struct GpuResources {
     player_buffer: wgpu::Buffer,
     remote_vertex_count: u32,
     camera_buffer: wgpu::Buffer,
+    environment_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     depth_view: wgpu::TextureView,
     size: PhysicalSize<u32>,
@@ -96,6 +102,7 @@ struct GpuResources {
     overview_globe: bool,
     scene_visible: bool,
     globe: Option<globe::GlobeGpu>,
+    output_encoder: Option<output::OutputEncoder>,
 }
 
 struct GameplayView {
@@ -160,6 +167,11 @@ struct Renderer {
     settings: ClientSettings,
     connection: ConnectionController,
     environment_frame: EnvironmentFrameInput,
+    render_environment_frame: EnvironmentFrame,
+    environment_observer: environment::observer::ObserverAdapter,
+    sky_calculator: minimium_astronomy::SkyCalculator,
+    sky_catalogue: Option<environment::stars::StarCatalogueAdapter>,
+    environment_error: Option<String>,
     demo_environment: Option<LocalDemoEnvironment>,
     world_catalog: std::collections::HashMap<minimium_core::world::WorldInstanceId, WorldMap>,
     world_manifests:

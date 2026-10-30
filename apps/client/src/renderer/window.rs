@@ -291,7 +291,7 @@ impl ApplicationHandler for App {
                 let interval = started.saturating_duration_since(renderer.metrics.last_redraw);
                 renderer.metrics.last_redraw = started;
                 renderer.update();
-                let draws = match renderer.gpu.render(&renderer.environment_frame) {
+                let draws = match renderer.gpu.render(&renderer.render_environment_frame) {
                     Ok(draws) => draws,
                     Err(
                         wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated,
