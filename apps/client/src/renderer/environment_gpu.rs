@@ -1,4 +1,6 @@
-use super::environment::{EnvironmentFrame, EnvironmentViewKind, RenderViewFrame};
+use super::environment::{
+    EnvironmentFrame, EnvironmentViewKind, HaloSource, RenderViewFrame, MAX_HALO_BODIES,
+};
 use bytemuck::{Pod, Zeroable};
 use std::sync::OnceLock;
 use std::time::Instant;
@@ -36,6 +38,8 @@ pub(super) struct EnvironmentUniform {
     pub(super) moon_disk_radiance: [f32; 4],
     pub(super) star_animation: [f32; 4],
     pub(super) moon_orbit_world: [f32; 4],
+    pub(super) halo_count: [u32; 4],
+    pub(super) halo_sources: [HaloSource; MAX_HALO_BODIES],
 }
 
 pub(super) struct EnvironmentGpuBindings {
@@ -121,6 +125,8 @@ pub(super) fn environment_uniform(frame: &EnvironmentFrame) -> EnvironmentUnifor
     uniform.flags[2] =
         u32::from(frame.status != super::environment::EnvironmentFrameStatus::Unavailable);
     uniform.flags[3] = u32::from(!frame.render_view.srgb_surface);
+    uniform.halo_count = [frame.halo_count.min(MAX_HALO_BODIES as u32), 0, 0, 0];
+    uniform.halo_sources = frame.halo_sources;
     uniform
 }
 
@@ -146,7 +152,9 @@ const _: () = {
     assert!(std::mem::offset_of!(CameraUniform, viewport) == 192);
     assert!(std::mem::offset_of!(CameraUniform, eye_world) == 208);
 
-    assert!(std::mem::size_of::<EnvironmentUniform>() == 352);
+    assert!(std::mem::size_of::<HaloSource>() == 64);
+    assert!(std::mem::align_of::<HaloSource>() == 16);
+    assert!(std::mem::size_of::<EnvironmentUniform>() == 880);
     assert!(std::mem::align_of::<EnvironmentUniform>() == 16);
     assert!(std::mem::offset_of!(EnvironmentUniform, sun_geometric_world) == 0);
     assert!(std::mem::offset_of!(EnvironmentUniform, sun_apparent_world) == 16);
@@ -167,4 +175,6 @@ const _: () = {
     assert!(std::mem::offset_of!(EnvironmentUniform, moon_disk_radiance) == 304);
     assert!(std::mem::offset_of!(EnvironmentUniform, star_animation) == 320);
     assert!(std::mem::offset_of!(EnvironmentUniform, moon_orbit_world) == 336);
+    assert!(std::mem::offset_of!(EnvironmentUniform, halo_count) == 352);
+    assert!(std::mem::offset_of!(EnvironmentUniform, halo_sources) == 368);
 };

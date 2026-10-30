@@ -7,6 +7,13 @@ struct CameraUniform {
 };
 @group(0) @binding(0) var<uniform> camera: CameraUniform;
 
+struct HaloSource {
+    direction_extent: vec4<f32>,
+    linear_rgb_visibility: vec4<f32>,
+    source_direction: vec4<f32>,
+    parameters: vec4<f32>,
+};
+
 struct EnvironmentUniform {
     sun_geometric_world: vec4<f32>,
     sun_apparent_world: vec4<f32>,
@@ -27,5 +34,7 @@ struct EnvironmentUniform {
     moon_disk_radiance: vec4<f32>,
     star_animation: vec4<f32>,
     moon_orbit_world: vec4<f32>,
+    halo_count: vec4<u32>,
+    halo_sources: array<HaloSource, 8>,
 };
 @group(0) @binding(1) var<uniform> environment: EnvironmentUniform;

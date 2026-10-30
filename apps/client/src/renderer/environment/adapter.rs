@@ -85,12 +85,12 @@ pub(super) fn from_sky_state(
 
     let (observer_up, horizon_cos, below_radius) = view_horizon(render_view);
     let horizon_altitude = horizon_cos.asin();
-    let sun_visible = visible_disk_fraction(
+    let sun_visible = super::halo::visible_disk_fraction(
         sky.sun.apparent_altitude_rad,
         sky.sun.angular_radius_rad,
         horizon_altitude,
     );
-    let moon_visible = visible_disk_fraction(
+    let moon_visible = super::halo::visible_disk_fraction(
         sky.moon.body.apparent_altitude_rad,
         sky.moon.body.angular_radius_rad,
         horizon_altitude,
@@ -136,7 +136,8 @@ pub(super) fn from_sky_state(
         linear_rgb: settings.global_sun_rgb,
         strength: settings.global_sun_strength,
     };
-    let moon_orbit_world = super::orbit::moon_orbit_world(sky, render_view)?;
+    let (observed_bodies, halo_sources, halo_count, moon_orbit_world) =
+        super::halo::prepare_halos(sky, render_view, disk_sun, disk_moon, moon_to_sun)?;
     let environment_uniform = EnvironmentUniform {
         sun_geometric_world: direction_altitude(
             sky.sun.geometric_direction_world,
@@ -190,13 +191,17 @@ pub(super) fn from_sky_state(
         moon_disk_radiance: super::super::moon_lighting::moon_disk_radiance(moon_flux),
         star_animation: [0.0; 4],
         moon_orbit_world,
+        halo_count: [halo_count, 0, 0, 0],
+        halo_sources,
     };
     Ok(EnvironmentFrame {
         context: Some(context),
         descriptor: Some(descriptor),
         clock_revision: Some(clock_revision),
         sky: Some(*sky),
-        observed_bodies: Vec::new(),
+        observed_bodies,
+        halo_sources,
+        halo_count,
         observer: Some(observer),
         render_view,
         global_sun: Some(global_sun),
@@ -233,6 +238,8 @@ pub(super) fn interior(
         clock_revision: Some(clock_revision),
         sky: None,
         observed_bodies: Vec::new(),
+        halo_sources: [super::HaloSource::zeroed(); super::MAX_HALO_BODIES],
+        halo_count: 0,
         observer: None,
         render_view,
         global_sun: None,
@@ -266,6 +273,8 @@ pub(super) fn unavailable(render_view: RenderViewFrame) -> EnvironmentFrame {
         clock_revision: None,
         sky: None,
         observed_bodies: Vec::new(),
+        halo_sources: [super::HaloSource::zeroed(); super::MAX_HALO_BODIES],
+        halo_count: 0,
         observer: None,
         render_view,
         global_sun: None,
@@ -280,25 +289,6 @@ pub(super) fn unavailable(render_view: RenderViewFrame) -> EnvironmentFrame {
             ..EnvironmentUniform::zeroed()
         },
     }
-}
-
-pub(super) fn visible_disk_fraction(
-    altitude_rad: f64,
-    angular_radius_rad: f64,
-    horizon_altitude_rad: f64,
-) -> f32 {
-    if !altitude_rad.is_finite() || !angular_radius_rad.is_finite() || angular_radius_rad <= 0.0 {
-        return 0.0;
-    }
-    let elevation = altitude_rad - horizon_altitude_rad;
-    if elevation <= -angular_radius_rad {
-        return 0.0;
-    }
-    if elevation >= angular_radius_rad {
-        return 1.0;
-    }
-    let x = (elevation / angular_radius_rad).clamp(-1.0, 1.0);
-    (0.5 + (x.asin() + x * (1.0 - x * x).max(0.0).sqrt()) / PI) as f32
 }
 
 fn view_horizon(view: RenderViewFrame) -> ([f64; 3], f64, bool) {
