@@ -1,5 +1,17 @@
 # E003 — macierz odbioru E003-06..14
 
+**Aktualizacja 2026-10-30:** E002 [PR #31](https://github.com/clickbytes/minimium/pull/31)
+scalono do `main` jako `9c938cc596e851bdbc3154fb45a01260330f14d6`,
+a E003 [PR #50](https://github.com/clickbytes/minimium/pull/50) po zmianie bazy
+na `main` jako `3e86b3e5a04a152567fde244f9f3cba217307081`.
+Po zmianie bazy diff #50 obejmował 10 commitów E003 i 104 pliki; GitHub zgłaszał
+`CLEAN`/`MERGEABLE`. [PR #49](https://github.com/clickbytes/minimium/pull/49)
+zamknięto jako zastąpiony przez #50. Nie utworzono osobnych issue ani PR-ów
+etapów. Otwarte pozostają wizualny odbiór klienta, pomiar E002 na sprzęcie
+klasy Pentium 500 MHz i formalna końcowa faza testowa E003. Merge nie jest
+potwierdzeniem tych kontroli. Poniższy stan bramek i kolejność integracji
+opisują sytuację sprzed decyzji o wcześniejszym merge.
+
 Stan implementacji na gałęzi `epic/003-seeded-worlds`. Główny przyrost jest w
 `91f42f1`, poprawka lokalizacji radialnej w `5e7f801`, a przegląd zbiorczy w
 [PR #50](https://github.com/clickbytes/minimium/pull/50). Nie utworzono osobnych

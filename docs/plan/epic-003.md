@@ -1,5 +1,25 @@
 # Epic 003 — Odtwarzalne światy: planeta, sektory i dungeon
 
+## Stan integracji — 2026-10-30
+
+Na polecenie użytkownika oba epiki scalono do `main` przed zamknięciem
+wcześniejszych bramek. [PR #31](https://github.com/clickbytes/minimium/pull/31)
+scalono merge commitem `9c938cc596e851bdbc3154fb45a01260330f14d6` (E002).
+Po zmianie bazy na ten `main` [PR #50](https://github.com/clickbytes/minimium/pull/50)
+obejmował tylko 10 commitów przyrostu E003, 104 zmienione pliki i miał stan
+`CLEAN`/`MERGEABLE`. Scalono go merge commitem
+`3e86b3e5a04a152567fde244f9f3cba217307081` (E003).
+Prototypowy [PR #49](https://github.com/clickbytes/minimium/pull/49) zamknięto
+jako zastąpiony przez #50. Gałęzie epików pozostają na zdalnym repozytorium.
+
+Nie powstały osobne issue ani PR-y etapów E003. Świadoma decyzja o wcześniejszym
+merge nie oznacza wykonania odroczonych kontroli: wizualnego odbioru klienta
+(w tym renderowanego transferu), pomiaru E002 na sprzęcie klasy Pentium 500 MHz
+ani formalnej końcowej fazy testowej E003. Ta ostatnia wymaga osobnego polecenia
+użytkownika. Wcześniejsze wyniki prób zapisane niżej pozostają aktualnymi
+dowodami w swoim zakresie; wcześniejsze opisy otwartych PR-ów i kolejności
+integracji są historyczne.
+
 ## Cel
 
 Jeden wersjonowany system światów i cyklu życia sektorów, z odrębnymi instancjami
