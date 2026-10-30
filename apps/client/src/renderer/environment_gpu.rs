@@ -1,5 +1,7 @@
 use super::environment::{EnvironmentFrame, EnvironmentViewKind, RenderViewFrame};
 use bytemuck::{Pod, Zeroable};
+use std::sync::OnceLock;
+use std::time::Instant;
 use wgpu::util::DeviceExt;
 
 #[repr(C, align(16))]
@@ -31,6 +33,7 @@ pub(super) struct EnvironmentUniform {
     pub(super) flags: [u32; 4],
     pub(super) eqj_to_world: [[f32; 4]; 4],
     pub(super) moon_disk_radiance: [f32; 4],
+    pub(super) star_animation: [f32; 4],
 }
 
 pub(super) struct EnvironmentGpuBindings {
@@ -97,7 +100,12 @@ pub(super) fn camera_uniform(view: RenderViewFrame) -> CameraUniform {
 }
 
 pub(super) fn environment_uniform(frame: &EnvironmentFrame) -> EnvironmentUniform {
+    static ANIMATION_EPOCH: OnceLock<Instant> = OnceLock::new();
     let mut uniform = frame.environment_uniform;
+    uniform.star_animation[0] = ANIMATION_EPOCH
+        .get_or_init(Instant::now)
+        .elapsed()
+        .as_secs_f32();
     uniform.flags[1] = match frame.render_view.kind {
         EnvironmentViewKind::Surface => 0,
         EnvironmentViewKind::Overview => 1,
@@ -129,7 +137,7 @@ const _: () = {
     assert!(std::mem::offset_of!(CameraUniform, inverse_sky_view_projection) == 128);
     assert!(std::mem::offset_of!(CameraUniform, viewport) == 192);
 
-    assert!(std::mem::size_of::<EnvironmentUniform>() == 320);
+    assert!(std::mem::size_of::<EnvironmentUniform>() == 336);
     assert!(std::mem::align_of::<EnvironmentUniform>() == 16);
     assert!(std::mem::offset_of!(EnvironmentUniform, sun_geometric_world) == 0);
     assert!(std::mem::offset_of!(EnvironmentUniform, sun_apparent_world) == 16);
@@ -148,4 +156,5 @@ const _: () = {
     assert!(std::mem::offset_of!(EnvironmentUniform, flags) == 224);
     assert!(std::mem::offset_of!(EnvironmentUniform, eqj_to_world) == 240);
     assert!(std::mem::offset_of!(EnvironmentUniform, moon_disk_radiance) == 304);
+    assert!(std::mem::offset_of!(EnvironmentUniform, star_animation) == 320);
 };

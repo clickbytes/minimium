@@ -46,6 +46,12 @@ pub(super) fn should_draw_overview_sun(frame: &EnvironmentFrame) -> bool {
         && frame.environment_uniform.sun_apparent_world[3] > 0.0
 }
 
+pub(super) fn should_draw_overview_stars(frame: &EnvironmentFrame) -> bool {
+    frame.status == EnvironmentFrameStatus::Available
+        && frame.render_view.kind == EnvironmentViewKind::Overview
+        && frame.diagnostics.star_frame.is_some()
+}
+
 pub(super) fn should_draw_overview_moon(frame: &EnvironmentFrame) -> bool {
     frame.status == EnvironmentFrameStatus::Available
         && frame.render_view.kind == EnvironmentViewKind::Overview

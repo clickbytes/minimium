@@ -27,7 +27,7 @@ impl ApplicationHandler for App {
         }
         let attributes = WindowAttributes::default()
             .with_title(Text::WindowTitle.to_string())
-            .with_inner_size(PhysicalSize::new(1280, 720));
+            .with_inner_size(PhysicalSize::new(1920, 1080));
         let window = match event_loop.create_window(attributes) {
             Ok(window) => Arc::new(window),
             Err(error) => {
