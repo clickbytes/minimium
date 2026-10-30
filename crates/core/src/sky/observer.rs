@@ -116,6 +116,24 @@ pub struct ObserverFrame {
     pub height_reference_revision: u32,
 }
 
+impl ObserverFrame {
+    /// Converts Astronomy Engine HOR coordinates `[north, west, up]` into game axes.
+    pub fn hor_to_world(self, direction: [f64; 3]) -> Result<[f64; 3], ObserverError> {
+        if !direction.iter().all(|component| component.is_finite()) {
+            return Err(ObserverError::NonFinite);
+        }
+        let [north, west, up] = direction;
+        let world = std::array::from_fn(|axis| {
+            self.north_world[axis] * north - self.east_world[axis] * west + self.up_world[axis] * up
+        });
+        if world.iter().all(|component| component.is_finite()) {
+            Ok(world)
+        } else {
+            Err(ObserverError::NonFinite)
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ObserverInput {
     pub feet_position_mm: Position3Mm,
