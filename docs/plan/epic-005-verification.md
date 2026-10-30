@@ -2,7 +2,7 @@
 
 Final verification started on 2026-10-30 after the user's instruction to do everything needed to finish the goal, including review and merge. The issue's example phrase was not repeated verbatim. This ledger records the actual results; **E005-19 is not accepted** while required scenarios below remain unrun.
 
-Platform: Windows `x86_64-pc-windows-msvc`, Rust 1.99.0, Intel Core i5-12600K (16 logical processors). Integration base SHA: `d8cc4eae6aca1d72ca1427f542b177fa88db365d`. `main` baseline SHA: `2418bbea332c23030055ce2dd6a2bb50f1e2a61d`. Final test branch code SHA before this ledger update: `f6bf0b4`. Tests ran on 2026-10-30.
+Platform: Windows `x86_64-pc-windows-msvc`, Rust 1.99.0, Intel Core i5-12600K (16 logical processors). Integration base SHA: `d8cc4eae6aca1d72ca1427f542b177fa88db365d`. `main` baseline SHA: `2418bbea332c23030055ce2dd6a2bb50f1e2a61d`. Final test branch code SHA before this ledger update: `7353a9c`. Tests ran on 2026-10-30.
 
 | Scenario | SHA / command | Result and evidence |
 |---|---|---|
@@ -13,6 +13,7 @@ Platform: Windows `x86_64-pc-windows-msvc`, Rust 1.99.0, Intel Core i5-12600K (1
 | New entity, universe and module contract tests | `db53038`; `cargo test -p minimium-core -p minimium-platform --locked` | PASS: 6 core and 3 platform tests; new cases cover ID restoration and migration, duplicate type/name rejection, orbit/occlusion, transactional module installation and command collision. |
 | New client parser and server MEC1 contract cases | `65cfc8e`; `cargo test --workspace --locked --quiet` | PASS (exit 0), included in the 39 tests above. Alias dispatch rejects a server-admin time command; sector state restores a component payload and leaves an unrecognized legacy blob to its original owner. |
 | Rebased integration with startup and shader fixes | `f6bf0b4`; `cargo test --workspace --locked --quiet` | PASS (exit 0), 39 tests across 20 suites. Server system ID correction was merged as #142 (`05d11cb`); halo WGSL finite guard correction as #143 (`995da77`). |
+| Bounded halo upload | `7353a9c`; `cargo test --workspace --locked --quiet` | PASS (exit 0), 40 tests across 20 suites. The new client case verifies selection and ordering of the brightest 8 bodies from 10 visible candidates. |
 | Final branch static checks | `f6bf0b4`; `cargo fmt --all -- --check`, `cargo check --workspace --locked`, `cargo clippy --workspace --locked`, `python scripts/check_static_refactor.py`, `python scripts/check_file_lengths.py`, `git diff --check` | PASS (exit 0). Clippy reports 25 nonfatal warnings; the file-length checker reports 273 source files under the 500-line cap. |
 | Process-level server/client E2E and golden seed/save/wire cases | — | PARTIAL: all six load scenarios ran with real server and clients, and existing unit tests cover narrower save/protocol round trips. Golden file comparisons, reconnect, portal transfer across two processes, and separate legacy wire/save E2E remain NOT RUN. |
 | Naga/WGSL | `995da77`; `cargo run --manifest-path .minimium-loadtest/naga-validator/Cargo.toml -- apps/client/src/renderer` | PASS (exit 0) for 13 composed shader variants, including both UI output transfer modes. A local, untracked validator uses Naga 30.0.1 and the same source order as `shader_source.rs`. Its first run FAILed at halo `isFinite`; #143 repaired this, and the full rerun passed. |
