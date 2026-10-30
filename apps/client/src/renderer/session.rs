@@ -113,6 +113,7 @@ impl Renderer {
     }
 
     pub(super) fn clear_connection(&mut self) {
+        self.game.session_context = None;
         self.clear_pending_sector_transitions();
         self.map_teleport_pending = false;
         self.map_teleport_armed = false;

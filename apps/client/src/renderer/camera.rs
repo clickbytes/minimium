@@ -3,7 +3,7 @@ use crate::messages::ClientText as Text;
 
 impl Renderer {
     pub(super) fn update(&mut self) -> environment::PreparedEnvironmentFrame {
-        if self.overview_open && self.overview_instance != Some(self.current_instance) {
+        if self.overview_open && self.overview_instance != Some(self.game.current_instance) {
             self.overview_open = false;
             self.gpu.overview_active = false;
         }
@@ -22,43 +22,23 @@ impl Renderer {
         } else {
             [0.0; 2]
         };
-        self.game.physics_accumulator += dt;
-        while self.game.physics_accumulator >= minimium_core::world::SIMULATION_STEP_SECONDS {
-            let mut input = CharacterInput {
-                direction: if self.game.sectors_ready && !self.overview_open {
-                    direction
-                } else {
-                    [0.0; 2]
-                },
-                jump: self.input.jump_pending && self.game.sectors_ready && !self.overview_open,
-            };
+        self.game.accumulate_prediction_time(dt);
+        let manifest = self
+            .game
+            .world_manifests
+            .get(&self.game.current_instance)
+            .copied();
+        while let Some(predicted) = self.game.predict_next(
+            direction,
+            self.input.jump_pending,
+            self.game.sectors_ready && !self.overview_open,
+            manifest,
+        ) {
+            let mut input = predicted.input;
             self.input.jump_pending = false;
-            let previous_state = self.game.character;
-            let previous_mm = self.game.position_mm;
-            self.game.predict(input);
-            if self
-                .world_manifests
-                .get(&self.current_instance)
-                .is_some_and(|manifest| {
-                    let position_mm = self.game.position_mm.unwrap_or_else(|| {
-                        minimium_core::world::Position3Mm(
-                            self.game
-                                .character
-                                .position
-                                .map(|value| (f64::from(value) * 1000.0).round() as i64),
-                        )
-                    });
-                    !minimium_procgen::can_traverse_surface(*manifest, position_mm)
-                })
-            {
-                self.game.character = previous_state;
-                self.game.position_mm = previous_mm;
-                self.game.character.velocity = [0.0; 3];
-                input = CharacterInput::default();
-            }
             if !self.refresh_active_sector_scene() {
-                self.game.character = previous_state;
-                self.game.position_mm = previous_mm;
+                self.game.character = predicted.previous_state;
+                self.game.position_mm = predicted.previous_mm;
                 input = CharacterInput::default();
             }
             self.input.input_keepalive += minimium_core::world::SIMULATION_STEP_SECONDS;
@@ -87,11 +67,11 @@ impl Renderer {
                     }
                 }
             }
-            self.game.physics_accumulator -= minimium_core::world::SIMULATION_STEP_SECONDS;
         }
         let origin = if self
+            .game
             .world_manifests
-            .get(&self.current_instance)
+            .get(&self.game.current_instance)
             .is_some_and(|manifest| manifest.planet().is_some())
         {
             self.game
@@ -128,13 +108,15 @@ impl Renderer {
             );
             let camera_position = glam::Vec3::from_array(self.game.character.position) + up * 1.7;
             let far = if self
+                .game
                 .world_manifests
-                .get(&self.current_instance)
+                .get(&self.game.current_instance)
                 .is_some_and(|manifest| manifest.topology() == WorldTopology::Planet)
             {
                 let radius = self
+                    .game
                     .world_manifests
-                    .get(&self.current_instance)
+                    .get(&self.game.current_instance)
                     .map(|manifest| {
                         minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0
                     })
@@ -168,13 +150,15 @@ impl Renderer {
         // near plane rounds its depth to 1.0 in f32 and hides the surface.
         let near = if self.overview_open
             && self
+                .game
                 .world_manifests
-                .get(&self.current_instance)
+                .get(&self.game.current_instance)
                 .is_some_and(|manifest| manifest.topology() == WorldTopology::Planet)
         {
             let radius = self
+                .game
                 .world_manifests
-                .get(&self.current_instance)
+                .get(&self.game.current_instance)
                 .map(|manifest| {
                     minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0
                 })
@@ -195,8 +179,9 @@ impl Renderer {
             far,
         );
         let game_planet_radius_m = self
+            .game
             .world_manifests
-            .get(&self.current_instance)
+            .get(&self.game.current_instance)
             .filter(|manifest| manifest.topology() == WorldTopology::Planet)
             .map(|manifest| {
                 manifest
@@ -270,34 +255,6 @@ impl Renderer {
         };
         self.gpu.ui_vertex_count = vertex_count;
         prepared_environment
-    }
-}
-
-impl GameplayView {
-    fn predict(&mut self, input: CharacterInput) {
-        self.collision_query.fill(
-            &self.collision_index,
-            self.character,
-            minimium_core::world::SIMULATION_STEP_SECONDS,
-        );
-        if let Some(position_mm) = &mut self.position_mm {
-            minimium_core::world::step_character_mm(
-                &mut self.character,
-                position_mm,
-                input,
-                self.collision_query.candidates(),
-                self.collision_query.surface_candidates(),
-                minimium_core::world::SIMULATION_STEP_SECONDS,
-            );
-        } else {
-            step_character(
-                &mut self.character,
-                input,
-                self.collision_query.candidates(),
-                self.collision_query.surface_candidates(),
-                minimium_core::world::SIMULATION_STEP_SECONDS,
-            );
-        }
     }
 }
 

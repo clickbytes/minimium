@@ -32,6 +32,7 @@ impl Renderer {
                     self.fail_connection("saved world instance is not available on this client");
                     return;
                 }
+                self.game.session_context = Some(context);
                 self.game.health = health;
                 self.gpu.scene_visible = true;
                 self.connection_status = if self.settings.require_earth {
@@ -186,7 +187,7 @@ impl Renderer {
                     .world_catalog
                     .get(&instance)
                     .is_some_and(|map| map.fingerprint() == map_fingerprint)
-                    && self.world_manifests.get(&instance) == Some(&manifest);
+                    && self.game.world_manifests.get(&instance) == Some(&manifest);
                 if !matches_catalog {
                     self.fail_connection("target world content does not match the loaded manifest");
                     return;
@@ -228,6 +229,7 @@ impl Renderer {
                     self.fail_connection("target world geometry does not match the server");
                     return;
                 }
+                self.game.session_context = Some(context);
                 self.game.health = health;
                 self.game.position_mm = manifest.planet().map(|_| destination_mm);
                 if self.ui.console.open {
@@ -283,7 +285,7 @@ impl Renderer {
         if worlds[instance.get() as usize - 1].manifest != manifest {
             return false;
         }
-        if self.world_manifests.get(&instance) != Some(&manifest) {
+        if self.game.world_manifests.get(&instance) != Some(&manifest) {
             self.sector_cache.reset();
             for generated_instance in [1, 2] {
                 self.gpu.release_world_sectors(
@@ -293,7 +295,9 @@ impl Renderer {
             }
         }
         for world in worlds {
-            self.world_manifests.insert(world.instance, world.manifest);
+            self.game
+                .world_manifests
+                .insert(world.instance, world.manifest);
             self.world_catalog.insert(world.instance, world.map);
         }
         true
@@ -312,7 +316,7 @@ impl Renderer {
         if map.fingerprint() != fingerprint {
             return false;
         }
-        if self.world_manifests.get(&instance) != Some(&manifest) {
+        if self.game.world_manifests.get(&instance) != Some(&manifest) {
             return false;
         }
         let target_position = destination.unwrap_or_else(|| map.spawn());
@@ -321,7 +325,7 @@ impl Renderer {
             manifest,
             target_position,
             &self.world_catalog,
-            &self.world_manifests,
+            &self.game.world_manifests,
         ) else {
             return false;
         };
@@ -330,7 +334,7 @@ impl Renderer {
         {
             return false;
         }
-        let previous_instance = self.current_instance;
+        let previous_instance = self.game.current_instance;
         self.game.collision_index = scene.collision.clone();
         self.game.character = CharacterState::at_spawn_with_gravity(
             target_position,
@@ -360,7 +364,7 @@ impl Renderer {
         self.input.jump_pending = false;
         self.input.last_sent_direction = [0.0; 2];
         self.input.input_keepalive = 0.0;
-        self.current_instance = instance;
+        self.game.current_instance = instance;
         self.pending_sector_transitions
             .retain(|_, pending| pending.context.instance() != instance);
         if previous_instance != instance {
@@ -377,7 +381,12 @@ impl Renderer {
     }
 
     pub(in crate::renderer) fn refresh_active_sector_scene(&mut self) -> bool {
-        let Some(manifest) = self.world_manifests.get(&self.current_instance).copied() else {
+        let Some(manifest) = self
+            .game
+            .world_manifests
+            .get(&self.game.current_instance)
+            .copied()
+        else {
             self.game.sectors_ready = false;
             return false;
         };
@@ -395,25 +404,27 @@ impl Renderer {
             && render_distance_squared < 400.0
             && self
                 .sector_cache
-                .interest_matches(self.current_instance, &keys, manifest)
+                .interest_matches(self.game.current_instance, &keys, manifest)
         {
             self.game.sectors_ready = true;
             return true;
         }
         let Some(scene) = self.sector_cache.ensure_scene(
-            self.current_instance,
+            self.game.current_instance,
             manifest,
             self.game.character.position,
             &self.world_catalog,
-            &self.world_manifests,
+            &self.game.world_manifests,
         ) else {
             self.game.sectors_ready = false;
             return false;
         };
-        if !self.gpu.cache_sector_scene(self.current_instance, &scene)
+        if !self
+            .gpu
+            .cache_sector_scene(self.game.current_instance, &scene)
             || !self
                 .gpu
-                .activate_sector_scene(self.current_instance, &scene)
+                .activate_sector_scene(self.game.current_instance, &scene)
         {
             self.game.sectors_ready = false;
             return false;
@@ -439,7 +450,7 @@ impl Renderer {
                 pending.manifest,
                 pending.destination,
                 &self.world_catalog,
-                &self.world_manifests,
+                &self.game.world_manifests,
             ) else {
                 continue;
             };
@@ -469,7 +480,7 @@ impl Renderer {
     }
 
     fn release_prepared_target(&mut self, instance: minimium_core::world::WorldInstanceId) {
-        if instance != self.current_instance {
+        if instance != self.game.current_instance {
             self.sector_cache.release_interest(instance);
             self.gpu.release_world_sectors(instance);
         }

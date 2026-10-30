@@ -1,13 +1,10 @@
-use super::environment::PreparedEnvironmentFrame;
-use super::GpuResources;
+use super::{scene_bridge::RenderSceneSnapshot, GpuResources};
 
 impl GpuResources {
     /// Keeps every GPU pass on the one immutable snapshot prepared for this frame.
     pub(super) fn render(
         &mut self,
-        prepared: &PreparedEnvironmentFrame,
-        map: Option<&minimium_core::world::WorldMap>,
-        player_position_m: [f64; 3],
+        snapshot: &RenderSceneSnapshot<'_>,
     ) -> Result<u32, wgpu::CurrentSurfaceTexture> {
         self.environment_draw_calls = super::sky::EnvironmentDrawCalls::default();
         self.last_shadow_prepare_cpu = None;
@@ -29,6 +26,7 @@ impl GpuResources {
         let surface_view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
+        let prepared = snapshot.environment;
         let environment = &prepared.frame;
         let upload_started = std::time::Instant::now();
         prepared.upload(self);
@@ -37,7 +35,7 @@ impl GpuResources {
         // uniform upload. Remote-player preparation occurs earlier in update().
         // This scope is disjoint from environment preparation and upload.
         let shadow_started = std::time::Instant::now();
-        self.prepare_shadow_frame(environment, map, player_position_m);
+        self.prepare_shadow_frame(environment, snapshot.map, snapshot.player_position_m);
         self.last_shadow_prepare_cpu = Some(shadow_started.elapsed());
         let scene_view = self
             .output_encoder
@@ -70,7 +68,7 @@ impl GpuResources {
             for (key, lod) in &self.shadow_state.caster_keys {
                 if let Some((buffer, vertex_count)) =
                     self.world_vertex_catalog
-                        .get(&(self.active_world_instance, *key, *lod))
+                        .get(&(snapshot.instance, *key, *lod))
                 {
                     pass.set_vertex_buffer(0, buffer.slice(..));
                     pass.draw(0..*vertex_count, 0..1);
@@ -194,7 +192,7 @@ impl GpuResources {
                     draw_calls += 1;
                     self.environment_draw_calls.overview_marker += 1;
                 }
-            } else if self.active_sector_keys.is_empty() {
+            } else if snapshot.sector_hints.is_empty() {
                 if super::sky::should_draw_surface_sky(environment) {
                     pass.set_pipeline(&self.environment_pipelines.sky);
                     pass.set_bind_group(0, &self.camera_bind_group, &[]);
@@ -275,10 +273,10 @@ impl GpuResources {
                 pass.set_pipeline(&self.pipeline);
                 pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
                 pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
-                for (key, lod) in &self.active_sector_keys {
+                for (key, lod) in &snapshot.sector_hints {
                     if let Some((buffer, vertex_count)) =
                         self.world_vertex_catalog
-                            .get(&(self.active_world_instance, *key, *lod))
+                            .get(&(snapshot.instance, *key, *lod))
                     {
                         pass.set_vertex_buffer(0, buffer.slice(..));
                         pass.draw(0..*vertex_count, 0..1);
