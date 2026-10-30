@@ -104,7 +104,9 @@ w [epic-004-verification.md](epic-004-verification.md); poniżej są instrukcje,
   rozgrzewce i ograniczony eksport. Bez publicznych komend testowych protokołu.
 - V13: dzień/noc/świt/zmierzch/polar day/night, wschód/zachód, terminator globusa.
   V14: te same 500 gwiazd w obu jakościach, jeden batch, zasłanianie przez planetę,
-  teren i całą tarczę Moon. V15: sceny A3, obie półkule, dzienny Księżyc,
+  teren i całą tarczę Moon, także w widoku globu. Sprawdzić rozmiary/jasności od magnitudo, niezależne
+  migotanie gwiazd bez zmiany po `timescale`, brak migotania nieba/tła oraz stabilny
+  koszt 500 instancji. V15: sceny A3, obie półkule, dzienny Księżyc,
   jasna strona/rozmiar i brak czarnego wycięcia na dziennym niebie.
   W V13/V15 obrócić kamerę globu: Słońce i Księżyc mają pojawiać się we
   właściwych kierunkach, a glob zasłaniać ich tarcze po przeciwnej stronie.
@@ -116,7 +118,8 @@ w [epic-004-verification.md](epic-004-verification.md); poniżej są instrukcje,
   planetarnego światła. V17: caster poza frustum, niskie Sun, Sun→Moon→none,
   bias/PCF/fade, teleport/rebase, incomplete coverage/budżet; fallback wyłącza
   cienie i podaje przyczynę.
-- V18: 50 low↔standard cykli, resize, minimalizacja 60 s, skipped surface,
+- V18: start okna 1920×1080 na dostępnym ekranie, 50 low↔standard cykli,
+  resize, minimalizacja 60 s, skipped surface,
   odtworzenie zasobów i reconnect, bez wzrostu utrzymywanych zasobów silnika.
   Wymusić skipped acquisition przy nowej epoce gwiazd: stamp publikować dopiero
   po uploadzie. Cancel przed/po Ready i disconnect/reconnect mają zwolnić zasoby

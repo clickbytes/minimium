@@ -132,8 +132,20 @@ impl GpuResources {
                 pass.set_pipeline(&self.pipeline);
                 pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
                 pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
-                // Draw distant disks before the globe so its surface covers
-                // whichever body is on the far side as the camera rotates.
+                // Draw distant stars and disks before the globe so its surface
+                // covers whichever body is on the far side as the camera rotates.
+                if super::sky::should_draw_overview_stars(environment)
+                    && self.stars.matches_frame(environment)
+                {
+                    pass.set_pipeline(&self.stars.pipeline);
+                    pass.set_vertex_buffer(0, self.stars.buffer.slice(..));
+                    pass.draw(
+                        0..6,
+                        0..super::environment::stars::STAR_GPU_RECORD_COUNT as u32,
+                    );
+                    draw_calls += 1;
+                    self.environment_draw_calls.stars += 1;
+                }
                 if super::sky::should_draw_overview_sun(environment) {
                     pass.set_pipeline(&self.environment_pipelines.sun);
                     pass.draw(0..6, 0..1);

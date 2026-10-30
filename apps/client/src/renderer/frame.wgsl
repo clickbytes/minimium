@@ -24,5 +24,6 @@ struct EnvironmentUniform {
     flags: vec4<u32>,
     eqj_to_world: mat4x4<f32>,
     moon_disk_radiance: vec4<f32>,
+    star_animation: vec4<f32>,
 };
 @group(0) @binding(1) var<uniform> environment: EnvironmentUniform;
