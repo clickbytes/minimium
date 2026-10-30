@@ -1,6 +1,6 @@
 # Epic 005 — implementation and verification ledger
 
-This ledger records the implemented integration branch, the changes associated with each execution issue, and the checks actually run. Epic 005 remains open. The integration branch is `epic/005-micro-engine-integration`; its current code tree is `bcbd561c112cadb9373a8549d128e0f012419d3f`. The branch is not merged to `main`; aggregate draft PR [#121](https://github.com/clickbytes/minimium/pull/121) still targets `main`.
+This ledger records the implemented integration branch, the changes associated with each execution issue, and the checks actually run. Epic 005 remains open. The integration branch is `epic/005-micro-engine-integration`. The branch is not merged to `main`; aggregate draft PR [#121](https://github.com/clickbytes/minimium/pull/121) still targets `main`.
 
 ## Status vocabulary
 
@@ -32,7 +32,7 @@ For PR-backed cards, the linked GitHub **Files** view is the authoritative exact
 | [#115](https://github.com/clickbytes/minimium/issues/115) | Shared fixed simulation step | [PR #131 files](https://github.com/clickbytes/minimium/pull/131/files) | `6987d31f7bb4b2c1dc5ad365519aeb51ea3187d0` | CODE |
 | [#116](https://github.com/clickbytes/minimium/issues/116) | Separate client game state and render snapshot | [PR #137 files](https://github.com/clickbytes/minimium/pull/137/files) | `9d3bc401c58ebc4eddf58aa2591f17883f70dfac` | CODE; runtime/render behavior NOT RUN |
 | [#117](https://github.com/clickbytes/minimium/issues/117) | Deterministic precise-position batches | [PR #135 files](https://github.com/clickbytes/minimium/pull/135/files) | `25f205c92bc46ec0d58df0c4fd90b0d8d3a691b0` | CODE |
-| [#118](https://github.com/clickbytes/minimium/issues/118) | Contract audit, docs and static gates | This PR: `docs/plan/epic-005.md`, `docs/architecture.md`, `docs/worlds.md`, `docs/commands.md`, `README.md`, `scripts/check_architecture.py`, `scripts/check_static_refactor.py` | Pending | CODE; static checks PASS below; final tests NOT RUN |
+| [#118](https://github.com/clickbytes/minimium/issues/118) | Contract audit, docs and static gates | [PR #139 files](https://github.com/clickbytes/minimium/pull/139/files): `docs/plan/epic-005.md`, `docs/architecture.md`, `docs/worlds.md`, `docs/commands.md`, `README.md`, `scripts/check_architecture.py`, `scripts/check_static_refactor.py` | `e47a327c2beff41b1305b219abd22f0ef217e74d` | CODE; static checks PASS below; final tests NOT RUN |
 | [#119](https://github.com/clickbytes/minimium/issues/119) | Final runtime and performance verification | Issue-defined test and evidence paths | — | NOT RUN; requires explicit user instruction |
 | [#120](https://github.com/clickbytes/minimium/issues/120) | Final review and merge to main | Final PR/documentation paths in issue | — | Blocked on #119 |
 
