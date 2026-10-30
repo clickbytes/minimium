@@ -4,10 +4,24 @@ use crate::{
     metrics::RuntimeMetrics,
     world_registry::WorldRegistry,
 };
+use minimium_core::entity::ComponentRegistry;
 use minimium_core::{ids::PlayerId, world::WorldInstanceId};
 use minimium_protocol::{
     RemotePlayer, RemotePlayerIds, RemotePlayers, ServerMessage, MAX_VISIBLE_PLAYERS,
 };
+
+/// Reads bounded component candidates into staging metrics without creating wire messages.
+pub(crate) fn collect_component_candidates(
+    worlds: &WorldRegistry,
+    registry: &ComponentRegistry,
+    metrics: &mut RuntimeMetrics,
+) {
+    for (instance, _) in worlds.iter() {
+        if let Ok((candidates, filtered)) = worlds.replication_candidates(instance, registry) {
+            metrics.record_component_candidates(candidates.len(), filtered);
+        }
+    }
+}
 use std::{
     collections::BTreeMap,
     time::{Duration, Instant},
