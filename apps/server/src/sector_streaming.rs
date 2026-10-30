@@ -7,7 +7,10 @@ use minimium_core::{
     },
 };
 use minimium_sectors::{InstallResult, RequestError, SectorManager, SectorTicket};
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 const MAX_INSTALLS_PER_TICK: usize = 32;
 
@@ -43,18 +46,8 @@ pub(crate) fn update(
     active_tickets: &mut std::collections::HashMap<PlayerId, Vec<SectorTicket>>,
     transfer_tickets: &mut std::collections::HashMap<PlayerId, Vec<SectorTicket>>,
 ) -> SectorReadiness {
-    for tickets in active_tickets.values() {
-        for ticket in tickets {
-            sectors.unpin(*ticket);
-        }
-    }
-    active_tickets.clear();
-    for tickets in transfer_tickets.values() {
-        for ticket in tickets {
-            sectors.unpin(*ticket);
-        }
-    }
-    transfer_tickets.clear();
+    let mut previous_active = std::mem::take(active_tickets);
+    let mut previous_transfers = std::mem::take(transfer_tickets);
 
     let installed_before: HashSet<_> = sectors.installed().map(|(ticket, _, _)| ticket).collect();
     let mut requests = Vec::new();
@@ -74,28 +67,19 @@ pub(crate) fn update(
 
     let mut readiness = Vec::with_capacity(requests.len());
     for request in requests {
-        let mut tickets = Vec::with_capacity(request.keys.len());
-        let mut complete = true;
-        for key in request.keys {
-            let Some(ticket) = request_sector(
-                sectors,
-                request.instance,
-                key,
-                request.generation,
-                request.content,
-            ) else {
-                complete = false;
-                continue;
-            };
-            if sectors.pin(ticket) {
-                tickets.push(ticket);
-            } else {
-                complete = false;
-            }
-        }
+        let previous = previous_active.remove(&request.player).unwrap_or_default();
+        let (tickets, complete) = reconcile_tickets(
+            sectors,
+            previous,
+            request.instance,
+            request.keys,
+            request.generation,
+            request.content,
+        );
         active_tickets.insert(request.player, tickets.clone());
         readiness.push((request.player, tickets, complete));
     }
+    release_cached_tickets(sectors, previous_active);
 
     let mut transfer_requests: Vec<_> = worlds
         .pending_transfer_sector_requests()
@@ -115,35 +99,29 @@ pub(crate) fn update(
     transfer_requests.sort_unstable_by_key(|request| request.player);
     let mut transfer_readiness = Vec::with_capacity(transfer_requests.len());
     for request in transfer_requests {
+        let previous = previous_transfers
+            .remove(&request.player)
+            .unwrap_or_default();
         let manifest = worlds
             .get(request.instance)
             .map(|instance| instance.manifest);
         let Some(manifest) = manifest else {
+            release_tickets(sectors, previous);
             transfer_readiness.push((request.player, Vec::new(), false, request.client_ready));
             continue;
         };
-        let mut tickets = Vec::new();
-        let mut complete = true;
-        for key in minimium_procgen::sector_neighborhood_for(manifest, request.position) {
-            let Some(ticket) = request_sector(
-                sectors,
-                request.instance,
-                key,
-                request.generation,
-                request.content,
-            ) else {
-                complete = false;
-                continue;
-            };
-            if sectors.pin(ticket) {
-                tickets.push(ticket);
-            } else {
-                complete = false;
-            }
-        }
+        let (tickets, complete) = reconcile_tickets(
+            sectors,
+            previous,
+            request.instance,
+            minimium_procgen::sector_neighborhood_for(manifest, request.position),
+            request.generation,
+            request.content,
+        );
         transfer_tickets.insert(request.player, tickets.clone());
         transfer_readiness.push((request.player, tickets, complete, request.client_ready));
     }
+    release_cached_tickets(sectors, previous_transfers);
 
     for _ in 0..MAX_INSTALLS_PER_TICK {
         let Some(ticket) = sectors.begin_next() else {
@@ -197,6 +175,68 @@ pub(crate) fn update(
     SectorReadiness {
         players: ready_players,
         transfers: ready_transfers,
+    }
+}
+
+fn reconcile_tickets(
+    sectors: &mut SectorManager<SectorPayload>,
+    previous: Vec<SectorTicket>,
+    instance: WorldInstanceId,
+    keys: Vec<SectorKey>,
+    generation: GenerationRevision,
+    content: WorldContentRevision,
+) -> (Vec<SectorTicket>, bool) {
+    let mut seen = HashSet::with_capacity(keys.len());
+    let desired: Vec<_> = keys.into_iter().filter(|key| seen.insert(*key)).collect();
+    let desired_keys: HashSet<_> = desired.iter().copied().collect();
+    let mut retained = HashMap::with_capacity(previous.len());
+    for ticket in previous {
+        let matches = ticket.instance() == instance
+            && ticket.generation() == generation
+            && ticket.content_revision() == content
+            && desired_keys.contains(&ticket.key());
+        if matches {
+            if let Some(displaced) = retained.insert(ticket.key(), ticket) {
+                sectors.unpin(displaced);
+            }
+        } else {
+            sectors.unpin(ticket);
+        }
+    }
+
+    let mut tickets = Vec::with_capacity(desired.len());
+    let mut complete = true;
+    for key in desired {
+        if let Some(ticket) = retained.remove(&key) {
+            tickets.push(ticket);
+            continue;
+        }
+        let Some(ticket) = request_sector(sectors, instance, key, generation, content) else {
+            complete = false;
+            continue;
+        };
+        if sectors.pin(ticket) {
+            tickets.push(ticket);
+        } else {
+            complete = false;
+        }
+    }
+    complete &= tickets.len() == desired_keys.len();
+    (tickets, complete)
+}
+
+fn release_cached_tickets(
+    sectors: &mut SectorManager<SectorPayload>,
+    cached: HashMap<PlayerId, Vec<SectorTicket>>,
+) {
+    for tickets in cached.into_values() {
+        release_tickets(sectors, tickets);
+    }
+}
+
+fn release_tickets(sectors: &mut SectorManager<SectorPayload>, tickets: Vec<SectorTicket>) {
+    for ticket in tickets {
+        sectors.unpin(ticket);
     }
 }
 
