@@ -1,8 +1,8 @@
 mod time;
 mod world;
 
+use minimium_platform::modules::{CommandScope, ModuleRegistry};
 use std::sync::OnceLock;
-use minimium_platform::modules::{CommandScope, EngineModule, ModuleRegistry};
 
 type ModuleHandler = fn(&mut CommandContext<'_>, &[&str]) -> CommandReply;
 
@@ -10,7 +10,8 @@ fn extensions() -> &'static ModuleRegistry<ModuleHandler, ()> {
     static REGISTRY: OnceLock<ModuleRegistry<ModuleHandler, ()>> = OnceLock::new();
     REGISTRY.get_or_init(|| {
         let mut registry = ModuleRegistry::default();
-        registry.install(&world::WorldCommands)
+        registry
+            .install(&world::WorldCommands)
             .expect("built-in world commands register without collisions");
         registry
     })
@@ -37,7 +38,6 @@ fn execute_registered(line: &str, context: &mut CommandContext<'_>) -> CommandRe
         },
     }
 }
-
 
 use crate::{environment::EnvironmentClock, world_registry::WorldRegistry};
 use crate::{

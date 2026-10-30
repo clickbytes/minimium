@@ -1,8 +1,8 @@
 //! Static, composable registration of engine capabilities.
 //! Registration is explicit at startup; neither the wire protocol nor a Rust ABI
 //! is extended implicitly by installing a module.
-use std::collections::BTreeMap;
 use minimium_core::entity::ComponentDescriptor;
+use std::collections::BTreeMap;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ModuleDescriptor {
@@ -77,7 +77,12 @@ pub struct ModuleRegistry<H, S> {
 
 impl<H, S> Default for ModuleRegistry<H, S> {
     fn default() -> Self {
-        Self { modules: BTreeMap::new(), commands: Vec::new(), systems: Vec::new(), components: Vec::new() }
+        Self {
+            modules: BTreeMap::new(),
+            commands: Vec::new(),
+            systems: Vec::new(),
+            components: Vec::new(),
+        }
     }
 }
 
@@ -99,8 +104,12 @@ pub struct ModuleRegistrar<'a, H, S> {
 fn valid_path(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 96
-        && name.split(' ').all(|part| !part.is_empty()
-            && part.bytes().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'_' || c == b'-'))
+        && name.split(' ').all(|part| {
+            !part.is_empty()
+                && part
+                    .bytes()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'_' || c == b'-')
+        })
 }
 
 impl<H, S> ModuleRegistrar<'_, H, S> {
@@ -111,36 +120,58 @@ impl<H, S> ModuleRegistrar<'_, H, S> {
             if !valid_path(name) {
                 return Err(ModuleError::InvalidCommand);
             }
-            let clash = self.existing_commands.iter().chain(self.commands.iter()).any(|entry| {
-                std::iter::once(entry.definition.name)
-                    .chain(entry.definition.aliases.iter().copied())
-                    .any(|registered| registered == name)
-            });
+            let clash = self
+                .existing_commands
+                .iter()
+                .chain(self.commands.iter())
+                .any(|entry| {
+                    std::iter::once(entry.definition.name)
+                        .chain(entry.definition.aliases.iter().copied())
+                        .any(|registered| registered == name)
+                });
             if clash || !seen.insert(name) {
                 return Err(ModuleError::DuplicateCommand);
             }
         }
-        self.commands.push(RegisteredCommand { module: self.module, definition });
+        self.commands.push(RegisteredCommand {
+            module: self.module,
+            definition,
+        });
         Ok(())
     }
 
     pub fn component(&mut self, descriptor: ComponentDescriptor) -> Result<(), ModuleError> {
-        if self.existing_components.iter().chain(self.components.iter()).any(|entry|
-            entry.descriptor.id == descriptor.id || entry.descriptor.name == descriptor.name
-        ) {
+        if self
+            .existing_components
+            .iter()
+            .chain(self.components.iter())
+            .any(|entry| {
+                entry.descriptor.id == descriptor.id || entry.descriptor.name == descriptor.name
+            })
+        {
             return Err(ModuleError::DuplicateComponent);
         }
-        self.components.push(RegisteredComponent { module: self.module, descriptor });
+        self.components.push(RegisteredComponent {
+            module: self.module,
+            descriptor,
+        });
         Ok(())
     }
 
     pub fn system(&mut self, definition: SystemDefinition<S>) -> Result<(), ModuleError> {
-        if !valid_path(definition.id) || self.existing_systems.iter().chain(self.systems.iter())
-            .any(|entry| entry.definition.id == definition.id)
+        if !valid_path(definition.id)
+            || self
+                .existing_systems
+                .iter()
+                .chain(self.systems.iter())
+                .any(|entry| entry.definition.id == definition.id)
         {
             return Err(ModuleError::DuplicateSystem);
         }
-        self.systems.push(RegisteredSystem { module: self.module, definition });
+        self.systems.push(RegisteredSystem {
+            module: self.module,
+            definition,
+        });
         Ok(())
     }
 }
@@ -150,15 +181,23 @@ impl<H, S> ModuleRegistry<H, S> {
     /// Dependencies must already have been installed, establishing a DAG order.
     pub fn install<M: EngineModule<H, S>>(&mut self, module: &M) -> Result<(), ModuleError> {
         let descriptor = module.descriptor();
-        if !valid_path(descriptor.id) || descriptor.version == 0
-            || descriptor.requires.iter().any(|dependency| !valid_path(dependency))
+        if !valid_path(descriptor.id)
+            || descriptor.version == 0
+            || descriptor
+                .requires
+                .iter()
+                .any(|dependency| !valid_path(dependency))
         {
             return Err(ModuleError::InvalidDescriptor);
         }
         if self.modules.contains_key(descriptor.id) {
             return Err(ModuleError::DuplicateModule);
         }
-        if descriptor.requires.iter().any(|dependency| !self.modules.contains_key(dependency)) {
+        if descriptor
+            .requires
+            .iter()
+            .any(|dependency| !self.modules.contains_key(dependency))
+        {
             return Err(ModuleError::MissingDependency);
         }
         let mut staging = ModuleRegistrar {
@@ -171,10 +210,16 @@ impl<H, S> ModuleRegistry<H, S> {
             systems: Vec::new(),
         };
         module.register(&mut staging)?;
+        let ModuleRegistrar {
+            commands,
+            systems,
+            components,
+            ..
+        } = staging;
         self.modules.insert(descriptor.id, descriptor);
-        self.commands.extend(staging.commands);
-        self.systems.extend(staging.systems);
-        self.components.extend(staging.components);
+        self.commands.extend(commands);
+        self.systems.extend(systems);
+        self.components.extend(components);
         self.systems.sort_by_key(|entry| entry.definition.stage);
         Ok(())
     }
@@ -199,16 +244,18 @@ impl<H, S> ModuleRegistry<H, S> {
     /// Arguments are never evaluated as code and remain caller-owned slices.
     pub fn resolve<'a>(&self, line: &'a str) -> Option<(&RegisteredCommand<H>, Vec<&'a str>)> {
         let parts: Vec<&str> = line.split_whitespace().collect();
-        self.commands.iter().filter_map(|entry| {
-            std::iter::once(entry.definition.name)
-                .chain(entry.definition.aliases.iter().copied())
-                .filter_map(|name| {
-                    let command_parts: Vec<&str> = name.split_whitespace().collect();
-                    (parts.starts_with(&command_parts))
-                        .then_some((entry, command_parts.len()))
-                }).max_by_key(|(_, len)| *len)
-        }).max_by_key(|(_, len)| *len)
+        self.commands
+            .iter()
+            .filter_map(|entry| {
+                std::iter::once(entry.definition.name)
+                    .chain(entry.definition.aliases.iter().copied())
+                    .filter_map(|name| {
+                        let command_parts: Vec<&str> = name.split_whitespace().collect();
+                        (parts.starts_with(&command_parts)).then_some((entry, command_parts.len()))
+                    })
+                    .max_by_key(|(_, len)| *len)
+            })
+            .max_by_key(|(_, len)| *len)
             .map(|(entry, len)| (entry, parts[len..].to_vec()))
     }
 }
-
