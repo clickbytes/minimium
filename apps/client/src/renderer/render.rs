@@ -150,7 +150,7 @@ impl GpuResources {
                     || super::sky::should_draw_overview_moon(environment)
                 {
                     pass.set_pipeline(&self.celestial_halo.pipeline);
-                    pass.draw(0..6, 0..2);
+                    pass.draw(0..6, 0..environment.halo_count.min(8));
                     draw_calls += 1;
                     self.environment_draw_calls.halos += 1;
                 }
@@ -214,7 +214,7 @@ impl GpuResources {
                         self.environment_draw_calls.stars += 1;
                     }
                     pass.set_pipeline(&self.celestial_halo.pipeline);
-                    pass.draw(0..6, 0..2);
+                    pass.draw(0..6, 0..environment.halo_count.min(8));
                     draw_calls += 1;
                     self.environment_draw_calls.halos += 1;
                     if super::sky::should_draw_sun(environment) {
@@ -256,7 +256,7 @@ impl GpuResources {
                         self.environment_draw_calls.stars += 1;
                     }
                     pass.set_pipeline(&self.celestial_halo.pipeline);
-                    pass.draw(0..6, 0..2);
+                    pass.draw(0..6, 0..environment.halo_count.min(8));
                     draw_calls += 1;
                     self.environment_draw_calls.halos += 1;
                     if super::sky::should_draw_sun(environment) {

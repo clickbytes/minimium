@@ -1,5 +1,6 @@
 mod adapter;
 mod clock;
+mod halo;
 pub mod observer;
 mod orbit;
 mod prepared;
@@ -8,9 +9,21 @@ mod runtime;
 pub mod stars;
 
 use super::environment_gpu::{CameraUniform, EnvironmentUniform};
+use bytemuck::{Pod, Zeroable};
 use minimium_astronomy::{CelestialBodyState, ObservedBody, SkyState};
 use minimium_core::{environment::EnvironmentDescriptor, sky::ObserverFrame, time::ClockRevision};
 use minimium_protocol::WorldContext;
+
+pub(crate) const MAX_HALO_BODIES: usize = 8;
+
+#[repr(C, align(16))]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Pod, Zeroable)]
+pub(crate) struct HaloSource {
+    pub(crate) direction_extent: [f32; 4],
+    pub(crate) linear_rgb_visibility: [f32; 4],
+    pub(crate) source_direction: [f32; 4],
+    pub(crate) parameters: [f32; 4],
+}
 
 pub(crate) use adapter::EnvironmentFrameError;
 pub(super) use prepared::{PreparedEnvironmentFrame, PreparedStarUpload};
@@ -211,6 +224,8 @@ pub(crate) struct EnvironmentFrame {
     pub(crate) clock_revision: Option<ClockRevision>,
     pub(crate) sky: Option<SkyState>,
     pub(crate) observed_bodies: Vec<ObservedBody>,
+    pub(crate) halo_sources: [HaloSource; MAX_HALO_BODIES],
+    pub(crate) halo_count: u32,
     pub(crate) observer: Option<ObserverFrame>,
     pub(crate) render_view: RenderViewFrame,
     pub(crate) global_sun: Option<GlobalSunFrame>,
