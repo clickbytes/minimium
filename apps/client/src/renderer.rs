@@ -47,6 +47,7 @@ mod gpu;
 mod gpu_surface;
 mod init;
 mod lighting;
+mod milky_way_gpu;
 mod moon_gpu;
 mod moon_lighting;
 mod moon_sphere_gpu;
@@ -99,6 +100,7 @@ struct GpuResources {
     shadow_gpu: shadow_gpu::ShadowGpu,
     shadow_state: shadows::ShadowState,
     environment_pipelines: sky_gpu::EnvironmentPipelines,
+    milky_way: milky_way_gpu::MilkyWayGpu,
     celestial_halo: celestial_halo_gpu::CelestialHaloGpu,
     stars: stars_gpu::StarGpu,
     moon: moon_gpu::MoonGpu,
