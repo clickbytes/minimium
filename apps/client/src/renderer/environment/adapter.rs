@@ -64,6 +64,7 @@ pub(super) fn from_sky_state(
         || !valid_body(sky.moon.body)
         || !sky.moon.illuminated_fraction.is_finite()
         || !(0.0..=1.0).contains(&sky.moon.illuminated_fraction)
+        || !sky.moon.apparent_v_magnitude.is_finite()
         || !sky.moon.phase_angle_rad.is_finite()
         || !valid_vector(sky.moon.moon_to_sun_world)
         || !valid_vector(sky.moon.pole_world)
@@ -101,7 +102,16 @@ pub(super) fn from_sky_state(
         clear_sky.direct_sun_factor,
         sun_visible,
     );
-    let moon_scale = settings.moon_full_phase_strength * sky.moon.illuminated_fraction as f32;
+    let moon_flux = super::super::moon_lighting::apparent_moon_flux(sky.moon.apparent_v_magnitude)
+        .ok_or(EnvironmentFrameError::SkyStateInvalid)?;
+    let moon_scale = super::super::moon_lighting::lunar_irradiance_at_observer(
+        moon_flux,
+        sky.moon.body.apparent_altitude_rad,
+        sky.moon.body.angular_radius_rad,
+        observer.geographic.height_m(),
+        settings.moon_full_phase_strength,
+    )
+    .ok_or(EnvironmentFrameError::SkyStateInvalid)?;
     let disk_moon = super::body_frame(
         sky.moon.body,
         settings.local_moon_rgb,
@@ -175,6 +185,7 @@ pub(super) fn from_sky_state(
             transfer_route(render_view),
         ],
         eqj_to_world: matrix4(sky.catalog_epoch_to_world)?,
+        moon_disk_radiance: super::super::moon_lighting::moon_disk_radiance(moon_flux),
     };
     Ok(EnvironmentFrame {
         context: Some(context),

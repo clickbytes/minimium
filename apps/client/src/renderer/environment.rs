@@ -128,6 +128,7 @@ pub(crate) struct EnvironmentSettings {
     pub(crate) global_sun_strength: f32,
     pub(crate) local_sun_rgb: [f32; 3],
     pub(crate) local_moon_rgb: [f32; 3],
+    /// Full-Moon illumination coefficient relative to unit-sun irradiance.
     pub(crate) moon_full_phase_strength: f32,
     pub(crate) ambient_rgb: [f32; 3],
     pub(crate) exposure: f32,
@@ -140,7 +141,7 @@ impl EnvironmentSettings {
             global_sun_strength: 1.0,
             local_sun_rgb: [1.0, 0.97, 0.90],
             local_moon_rgb: [0.25, 0.32, 0.50],
-            moon_full_phase_strength: 0.12,
+            moon_full_phase_strength: 2.0e-6,
             ambient_rgb: [1.0, 1.0, 1.0],
             exposure: 1.0,
         }

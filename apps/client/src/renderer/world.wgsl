@@ -24,6 +24,11 @@ struct VertexOutput {
         let sun_diffuse = max(dot(normal, normalize(sun_direction)), 0.0);
         direct = environment.local_sun_rgb_visibility.xyz * sun_diffuse;
     }
+    let moon_direction = environment.moon_geometric_world.xyz;
+    if length(moon_direction) > 1.0e-8 {
+        let moon_diffuse = max(dot(normal, normalize(moon_direction)), 0.0);
+        direct += environment.local_moon_rgb_visibility.xyz * moon_diffuse;
+    }
     let linear = albedo * (environment.ambient_rgb_exposure.xyz + direct);
     return vec4<f32>(tone_map_linear(linear * environment.ambient_rgb_exposure.w), 1.0);
 }
