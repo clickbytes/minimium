@@ -102,10 +102,9 @@ impl StarGpu {
     pub(super) fn upload(
         &mut self,
         queue: &wgpu::Queue,
-        instances: &[StarInstanceGpu],
+        instances: &[StarInstanceGpu; STAR_GPU_RECORD_COUNT],
         stamp: StarFrameStamp,
     ) {
-        debug_assert_eq!(instances.len(), STAR_GPU_RECORD_COUNT);
         queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(instances));
         self.uploaded_stamp = Some(stamp);
     }

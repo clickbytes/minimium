@@ -1,6 +1,7 @@
 mod adapter;
 mod clock;
 pub mod observer;
+mod prepared;
 mod runtime;
 #[allow(dead_code)]
 pub mod stars;
@@ -11,6 +12,7 @@ use minimium_core::{environment::EnvironmentDescriptor, sky::ObserverFrame, time
 use minimium_protocol::WorldContext;
 
 pub(crate) use adapter::EnvironmentFrameError;
+pub(super) use prepared::{PreparedEnvironmentFrame, PreparedStarUpload};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]

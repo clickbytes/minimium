@@ -20,8 +20,13 @@ impl Renderer {
             draws.moon,
             draws.shadows,
         );
-        self.metrics
-            .frame_stats
-            .record_shadow_cpu(self.gpu.last_shadow_prepare_cpu);
+        if let Some(duration) = self.gpu.last_shadow_prepare_cpu {
+            self.metrics.frame_stats.record_shadow_cpu(duration);
+        }
+        if let Some(duration) = self.gpu.last_environment_upload_cpu {
+            self.metrics
+                .frame_stats
+                .record_environment_upload_cpu(duration);
+        }
     }
 }

@@ -67,6 +67,10 @@ impl FrameStats {
         self.environment.record_shadow_cpu(duration);
     }
 
+    pub(crate) fn record_environment_upload_cpu(&mut self, duration: Duration) {
+        self.environment.record_upload_cpu(duration);
+    }
+
     pub(crate) fn set_astronomy_counters(
         &mut self,
         ephemeris_evaluations: u64,
@@ -120,11 +124,15 @@ impl FrameStats {
             "n/a".to_owned()
         };
         let frame_average_ms = format_duration_ms(self.frame_intervals.average_microseconds());
+        let frame_p50_ms = format_duration_ms(self.frame_intervals.percentile_microseconds(50));
         let frame_p95_ms = format_duration_ms(self.frame_intervals.percentile_microseconds(95));
         let frame_p99_ms = format_duration_ms(self.frame_intervals.percentile_microseconds(99));
+        let frame_max_ms = format_milliseconds(self.frame_intervals.maximum_milliseconds());
         let cpu_average_ms = format_duration_ms(self.cpu_work.average_microseconds());
+        let cpu_p50_ms = format_duration_ms(self.cpu_work.percentile_microseconds(50));
         let cpu_p95_ms = format_duration_ms(self.cpu_work.percentile_microseconds(95));
         let cpu_p99_ms = format_duration_ms(self.cpu_work.percentile_microseconds(99));
+        let cpu_max_ms = format_milliseconds(self.cpu_work.maximum_milliseconds());
         let gpu_estimate = self
             .gpu_bytes
             .map_or_else(|| "unavailable".to_string(), |bytes| format!("{bytes} B"));
@@ -133,10 +141,14 @@ impl FrameStats {
             .process_cpu_time
             .map_or_else(|| "n/a".to_owned(), |time| time.as_millis().to_string());
         format!(
-            "frames={} presented={} presented_FPS_avg={fps} frame_ms(avg/p95/p99)={frame_average_ms}/{frame_p95_ms}/{frame_p99_ms} cpu_work_ms(avg/p95/p99)={cpu_average_ms}/{cpu_p95_ms}/{cpu_p99_ms} draw_calls_per_presented_frame={draws_per_presented_frame} process_cpu_time_ms={process_cpu} engine_GPU_estimate={gpu_estimate}",
-            self.sample_count, self.presented_frames
+            "frames={} presented={} presented_FPS_avg={fps} frame_ms(avg/p50/p95/p99/max)={frame_average_ms}/{frame_p50_ms}/{frame_p95_ms}/{frame_p99_ms}/{frame_max_ms} cpu_work_ms(avg/p50/p95/p99/max)={cpu_average_ms}/{cpu_p50_ms}/{cpu_p95_ms}/{cpu_p99_ms}/{cpu_max_ms} timing_samples={} draw_calls_per_presented_frame={draws_per_presented_frame} process_cpu_time_ms={process_cpu} engine_GPU_estimate={gpu_estimate}",
+            self.sample_count, self.presented_frames, self.sample_count
         )
     }
+}
+
+fn format_milliseconds(milliseconds: Option<f64>) -> String {
+    milliseconds.map_or_else(|| "n/a".to_owned(), |value| format!("{value:.3}"))
 }
 
 fn format_duration_ms(microseconds: Option<u64>) -> String {
