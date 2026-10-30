@@ -33,8 +33,11 @@ use winit::{
 mod camera;
 mod controller;
 mod geometry;
+mod globe;
 mod gpu;
 mod init;
+mod overview;
+mod planet_visibility;
 mod render;
 mod sector_scene;
 mod session;
@@ -49,9 +52,9 @@ const SHOT_LOCAL_COOLDOWN: Duration = Duration::from_millis(300);
 #[derive(Clone, Copy)]
 pub(super) struct RemotePlayerTrack {
     pub(super) id: minimium_core::ids::PlayerId,
-    pub(super) previous_position: [f32; 3],
-    pub(super) current_position: [f32; 3],
-    pub(super) displayed_position: [f32; 3],
+    pub(super) previous_position_mm: [i64; 3],
+    pub(super) current_position_mm: [i64; 3],
+    pub(super) displayed_position_mm: [i64; 3],
     pub(super) previous_time_ms: u64,
     pub(super) current_time_ms: u64,
     pub(super) displayed_time_ms: u64,
@@ -76,13 +79,19 @@ struct GpuResources {
     size: PhysicalSize<u32>,
     fixed_gpu_bytes: u64,
     world_vertex_catalog: std::collections::HashMap<
-        (minimium_core::world::WorldInstanceId, SectorKey),
+        (minimium_core::world::WorldInstanceId, SectorKey, u8),
         (wgpu::Buffer, u32),
     >,
     world_sector_versions:
         HashMap<minimium_core::world::WorldInstanceId, (GenerationRevision, WorldContentRevision)>,
-    active_sector_keys: Vec<SectorKey>,
+    active_sector_keys: Vec<(SectorKey, u8)>,
     active_world_instance: minimium_core::world::WorldInstanceId,
+    render_origin: [f32; 3],
+    overview_buffer: Option<(wgpu::Buffer, u32)>,
+    overview_active: bool,
+    overview_globe: bool,
+    scene_visible: bool,
+    globe: Option<globe::GlobeGpu>,
 }
 
 struct GameplayView {
@@ -92,6 +101,7 @@ struct GameplayView {
     last_remote_snapshot_received_at: Option<Instant>,
     remote_geometry_dirty: bool,
     character: CharacterState,
+    position_mm: Option<minimium_core::world::Position3Mm>,
     health: u16,
     collision_index: CollisionIndex,
     collision_query: CollisionQuery,
@@ -133,6 +143,7 @@ struct ClientSettings {
     map_path: Option<PathBuf>,
     world_definition_path: Option<PathBuf>,
     threads: crate::options::ThreadLane,
+    require_earth: bool,
 }
 
 struct Renderer {
@@ -148,9 +159,23 @@ struct Renderer {
         std::collections::HashMap<minimium_core::world::WorldInstanceId, WorldManifest>,
     sector_cache: sector_scene::ClientSectorCache,
     active_sector_keys: Vec<SectorKey>,
+    last_render_position: [f32; 3],
     pending_sector_transitions:
         std::collections::HashMap<minimium_core::world::TransitionId, PendingSectorTransition>,
     current_instance: minimium_core::world::WorldInstanceId,
+    overview_open: bool,
+    overview_instance: Option<minimium_core::world::WorldInstanceId>,
+    connection_status: String,
+    globe_loading: Option<std::sync::mpsc::Receiver<Vec<u8>>>,
+    overview_yaw: f32,
+    overview_pitch: f32,
+    overview_zoom: f32,
+    overview_dragging: bool,
+    overview_dragged: bool,
+    overview_drag_distance: f64,
+    map_teleport_armed: bool,
+    map_teleport_pending: bool,
+    teleport_loading: bool,
 }
 
 #[derive(Clone, Copy)]

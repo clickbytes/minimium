@@ -48,6 +48,13 @@ pub fn decode_client(input: &[u8]) -> Result<Option<(ClientMessage, usize)>, Pro
                 }
                 4 => super::models::ClientWorldInput::Chat(reader.chat_text()?.to_owned()),
                 5 => super::models::ClientWorldInput::UsePortal,
+                6 => {
+                    let direction = reader.vector()?;
+                    if !is_unit_direction(direction) {
+                        return Err(ProtocolError::InvalidPayload);
+                    }
+                    super::models::ClientWorldInput::MapTeleport { direction }
+                }
                 _ => return Err(ProtocolError::InvalidPayload),
             };
             ClientMessage::WorldInput { context, input }
@@ -74,7 +81,8 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
             let id = PlayerId::new(reader.u64()?);
             let map_fingerprint = reader.u64()?;
             let health = reader.u16()?;
-            let position = reader.vector()?;
+            let position_mm = reader.position_mm()?;
+            let position = position_mm.0.map(|coordinate| coordinate as f32 / 1000.0);
             if health > 100 {
                 return Err(ProtocolError::InvalidPayload);
             }
@@ -90,12 +98,21 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
                 map_fingerprint,
                 health,
                 position,
+                position_mm,
                 context,
                 manifest,
                 transition_id,
             }
         }
         ServerKind::Pong => ServerMessage::Pong,
+        ServerKind::MapTeleportResult => {
+            let position_mm = if reader.boolean()? {
+                Some(reader.position_mm()?)
+            } else {
+                None
+            };
+            ServerMessage::MapTeleportResult { position_mm }
+        }
         ServerKind::Accepted => ServerMessage::Accepted,
         ServerKind::Bye => ServerMessage::Bye,
         ServerKind::Error => ServerMessage::Error(reader.byte()?.into()),
@@ -136,7 +153,10 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
         ServerKind::Snapshot => {
             let server_time_ms = reader.u64()?;
             let context = reader.world_context()?;
-            let self_position = reader.vector()?;
+            let self_position_mm = reader.position_mm()?;
+            let self_position = self_position_mm
+                .0
+                .map(|coordinate| coordinate as f32 / 1000.0);
             let self_velocity = reader.vector()?;
             let self_grounded = reader.boolean()?;
             let full_snapshot = reader.boolean()?;
@@ -150,10 +170,14 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
             }
             let mut players = RemotePlayers::default();
             for _ in 0..count {
+                let id = PlayerId::new(reader.u64()?);
+                let name = reader.shared_name()?;
+                let position_mm = reader.position_mm()?;
                 if !players.push(RemotePlayer {
-                    id: PlayerId::new(reader.u64()?),
-                    name: reader.shared_name()?,
-                    position: reader.vector()?,
+                    id,
+                    name,
+                    position: position_mm.0.map(|coordinate| coordinate as f32 / 1000.0),
+                    position_mm,
                 }) {
                     return Err(ProtocolError::InvalidPayload);
                 }
@@ -175,25 +199,39 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
                 context,
                 full_snapshot,
                 self_position,
+                self_position_mm,
                 self_velocity,
                 self_grounded,
-                players,
+                players: Box::new(players),
                 removed_players,
             }
         }
-        ServerKind::TransitionPrepare => ServerMessage::TransitionPrepare {
-            transition_id: reader.transition_id()?,
-            source_context: reader.world_context()?,
-            target_context: reader.world_context()?,
-            map_fingerprint: reader.u64()?,
-            destination: reader.vector()?,
-            manifest: reader.world_manifest()?,
-        },
+        ServerKind::TransitionPrepare => {
+            let transition_id = reader.transition_id()?;
+            let source_context = reader.world_context()?;
+            let target_context = reader.world_context()?;
+            let map_fingerprint = reader.u64()?;
+            let destination_mm = reader.position_mm()?;
+            ServerMessage::TransitionPrepare {
+                transition_id,
+                source_context,
+                target_context,
+                map_fingerprint,
+                destination: destination_mm
+                    .0
+                    .map(|coordinate| coordinate as f32 / 1000.0),
+                destination_mm,
+                manifest: reader.world_manifest()?,
+            }
+        }
         ServerKind::TransitionCommitted => {
             let transition_id = reader.transition_id()?;
             let context = reader.world_context()?;
             let map_fingerprint = reader.u64()?;
-            let destination = reader.vector()?;
+            let destination_mm = reader.position_mm()?;
+            let destination = destination_mm
+                .0
+                .map(|coordinate| coordinate as f32 / 1000.0);
             let health = reader.u16()?;
             if health > 100 {
                 return Err(ProtocolError::InvalidPayload);
@@ -203,6 +241,7 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
                 context,
                 map_fingerprint,
                 destination,
+                destination_mm,
                 health,
                 manifest: reader.world_manifest()?,
             }

@@ -92,6 +92,23 @@ fn player_store_shard(profile_id: PlayerProfileId) -> usize {
 }
 
 impl PlayerStore {
+    pub(crate) fn migrate_legacy_planet_positions(&mut self) {
+        for shard in &mut self.players {
+            for player in Arc::make_mut(shard).values_mut() {
+                if player.location.instance().get() == 1 {
+                    player.location = remap_planet_location(player.location);
+                    player.position = player
+                        .location
+                        .position()
+                        .coordinates()
+                        .map(|x| x as f32 / 1000.0);
+                }
+                if player.return_location.instance().get() == 1 {
+                    player.return_location = remap_planet_location(player.return_location);
+                }
+            }
+        }
+    }
     pub(crate) fn reserve_active(&mut self, capacity: usize) {
         self.active_players.reserve(capacity);
     }
@@ -130,6 +147,7 @@ impl PlayerStore {
         profile_id: PlayerProfileId,
         next_id: &mut u64,
         spawn: [f32; 3],
+        spawn_mm: Option<minimium_core::world::Position3Mm>,
         spawn_instance: WorldInstanceId,
         spawn_gravity: CharacterGravity,
     ) -> io::Result<StoredPlayer> {
@@ -155,21 +173,18 @@ impl PlayerStore {
             let name = StoredName::new(&default_name)
                 .or_else(|| StoredName::new(&format!("P{id}")))
                 .ok_or_else(|| io::Error::other("could not create default player name"))?;
+            let spawn_location =
+                crate::world_location::world_location(spawn_instance, spawn, spawn_gravity);
+            let spawn_location = spawn_mm.map_or(spawn_location, |position| {
+                WorldLocation::new(spawn_instance, position, spawn_location.orientation())
+            });
             let player = StoredPlayer {
                 id: PlayerId::new(id),
                 name,
                 position: spawn,
                 health: PLAYER_MAX_HEALTH,
-                location: crate::world_location::world_location(
-                    spawn_instance,
-                    spawn,
-                    spawn_gravity,
-                ),
-                return_location: crate::world_location::world_location(
-                    spawn_instance,
-                    spawn,
-                    spawn_gravity,
-                ),
+                location: spawn_location,
+                return_location: spawn_location,
             };
             Arc::make_mut(&mut self.players[shard]).insert(profile_id, player);
             self.profile_by_player.insert(PlayerId::new(id), profile_id);
@@ -214,7 +229,7 @@ impl PlayerStore {
             .ok_or_else(|| invalid_world_snapshot("active player has an invalid name"))?;
         stored.position = player.position;
         stored.health = player.health;
-        stored.location = crate::world_location::world_location(instance, player.position, gravity);
+        stored.location = crate::world_location::player_location(instance, player, gravity);
         Ok(())
     }
 
@@ -294,6 +309,21 @@ impl PlayerStore {
     }
 }
 
+fn remap_planet_location(location: WorldLocation) -> WorldLocation {
+    let old = location.position().coordinates().map(|x| x as f64);
+    let length = old.iter().map(|x| x * x).sum::<f64>().sqrt();
+    if length < 1.0 {
+        return location;
+    }
+    let radius = 10_035_000.0 + (length - 100_000.0).max(0.0);
+    let position = old.map(|x| (x / length * radius).round() as i64);
+    WorldLocation::new(
+        location.instance(),
+        minimium_core::world::Position3Mm(position),
+        location.orientation(),
+    )
+}
+
 fn gravity_for(topology: WorldTopology) -> CharacterGravity {
     match topology {
         WorldTopology::Planet => CharacterGravity::Radial { center: [0.0; 3] },
@@ -302,7 +332,7 @@ fn gravity_for(topology: WorldTopology) -> CharacterGravity {
 }
 
 impl SaveSnapshot {
-    pub(super) fn write(self, data_dir: &Path) -> io::Result<()> {
+    pub(crate) fn write(self, data_dir: &Path) -> io::Result<()> {
         format::write(self, data_dir)
     }
 }

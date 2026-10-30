@@ -55,6 +55,7 @@ impl WorldRegistry {
         let mut world = World::default();
         world.load_map_streamed(&map);
         world.set_gravity(gravity_for(manifest.topology()));
+        world.set_precise_positions(manifest.planet().is_some());
         let map = Arc::new(map);
         self.instances.insert(
             instance,
@@ -86,6 +87,7 @@ impl WorldRegistry {
         let mut simulation = World::default();
         simulation.load_map_streamed(&map);
         simulation.set_gravity(gravity_for(world.manifest.topology()));
+        simulation.set_precise_positions(world.manifest.planet().is_some());
         let mut instances = BTreeMap::new();
         instances.insert(
             world.instance,

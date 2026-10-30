@@ -25,6 +25,7 @@ mod combat;
 mod geometry;
 mod map;
 mod model;
+mod precise_step;
 mod raycast;
 mod rules;
 mod snapshot;
@@ -33,7 +34,8 @@ mod world_state;
 pub use addressing::{
     CollisionCell, CubeSampleKey, DungeonCollisionCell, DungeonSectorKey, PlanetCollisionCell,
     PlanetCorner, PlanetEdge, PlanetFace, PlanetSectorKey, RenderPatchKey, SectorKey,
-    PLANET_COLLISION_CELLS_PER_FACE, PLANET_SAMPLE_COORDINATE_SCALE, PLANET_SECTORS_PER_FACE,
+    PLANET_COLLISION_CELLS_PER_FACE, PLANET_DENSE_SECTORS_PER_FACE, PLANET_SAMPLE_COORDINATE_SCALE,
+    PLANET_SECTORS_PER_FACE,
 };
 pub use collision_index::{Aabb, CollisionIndex};
 pub use collision_queries::{CollisionQuery, CollisionQueryStats};
@@ -43,12 +45,13 @@ pub use map::{
 };
 pub use model::{
     GenerationRevision, GenerationSpec, GeneratorDigest, MembershipEpoch, ObjectOriginId,
-    Position3Mm, SectorRevision, TransitionId, WorldContentRevision, WorldDefinitionId,
-    WorldInstanceId, WorldLocation, WorldManifest, WorldObjectState, WorldOrientationQ30,
-    WorldSectorState, WorldSeed, WorldTopology, MAX_OBJECT_STATE_BYTES,
+    PlanetDefinition, Position3Mm, SectorRevision, TransitionId, WorldContentRevision,
+    WorldDefinitionId, WorldInstanceId, WorldLocation, WorldManifest, WorldObjectState,
+    WorldOrientationQ30, WorldSectorState, WorldSeed, WorldTopology, MAX_OBJECT_STATE_BYTES,
     MAX_PERSISTED_WORLD_OBJECT_STATES, MAX_PERSISTED_WORLD_OBJECT_STATE_BYTES,
     MAX_PERSISTED_WORLD_SECTORS, MAX_SECTOR_OBJECT_STATES, MAX_SECTOR_OBJECT_STATE_BYTES,
 };
+pub use precise_step::step_character_mm;
 pub use rules::{
     character_frame, step_character, CharacterGravity, CharacterInput, CharacterState, Player,
     ShotOutcome,

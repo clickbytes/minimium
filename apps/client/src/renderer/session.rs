@@ -5,6 +5,10 @@ use crate::messages::ClientText as Text;
 
 impl Renderer {
     pub(crate) fn start_remote_attempt(&mut self, address: &str) {
+        if self.settings.require_earth {
+            self.connection_status = "Łączenie z Earth".into();
+            self.gpu.scene_visible = false;
+        }
         match self.connection.start_remote(address.to_owned()) {
             Ok(()) => self
                 .ui
@@ -15,6 +19,10 @@ impl Renderer {
     }
 
     pub(crate) fn start_local_attempt(&mut self, threads: crate::options::ThreadLane) {
+        if self.settings.require_earth {
+            self.connection_status = "Łączenie z Earth".into();
+            self.gpu.scene_visible = false;
+        }
         match self.connection.start_local(
             self.settings.data_dir.clone(),
             self.settings.map_path.clone(),
@@ -40,27 +48,36 @@ impl Renderer {
                 Text::WorkerStartFailed(error.to_string()).to_string()
             }
         };
+        if self.settings.require_earth {
+            self.connection_status = format!("Błąd Earth: {message}");
+        }
         self.ui.console.push_error(message);
     }
 
     pub(super) fn poll_connector(&mut self) {
         match self.connection.poll_connector() {
-            ConnectionEvent::TimedOut => self
-                .ui
-                .console
-                .push_error(Text::AttemptTimedOut.to_string()),
+            ConnectionEvent::TimedOut => {
+                self.connection_status = "Błąd połączenia: przekroczono czas".into();
+                self.ui
+                    .console
+                    .push_error(Text::AttemptTimedOut.to_string());
+            }
             ConnectionEvent::SessionStarted => {
                 self.reset_remote_gameplay();
                 self.ui.console.push_line(Text::AwaitingWelcome.to_string());
             }
-            ConnectionEvent::SetupFailed(error) => self
-                .ui
-                .console
-                .push_error(Text::ConnectionSetupFailed(error.to_string()).to_string()),
-            ConnectionEvent::Failed(error) => self
-                .ui
-                .console
-                .push_error(Text::ConnectFailed(error.to_string()).to_string()),
+            ConnectionEvent::SetupFailed(error) => {
+                self.connection_status = format!("Błąd Earth: {error}");
+                self.ui
+                    .console
+                    .push_error(Text::ConnectionSetupFailed(error.to_string()).to_string());
+            }
+            ConnectionEvent::Failed(error) => {
+                self.connection_status = format!("Błąd Earth: {error}");
+                self.ui
+                    .console
+                    .push_error(Text::ConnectFailed(error.to_string()).to_string());
+            }
             _ => {}
         }
     }
@@ -85,6 +102,15 @@ impl Renderer {
     }
 
     pub(super) fn clear_connection(&mut self) {
+        self.map_teleport_pending = false;
+        self.map_teleport_armed = false;
+        self.teleport_loading = false;
+        if self.settings.require_earth {
+            self.gpu.scene_visible = false;
+            if !self.connection_status.starts_with("Błąd") {
+                self.connection_status = "Earth: rozłączono".into();
+            }
+        }
         if let Some(mut session) = self.connection.take_session() {
             let metrics = session.metrics();
             self.metrics.previous_bytes_sent = self
@@ -111,6 +137,10 @@ impl Renderer {
 
     pub(super) fn fail_connection(&mut self, message: impl Into<String>) {
         let message = message.into();
+        self.connection_status = format!("Błąd Earth: {message}");
+        if self.settings.require_earth {
+            self.gpu.scene_visible = false;
+        }
         eprintln!("{message}");
         self.ui.console.push_error(message);
         self.clear_connection();
@@ -136,6 +166,9 @@ impl Renderer {
                 }
                 SessionEvent::Disconnected(reason) => {
                     if reason == DisconnectReason::ServerClosed {
+                        if self.settings.require_earth {
+                            self.connection_status = "Błąd Earth: serwer zamknął połączenie".into();
+                        }
                         if self.ui.console.open {
                             self.ui.console.push_line(Text::ServerClosed.to_string());
                         }
@@ -215,7 +248,10 @@ impl Renderer {
             self.gpu.remote_vertex_count = 0;
             return;
         }
-        if self.game.update_remote_vertices(now) {
+        if self
+            .game
+            .update_remote_vertices(now, self.gpu.render_origin)
+        {
             self.gpu.update_remote_vertices(&self.game.remote_vertices);
         }
     }
@@ -225,6 +261,7 @@ struct SnapshotUpdate {
     server_time_ms: u64,
     full_snapshot: bool,
     self_position: [f32; 3],
+    self_position_mm: minimium_core::world::Position3Mm,
     self_velocity: [f32; 3],
     self_grounded: bool,
     players: minimium_protocol::RemotePlayers,
@@ -237,6 +274,7 @@ impl GameplayView {
             server_time_ms,
             full_snapshot,
             self_position,
+            self_position_mm,
             self_velocity,
             self_grounded,
             players,
@@ -270,17 +308,33 @@ impl GameplayView {
                 return false;
             };
             let existing = self.remote_players[slot];
-            let previous_position = existing
-                .map(|track| track.current_position)
-                .unwrap_or(player.position);
+            let previous_position_mm = existing
+                .map(|track| track.current_position_mm)
+                .unwrap_or(player.position_mm.0);
+            let displacement_squared = previous_position_mm
+                .iter()
+                .zip(player.position_mm.0)
+                .map(|(previous, current)| (*previous as f64 - current as f64).powi(2))
+                .sum::<f64>();
+            let teleported = displacement_squared > 100_000_f64.powi(2);
+            let previous_position_mm = if teleported {
+                player.position_mm.0
+            } else {
+                previous_position_mm
+            };
             let previous_time_ms = existing
                 .map(|track| track.current_time_ms.min(server_time_ms))
                 .unwrap_or(server_time_ms);
+            let previous_time_ms = if teleported {
+                server_time_ms
+            } else {
+                previous_time_ms
+            };
             self.remote_players[slot] = Some(RemotePlayerTrack {
                 id: player.id,
-                previous_position,
-                current_position: player.position,
-                displayed_position: previous_position,
+                previous_position_mm,
+                current_position_mm: player.position_mm.0,
+                displayed_position_mm: previous_position_mm,
                 previous_time_ms,
                 current_time_ms: server_time_ms,
                 displayed_time_ms: previous_time_ms,
@@ -288,9 +342,17 @@ impl GameplayView {
         }
         self.remote_player_count = self.remote_players.iter().flatten().count();
         self.remote_geometry_dirty = true;
-        let predicted = glam::Vec3::from_array(self.character.position);
-        let authoritative = glam::Vec3::from_array(self_position);
-        self.character.position = predicted.lerp(authoritative, 0.25).to_array();
+        if let Some(predicted_mm) = &mut self.position_mm {
+            predicted_mm.0 = std::array::from_fn(|axis| {
+                (predicted_mm.0[axis] as f64 * 0.75 + self_position_mm.0[axis] as f64 * 0.25)
+                    .round() as i64
+            });
+            self.character.position = predicted_mm.0.map(|value| value as f32 / 1000.0);
+        } else {
+            let predicted = glam::Vec3::from_array(self.character.position);
+            let authoritative = glam::Vec3::from_array(self_position);
+            self.character.position = predicted.lerp(authoritative, 0.25).to_array();
+        }
         self.character.velocity = self_velocity;
         self.character.grounded = self_grounded;
         true
@@ -306,7 +368,7 @@ impl GameplayView {
         self.remote_geometry_dirty = false;
     }
 
-    fn update_remote_vertices(&mut self, now: Instant) -> bool {
+    fn update_remote_vertices(&mut self, now: Instant, origin: [f32; 3]) -> bool {
         let estimated_server_time_ms = match (
             self.last_remote_snapshot_time_ms,
             self.last_remote_snapshot_received_at,
@@ -329,16 +391,15 @@ impl GameplayView {
                 1.0
             } else {
                 (render_time_ms.saturating_sub(track.previous_time_ms) as f64 / interval_ms as f64)
-                    .clamp(0.0, 1.0) as f32
+                    .clamp(0.0, 1.0)
             };
-            let position = glam::Vec3::from_array(track.previous_position)
-                .lerp(
-                    glam::Vec3::from_array(track.current_position),
-                    interpolation,
-                )
-                .to_array();
-            if position != track.displayed_position {
-                track.displayed_position = position;
+            let position_mm = std::array::from_fn(|axis| {
+                (track.previous_position_mm[axis] as f64 * (1.0 - interpolation)
+                    + track.current_position_mm[axis] as f64 * interpolation)
+                    .round() as i64
+            });
+            if position_mm != track.displayed_position_mm {
+                track.displayed_position_mm = position_mm;
                 moved = true;
             }
             track.displayed_time_ms = render_time_ms.clamp(
@@ -352,7 +413,9 @@ impl GameplayView {
 
         self.remote_vertices.clear();
         for track in self.remote_players.iter().flatten() {
-            let position = track.displayed_position;
+            let position: [f32; 3] = std::array::from_fn(|axis| {
+                (track.displayed_position_mm[axis] as f64 / 1000.0 - f64::from(origin[axis])) as f32
+            });
             cube(
                 &mut self.remote_vertices,
                 [position[0], position[1] + 0.85, position[2]],

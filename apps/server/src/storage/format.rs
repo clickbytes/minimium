@@ -6,10 +6,11 @@ use minimium_core::{
     identity::PlayerProfileId,
     ids::PlayerId,
     world::{
-        GenerationRevision, GenerationSpec, GeneratorDigest, Position3Mm, SectorKey,
-        WorldContentRevision, WorldDefinitionId, WorldInstanceId, WorldLocation, WorldManifest,
-        WorldMap, WorldOrientationQ30, WorldSeed, WorldTopology, MAX_PERSISTED_WORLD_OBJECT_STATES,
-        MAX_PERSISTED_WORLD_OBJECT_STATE_BYTES, MAX_PERSISTED_WORLD_SECTORS, PLAYER_MAX_HEALTH,
+        GenerationRevision, GenerationSpec, GeneratorDigest, PlanetDefinition, Position3Mm,
+        SectorKey, WorldContentRevision, WorldDefinitionId, WorldInstanceId, WorldLocation,
+        WorldManifest, WorldMap, WorldOrientationQ30, WorldSeed, WorldTopology,
+        MAX_PERSISTED_WORLD_OBJECT_STATES, MAX_PERSISTED_WORLD_OBJECT_STATE_BYTES,
+        MAX_PERSISTED_WORLD_SECTORS, PLAYER_MAX_HEALTH,
     },
 };
 mod locations;
@@ -20,7 +21,9 @@ mod worlds;
 mod tests;
 use locations::{legacy_location, parse_location, position_from_location, write_location};
 use sectors::{parse_saved_sector, write_saved_sector};
-use worlds::{parse_saved_world, validate_saved_world, write_manifest, write_saved_world};
+use worlds::{
+    parse_manifest, parse_saved_world, validate_saved_world, write_manifest, write_saved_world,
+};
 
 use std::{
     collections::HashSet,
@@ -29,11 +32,11 @@ use std::{
     sync::Arc,
 };
 
-pub(crate) const SAVE_VERSION: u8 = 6;
+pub(crate) const SAVE_VERSION: u8 = 7;
 pub(super) const MAX_STORED_PLAYERS: usize = 100_000;
 const MAX_WORLD_SNAPSHOT_BYTES: usize = 16 * 1024 * 1024;
-const MAX_SAVED_COORDINATE: f32 = 1_000_000.0;
-const MAX_SAVED_POSITION_MM: u64 = 1_000_000_000;
+const MAX_SAVED_COORDINATE: f32 = 7_000_000.0;
+const MAX_SAVED_POSITION_MM: u64 = 7_000_000_000;
 pub(super) const PLAYER_STORE_SHARDS: usize = 256;
 
 pub(super) fn load(
@@ -66,7 +69,7 @@ pub(super) fn load(
     if version == Some("1") {
         return Err(invalid_world_snapshot("snapshot version 1 has no client profile IDs; back up or remove the old snapshot before starting"));
     }
-    if !matches!(version, Some("2" | "3" | "4" | "5" | "6")) {
+    if !matches!(version, Some("2" | "3" | "4" | "5" | "6" | "7")) {
         return Err(invalid_world_snapshot("unsupported snapshot version"));
     }
     let legacy_world = worlds
@@ -78,7 +81,7 @@ pub(super) fn load(
             )
         })?;
     match version {
-        Some("4" | "5" | "6") => {
+        Some("4" | "5" | "6" | "7") => {
             let saved_manifest = parse_manifest(&mut header_fields)?;
             let Some((_, primary_map, primary_manifest)) = worlds.first() else {
                 return Err(invalid_world_snapshot("no primary world is loaded"));
@@ -101,7 +104,7 @@ pub(super) fn load(
 
     let mut store = PlayerStore::default();
     let mut saved_world_instances = HashSet::new();
-    if matches!(version, Some("5" | "6")) {
+    if matches!(version, Some("5" | "6" | "7")) {
         let (primary_instance, _, _) = worlds
             .first()
             .ok_or_else(|| invalid_world_snapshot("no primary world is loaded"))?;
@@ -114,7 +117,7 @@ pub(super) fn load(
     let mut saved_object_bytes = 0_usize;
     let mut lines = lines.peekable();
     while let Some(line) = lines.next() {
-        if matches!(version, Some("5" | "6")) && line.starts_with("WORLD\t") {
+        if matches!(version, Some("5" | "6" | "7")) && line.starts_with("WORLD\t") {
             if player_records_started || sector_records_started {
                 return Err(invalid_world_snapshot(
                     "world manifest appears after state records",
@@ -127,7 +130,7 @@ pub(super) fn load(
             }
             continue;
         }
-        if version == Some("6") && line.starts_with("SECTOR\t") {
+        if matches!(version, Some("6" | "7")) && line.starts_with("SECTOR\t") {
             if player_records_started {
                 return Err(invalid_world_snapshot(
                     "sector state appears after player records",
@@ -201,7 +204,8 @@ pub(super) fn load(
             .ok_or_else(|| invalid_world_snapshot("missing player name"))?;
         let name = StoredName::new(name)
             .ok_or_else(|| invalid_world_snapshot("invalid saved player name"))?;
-        let (location, return_location, health) = if matches!(version, Some("4" | "5" | "6")) {
+        let (location, return_location, health) = if matches!(version, Some("4" | "5" | "6" | "7"))
+        {
             let location = parse_location(&mut fields)?;
             let health = parse_saved_health(fields.next())?;
             let return_location = parse_location(&mut fields)?;
@@ -233,7 +237,7 @@ pub(super) fn load(
                 ));
             }
         }
-        if matches!(version, Some("5" | "6"))
+        if matches!(version, Some("5" | "6" | "7"))
             && (!saved_world_instances.contains(&location.instance())
                 || !saved_world_instances.contains(&return_location.instance()))
         {
@@ -363,70 +367,6 @@ fn gravity_for_world(
         }
         WorldTopology::Dungeon => minimium_core::world::CharacterGravity::FixedY,
     })
-}
-
-fn parse_manifest(fields: &mut std::str::Split<'_, char>) -> io::Result<WorldManifest> {
-    let definition = fields
-        .next()
-        .ok_or_else(|| invalid_world_snapshot("missing saved world definition"))?
-        .parse::<u128>()
-        .ok()
-        .and_then(WorldDefinitionId::new)
-        .ok_or_else(|| invalid_world_snapshot("invalid saved world definition"))?;
-    let topology = match fields.next() {
-        Some("0") => WorldTopology::Planet,
-        Some("1") => WorldTopology::Dungeon,
-        _ => return Err(invalid_world_snapshot("invalid saved world topology")),
-    };
-    let seed = fields
-        .next()
-        .ok_or_else(|| invalid_world_snapshot("missing saved world seed"))?
-        .parse::<u128>()
-        .map_err(|_| invalid_world_snapshot("invalid saved world seed"))?;
-    let revision = fields
-        .next()
-        .ok_or_else(|| invalid_world_snapshot("missing saved generation revision"))?
-        .parse::<u32>()
-        .ok()
-        .and_then(GenerationRevision::new)
-        .ok_or_else(|| invalid_world_snapshot("invalid saved generation revision"))?;
-    let quantum = fields
-        .next()
-        .ok_or_else(|| invalid_world_snapshot("missing saved position quantum"))?
-        .parse::<u32>()
-        .map_err(|_| invalid_world_snapshot("invalid saved position quantum"))?;
-    let generation = GenerationSpec::new(WorldSeed::new(seed), revision, quantum)
-        .ok_or_else(|| invalid_world_snapshot("invalid saved generation settings"))?;
-    let content_revision = fields
-        .next()
-        .ok_or_else(|| invalid_world_snapshot("missing saved content revision"))?
-        .parse::<u64>()
-        .ok()
-        .and_then(WorldContentRevision::new)
-        .ok_or_else(|| invalid_world_snapshot("invalid saved content revision"))?;
-    let digest = fields
-        .next()
-        .ok_or_else(|| invalid_world_snapshot("missing saved generator digest"))?;
-    if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-        return Err(invalid_world_snapshot("invalid saved generator digest"));
-    }
-    let mut digest_bytes = [0_u8; 32];
-    for (byte, pair) in digest_bytes
-        .iter_mut()
-        .zip(digest.as_bytes().as_chunks::<2>().0.iter())
-    {
-        let pair = std::str::from_utf8(pair)
-            .map_err(|_| invalid_world_snapshot("invalid saved generator digest"))?;
-        *byte = u8::from_str_radix(pair, 16)
-            .map_err(|_| invalid_world_snapshot("invalid saved generator digest"))?;
-    }
-    Ok(WorldManifest::new(
-        definition,
-        topology,
-        generation,
-        content_revision,
-        GeneratorDigest::new(digest_bytes),
-    ))
 }
 
 fn hex_digest(bytes: &[u8; 32]) -> String {

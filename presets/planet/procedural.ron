@@ -1,0 +1,9 @@
+(
+    version: Some(1),
+    mode: Some(Procedural),
+    height_scale_permille: Some(1000),
+    mountain_limit_mm: Some(5000000),
+    detail_strength_mm: Some(15000),
+    detail_wavelength_mm: Some(30000),
+    mountain_band_frequency: Some(8),
+)

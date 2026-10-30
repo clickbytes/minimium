@@ -36,6 +36,7 @@ pub struct ClientOptions {
     pub map_path: Option<PathBuf>,
     pub world_definition_path: Option<PathBuf>,
     pub demo: bool,
+    pub require_earth: bool,
     pub console: bool,
     pub help: bool,
     pub threads: ThreadLane,
@@ -51,6 +52,7 @@ impl ClientOptions {
             map_path: None,
             world_definition_path: None,
             demo: false,
+            require_earth: false,
             console: false,
             help: false,
             threads: ThreadLane::One,
@@ -61,6 +63,7 @@ impl ClientOptions {
         let mut seen_map = false;
         let mut seen_world_definition = false;
         let mut seen_demo = false;
+        let mut seen_require_earth = false;
         let mut seen_console = false;
         let mut seen_help = false;
         let mut seen_threads = false;
@@ -106,6 +109,10 @@ impl ClientOptions {
                     reject_duplicate(&mut seen_demo, "--demo")?;
                     options.demo = true;
                 }
+                "--require-earth" => {
+                    reject_duplicate(&mut seen_require_earth, "--require-earth")?;
+                    options.require_earth = true;
+                }
                 "--console" => {
                     reject_duplicate(&mut seen_console, "--console")?;
                     options.console = true;
@@ -123,6 +130,12 @@ impl ClientOptions {
         }
         if options.demo && options.console {
             return Err("--demo cannot be used with --console".to_owned());
+        }
+        if options.require_earth && options.demo {
+            return Err("--require-earth cannot be used with --demo".to_owned());
+        }
+        if options.require_earth && options.console {
+            return Err("--require-earth requires the desktop client".to_owned());
         }
         if options.map_path.is_some() && options.world_definition_path.is_some() {
             return Err("--map and --world-definition cannot be used together".to_owned());

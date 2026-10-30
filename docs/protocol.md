@@ -1,4 +1,4 @@
-# Game protocol v9
+# Game protocol v11
 
 `minimium-protocol` defines typed messages and binary encoding without depending
 on TCP, UDP, sockets or a runtime. The current server adapter carries frames over
@@ -10,7 +10,7 @@ Every frame begins with a four-byte header:
 
 | Offset | Size | Meaning |
 | --- | ---: | --- |
-| 0 | 1 byte | Protocol version (`9`) |
+| 0 | 1 byte | Protocol version (`11`) |
 | 1 | 1 byte | Message type |
 | 2 | 2 bytes | Payload length, unsigned little-endian |
 
@@ -30,7 +30,10 @@ player's current membership. The client discards snapshots from an old context.
 
 A `WorldManifest` encodes a 16-byte definition ID, one-byte topology, 16-byte
 seed, 4-byte generation revision, 4-byte position quantum, 8-byte content
-revision and 32-byte generator digest. The client verifies the map fingerprint
+revision and 32-byte generator digest, followed by a one-byte planet-definition
+presence flag. A present definition adds mode, radius, height scale, sea level,
+mountain limit, detail strength/wavelength, band frequency and a 32-byte GEBCO
+package digest. The client verifies the map fingerprint
 and generator digest in Welcome and transfer preparation before joining a world.
 
 ## Message types
@@ -47,11 +50,11 @@ server sends Welcome only after accepting that profile.
 | Client → server | `5` Identify | 16-byte persistent profile ID; first message only |
 | Client → server | `6` Fire | normalized world direction (`f32 x/y/z`) |
 | Client → server | `7` Chat | one-byte UTF-8 byte length, then 1–128 text bytes |
-| Client → server | `8` WorldInput | context, subtype, then SetName/Move/Fire/Chat/UsePortal payload |
+| Client → server | `8` WorldInput | context, subtype, then SetName/Move/Fire/Chat/UsePortal/MapTeleport payload |
 | Client → server | `9` TransitionReady | 16-byte transition ID and target context |
 | Client → server | `10` UsePortal | empty; legacy unwrapped form is rejected by server admission |
 | Client → server | `11` CancelTransition | 16-byte transition ID |
-| Server → client | `0x81` Welcome | player ID, map fingerprint, health, restored position (`f32 x/y/z`), context, manifest, optional transition ID |
+| Server → client | `0x81` Welcome | player ID, map fingerprint, health, restored position (`i64` millimeters x/y/z), context, manifest, optional transition ID |
 | Server → client | `0x82` Pong | empty |
 | Server → client | `0x83` Accepted | empty |
 | Server → client | `0x84` Bye | empty |
@@ -63,20 +66,22 @@ server sends Welcome only after accepting that profile.
 | Server → client | `0x8a` TransitionPrepare | transition ID, source/target contexts, fingerprint, destination, target manifest |
 | Server → client | `0x8b` TransitionCommitted | transition ID, target context, fingerprint, destination, health, target manifest |
 | Server → client | `0x8c` TransitionCancelled | transition ID and source context |
+| Server → client | `0x8d` MapTeleportResult | success flag; on success, destination (`i64` millimeters x/y/z) |
 
 For `WorldInput`, subtypes are `1` SetName, `2` Move, `3` Fire, `4` Chat and
-`5` UsePortal. The client session wraps ordinary gameplay messages in this record
+`5` UsePortal and `6` MapTeleport (unit direction, three `f32` values). The client session wraps ordinary gameplay messages in this record
 using its current context. `TransitionReady` is sent only after the client
 validates the target manifest. The server commits ready transfers at a tick
 boundary and forces a full snapshot in the new context. A cancellation succeeds
 only before that commit.
 
 Snapshots begin with monotonic server time (`u64`), the 32-byte context, local
-position and velocity (three `f32` values each), a grounded flag, full/delta
+position (three `i64` millimeters) and velocity (three `f32` values), a grounded flag, full/delta
 flag, and one-byte update/removal counts. Each update contains player ID, name
-and position; each removal contains a player ID. Both lists are bounded to 16.
+and position (`i64` millimeters per axis); each removal contains a player ID. Both lists are bounded to 16.
 The server advances a per-client baseline only after queuing a snapshot
 successfully.
+Portal transition destinations also use three `i64` millimeter coordinates.
 
 ## Runtime policy and persistence
 
@@ -86,7 +91,7 @@ send Ping every 10 seconds; server idle timeout is 30 seconds and the desktop
 client's Pong timeout is 20 seconds. These are runtime policies, not frame
 requirements.
 
-Save format v6 records every loaded world's manifest and map fingerprint, plus
+Save format v7 records every loaded world's manifest and map fingerprint, plus
 each player's instance, quantized position, orientation, health and return
 location. v2/v3 snapshots are migrated only to a loaded legacy map whose
 fingerprint matches the saved header. The intermediate v4 format is accepted

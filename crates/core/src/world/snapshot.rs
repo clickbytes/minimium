@@ -1,5 +1,6 @@
 use super::collision_index::Cell;
 use super::geometry::cell_for;
+use super::model::Position3Mm;
 use super::rules::{CharacterGravity, CharacterState, Player};
 use super::VISIBILITY_RADIUS;
 use crate::ids::PlayerId;
@@ -23,6 +24,18 @@ pub(super) struct NearbyCandidate<'a> {
 impl WorldSnapshot {
     pub fn position(&self, entity: PlayerId) -> Option<[f32; 3]> {
         self.players.get(&entity).map(|player| player.position)
+    }
+
+    pub fn position_mm(&self, entity: PlayerId) -> Option<Position3Mm> {
+        self.players.get(&entity).map(|player| {
+            player.position_mm.unwrap_or_else(|| {
+                Position3Mm(
+                    player
+                        .position
+                        .map(|value| (f64::from(value) * 1000.0).round() as i64),
+                )
+            })
+        })
     }
 
     pub fn character_state(&self, entity: PlayerId) -> Option<CharacterState> {

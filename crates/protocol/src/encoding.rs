@@ -27,6 +27,7 @@ pub fn encode_client(message: &ClientMessage) -> Result<Vec<u8>, ProtocolError> 
             write_unit_direction(*direction, &mut payload)?;
             ClientKind::Fire
         }
+        ClientMessage::MapTeleport { .. } => return Err(ProtocolError::InvalidPayload),
         ClientMessage::Chat(text) => {
             write_chat_text(text, &mut payload)?;
             ClientKind::Chat
@@ -52,6 +53,10 @@ pub fn encode_client(message: &ClientMessage) -> Result<Vec<u8>, ProtocolError> 
                     write_chat_text(text, &mut payload)?;
                 }
                 ClientWorldInput::UsePortal => payload.push(5),
+                ClientWorldInput::MapTeleport { direction } => {
+                    payload.push(6);
+                    write_unit_direction(*direction, &mut payload)?;
+                }
             }
             ClientKind::WorldInput
         }
@@ -93,6 +98,7 @@ pub fn encode_server_into(
                 map_fingerprint,
                 health,
                 position,
+                position_mm,
                 context,
                 manifest,
                 transition_id,
@@ -103,7 +109,8 @@ pub fn encode_server_into(
                 frame.extend_from_slice(&id.get().to_le_bytes());
                 frame.extend_from_slice(&map_fingerprint.to_le_bytes());
                 frame.extend_from_slice(&health.to_le_bytes());
-                write_vector(*position, frame)?;
+                let _ = position;
+                write_position_mm(*position_mm, frame);
                 write_world_context(*context, frame);
                 write_world_manifest(*manifest, frame);
                 frame.push(u8::from(transition_id.is_some()));
@@ -113,6 +120,13 @@ pub fn encode_server_into(
                 ServerKind::Welcome
             }
             ServerMessage::Pong => ServerKind::Pong,
+            ServerMessage::MapTeleportResult { position_mm } => {
+                frame.push(u8::from(position_mm.is_some()));
+                if let Some(position_mm) = position_mm {
+                    write_position_mm(*position_mm, frame);
+                }
+                ServerKind::MapTeleportResult
+            }
             ServerMessage::Accepted => ServerKind::Accepted,
             ServerMessage::Bye => ServerKind::Bye,
             ServerMessage::Error(code) => {
@@ -159,6 +173,7 @@ pub fn encode_server_into(
                 context,
                 full_snapshot,
                 self_position,
+                self_position_mm,
                 self_velocity,
                 self_grounded,
                 players,
@@ -173,7 +188,8 @@ pub fn encode_server_into(
                 }
                 frame.extend_from_slice(&server_time_ms.to_le_bytes());
                 write_world_context(*context, frame);
-                write_vector(*self_position, frame)?;
+                let _ = self_position;
+                write_position_mm(*self_position_mm, frame);
                 write_vector(*self_velocity, frame)?;
                 frame.push(u8::from(*self_grounded));
                 frame.push(u8::from(*full_snapshot));
@@ -182,7 +198,7 @@ pub fn encode_server_into(
                 for player in players.iter() {
                     frame.extend_from_slice(&player.id.get().to_le_bytes());
                     write_name(&player.name, frame)?;
-                    write_vector(player.position, frame)?;
+                    write_position_mm(player.position_mm, frame);
                 }
                 for id in removed_players.iter() {
                     frame.extend_from_slice(&id.get().to_le_bytes());
@@ -195,13 +211,15 @@ pub fn encode_server_into(
                 target_context,
                 map_fingerprint,
                 destination,
+                destination_mm,
                 manifest,
             } => {
                 frame.extend_from_slice(&transition_id.get().to_le_bytes());
                 write_world_context(*source_context, frame);
                 write_world_context(*target_context, frame);
                 frame.extend_from_slice(&map_fingerprint.to_le_bytes());
-                write_vector(*destination, frame)?;
+                let _ = destination;
+                write_position_mm(*destination_mm, frame);
                 write_world_manifest(*manifest, frame);
                 ServerKind::TransitionPrepare
             }
@@ -210,6 +228,7 @@ pub fn encode_server_into(
                 context,
                 map_fingerprint,
                 destination,
+                destination_mm,
                 health,
                 manifest,
             } => {
@@ -219,7 +238,8 @@ pub fn encode_server_into(
                 frame.extend_from_slice(&transition_id.get().to_le_bytes());
                 write_world_context(*context, frame);
                 frame.extend_from_slice(&map_fingerprint.to_le_bytes());
-                write_vector(*destination, frame)?;
+                let _ = destination;
+                write_position_mm(*destination_mm, frame);
                 frame.extend_from_slice(&health.to_le_bytes());
                 write_world_manifest(*manifest, frame);
                 ServerKind::TransitionCommitted
@@ -282,6 +302,20 @@ fn write_world_manifest(manifest: minimium_core::world::WorldManifest, output: &
     output.extend_from_slice(&generation.position_quantum_mm().to_le_bytes());
     output.extend_from_slice(&manifest.content_revision().get().to_le_bytes());
     output.extend_from_slice(manifest.generator_digest().as_bytes());
+    if let Some(planet) = manifest.planet() {
+        output.push(1);
+        output.push(planet.mode);
+        output.extend_from_slice(&planet.radius_mm.to_le_bytes());
+        output.extend_from_slice(&planet.height_scale_permille.to_le_bytes());
+        output.extend_from_slice(&planet.sea_level_mm.to_le_bytes());
+        output.extend_from_slice(&planet.mountain_limit_mm.to_le_bytes());
+        output.extend_from_slice(&planet.detail_strength_mm.to_le_bytes());
+        output.extend_from_slice(&planet.detail_wavelength_mm.to_le_bytes());
+        output.extend_from_slice(&planet.mountain_band_frequency.to_le_bytes());
+        output.extend_from_slice(&planet.package_digest);
+    } else {
+        output.push(0);
+    }
 }
 
 pub(crate) fn write_chat_text(text: &str, output: &mut Vec<u8>) -> Result<(), ProtocolError> {
@@ -301,6 +335,12 @@ pub(crate) fn write_vector(vector: [f32; 3], output: &mut Vec<u8>) -> Result<(),
         output.extend_from_slice(&value.to_le_bytes());
     }
     Ok(())
+}
+
+pub(crate) fn write_position_mm(position: minimium_core::world::Position3Mm, output: &mut Vec<u8>) {
+    for coordinate in position.0 {
+        output.extend_from_slice(&coordinate.to_le_bytes());
+    }
 }
 
 pub(crate) fn write_direction(

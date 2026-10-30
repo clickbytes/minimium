@@ -1,0 +1,250 @@
+use super::GpuResources;
+use std::borrow::Cow;
+use wgpu::util::DeviceExt;
+
+const WIDTH: u32 = 2048;
+const HEIGHT: u32 = 1024;
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct GlobeVertex {
+    position: [f32; 3],
+    uv: [f32; 2],
+}
+
+pub(super) struct GlobeGpu {
+    pub(super) pipeline: wgpu::RenderPipeline,
+    pub(super) bind_group: wgpu::BindGroup,
+    pub(super) vertices: wgpu::Buffer,
+    pub(super) vertex_count: u32,
+}
+
+/// Samples the pinned package on a worker thread, away from redraw handling.
+pub(super) fn pixels(height_scale_permille: u32, sea_level_mm: i64) -> Vec<u8> {
+    let mut pixels = vec![0; (WIDTH * HEIGHT * 4) as usize];
+    for y in 0..HEIGHT {
+        let latitude = (90.0 - (f64::from(y) + 0.5) * 180.0 / f64::from(HEIGHT)).to_radians();
+        for x in 0..WIDTH {
+            let longitude = ((f64::from(x) + 0.5) * 360.0 / f64::from(WIDTH) - 180.0).to_radians();
+            let direction = [
+                latitude.cos() * longitude.cos(),
+                latitude.sin(),
+                latitude.cos() * longitude.sin(),
+            ];
+            let elevation = minimium_procgen::earth_elevation_mm(direction, height_scale_permille);
+            let metres = ((elevation - sea_level_mm) / 1000) as f32;
+            let color: [u8; 3] = if metres < 0.0 {
+                let deep = (-metres / 400.0).clamp(0.0, 1.0);
+                [
+                    ((20.0 - 12.0 * deep) as u8),
+                    ((82.0 - 39.0 * deep) as u8),
+                    ((145.0 - 44.0 * deep) as u8),
+                ]
+            } else if metres < 110.0 {
+                [63, 122, 66]
+            } else if metres < 280.0 {
+                [84, 132, 70]
+            } else if metres < 500.0 {
+                [119, 126, 81]
+            } else {
+                let snow = ((metres - 500.0) / 400.0).clamp(0.0, 1.0);
+                [
+                    ((133.0 + 100.0 * snow) as u8),
+                    ((125.0 + 105.0 * snow) as u8),
+                    ((114.0 + 120.0 * snow) as u8),
+                ]
+            };
+            let offset = ((y * WIDTH + x) * 4) as usize;
+            pixels[offset..offset + 3].copy_from_slice(&color);
+            pixels[offset + 3] = ((metres + 500.0) / 1000.0 * 255.0).clamp(0.0, 255.0) as u8;
+        }
+    }
+    pixels
+}
+
+fn vertices(radius: f32) -> Vec<GlobeVertex> {
+    const LONGITUDES: u32 = 160;
+    const LATITUDES: u32 = 80;
+    let mut out = Vec::with_capacity((LONGITUDES * LATITUDES * 6) as usize);
+    let point = |x: u32, y: u32| {
+        let u = x as f32 / LONGITUDES as f32;
+        let v = y as f32 / LATITUDES as f32;
+        let lon = (u * 360.0 - 180.0).to_radians();
+        let lat = (90.0 - v * 180.0).to_radians();
+        GlobeVertex {
+            position: [
+                radius * lat.cos() * lon.cos(),
+                radius * lat.sin(),
+                radius * lat.cos() * lon.sin(),
+            ],
+            uv: [u, v],
+        }
+    };
+    for y in 0..LATITUDES {
+        for x in 0..LONGITUDES {
+            let (a, b, c, d) = (
+                point(x, y),
+                point(x + 1, y),
+                point(x, y + 1),
+                point(x + 1, y + 1),
+            );
+            out.extend_from_slice(&[a, c, b, b, c, d]);
+        }
+    }
+    out
+}
+
+impl GpuResources {
+    pub(super) fn install_globe(&mut self, pixels: &[u8], radius: f32) {
+        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("GEBCO 2048x1024 overview"),
+            size: wgpu::Extent3d {
+                width: WIDTH,
+                height: HEIGHT,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            pixels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(WIDTH * 4),
+                rows_per_image: Some(HEIGHT),
+            },
+            wgpu::Extent3d {
+                width: WIDTH,
+                height: HEIGHT,
+                depth_or_array_layers: 1,
+            },
+        );
+        let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+        let layout = self
+            .device
+            .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("globe texture layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+        let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("globe texture bind group"),
+            layout: &layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(
+                        &texture.create_view(&wgpu::TextureViewDescriptor::default()),
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+        let shader = self
+            .device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("globe shader"),
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("globe.wgsl"))),
+            });
+        let camera_layout = self.pipeline.get_bind_group_layout(0);
+        let pipeline_layout = self
+            .device
+            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("globe pipeline layout"),
+                bind_group_layouts: &[Some(&camera_layout), Some(&layout)],
+                immediate_size: 0,
+            });
+        let pipeline = self
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("globe pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    compilation_options: Default::default(),
+                    buffers: &[Some(wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<GlobeVertex>() as u64,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x2],
+                    })],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs_main"),
+                    compilation_options: Default::default(),
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: self.config.format,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: wgpu::TextureFormat::Depth32Float,
+                    depth_write_enabled: Some(true),
+                    depth_compare: Some(wgpu::CompareFunction::Less),
+                    stencil: Default::default(),
+                    bias: Default::default(),
+                }),
+                multisample: Default::default(),
+                multiview_mask: None,
+                cache: None,
+            });
+        let mesh = vertices(radius);
+        let vertex_count = mesh.len() as u32;
+        let vertex_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("globe sphere"),
+                contents: bytemuck::cast_slice(&mesh),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        self.fixed_gpu_bytes += vertex_buffer.size() + u64::from(WIDTH * HEIGHT * 4);
+        self.globe = Some(GlobeGpu {
+            pipeline,
+            bind_group,
+            vertices: vertex_buffer,
+            vertex_count,
+        });
+    }
+}

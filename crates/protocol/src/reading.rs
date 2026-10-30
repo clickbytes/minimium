@@ -6,9 +6,9 @@ use super::{
 };
 use minimium_core::identity::PlayerProfileId;
 use minimium_core::world::{
-    GenerationRevision, GenerationSpec, GeneratorDigest, MembershipEpoch, TransitionId,
-    WorldContentRevision, WorldDefinitionId, WorldInstanceId, WorldManifest, WorldSeed,
-    WorldTopology,
+    GenerationRevision, GenerationSpec, GeneratorDigest, MembershipEpoch, Position3Mm,
+    TransitionId, WorldContentRevision, WorldDefinitionId, WorldInstanceId, WorldManifest,
+    WorldSeed, WorldTopology,
 };
 use std::sync::Arc;
 
@@ -99,9 +99,29 @@ impl<'a> Reader<'a> {
         let content =
             WorldContentRevision::new(self.u64()?).ok_or(ProtocolError::InvalidPayload)?;
         let digest = GeneratorDigest::new(self.fixed::<32>()?);
-        Ok(WorldManifest::new(
-            definition, topology, generation, content, digest,
-        ))
+        let mut manifest = WorldManifest::new(definition, topology, generation, content, digest);
+        match self.byte()? {
+            0 => {}
+            1 => {
+                let planet = minimium_core::world::PlanetDefinition {
+                    mode: self.byte()?,
+                    radius_mm: self.u64()?,
+                    height_scale_permille: self.u32()?,
+                    sea_level_mm: self.u64()? as i64,
+                    mountain_limit_mm: self.u32()?,
+                    detail_strength_mm: self.u32()?,
+                    detail_wavelength_mm: self.u32()?,
+                    mountain_band_frequency: self.u32()?,
+                    package_digest: self.fixed::<32>()?,
+                };
+                if !planet.is_valid() {
+                    return Err(ProtocolError::InvalidPayload);
+                }
+                manifest = manifest.with_planet(planet);
+            }
+            _ => return Err(ProtocolError::InvalidPayload),
+        }
+        Ok(manifest)
     }
 
     pub(crate) fn transition_id(&mut self) -> Result<TransitionId, ProtocolError> {
@@ -129,6 +149,21 @@ impl<'a> Reader<'a> {
             return Err(ProtocolError::InvalidPayload);
         }
         Ok(vector)
+    }
+
+    pub(crate) fn position_mm(&mut self) -> Result<Position3Mm, ProtocolError> {
+        let mut position = [0_i64; 3];
+        for coordinate in &mut position {
+            *coordinate = i64::from_le_bytes(
+                self.take(8)?
+                    .try_into()
+                    .map_err(|_| ProtocolError::InvalidPayload)?,
+            );
+            if coordinate.unsigned_abs() > 7_000_000_000 {
+                return Err(ProtocolError::InvalidPayload);
+            }
+        }
+        Ok(Position3Mm(position))
     }
 
     pub(crate) fn direction(&mut self) -> Result<[f32; 2], ProtocolError> {

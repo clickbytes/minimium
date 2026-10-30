@@ -72,12 +72,22 @@ pub(crate) fn replicate_snapshots(
                         id: player.id,
                         name: player.name.clone(),
                         position: player.position,
+                        position_mm: player.position_mm.unwrap_or_else(|| {
+                            minimium_core::world::Position3Mm(
+                                player
+                                    .position
+                                    .map(|value| (f64::from(value) * 1000.0).round() as i64),
+                            )
+                        }),
                     });
                 },
             );
-            (index, context, character_state, players)
+            let position_mm = snapshot
+                .position_mm(recipient)
+                .unwrap_or(minimium_core::world::Position3Mm([0; 3]));
+            (index, context, character_state, position_mm, players)
         });
-        for (recipient, context, character_state, current_players) in snapshots {
+        for (recipient, context, character_state, position_mm, current_players) in snapshots {
             if let Some(client) = clients.get_mut(recipient) {
                 let full_snapshot = !client.replication_initialized;
                 let (players, removed_players) = if full_snapshot {
@@ -90,9 +100,10 @@ pub(crate) fn replicate_snapshots(
                     context,
                     full_snapshot,
                     self_position: character_state.position,
+                    self_position_mm: position_mm,
                     self_velocity: character_state.velocity,
                     self_grounded: character_state.grounded,
-                    players,
+                    players: Box::new(players),
                     removed_players,
                 };
                 if queue_message(client, metrics, message) {
@@ -114,7 +125,7 @@ pub(crate) fn diff_remote_players(
     for player in current.iter() {
         let differs = previous
             .get(player.id)
-            .is_none_or(|old| old.name != player.name || old.position != player.position);
+            .is_none_or(|old| old.name != player.name || old.position_mm != player.position_mm);
         if differs {
             let _ = changed.push(player.clone());
         }

@@ -1,9 +1,12 @@
 use std::time::Duration;
 
-pub(super) const CELL: usize = 8;
+pub(super) const CELL: usize = 20;
+pub(super) const GLYPH_ADVANCE: f32 = 12.0;
 pub(super) const COLUMNS: usize = 16;
 pub(super) const ASCII_GLYPHS: usize = 127;
-pub(super) const POLISH_GLYPHS: [char; 9] = ['Ą', 'Ć', 'Ę', 'Ł', 'Ń', 'Ó', 'Ś', 'Ź', 'Ż'];
+pub(super) const POLISH_GLYPHS: [char; 18] = [
+    'Ą', 'ą', 'Ć', 'ć', 'Ę', 'ę', 'Ł', 'ł', 'Ń', 'ń', 'Ó', 'ó', 'Ś', 'ś', 'Ź', 'ź', 'Ż', 'ż',
+];
 pub(super) const WHITE_CELL: usize = ASCII_GLYPHS + POLISH_GLYPHS.len();
 pub(super) const ATLAS_CELLS: usize = WHITE_CELL + 1;
 pub(super) const ATLAS_ROWS: usize = ATLAS_CELLS.div_ceil(COLUMNS);

@@ -132,6 +132,7 @@ fn parse_with_base(source: &str, base_dir: Option<&Path>) -> Result<WorldMap, St
                 };
                 triangles.push(MapTriangle {
                     vertices,
+                    precise_vertices: None,
                     color,
                     solid,
                 });

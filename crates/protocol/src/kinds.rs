@@ -30,5 +30,5 @@ kinds!(ServerKind {
     Welcome = 0x81, Pong = 0x82, Accepted = 0x83, Bye = 0x84, Error = 0x85,
     Snapshot = 0x86, ShotResult = 0x87, HealthUpdate = 0x88, Chat = 0x89,
     TransitionPrepare = 0x8a, TransitionCommitted = 0x8b,
-    TransitionCancelled = 0x8c,
+    TransitionCancelled = 0x8c, MapTeleportResult = 0x8d,
 });

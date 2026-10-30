@@ -9,9 +9,20 @@ impl Renderer {
                 context,
                 health,
                 position,
+                position_mm,
                 manifest,
                 ..
             } => {
+                if self.settings.require_earth
+                    && manifest.planet().is_none_or(|planet| planet.mode != 1)
+                {
+                    self.fail_connection("serwer nie udostępnia manifestu Earth");
+                    return;
+                }
+                if !self.load_generated_catalog(context.instance(), manifest) {
+                    self.fail_connection("server generation manifest is not supported");
+                    return;
+                }
                 if !self.install_world(
                     context.instance(),
                     map_fingerprint,
@@ -22,6 +33,13 @@ impl Renderer {
                     return;
                 }
                 self.game.health = health;
+                self.gpu.scene_visible = true;
+                self.connection_status = if self.settings.require_earth {
+                    "Earth: połączono".into()
+                } else {
+                    "Połączono".into()
+                };
+                self.game.position_mm = manifest.planet().map(|_| position_mm);
                 if self.ui.console.open {
                     self.ui
                         .console
@@ -31,6 +49,40 @@ impl Renderer {
             ServerMessage::Pong => {
                 if self.ui.console.open {
                     self.ui.console.push_line(Text::Pong.to_string());
+                }
+            }
+            ServerMessage::MapTeleportResult { position_mm } => {
+                self.map_teleport_pending = false;
+                if let Some(position_mm) = position_mm {
+                    self.game.position_mm = Some(position_mm);
+                    self.game.character.position =
+                        position_mm.0.map(|coordinate| coordinate as f32 / 1000.0);
+                    let origin = self
+                        .game
+                        .character
+                        .position
+                        .map(|coordinate| (coordinate / 256.0).round() * 256.0);
+                    self.gpu.set_render_origin(origin);
+                    self.game.character.velocity = [0.0; 3];
+                    self.game.character.grounded = false;
+                    self.game.physics_accumulator = 0.0;
+                    self.game.sectors_ready = false;
+                    self.teleport_loading = true;
+                    self.gpu.scene_visible = false;
+                    self.last_render_position = [f32::INFINITY; 3];
+                    self.input.keys.clear();
+                    self.input.last_sent_direction = [0.0; 2];
+                    self.connection_status = "Earth: wczytywanie terenu...".into();
+                    self.ui.console.push_line("map_telepo: destination reached");
+                } else {
+                    self.connection_status = "Earth: wybierz punkt na lądzie".into();
+                    self.ui
+                        .console
+                        .push_error("map_telepo: destination unavailable; choose land");
+                    if !self.overview_open && self.gpu.scene_visible {
+                        self.toggle_overview();
+                        self.map_teleport_armed = true;
+                    }
                 }
             }
             ServerMessage::Accepted if self.ui.console.open => {
@@ -94,6 +146,7 @@ impl Renderer {
                 server_time_ms,
                 full_snapshot,
                 self_position,
+                self_position_mm,
                 self_velocity,
                 self_grounded,
                 players,
@@ -104,9 +157,10 @@ impl Renderer {
                     server_time_ms,
                     full_snapshot,
                     self_position,
+                    self_position_mm,
                     self_velocity,
                     self_grounded,
-                    players,
+                    players: *players,
                     removed_players,
                 };
                 if !self.game.apply_snapshot(snapshot) {
@@ -123,6 +177,10 @@ impl Renderer {
                 ..
             } => {
                 let instance = target_context.instance();
+                if !self.load_generated_catalog(instance, manifest) {
+                    self.fail_connection("target generation manifest is not supported");
+                    return;
+                }
                 let matches_catalog = self
                     .world_catalog
                     .get(&instance)
@@ -149,10 +207,15 @@ impl Renderer {
                 context,
                 map_fingerprint,
                 destination,
+                destination_mm,
                 health,
                 manifest,
                 ..
             } => {
+                if !self.load_generated_catalog(context.instance(), manifest) {
+                    self.fail_connection("target generation manifest is not supported");
+                    return;
+                }
                 if !self.install_world(
                     context.instance(),
                     map_fingerprint,
@@ -163,6 +226,7 @@ impl Renderer {
                     return;
                 }
                 self.game.health = health;
+                self.game.position_mm = manifest.planet().map(|_| destination_mm);
                 if self.ui.console.open {
                     self.ui.console.push_line("World transfer committed");
                 }
@@ -182,6 +246,53 @@ impl Renderer {
             ServerMessage::TransitionCancelled { .. } => {}
             _ => {}
         }
+    }
+
+    fn load_generated_catalog(
+        &mut self,
+        instance: minimium_core::world::WorldInstanceId,
+        manifest: WorldManifest,
+    ) -> bool {
+        if !matches!(manifest.generation().revision().get(), 2..=4)
+            || !matches!(instance.get(), 1 | 2)
+        {
+            return true;
+        }
+        let seed = manifest.generation().seed().get()
+            ^ if instance.get() == 2 {
+                0x0030_0000_0000_0003
+            } else {
+                0
+            };
+        let generated = if let Some(planet) = manifest.planet() {
+            minimium_procgen::generate_worlds_with_planet_revision(
+                seed,
+                planet,
+                manifest.generation().revision().get(),
+            )
+        } else {
+            minimium_procgen::generate_worlds(seed)
+        };
+        let Ok(worlds) = generated else {
+            return false;
+        };
+        if worlds[instance.get() as usize - 1].manifest != manifest {
+            return false;
+        }
+        if self.world_manifests.get(&instance) != Some(&manifest) {
+            self.sector_cache.reset();
+            for generated_instance in [1, 2] {
+                self.gpu.release_world_sectors(
+                    minimium_core::world::WorldInstanceId::new(generated_instance)
+                        .expect("generated instance ID is nonzero"),
+                );
+            }
+        }
+        for world in worlds {
+            self.world_manifests.insert(world.instance, world.manifest);
+            self.world_catalog.insert(world.instance, world.map);
+        }
+        true
     }
 
     fn install_world(
@@ -221,8 +332,22 @@ impl Renderer {
             target_position,
             super::camera::gravity_for_manifest(manifest),
         );
+        self.game.position_mm = manifest.planet().map(|_| {
+            if target_position == map.spawn() {
+                map.spawn_position_mm().unwrap_or_else(|| {
+                    minimium_core::world::Position3Mm(
+                        target_position.map(|value| (f64::from(value) * 1000.0).round() as i64),
+                    )
+                })
+            } else {
+                minimium_core::world::Position3Mm(
+                    target_position.map(|value| (f64::from(value) * 1000.0).round() as i64),
+                )
+            }
+        });
         self.game.sectors_ready = true;
         self.active_sector_keys.clone_from(&scene.keys);
+        self.last_render_position = target_position;
         self.game.physics_accumulator = 0.0;
         self.reset_remote_gameplay();
         self.input.yaw = -std::f32::consts::FRAC_PI_2;
@@ -252,11 +377,18 @@ impl Renderer {
             self.game.sectors_ready = false;
             return false;
         };
-        let keys = minimium_procgen::sector_neighborhood(
-            manifest.topology(),
-            self.game.character.position,
-        );
+        let keys =
+            minimium_procgen::sector_neighborhood_for(manifest, self.game.character.position);
+        let render_distance_squared = self
+            .game
+            .character
+            .position
+            .iter()
+            .zip(self.last_render_position)
+            .map(|(current, previous)| (current - previous) * (current - previous))
+            .sum::<f32>();
         if self.active_sector_keys == keys
+            && render_distance_squared < 400.0
             && self
                 .sector_cache
                 .interest_matches(self.current_instance, &keys, manifest)
@@ -284,6 +416,7 @@ impl Renderer {
         }
         self.game.collision_index = scene.collision;
         self.active_sector_keys.clone_from(&scene.keys);
+        self.last_render_position = self.game.character.position;
         self.game.sectors_ready = true;
         true
     }

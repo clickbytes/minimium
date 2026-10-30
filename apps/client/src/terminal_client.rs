@@ -226,6 +226,9 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
                             io::stdout().flush()?;
                         }
                         FrontendAction::Quit => break,
+                        FrontendAction::MapTeleport => {
+                            println!("map_telepo is available in the desktop Earth overview");
+                        }
                     },
                 }
             }
@@ -356,6 +359,7 @@ fn print_session_event(event: SessionEvent, show_snapshot: bool) {
             ServerMessage::TransitionPrepare { .. } => println!("world transfer prepared"),
             ServerMessage::TransitionCommitted { .. } => println!("world transfer committed"),
             ServerMessage::TransitionCancelled { .. } => println!("world transfer cancelled"),
+            ServerMessage::MapTeleportResult { .. } => {}
         },
     }
 }

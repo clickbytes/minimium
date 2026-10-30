@@ -105,6 +105,7 @@ fn main() {
             println!("{}", Text::CommandLineHelp);
             return Ok(());
         }
+        client_commands::initialize_registry();
         if options.console {
             terminal_client::run(options)
         } else {

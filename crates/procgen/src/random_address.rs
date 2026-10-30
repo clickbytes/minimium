@@ -7,6 +7,8 @@ pub enum GenerationChannel {
     Terrain = 1,
     Objects = 2,
     DungeonLayout = 3,
+    TerrainDetail = 4,
+    TerrainBands = 5,
 }
 
 /// A seekable random source whose address includes generation revision, channel

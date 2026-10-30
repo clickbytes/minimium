@@ -163,6 +163,39 @@ pub enum WorldTopology {
     Dungeon,
 }
 
+/// Parameters that change the generated planet. Present from generator v3.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct PlanetDefinition {
+    pub mode: u8,
+    pub radius_mm: u64,
+    pub height_scale_permille: u32,
+    pub sea_level_mm: i64,
+    pub mountain_limit_mm: u32,
+    pub detail_strength_mm: u32,
+    pub detail_wavelength_mm: u32,
+    pub mountain_band_frequency: u32,
+    pub package_digest: [u8; 32],
+}
+
+impl PlanetDefinition {
+    pub const fn is_valid(self) -> bool {
+        self.mode <= 1
+            && self.radius_mm >= 318_550_000
+            && self.radius_mm <= 6_371_000_000
+            && self.height_scale_permille >= 1
+            && self.height_scale_permille <= 1000
+            && self.mountain_limit_mm <= 5_000_000
+            && self.sea_level_mm <= self.mountain_limit_mm as i64
+            && self.detail_strength_mm <= 1_000_000
+            && self.detail_wavelength_mm > 0
+            && self.detail_wavelength_mm <= 1_000_000_000
+            && self.mountain_band_frequency > 0
+            && self.mountain_band_frequency <= 1024
+            && self.sea_level_mm >= -20_000_000
+            && self.sea_level_mm <= 20_000_000
+    }
+}
+
 /// A published immutable description used to create one or more instances.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct WorldManifest {
@@ -171,6 +204,7 @@ pub struct WorldManifest {
     generation: GenerationSpec,
     content_revision: WorldContentRevision,
     generator_digest: GeneratorDigest,
+    planet: Option<PlanetDefinition>,
 }
 
 impl WorldManifest {
@@ -187,6 +221,7 @@ impl WorldManifest {
             generation,
             content_revision,
             generator_digest,
+            planet: None,
         }
     }
 
@@ -208,6 +243,15 @@ impl WorldManifest {
 
     pub const fn generator_digest(self) -> GeneratorDigest {
         self.generator_digest
+    }
+
+    pub const fn with_planet(mut self, planet: PlanetDefinition) -> Self {
+        self.planet = Some(planet);
+        self
+    }
+
+    pub const fn planet(self) -> Option<PlanetDefinition> {
+        self.planet
     }
 }
 

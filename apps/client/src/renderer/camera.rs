@@ -3,33 +3,60 @@ use crate::messages::ClientText as Text;
 
 impl Renderer {
     pub(super) fn update(&mut self) {
+        if self.overview_open && self.overview_instance != Some(self.current_instance) {
+            self.overview_open = false;
+            self.gpu.overview_active = false;
+        }
         let now = Instant::now();
         let dt = now
             .duration_since(self.metrics.last_frame)
             .as_secs_f32()
             .min(0.05);
         self.metrics.last_frame = now;
-        let direction = if self.game.sectors_ready {
-            self.input
-                .movement(self.ui.console.open, self.game.character)
+        let direction = if self.game.sectors_ready && !self.overview_open {
+            self.input.movement(
+                self.ui.console.open,
+                self.game.character,
+                self.is_earth_world(),
+            )
         } else {
             [0.0; 2]
         };
         self.game.physics_accumulator += dt;
         while self.game.physics_accumulator >= 0.05 {
             let mut input = CharacterInput {
-                direction: if self.game.sectors_ready {
+                direction: if self.game.sectors_ready && !self.overview_open {
                     direction
                 } else {
                     [0.0; 2]
                 },
-                jump: self.input.jump_pending && self.game.sectors_ready,
+                jump: self.input.jump_pending && self.game.sectors_ready && !self.overview_open,
             };
             self.input.jump_pending = false;
             let previous_state = self.game.character;
+            let previous_mm = self.game.position_mm;
             self.game.predict(input);
+            if self
+                .world_manifests
+                .get(&self.current_instance)
+                .and_then(|manifest| manifest.planet())
+                .is_some_and(|definition| {
+                    definition.mode == 1
+                        && !minimium_procgen::earth_is_land(
+                            self.game.character.position,
+                            definition.height_scale_permille,
+                            definition.sea_level_mm,
+                        )
+                })
+            {
+                self.game.character = previous_state;
+                self.game.position_mm = previous_mm;
+                self.game.character.velocity = [0.0; 3];
+                input = CharacterInput::default();
+            }
             if !self.refresh_active_sector_scene() {
                 self.game.character = previous_state;
+                self.game.position_mm = previous_mm;
                 input = CharacterInput::default();
             }
             self.input.input_keepalive += 0.05;
@@ -56,24 +83,101 @@ impl Renderer {
             }
             self.game.physics_accumulator -= 0.05;
         }
+        let origin = if self
+            .world_manifests
+            .get(&self.current_instance)
+            .is_some_and(|manifest| manifest.planet().is_some())
+        {
+            self.game
+                .character
+                .position
+                .map(|coordinate| (coordinate / 256.0).round() * 256.0)
+        } else {
+            [0.0; 3]
+        };
+        if self.gpu.set_render_origin(origin) {
+            self.last_render_position = [f32::INFINITY; 3];
+            self.game.remote_geometry_dirty = true;
+        }
         self.poll_connector();
         self.poll_session();
-        self.refresh_active_sector_scene();
+        self.poll_globe();
+        if self.refresh_active_sector_scene() && self.teleport_loading {
+            self.teleport_loading = false;
+            self.gpu.scene_visible = true;
+            self.connection_status = "Earth: przeniesiono".into();
+        }
         self.advance_pending_transitions();
         self.update_remote_player_rendering(Instant::now());
 
-        let direction =
-            camera_direction(self.game.character, self.input.yaw, self.input.pitch).normalize();
-        let up = glam::Vec3::from_array(
-            character_frame(self.game.character.gravity, self.game.character.position).0,
-        );
-        let camera_position = glam::Vec3::from_array(self.game.character.position) + up * 1.7;
-        let view = glam::Mat4::look_to_rh(camera_position, direction, up);
+        let (view, far) = if self.overview_open {
+            self.overview_camera()
+        } else {
+            let direction =
+                camera_direction(self.game.character, self.input.yaw, self.input.pitch).normalize();
+            let up = glam::Vec3::from_array(
+                character_frame(self.game.character.gravity, self.game.character.position).0,
+            );
+            let camera_position = glam::Vec3::from_array(self.game.character.position) + up * 1.7;
+            let far = if self
+                .world_manifests
+                .get(&self.current_instance)
+                .is_some_and(|manifest| manifest.topology() == WorldTopology::Planet)
+            {
+                let radius = self
+                    .world_manifests
+                    .get(&self.current_instance)
+                    .map(|manifest| {
+                        minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0
+                    })
+                    .unwrap_or(10_000.0);
+                (camera_position.length_squared() - radius * radius)
+                    .max(0.0)
+                    .sqrt()
+                    .max(220.0)
+                    + 10.0
+            } else {
+                200.0
+            };
+            let local_camera = if let Some(position_mm) = self.game.position_mm {
+                glam::Vec3::from_array(std::array::from_fn(|axis| {
+                    (position_mm.0[axis] as f64 / 1000.0 - f64::from(self.gpu.render_origin[axis]))
+                        as f32
+                })) + up * 1.7
+            } else {
+                camera_position - glam::Vec3::from_array(self.gpu.render_origin)
+            };
+            (glam::Mat4::look_to_rh(local_camera, direction, up), far)
+        };
+        // The overview camera is millions of metres from the globe. A 5 cm
+        // near plane rounds its depth to 1.0 in f32 and hides the surface.
+        let near = if self.overview_open
+            && self
+                .world_manifests
+                .get(&self.current_instance)
+                .is_some_and(|manifest| manifest.topology() == WorldTopology::Planet)
+        {
+            let radius = self
+                .world_manifests
+                .get(&self.current_instance)
+                .map(|manifest| {
+                    minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0
+                })
+                .unwrap_or(10_000.0);
+            radius * ((self.overview_zoom - 1.0) * 0.08).max(0.001)
+        } else {
+            0.05
+        };
+        let view = if self.is_earth_world() {
+            glam::Mat4::from_scale(glam::Vec3::new(-1.0, 1.0, 1.0)) * view
+        } else {
+            view
+        };
         let projection = glam::Mat4::perspective_rh(
             70f32.to_radians(),
             self.gpu.size.width as f32 / self.gpu.size.height as f32,
-            0.05,
-            200.0,
+            near,
+            far,
         );
         self.gpu.queue.write_buffer(
             &self.gpu.camera_buffer,
@@ -90,6 +194,9 @@ impl Renderer {
                 self.game
                     .hit_confirmation_until
                     .is_some_and(|until| Instant::now() < until),
+                self.settings
+                    .require_earth
+                    .then_some(self.connection_status.as_str()),
             );
             let count = vertices.len() as u32;
             if count > 0 {
@@ -109,24 +216,41 @@ impl GameplayView {
     fn predict(&mut self, input: CharacterInput) {
         self.collision_query
             .fill(&self.collision_index, self.character, 0.05);
-        step_character(
-            &mut self.character,
-            input,
-            self.collision_query.candidates(),
-            self.collision_query.surface_candidates(),
-            0.05,
-        );
+        if let Some(position_mm) = &mut self.position_mm {
+            minimium_core::world::step_character_mm(
+                &mut self.character,
+                position_mm,
+                input,
+                self.collision_query.candidates(),
+                self.collision_query.surface_candidates(),
+                0.05,
+            );
+        } else {
+            step_character(
+                &mut self.character,
+                input,
+                self.collision_query.candidates(),
+                self.collision_query.surface_candidates(),
+                0.05,
+            );
+        }
     }
 }
 
 impl InputState {
-    fn movement(&self, console_open: bool, character: CharacterState) -> [f32; 2] {
+    fn movement(
+        &self,
+        console_open: bool,
+        character: CharacterState,
+        mirror_earth: bool,
+    ) -> [f32; 2] {
         let (up, base_right, base_forward) = character_frame(character.gravity, character.position);
         let base_right = glam::Vec3::from_array(base_right);
         let base_forward = glam::Vec3::from_array(base_forward);
         let _up = glam::Vec3::from_array(up);
         let forward = base_forward * self.yaw.cos() + base_right * self.yaw.sin();
-        let right = base_right * self.yaw.cos() - base_forward * self.yaw.sin();
+        let right = (base_right * self.yaw.cos() - base_forward * self.yaw.sin())
+            * if mirror_earth { -1.0 } else { 1.0 };
         let mut movement = glam::Vec3::ZERO;
         if !console_open {
             if self.keys.contains(&KeyCode::KeyW) {

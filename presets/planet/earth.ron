@@ -1,0 +1,9 @@
+(
+    extends: Some("procedural.ron"),
+    mode: Some(Earth),
+    generator_revision: Some(4),
+    radius_mm: Some(650000000),
+    height_scale_permille: Some(100),
+    sea_level_mm: Some(0),
+    detail_strength_mm: Some(1000),
+)

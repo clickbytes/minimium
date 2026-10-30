@@ -181,6 +181,7 @@ pub(super) fn load_obj_triangles(
                     }
                     triangles.push(MapTriangle {
                         vertices: world_vertices,
+                        precise_vertices: None,
                         color,
                         solid,
                     });

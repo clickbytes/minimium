@@ -1,6 +1,4 @@
-use super::{
-    sector_geometry, sector_scene::ClientSectorScene, GpuResources, Vertex, UI_VERTEX_CAPACITY,
-};
+use super::{sector_scene::ClientSectorScene, GpuResources, Vertex, UI_VERTEX_CAPACITY};
 use crate::console::{font_atlas_pixels, UiVertex};
 use std::{borrow::Cow, error::Error, sync::Arc};
 use wgpu::util::DeviceExt;
@@ -21,13 +19,20 @@ impl GpuResources {
             self.release_world_sectors(instance);
         }
         self.world_sector_versions.insert(instance, version);
-        let required: std::collections::HashSet<_> = scene.keys.iter().copied().collect();
-        for (key, geometry) in &scene.sectors {
-            if self.world_vertex_catalog.contains_key(&(instance, *key)) {
+        let required: std::collections::HashSet<_> = scene
+            .render_sectors
+            .iter()
+            .map(|(key, lod, _)| (*key, *lod))
+            .collect();
+        for (key, lod, geometry) in &scene.render_sectors {
+            if self
+                .world_vertex_catalog
+                .contains_key(&(instance, *key, *lod))
+            {
                 continue;
             }
-            let vertices = sector_geometry(geometry);
-            let empty_vertices = [0.0_f32; 6];
+            let vertices = super::geometry::sector_geometry_relative(geometry, self.render_origin);
+            let empty_vertices = [0.0_f32; 9];
             let contents = if vertices.is_empty() {
                 bytemuck::cast_slice(&empty_vertices)
             } else {
@@ -42,22 +47,22 @@ impl GpuResources {
                 });
             self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_add(buffer.size());
             self.world_vertex_catalog
-                .insert((instance, *key), (buffer, vertices.len() as u32));
+                .insert((instance, *key, *lod), (buffer, vertices.len() as u32));
         }
         self.world_vertex_catalog
-            .retain(|(owner, key), (buffer, _)| {
-                if *owner != instance || required.contains(key) {
+            .retain(|(owner, key, lod), (buffer, _)| {
+                if *owner != instance || required.contains(&(*key, *lod)) {
                     true
                 } else {
                     self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_sub(buffer.size());
                     false
                 }
             });
-        if scene
-            .keys
-            .iter()
-            .any(|key| !self.world_vertex_catalog.contains_key(&(instance, *key)))
-        {
+        if scene.render_sectors.iter().any(|(key, lod, _)| {
+            !self
+                .world_vertex_catalog
+                .contains_key(&(instance, *key, *lod))
+        }) {
             return false;
         }
         true
@@ -68,14 +73,18 @@ impl GpuResources {
         instance: minimium_core::world::WorldInstanceId,
         scene: &ClientSectorScene,
     ) -> bool {
-        if scene
-            .keys
-            .iter()
-            .any(|key| !self.world_vertex_catalog.contains_key(&(instance, *key)))
-        {
+        if scene.render_sectors.iter().any(|(key, lod, _)| {
+            !self
+                .world_vertex_catalog
+                .contains_key(&(instance, *key, *lod))
+        }) {
             return false;
         }
-        self.active_sector_keys.clone_from(&scene.keys);
+        self.active_sector_keys = scene
+            .render_sectors
+            .iter()
+            .map(|(key, lod, _)| (*key, *lod))
+            .collect();
         self.active_world_instance = instance;
         true
     }
@@ -84,14 +93,15 @@ impl GpuResources {
         &mut self,
         instance: minimium_core::world::WorldInstanceId,
     ) {
-        self.world_vertex_catalog.retain(|(owner, _), (buffer, _)| {
-            if *owner != instance {
-                true
-            } else {
-                self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_sub(buffer.size());
-                false
-            }
-        });
+        self.world_vertex_catalog
+            .retain(|(owner, _, _), (buffer, _)| {
+                if *owner != instance {
+                    true
+                } else {
+                    self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_sub(buffer.size());
+                    false
+                }
+            });
         self.world_sector_versions.remove(&instance);
     }
 
@@ -101,6 +111,19 @@ impl GpuResources {
             self.queue
                 .write_buffer(&self.player_buffer, 0, bytemuck::cast_slice(vertices));
         }
+    }
+
+    pub(super) fn set_render_origin(&mut self, origin: [f32; 3]) -> bool {
+        if self.render_origin == origin {
+            return false;
+        }
+        self.render_origin = origin;
+        for (_, (buffer, _)) in self.world_vertex_catalog.drain() {
+            self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_sub(buffer.size());
+        }
+        self.world_sector_versions.clear();
+        self.active_sector_keys.clear();
+        true
     }
 
     pub(super) async fn new(
@@ -190,7 +213,7 @@ impl GpuResources {
             }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList,
-                cull_mode: Some(wgpu::Face::Back),
+                cull_mode: None,
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
@@ -247,6 +270,12 @@ impl GpuResources {
             active_sector_keys: Vec::new(),
             active_world_instance: minimium_core::world::WorldInstanceId::new(1)
                 .expect("primary world ID is nonzero"),
+            render_origin: [0.0; 3],
+            overview_buffer: None,
+            overview_active: false,
+            overview_globe: false,
+            scene_visible: true,
+            globe: None,
         })
     }
 
@@ -317,8 +346,8 @@ fn create_ui_resources(
         address_mode_u: wgpu::AddressMode::ClampToEdge,
         address_mode_v: wgpu::AddressMode::ClampToEdge,
         address_mode_w: wgpu::AddressMode::ClampToEdge,
-        mag_filter: wgpu::FilterMode::Nearest,
-        min_filter: wgpu::FilterMode::Nearest,
+        mag_filter: wgpu::FilterMode::Linear,
+        min_filter: wgpu::FilterMode::Linear,
         mipmap_filter: wgpu::MipmapFilterMode::Nearest,
         ..Default::default()
     });
@@ -329,7 +358,7 @@ fn create_ui_resources(
                 binding: 0,
                 visibility: wgpu::ShaderStages::FRAGMENT,
                 ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
                     view_dimension: wgpu::TextureViewDimension::D2,
                     multisampled: false,
                 },
@@ -338,7 +367,7 @@ fn create_ui_resources(
             wgpu::BindGroupLayoutEntry {
                 binding: 1,
                 visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
         ],

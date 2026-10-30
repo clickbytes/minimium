@@ -157,6 +157,7 @@ impl From<DisconnectReason> for ClientText {
             }
             DisconnectReason::PeerClosed => Self::PeerDisconnected,
             DisconnectReason::ServerClosed => Self::ServerClosed,
+            DisconnectReason::EarthPackage(error) => Self::ConnectionLost(error),
             other => Self::ConnectionLost(format!("{other:?}")),
         }
     }
@@ -240,7 +241,7 @@ impl fmt::Display for ClientText {
                 f.write_str("Minimium client console. Type `help` for commands.")
             }
             Self::CommandLineHelp => f.write_str(
-                "minimium-client [--connect HOST:PORT] [--map PATH | --world-definition PATH] [--profile-dir PATH] [--server-data-dir PATH] [--threads 1|2|auto] [--demo] [--console]\nDefault: desktop client with a local server. F1 opens the console. --console selects the text client; host local starts/attaches its server.",
+                "minimium-client [--connect HOST:PORT] [--map PATH | --world-definition PATH] [--profile-dir PATH] [--server-data-dir PATH] [--threads 1|2|auto] [--demo] [--console] [--require-earth]\nDefault: desktop client with a local server. F1 opens the console. --console selects the text client; host local starts/attaches its server.",
             ),
             Self::InputPrompt => f.write_str("> "),
             Self::ClientError(error) => write!(f, "client error: {error}"),

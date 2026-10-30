@@ -39,6 +39,7 @@ fn welcome_and_transition_frames_round_trip_full_world_context() {
         map_fingerprint: 0x1234,
         health: 77,
         position: [1.25, 8.5, -3.0],
+        position_mm: minimium_core::world::Position3Mm([1250, 8500, -3000]),
         context: context(1, 9),
         manifest: manifest(WorldTopology::Planet),
         transition_id: None,
@@ -54,6 +55,7 @@ fn welcome_and_transition_frames_round_trip_full_world_context() {
         target_context: context(2, 10),
         map_fingerprint: 0x9876,
         destination: [3.0, 0.0, 5.0],
+        destination_mm: minimium_core::world::Position3Mm([3000, 0, 5000]),
         manifest: manifest(WorldTopology::Dungeon),
     };
     let frame = encode_server(&transition).unwrap();

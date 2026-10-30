@@ -1,5 +1,6 @@
 use super::theme::{
-    ASCII_GLYPHS, ATLAS_HEIGHT, ATLAS_WIDTH, CELL, COLUMNS, MAX_VERTICES, POLISH_GLYPHS,
+    ASCII_GLYPHS, ATLAS_HEIGHT, ATLAS_WIDTH, CELL, COLUMNS, GLYPH_ADVANCE, MAX_VERTICES,
+    POLISH_GLYPHS,
 };
 
 #[repr(C)]
@@ -72,7 +73,7 @@ pub(super) fn append_text(vertices: &mut Vec<UiVertex>, context: DrawContext, dr
             (cell_x as f32 + CELL as f32 - 0.5) / ATLAS_WIDTH as f32,
             (cell_y as f32 + CELL as f32 - 0.5) / ATLAS_HEIGHT as f32,
         ];
-        let left = draw.x + column as f32 * CELL as f32 * draw.scale;
+        let left = draw.x + column as f32 * GLYPH_ADVANCE * draw.scale;
         append_quad(
             vertices,
             context,
@@ -90,24 +91,12 @@ pub(super) fn append_text(vertices: &mut Vec<UiVertex>, context: DrawContext, dr
 }
 
 fn glyph_index(character: char) -> usize {
-    let normalized = match character {
-        'ą' => 'Ą',
-        'ć' => 'Ć',
-        'ę' => 'Ę',
-        'ł' => 'Ł',
-        'ń' => 'Ń',
-        'ó' => 'Ó',
-        'ś' => 'Ś',
-        'ź' => 'Ź',
-        'ż' => 'Ż',
-        _ => character.to_ascii_uppercase(),
-    };
-    if normalized.is_ascii() && (normalized as usize) < ASCII_GLYPHS {
-        normalized as usize
+    if character.is_ascii() && (character as usize) < ASCII_GLYPHS {
+        character as usize
     } else {
         POLISH_GLYPHS
             .iter()
-            .position(|&glyph| glyph == normalized)
+            .position(|&glyph| glyph == character)
             .map_or('?' as usize, |index| ASCII_GLYPHS + index)
     }
 }

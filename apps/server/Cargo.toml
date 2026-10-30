@@ -12,6 +12,8 @@ minimium-protocol = { path = "../../crates/protocol" }
 minimium-procgen = { path = "../../crates/procgen" }
 minimium-sectors = { path = "../../crates/sectors" }
 minimium-telemetry = { path = "../../crates/telemetry" }
+ron = "0.12.3"
+serde = { version = "1", features = ["derive"] }
 
 [features]
 default = []

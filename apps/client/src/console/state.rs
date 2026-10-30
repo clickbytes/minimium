@@ -21,6 +21,7 @@ pub struct Console {
     pub(super) history: Vec<String>,
     pub(super) history_cursor: Option<usize>,
     pub(super) lines: VecDeque<ConsoleLine>,
+    scroll_offset: usize,
     pub(super) chat_lines: VecDeque<ChatLine>,
     vertices: Vec<UiVertex>,
     render_input: String,
@@ -34,6 +35,7 @@ impl Console {
             history: Vec::with_capacity(32),
             history_cursor: None,
             lines: VecDeque::with_capacity(MAX_LINES),
+            scroll_offset: 0,
             chat_lines: VecDeque::with_capacity(MAX_CHAT_LINES),
             vertices: Vec::with_capacity(MAX_VERTICES),
             render_input: String::with_capacity(MAX_INPUT + 2),
@@ -57,6 +59,9 @@ impl Console {
             self.lines.pop_front();
         }
         self.lines.push_back(ConsoleLine { text, color });
+        if self.scroll_offset > 0 {
+            self.scroll_offset = (self.scroll_offset + 1).min(self.lines.len());
+        }
     }
 
     pub fn push_chat_line(&mut self, text: &str) {
@@ -107,6 +112,16 @@ impl Console {
 
     pub fn clear_lines(&mut self) {
         self.lines.clear();
+        self.scroll_offset = 0;
+    }
+
+    pub fn scroll_lines(&mut self, delta: isize) {
+        self.scroll_offset = self.scroll_offset.saturating_add_signed(delta);
+        self.scroll_offset = self.scroll_offset.min(self.lines.len());
+    }
+
+    pub fn scroll_to_latest(&mut self) {
+        self.scroll_offset = 0;
     }
 
     pub fn build_vertices(
@@ -116,6 +131,7 @@ impl Console {
         health: u16,
         show_crosshair: bool,
         hit_feedback: bool,
+        status: Option<&str>,
     ) -> &[UiVertex] {
         self.vertices.clear();
         if width < 120 || height < 100 {
@@ -131,6 +147,9 @@ impl Console {
                 hit_feedback,
             },
         );
+        if let Some(status) = status {
+            hud::append_status(&mut self.vertices, context, status);
+        }
         if !self.open {
             self.append_chat(context);
             return &self.vertices;
@@ -150,7 +169,7 @@ impl Console {
         }
         let visible_lines = self.chat_lines.len().min(4);
         let first_line = self.chat_lines.len().saturating_sub(visible_lines);
-        let max_chars = ((context.width - 32.0) / (CELL as f32 * 2.0)) as usize;
+        let max_chars = ((context.width - 32.0) / GLYPH_ADVANCE) as usize;
         for (row, line) in self.chat_lines.iter().skip(first_line).enumerate() {
             text::append_text(
                 &mut self.vertices,
@@ -161,14 +180,14 @@ impl Console {
                     text: &line.text,
                     color: CHAT_TEXT,
                     max_chars,
-                    scale: 2.0,
+                    scale: 1.0,
                 },
             );
         }
     }
 
     fn append_console(&mut self, context: DrawContext) {
-        let panel_height = 260.0f32.min(context.height - 20.0);
+        let panel_height = 500.0f32.min(context.height - 20.0);
         let panel_top = context.height - panel_height - 10.0;
         text::append_quad(
             &mut self.vertices,
@@ -192,12 +211,21 @@ impl Console {
                 [0.07, 0.10, 0.13],
             ),
         );
-        let scale = 2.0;
-        let line_height = 20.0;
-        let max_chars = ((context.width - 44.0) / (CELL as f32 * scale)) as usize;
+        let scale = 1.0;
+        let line_height = 22.0;
+        let max_chars = ((context.width - 44.0) / GLYPH_ADVANCE) as usize;
         let visible_lines = ((panel_height - 70.0) / line_height).max(0.0) as usize;
-        let first_line = self.lines.len().saturating_sub(visible_lines);
-        for (row, line) in self.lines.iter().skip(first_line).enumerate() {
+        let first_line = self
+            .lines
+            .len()
+            .saturating_sub(visible_lines + self.scroll_offset);
+        for (row, line) in self
+            .lines
+            .iter()
+            .skip(first_line)
+            .take(visible_lines)
+            .enumerate()
+        {
             text::append_text(
                 &mut self.vertices,
                 context,

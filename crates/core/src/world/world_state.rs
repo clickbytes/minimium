@@ -4,6 +4,8 @@ use super::geometry::{
     cell_for, intersects_player, oriented_capsule_intersects, update_cell_index,
 };
 use super::map::{MapTriangle, WorldMap};
+use super::model::Position3Mm;
+use super::precise_step;
 use super::raycast::{MapRayQuery, PlayerRayQuery};
 use super::rules::{
     character_frame, step_character, CharacterGravity, CharacterInput, CharacterState, Player,
@@ -51,7 +53,9 @@ pub struct World {
     pub(super) simulation_batches: Vec<SimulationBatch>,
     pub(super) next_id: u64,
     pub(super) spawn: [f32; 3],
+    pub(super) spawn_mm: Option<Position3Mm>,
     pub(super) gravity: CharacterGravity,
+    pub(super) precise_positions: bool,
 }
 
 impl World {
@@ -103,6 +107,17 @@ impl World {
             id,
             name: Arc::from(name),
             position,
+            position_mm: self.precise_positions.then(|| {
+                if position == self.spawn {
+                    self.spawn_mm.unwrap_or_else(|| {
+                        Position3Mm(
+                            position.map(|value| (f64::from(value) * 1000.0).round() as i64),
+                        )
+                    })
+                } else {
+                    Position3Mm(position.map(|value| (f64::from(value) * 1000.0).round() as i64))
+                }
+            }),
             velocity: [0.0; 3],
             grounded: false,
             health: health.clamp(1, PLAYER_MAX_HEALTH),
@@ -173,13 +188,24 @@ impl World {
             };
             let input = inputs.get(id).copied().unwrap_or_default();
             collision_stats.accumulate(collision_query.fill(collision_index, state, delta_seconds));
-            step_character(
-                &mut state,
-                input,
-                collision_query.candidates(),
-                collision_query.surface_candidates(),
-                delta_seconds,
-            );
+            if let Some(position_mm) = &mut player.position_mm {
+                precise_step::step_character_mm(
+                    &mut state,
+                    position_mm,
+                    input,
+                    collision_query.candidates(),
+                    collision_query.surface_candidates(),
+                    delta_seconds,
+                );
+            } else {
+                step_character(
+                    &mut state,
+                    input,
+                    collision_query.candidates(),
+                    collision_query.surface_candidates(),
+                    delta_seconds,
+                );
+            }
             player.position = state.position;
             player.velocity = state.velocity;
             player.grounded = state.grounded;
@@ -209,6 +235,9 @@ impl World {
         lanes: usize,
         dispatch: impl FnOnce(Vec<SimulationBatch>, Arc<CollisionIndex>, f32) -> Vec<SimulationBatch>,
     ) -> CollisionQueryStats {
+        if self.precise_positions {
+            return self.step_players_selected(inputs, selected, delta_seconds);
+        }
         let Some((geometry, batches)) = self.prepare_movement_batches(inputs, selected, lanes)
         else {
             return self.step_players_selected(inputs, selected, delta_seconds);
@@ -309,9 +338,39 @@ impl World {
             return false;
         };
         player.position = position;
+        player.position_mm = self
+            .precise_positions
+            .then(|| Position3Mm(position.map(|value| (f64::from(value) * 1000.0).round() as i64)));
         player.velocity = [0.0; 3];
         player.grounded = false;
         self.update_player_cell(id, position);
+        true
+    }
+
+    pub fn restore_position_mm(&mut self, id: PlayerId, position: Position3Mm) -> bool {
+        if !self.precise_positions
+            || position
+                .0
+                .iter()
+                .any(|value| value.unsigned_abs() > 7_000_000_000)
+        {
+            return false;
+        }
+        let Some(player) = Arc::make_mut(&mut self.players).get_mut(&id) else {
+            return false;
+        };
+        let approximate = position.0.map(|value| value as f32 / 1000.0);
+        if player
+            .position
+            .iter()
+            .zip(approximate)
+            .any(|(a, b)| (a - b).abs() > 1.0)
+        {
+            return false;
+        }
+        player.position_mm = Some(position);
+        player.position = approximate;
+        self.update_player_cell(id, approximate);
         true
     }
 
@@ -360,6 +419,10 @@ impl World {
         self.gravity
     }
 
+    pub fn set_precise_positions(&mut self, enabled: bool) {
+        self.precise_positions = enabled;
+    }
+
     pub fn add_collider(&mut self, collider: Aabb) {
         Arc::make_mut(&mut self.collision_index).add(collider);
         Arc::make_mut(&mut self.combat_index).add(collider);
@@ -367,6 +430,7 @@ impl World {
 
     pub fn load_map(&mut self, map: &WorldMap) {
         self.spawn = map.spawn;
+        self.spawn_mm = map.spawn_mm;
         let index = Arc::new(map.collision_index());
         self.collision_index = Arc::clone(&index);
         self.combat_index = index;
@@ -377,6 +441,7 @@ impl World {
     /// sectors installed by the owning server.
     pub fn load_map_streamed(&mut self, map: &WorldMap) {
         self.spawn = map.spawn;
+        self.spawn_mm = map.spawn_mm;
         self.collision_index = Arc::new(CollisionIndex::default());
         self.combat_index = Arc::new(map.collision_index());
         self.reset_collision_queries();

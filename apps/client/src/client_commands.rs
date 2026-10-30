@@ -1,12 +1,17 @@
 //! Shared typed command parsing and dispatch for terminal and graphical clients.
 //!
 //! [`parse_command`] accepts the union of the terminal and F1 console commands.
-//! [`COMMAND_CATALOG`] is the source for help, aliases, and completion. Execution
+//! A startup registry is the source for help, aliases, and completion. Execution
 //! queues protocol messages directly and reports UI/process work as a typed
 //! [`FrontendAction`], leaving each front end in control of its own event loop.
 
 use crate::{options::ThreadLane, session::QueueError};
 use minimium_protocol::ClientMessage;
+use std::sync::OnceLock;
+
+mod connection;
+mod gameplay;
+mod interface;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum ClientCommand {
@@ -20,6 +25,7 @@ pub(crate) enum ClientCommand {
     Move([f32; 2]),
     Jump,
     UsePortal,
+    MapTeleport,
     Fire,
     Chat(String),
     SetName(String),
@@ -29,7 +35,7 @@ pub(crate) enum ClientCommand {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum CommandId {
+pub(super) enum CommandId {
     Help,
     HostLocal,
     Connect,
@@ -40,6 +46,7 @@ enum CommandId {
     Move,
     Jump,
     UsePortal,
+    MapTeleport,
     Fire,
     Chat,
     SetName,
@@ -50,124 +57,66 @@ enum CommandId {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct CommandSpec {
-    id: CommandId,
+    pub(super) id: CommandId,
     pub name: &'static str,
     pub alias: Option<&'static str>,
     pub usage: &'static str,
 }
 
-/// Canonical command names, aliases, and syntax used by help and completion.
-pub(crate) const COMMAND_CATALOG: &[CommandSpec] = &[
-    CommandSpec {
-        id: CommandId::Help,
-        name: "help",
-        alias: None,
-        usage: "help",
-    },
-    CommandSpec {
-        id: CommandId::HostLocal,
-        name: "host local",
-        alias: None,
-        usage: "host local [--threads 1|2|auto]",
-    },
-    CommandSpec {
-        id: CommandId::Connect,
-        name: "connect",
-        alias: None,
-        usage: "connect HOST:PORT",
-    },
-    CommandSpec {
-        id: CommandId::Disconnect,
-        name: "disconnect",
-        alias: None,
-        usage: "disconnect",
-    },
-    CommandSpec {
-        id: CommandId::FpsShow,
-        name: "fps show",
-        alias: None,
-        usage: "fps show",
-    },
-    CommandSpec {
-        id: CommandId::NetStats,
-        name: "net stats",
-        alias: None,
-        usage: "net stats",
-    },
-    CommandSpec {
-        id: CommandId::Ping,
-        name: "ping",
-        alias: None,
-        usage: "ping",
-    },
-    CommandSpec {
-        id: CommandId::Move,
-        name: "move",
-        alias: None,
-        usage: "move X Z",
-    },
-    CommandSpec {
-        id: CommandId::Jump,
-        name: "jump",
-        alias: None,
-        usage: "jump",
-    },
-    CommandSpec {
-        id: CommandId::UsePortal,
-        name: "portal",
-        alias: None,
-        usage: "portal",
-    },
-    CommandSpec {
-        id: CommandId::Fire,
-        name: "fire",
-        alias: None,
-        usage: "fire",
-    },
-    CommandSpec {
-        id: CommandId::Chat,
-        name: "say",
-        alias: Some("chat"),
-        usage: "say TEXT (alias: chat)",
-    },
-    CommandSpec {
-        id: CommandId::SetName,
-        name: "name",
-        alias: None,
-        usage: "name NAME",
-    },
-    CommandSpec {
-        id: CommandId::State,
-        name: "state",
-        alias: None,
-        usage: "state",
-    },
-    CommandSpec {
-        id: CommandId::Clear,
-        name: "clear",
-        alias: None,
-        usage: "clear",
-    },
-    CommandSpec {
-        id: CommandId::Quit,
-        name: "quit",
-        alias: Some("exit"),
-        usage: "quit (alias: exit)",
-    },
-];
+pub(super) struct CommandRegistry {
+    commands: Vec<CommandSpec>,
+}
+
+impl CommandRegistry {
+    pub(super) fn register(&mut self, specs: &'static [CommandSpec]) {
+        for spec in specs {
+            assert!(
+                !self.commands.iter().any(|existing| {
+                    existing.name == spec.name
+                        || existing.alias == Some(spec.name)
+                        || spec.alias == Some(existing.name)
+                        || spec.alias.is_some() && spec.alias == existing.alias
+                }),
+                "duplicate console command: {}",
+                spec.name
+            );
+            self.commands.push(*spec);
+        }
+    }
+}
+
+static REGISTRY: OnceLock<CommandRegistry> = OnceLock::new();
+
+pub(crate) fn initialize_registry() {
+    let _ = registry();
+}
+
+fn registry() -> &'static CommandRegistry {
+    REGISTRY.get_or_init(|| {
+        let mut registry = CommandRegistry {
+            commands: Vec::new(),
+        };
+        interface::register(&mut registry);
+        connection::register(&mut registry);
+        gameplay::register(&mut registry);
+        registry
+    })
+}
 
 pub(crate) fn help_lines() -> impl Iterator<Item = &'static str> {
-    COMMAND_CATALOG.iter().map(|command| command.usage)
+    registry().commands.iter().map(|command| command.usage)
 }
 
 pub(crate) fn completion_candidates() -> impl Iterator<Item = &'static str> {
-    COMMAND_CATALOG
+    registry()
+        .commands
         .iter()
         .flat_map(|command| std::iter::once(command.name).chain(command.alias))
 }
 
 fn command_id(first: &str, second: Option<&str>) -> Option<CommandId> {
-    COMMAND_CATALOG
+    registry()
+        .commands
         .iter()
         .find(|spec| {
             if let Some((verb, subcommand)) = spec.name.split_once(' ') {
@@ -234,6 +183,7 @@ pub(crate) fn parse_command(input: &str) -> Result<Option<ClientCommand>, ParseE
         }
         (Some(CommandId::Jump), (_, None, None, None, None)) => ClientCommand::Jump,
         (Some(CommandId::UsePortal), (_, None, None, None, None)) => ClientCommand::UsePortal,
+        (Some(CommandId::MapTeleport), (_, None, None, None, None)) => ClientCommand::MapTeleport,
         (Some(CommandId::Fire), (_, None, None, None, None)) => ClientCommand::Fire,
         (Some(CommandId::SetName), (_, Some(name), None, None, None)) => {
             ClientCommand::SetName(name.into())
@@ -276,6 +226,7 @@ pub(crate) enum FrontendAction {
     FpsShow,
     NetStats,
     State,
+    MapTeleport,
     Clear,
     Quit,
 }
@@ -299,6 +250,7 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
             jump: true,
         },
         ClientCommand::UsePortal => ClientMessage::UsePortal,
+        ClientCommand::MapTeleport => return CommandResult::Action(FrontendAction::MapTeleport),
         ClientCommand::Fire => ClientMessage::Fire {
             direction: context.fire_direction,
         },

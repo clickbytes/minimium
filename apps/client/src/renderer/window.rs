@@ -56,6 +56,7 @@ impl ApplicationHandler for App {
             map_path: self.options.map_path.clone(),
             world_definition_path: self.options.world_definition_path.clone(),
             threads: self.options.threads,
+            require_earth: self.options.require_earth,
         })) {
             Ok(mut renderer) => {
                 if !self.options.demo {
@@ -91,7 +92,9 @@ impl ApplicationHandler for App {
                         let _ = window.set_cursor_grab(CursorGrabMode::None);
                         window.set_cursor_visible(true);
                         renderer.input.cursor_locked = false;
-                        renderer.input.last_cursor = None;
+                        if !renderer.overview_open {
+                            renderer.input.last_cursor = None;
+                        }
                         renderer.input.keys.clear();
                         renderer.input.jump_pending = false;
                         return;
@@ -108,6 +111,10 @@ impl ApplicationHandler for App {
                                 KeyCode::Backspace => renderer.ui.console.backspace(),
                                 KeyCode::ArrowUp => renderer.ui.console.history_up(),
                                 KeyCode::ArrowDown => renderer.ui.console.history_down(),
+                                KeyCode::PageUp => renderer.ui.console.scroll_lines(10),
+                                KeyCode::PageDown => renderer.ui.console.scroll_lines(-10),
+                                KeyCode::Home => renderer.ui.console.scroll_lines(128),
+                                KeyCode::End => renderer.ui.console.scroll_to_latest(),
                                 KeyCode::Tab => renderer.ui.console.complete_input(),
                                 _ => {
                                     if let Some(text) = event.text.as_ref() {
@@ -115,6 +122,25 @@ impl ApplicationHandler for App {
                                     }
                                 }
                             }
+                        }
+                        return;
+                    }
+                    if code == KeyCode::KeyM
+                        && event.state == ElementState::Pressed
+                        && !event.repeat
+                    {
+                        renderer.toggle_overview();
+                        let _ = window.set_cursor_grab(CursorGrabMode::None);
+                        window.set_cursor_visible(true);
+                        renderer.input.cursor_locked = false;
+                        renderer.input.last_cursor = None;
+                        renderer.input.keys.clear();
+                        renderer.input.jump_pending = false;
+                        return;
+                    }
+                    if renderer.overview_open {
+                        if code == KeyCode::Escape && event.state == ElementState::Pressed {
+                            renderer.toggle_overview();
                         }
                         return;
                     }
@@ -142,7 +168,13 @@ impl ApplicationHandler for App {
                 button: MouseButton::Left,
                 ..
             } => {
-                if !renderer.ui.console.open {
+                if renderer.overview_open && !renderer.ui.console.open {
+                    renderer.overview_dragging = true;
+                    renderer.overview_dragged = false;
+                    renderer.overview_drag_distance = 0.0;
+                    return;
+                }
+                if !renderer.ui.console.open && !renderer.overview_open {
                     if renderer.input.cursor_locked {
                         renderer.queue_fire();
                     } else if window.set_cursor_grab(CursorGrabMode::Locked).is_ok()
@@ -154,10 +186,58 @@ impl ApplicationHandler for App {
                     }
                 }
             }
+            WindowEvent::MouseInput {
+                state: ElementState::Released,
+                button: MouseButton::Left,
+                ..
+            } => {
+                if renderer.overview_open && !renderer.ui.console.open && !renderer.overview_dragged
+                {
+                    renderer.click_map_teleport();
+                }
+                renderer.overview_dragging = false;
+            }
+            WindowEvent::MouseWheel { delta, .. } if renderer.ui.console.open => {
+                let amount = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(_, lines) => lines,
+                    winit::event::MouseScrollDelta::PixelDelta(position) => {
+                        position.y as f32 / 40.0
+                    }
+                };
+                renderer.ui.console.scroll_lines(amount.round() as isize);
+            }
+            WindowEvent::MouseWheel { delta, .. } if renderer.overview_open => {
+                let amount = match delta {
+                    winit::event::MouseScrollDelta::LineDelta(_, lines) => lines,
+                    winit::event::MouseScrollDelta::PixelDelta(position) => {
+                        position.y as f32 / 80.0
+                    }
+                };
+                renderer.overview_zoom =
+                    (renderer.overview_zoom * (1.0 - amount * 0.1)).clamp(1.08, 8.0);
+                renderer.refresh_earth_marker();
+            }
             WindowEvent::CursorMoved { position, .. } => {
-                if renderer.input.cursor_locked && !renderer.ui.console.open {
+                if renderer.overview_open && renderer.overview_dragging && !renderer.ui.console.open
+                {
                     if let Some((x, y)) = renderer.input.last_cursor {
-                        renderer.input.yaw += ((position.x - x) as f32) * 0.0025;
+                        renderer.overview_drag_distance +=
+                            ((position.x - x).powi(2) + (position.y - y).powi(2)).sqrt();
+                        renderer.overview_dragged |= renderer.overview_drag_distance > 5.0;
+                        let horizontal = if renderer.is_earth_world() { 1.0 } else { -1.0 };
+                        renderer.overview_yaw += (position.x - x) as f32 * 0.005 * horizontal;
+                        renderer.overview_pitch = (renderer.overview_pitch
+                            + (position.y - y) as f32 * 0.005)
+                            .clamp(-1.4, 1.4);
+                    }
+                }
+                if renderer.input.cursor_locked
+                    && !renderer.ui.console.open
+                    && !renderer.overview_open
+                {
+                    if let Some((x, y)) = renderer.input.last_cursor {
+                        let horizontal = if renderer.is_earth_world() { -1.0 } else { 1.0 };
+                        renderer.input.yaw += ((position.x - x) as f32) * 0.0025 * horizontal;
                         renderer.input.pitch -= ((position.y - y) as f32) * 0.0025;
                         renderer.input.pitch = renderer.input.pitch.clamp(-1.5, 1.5);
                     }
@@ -194,13 +274,27 @@ impl ApplicationHandler for App {
                     let fps = renderer.metrics.fps_frames as f64 / sample_time;
                     renderer.metrics.fps_frames = 0;
                     renderer.metrics.fps_time = Instant::now();
-                    window.set_title(
-                        &Text::WindowTitleStatus {
+                    let coordinates =
+                        if renderer.settings.require_earth && renderer.gpu.scene_visible {
+                            let [x, y, z] = renderer.game.character.position.map(f64::from);
+                            let radius = (x * x + y * y + z * z).sqrt();
+                            format!(
+                                " | {:.4}°N {:.4}°E",
+                                (y / radius).asin().to_degrees(),
+                                z.atan2(x).to_degrees()
+                            )
+                        } else {
+                            String::new()
+                        };
+                    window.set_title(&format!(
+                        "{} | {}{}",
+                        Text::WindowTitleStatus {
                             fps,
-                            health: renderer.game.health,
-                        }
-                        .to_string(),
-                    );
+                            health: renderer.game.health
+                        },
+                        renderer.connection_status,
+                        coordinates
+                    ));
                 }
             }
             _ => {}
@@ -215,8 +309,12 @@ impl ApplicationHandler for App {
     ) {
         if let DeviceEvent::MouseMotion { delta } = event {
             if let Some(renderer) = &mut self.renderer {
-                if renderer.input.cursor_locked && !renderer.ui.console.open {
-                    renderer.input.yaw += (delta.0 as f32) * 0.0025;
+                if renderer.input.cursor_locked
+                    && !renderer.ui.console.open
+                    && !renderer.overview_open
+                {
+                    let horizontal = if renderer.is_earth_world() { -1.0 } else { 1.0 };
+                    renderer.input.yaw += (delta.0 as f32) * 0.0025 * horizontal;
                     renderer.input.pitch -= (delta.1 as f32) * 0.0025;
                     renderer.input.pitch = renderer.input.pitch.clamp(-1.5, 1.5);
                 }

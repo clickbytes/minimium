@@ -17,6 +17,7 @@ pub struct Player {
     pub id: PlayerId,
     pub name: Arc<str>,
     pub position: [f32; 3],
+    pub position_mm: Option<super::model::Position3Mm>,
     pub velocity: [f32; 3],
     pub grounded: bool,
     pub health: u16,

@@ -22,10 +22,12 @@ impl LaneSelection {
 }
 
 pub struct ServerConfig {
+    pub seed: Option<u128>,
     pub lanes: LaneSelection,
     pub data_dir: PathBuf,
     pub map_path: Option<PathBuf>,
     pub world_definition_path: Option<PathBuf>,
+    pub planet_config_path: Option<PathBuf>,
     pub bind_address: String,
     pub game_port: u16,
     pub max_players: usize,
@@ -39,10 +41,12 @@ impl ServerConfig {
             return Err("expected subcommand `run` (try --help)".into());
         }
         let mut config = Self {
+            seed: None,
             lanes: LaneSelection::Fixed(1),
             data_dir: PathBuf::from(minimium_platform::files::DEFAULT_SERVER_DATA_DIR),
             map_path: None,
             world_definition_path: None,
+            planet_config_path: None,
             bind_address: String::from("127.0.0.1"),
             game_port: 0,
             max_players: MAX_PLAYERS,
@@ -52,6 +56,17 @@ impl ServerConfig {
         let mut index = usize::from(!args.is_empty());
         while index < args.len() {
             match args[index].as_str() {
+                "--seed" => {
+                    index += 1;
+                    let value = args
+                        .get(index)
+                        .ok_or("--seed requires a decimal or 0x hex value")?;
+                    config.seed = Some(if let Some(hex) = value.strip_prefix("0x") {
+                        u128::from_str_radix(hex, 16)?
+                    } else {
+                        value.parse()?
+                    });
+                }
                 "--threads" => {
                     index += 1;
                     let value = args.get(index).ok_or("--threads requires 1, 2, or auto")?;
@@ -97,6 +112,12 @@ impl ServerConfig {
                             .ok_or("--world-definition requires a path")?,
                     ));
                 }
+                "--planet-config" => {
+                    index += 1;
+                    config.planet_config_path = Some(PathBuf::from(
+                        args.get(index).ok_or("--planet-config requires a path")?,
+                    ));
+                }
                 "--bind" => {
                     index += 1;
                     config.bind_address = args
@@ -128,6 +149,16 @@ impl ServerConfig {
         }
         if config.map_path.is_some() && config.world_definition_path.is_some() {
             return Err("--map and --world-definition cannot be used together".into());
+        }
+        if config.seed.is_some()
+            && (config.map_path.is_some() || config.world_definition_path.is_some())
+        {
+            return Err("--seed is only available for generated worlds".into());
+        }
+        if config.planet_config_path.is_some()
+            && (config.map_path.is_some() || config.world_definition_path.is_some())
+        {
+            return Err("--planet-config is only available for generated worlds".into());
         }
         Ok(config)
     }

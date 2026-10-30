@@ -1,4 +1,7 @@
 /target/
+/third_party/
 /.minimium/
 /.minimium-local/
+/.minimium-earth/
+/.minimium-server/
 *.log

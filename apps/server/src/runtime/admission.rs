@@ -41,6 +41,32 @@ impl ServerRuntime {
                     }
                     continue;
                 }
+                ClientMessage::WorldInput {
+                    context,
+                    input: ClientWorldInput::MapTeleport { direction },
+                } => {
+                    if let Some(player) = player_id {
+                        if self
+                            .game
+                            .worlds
+                            .world_input_context_is_current(player, context)
+                            && self.game.pending_world_inputs.len() < MAX_PENDING_WORLD_INPUTS
+                        {
+                            self.game.pending_world_inputs.push((
+                                WorldInput::MapTeleport(player, context, direction),
+                                Some(decoded_at),
+                            ));
+                        } else {
+                            self.metrics.rejected_inputs =
+                                self.metrics.rejected_inputs.saturating_add(1);
+                        }
+                    } else {
+                        self.connections.clients[index].disconnect_reason =
+                            Some(CloseReason::InvalidSequence);
+                        self.connections.disconnected.push(index);
+                    }
+                    continue;
+                }
                 ClientMessage::TransitionReady {
                     transition_id,
                     target_context,
@@ -97,6 +123,9 @@ impl ServerRuntime {
                         ClientWorldInput::Fire { direction } => ClientMessage::Fire { direction },
                         ClientWorldInput::Chat(text) => ClientMessage::Chat(text),
                         ClientWorldInput::UsePortal => unreachable!("portal branch handled above"),
+                        ClientWorldInput::MapTeleport { .. } => {
+                            unreachable!("teleport branch handled above")
+                        }
                     }
                 }
                 other => other,
@@ -132,6 +161,7 @@ impl ServerRuntime {
                         profile_id,
                         &mut self.operations.next_player,
                         self.map.spawn(),
+                        self.map.spawn_position_mm(),
                         self.game.worlds.primary_id(),
                         self.game.worlds.primary().world.gravity(),
                     ) {
@@ -168,6 +198,7 @@ impl ServerRuntime {
                             instance,
                             name: player.name.as_str().to_owned(),
                             position: player.position,
+                            position_mm: player.location.position(),
                             health: player.health,
                         },
                         Some(decoded_at),
@@ -184,6 +215,7 @@ impl ServerRuntime {
                                 .expect("reserved membership references a loaded world"),
                             health: player.health,
                             position: player.position,
+                            position_mm: player.location.position(),
                             context,
                             manifest: self
                                 .game

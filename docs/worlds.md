@@ -1,10 +1,39 @@
 # World model and generation
 
 Epic 003 introduces a versioned world contract shared by the server and client.
-The default demo builds the same seeded planet and separate dungeon instance.
+New data directories build a seeded procedural planet with a radius in the
+617.5–682.5 km range and a connected dungeon. Existing revision-2 directories
+retain their 10 km planet.
+`minimium-server run --seed DECIMAL|0xHEX` chooses the seed for a new generated
+world. Without it, the server samples a random seed once. The server records it
+in `world.seed` and rejects a different seed on
+later starts with the same data directory. The client obtains the seed from the
+manifest in `Welcome`; the seed is visible to the client.
 The server owns memberships, simulation state, sector tickets and transfers;
 `procgen` is pure, `assets` validates authored definitions, and the client owns
 scene, prediction and renderer resources.
+
+Revision 3 introduces a versioned RON planet preset and stores its resolved
+definition in `world.planet.ron`. Presets can use `extends` up to eight levels;
+cycles and changes to an existing definition are rejected. The Earth preset
+reads a separately imported GEBCO 2026 ice-surface package and uses generator
+revision 4 for new directories, with a GEBCO land spawn near Bergen. Saved
+resolved definitions without `generator_revision` remain revision 3; existing
+coordinates, generation geometry and player positions are preserved. The default
+`third_party/gebco-2026` package uses a 1-arcminute overview (about 467 MB)
+streamed from the Australian Antarctic Division's COG mirror. The full
+15-arcsecond netCDF import remains available; its coasts and heights are more
+detailed. The Earth renderer reflects the camera's horizontal presentation so
+east appears to the right in both the globe overview and first-person view.
+Mouse steering, movement, and map-click rays use the same presentation; GEBCO
+sampling and saved world coordinates remain unchanged. The client must have
+the same package; from outside the repository
+root, set `MINIMIUM_EARTH_PACKAGE` to its directory. Tile checksums and source identity
+(source hash for the full package, ETag/version for the compact one) are pinned
+in the world definition. Rendering
+uses millimeter vertices for generated terrain and camera-relative GPU
+coordinates. Active planet players use millimeter positions in simulation,
+saves and snapshots; collision queries retain coarse `f32` broadphase cells.
 
 ## Identity and location
 
@@ -23,6 +52,13 @@ scene, prediction and renderer resources.
 
 ## Sector addresses
 
+The rendered client has an `M` overview for the active world. On the default
+planet it draws all six cube-sphere faces from the same deterministic seed at
+coarse visual resolution; in the dungeon it draws the complete authored map.
+The red marker shows the player's position. Gameplay generates collision for
+addressed sectors across all six faces as players move; the overview remains a
+separate visual mesh.
+
 Planet projection v1 preserves the six face mapping used by PR #49:
 
 | Face index | Normal | Local U | Local V |
@@ -34,7 +70,8 @@ Planet projection v1 preserves the six face mapping used by PR #49:
 | 4 | +Z | +X | +Y |
 | 5 | -Z | +X | +Y |
 
-Each face has a fixed 256 by 256 logical sector grid. Sector adjacency crosses
+Revision 2 uses a 256 by 256 logical sector grid per face; revision 3 uses
+16,384 by 16,384. Sector adjacency crosses
 faces using integer cube coordinates. A shared edge or corner sample maps to
 one `CubeSampleKey` regardless of its face address. Changing face order, basis,
 grid size or mapping rules requires a new generation revision. Sample
@@ -60,7 +97,7 @@ cryptographic and IDs are not an authorization mechanism.
 ## Planet and dungeon geometry
 
 The planet generator uses integer Q16 smooth value noise over canonical cube
-samples. It limits relief to 1/256 of base radius, validates output quantum and
+samples. Revision 3 applies sparse mountain bands and local detail, validates output quantum and
 returns positions quantized in millimeters. Fixed landmarks provide a safe spawn,
 an entrance and nine approach points. The default world places a portal at the
 entrance and transfers into another world instance.
@@ -103,9 +140,9 @@ digest, then waits for target sector data, collision and GPU buffers before
 acknowledging readiness. It switches its active sector scene and input state
 without recreating the window, GPU device or TCP session.
 
-Protocol v9 wraps gameplay inputs and snapshots in instance, content revision and
+Protocol v11 wraps gameplay inputs and snapshots in instance, content revision and
 membership epoch. Inputs and snapshots from an older membership context are
-discarded. Save v6 records every loaded world's manifest and map fingerprint,
+discarded. Save v7 records every loaded world's manifest and map fingerprint,
 along with each player's instance, millimeter position, orientation, health and
 return location. v2/v3 snapshots are attached only to a loaded legacy map with a
 matching fingerprint; they are never guessed onto the procedural planet. The
@@ -113,14 +150,22 @@ intermediate v4 format is accepted only for locations in the primary instance,
 because it did not pin manifests for target worlds.
 
 The server and client use the same topology-specific neighborhood and geometry
-slicer. Both keep bounded ticketed caches. On the server, a sector becomes
+generator. Both keep bounded ticketed caches. On the server, a sector becomes
 installed after data and collision readiness; movement waits until every sector
 in the player's neighborhood is installed. The server keeps a full immutable map
 collision index for hitscan blockers. The client builds collision indices and
 GPU vertex buffers from its active sector neighborhood, then replaces them as
-the player moves. Portal readiness waits for target data, collision and GPU
+the player moves. Planet rendering uses separate patch meshes with interior
+subdivisions of 16, 8, 4 and 2 for distances below 100, 500 and 1000 meters,
+and farther regions. Every patch retains the same boundary samples across LOD
+levels for revision 2. Revision 3 selects quadtree patches to the computed
+horizon and uses edge skirts where patch sizes differ. Portal
+readiness waits for target data, collision and GPU
 buffers before the client acknowledges. The client retains source maps in CPU
-memory so it can create deterministic slices locally. Save v6 stores complete,
+memory so it can create deterministic sectors locally. An existing v1 demo
+snapshot is loaded with its original generator, copied to
+`world.snapshot.legacy-v1`, and rewritten with positions projected along their
+saved radial directions. Save v7 stores complete,
 revisioned logical object-state sets by sector; the server registry checks
 topology, revision order and size limits when committing or restoring them. The
 demo currently has no interaction that changes sector objects. Geometry edits

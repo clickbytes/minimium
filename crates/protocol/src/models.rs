@@ -1,6 +1,6 @@
 use super::world_context::WorldContext;
 use super::{limits::MAX_VISIBLE_PLAYERS, ServerErrorCode};
-use minimium_core::world::{TransitionId, WorldManifest};
+use minimium_core::world::{Position3Mm, TransitionId, WorldManifest};
 use minimium_core::{identity::PlayerProfileId, ids::PlayerId};
 use std::{error::Error, fmt, sync::Arc};
 
@@ -14,6 +14,9 @@ pub enum ClientMessage {
         jump: bool,
     },
     Fire {
+        direction: [f32; 3],
+    },
+    MapTeleport {
         direction: [f32; 3],
     },
     Chat(String),
@@ -35,6 +38,7 @@ pub enum ClientWorldInput {
     SetName(String),
     Move { direction: [f32; 2], jump: bool },
     Fire { direction: [f32; 3] },
+    MapTeleport { direction: [f32; 3] },
     Chat(String),
     UsePortal,
 }
@@ -44,6 +48,7 @@ pub struct RemotePlayer {
     pub id: PlayerId,
     pub name: Arc<str>,
     pub position: [f32; 3],
+    pub position_mm: Position3Mm,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -137,11 +142,15 @@ pub enum ServerMessage {
         map_fingerprint: u64,
         health: u16,
         position: [f32; 3],
+        position_mm: Position3Mm,
         context: WorldContext,
         manifest: WorldManifest,
         transition_id: Option<TransitionId>,
     },
     Pong,
+    MapTeleportResult {
+        position_mm: Option<Position3Mm>,
+    },
     Accepted,
     Bye,
     Error(ServerErrorCode),
@@ -161,9 +170,10 @@ pub enum ServerMessage {
         context: WorldContext,
         full_snapshot: bool,
         self_position: [f32; 3],
+        self_position_mm: Position3Mm,
         self_velocity: [f32; 3],
         self_grounded: bool,
-        players: RemotePlayers,
+        players: Box<RemotePlayers>,
         removed_players: RemotePlayerIds,
     },
     TransitionPrepare {
@@ -172,6 +182,7 @@ pub enum ServerMessage {
         target_context: WorldContext,
         map_fingerprint: u64,
         destination: [f32; 3],
+        destination_mm: Position3Mm,
         manifest: WorldManifest,
     },
     TransitionCommitted {
@@ -179,6 +190,7 @@ pub enum ServerMessage {
         context: WorldContext,
         map_fingerprint: u64,
         destination: [f32; 3],
+        destination_mm: Position3Mm,
         health: u16,
         manifest: WorldManifest,
     },

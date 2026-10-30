@@ -56,15 +56,31 @@ impl GpuResources {
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            if self.active_sector_keys.is_empty() {
+            if !self.scene_visible {
+                // Waiting for a required Earth manifest or showing a persistent error.
+            } else if self.overview_active {
+                if let Some(globe) = self.globe.as_ref().filter(|_| self.overview_globe) {
+                    pass.set_pipeline(&globe.pipeline);
+                    pass.set_bind_group(1, &globe.bind_group, &[]);
+                    pass.set_vertex_buffer(0, globe.vertices.slice(..));
+                    pass.draw(0..globe.vertex_count, 0..1);
+                    draw_calls += 1;
+                    pass.set_pipeline(&self.pipeline);
+                }
+                if let Some((buffer, count)) = &self.overview_buffer {
+                    pass.set_vertex_buffer(0, buffer.slice(..));
+                    pass.draw(0..*count, 0..1);
+                    draw_calls += 1;
+                }
+            } else if self.active_sector_keys.is_empty() {
                 pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
                 pass.draw(0..self.vertex_count, 0..1);
                 draw_calls += 1;
             } else {
-                for key in &self.active_sector_keys {
-                    if let Some((buffer, vertex_count)) = self
-                        .world_vertex_catalog
-                        .get(&(self.active_world_instance, *key))
+                for (key, lod) in &self.active_sector_keys {
+                    if let Some((buffer, vertex_count)) =
+                        self.world_vertex_catalog
+                            .get(&(self.active_world_instance, *key, *lod))
                     {
                         pass.set_vertex_buffer(0, buffer.slice(..));
                         pass.draw(0..*vertex_count, 0..1);
@@ -72,7 +88,7 @@ impl GpuResources {
                     }
                 }
             }
-            if self.remote_vertex_count > 0 {
+            if !self.overview_active && self.remote_vertex_count > 0 {
                 pass.set_vertex_buffer(0, self.player_buffer.slice(..));
                 pass.draw(0..self.remote_vertex_count, 0..1);
                 draw_calls += 1;

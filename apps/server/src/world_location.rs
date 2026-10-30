@@ -25,6 +25,27 @@ pub(crate) fn world_location(
     )
 }
 
+pub(crate) fn player_location(
+    instance: WorldInstanceId,
+    player: &minimium_core::world::Player,
+    gravity: CharacterGravity,
+) -> WorldLocation {
+    let Some(mut position_mm) = player.position_mm else {
+        return world_location(instance, player.position, gravity);
+    };
+    if matches!(gravity, CharacterGravity::Radial { .. }) {
+        let up = minimium_core::world::character_frame(gravity, player.position).0;
+        for (axis, direction) in up.into_iter().enumerate() {
+            position_mm.0[axis] += (f64::from(direction) * 10.0).round() as i64;
+        }
+    }
+    WorldLocation::new(
+        instance,
+        position_mm,
+        orientation_for_gravity(gravity, player.position),
+    )
+}
+
 fn orientation_for_gravity(gravity: CharacterGravity, position: [f32; 3]) -> WorldOrientationQ30 {
     let up = minimium_core::world::character_frame(gravity, position).0;
     let denominator = (2.0 * (1.0 + up[1])).sqrt();

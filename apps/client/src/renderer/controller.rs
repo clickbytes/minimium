@@ -14,10 +14,10 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
             return false;
         }
     };
-    let direction = glam::Vec3::new(
-        renderer.input.yaw.cos() * renderer.input.pitch.cos(),
-        renderer.input.pitch.sin(),
-        renderer.input.yaw.sin() * renderer.input.pitch.cos(),
+    let direction = super::camera::camera_direction(
+        renderer.game.character,
+        renderer.input.yaw,
+        renderer.input.pitch,
     )
     .normalize()
     .to_array();
@@ -47,11 +47,13 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
     };
     match action {
         FrontendAction::Help => {
-            renderer.ui.console.push_line(
-                client_commands::help_lines()
-                    .collect::<Vec<_>>()
-                    .join(" | "),
-            );
+            renderer
+                .ui
+                .console
+                .push_line("Commands (PageUp/PageDown to scroll):");
+            for line in client_commands::help_lines() {
+                renderer.ui.console.push_line(line);
+            }
             renderer
                 .ui
                 .console
@@ -119,6 +121,7 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
             }
             .to_string(),
         ),
+        FrontendAction::MapTeleport => renderer.arm_map_teleport(),
         FrontendAction::Clear => renderer.ui.console.clear_lines(),
         FrontendAction::Quit => return true,
     }

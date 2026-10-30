@@ -7,6 +7,7 @@ mod executor;
 mod lifecycle;
 mod metrics;
 mod network;
+mod planet_config;
 mod receive;
 mod replication;
 mod sector_streaming;
@@ -47,7 +48,7 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().skip(1).collect();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
-        println!("minimium-server run [--threads 1..64|auto] [--max-players N] [--bind IP] [--game-port PORT] [--data-dir PATH] [--map PATH | --world-definition PATH] [--autosave-seconds N] [--headless]\nminimium-server --version\n--max-players defaults to {MAX_PLAYERS}; --game-port 0 selects an available port (default); --autosave-seconds 0 disables periodic saves (default: {DEFAULT_AUTOSAVE_SECONDS}); --headless disables stdin commands; administer with minimiumctl.");
+        println!("minimium-server run [--seed DECIMAL|0xHEX] [--planet-config PATH] [--threads 1..64|auto] [--max-players N] [--bind IP] [--game-port PORT] [--data-dir PATH] [--map PATH | --world-definition PATH] [--autosave-seconds N] [--headless]\nminimium-server --version\n--max-players defaults to {MAX_PLAYERS}; --game-port 0 selects an available port (default); --autosave-seconds 0 disables periodic saves (default: {DEFAULT_AUTOSAVE_SECONDS}); --headless disables stdin commands; administer with minimiumctl.");
         return Ok(());
     }
     if args.iter().any(|arg| arg == "--version") {
@@ -55,14 +56,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let config = config::ServerConfig::parse(&args)?;
-    let startup = startup::initialize(
-        &config.data_dir,
-        config.map_path.as_deref(),
-        config.world_definition_path.as_deref(),
-        &config.bind_address,
-        config.game_port,
-        config.max_players,
-    )?;
+    let startup = startup::initialize(&config)?;
     runtime::ServerRuntime::new(config, startup)?.run()?;
     Ok(())
 }

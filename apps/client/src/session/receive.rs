@@ -1,6 +1,42 @@
 use super::*;
 
 impl ClientSession {
+    fn expected_fingerprint(
+        &self,
+        instance: minimium_core::world::WorldInstanceId,
+        manifest: &minimium_core::world::WorldManifest,
+    ) -> u64 {
+        if matches!(manifest.generation().revision().get(), 2..=4)
+            && (instance.get() == 1 || instance.get() == 2)
+        {
+            let seed = manifest.generation().seed().get()
+                ^ if instance.get() == 2 {
+                    0x0030_0000_0000_0003
+                } else {
+                    0
+                };
+            let generated = if let Some(planet) = manifest.planet() {
+                minimium_procgen::generate_worlds_with_planet_revision(
+                    seed,
+                    planet,
+                    manifest.generation().revision().get(),
+                )
+            } else {
+                minimium_procgen::generate_worlds(seed)
+            };
+            if let Ok(worlds) = generated {
+                let world = &worlds[instance.get() as usize - 1];
+                if world.manifest == *manifest {
+                    return world.map.fingerprint();
+                }
+            }
+            return 0;
+        }
+        self.world_fingerprints
+            .get(&instance)
+            .copied()
+            .unwrap_or(self.expected_map_fingerprint)
+    }
     /// Performs bounded nonblocking reads, flushes queued writes (including
     /// partial writes), validates protocol state, and maintains heartbeat
     /// timers. Appends events to caller-owned storage and returns the current
@@ -152,6 +188,19 @@ impl ClientSession {
             match decode_server(&self.receive_buffer) {
                 Ok(Some((message, frame_bytes))) => {
                     self.receive_buffer.drain(..frame_bytes);
+                    let planet = match &message {
+                        ServerMessage::Welcome { manifest, .. }
+                        | ServerMessage::TransitionPrepare { manifest, .. }
+                        | ServerMessage::TransitionCommitted { manifest, .. } => manifest.planet(),
+                        _ => None,
+                    };
+                    if let Some(definition) = planet {
+                        if let Err(error) = minimium_procgen::ensure_earth_from_manifest(definition)
+                        {
+                            self.disconnect(DisconnectReason::EarthPackage(error), events);
+                            return;
+                        }
+                    }
                     match &message {
                         ServerMessage::Welcome {
                             map_fingerprint,
@@ -163,11 +212,8 @@ impl ClientSession {
                                 self.disconnect(DisconnectReason::UnexpectedMessage, events);
                                 return;
                             }
-                            let expected_fingerprint = self
-                                .world_fingerprints
-                                .get(&context.instance())
-                                .copied()
-                                .unwrap_or(self.expected_map_fingerprint);
+                            let expected_fingerprint =
+                                self.expected_fingerprint(context.instance(), manifest);
                             if *map_fingerprint != expected_fingerprint {
                                 self.disconnect(
                                     DisconnectReason::MapMismatch {
@@ -217,11 +263,8 @@ impl ClientSession {
                             if Some(*source_context) != self.world_context {
                                 continue;
                             }
-                            let expected_fingerprint = self
-                                .world_fingerprints
-                                .get(&target_context.instance())
-                                .copied()
-                                .unwrap_or(self.expected_map_fingerprint);
+                            let expected_fingerprint =
+                                self.expected_fingerprint(target_context.instance(), manifest);
                             if *map_fingerprint != expected_fingerprint {
                                 self.disconnect(
                                     DisconnectReason::MapMismatch {
@@ -256,11 +299,8 @@ impl ClientSession {
                             manifest,
                             ..
                         } => {
-                            let expected_fingerprint = self
-                                .world_fingerprints
-                                .get(&context.instance())
-                                .copied()
-                                .unwrap_or(self.expected_map_fingerprint);
+                            let expected_fingerprint =
+                                self.expected_fingerprint(context.instance(), manifest);
                             if *map_fingerprint != expected_fingerprint {
                                 self.disconnect(
                                     DisconnectReason::MapMismatch {

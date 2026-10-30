@@ -48,6 +48,7 @@ pub enum DisconnectReason {
     Rejected(minimium_protocol::ServerErrorCode),
     MapMismatch { expected: u64, actual: u64 },
     GeneratorMismatch,
+    EarthPackage(String),
     Io(io::ErrorKind),
     BufferLimit,
 }
@@ -55,6 +56,8 @@ pub enum DisconnectReason {
 /// Typed output from a session poll. Every valid server message is delivered
 /// as `Message`; a matching Pong also produces `PingRoundTrip`.
 #[derive(Clone, Debug, PartialEq)]
+// Session events are queued by value and consumed immediately after polling.
+#[allow(clippy::large_enum_variant)]
 pub enum SessionEvent {
     Message(ServerMessage),
     PingRoundTrip(Duration),
@@ -220,6 +223,12 @@ impl ClientSession {
             ClientMessage::Fire { direction } => Some(ClientMessage::WorldInput {
                 context: self.world_context.ok_or(QueueError::AwaitingWelcome)?,
                 input: ClientWorldInput::Fire {
+                    direction: *direction,
+                },
+            }),
+            ClientMessage::MapTeleport { direction } => Some(ClientMessage::WorldInput {
+                context: self.world_context.ok_or(QueueError::AwaitingWelcome)?,
+                input: ClientWorldInput::MapTeleport {
                     direction: *direction,
                 },
             }),

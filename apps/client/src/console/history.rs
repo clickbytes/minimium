@@ -7,6 +7,7 @@ pub(super) fn take_input(console: &mut Console) -> String {
     console.input = String::with_capacity(MAX_INPUT);
     console.history_cursor = None;
     if !input.trim().is_empty() {
+        console.scroll_to_latest();
         if console.history.last() != Some(&input) {
             if console.history.len() == MAX_LINES {
                 console.history.remove(0);

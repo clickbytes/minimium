@@ -1,13 +1,12 @@
 //! Version-one logical address spaces for planet and dungeon sectors.
 
 pub const PLANET_SECTORS_PER_FACE: u16 = 256;
+pub const PLANET_DENSE_SECTORS_PER_FACE: u16 = 16_384;
 pub const PLANET_COLLISION_CELLS_PER_FACE: u16 = 4096;
 pub const MAX_RENDER_LOD: u8 = 15;
 pub const PLANET_SAMPLE_COORDINATE_SCALE: i32 =
     PLANET_SECTORS_PER_FACE as i32 * (1_i32 << MAX_RENDER_LOD);
 const FACE_SECTOR_COORDINATE_SCALE: i32 = PLANET_SECTORS_PER_FACE as i32;
-const SECTOR_SAMPLE_SPAN: u32 =
-    (PLANET_SAMPLE_COORDINATE_SCALE as u32 * 2) / PLANET_SECTORS_PER_FACE as u32;
 
 /// Face order is part of the v1 planet projection contract.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -96,7 +95,7 @@ pub struct PlanetSectorKey {
 
 impl PlanetSectorKey {
     pub const fn new(face: PlanetFace, u: u16, v: u16) -> Option<Self> {
-        if u < PLANET_SECTORS_PER_FACE && v < PLANET_SECTORS_PER_FACE {
+        if u < PLANET_DENSE_SECTORS_PER_FACE && v < PLANET_DENSE_SECTORS_PER_FACE {
             Some(Self { face, u, v })
         } else {
             None
@@ -113,6 +112,10 @@ impl PlanetSectorKey {
 
     /// Maps a direction to the v1 face lattice using the dominant cube axis.
     pub fn from_direction(direction: [f32; 3]) -> Self {
+        Self::from_direction_with_count(direction, PLANET_SECTORS_PER_FACE)
+    }
+
+    pub fn from_direction_with_count(direction: [f32; 3], count: u16) -> Self {
         let absolute = direction.map(f32::abs);
         let face = if absolute[0] >= absolute[1] && absolute[0] >= absolute[2] {
             if direction[0] >= 0.0 {
@@ -139,13 +142,10 @@ impl PlanetSectorKey {
         };
         let denominator = component(normal).abs().max(f32::EPSILON);
         let coordinate = |axis: [i8; 3]| {
-            let scaled = (component(axis) / denominator).clamp(-1.0, 1.0)
-                * f32::from(PLANET_SECTORS_PER_FACE);
-            (((scaled + f32::from(PLANET_SECTORS_PER_FACE))
-                / (2.0 * f32::from(PLANET_SECTORS_PER_FACE)))
-                * f32::from(PLANET_SECTORS_PER_FACE))
-            .floor()
-            .clamp(0.0, f32::from(PLANET_SECTORS_PER_FACE - 1)) as u16
+            let scaled = (component(axis) / denominator).clamp(-1.0, 1.0) * f32::from(count);
+            (((scaled + f32::from(count)) / (2.0 * f32::from(count))) * f32::from(count))
+                .floor()
+                .clamp(0.0, f32::from(count - 1)) as u16
         };
         Self {
             face,
@@ -162,28 +162,45 @@ impl PlanetSectorKey {
         local_v: u32,
         subdivisions: u32,
     ) -> Option<CubeSampleKey> {
+        self.cube_sample_with_count(local_u, local_v, subdivisions, PLANET_SECTORS_PER_FACE)
+    }
+
+    pub fn cube_sample_with_count(
+        self,
+        local_u: u32,
+        local_v: u32,
+        subdivisions: u32,
+        count: u16,
+    ) -> Option<CubeSampleKey> {
+        let span = (PLANET_SAMPLE_COORDINATE_SCALE as u32 * 2) / u32::from(count);
         if subdivisions == 0
             || subdivisions > (1_u32 << MAX_RENDER_LOD)
-            || !SECTOR_SAMPLE_SPAN.is_multiple_of(subdivisions)
+            || !span.is_multiple_of(subdivisions)
             || local_u > subdivisions
             || local_v > subdivisions
+            || self.u >= count
+            || self.v >= count
         {
             return None;
         }
-        let step = SECTOR_SAMPLE_SPAN / subdivisions;
+        let step = span / subdivisions;
         let u = -(PLANET_SAMPLE_COORDINATE_SCALE)
-            + i32::from(self.u) * SECTOR_SAMPLE_SPAN as i32
+            + i32::from(self.u) * span as i32
             + (local_u * step) as i32;
         let v = -(PLANET_SAMPLE_COORDINATE_SCALE)
-            + i32::from(self.v) * SECTOR_SAMPLE_SPAN as i32
+            + i32::from(self.v) * span as i32
             + (local_v * step) as i32;
         self.face.cube_sample(u, v)
     }
 
     pub fn neighbor(self, edge: PlanetEdge) -> Self {
+        self.neighbor_with_count(edge, PLANET_SECTORS_PER_FACE)
+    }
+
+    pub fn neighbor_with_count(self, edge: PlanetEdge, count: u16) -> Self {
         let neighbor_u = match edge {
             PlanetEdge::UNegative if self.u > 0 => Some(self.u - 1),
-            PlanetEdge::UPositive if self.u + 1 < PLANET_SECTORS_PER_FACE => Some(self.u + 1),
+            PlanetEdge::UPositive if self.u + 1 < count => Some(self.u + 1),
             _ => None,
         };
         if let Some(u) = neighbor_u {
@@ -191,21 +208,25 @@ impl PlanetSectorKey {
         }
         let neighbor_v = match edge {
             PlanetEdge::VNegative if self.v > 0 => Some(self.v - 1),
-            PlanetEdge::VPositive if self.v + 1 < PLANET_SECTORS_PER_FACE => Some(self.v + 1),
+            PlanetEdge::VPositive if self.v + 1 < count => Some(self.v + 1),
             _ => None,
         };
         if let Some(v) = neighbor_v {
             return Self { v, ..self };
         }
-        neighbor_across_face(self, edge)
+        neighbor_across_face(self, edge, count)
     }
 
     pub fn neighbors(self) -> [Self; 4] {
+        self.neighbors_with_count(PLANET_SECTORS_PER_FACE)
+    }
+
+    pub fn neighbors_with_count(self, count: u16) -> [Self; 4] {
         [
-            self.neighbor(PlanetEdge::UNegative),
-            self.neighbor(PlanetEdge::UPositive),
-            self.neighbor(PlanetEdge::VNegative),
-            self.neighbor(PlanetEdge::VPositive),
+            self.neighbor_with_count(PlanetEdge::UNegative, count),
+            self.neighbor_with_count(PlanetEdge::UPositive, count),
+            self.neighbor_with_count(PlanetEdge::VNegative, count),
+            self.neighbor_with_count(PlanetEdge::VPositive, count),
         ]
     }
 }
@@ -251,8 +272,14 @@ impl PlanetCorner {
         ];
         faces.map(|face| {
             let (_, u_axis, v_axis) = face.basis();
-            let u = sector_index(inward_center(dot(cube, u_axis)));
-            let v = sector_index(inward_center(dot(cube, v_axis)));
+            let u = sector_index(
+                inward_center(dot(cube, u_axis), FACE_SECTOR_COORDINATE_SCALE),
+                FACE_SECTOR_COORDINATE_SCALE,
+            );
+            let v = sector_index(
+                inward_center(dot(cube, v_axis), FACE_SECTOR_COORDINATE_SCALE),
+                FACE_SECTOR_COORDINATE_SCALE,
+            );
             PlanetSectorKey { face, u, v }
         })
     }
@@ -378,31 +405,26 @@ impl RenderPatchKey {
     }
 }
 
-fn neighbor_across_face(key: PlanetSectorKey, edge: PlanetEdge) -> PlanetSectorKey {
+fn neighbor_across_face(key: PlanetSectorKey, edge: PlanetEdge, count: u16) -> PlanetSectorKey {
     let (normal, u_axis, v_axis) = key.face.basis();
-    let u_center = sector_center(key.u);
-    let v_center = sector_center(key.v);
+    let scale = i32::from(count);
+    let u_center = sector_center(key.u, scale);
+    let v_center = sector_center(key.v, scale);
     let (adjacent_normal, u, v) = match edge {
-        PlanetEdge::UNegative => (negate(u_axis), -FACE_SECTOR_COORDINATE_SCALE, v_center),
-        PlanetEdge::UPositive => (u_axis, FACE_SECTOR_COORDINATE_SCALE, v_center),
-        PlanetEdge::VNegative => (negate(v_axis), u_center, -FACE_SECTOR_COORDINATE_SCALE),
-        PlanetEdge::VPositive => (v_axis, u_center, FACE_SECTOR_COORDINATE_SCALE),
+        PlanetEdge::UNegative => (negate(u_axis), -scale, v_center),
+        PlanetEdge::UPositive => (u_axis, scale, v_center),
+        PlanetEdge::VNegative => (negate(v_axis), u_center, -scale),
+        PlanetEdge::VPositive => (v_axis, u_center, scale),
     };
     let face = face_from_normal(adjacent_normal);
     let cube = [
-        i32::from(normal[0]) * FACE_SECTOR_COORDINATE_SCALE
-            + i32::from(u_axis[0]) * u
-            + i32::from(v_axis[0]) * v,
-        i32::from(normal[1]) * FACE_SECTOR_COORDINATE_SCALE
-            + i32::from(u_axis[1]) * u
-            + i32::from(v_axis[1]) * v,
-        i32::from(normal[2]) * FACE_SECTOR_COORDINATE_SCALE
-            + i32::from(u_axis[2]) * u
-            + i32::from(v_axis[2]) * v,
+        i32::from(normal[0]) * scale + i32::from(u_axis[0]) * u + i32::from(v_axis[0]) * v,
+        i32::from(normal[1]) * scale + i32::from(u_axis[1]) * u + i32::from(v_axis[1]) * v,
+        i32::from(normal[2]) * scale + i32::from(u_axis[2]) * u + i32::from(v_axis[2]) * v,
     ];
     let (_, adjacent_u, adjacent_v) = face.basis();
-    let mapped_u = sector_index(inward_center(dot(cube, adjacent_u)));
-    let mapped_v = sector_index(inward_center(dot(cube, adjacent_v)));
+    let mapped_u = sector_index(inward_center(dot(cube, adjacent_u), scale), scale);
+    let mapped_v = sector_index(inward_center(dot(cube, adjacent_v), scale), scale);
     PlanetSectorKey {
         face,
         u: mapped_u,
@@ -421,18 +443,18 @@ fn face_from_normal(normal: [i8; 3]) -> PlanetFace {
     }
 }
 
-fn sector_center(index: u16) -> i32 {
-    i32::from(index) * 2 - (FACE_SECTOR_COORDINATE_SCALE - 1)
+fn sector_center(index: u16, scale: i32) -> i32 {
+    i32::from(index) * 2 - (scale - 1)
 }
 
-fn sector_index(center: i32) -> u16 {
-    ((center + FACE_SECTOR_COORDINATE_SCALE - 1) / 2) as u16
+fn sector_index(center: i32, scale: i32) -> u16 {
+    ((center + scale - 1) / 2) as u16
 }
 
-fn inward_center(coordinate: i32) -> i32 {
-    if coordinate == FACE_SECTOR_COORDINATE_SCALE {
+fn inward_center(coordinate: i32, scale: i32) -> i32 {
+    if coordinate == scale {
         coordinate - 1
-    } else if coordinate == -FACE_SECTOR_COORDINATE_SCALE {
+    } else if coordinate == -scale {
         coordinate + 1
     } else {
         coordinate

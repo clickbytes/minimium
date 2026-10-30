@@ -1,3 +1,4 @@
+use crate::generate_planet_sector;
 use crate::sector_neighborhood::DUNGEON_SECTOR_EDGE;
 use minimium_core::world::{
     MapBox, MapTriangle, PlanetFace, PlanetSectorKey, SectorKey, WorldMap, WorldTopology,
@@ -17,11 +18,20 @@ pub fn slice_sector_geometry(
     topology: WorldTopology,
     key: SectorKey,
 ) -> SectorGeometry {
+    slice_sector_geometry_with_count(map, topology, key, PLANET_SECTORS_PER_FACE)
+}
+
+fn slice_sector_geometry_with_count(
+    map: &WorldMap,
+    topology: WorldTopology,
+    key: SectorKey,
+    count: u16,
+) -> SectorGeometry {
     let mut geometry = SectorGeometry::default();
     for map_box in map.boxes() {
         let included = match (topology, key) {
             (WorldTopology::Planet, SectorKey::Planet(sector)) => {
-                planet_box_touches(*map_box, sector)
+                planet_box_touches(*map_box, sector, count)
             }
             (WorldTopology::Dungeon, SectorKey::Dungeon(sector)) => {
                 dungeon_box_overlaps(*map_box, sector.coordinates())
@@ -35,7 +45,7 @@ pub fn slice_sector_geometry(
     for triangle in map.triangles() {
         let included = match (topology, key) {
             (WorldTopology::Planet, SectorKey::Planet(sector)) => {
-                planet_triangle_touches(*triangle, sector)
+                planet_triangle_touches(*triangle, sector, count)
             }
             (WorldTopology::Dungeon, SectorKey::Dungeon(sector)) => {
                 dungeon_triangle_touches(*triangle, sector.coordinates())
@@ -49,7 +59,27 @@ pub fn slice_sector_geometry(
     geometry
 }
 
-fn planet_box_touches(map_box: MapBox, sector: PlanetSectorKey) -> bool {
+/// Shared server/client source for the current manifest's sector geometry.
+pub fn materialize_world_sector(
+    map: &WorldMap,
+    manifest: minimium_core::world::WorldManifest,
+    key: SectorKey,
+) -> SectorGeometry {
+    let mut geometry = slice_sector_geometry_with_count(
+        map,
+        manifest.topology(),
+        key,
+        crate::planet_sector_count(manifest),
+    );
+    if let (WorldTopology::Planet, SectorKey::Planet(planet)) = (manifest.topology(), key) {
+        geometry
+            .triangles
+            .extend(generate_planet_sector(manifest, planet).triangles);
+    }
+    geometry
+}
+
+fn planet_box_touches(map_box: MapBox, sector: PlanetSectorKey, count: u16) -> bool {
     let half = map_box.size.map(|value| value.abs() * 0.5);
     let mut directions = Vec::with_capacity(9);
     directions.push(map_box.center);
@@ -65,12 +95,12 @@ fn planet_box_touches(map_box: MapBox, sector: PlanetSectorKey) -> bool {
         }
     }
     directions.into_iter().any(|direction| {
-        let sample = PlanetSectorKey::from_direction(direction);
-        sample == sector || sample.neighbors().contains(&sector)
+        let sample = PlanetSectorKey::from_direction_with_count(direction, count);
+        sample == sector || sample.neighbors_with_count(count).contains(&sector)
     })
 }
 
-fn planet_triangle_touches(triangle: MapTriangle, sector: PlanetSectorKey) -> bool {
+fn planet_triangle_touches(triangle: MapTriangle, sector: PlanetSectorKey, count: u16) -> bool {
     let centroid = std::array::from_fn(|axis| {
         triangle
             .vertices
@@ -79,7 +109,7 @@ fn planet_triangle_touches(triangle: MapTriangle, sector: PlanetSectorKey) -> bo
             .sum::<f32>()
             / 3.0
     });
-    let face = PlanetSectorKey::from_direction(centroid).face();
+    let face = PlanetSectorKey::from_direction_with_count(centroid, count).face();
     if sector.face() != face {
         return false;
     }
@@ -104,8 +134,8 @@ fn planet_triangle_touches(triangle: MapTriangle, sector: PlanetSectorKey) -> bo
         }
     }
     let (u, v) = sector.coordinates();
-    overlaps_planet_interval(minimum[0], maximum[0], u)
-        && overlaps_planet_interval(minimum[1], maximum[1], v)
+    overlaps_planet_interval(minimum[0], maximum[0], u, count)
+        && overlaps_planet_interval(minimum[1], maximum[1], v, count)
 }
 
 fn planet_face_basis(face: PlanetFace) -> ([i8; 3], [i8; 3], [i8; 3]) {
@@ -119,8 +149,8 @@ fn planet_face_basis(face: PlanetFace) -> ([i8; 3], [i8; 3], [i8; 3]) {
     }
 }
 
-fn overlaps_planet_interval(minimum: f32, maximum: f32, sector: u16) -> bool {
-    let count = f32::from(PLANET_SECTORS_PER_FACE);
+fn overlaps_planet_interval(minimum: f32, maximum: f32, sector: u16, count: u16) -> bool {
+    let count = f32::from(count);
     let start = -1.0 + 2.0 * f32::from(sector) / count;
     let end = start + 2.0 / count;
     minimum <= end && maximum >= start

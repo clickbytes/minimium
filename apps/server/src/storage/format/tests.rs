@@ -36,6 +36,7 @@ fn v6_save_restores_instance_position_and_portal_return_location() {
             profile,
             &mut next_id,
             generated[0].map.spawn(),
+            None,
             primary,
             CharacterGravity::Radial { center: [0.0; 3] },
         )
@@ -68,6 +69,7 @@ fn v6_save_restores_instance_position_and_portal_return_location() {
             profile,
             &mut next_id,
             [0.0; 3],
+            None,
             primary,
             CharacterGravity::Radial { center: [0.0; 3] },
         )
@@ -95,6 +97,7 @@ fn v6_roundtrip_keeps_a_live_planet_position_clear_after_quantization() {
             profile,
             &mut next_id,
             generated[0].map.spawn(),
+            None,
             primary,
             gravity,
         )
@@ -129,7 +132,7 @@ fn v6_roundtrip_keeps_a_live_planet_position_clear_after_quantization() {
     let mut restored = load(&directory, &worlds).unwrap();
     let mut next_id = restored.next_player_id().unwrap();
     let player = restored
-        .claim(profile, &mut next_id, [0.0; 3], primary, gravity)
+        .claim(profile, &mut next_id, [0.0; 3], None, primary, gravity)
         .unwrap();
     let restored_position = player
         .location
@@ -181,6 +184,7 @@ fn v2_and_v3_snapshots_migrate_only_to_the_matching_legacy_world() {
                 profile,
                 &mut next_id,
                 [0.0; 3],
+                None,
                 instance,
                 CharacterGravity::FixedY,
             )

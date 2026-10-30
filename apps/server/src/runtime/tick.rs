@@ -145,6 +145,7 @@ impl ServerRuntime {
                     context: transfer.context,
                     map_fingerprint: transfer.map_fingerprint,
                     destination: transfer.destination,
+                    destination_mm: transfer.destination_mm,
                     health: transfer.health,
                     manifest: transfer.manifest,
                 },
@@ -172,6 +173,11 @@ impl ServerRuntime {
         let (worlds, active_inputs) = (&mut self.game.worlds, &self.game.active_inputs);
         let mut collision_stats = CollisionQueryStats::default();
         for (_, instance) in worlds.iter_mut() {
+            let earth = instance
+                .manifest
+                .planet()
+                .filter(|definition| definition.mode == 1);
+            let previous = earth.map(|_| instance.world.snapshot());
             collision_stats.merge(simulation::step_ready_players(
                 &mut instance.world,
                 active_inputs,
@@ -179,6 +185,22 @@ impl ServerRuntime {
                 TICK.as_secs_f32(),
                 &self.executor,
             ));
+            if let (Some(definition), Some(previous)) = (earth, previous) {
+                for player in previous {
+                    if let Some(current) = instance.world.player(player.id) {
+                        if !minimium_procgen::earth_is_land(
+                            current.position,
+                            definition.height_scale_permille,
+                            definition.sea_level_mm,
+                        ) {
+                            instance.world.set_position(player.id, player.position);
+                            if let Some(position_mm) = player.position_mm {
+                                instance.world.restore_position_mm(player.id, position_mm);
+                            }
+                        }
+                    }
+                }
+            }
         }
         self.metrics.record_collision_queries(collision_stats);
         self.metrics.simulation.record(simulation_started.elapsed());

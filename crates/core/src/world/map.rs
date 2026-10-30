@@ -7,7 +7,7 @@ use super::rules::{character_frame, CharacterGravity};
 
 pub const MAX_MAP_BOXES: usize = 4096;
 pub const MAX_MAP_TRIANGLES: usize = 8192;
-pub const MAX_MAP_COORDINATE: f32 = 1_000_000.0;
+pub const MAX_MAP_COORDINATE: f32 = 7_000_000.0;
 
 #[derive(Clone, Copy, Debug)]
 pub struct MapBox {
@@ -20,6 +20,7 @@ pub struct MapBox {
 #[derive(Clone, Copy, Debug)]
 pub struct MapTriangle {
     pub vertices: [[f32; 3]; 3],
+    pub precise_vertices: Option<[[i64; 3]; 3]>,
     pub color: [f32; 3],
     pub solid: bool,
 }
@@ -27,6 +28,7 @@ pub struct MapTriangle {
 #[derive(Clone, Debug)]
 pub struct WorldMap {
     pub(super) spawn: [f32; 3],
+    pub(super) spawn_mm: Option<super::model::Position3Mm>,
     pub(super) boxes: Vec<MapBox>,
     pub(super) triangles: Vec<MapTriangle>,
     pub(super) fingerprint: u64,
@@ -72,6 +74,7 @@ impl WorldMap {
         let fingerprint = map_fingerprint(spawn, &boxes, &triangles);
         Ok(Self {
             spawn,
+            spawn_mm: None,
             boxes,
             triangles,
             fingerprint,
@@ -80,6 +83,15 @@ impl WorldMap {
 
     pub fn spawn(&self) -> [f32; 3] {
         self.spawn
+    }
+
+    pub fn spawn_position_mm(&self) -> Option<super::model::Position3Mm> {
+        self.spawn_mm
+    }
+
+    pub fn with_spawn_position_mm(mut self, position: super::model::Position3Mm) -> Self {
+        self.spawn_mm = Some(position);
+        self
     }
 
     pub fn boxes(&self) -> &[MapBox] {

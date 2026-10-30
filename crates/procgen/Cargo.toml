@@ -9,3 +9,7 @@ path = "src/lib.rs"
 
 [dependencies]
 minimium-core = { path = "../core" }
+memmap2 = "0.9.12"
+ron = "0.12.3"
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"

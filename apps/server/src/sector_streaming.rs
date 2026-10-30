@@ -65,7 +65,7 @@ pub(crate) fn update(
         requests.extend(players.into_iter().map(|player| PlayerSectorRequest {
             player: player.id,
             instance: instance_id,
-            keys: minimium_procgen::sector_neighborhood(manifest.topology(), player.position),
+            keys: minimium_procgen::sector_neighborhood_for(manifest, player.position),
             generation: manifest.generation().revision(),
             content: manifest.content_revision(),
         }));
@@ -115,16 +115,16 @@ pub(crate) fn update(
     transfer_requests.sort_unstable_by_key(|request| request.player);
     let mut transfer_readiness = Vec::with_capacity(transfer_requests.len());
     for request in transfer_requests {
-        let topology = worlds
+        let manifest = worlds
             .get(request.instance)
-            .map(|instance| instance.manifest.topology());
-        let Some(topology) = topology else {
+            .map(|instance| instance.manifest);
+        let Some(manifest) = manifest else {
             transfer_readiness.push((request.player, Vec::new(), false, request.client_ready));
             continue;
         };
         let mut tickets = Vec::new();
         let mut complete = true;
-        for key in minimium_procgen::sector_neighborhood(topology, request.position) {
+        for key in minimium_procgen::sector_neighborhood_for(manifest, request.position) {
             let Some(ticket) = request_sector(
                 sectors,
                 request.instance,
@@ -152,9 +152,9 @@ pub(crate) fn update(
         let Some(instance) = worlds.get(ticket.instance()) else {
             continue;
         };
-        let payload = Arc::new(minimium_procgen::slice_sector_geometry(
+        let payload = Arc::new(minimium_procgen::materialize_world_sector(
             &instance.map,
-            instance.manifest.topology(),
+            instance.manifest,
             ticket.key(),
         ));
         let revision = SectorRevision::new(1).expect("initial sector revision is nonzero");

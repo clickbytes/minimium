@@ -1,3 +1,4 @@
+use crate::terrain_color::{mostly_ocean, terrain_color};
 use crate::{DungeonBlueprint, DungeonTile, PlanetLandmarks, PlanetTerrain};
 use minimium_core::world::{
     MapBox, MapTriangle, PlanetFace, WorldMap, PLANET_SAMPLE_COORDINATE_SCALE,
@@ -8,13 +9,97 @@ const ROOM_COLOR: [f32; 3] = [0.34, 0.32, 0.28];
 const WALL_COLOR: [f32; 3] = [0.28, 0.30, 0.33];
 const PLANET_SPAWN_CLEARANCE_MM: i64 = 2_000;
 
-/// Produces a bounded triangulated landing region from canonical planet samples.
+/// Bounded visual overview of all six faces.
+pub fn materialize_planet_overview(terrain: PlanetTerrain) -> Vec<MapTriangle> {
+    let steps: usize = if terrain.is_earth() { 96 } else { 24 };
+    let scale = PLANET_SAMPLE_COORDINATE_SCALE;
+    let mut triangles = Vec::with_capacity(6 * steps * steps * 2);
+    for face in PlanetFace::ALL {
+        let mut points = Vec::with_capacity((steps + 1) * (steps + 1));
+        let mut ocean = Vec::with_capacity((steps + 1) * (steps + 1));
+        let mut heights = Vec::with_capacity((steps + 1) * (steps + 1));
+        for v in 0..=steps {
+            for u in 0..=steps {
+                let sample = face
+                    .cube_sample(
+                        -scale + 2 * scale * u as i32 / steps as i32,
+                        -scale + 2 * scale * v as i32 / steps as i32,
+                    )
+                    .expect("overview samples lie on a cube face");
+                let point = terrain.sample(sample);
+                points.push(millimeters_to_world(point.position_mm.coordinates()));
+                ocean.push(point.ocean);
+                heights.push(
+                    point.height_mm as i64 - terrain.radius_mm() as i64 - terrain.sea_level_mm(),
+                );
+            }
+        }
+        for v in 0..steps {
+            for u in 0..steps {
+                let a = v * (steps + 1) + u;
+                let b = (v + 1) * (steps + 1) + u;
+                let c = a + 1;
+                let d = b + 1;
+                for indices in [[a, b, c], [c, b, d]] {
+                    let mut vertices = indices.map(|index| points[index]);
+                    let water = mostly_ocean(indices.map(|index| ocean[index]));
+                    let average_height =
+                        indices.map(|index| heights[index]).into_iter().sum::<i64>() / 3;
+                    let color = terrain_color(average_height, water);
+                    let a = vertices[0];
+                    let b = vertices[1];
+                    let c = vertices[2];
+                    let ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+                    let ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+                    let normal = [
+                        ab[1] * ac[2] - ab[2] * ac[1],
+                        ab[2] * ac[0] - ab[0] * ac[2],
+                        ab[0] * ac[1] - ab[1] * ac[0],
+                    ];
+                    if normal[0] * a[0] + normal[1] * a[1] + normal[2] * a[2] < 0.0 {
+                        vertices.swap(1, 2);
+                    }
+                    triangles.push(MapTriangle {
+                        vertices,
+                        precise_vertices: None,
+                        color,
+                        solid: false,
+                    });
+                }
+            }
+        }
+    }
+    triangles
+}
+
+/// Produces the landing marker. Terrain is generated per sector on demand.
 pub fn materialize_planet_map(
     terrain: PlanetTerrain,
     landmarks: PlanetLandmarks,
 ) -> Result<WorldMap, String> {
+    let _ = terrain;
+    let spawn_mm = radial_clearance(
+        landmarks.spawn.position_mm.coordinates(),
+        PLANET_SPAWN_CLEARANCE_MM,
+    );
+    let spawn = millimeters_to_world(spawn_mm);
+    let entrance = millimeters_to_world(landmarks.entrance.position_mm.coordinates());
+    let marker = MapBox {
+        center: [entrance[0], entrance[1] + 0.6, entrance[2]],
+        size: [0.65, 1.2, 0.65],
+        color: [0.86, 0.53, 0.16],
+        solid: false,
+    };
+    WorldMap::from_parts(spawn, vec![marker], Vec::new())
+        .map(|map| map.with_spawn_position_mm(minimium_core::world::Position3Mm(spawn_mm)))
+}
+
+/// The v1 landing mesh is retained solely for reading its saved fingerprint.
+pub(crate) fn materialize_legacy_planet_map(
+    terrain: PlanetTerrain,
+    landmarks: PlanetLandmarks,
+) -> Result<WorldMap, String> {
     let u_steps = 16_usize;
-    // Half-sector steps put all nine route landmarks exactly on mesh vertices.
     let v_steps = 36_usize;
     let scale = PLANET_SAMPLE_COORDINATE_SCALE;
     let half_u = scale / 32;
@@ -27,7 +112,7 @@ pub fn materialize_planet_map(
             let u = -half_u + 2 * half_u * u_index as i32 / u_steps as i32;
             let sample = PlanetFace::PositiveY
                 .cube_sample(u, v)
-                .ok_or_else(|| String::from("planet sample is outside face bounds"))?;
+                .ok_or_else(|| String::from("legacy planet sample is outside face bounds"))?;
             points.push(millimeters_to_world(
                 terrain.sample(sample).position_mm.coordinates(),
             ));
@@ -42,11 +127,13 @@ pub fn materialize_planet_map(
             let upper_right = upper_left + 1;
             triangles.push(MapTriangle {
                 vertices: [points[lower_left], points[upper_left], points[lower_right]],
+                precise_vertices: None,
                 color: TERRAIN_COLOR,
                 solid: true,
             });
             triangles.push(MapTriangle {
                 vertices: [points[lower_right], points[upper_left], points[upper_right]],
+                precise_vertices: None,
                 color: TERRAIN_COLOR,
                 solid: true,
             });
@@ -124,6 +211,7 @@ fn floor_triangles(x: u16, y: u16, color: [f32; 3]) -> [MapTriangle; 2] {
     [
         MapTriangle {
             vertices: [[x, 0.0, z], [x, 0.0, z + 1.0], [x + 1.0, 0.0, z]],
+            precise_vertices: None,
             color,
             solid: true,
         },
@@ -133,6 +221,7 @@ fn floor_triangles(x: u16, y: u16, color: [f32; 3]) -> [MapTriangle; 2] {
                 [x + 1.0, 0.0, z + 1.0],
                 [x + 1.0, 0.0, z],
             ],
+            precise_vertices: None,
             color,
             solid: true,
         },

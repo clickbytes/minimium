@@ -4,9 +4,9 @@ This page documents the current parsers and dispatchers. For operational sequenc
 
 | Program | Options and commands | Defaults and parsing |
 | --- | --- | --- |
-| Server | `run`, `--threads`, `--max-players`, `--bind`, `--game-port`, `--data-dir`, `--map`, `--world-definition`, `--autosave-seconds`, `--headless`, `--help`/`-h`, `--version` | One lane, 512 players, loopback, port 0, `.minimium`, seeded demo worlds, 300 s autosave. `--map` and `--world-definition` are mutually exclusive. |
+| Server | `run`, `--seed`, `--planet-config`, `--threads`, `--max-players`, `--bind`, `--game-port`, `--data-dir`, `--map`, `--world-definition`, `--autosave-seconds`, `--headless`, `--help`/`-h`, `--version` | One lane, 512 players, loopback, port 0, `.minimium`, seeded generated worlds, 300 s autosave. `--seed` and `--planet-config` apply only to generated worlds. |
 | Control | `--data-dir`, `--help`/`-h`, and the six server commands below | `.minimium`; help is handled before command parsing. Only the first `--data-dir` is consumed. |
-| Client | `--connect`, `--map`, `--world-definition`, `--profile-dir`, `--server-data-dir`, `--threads`, `--demo`, `--console`, `--help`/`-h` | One local-server lane, seeded demo worlds and `.minimium-local` paths; repeated options are errors. Demo conflicts with connect and console. `--map` and `--world-definition` are mutually exclusive. |
+| Client | `--connect`, `--map`, `--world-definition`, `--profile-dir`, `--server-data-dir`, `--threads`, `--demo`, `--console`, `--require-earth`, `--help`/`-h` | One local-server lane, seeded demo worlds and `.minimium-local` paths; repeated options are errors. Demo conflicts with connect and console. `--require-earth` requires the desktop client and conflicts with demo. `--map` and `--world-definition` are mutually exclusive. |
 | Load generator | `--address`, `--scenario`, `--clients`, `--seconds`, `--threads`, `--format`, `--scenario-id`, `--cpu-label`, `--cpu-mhz`, `--server-data-dir`, `--help`/`-h` | Address required; 100 clients, 10 s, heartbeat, auto workers and text output. Repeated option names are errors. |
 
 Lane types remain application-owned: the server accepts `1..=64` or `auto`, the client accepts `1`, `2` or `auto` for a locally started server, and the generator accepts `1`, `2` or `auto` with at most two workers. Their different meanings and limits do not justify a shared policy type. The server's existing invalid-value message mentions `1, 2, or auto` even though values through 64 are accepted; the range check and its separate error remain unchanged.
@@ -14,11 +14,38 @@ Lane types remain application-owned: the server accepts `1..=64` or `auto`, the 
 ## Server
 
 ~~~text
-minimium-server run [--threads 1..64|auto] [--max-players N] [--bind IP] [--game-port PORT] [--data-dir PATH] [--map PATH | --world-definition PATH] [--autosave-seconds N] [--headless]
+minimium-server run [--seed DECIMAL|0xHEX] [--planet-config PATH] [--threads 1..64|auto] [--max-players N] [--bind IP] [--game-port PORT] [--data-dir PATH] [--map PATH | --world-definition PATH] [--autosave-seconds N] [--headless]
 minimium-server --version
 ~~~
 
 The defaults are one execution lane, 512 active players, loopback bind (`127.0.0.1`), an OS-selected game port (`0`), data directory `.minimium`, seeded planet/dungeon demo worlds, and autosave every 300 seconds. `--threads` accepts 1 through 64 lanes or `auto`; `--max-players` accepts 1 through 512. `--autosave-seconds` accepts 0 through 604800; zero disables periodic saves. `--headless` leaves the server in the foreground but disables terminal commands. Without it, terminal commands use the same command registry as the admin CLI. Game traffic binds to the selected IP; the administrative listener is loopback-only.
+
+`--seed` accepts a decimal or `0x` hexadecimal 128-bit value for a new generated
+world. If omitted, the server draws one random seed. It records the seed in
+`world.seed`; later starts use that seed and reject a different supplied value.
+New procedural planets have a deterministic radius between 617.5 and 682.5 km.
+`start-procedural.ps1` supplies the procedural RON preset. Both scripts accept
+`-DataDir` and optional `-Seed`. `start-earth.ps1` builds and opens the desktop
+client; the client starts or attaches to the server in that data directory and
+owns a server it starts. It passes `--require-earth`, so the desktop keeps the
+demo scene hidden until an Earth manifest is accepted and keeps connection
+errors visible in the window title. `-ProfileDir` selects a separate client profile
+directory (by default, `${DataDir}-profile`). For the smaller Earth package, run
+`import-gebco-lite.ps1`. It streams the 1-arcminute overview of the
+[GEBCO 2026 ice-surface grid](https://www.gebco.net/data-products/gridded-bathymetry-data#global)
+from the Australian Antarctic Division's COG mirror into
+`third_party/gebco-2026` (about 467 MB of raw heights, ignored by Git).
+It requires `uv`; the wrapper supplies Rasterio in a temporary environment.
+The 1-arcminute coast and relief are coarser than GEBCO's native 15-arcsecond
+grid. `start-earth.ps1` defaults to this package and accepts `-PackageDir`.
+World saves remain under `%LOCALAPPDATA%/Minimium` by default.
+
+For full resolution, download the GEBCO ice-surface netCDF archive, extract
+`GEBCO_2026.nc`, install GDAL's `gdal_translate`, then run
+`import-gebco.ps1 -GridPath GEBCO_2026.nc`. It writes eight checked tiles to
+`third_party/gebco-2026` by default. A client started from the repository root
+uses that package automatically; a client elsewhere sets
+`MINIMIUM_EARTH_PACKAGE` to its local copy of the selected package.
 
 The shared server command parser is owned by `minimium-platform`; terminal and admin control use the same schema.
 
@@ -67,17 +94,23 @@ Each option may appear once. Unknown options and missing values are errors. `--t
 
 The seeded demo worlds are used unless `--map PATH` or `--world-definition PATH` is supplied. Provide the same custom file to each client and the server. Welcome validates the map fingerprint and generator digest; these detect accidental mismatch and are not authentication.
 
+In the desktop Earth client, press F1 and enter `map_telepo`. The command opens
+the `M` overview; click a land point to request a server-authoritative teleport.
+Drag to rotate the globe, scroll to zoom (down to 1.08 planet radii), and press Escape to cancel selection.
+Ocean destinations are rejected. The server places the player above the same
+collision triangles used by movement and reports success or failure to the client.
+
 Both frontends use one connection controller. It starts a background connector worker for DNS, sequential remote address attempts, or local server startup. The 10-second attempt timeout bounds when the front end accepts the result; blocking resolver or startup work cannot always be cancelled, so a timed-out/cancelled attempt remains busy until its worker exits. A replaced owned local server is cleaned up on a tracked worker before another attempt is allowed. After the connector returns a socket, the foreground client loop polls a shared nonblocking session; the session itself does not own a thread. The session sends Identify first, requires Welcome with the expected map fingerprint, queues app messages only when connected, and handles heartbeat timers. The initial Identify/Welcome exchange has a five-second client timeout; connected clients send pings every 10 seconds, disconnect after 20 seconds without a pong, and the server drops a client after 30 seconds without a valid game message.
 
 ### Text-client commands
 
-The text client and in-window console use the same command catalog and parser. Both accept `help`, `host local [--threads 1|2|auto]`, `connect HOST:PORT`, `disconnect`, `fps show`, `net stats`, `ping`, `move X Z`, `jump`, `portal`, `fire`, `say TEXT` (alias `chat`), `name NAME`, `state`, `clear`, and `quit` (alias `exit`). `portal` requests a transfer when the player is near a portal; the desktop client also binds this action to E. `host local` starts or attaches to the local server configured by startup paths. It stores an owned server guard before later connection setup; only an owned child is stopped on exit. An attached server is left running. The terminal frontend renders state/events as text; the desktop frontend provides F1 console history and tab completion from the same catalog.
+The text client and in-window console use one startup command registry and parser. The interface, connection, and gameplay modules each register their own commands. Both accept `help`, `host local [--threads 1|2|auto]`, `connect HOST:PORT`, `disconnect`, `fps show`, `net stats`, `ping`, `move X Z`, `jump`, `portal`, `map_telepo`, `fire`, `say TEXT` (alias `chat`), `name NAME`, `state`, `clear`, and `quit` (alias `exit`). `help` lists every registered command, and tab completion uses the same registry. `portal` requests a transfer when the player is near a portal; the desktop client also binds this action to E. `host local` starts or attaches to the local server configured by startup paths. It stores an owned server guard before later connection setup; only an owned child is stopped on exit. An attached server is left running. The terminal frontend renders state/events as text; the desktop frontend provides F1 console history and tab completion.
 
 `fps show` reports that frame statistics are unavailable in the text client.
 
 ### In-window console commands
 
-Press F1 to open or close the console. It uses the shared command catalog above. Arrow keys browse history and Tab suggests canonical commands and aliases. Lock the mouse and left-click to fire. `fps show` reports frame interval and render-loop work summaries; `net stats` reports application bytes, latest round-trip time, and nearby-player count.
+Press F1 to open or close the console. It uses the shared registry above and renders text in Roboto Mono. Arrow keys browse history; PageUp/PageDown or the mouse wheel scroll the console, Home jumps to the oldest lines, End returns to the newest lines, and Tab suggests canonical commands and aliases. Lock the mouse and left-click to fire. `fps show` reports frame interval and render-loop work summaries; `net stats` reports application bytes, latest round-trip time, and nearby-player count.
 
 ## Load generator
 

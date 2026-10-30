@@ -12,6 +12,7 @@ pub(super) struct RendererSetup {
     pub(super) map_path: Option<PathBuf>,
     pub(super) world_definition_path: Option<PathBuf>,
     pub(super) threads: crate::options::ThreadLane,
+    pub(super) require_earth: bool,
 }
 
 impl Renderer {
@@ -26,6 +27,7 @@ impl Renderer {
             map_path,
             world_definition_path,
             threads,
+            require_earth,
         } = setup;
         let map_fingerprint = map.fingerprint();
         let current_instance = world_catalog
@@ -57,6 +59,7 @@ impl Renderer {
             .flat_map(|(_, geometry)| sector_geometry(geometry))
             .collect();
         let mut gpu = GpuResources::new(window, &vertices).await?;
+        gpu.scene_visible = !require_earth;
         if !gpu.cache_sector_scene(current_instance, &initial_scene)
             || !gpu.activate_sector_scene(current_instance, &initial_scene)
         {
@@ -70,6 +73,7 @@ impl Renderer {
         );
         let mut console = Console::new();
         console.push_line("F1 opens the command console. Type help for commands.");
+        console.push_line("M toggles the world overview.");
         let fingerprints = world_catalog
             .iter()
             .map(|(instance, map)| (*instance, map.fingerprint()))
@@ -90,6 +94,7 @@ impl Renderer {
                 last_remote_snapshot_received_at: None,
                 remote_geometry_dirty: false,
                 character: CharacterState::at_spawn_with_gravity(map.spawn(), gravity),
+                position_mm: None,
                 health: PLAYER_MAX_HEALTH,
                 collision_index,
                 collision_query: CollisionQuery::default(),
@@ -127,14 +132,33 @@ impl Renderer {
                 map_path,
                 world_definition_path,
                 threads,
+                require_earth,
             },
             connection,
             world_catalog,
             world_manifests,
             sector_cache,
             active_sector_keys: initial_scene.keys,
+            last_render_position: map.spawn(),
             pending_sector_transitions: std::collections::HashMap::new(),
             current_instance,
+            overview_open: false,
+            overview_instance: None,
+            connection_status: if require_earth {
+                "Łączenie z Earth".into()
+            } else {
+                "Demo".into()
+            },
+            globe_loading: None,
+            overview_yaw: 0.0,
+            overview_pitch: 0.0,
+            overview_zoom: 2.8,
+            overview_dragging: false,
+            overview_dragged: false,
+            overview_drag_distance: 0.0,
+            map_teleport_armed: false,
+            map_teleport_pending: false,
+            teleport_loading: false,
         })
     }
 

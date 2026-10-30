@@ -359,6 +359,14 @@ fn start_local_server(
     if let Some(world_definition_path) = world_definition_path {
         command.arg("--world-definition").arg(world_definition_path);
     }
+    if let Some(planet_config) = std::env::var_os("MINIMIUM_LOCAL_PLANET_CONFIG") {
+        command.arg("--planet-config").arg(planet_config);
+    }
+    if let Some(seed) = std::env::var_os("MINIMIUM_LOCAL_SEED") {
+        if !seed.is_empty() {
+            command.arg("--seed").arg(seed);
+        }
+    }
     command
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())

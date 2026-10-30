@@ -1,11 +1,10 @@
-use crate::world_location::world_location;
 use minimium_core::world::WorldMap;
 use minimium_core::{
     ids::PlayerId,
     world::{
-        GenerationRevision, GenerationSpec, GeneratorDigest, MembershipEpoch, TransitionId, World,
-        WorldContentRevision, WorldDefinitionId, WorldInstanceId, WorldLocation, WorldManifest,
-        WorldSectorState, WorldSeed, WorldTopology,
+        GenerationRevision, GenerationSpec, GeneratorDigest, MembershipEpoch, Position3Mm,
+        TransitionId, World, WorldContentRevision, WorldDefinitionId, WorldInstanceId,
+        WorldLocation, WorldManifest, WorldSectorState, WorldSeed, WorldTopology,
     },
 };
 use minimium_procgen::{DemoPortal, GeneratedWorld};
@@ -62,6 +61,7 @@ pub(crate) struct TransferOffer {
     pub(crate) target_context: WorldContext,
     pub(crate) map_fingerprint: u64,
     pub(crate) destination: [f32; 3],
+    pub(crate) destination_mm: Position3Mm,
     pub(crate) manifest: WorldManifest,
 }
 
@@ -71,6 +71,7 @@ pub(crate) struct CommittedTransfer {
     pub(crate) context: WorldContext,
     pub(crate) map_fingerprint: u64,
     pub(crate) destination: [f32; 3],
+    pub(crate) destination_mm: Position3Mm,
     pub(crate) source_location: WorldLocation,
     pub(crate) health: u16,
     pub(crate) manifest: WorldManifest,
@@ -100,15 +101,27 @@ impl WorldRegistry {
         let target = self.instances.get(&anchor.target_instance)?;
         let target_manifest = target.manifest;
         let target_fingerprint = target.map.fingerprint();
-        let destination = return_location
+        let return_destination = return_location
             .filter(|location| location.instance() == anchor.target_instance)
-            .map(|location| {
-                location
-                    .position()
-                    .coordinates()
-                    .map(|value| value as f32 / 1000.0)
-            })
-            .unwrap_or(anchor.destination);
+            .map(|location| location.position());
+        let destination_mm = return_destination.unwrap_or_else(|| {
+            if anchor.destination == target.map.spawn() {
+                target.map.spawn_position_mm().unwrap_or_else(|| {
+                    Position3Mm(
+                        anchor
+                            .destination
+                            .map(|value| (f64::from(value) * 1000.0).round() as i64),
+                    )
+                })
+            } else {
+                Position3Mm(
+                    anchor
+                        .destination
+                        .map(|value| (f64::from(value) * 1000.0).round() as i64),
+                )
+            }
+        });
+        let destination = destination_mm.0.map(|value| value as f32 / 1000.0);
         if !target
             .map
             .can_place_player_with_gravity(destination, target.world.gravity())
@@ -128,6 +141,7 @@ impl WorldRegistry {
             ),
             map_fingerprint: target_fingerprint,
             destination,
+            destination_mm,
             manifest: target_manifest,
         };
         self.transfers.insert(
@@ -244,6 +258,9 @@ impl WorldRegistry {
                 offer.destination,
                 player_state.health,
             );
+            target
+                .world
+                .restore_position_mm(player, offer.destination_mm);
             self.memberships.insert(
                 player,
                 Membership {
@@ -257,9 +274,10 @@ impl WorldRegistry {
                 context: offer.target_context,
                 map_fingerprint: offer.map_fingerprint,
                 destination: offer.destination,
-                source_location: world_location(
+                destination_mm: offer.destination_mm,
+                source_location: crate::world_location::player_location(
                     source_instance,
-                    player_state.position,
+                    &player_state,
                     source_gravity,
                 ),
                 health: player_state.health,
@@ -299,6 +317,22 @@ impl WorldRegistry {
             .get_mut(&instance)
             .ok_or(RegistryError::UnknownInstance)?;
         target.world.join_at_with_health(id, name, position, health);
+        Ok(())
+    }
+
+    pub(crate) fn join_at_precise(
+        &mut self,
+        instance: WorldInstanceId,
+        id: PlayerId,
+        name: String,
+        position: [f32; 3],
+        position_mm: minimium_core::world::Position3Mm,
+        health: u16,
+    ) -> Result<(), RegistryError> {
+        self.join_at(instance, id, name, position, health)?;
+        if let Some(owner) = self.instances.get_mut(&instance) {
+            owner.world.restore_position_mm(id, position_mm);
+        }
         Ok(())
     }
 
@@ -361,6 +395,10 @@ impl WorldRegistry {
 
     pub(crate) fn context_matches(&self, id: PlayerId, context: WorldContext) -> bool {
         self.context_for_player(id) == Some(context)
+    }
+
+    pub(crate) fn can_map_teleport(&self, id: PlayerId, context: WorldContext) -> bool {
+        self.context_matches(id, context) && !self.transfers.contains_key(&id)
     }
 
     pub(crate) fn manifest_for_player(&self, id: PlayerId) -> Option<WorldManifest> {

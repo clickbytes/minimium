@@ -32,6 +32,18 @@ pub(super) fn is_valid_solid_triangle(surface: MapTriangle) -> bool {
     {
         return false;
     }
+    if let Some(vertices) = surface.precise_vertices {
+        let ab: [f64; 3] =
+            std::array::from_fn(|axis| (vertices[1][axis] - vertices[0][axis]) as f64 / 1000.0);
+        let ac: [f64; 3] =
+            std::array::from_fn(|axis| (vertices[2][axis] - vertices[0][axis]) as f64 / 1000.0);
+        let cross = [
+            ab[1] * ac[2] - ab[2] * ac[1],
+            ab[2] * ac[0] - ab[0] * ac[2],
+            ab[0] * ac[1] - ab[1] * ac[0],
+        ];
+        return cross.iter().map(|value| value * value).sum::<f64>() > 1.0e-12;
+    }
     let normal = triangle_normal(surface.vertices);
     if normal.iter().any(|value| !value.is_finite()) {
         return false;

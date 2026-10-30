@@ -36,7 +36,7 @@ pub(super) fn append_hud(vertices: &mut Vec<UiVertex>, context: DrawContext, sta
             text: std::str::from_utf8(&health_label).unwrap_or("HP"),
             color: [0.90, 0.95, 0.98],
             max_chars: 12,
-            scale: 2.0,
+            scale: 1.0,
         },
     );
     text::append_quad(
@@ -94,4 +94,29 @@ pub(super) fn append_hud(vertices: &mut Vec<UiVertex>, context: DrawContext, sta
             );
         }
     }
+}
+
+pub(super) fn append_status(vertices: &mut Vec<UiVertex>, context: DrawContext, status: &str) {
+    let max_chars = ((context.width - 32.0) / super::theme::GLYPH_ADVANCE).max(1.0) as usize;
+    text::append_quad(
+        vertices,
+        context,
+        QuadDraw::solid(8.0, 8.0, context.width - 16.0, 32.0, [0.025, 0.035, 0.050]),
+    );
+    text::append_text(
+        vertices,
+        context,
+        TextDraw {
+            x: 16.0,
+            y: 16.0,
+            text: status,
+            color: if status.starts_with("Błąd") {
+                [1.0, 0.45, 0.3]
+            } else {
+                [0.9, 0.95, 0.98]
+            },
+            max_chars,
+            scale: 1.0,
+        },
+    );
 }

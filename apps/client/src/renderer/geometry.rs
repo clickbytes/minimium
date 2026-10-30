@@ -6,11 +6,12 @@ use minimium_core::world::{MapBox, MapTriangle};
 pub(super) struct Vertex {
     position: [f32; 3],
     color: [f32; 3],
+    normal: [f32; 3],
 }
 
 impl Vertex {
-    const ATTRIBUTES: [wgpu::VertexAttribute; 2] =
-        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+    const ATTRIBUTES: [wgpu::VertexAttribute; 3] =
+        wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3];
     pub(super) fn layout() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Self>() as wgpu::BufferAddress,
@@ -37,15 +38,55 @@ pub(super) fn sector_geometry(geometry: &minimium_procgen::SectorGeometry) -> Ve
     out
 }
 
+pub(super) fn sector_geometry_relative(
+    geometry: &minimium_procgen::SectorGeometry,
+    origin: [f32; 3],
+) -> Vec<Vertex> {
+    let mut vertices = sector_geometry(geometry);
+    for vertex in &mut vertices {
+        for (coordinate, origin) in vertex.position.iter_mut().zip(origin) {
+            *coordinate = (f64::from(*coordinate) - f64::from(origin)) as f32;
+        }
+    }
+    for (triangle, rendered) in geometry.triangles.iter().zip(
+        vertices[geometry.boxes.len() * 36..]
+            .as_chunks_mut::<3>()
+            .0
+            .iter_mut(),
+    ) {
+        if let Some(precise) = triangle.precise_vertices {
+            for (point, vertex) in precise.iter().zip(rendered.iter_mut()) {
+                vertex.position = std::array::from_fn(|axis| {
+                    (point[axis] as f64 / 1000.0 - f64::from(origin[axis])) as f32
+                });
+            }
+        }
+    }
+    vertices
+}
+
 fn append_geometry(out: &mut Vec<Vertex>, boxes: &[MapBox], triangles: &[MapTriangle]) {
     for map_box in boxes {
         cube(out, map_box.center, map_box.size, map_box.color);
     }
     for triangle in triangles {
+        let points = triangle
+            .precise_vertices
+            .map(|vertices| vertices.map(|point| point.map(|value| value as f64 / 1000.0)))
+            .unwrap_or_else(|| triangle.vertices.map(|point| point.map(f64::from)));
+        let a = glam::DVec3::from_array(points[0]);
+        let b = glam::DVec3::from_array(points[1]);
+        let c = glam::DVec3::from_array(points[2]);
+        let normal = (b - a)
+            .cross(c - a)
+            .normalize_or_zero()
+            .as_vec3()
+            .to_array();
         for position in triangle.vertices {
             out.push(Vertex {
                 position,
                 color: triangle.color,
+                normal,
             });
         }
     }
@@ -72,10 +113,15 @@ pub(super) fn cube(out: &mut Vec<Vertex>, center: [f32; 3], size: [f32; 3], colo
         [3, 2, 6, 3, 6, 7],
         [4, 5, 1, 4, 1, 0],
     ] {
+        let a = glam::Vec3::from_array(p[face[0]]);
+        let b = glam::Vec3::from_array(p[face[1]]);
+        let c = glam::Vec3::from_array(p[face[2]]);
+        let normal = (b - a).cross(c - a).normalize_or_zero().to_array();
         for index in face {
             out.push(Vertex {
                 position: p[index],
                 color,
+                normal,
             });
         }
     }

@@ -24,12 +24,16 @@ struct SectorInterest {
 pub(super) struct ClientSectorScene {
     pub(super) keys: Vec<SectorKey>,
     pub(super) sectors: Vec<(SectorKey, Arc<SectorGeometry>)>,
+    pub(super) render_sectors: Vec<(SectorKey, u8, Arc<SectorGeometry>)>,
     pub(super) collision: CollisionIndex,
     pub(super) generation: GenerationRevision,
     pub(super) content_revision: WorldContentRevision,
 }
 
 impl ClientSectorCache {
+    pub(super) fn reset(&mut self) {
+        *self = Self::new();
+    }
     pub(super) fn new() -> Self {
         Self {
             manager: SectorManager::new(CLIENT_SECTOR_CACHE_CAPACITY, CLIENT_SECTOR_CACHE_CAPACITY)
@@ -63,7 +67,7 @@ impl ClientSectorCache {
         if maps.get(&instance).is_none() || manifests.get(&instance) != Some(&manifest) {
             return None;
         }
-        let keys = minimium_procgen::sector_neighborhood(manifest.topology(), position);
+        let keys = minimium_procgen::sector_neighborhood_for(manifest, position);
         let same_interest = self.interest_matches(instance, &keys, manifest);
         if !same_interest {
             if let Some(previous) = self.interests.remove(&instance) {
@@ -101,9 +105,9 @@ impl ClientSectorCache {
             let Some(source_manifest) = manifests.get(&ticket.instance()) else {
                 continue;
             };
-            let geometry = Arc::new(minimium_procgen::slice_sector_geometry(
+            let geometry = Arc::new(minimium_procgen::materialize_world_sector(
                 source_map,
-                source_manifest.topology(),
+                *source_manifest,
                 ticket.key(),
             ));
             let revision = SectorRevision::new(1).expect("initial sector revision is nonzero");
@@ -129,9 +133,18 @@ impl ClientSectorCache {
             .collect::<Option<_>>()?;
         let collision =
             collision_from_sectors(sectors.iter().map(|(_, geometry)| geometry.as_ref()));
+        let render_sectors = if manifest.topology() == minimium_core::world::WorldTopology::Planet {
+            super::planet_visibility::render_patches(manifest, position, &sectors)
+        } else {
+            sectors
+                .iter()
+                .map(|(key, geometry)| (*key, 0, Arc::clone(geometry)))
+                .collect()
+        };
         Some(ClientSectorScene {
             keys,
             sectors,
+            render_sectors,
             collision,
             generation: manifest.generation().revision(),
             content_revision: manifest.content_revision(),
