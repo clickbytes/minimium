@@ -6,7 +6,6 @@
 //! [`FrontendAction`], leaving each front end in control of its own event loop.
 
 use crate::{environment::quality::SkyQuality, options::ThreadLane, session::QueueError};
-use minimium_platform::commands::parse_scale_ppm;
 use minimium_protocol::ClientMessage;
 use std::sync::OnceLock;
 
@@ -40,37 +39,12 @@ pub(crate) enum ClientCommand {
     TimeScale(String),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum CommandId {
-    Help,
-    HostLocal,
-    Connect,
-    Disconnect,
-    FpsShow,
-    NetStats,
-    Ping,
-    Move,
-    Jump,
-    UsePortal,
-    MapTeleport,
-    Fire,
-    Chat,
-    SetName,
-    State,
-    Clear,
-    Quit,
-    SkyQuality,
-    SkyInfo,
-    TimeStatus,
-    TimeScale,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct CommandSpec {
-    pub(super) id: CommandId,
     pub name: &'static str,
     pub alias: Option<&'static str>,
     pub usage: &'static str,
+    parser: fn(&[&str]) -> Result<ClientCommand, ParseError>,
 }
 
 pub(super) struct CommandRegistry {
@@ -80,18 +54,34 @@ pub(super) struct CommandRegistry {
 impl CommandRegistry {
     pub(super) fn register(&mut self, specs: &'static [CommandSpec]) {
         for spec in specs {
-            assert!(
-                !self.commands.iter().any(|existing| {
-                    existing.name == spec.name
-                        || existing.alias == Some(spec.name)
-                        || spec.alias == Some(existing.name)
-                        || spec.alias.is_some() && spec.alias == existing.alias
-                }),
-                "duplicate console command: {}",
-                spec.name
-            );
+            for name in std::iter::once(spec.name).chain(spec.alias) {
+                assert!(
+                    !self.commands.iter().any(|existing| {
+                        std::iter::once(existing.name)
+                            .chain(existing.alias)
+                            .any(|registered| registered == name)
+                    }),
+                    "duplicate console command: {name}"
+                );
+            }
             self.commands.push(*spec);
         }
+    }
+
+    fn parse(&self, words: &[&str]) -> Option<Result<ClientCommand, ParseError>> {
+        self.commands
+            .iter()
+            .filter_map(|spec| {
+                let matched = [Some(spec.name), spec.alias]
+                    .into_iter()
+                    .flatten()
+                    .map(|name| name.split_whitespace().collect::<Vec<_>>())
+                    .filter(|name| words.starts_with(name))
+                    .max_by_key(Vec::len)?;
+                Some((spec, matched.len()))
+            })
+            .max_by_key(|(_, length)| *length)
+            .map(|(spec, _)| (spec.parser)(words))
     }
 }
 
@@ -122,20 +112,6 @@ pub(crate) fn command_specs() -> &'static [CommandSpec] {
     &registry().commands
 }
 
-fn command_id(first: &str, second: Option<&str>) -> Option<CommandId> {
-    registry()
-        .commands
-        .iter()
-        .find(|spec| {
-            if let Some((verb, subcommand)) = spec.name.split_once(' ') {
-                (first == verb && second == Some(subcommand)) || spec.alias == Some(first)
-            } else {
-                first == spec.name || spec.alias == Some(first)
-            }
-        })
-        .map(|spec| spec.id)
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ParseError {
     MissingChat,
@@ -153,89 +129,14 @@ pub(crate) enum ParseError {
 
 pub(crate) fn parse_command(input: &str) -> Result<Option<ClientCommand>, ParseError> {
     let trimmed = input.trim();
-    if let Some((verb, text)) = trimmed.split_once(char::is_whitespace) {
-        if command_id(verb, None) == Some(CommandId::Chat) {
-            let text = text.trim();
-            return if text.is_empty() {
-                Err(ParseError::MissingChat)
-            } else {
-                Ok(Some(ClientCommand::Chat(text.to_owned())))
-            };
-        }
+    if trimmed.is_empty() {
+        return Ok(None);
     }
-    let mut words = trimmed.split_whitespace();
-    let parts = (
-        words.next(),
-        words.next(),
-        words.next(),
-        words.next(),
-        words.next(),
-    );
-    let id = parts.0.and_then(|first| command_id(first, parts.1));
-    let command = match (id, parts) {
-        (_, (None, None, None, None, None)) => return Ok(None),
-        (Some(CommandId::Help), (_, None, None, None, None)) => ClientCommand::Help,
-        (Some(CommandId::HostLocal), (_, _, None, None, None)) => ClientCommand::HostLocal(None),
-        (Some(CommandId::HostLocal), (_, _, Some("--threads"), Some(lane), None)) => {
-            ClientCommand::HostLocal(Some(
-                ThreadLane::parse(lane).map_err(|_| ParseError::InvalidLane)?,
-            ))
-        }
-        (Some(CommandId::Connect), (_, Some(address), None, None, None)) => {
-            ClientCommand::Connect(address.into())
-        }
-        (Some(CommandId::Disconnect), (_, None, None, None, None)) => ClientCommand::Disconnect,
-        (Some(CommandId::FpsShow), (_, _, None, None, None)) => ClientCommand::FpsShow,
-        (Some(CommandId::NetStats), (_, _, None, None, None)) => ClientCommand::NetStats,
-        (Some(CommandId::Ping), (_, None, None, None, None)) => ClientCommand::Ping,
-        (Some(CommandId::Move), (_, Some(x), Some(z), None, None)) => {
-            ClientCommand::Move([parse_coordinate(x)?, parse_coordinate(z)?])
-        }
-        (Some(CommandId::Jump), (_, None, None, None, None)) => ClientCommand::Jump,
-        (Some(CommandId::UsePortal), (_, None, None, None, None)) => ClientCommand::UsePortal,
-        (Some(CommandId::MapTeleport), (_, None, None, None, None)) => ClientCommand::MapTeleport,
-        (Some(CommandId::Fire), (_, None, None, None, None)) => ClientCommand::Fire,
-        (Some(CommandId::SetName), (_, Some(name), None, None, None)) => {
-            ClientCommand::SetName(name.into())
-        }
-        (Some(CommandId::State), (_, None, None, None, None)) => ClientCommand::State,
-        (Some(CommandId::Clear), (_, None, None, None, None)) => ClientCommand::Clear,
-        (Some(CommandId::Quit), (_, None, None, None, None)) => ClientCommand::Quit,
-        (Some(CommandId::SkyQuality), (_, _, Some(value), None, None)) => {
-            ClientCommand::SkyQuality(
-                SkyQuality::parse(value).map_err(|_| ParseError::SkyQualityUsage)?,
-            )
-        }
-        (Some(CommandId::SkyInfo), (_, _, None, None, None)) => ClientCommand::SkyInfo,
-        (Some(CommandId::TimeStatus), (_, _, None, None, None)) => ClientCommand::TimeStatus,
-        (Some(CommandId::TimeScale), (_, _, Some(value), None, None)) => {
-            parse_scale_ppm(value).map_err(|_| ParseError::TimeScaleUsage)?;
-            ClientCommand::TimeScale(value.to_owned())
-        }
-        (Some(CommandId::TimeScale), (Some("timescale"), Some(value), None, None, None)) => {
-            parse_scale_ppm(value).map_err(|_| ParseError::TimeScaleUsage)?;
-            ClientCommand::TimeScale(value.to_owned())
-        }
-        (Some(CommandId::HostLocal), _) => return Err(ParseError::HostUsage),
-        (Some(CommandId::Connect), _) => return Err(ParseError::ConnectUsage),
-        (Some(CommandId::Move), _) => return Err(ParseError::MoveUsage),
-        (Some(CommandId::SetName), _) => return Err(ParseError::NameUsage),
-        (Some(CommandId::SkyQuality), _) => return Err(ParseError::SkyQualityUsage),
-        (Some(CommandId::TimeScale), _) => return Err(ParseError::TimeScaleUsage),
-        (Some(CommandId::Chat), _) => return Err(ParseError::MissingChat),
-        _ => return Err(ParseError::UnknownCommand),
-    };
-    Ok(Some(command))
-}
-
-fn parse_coordinate(value: &str) -> Result<f32, ParseError> {
-    let coordinate = value
-        .parse::<f32>()
-        .map_err(|_| ParseError::InvalidCoordinate)?;
-    if !coordinate.is_finite() {
-        return Err(ParseError::NonFiniteCoordinate);
-    }
-    Ok(coordinate)
+    let words = trimmed.split_whitespace().collect::<Vec<_>>();
+    registry()
+        .parse(&words)
+        .unwrap_or(Err(ParseError::UnknownCommand))
+        .map(Some)
 }
 
 pub(crate) struct CommandContext<'a> {

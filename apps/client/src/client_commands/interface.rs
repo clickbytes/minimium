@@ -1,44 +1,56 @@
-use super::{CommandId, CommandRegistry, CommandSpec};
+use super::{ClientCommand, CommandRegistry, CommandSpec, ParseError};
 
 const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
-        id: CommandId::Help,
         name: "help",
         alias: None,
         usage: "help",
+        parser: parse,
     },
     CommandSpec {
-        id: CommandId::FpsShow,
         name: "fps show",
         alias: None,
         usage: "fps show",
+        parser: parse,
     },
     CommandSpec {
-        id: CommandId::NetStats,
         name: "net stats",
         alias: None,
         usage: "net stats",
+        parser: parse,
     },
     CommandSpec {
-        id: CommandId::State,
         name: "state",
         alias: None,
         usage: "state",
+        parser: parse,
     },
     CommandSpec {
-        id: CommandId::Clear,
         name: "clear",
         alias: None,
         usage: "clear",
+        parser: parse,
     },
     CommandSpec {
-        id: CommandId::Quit,
         name: "quit",
         alias: Some("exit"),
         usage: "quit (alias: exit)",
+        parser: parse,
     },
 ];
 
 pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(COMMANDS);
+}
+
+fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
+    match words {
+        ["help"] => Ok(ClientCommand::Help),
+        ["fps", "show"] => Ok(ClientCommand::FpsShow),
+        ["net", "stats"] => Ok(ClientCommand::NetStats),
+        ["state"] => Ok(ClientCommand::State),
+        ["clear"] => Ok(ClientCommand::Clear),
+        ["quit"] | ["exit"] => Ok(ClientCommand::Quit),
+        _ => Err(ParseError::UnknownCommand),
+    }
 }
