@@ -68,6 +68,7 @@ mod shadows;
 mod sky;
 mod sky_gpu;
 mod stars_gpu;
+mod weather_gpu;
 mod window;
 mod window_metrics;
 mod world_pipeline;
@@ -105,6 +106,7 @@ struct GpuResources {
     stars: stars_gpu::StarGpu,
     moon: moon_gpu::MoonGpu,
     moon_sphere: moon_sphere_gpu::MoonSphereGpu,
+    weather_gpu: weather_gpu::WeatherGpu,
     ui_pipeline: wgpu::RenderPipeline,
     ui_output_pipeline: Option<wgpu::RenderPipeline>,
     ui_bind_group: wgpu::BindGroup,
@@ -216,6 +218,7 @@ struct Renderer {
     demo_universe_enabled: bool,
     fov_degrees: f32,
     show_celestial_names: bool,
+    weather: crate::environment::weather::WeatherRuntime,
     sky_quality: crate::environment::quality::SkyQualityState,
     connection: ConnectionController,
     environment_frame: EnvironmentFrameInput,

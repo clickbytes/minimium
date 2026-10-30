@@ -191,6 +191,12 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
                 "celestial names disabled"
             });
         }
+        FrontendAction::Weather(command) => {
+            renderer
+                .ui
+                .console
+                .push_line(renderer.weather.command(command));
+        }
         FrontendAction::TimeStatus => renderer
             .ui
             .console

@@ -235,6 +235,12 @@ impl GpuResources {
                         draw_calls += 1;
                         self.environment_draw_calls.moon += 1;
                     }
+                    if self.weather_gpu.cloud_cover > 0.005 {
+                        pass.set_pipeline(&self.weather_gpu.clouds);
+                        pass.set_bind_group(1, &self.weather_gpu.bind_group, &[]);
+                        pass.draw(0..3, 0..1);
+                        draw_calls += 1;
+                    }
                 }
                 pass.set_pipeline(&self.pipeline);
                 pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
@@ -278,6 +284,12 @@ impl GpuResources {
                         draw_calls += 1;
                         self.environment_draw_calls.moon += 1;
                     }
+                    if self.weather_gpu.cloud_cover > 0.005 {
+                        pass.set_pipeline(&self.weather_gpu.clouds);
+                        pass.set_bind_group(1, &self.weather_gpu.bind_group, &[]);
+                        pass.draw(0..3, 0..1);
+                        draw_calls += 1;
+                    }
                 }
                 pass.set_pipeline(&self.pipeline);
                 pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
@@ -299,6 +311,16 @@ impl GpuResources {
                 pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
                 pass.set_vertex_buffer(0, self.player_buffer.slice(..));
                 pass.draw(0..self.remote_vertex_count, 0..1);
+                draw_calls += 1;
+            }
+            if self.scene_visible
+                && !self.overview_active
+                && super::sky::should_draw_surface_sky(environment)
+                && self.weather_gpu.rain_mm_h > 0.05
+            {
+                pass.set_pipeline(&self.weather_gpu.rain);
+                pass.set_bind_group(1, &self.weather_gpu.bind_group, &[]);
+                pass.draw(0..3, 0..1);
                 draw_calls += 1;
             }
         }

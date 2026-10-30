@@ -242,6 +242,12 @@ impl GpuResources {
             &frame_bindings.layout,
             scene_color_format,
         );
+        let weather_gpu = super::weather_gpu::WeatherGpu::new(
+            &device,
+            &queue,
+            &frame_bindings.layout,
+            scene_color_format,
+        );
         let mut shadow_gpu = super::shadow_gpu::ShadowGpu::new(
             &device,
             super::shadows::ShadowSettings::for_quality(initial_quality),
@@ -290,6 +296,7 @@ impl GpuResources {
             + ui_vertex_buffer.size()
             + stars.buffer.size()
             + super::milky_way_gpu::MilkyWayGpu::BYTES
+            + super::weather_gpu::WeatherGpu::BYTES
             + output_encoder
                 .as_ref()
                 .map_or(0, |output| output.size_bytes())
@@ -310,6 +317,7 @@ impl GpuResources {
             stars,
             moon,
             moon_sphere,
+            weather_gpu,
             ui_pipeline,
             ui_output_pipeline,
             ui_bind_group,

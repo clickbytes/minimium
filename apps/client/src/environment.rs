@@ -1,6 +1,7 @@
 mod demo;
 pub(crate) mod diagnostics;
 pub(crate) mod quality;
+pub(crate) mod weather;
 
 use minimium_core::environment::EnvironmentDescriptor;
 use minimium_protocol::WorldContext;

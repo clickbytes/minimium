@@ -5,7 +5,11 @@
 //! queues protocol messages directly and reports UI/process work as a typed
 //! [`FrontendAction`], leaving each front end in control of its own event loop.
 
-use crate::{environment::quality::SkyQuality, options::ThreadLane, session::QueueError};
+use crate::{
+    environment::{quality::SkyQuality, weather::WeatherCommand},
+    options::ThreadLane,
+    session::QueueError,
+};
 use minimium_protocol::ClientMessage;
 use std::sync::OnceLock;
 
@@ -39,6 +43,7 @@ pub(crate) enum ClientCommand {
     SkyDemo(bool),
     Fov(Option<f32>),
     ShowCelestialNames(bool),
+    Weather(WeatherCommand),
     TimeStatus,
     TimeScale(String),
 }
@@ -142,6 +147,7 @@ pub(crate) enum ParseError {
     SkyQualityUsage,
     FovUsage,
     CelestialNamesUsage,
+    WeatherUsage,
     TimeScaleUsage,
     UnknownCommand,
 }
@@ -182,6 +188,7 @@ pub(crate) enum FrontendAction {
     SkyDemo(bool),
     Fov(Option<f32>),
     ShowCelestialNames(bool),
+    Weather(WeatherCommand),
     TimeStatus,
     TimeScale(String),
 }
@@ -235,6 +242,9 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
         ClientCommand::Fov(degrees) => return CommandResult::Action(FrontendAction::Fov(degrees)),
         ClientCommand::ShowCelestialNames(enabled) => {
             return CommandResult::Action(FrontendAction::ShowCelestialNames(enabled))
+        }
+        ClientCommand::Weather(command) => {
+            return CommandResult::Action(FrontendAction::Weather(command))
         }
         ClientCommand::TimeStatus => return CommandResult::Action(FrontendAction::TimeStatus),
         ClientCommand::TimeScale(value) => {
