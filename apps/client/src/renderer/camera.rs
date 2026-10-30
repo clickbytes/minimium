@@ -240,8 +240,17 @@ impl Renderer {
                     geographic.longitude_rad().to_degrees(),
                 )
             });
-        let weather = self.weather.update(earth_location);
+        let world_utc_ms = prepared_environment
+            .frame
+            .sky
+            .as_ref()
+            .map(|sky| sky.utc_ms.get());
+        let weather = self.weather.update(earth_location, world_utc_ms);
         self.gpu.weather_gpu.upload(&self.gpu.queue, weather);
+        let (atlas, revision) = self.weather.atlas();
+        self.gpu
+            .weather_gpu
+            .upload_atlas(&self.gpu.queue, atlas, revision);
 
         let celestial_labels = if self.show_celestial_names {
             celestial_labels::prepare(&prepared_environment.frame, self.sky_catalogue.as_ref())

@@ -1,4 +1,6 @@
 //! Local visual weather and optional MET Norway point forecast for Earth.
+mod simulated;
+
 use serde_json::Value;
 use std::{
     sync::mpsc::{self, Receiver, TryRecvError},
@@ -22,6 +24,7 @@ pub(crate) enum WeatherPreset {
 pub(crate) enum WeatherCommand {
     Status,
     Live(bool),
+    Simulated,
     Preset(WeatherPreset),
 }
 
@@ -106,6 +109,11 @@ type PendingForecast = (Location, Receiver<ForecastResult>);
 pub(crate) struct WeatherRuntime {
     preset: WeatherPreset,
     live: bool,
+    simulated: bool,
+    simulation: simulated::SimulatedWeather,
+    last_simulated_sample: Option<WeatherSample>,
+    atlas_revision: u64,
+    local_atlas: Vec<u8>,
     forecast: Option<Forecast>,
     current_location: Option<Location>,
     pending: Option<PendingForecast>,
@@ -115,10 +123,18 @@ pub(crate) struct WeatherRuntime {
 }
 
 impl WeatherRuntime {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(simulated: bool) -> Self {
+        let preset = WeatherPreset::PartlyCloudy;
+        let mut local_atlas = vec![0; simulated::WIDTH * simulated::HEIGHT * 4];
+        fill_local_atlas(&mut local_atlas, preset.sample());
         Self {
-            preset: WeatherPreset::PartlyCloudy,
+            preset,
             live: false,
+            simulated,
+            simulation: simulated::SimulatedWeather::new(),
+            last_simulated_sample: None,
+            atlas_revision: 1,
+            local_atlas,
             forecast: None,
             current_location: None,
             pending: None,
@@ -133,18 +149,47 @@ impl WeatherRuntime {
             WeatherCommand::Status => return self.status(),
             WeatherCommand::Live(enabled) => {
                 self.live = enabled;
+                self.simulated = !enabled;
                 self.next_request = Instant::now();
+                self.atlas_revision += 1;
+            }
+            WeatherCommand::Simulated => {
+                self.live = false;
+                self.simulated = true;
+                self.atlas_revision += 1;
             }
             WeatherCommand::Preset(preset) => {
                 self.preset = preset;
                 self.live = false;
+                self.simulated = false;
+                fill_local_atlas(&mut self.local_atlas, preset.sample());
+                self.atlas_revision += 1;
             }
         }
         self.status()
     }
 
-    pub(crate) fn update(&mut self, earth_location: Option<(f64, f64)>) -> WeatherSample {
+    pub(crate) fn update(
+        &mut self,
+        earth_location: Option<(f64, f64)>,
+        world_utc_ms: Option<i64>,
+    ) -> WeatherSample {
         self.receive_pending();
+        if (self.simulated || self.live)
+            && earth_location.is_some()
+            && world_utc_ms.is_some_and(|time| self.simulation.update(time))
+        {
+            self.atlas_revision += 1;
+        }
+        if self.simulated {
+            self.last_simulated_sample = match (earth_location, world_utc_ms) {
+                (Some((lat, lon)), Some(_)) => Some(self.simulation.sample(lat, lon)),
+                _ => None,
+            };
+            return self
+                .last_simulated_sample
+                .unwrap_or_else(|| self.preset.sample());
+        }
         if !self.live {
             return self.preset.sample();
         }
@@ -174,6 +219,18 @@ impl WeatherRuntime {
     }
 
     pub(crate) fn status(&self) -> String {
+        if self.simulated {
+            return self.last_simulated_sample.map_or_else(
+                || "weather simulated Earth | waiting for world clock / Earth position".to_owned(),
+                |sample| format!(
+                    "weather simulated Earth | {:.0}% low, {:.0}% mid, {:.0}% high | rain {:.1} mm/h | no network",
+                    sample.low * 100.0,
+                    sample.middle * 100.0,
+                    sample.high * 100.0,
+                    sample.rain_mm_h
+                ),
+            );
+        }
         if !self.live {
             return format!("weather local {:?}", self.preset);
         }
@@ -195,6 +252,15 @@ impl WeatherRuntime {
             return format!("weather live unavailable ({error}); local fallback");
         }
         "weather live waiting for Earth position / MET Norway forecast".to_owned()
+    }
+
+    pub(crate) fn atlas(&self) -> (&[u8], u64) {
+        let pixels = if self.simulated || self.live {
+            self.simulation.pixels()
+        } else {
+            &self.local_atlas
+        };
+        (pixels, self.atlas_revision)
     }
 
     fn request(&mut self, location: Location) {
@@ -231,6 +297,18 @@ impl WeatherRuntime {
             }
             Err(error) => self.last_error = Some(error),
         }
+    }
+}
+
+fn fill_local_atlas(pixels: &mut [u8], sample: WeatherSample) {
+    let color = [
+        (sample.low * 255.0) as u8,
+        (sample.middle * 255.0) as u8,
+        (sample.high * 255.0) as u8,
+        ((sample.rain_mm_h / 8.0).min(1.0) * 255.0) as u8,
+    ];
+    for pixel in pixels.as_chunks_mut::<4>().0 {
+        pixel.copy_from_slice(&color);
     }
 }
 

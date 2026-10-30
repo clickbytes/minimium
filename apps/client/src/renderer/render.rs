@@ -174,6 +174,7 @@ impl GpuResources {
                 if let Some(globe) = self.globe.as_ref().filter(|_| self.overview_globe) {
                     pass.set_pipeline(&globe.pipeline);
                     pass.set_bind_group(1, &globe.bind_group, &[]);
+                    pass.set_bind_group(2, &self.weather_gpu.globe_bind_group, &[]);
                     pass.set_vertex_buffer(0, globe.vertices.slice(..));
                     pass.draw(0..globe.vertex_count, 0..1);
                     draw_calls += 1;

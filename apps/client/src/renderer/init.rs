@@ -165,7 +165,7 @@ impl Renderer {
             demo_universe_enabled: false,
             fov_degrees: 70.0,
             show_celestial_names: false,
-            weather: crate::environment::weather::WeatherRuntime::new(),
+            weather: crate::environment::weather::WeatherRuntime::new(require_earth),
             sky_quality: sky_quality_state,
             connection,
             environment_frame: EnvironmentFrameInput::unavailable(),

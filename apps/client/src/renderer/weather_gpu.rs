@@ -11,6 +11,10 @@ struct WeatherUniform {
 
 pub(super) struct WeatherGpu {
     _noise: wgpu::Texture,
+    atlas: wgpu::Texture,
+    pub(super) globe_layout: wgpu::BindGroupLayout,
+    pub(super) globe_bind_group: wgpu::BindGroup,
+    atlas_revision: u64,
     uniform: wgpu::Buffer,
     pub(super) bind_group: wgpu::BindGroup,
     pub(super) clouds: wgpu::RenderPipeline,
@@ -20,7 +24,8 @@ pub(super) struct WeatherGpu {
 }
 
 impl WeatherGpu {
-    pub(super) const BYTES: u64 = 256 * 256 + std::mem::size_of::<WeatherUniform>() as u64;
+    pub(super) const BYTES: u64 =
+        256 * 256 + 256 * 128 * 4 + std::mem::size_of::<WeatherUniform>() as u64;
 
     pub(super) fn new(
         device: &wgpu::Device,
@@ -67,6 +72,20 @@ impl WeatherGpu {
             },
         );
         let view = noise.create_view(&wgpu::TextureViewDescriptor::default());
+        let atlas = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("Earth weather atlas"),
+            size: wgpu::Extent3d {
+                width: 256,
+                height: 128,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("cloud noise sampler"),
             address_mode_u: wgpu::AddressMode::Repeat,
@@ -124,6 +143,57 @@ impl WeatherGpu {
                 },
             ],
         });
+        let globe_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("globe weather layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let globe_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("globe weather bind group"),
+            layout: &globe_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(
+                        &atlas.create_view(&wgpu::TextureViewDescriptor::default()),
+                    ),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::TextureView(&view),
+                },
+            ],
+        });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("weather pipeline layout"),
             bind_group_layouts: &[Some(frame_layout), Some(&layout)],
@@ -145,6 +215,10 @@ impl WeatherGpu {
         );
         Self {
             _noise: noise,
+            atlas,
+            globe_layout,
+            globe_bind_group,
+            atlas_revision: 0,
             uniform,
             bind_group,
             clouds,
@@ -162,6 +236,32 @@ impl WeatherGpu {
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&value));
         self.cloud_cover = sample.low.max(sample.middle).max(sample.high);
         self.rain_mm_h = sample.rain_mm_h;
+    }
+
+    pub(super) fn upload_atlas(&mut self, queue: &wgpu::Queue, pixels: &[u8], revision: u64) {
+        if self.atlas_revision == revision {
+            return;
+        }
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.atlas,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            pixels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256 * 4),
+                rows_per_image: Some(128),
+            },
+            wgpu::Extent3d {
+                width: 256,
+                height: 128,
+                depth_or_array_layers: 1,
+            },
+        );
+        self.atlas_revision = revision;
     }
 }
 

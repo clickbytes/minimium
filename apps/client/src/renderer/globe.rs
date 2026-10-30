@@ -246,7 +246,11 @@ impl GpuResources {
             .device
             .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("globe pipeline layout"),
-                bind_group_layouts: &[Some(&camera_layout), Some(&layout)],
+                bind_group_layouts: &[
+                    Some(&camera_layout),
+                    Some(&layout),
+                    Some(&self.weather_gpu.globe_layout),
+                ],
                 immediate_size: 0,
             });
         let pipeline = self

@@ -1,5 +1,8 @@
 @group(1) @binding(0) var globe: texture_2d_array<f32>;
 @group(1) @binding(1) var globe_sampler: sampler;
+@group(2) @binding(0) var weather_atlas: texture_2d<f32>;
+@group(2) @binding(1) var weather_sampler: sampler;
+@group(2) @binding(2) var cloud_noise: texture_2d<f32>;
 
 fn sample_map(uv: vec2<f32>) -> vec4<f32> {
     let wrapped = vec2<f32>(fract(uv.x), clamp(uv.y, 0.0, 0.999999));
@@ -51,5 +54,16 @@ struct Output {
     let sun_direction = normalize(environment.global_sun_direction.xyz);
     let diffuse = max(dot(relief_normal, sun_direction), 0.0);
     let linear = sample.rgb * environment.global_sun_rgb.xyz * diffuse;
-    return vec4<f32>(tone_map_linear(linear), 1.0);
+    let weather_uv = vec2<f32>(fract(input.uv.x), clamp(input.uv.y, 0.00390625, 0.99609375));
+    let conditions = textureSample(weather_atlas, weather_sampler, weather_uv);
+    let noise = textureSample(cloud_noise, weather_sampler,
+        weather_uv * vec2<f32>(4.0, 2.0) + vec2<f32>(environment.star_animation.x * 0.00001, 0.0)).r;
+    let coverage = max(conditions.r, max(conditions.g * 0.75, conditions.b * 0.55));
+    let cloud = smoothstep(1.0 - coverage - 0.12, 1.0 - coverage + 0.12, noise);
+    let rain_darkening = conditions.a * 0.18;
+    let cloud_lit = vec3<f32>(0.75, 0.78, 0.82) *
+        (0.035 + diffuse * 0.9) * environment.global_sun_rgb.xyz;
+    let cloud_night = vec3<f32>(0.012, 0.016, 0.022);
+    let cloud_color = max(cloud_lit, cloud_night) * (1.0 - rain_darkening);
+    return vec4<f32>(tone_map_linear(mix(linear, cloud_color, cloud * 0.92)), 1.0);
 }
