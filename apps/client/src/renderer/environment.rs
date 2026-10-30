@@ -131,8 +131,6 @@ pub(crate) struct EnvironmentSettings {
     pub(crate) moon_full_phase_strength: f32,
     pub(crate) ambient_rgb: [f32; 3],
     pub(crate) exposure: f32,
-    pub(crate) sky_zenith_rgb: [f32; 3],
-    pub(crate) sky_horizon_rgb: [f32; 3],
 }
 
 impl EnvironmentSettings {
@@ -143,10 +141,8 @@ impl EnvironmentSettings {
             local_sun_rgb: [1.0, 0.97, 0.90],
             local_moon_rgb: [0.25, 0.32, 0.50],
             moon_full_phase_strength: 0.12,
-            ambient_rgb: [0.10, 0.12, 0.17],
+            ambient_rgb: [1.0, 1.0, 1.0],
             exposure: 1.0,
-            sky_zenith_rgb: [0.012, 0.018, 0.045],
-            sky_horizon_rgb: [0.025, 0.035, 0.060],
         }
     }
 
@@ -159,8 +155,6 @@ impl EnvironmentSettings {
             moon_full_phase_strength: 0.0,
             ambient_rgb: [0.32, 0.32, 0.32],
             exposure: 1.0,
-            sky_zenith_rgb: [0.0; 3],
-            sky_horizon_rgb: [0.0; 3],
         }
     }
 }
@@ -194,6 +188,7 @@ pub(crate) enum EnvironmentFrameStatus {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(crate) struct EnvironmentFrameDiagnostics {
     pub(crate) eye_below_planet_radius: bool,
+    pub(crate) clear_sky_model_revision: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -248,9 +243,12 @@ impl EnvironmentFrame {
     }
 }
 
-pub(crate) fn body_frame(body: CelestialBodyState, color: [f32; 3], scale: f32) -> LocalBodyFrame {
-    let visible_fraction =
-        adapter::visible_disk_fraction(body.apparent_altitude_rad, body.angular_radius_rad);
+pub(crate) fn body_frame(
+    body: CelestialBodyState,
+    color: [f32; 3],
+    scale: f32,
+    visible_fraction: f32,
+) -> LocalBodyFrame {
     LocalBodyFrame {
         geometric_direction_world: body.geometric_direction_world,
         apparent_direction_world: body.apparent_direction_world,

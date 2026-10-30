@@ -81,9 +81,33 @@ pub(super) fn from_sky_state(
         return Err(EnvironmentFrameError::SkyStateInvalid);
     }
 
-    let disk_sun = super::body_frame(sky.sun, settings.local_sun_rgb, 1.0);
+    let (observer_up, horizon_cos, below_radius) = view_horizon(render_view);
+    let horizon_altitude = horizon_cos.asin();
+    let sun_visible = visible_disk_fraction(
+        sky.sun.apparent_altitude_rad,
+        sky.sun.angular_radius_rad,
+        horizon_altitude,
+    );
+    let moon_visible = visible_disk_fraction(
+        sky.moon.body.apparent_altitude_rad,
+        sky.moon.body.angular_radius_rad,
+        horizon_altitude,
+    );
+    let clear_sky =
+        super::super::lighting::evaluate_clear_sky_parameters(sky, &observer, &settings);
+    let disk_sun = super::body_frame(
+        sky.sun,
+        settings.local_sun_rgb,
+        clear_sky.direct_sun_factor,
+        sun_visible,
+    );
     let moon_scale = settings.moon_full_phase_strength * sky.moon.illuminated_fraction as f32;
-    let disk_moon = super::body_frame(sky.moon.body, settings.local_moon_rgb, moon_scale);
+    let disk_moon = super::body_frame(
+        sky.moon.body,
+        settings.local_moon_rgb,
+        moon_scale,
+        moon_visible,
+    );
     let moon_to_sun = rotate_shortest_arc(
         sky.moon.body.geometric_direction_world,
         sky.moon.body.apparent_direction_world,
@@ -96,8 +120,6 @@ pub(super) fn from_sky_state(
         sky.moon.pole_world,
     )
     .ok_or(EnvironmentFrameError::SkyStateInvalid)?;
-    let (observer_up, horizon_cos, below_radius) = view_horizon(render_view);
-    let star_visibility = star_visibility(sky.sun.apparent_altitude_rad);
     let global_sun = GlobalSunFrame {
         direction_world: sky.geocentric_sun_direction_world,
         linear_rgb: settings.global_sun_rgb,
@@ -136,14 +158,14 @@ pub(super) fn from_sky_state(
                 .global_sun_rgb
                 .map(|channel| channel * settings.global_sun_strength),
         )?,
-        ambient_rgb_exposure: color_exposure(settings.ambient_rgb, settings.exposure)?,
+        ambient_rgb_exposure: color_exposure(clear_sky.ambient_rgb, clear_sky.exposure)?,
         sky_zenith_rgb_sun_altitude: color_altitude(
-            settings.sky_zenith_rgb,
+            clear_sky.zenith_rgb,
             sky.sun.apparent_altitude_rad,
         )?,
         sky_horizon_rgb_star_visibility: color_visibility(
-            settings.sky_horizon_rgb,
-            star_visibility,
+            clear_sky.horizon_rgb,
+            clear_sky.star_visibility,
         )?,
         observer_up_horizon_cos: direction_fraction(observer_up, horizon_cos)?,
         flags: [
@@ -166,6 +188,7 @@ pub(super) fn from_sky_state(
         local_moon: Some(disk_moon),
         diagnostics: EnvironmentFrameDiagnostics {
             eye_below_planet_radius: below_radius,
+            clear_sky_model_revision: super::super::lighting::CLEAR_SKY_MODEL_REVISION,
         },
         status: EnvironmentFrameStatus::Available,
         camera_uniform: camera_uniform(render_view),
@@ -199,6 +222,7 @@ pub(super) fn interior(
         local_moon: None,
         diagnostics: EnvironmentFrameDiagnostics {
             eye_below_planet_radius: below_radius,
+            clear_sky_model_revision: 0,
         },
         status: EnvironmentFrameStatus::Interior,
         camera_uniform: camera_uniform(render_view),
@@ -231,23 +255,29 @@ pub(super) fn unavailable(render_view: RenderViewFrame) -> EnvironmentFrame {
         status: EnvironmentFrameStatus::Unavailable,
         camera_uniform: camera_uniform(render_view),
         environment_uniform: EnvironmentUniform {
+            ambient_rgb_exposure: [0.08, 0.09, 0.12, 1.0],
             flags: [0, render_view.kind as u32, 0, transfer_route(render_view)],
             ..EnvironmentUniform::zeroed()
         },
     }
 }
 
-pub(super) fn visible_disk_fraction(altitude_rad: f64, angular_radius_rad: f64) -> f32 {
+pub(super) fn visible_disk_fraction(
+    altitude_rad: f64,
+    angular_radius_rad: f64,
+    horizon_altitude_rad: f64,
+) -> f32 {
     if !altitude_rad.is_finite() || !angular_radius_rad.is_finite() || angular_radius_rad <= 0.0 {
         return 0.0;
     }
-    if altitude_rad <= -angular_radius_rad {
+    let elevation = altitude_rad - horizon_altitude_rad;
+    if elevation <= -angular_radius_rad {
         return 0.0;
     }
-    if altitude_rad >= angular_radius_rad {
+    if elevation >= angular_radius_rad {
         return 1.0;
     }
-    let x = (altitude_rad / angular_radius_rad).clamp(-1.0, 1.0);
+    let x = (elevation / angular_radius_rad).clamp(-1.0, 1.0);
     (0.5 + (x.asin() + x * (1.0 - x * x).max(0.0).sqrt()) / PI) as f32
 }
 
@@ -265,13 +295,6 @@ fn view_horizon(view: RenderViewFrame) -> ([f64; 3], f64, bool) {
     let ratio = (radius / eye_radius).clamp(0.0, 1.0);
     let horizon_cos = -(1.0 - ratio * ratio).max(0.0).sqrt();
     (up, horizon_cos, false)
-}
-
-fn star_visibility(sun_altitude_rad: f64) -> f32 {
-    let start = -18.0_f64.to_radians();
-    let end = -6.0_f64.to_radians();
-    let value = ((sun_altitude_rad - start) / (end - start)).clamp(0.0, 1.0);
-    (1.0 - value * value * (3.0 - 2.0 * value)) as f32
 }
 
 fn rotate_shortest_arc(from: [f64; 3], to: [f64; 3], vector: [f64; 3]) -> Option<[f64; 3]> {
@@ -306,8 +329,6 @@ fn valid_settings(settings: EnvironmentSettings) -> bool {
         .chain(settings.local_sun_rgb.iter())
         .chain(settings.local_moon_rgb.iter())
         .chain(settings.ambient_rgb.iter())
-        .chain(settings.sky_zenith_rgb.iter())
-        .chain(settings.sky_horizon_rgb.iter())
         .all(|value| value.is_finite() && *value >= 0.0)
         && settings.global_sun_strength.is_finite()
         && settings.global_sun_strength >= 0.0

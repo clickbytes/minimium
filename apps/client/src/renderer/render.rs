@@ -44,6 +44,7 @@ impl GpuResources {
                 label: Some("frame-encoder"),
             });
         let mut draw_calls = 0;
+        self.environment_draw_calls = super::sky::EnvironmentDrawCalls::default();
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("main-pass"),
@@ -52,12 +53,10 @@ impl GpuResources {
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.055,
-                            g: 0.075,
-                            b: 0.105,
-                            a: 1.0,
-                        }),
+                        load: wgpu::LoadOp::Clear(super::sky::clear_color(
+                            self.scene_visible,
+                            self.overview_active,
+                        )),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -73,11 +72,12 @@ impl GpuResources {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &self.camera_bind_group, &[]);
             if !self.scene_visible {
                 // Waiting for a required Earth manifest or showing a persistent error.
+                pass.set_pipeline(&self.pipeline);
             } else if self.overview_active {
+                pass.set_pipeline(&self.pipeline);
                 if let Some(globe) = self.globe.as_ref().filter(|_| self.overview_globe) {
                     pass.set_pipeline(&globe.pipeline);
                     pass.set_bind_group(1, &globe.bind_group, &[]);
@@ -97,11 +97,46 @@ impl GpuResources {
                     pass.draw(0..*count, 0..1);
                     draw_calls += 1;
                 }
+                if let Some((buffer, count)) = &self.overview_marker_buffer {
+                    pass.set_pipeline(&self.environment_pipelines.marker);
+                    pass.set_vertex_buffer(0, buffer.slice(..));
+                    pass.draw(0..*count, 0..1);
+                    draw_calls += 1;
+                    self.environment_draw_calls.overview_marker += 1;
+                }
             } else if self.active_sector_keys.is_empty() {
+                if super::sky::should_draw_surface_sky(environment) {
+                    pass.set_pipeline(&self.environment_pipelines.sky);
+                    pass.set_bind_group(0, &self.camera_bind_group, &[]);
+                    pass.draw(0..3, 0..1);
+                    draw_calls += 1;
+                    self.environment_draw_calls.sky += 1;
+                    if super::sky::should_draw_sun(environment) {
+                        pass.set_pipeline(&self.environment_pipelines.sun);
+                        pass.draw(0..6, 0..1);
+                        draw_calls += 1;
+                        self.environment_draw_calls.sun += 1;
+                    }
+                }
+                pass.set_pipeline(&self.pipeline);
                 pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
                 pass.draw(0..self.vertex_count, 0..1);
                 draw_calls += 1;
             } else {
+                if super::sky::should_draw_surface_sky(environment) {
+                    pass.set_pipeline(&self.environment_pipelines.sky);
+                    pass.set_bind_group(0, &self.camera_bind_group, &[]);
+                    pass.draw(0..3, 0..1);
+                    draw_calls += 1;
+                    self.environment_draw_calls.sky += 1;
+                    if super::sky::should_draw_sun(environment) {
+                        pass.set_pipeline(&self.environment_pipelines.sun);
+                        pass.draw(0..6, 0..1);
+                        draw_calls += 1;
+                        self.environment_draw_calls.sun += 1;
+                    }
+                }
+                pass.set_pipeline(&self.pipeline);
                 for (key, lod) in &self.active_sector_keys {
                     if let Some((buffer, vertex_count)) =
                         self.world_vertex_catalog

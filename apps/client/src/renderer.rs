@@ -41,6 +41,7 @@ mod globe;
 mod globe_detail;
 mod gpu;
 mod init;
+mod lighting;
 mod output;
 mod overview;
 mod planet_visibility;
@@ -48,6 +49,8 @@ mod render;
 mod sector_scene;
 mod session;
 mod shader_source;
+mod sky;
+mod sky_gpu;
 mod window;
 
 use environment::{EnvironmentFrame, RenderViewFrame, RenderViewInput};
@@ -74,6 +77,7 @@ struct GpuResources {
     config: wgpu::SurfaceConfiguration,
     scene_color_format: wgpu::TextureFormat,
     pipeline: wgpu::RenderPipeline,
+    environment_pipelines: sky_gpu::EnvironmentPipelines,
     ui_pipeline: wgpu::RenderPipeline,
     ui_bind_group: wgpu::BindGroup,
     ui_vertex_buffer: wgpu::Buffer,
@@ -98,6 +102,8 @@ struct GpuResources {
     active_world_instance: minimium_core::world::WorldInstanceId,
     render_origin: [f32; 3],
     overview_buffer: Option<(wgpu::Buffer, u32)>,
+    overview_marker_buffer: Option<(wgpu::Buffer, u32)>,
+    environment_draw_calls: sky::EnvironmentDrawCalls,
     overview_active: bool,
     overview_globe: bool,
     scene_visible: bool,

@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use winit::dpi::PhysicalSize;
 
 pub(super) struct OutputEncoder {
@@ -32,7 +33,7 @@ impl OutputEncoder {
         let bind_group = output_bind_group(device, &bind_group_layout, &view);
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("linear-output-srgb-encode-shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("encode_output.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(Cow::Owned(super::shader_source::encode_output())),
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("linear-output-srgb-encode-layout"),

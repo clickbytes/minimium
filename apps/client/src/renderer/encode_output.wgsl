@@ -14,13 +14,6 @@ struct VertexOutput {
     return output;
 }
 
-fn linear_to_srgb(linear: vec3<f32>) -> vec3<f32> {
-    let value = max(linear, vec3<f32>(0.0));
-    let low = value * 12.92;
-    let high = 1.055 * pow(value, vec3<f32>(1.0 / 2.4)) - vec3<f32>(0.055);
-    return select(high, low, value <= vec3<f32>(0.0031308));
-}
-
 @fragment fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     let pixel = vec2<i32>(position.xy);
     let linear = textureLoad(linear_image, pixel, 0);
