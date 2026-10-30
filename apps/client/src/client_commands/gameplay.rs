@@ -1,50 +1,88 @@
-use super::{CommandId, CommandRegistry, CommandSpec};
+use super::{ClientCommand, CommandRegistry, CommandSpec, ParseError};
 
 const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
-        id: CommandId::Move,
         name: "move",
         alias: None,
         usage: "move X Z",
+        parser: parse,
     },
     CommandSpec {
-        id: CommandId::Jump,
         name: "jump",
         alias: None,
         usage: "jump",
+        parser: parse,
     },
     CommandSpec {
-        id: CommandId::UsePortal,
         name: "portal",
         alias: None,
         usage: "portal",
+        parser: parse,
     },
     CommandSpec {
-        id: CommandId::MapTeleport,
         name: "map_telepo",
         alias: None,
         usage: "map_telepo: click land on the Earth overview",
+        parser: parse,
     },
     CommandSpec {
-        id: CommandId::Fire,
         name: "fire",
         alias: None,
         usage: "fire",
+        parser: parse,
     },
     CommandSpec {
-        id: CommandId::Chat,
         name: "say",
         alias: Some("chat"),
         usage: "say TEXT (alias: chat)",
+        parser: parse,
     },
     CommandSpec {
-        id: CommandId::SetName,
         name: "name",
         alias: None,
         usage: "name NAME",
+        parser: parse,
     },
 ];
 
 pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(COMMANDS);
+}
+
+fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
+    let [command, raw_arguments] = words else {
+        return Err(ParseError::UnknownCommand);
+    };
+    if *command == "say" {
+        return if raw_arguments.is_empty() {
+            Err(ParseError::MissingChat)
+        } else {
+            Ok(ClientCommand::Chat((*raw_arguments).to_owned()))
+        };
+    }
+    let arguments = raw_arguments.split_whitespace().collect::<Vec<_>>();
+    match (*command, arguments.as_slice()) {
+        ("move", [x, z]) => Ok(ClientCommand::Move([
+            parse_coordinate(x)?,
+            parse_coordinate(z)?,
+        ])),
+        ("move", _) => Err(ParseError::MoveUsage),
+        ("jump", []) => Ok(ClientCommand::Jump),
+        ("portal", []) => Ok(ClientCommand::UsePortal),
+        ("map_telepo", []) => Ok(ClientCommand::MapTeleport),
+        ("fire", []) => Ok(ClientCommand::Fire),
+        ("name", [name]) => Ok(ClientCommand::SetName((*name).to_owned())),
+        ("name", _) => Err(ParseError::NameUsage),
+        _ => Err(ParseError::UnknownCommand),
+    }
+}
+
+fn parse_coordinate(value: &str) -> Result<f32, ParseError> {
+    let coordinate = value
+        .parse::<f32>()
+        .map_err(|_| ParseError::InvalidCoordinate)?;
+    if !coordinate.is_finite() {
+        return Err(ParseError::NonFiniteCoordinate);
+    }
+    Ok(coordinate)
 }
