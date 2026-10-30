@@ -23,6 +23,7 @@ mod collision_index;
 mod collision_queries;
 mod combat;
 mod geometry;
+mod gravity_policy;
 mod map;
 mod model;
 mod precise_step;
@@ -40,6 +41,7 @@ pub use addressing::{
 pub use collision_index::{Aabb, CollisionIndex};
 pub use collision_queries::{CollisionQuery, CollisionQueryStats};
 pub use geometry::triangle_area_squared;
+pub use gravity_policy::GravityPolicy;
 pub use map::{
     MapBox, MapTriangle, WorldMap, MAX_MAP_BOXES, MAX_MAP_COORDINATE, MAX_MAP_TRIANGLES,
 };
