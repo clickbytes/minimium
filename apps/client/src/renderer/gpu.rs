@@ -191,7 +191,7 @@ impl GpuResources {
             .get_default_config(&adapter, size.width.max(1), size.height.max(1))
             .ok_or("graphics adapter does not support this surface")?;
         surface.configure(&device, &config);
-        let output_encoder = (!is_srgb(config.format))
+        let output_encoder = (!super::gpu_surface::is_srgb(config.format))
             .then(|| super::output::OutputEncoder::new(&device, size, config.format));
         let scene_color_format = if output_encoder.is_some() {
             wgpu::TextureFormat::Rgba8Unorm
@@ -204,10 +204,20 @@ impl GpuResources {
             &frame_bindings.layout,
             scene_color_format,
         );
+        let celestial_halo = super::celestial_halo_gpu::CelestialHaloGpu::new(
+            &device,
+            &frame_bindings.layout,
+            scene_color_format,
+        );
         let stars =
             super::stars_gpu::StarGpu::new(&device, &frame_bindings.layout, scene_color_format);
         let moon =
             super::moon_gpu::MoonGpu::new(&device, &frame_bindings.layout, scene_color_format);
+        let moon_sphere = super::moon_sphere_gpu::MoonSphereGpu::new(
+            &device,
+            &frame_bindings.layout,
+            scene_color_format,
+        );
         let mut shadow_gpu = super::shadow_gpu::ShadowGpu::new(
             &device,
             super::shadows::ShadowSettings::for_quality(initial_quality),
@@ -239,7 +249,7 @@ impl GpuResources {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let depth_view = create_depth_view(&device, size);
+        let depth_view = super::gpu_surface::create_depth_view(&device, size);
         let fixed_gpu_bytes = frame_bindings.camera_buffer.size()
             + frame_bindings.environment_buffer.size()
             + vertex_buffer.size()
@@ -261,8 +271,10 @@ impl GpuResources {
             shadow_gpu,
             shadow_state: super::shadows::ShadowState::default(),
             environment_pipelines,
+            celestial_halo,
             stars,
             moon,
+            moon_sphere,
             ui_pipeline,
             ui_bind_group,
             ui_vertex_buffer,
@@ -314,7 +326,7 @@ impl GpuResources {
         self.config.width = size.width;
         self.config.height = size.height;
         self.surface.configure(&self.device, &self.config);
-        self.depth_view = create_depth_view(&self.device, size);
+        self.depth_view = super::gpu_surface::create_depth_view(&self.device, size);
         if let Some(output) = &mut self.output_encoder {
             let old_size = output.size_bytes();
             output.resize(&self.device, size);
@@ -466,30 +478,4 @@ fn create_ui_resources(
         mapped_at_creation: false,
     });
     (pipeline, bind_group, vertex_buffer)
-}
-
-fn create_depth_view(device: &wgpu::Device, size: PhysicalSize<u32>) -> wgpu::TextureView {
-    device
-        .create_texture(&wgpu::TextureDescriptor {
-            label: Some("depth-buffer"),
-            size: wgpu::Extent3d {
-                width: size.width.max(1),
-                height: size.height.max(1),
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Depth32Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        })
-        .create_view(&wgpu::TextureViewDescriptor::default())
-}
-
-fn is_srgb(format: wgpu::TextureFormat) -> bool {
-    matches!(
-        format,
-        wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb
-    )
 }

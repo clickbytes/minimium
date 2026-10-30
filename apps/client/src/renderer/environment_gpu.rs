@@ -11,6 +11,7 @@ pub(super) struct CameraUniform {
     pub(super) sky_view_projection: [[f32; 4]; 4],
     pub(super) inverse_sky_view_projection: [[f32; 4]; 4],
     pub(super) viewport: [f32; 4],
+    pub(super) eye_world: [f32; 4],
 }
 
 #[repr(C, align(16))]
@@ -34,6 +35,7 @@ pub(super) struct EnvironmentUniform {
     pub(super) eqj_to_world: [[f32; 4]; 4],
     pub(super) moon_disk_radiance: [f32; 4],
     pub(super) star_animation: [f32; 4],
+    pub(super) moon_orbit_world: [f32; 4],
 }
 
 pub(super) struct EnvironmentGpuBindings {
@@ -96,6 +98,12 @@ pub(super) fn camera_uniform(view: RenderViewFrame) -> CameraUniform {
             1.0 / view.viewport[0].max(1) as f32,
             1.0 / view.viewport[1].max(1) as f32,
         ],
+        eye_world: [
+            view.camera_eye_world_m[0] as f32,
+            view.camera_eye_world_m[1] as f32,
+            view.camera_eye_world_m[2] as f32,
+            0.0,
+        ],
     }
 }
 
@@ -130,14 +138,15 @@ fn uniform_entry(binding: u32, size: u64) -> wgpu::BindGroupLayoutEntry {
 }
 
 const _: () = {
-    assert!(std::mem::size_of::<CameraUniform>() == 208);
+    assert!(std::mem::size_of::<CameraUniform>() == 224);
     assert!(std::mem::align_of::<CameraUniform>() == 16);
     assert!(std::mem::offset_of!(CameraUniform, view_projection) == 0);
     assert!(std::mem::offset_of!(CameraUniform, sky_view_projection) == 64);
     assert!(std::mem::offset_of!(CameraUniform, inverse_sky_view_projection) == 128);
     assert!(std::mem::offset_of!(CameraUniform, viewport) == 192);
+    assert!(std::mem::offset_of!(CameraUniform, eye_world) == 208);
 
-    assert!(std::mem::size_of::<EnvironmentUniform>() == 336);
+    assert!(std::mem::size_of::<EnvironmentUniform>() == 352);
     assert!(std::mem::align_of::<EnvironmentUniform>() == 16);
     assert!(std::mem::offset_of!(EnvironmentUniform, sun_geometric_world) == 0);
     assert!(std::mem::offset_of!(EnvironmentUniform, sun_apparent_world) == 16);
@@ -157,4 +166,5 @@ const _: () = {
     assert!(std::mem::offset_of!(EnvironmentUniform, eqj_to_world) == 240);
     assert!(std::mem::offset_of!(EnvironmentUniform, moon_disk_radiance) == 304);
     assert!(std::mem::offset_of!(EnvironmentUniform, star_animation) == 320);
+    assert!(std::mem::offset_of!(EnvironmentUniform, moon_orbit_world) == 336);
 };

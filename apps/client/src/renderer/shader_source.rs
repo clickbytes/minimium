@@ -53,6 +53,24 @@ pub(super) fn moon() -> String {
     ])
 }
 
+pub(super) fn moon_sphere() -> String {
+    combine(&[
+        include_str!("frame.wgsl"),
+        include_str!("output_color.wgsl"),
+        include_str!("sky_common.wgsl"),
+        include_str!("moon_sphere.wgsl"),
+    ])
+}
+
+pub(super) fn celestial_halo() -> String {
+    combine(&[
+        include_str!("frame.wgsl"),
+        include_str!("output_color.wgsl"),
+        include_str!("sky_common.wgsl"),
+        include_str!("celestial_halo.wgsl"),
+    ])
+}
+
 pub(super) fn marker() -> String {
     combine(&[
         include_str!("frame.wgsl"),

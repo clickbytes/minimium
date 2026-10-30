@@ -32,6 +32,7 @@ use winit::{
 };
 
 mod camera;
+mod celestial_halo_gpu;
 mod console_events;
 mod controller;
 mod diagnostics;
@@ -41,10 +42,12 @@ mod geometry;
 mod globe;
 mod globe_detail;
 mod gpu;
+mod gpu_surface;
 mod init;
 mod lighting;
 mod moon_gpu;
 mod moon_lighting;
+mod moon_sphere_gpu;
 mod output;
 mod overview;
 mod planet_visibility;
@@ -92,8 +95,10 @@ struct GpuResources {
     shadow_gpu: shadow_gpu::ShadowGpu,
     shadow_state: shadows::ShadowState,
     environment_pipelines: sky_gpu::EnvironmentPipelines,
+    celestial_halo: celestial_halo_gpu::CelestialHaloGpu,
     stars: stars_gpu::StarGpu,
     moon: moon_gpu::MoonGpu,
+    moon_sphere: moon_sphere_gpu::MoonSphereGpu,
     ui_pipeline: wgpu::RenderPipeline,
     ui_bind_group: wgpu::BindGroup,
     ui_vertex_buffer: wgpu::Buffer,

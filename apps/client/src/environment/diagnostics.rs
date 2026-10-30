@@ -2,7 +2,7 @@ use minimium_core::time::{ClockId, ClockMode, OfflinePolicy};
 
 use super::SynchronizationQuality;
 
-pub(crate) const SKY_DIAGNOSTICS_VERSION: u32 = 2;
+pub(crate) const SKY_DIAGNOSTICS_VERSION: u32 = 3;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ClockSource {

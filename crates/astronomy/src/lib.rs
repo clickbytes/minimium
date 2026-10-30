@@ -13,5 +13,5 @@ pub use calculator::{SkyCalculator, SkyCalculatorDiagnostics, SkyInvalidation};
 pub use model::{
     AstronomyContextKey, CelestialBodyState, CorrectedStarDirections, MoonState, RefractionMode,
     SkyError, SkySampleContext, SkyState, StarAstrometry, StarDirection, ASTRONOMY_MODEL_REVISION,
-    MAX_STAR_RECORDS,
+    MAX_STAR_RECORDS, MOON_MEAN_RADIUS_M,
 };

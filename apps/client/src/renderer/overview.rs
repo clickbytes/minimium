@@ -304,7 +304,8 @@ impl Renderer {
                     glam::Vec3::ZERO,
                     up,
                 ),
-                radius * (self.overview_zoom + 2.0),
+                // The physical Moon remains about 60 Earth radii away.
+                radius * 80.0,
             )
         } else {
             let Some(map) = self.world_catalog.get(&self.current_instance) else {

@@ -139,11 +139,14 @@ impl SkyCalculator {
             eqj_to_world,
             normalize(values.sun_geocentric_m)?,
         ))?;
+        let geocentric_moon_position_world_m =
+            validate_vector(matrix_vector(eqj_to_world, values.moon_geocentric_m))?;
         Ok(SkyState {
             utc_ms: sample.utc_ms,
             observer_model_revision: sample.observer_model_revision,
             sun,
             moon,
+            geocentric_moon_position_world_m,
             geocentric_sun_direction_world,
             catalog_epoch_to_world: eqj_to_world,
             ephemeris_revision: EPHEMERIS_REVISION,

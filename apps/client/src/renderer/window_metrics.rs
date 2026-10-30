@@ -14,11 +14,14 @@ impl Renderer {
         let draws = self.gpu.environment_draw_calls;
         self.metrics.frame_stats.record_environment_frame(
             presented,
-            draws.sky,
-            draws.stars,
-            draws.sun,
-            draws.moon,
-            draws.shadows,
+            crate::stats::environment::EnvironmentDrawCounts {
+                sky: draws.sky,
+                stars: draws.stars,
+                sun: draws.sun,
+                moon: draws.moon,
+                halos: draws.halos,
+                shadows: draws.shadows,
+            },
         );
         if let Some(duration) = self.gpu.last_shadow_prepare_cpu {
             self.metrics.frame_stats.record_shadow_cpu(duration);
