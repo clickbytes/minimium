@@ -1,6 +1,8 @@
 use minimium_core::world::WorldMap;
 use minimium_core::{
+    environment::EnvironmentProfile,
     ids::PlayerId,
+    time::ClockId,
     world::{
         GenerationRevision, GenerationSpec, GeneratorDigest, MembershipEpoch, Position3Mm,
         TransitionId, World, WorldContentRevision, WorldDefinitionId, WorldInstanceId,
@@ -15,12 +17,15 @@ use std::{
 };
 
 mod constructors;
+mod environment;
 mod sector_state;
 
 #[cfg(test)]
 mod tests;
 
 pub(crate) struct WorldInstance {
+    pub(crate) clock_id: ClockId,
+    pub(crate) environment_profile: EnvironmentProfile,
     pub(crate) manifest: WorldManifest,
     pub(crate) map: Arc<WorldMap>,
     pub(crate) world: World,
@@ -487,13 +492,4 @@ fn near_portal(position: [f32; 3], portal: [f32; 3]) -> bool {
         .map(|(position, portal)| (position - portal) * (position - portal))
         .sum::<f32>()
         <= 9.0
-}
-
-fn gravity_for(topology: WorldTopology) -> minimium_core::world::CharacterGravity {
-    match topology {
-        WorldTopology::Planet => {
-            minimium_core::world::CharacterGravity::Radial { center: [0.0; 3] }
-        }
-        WorldTopology::Dungeon => minimium_core::world::CharacterGravity::FixedY,
-    }
 }

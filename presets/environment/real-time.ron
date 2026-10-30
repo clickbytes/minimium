@@ -1,0 +1,6 @@
+(
+    schema_version: 1,
+    mode: real_time,
+    scale_ppm: 1000000,
+    offline_policy: pause,
+)

@@ -4,8 +4,8 @@ This page documents the current parsers and dispatchers. For operational sequenc
 
 | Program | Options and commands | Defaults and parsing |
 | --- | --- | --- |
-| Server | `run`, `--seed`, `--planet-config`, `--threads`, `--max-players`, `--bind`, `--game-port`, `--data-dir`, `--map`, `--world-definition`, `--autosave-seconds`, `--headless`, `--help`/`-h`, `--version` | One lane, 512 players, loopback, port 0, `.minimium`, seeded generated worlds, 300 s autosave. `--seed` and `--planet-config` apply only to generated worlds. |
-| Control | `--data-dir`, `--help`/`-h`, and the six server commands below | `.minimium`; help is handled before command parsing. Only the first `--data-dir` is consumed. |
+| Server | `run`, `--seed`, `--planet-config`, `--environment-config`, `--threads`, `--max-players`, `--bind`, `--game-port`, `--data-dir`, `--map`, `--world-definition`, `--autosave-seconds`, `--headless`, `--help`/`-h`, `--version` | One lane, 512 players, loopback, port 0, `.minimium`, seeded generated worlds, 300 s autosave. `--environment-config` initializes a new world's clock only; it is rejected when world data already exists. |
+| Control | `--data-dir`, `--help`/`-h`, server commands below | `.minimium`; help is handled before command parsing. Only the first `--data-dir` is consumed. |
 | Client | `--connect`, `--map`, `--world-definition`, `--profile-dir`, `--server-data-dir`, `--threads`, `--demo`, `--console`, `--require-earth`, `--help`/`-h` | One local-server lane, seeded demo worlds and `.minimium-local` paths; repeated options are errors. Demo conflicts with connect and console. `--require-earth` requires the desktop client and conflicts with demo. `--map` and `--world-definition` are mutually exclusive. |
 | Load generator | `--address`, `--scenario`, `--clients`, `--seconds`, `--threads`, `--format`, `--scenario-id`, `--cpu-label`, `--cpu-mhz`, `--server-data-dir`, `--help`/`-h` | Address required; 100 clients, 10 s, heartbeat, auto workers and text output. Repeated option names are errors. |
 
@@ -14,11 +14,13 @@ Lane types remain application-owned: the server accepts `1..=64` or `auto`, the 
 ## Server
 
 ~~~text
-minimium-server run [--seed DECIMAL|0xHEX] [--planet-config PATH] [--threads 1..64|auto] [--max-players N] [--bind IP] [--game-port PORT] [--data-dir PATH] [--map PATH | --world-definition PATH] [--autosave-seconds N] [--headless]
+minimium-server run [--seed DECIMAL|0xHEX] [--planet-config PATH] [--environment-config PATH] [--threads 1..64|auto] [--max-players N] [--bind IP] [--game-port PORT] [--data-dir PATH] [--map PATH | --world-definition PATH] [--autosave-seconds N] [--headless]
 minimium-server --version
 ~~~
 
 The defaults are one execution lane, 512 active players, loopback bind (`127.0.0.1`), an OS-selected game port (`0`), data directory `.minimium`, seeded planet/dungeon demo worlds, and autosave every 300 seconds. `--threads` accepts 1 through 64 lanes or `auto`; `--max-players` accepts 1 through 512. `--autosave-seconds` accepts 0 through 604800; zero disables periodic saves. `--headless` leaves the server in the foreground but disables terminal commands. Without it, terminal commands use the same command registry as the admin CLI. Game traffic binds to the selected IP; the administrative listener is loopback-only.
+
+`--environment-config PATH` reads at most 16 KiB of UTF-8 RON schema 1 with unknown fields rejected. It initializes `mode`, optional `initial_utc`, `scale_ppm`, and `offline_policy` for a new world. `real_time` requires no initial date and exactly 1x; `time_scale` uses the configured date or the current UTC. Examples are [real-time.ron](../presets/environment/real-time.ron) and [time-scale.ron](../presets/environment/time-scale.ron). The option is rejected if `world.seed`, `world.planet.ron`, or `world.snapshot` already exists. This task does not persist clock state; that is added by E004-03, so an existing world without a saved clock starts in default RealTime mode.
 
 `--seed` accepts a decimal or `0x` hexadecimal 128-bit value for a new generated
 world. If omitted, the server draws one random seed. It records the seed in
@@ -71,13 +73,21 @@ The same commands are available through the server terminal (unless `--headless`
 | `metrics show` | Print runtime, network, queue, collision, memory, process, and optional allocation metrics. Field names are documented in [performance policy](performance.md). |
 | `world save` | Queue one snapshot on the persistence worker. A successful reply means queued, not completed; use `status` to inspect `save_pending` and `save_last`. A second save is rejected while one is pending. |
 | `stop` | Request controlled shutdown. The server saves a final snapshot, reports the final result, and releases the data-directory lock. |
+| `time status` | Show clock ID, revision, session nonce, mode, UTC milliseconds, rate in ppm and decimal form, offline policy, fault, last UTC correction and pending sync revision. |
+| `time mode real_time` | Anchor to current server UTC at 1x. |
+| `time mode time_scale` | Continue from the current world date, preserving its TimeScale rate or using 1x when switching from RealTime. |
+| `time set RFC3339_UTC` | Set a UTC date and switch to TimeScale; preserve an existing TimeScale rate or use 1x. |
+| `time scale DECIMAL` | Set a nonnegative 0–1440x rate and switch to TimeScale; zero pauses only the environment clock. |
+| `time offline pause` / `time offline advance` | Set the future restart policy. Save/restart persistence is added in E004-03. |
+
+Rates accept decimal digits and an optional dot with one to six fractional digits, parsed exactly as ppm. Dates accept RFC3339 UTC with `Z` or `+00:00`, zero to three millisecond digits, and no leap second. Every accepted mutation increments the clock revision; invalid input is rejected without applying a change. Physical simulation, cooldowns, heartbeat and deadlines continue in real time.
 
 The snapshot for `world save` captures the committed world at the command's execution point, before that tick applies its pending game inputs. A queued acknowledgement does not mean inputs still waiting for that tick are included. Controlled `stop` applies the pending input batch before taking its final snapshot.
 
 `minimiumctl` syntax:
 
 ~~~text
-minimiumctl [--data-dir PATH] <help|status|players list|metrics show|world save|stop>
+minimiumctl [--data-dir PATH] <help|status|players list|metrics show|world save|stop|time ...>
 ~~~
 
 The data directory defaults to `.minimium`. `minimiumctl stop` waits up to 120 seconds for the captured instance to finish, verifies its private owner marker, checks the legacy `server.shutdown` result, and waits for lock release. It exits with an error if the final save or shutdown failed. The legacy result body remains `<admin-port>\tOK` or `<admin-port>\tERR\t<message>`; the separate private owner sidecar binds that result to the instance. Neither file should be treated as a public credential store.

@@ -7,7 +7,7 @@ Draft PR integracyjny do main jest podlinkowany w rodzicu. Data przygotowania pl
 
 Dodać do Minimium wspólny czas świata, płynny dzień/noc, podstawowe niebo, Słońce, Księżyc z rzeczywistą fazą, 500 rzeczywistych gwiazd oraz zgodne z nimi oświetlenie i lokalne cienie. Dla ustalonej daty UTC i geograficznej pozycji gracza na Earth układ nieba ma odpowiadać rzeczywistemu niebu w zadanym budżecie błędu.
 
-**Stan: PLANNED.** Ta karta i zadania wykonawcze opisują przyszłą implementację. Utworzenie planu, branchu i draft PR nie oznacza wdrożenia funkcji ani rozpoczęcia końcowych testów.
+**Stan: W REALIZACJI.** E004-00..01 są zintegrowane, a E004-02 jest w PR #74. Funkcje czasu i nieba nie zostały jeszcze poddane końcowej weryfikacji runtime.
 
 Baza planu: [`main@aad2c82`](https://github.com/clickbytes/minimium/commit/aad2c8298606a46dc3a286b4eac7f1de45759851). Przed implementacją gałąź integracyjna została porównana i zsynchronizowana z [`main@30ff278`](https://github.com/clickbytes/minimium/commit/30ff278f9a0020f93d2567b2ca5c05a290bc605e) przez `cd816c2`. Zachowuje to nowszą konsolę, suwak zoomu i kafelkowany LOD globusa. Baseline potwierdza protokół v11 i save v7; kalendarzowego zegara i dynamicznego oświetlenia nadal brak.
 
@@ -50,7 +50,7 @@ Każde poniższe issue ma własny cel, konkretne istniejące i nowe pliki, kontr
 
 - [x] #52 — **E004-00**: Zamrożenie kontraktów czasu i nieba, ADR oraz baseline integracji
 - [x] #53 — **E004-01**: Wprowadzić czyste typy czasu świata i kontrakt środowiska w minimium-core
-- [ ] #54 — **E004-02**: Uruchomić autorytatywny zegar serwera i parametryczne polecenia administracyjne czasu
+- [x] #54 — **E004-02**: Uruchomić autorytatywny zegar serwera i parametryczne polecenia administracyjne czasu
 - [ ] #55 — **E004-03**: Zapisywać zegar świata w save v8 i zachować dane podczas migracji oraz restartu
 - [ ] #59 — **E004-04**: Rozszerzyć protokół do v12 o stan środowiska i synchronizację czasu we wszystkich aplikacjach
 - [ ] #60 — **E004-05**: Dodać klientowy estymator czasu, wygładzanie i poprawny lifecycle portali, reconnect oraz demo
@@ -73,7 +73,7 @@ Każde poniższe issue ma własny cel, konkretne istniejące i nowe pliki, kontr
 | --- | --- | --- |
 | [E004-00 / #52](https://github.com/clickbytes/minimium/issues/52) | brak | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#71](https://github.com/clickbytes/minimium/pull/71), merge `12f84a7`) |
 | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53) | [E004-00 / #52](https://github.com/clickbytes/minimium/issues/52) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#73](https://github.com/clickbytes/minimium/pull/73), commit `a8577b4`) |
-| [E004-02 / #54](https://github.com/clickbytes/minimium/issues/54) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53) | PLANNED |
+| [E004-02 / #54](https://github.com/clickbytes/minimium/issues/54) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#74](https://github.com/clickbytes/minimium/pull/74), code commit `c9a6855`) |
 | [E004-03 / #55](https://github.com/clickbytes/minimium/issues/55) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53), [E004-02 / #54](https://github.com/clickbytes/minimium/issues/54) | PLANNED |
 | [E004-04 / #59](https://github.com/clickbytes/minimium/issues/59) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53), [E004-02 / #54](https://github.com/clickbytes/minimium/issues/54), [E004-03 / #55](https://github.com/clickbytes/minimium/issues/55), [E004-08 / #58](https://github.com/clickbytes/minimium/issues/58) | PLANNED |
 | [E004-05 / #60](https://github.com/clickbytes/minimium/issues/60) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53), [E004-04 / #59](https://github.com/clickbytes/minimium/issues/59) | PLANNED |
@@ -122,8 +122,10 @@ Branch integracyjny: `epic/004-realistic-sky-time`. Każdy task ma osobny branch
 ## Stan przygotowania
 
 E004-00 / #52 zostało scalone przez PR [#71](https://github.com/clickbytes/minimium/pull/71)
-do gałęzi integracyjnej (`12f84a7`). Zatwierdza [ADR 0006](../adr/0006-world-time-and-sky.md),
-wspólne kontrakty i baseline w [rejestrze weryfikacji](epic-004-verification.md). Wykonano formatowanie
-kontrolne, kompilację workspace, Clippy i kontrole statyczne bez testów i uruchamiania
-aplikacji. E004-01 dostarcza czysty kontrakt core przez PR [#73](https://github.com/clickbytes/minimium/pull/73);
-E004-02..14 pozostaje PLANNED. Wyniki runtime są NOT RUN.
+do gałęzi integracyjnej (`12f84a7`). E004-01 dostarcza czysty kontrakt core przez PR
+[#73](https://github.com/clickbytes/minimium/pull/73). E004-02 jest w PR
+[#74](https://github.com/clickbytes/minimium/pull/74), z osobnym adapterem serwerowym,
+komendami czasu, konfiguracją nowego świata i profilami instancji. Formatowanie, kompilacja,
+Clippy i kontrole statyczne przeszły; cargo zgłasza wyłącznie ostrzeżenia Windows o fallbacku
+hard-link cache. Nie uruchamiano testów ani aplikacji. E004-03..14 pozostają PLANNED, a wyniki
+runtime całego epica są NOT RUN.
