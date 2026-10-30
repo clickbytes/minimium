@@ -48,6 +48,10 @@ impl GpuResources {
             self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_add(buffer.size());
             self.world_vertex_catalog
                 .insert((instance, *key, *lod), (buffer, vertices.len() as u32));
+            if let Some(bounds) = super::shadows::geometry_bounds(geometry) {
+                self.world_geometry_bounds
+                    .insert((instance, *key, *lod), bounds);
+            }
         }
         self.world_vertex_catalog
             .retain(|(owner, key, lod), (buffer, _)| {
@@ -58,6 +62,8 @@ impl GpuResources {
                     false
                 }
             });
+        self.world_geometry_bounds
+            .retain(|(owner, key, lod), _| *owner != instance || required.contains(&(*key, *lod)));
         if scene.render_sectors.iter().any(|(key, lod, _)| {
             !self
                 .world_vertex_catalog
@@ -103,6 +109,11 @@ impl GpuResources {
                 }
             });
         self.world_sector_versions.remove(&instance);
+        self.world_geometry_bounds
+            .retain(|(owner, _, _), _| *owner != instance);
+        if self.shadow_map_instance == Some(instance) {
+            self.release_shadow_map_casters();
+        }
     }
 
     pub(super) fn update_remote_vertices(&mut self, vertices: &[Vertex]) {
@@ -122,7 +133,14 @@ impl GpuResources {
             self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_sub(buffer.size());
         }
         self.world_sector_versions.clear();
+        self.world_geometry_bounds.clear();
         self.active_sector_keys.clear();
+        self.shadow_player_vertex_count = 0;
+        self.shadow_remote_complete = false;
+        self.shadow_remote_dirty = true;
+        self.release_shadow_map_casters();
+        self.shadow_state
+            .invalidate(super::shadows::ShadowInvalidReason::StaleContext);
         true
     }
 
@@ -175,46 +193,18 @@ impl GpuResources {
             super::stars_gpu::StarGpu::new(&device, &frame_bindings.layout, scene_color_format);
         let moon =
             super::moon_gpu::MoonGpu::new(&device, &frame_bindings.layout, scene_color_format);
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("minimium-basic-3d-shader"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Owned(super::shader_source::world())),
+        let shadow_gpu =
+            super::shadow_gpu::ShadowGpu::new(&device, super::shadows::ShadowSettings::standard());
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("minimium-world-shadow-pipeline-layout"),
+            bind_group_layouts: &[
+                Some(&frame_bindings.layout),
+                Some(&shadow_gpu.empty_layout),
+                Some(&shadow_gpu.group2_layout),
+            ],
+            immediate_size: 0,
         });
-        let pipeline_layout = frame_bindings.pipeline_layout(&device);
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("minimium-solid-3d-pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[Some(Vertex::layout())],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: scene_color_format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::Less),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: Default::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+        let pipeline = super::world_pipeline::create(&device, &pipeline_layout, scene_color_format);
         let (ui_pipeline, ui_bind_group, ui_vertex_buffer) =
             create_ui_resources(&device, &queue, scene_color_format);
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -233,6 +223,7 @@ impl GpuResources {
             + frame_bindings.environment_buffer.size()
             + vertex_buffer.size()
             + player_buffer.size()
+            + shadow_gpu.gpu_bytes()
             + ui_vertex_buffer.size()
             + stars.buffer.size()
             + output_encoder
@@ -246,6 +237,8 @@ impl GpuResources {
             config,
             scene_color_format,
             pipeline,
+            shadow_gpu,
+            shadow_state: super::shadows::ShadowState::default(),
             environment_pipelines,
             stars,
             moon,
@@ -257,6 +250,10 @@ impl GpuResources {
             vertex_count: vertices.len() as u32,
             player_buffer,
             remote_vertex_count: 0,
+            shadow_player_buffer: None,
+            shadow_player_vertex_count: 0,
+            shadow_remote_complete: true,
+            shadow_remote_dirty: false,
             camera_buffer: frame_bindings.camera_buffer,
             environment_buffer: frame_bindings.environment_buffer,
             camera_bind_group: frame_bindings.bind_group,
@@ -265,10 +262,16 @@ impl GpuResources {
             fixed_gpu_bytes,
             world_vertex_catalog: std::collections::HashMap::new(),
             world_sector_versions: std::collections::HashMap::new(),
+            world_geometry_bounds: std::collections::HashMap::new(),
             active_sector_keys: Vec::new(),
             active_world_instance: minimium_core::world::WorldInstanceId::new(1)
                 .expect("primary world ID is nonzero"),
             render_origin: [0.0; 3],
+            shadow_map_buffer: None,
+            shadow_map_instance: None,
+            shadow_map_fingerprint: None,
+            shadow_map_center: None,
+            shadow_map_vertex_count: 0,
             overview_buffer: None,
             overview_marker_buffer: None,
             environment_draw_calls: super::sky::EnvironmentDrawCalls::default(),

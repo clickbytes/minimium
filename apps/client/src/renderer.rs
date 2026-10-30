@@ -51,10 +51,16 @@ mod render;
 mod sector_scene;
 mod session;
 mod shader_source;
+mod shadow_casters;
+mod shadow_gpu;
+mod shadow_map_cache;
+mod shadows;
 mod sky;
 mod sky_gpu;
 mod stars_gpu;
 mod window;
+mod window_metrics;
+mod world_pipeline;
 
 use environment::{EnvironmentFrame, RenderViewFrame, RenderViewInput};
 use geometry::{cube, sector_geometry, Vertex};
@@ -80,6 +86,8 @@ struct GpuResources {
     config: wgpu::SurfaceConfiguration,
     scene_color_format: wgpu::TextureFormat,
     pipeline: wgpu::RenderPipeline,
+    shadow_gpu: shadow_gpu::ShadowGpu,
+    shadow_state: shadows::ShadowState,
     environment_pipelines: sky_gpu::EnvironmentPipelines,
     stars: stars_gpu::StarGpu,
     moon: moon_gpu::MoonGpu,
@@ -91,6 +99,10 @@ struct GpuResources {
     vertex_count: u32,
     player_buffer: wgpu::Buffer,
     remote_vertex_count: u32,
+    shadow_player_buffer: Option<wgpu::Buffer>,
+    shadow_player_vertex_count: u32,
+    shadow_remote_complete: bool,
+    shadow_remote_dirty: bool,
     camera_buffer: wgpu::Buffer,
     environment_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
@@ -103,9 +115,16 @@ struct GpuResources {
     >,
     world_sector_versions:
         HashMap<minimium_core::world::WorldInstanceId, (GenerationRevision, WorldContentRevision)>,
+    world_geometry_bounds:
+        HashMap<(minimium_core::world::WorldInstanceId, SectorKey, u8), shadows::ShadowBounds>,
     active_sector_keys: Vec<(SectorKey, u8)>,
     active_world_instance: minimium_core::world::WorldInstanceId,
     render_origin: [f32; 3],
+    shadow_map_buffer: Option<wgpu::Buffer>,
+    shadow_map_instance: Option<minimium_core::world::WorldInstanceId>,
+    shadow_map_fingerprint: Option<u64>,
+    shadow_map_center: Option<[f64; 3]>,
+    shadow_map_vertex_count: u32,
     overview_buffer: Option<(wgpu::Buffer, u32)>,
     overview_marker_buffer: Option<(wgpu::Buffer, u32)>,
     environment_draw_calls: sky::EnvironmentDrawCalls,
@@ -118,6 +137,7 @@ struct GpuResources {
 
 struct GameplayView {
     remote_vertices: Vec<Vertex>,
+    remote_shadow_vertices: Vec<Vertex>,
     remote_players: [Option<RemotePlayerTrack>; MAX_VISIBLE_PLAYERS],
     last_remote_snapshot_time_ms: Option<u64>,
     last_remote_snapshot_received_at: Option<Instant>,

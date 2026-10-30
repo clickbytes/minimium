@@ -6,6 +6,8 @@ impl GpuResources {
     pub(super) fn render(
         &mut self,
         environment: &EnvironmentFrame,
+        map: Option<&minimium_core::world::WorldMap>,
+        player_position_m: [f64; 3],
     ) -> Result<u32, wgpu::CurrentSurfaceTexture> {
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) => frame,
@@ -24,6 +26,7 @@ impl GpuResources {
         let surface_view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
+        self.prepare_shadow_frame(environment, map, player_position_m);
         let scene_view = self
             .output_encoder
             .as_ref()
@@ -44,6 +47,49 @@ impl GpuResources {
                 label: Some("frame-encoder"),
             });
         let mut draw_calls = 0;
+        if self.shadow_state.valid {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("local-shadow-depth-pass"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.shadow_gpu.depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.shadow_gpu.depth_pipeline);
+            pass.set_bind_group(0, &self.shadow_gpu.uniform_bind_group, &[]);
+            for (key, lod) in &self.shadow_state.caster_keys {
+                if let Some((buffer, vertex_count)) =
+                    self.world_vertex_catalog
+                        .get(&(self.active_world_instance, *key, *lod))
+                {
+                    pass.set_vertex_buffer(0, buffer.slice(..));
+                    pass.draw(0..*vertex_count, 0..1);
+                    draw_calls += 1;
+                }
+            }
+            if let Some(buffer) = &self.shadow_map_buffer {
+                if self.shadow_map_vertex_count > 0 {
+                    pass.set_vertex_buffer(0, buffer.slice(..));
+                    pass.draw(0..self.shadow_map_vertex_count, 0..1);
+                    draw_calls += 1;
+                }
+            }
+            if self.shadow_player_vertex_count > 0 {
+                if let Some(buffer) = &self.shadow_player_buffer {
+                    pass.set_vertex_buffer(0, buffer.slice(..));
+                    pass.draw(0..self.shadow_player_vertex_count, 0..1);
+                    draw_calls += 1;
+                }
+            }
+        }
         self.environment_draw_calls = super::sky::EnvironmentDrawCalls::default();
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -76,8 +122,12 @@ impl GpuResources {
             if !self.scene_visible {
                 // Waiting for a required Earth manifest or showing a persistent error.
                 pass.set_pipeline(&self.pipeline);
+                pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
+                pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
             } else if self.overview_active {
                 pass.set_pipeline(&self.pipeline);
+                pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
+                pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
                 if let Some(globe) = self.globe.as_ref().filter(|_| self.overview_globe) {
                     pass.set_pipeline(&globe.pipeline);
                     pass.set_bind_group(1, &globe.bind_group, &[]);
@@ -91,6 +141,8 @@ impl GpuResources {
                         draw_calls += 1;
                     }
                     pass.set_pipeline(&self.pipeline);
+                    pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
+                    pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
                 }
                 if let Some((buffer, count)) = &self.overview_buffer {
                     pass.set_vertex_buffer(0, buffer.slice(..));
@@ -137,6 +189,8 @@ impl GpuResources {
                     }
                 }
                 pass.set_pipeline(&self.pipeline);
+                pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
+                pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
                 pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
                 pass.draw(0..self.vertex_count, 0..1);
                 draw_calls += 1;
@@ -173,6 +227,8 @@ impl GpuResources {
                     }
                 }
                 pass.set_pipeline(&self.pipeline);
+                pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
+                pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
                 for (key, lod) in &self.active_sector_keys {
                     if let Some((buffer, vertex_count)) =
                         self.world_vertex_catalog
@@ -185,6 +241,9 @@ impl GpuResources {
                 }
             }
             if !self.overview_active && self.remote_vertex_count > 0 {
+                pass.set_pipeline(&self.pipeline);
+                pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
+                pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
                 pass.set_vertex_buffer(0, self.player_buffer.slice(..));
                 pass.draw(0..self.remote_vertex_count, 0..1);
                 draw_calls += 1;
