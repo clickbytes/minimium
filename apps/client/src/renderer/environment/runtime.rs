@@ -19,7 +19,7 @@ impl Renderer {
     ) -> PreparedEnvironmentFrame {
         let started = std::time::Instant::now();
         let stars = self.update_render_environment_inner(render_view);
-        let prepared = PreparedEnvironmentFrame::new(self.render_environment_frame, stars);
+        let prepared = PreparedEnvironmentFrame::new(self.render_environment_frame.clone(), stars);
         self.metrics
             .frame_stats
             .record_environment_cpu(started.elapsed());
@@ -207,6 +207,7 @@ impl Renderer {
         } else {
             None
         };
+        let observations = minimium_astronomy::observed_bodies(&sky, None);
         match EnvironmentFrame::from_sky_state(
             &sky,
             observer,
@@ -217,6 +218,7 @@ impl Renderer {
             EnvironmentSettings::planetary(),
         ) {
             Ok(mut frame) => {
+                frame.observed_bodies = observations;
                 frame.diagnostics.star_frame = Some(star_stamp);
                 self.publish_environment(frame);
                 star_upload

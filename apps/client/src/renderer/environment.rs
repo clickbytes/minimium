@@ -8,7 +8,7 @@ mod runtime;
 pub mod stars;
 
 use super::environment_gpu::{CameraUniform, EnvironmentUniform};
-use minimium_astronomy::{CelestialBodyState, SkyState};
+use minimium_astronomy::{CelestialBodyState, ObservedBody, SkyState};
 use minimium_core::{environment::EnvironmentDescriptor, sky::ObserverFrame, time::ClockRevision};
 use minimium_protocol::WorldContext;
 
@@ -204,12 +204,13 @@ pub(crate) struct StarFrameStamp {
     pub(crate) epoch_revision: u64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct EnvironmentFrame {
     pub(crate) context: Option<WorldContext>,
     pub(crate) descriptor: Option<EnvironmentDescriptor>,
     pub(crate) clock_revision: Option<ClockRevision>,
     pub(crate) sky: Option<SkyState>,
+    pub(crate) observed_bodies: Vec<ObservedBody>,
     pub(crate) observer: Option<ObserverFrame>,
     pub(crate) render_view: RenderViewFrame,
     pub(crate) global_sun: Option<GlobalSunFrame>,
