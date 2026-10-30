@@ -1,7 +1,10 @@
 mod atlas;
+mod editor;
 mod history;
 mod hud;
+mod input_draw;
 mod state;
+mod suggestions;
 mod text;
 mod theme;
 

@@ -124,6 +124,23 @@ impl Renderer {
         self.gpu.install_overview(&vertices);
     }
 
+    pub(super) fn refresh_earth_globe_lod(&mut self) {
+        if !self.overview_open || !self.is_earth_world() {
+            return;
+        }
+        let Some(manifest) = self.world_manifests.get(&self.current_instance) else {
+            return;
+        };
+        let radius = minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0;
+        self.gpu.refresh_globe_lod(radius, self.overview_zoom);
+        self.metrics.frame_stats.set_gpu_bytes(
+            self.gpu.fixed_gpu_bytes
+                + u64::from(self.gpu.size.width.max(1))
+                    * u64::from(self.gpu.size.height.max(1))
+                    * 4,
+        );
+    }
+
     pub(super) fn arm_map_teleport(&mut self) {
         if self.map_teleport_pending {
             self.ui
@@ -164,21 +181,20 @@ impl Renderer {
             return;
         };
         let radius = minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0;
-        let (view, _) = self.overview_camera();
-        let eye = view.inverse().transform_point3(glam::Vec3::ZERO);
-        let forward = -eye.normalize();
-        // The Earth presentation is reflected in camera space, so screen-right
-        // points opposite the unreflected right vector.
-        let right = -forward.cross(glam::Vec3::Y).normalize();
-        let up = -right.cross(forward);
+        let (mut view, far) = self.overview_camera();
         let width = self.gpu.size.width.max(1) as f32;
         let height = self.gpu.size.height.max(1) as f32;
-        let aspect = width / height;
-        let half_fov = (70_f32.to_radians() * 0.5).tan();
-        let ray = (forward
-            + right * ((2.0 * x as f32 / width - 1.0) * aspect * half_fov)
-            + up * ((1.0 - 2.0 * y as f32 / height) * half_fov))
-            .normalize();
+        if self.is_earth_world() {
+            view = glam::Mat4::from_scale(glam::Vec3::new(-1.0, 1.0, 1.0)) * view;
+        }
+        let near = radius * ((self.overview_zoom - 1.0) * 0.08).max(0.001);
+        let projection = glam::Mat4::perspective_rh(70_f32.to_radians(), width / height, near, far);
+        let inverse = (projection * view).inverse();
+        let ndc = glam::Vec2::new(2.0 * x as f32 / width - 1.0, 1.0 - 2.0 * y as f32 / height);
+        let near_point = inverse.project_point3(glam::Vec3::new(ndc.x, ndc.y, 0.0));
+        let far_point = inverse.project_point3(glam::Vec3::new(ndc.x, ndc.y, 1.0));
+        let ray = (far_point - near_point).normalize();
+        let eye = view.inverse().transform_point3(glam::Vec3::ZERO);
         let b = eye.dot(ray);
         let discriminant = b * b - (eye.length_squared() - radius * radius);
         if discriminant < 0.0 {
@@ -215,7 +231,7 @@ impl Renderer {
             {
                 let radius =
                     minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0;
-                self.gpu.install_globe(&pixels, radius);
+                self.gpu.install_globe(&pixels, radius, self.overview_zoom);
                 if self.settings.require_earth && self.gpu.scene_visible {
                     self.connection_status = "Earth: połączono".into();
                 }

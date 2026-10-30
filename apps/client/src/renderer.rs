@@ -31,6 +31,7 @@ use winit::{
 };
 
 mod camera;
+mod console_events;
 mod controller;
 mod geometry;
 mod globe;

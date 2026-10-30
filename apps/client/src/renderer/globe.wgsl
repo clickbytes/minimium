@@ -21,7 +21,7 @@ struct Output {
 }
 @fragment fn fs_main(input: Output) -> @location(0) vec4<f32> {
     let sample = textureSample(globe, globe_sampler, input.uv);
-    let offset = vec2<f32>(1.0 / 2048.0, 1.0 / 1024.0);
+    let offset = vec2<f32>(1.0) / vec2<f32>(textureDimensions(globe));
     let east = textureSample(globe, globe_sampler, input.uv + vec2<f32>(offset.x, 0.0)).a;
     let west = textureSample(globe, globe_sampler, input.uv - vec2<f32>(offset.x, 0.0)).a;
     let north = textureSample(globe, globe_sampler, input.uv - vec2<f32>(0.0, offset.y)).a;

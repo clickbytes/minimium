@@ -1,5 +1,8 @@
+use super::editor::Editor;
 use super::history;
 use super::hud::{self, HudState};
+use super::input_draw;
+use super::suggestions::Suggestions;
 use super::text::{self, DrawContext, TextDraw, UiVertex};
 use super::theme::*;
 use std::collections::VecDeque;
@@ -17,28 +20,30 @@ pub(super) struct ChatLine {
 
 pub struct Console {
     pub open: bool,
-    pub(super) input: String,
+    pub(crate) editor: Editor,
+    pub(super) suggestions: Suggestions,
     pub(super) history: Vec<String>,
     pub(super) history_cursor: Option<usize>,
+    pub(super) history_draft: String,
     pub(super) lines: VecDeque<ConsoleLine>,
     scroll_offset: usize,
     pub(super) chat_lines: VecDeque<ChatLine>,
     vertices: Vec<UiVertex>,
-    render_input: String,
 }
 
 impl Console {
     pub fn new() -> Self {
         Self {
             open: false,
-            input: String::with_capacity(MAX_INPUT),
+            editor: Editor::new(),
+            suggestions: Suggestions::new(),
             history: Vec::with_capacity(32),
             history_cursor: None,
+            history_draft: String::new(),
             lines: VecDeque::with_capacity(MAX_LINES),
             scroll_offset: 0,
             chat_lines: VecDeque::with_capacity(MAX_CHAT_LINES),
             vertices: Vec::with_capacity(MAX_VERTICES),
-            render_input: String::with_capacity(MAX_INPUT + 2),
         }
     }
 
@@ -77,21 +82,15 @@ impl Console {
     }
 
     pub fn append_text(&mut self, text: &str) {
-        for character in text.chars() {
-            let encoded_length = character.len_utf8();
-            if self.input.len() + encoded_length > MAX_INPUT {
-                break;
-            }
-            if !character.is_control() {
-                self.input.push(character);
-            }
-        }
+        self.editor.replace_selection(text);
         self.history_cursor = None;
+        self.suggestions.edited(&self.editor);
     }
 
     pub fn backspace(&mut self) {
-        self.input.pop();
+        self.editor.delete(true, false);
         self.history_cursor = None;
+        self.suggestions.edited(&self.editor);
     }
 
     pub fn take_input(&mut self) -> String {
@@ -106,8 +105,25 @@ impl Console {
         history::history_down(self);
     }
 
-    pub fn complete_input(&mut self) {
-        history::complete_input(self);
+    pub fn complete_input(&mut self, reverse: bool) {
+        self.suggestions.cycle(&mut self.editor, reverse);
+    }
+
+    pub fn edit_changed(&mut self) {
+        self.history_cursor = None;
+        self.suggestions.edited(&self.editor);
+    }
+
+    pub fn refresh_suggestions(&mut self) {
+        self.suggestions.edited(&self.editor);
+    }
+
+    pub fn input_hit(&mut self, width: u32, height: u32, x: f64, y: f64, select: bool) -> bool {
+        let hit = input_draw::hit(&mut self.editor, width, height, x, y, select);
+        if hit {
+            self.refresh_suggestions();
+        }
+        hit
     }
 
     pub fn clear_lines(&mut self) {
@@ -214,7 +230,8 @@ impl Console {
         let scale = 1.0;
         let line_height = 22.0;
         let max_chars = ((context.width - 44.0) / GLYPH_ADVANCE) as usize;
-        let visible_lines = ((panel_height - 70.0) / line_height).max(0.0) as usize;
+        let hint_space = self.suggestions.lines().count() as f32 * 20.0;
+        let visible_lines = ((panel_height - 70.0 - hint_space) / line_height).max(0.0) as usize;
         let first_line = self
             .lines
             .len()
@@ -239,20 +256,11 @@ impl Console {
                 },
             );
         }
-        self.render_input.clear();
-        self.render_input.push_str("> ");
-        self.render_input.push_str(&self.input);
-        text::append_text(
+        input_draw::draw(
             &mut self.vertices,
             context,
-            TextDraw {
-                x: 22.0,
-                y: context.height - 42.0,
-                text: &self.render_input,
-                color: INPUT_TEXT,
-                max_chars,
-                scale,
-            },
+            &mut self.editor,
+            &self.suggestions,
         );
     }
 }

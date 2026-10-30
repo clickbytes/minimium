@@ -1,11 +1,11 @@
 use super::state::Console;
-use super::theme::{ECHO_TEXT, MAX_INPUT, MAX_LINES};
-use crate::client_commands::completion_candidates;
+use super::theme::{ECHO_TEXT, MAX_LINES};
 
 pub(super) fn take_input(console: &mut Console) -> String {
-    let input = std::mem::take(&mut console.input);
-    console.input = String::with_capacity(MAX_INPUT);
+    let input = console.editor.clear();
     console.history_cursor = None;
+    console.history_draft.clear();
+    console.suggestions.edited(&console.editor);
     if !input.trim().is_empty() {
         console.scroll_to_latest();
         if console.history.last() != Some(&input) {
@@ -23,13 +23,16 @@ pub(super) fn history_up(console: &mut Console) {
     if console.history.is_empty() {
         return;
     }
+    if console.history_cursor.is_none() {
+        console.history_draft = console.editor.text.clone();
+    }
     let index = console
         .history_cursor
         .unwrap_or(console.history.len())
         .saturating_sub(1);
     console.history_cursor = Some(index);
-    console.input.clear();
-    console.input.push_str(&console.history[index]);
+    console.editor.set_text(&console.history[index]);
+    console.suggestions.edited(&console.editor);
 }
 
 pub(super) fn history_down(console: &mut Console) {
@@ -38,31 +41,10 @@ pub(super) fn history_down(console: &mut Console) {
     };
     if index + 1 >= console.history.len() {
         console.history_cursor = None;
-        console.input.clear();
+        console.editor.set_text(&console.history_draft);
     } else {
         console.history_cursor = Some(index + 1);
-        console.input.clear();
-        console.input.push_str(&console.history[index + 1]);
+        console.editor.set_text(&console.history[index + 1]);
     }
-}
-
-pub(super) fn complete_input(console: &mut Console) {
-    let input = console.input.trim();
-    let matches: Vec<_> = completion_candidates()
-        .filter(|command| command.starts_with(input))
-        .collect();
-    if matches.len() == 1 {
-        console.input.clear();
-        console.input.push_str(matches[0]);
-        console.input.push(' ');
-    } else if matches.len() > 1 {
-        let mut suggestions = String::new();
-        for command in &matches {
-            if !suggestions.is_empty() {
-                suggestions.push_str("  ");
-            }
-            suggestions.push_str(command);
-        }
-        console.push_line(suggestions);
-    }
+    console.suggestions.edited(&console.editor);
 }

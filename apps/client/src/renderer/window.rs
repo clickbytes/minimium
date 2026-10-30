@@ -17,6 +17,7 @@ struct App {
     options: crate::options::ClientOptions,
     data_dir: PathBuf,
     startup_error: Option<String>,
+    modifiers: winit::keyboard::ModifiersState,
 }
 
 impl ApplicationHandler for App {
@@ -84,6 +85,7 @@ impl ApplicationHandler for App {
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => renderer.resize(size),
+            WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
                     if code == KeyCode::F1 && event.state == ElementState::Pressed && !event.repeat
@@ -108,19 +110,12 @@ impl ApplicationHandler for App {
                                         event_loop.exit();
                                     }
                                 }
-                                KeyCode::Backspace => renderer.ui.console.backspace(),
-                                KeyCode::ArrowUp => renderer.ui.console.history_up(),
-                                KeyCode::ArrowDown => renderer.ui.console.history_down(),
-                                KeyCode::PageUp => renderer.ui.console.scroll_lines(10),
-                                KeyCode::PageDown => renderer.ui.console.scroll_lines(-10),
-                                KeyCode::Home => renderer.ui.console.scroll_lines(128),
-                                KeyCode::End => renderer.ui.console.scroll_to_latest(),
-                                KeyCode::Tab => renderer.ui.console.complete_input(),
-                                _ => {
-                                    if let Some(text) = event.text.as_ref() {
-                                        renderer.ui.console.append_text(text.as_str());
-                                    }
-                                }
+                                _ => super::console_events::key(
+                                    &mut renderer.ui.console,
+                                    code,
+                                    event.text.as_ref().map(|text| text.as_str()),
+                                    self.modifiers,
+                                ),
                             }
                         }
                         return;
@@ -168,6 +163,17 @@ impl ApplicationHandler for App {
                 button: MouseButton::Left,
                 ..
             } => {
+                if renderer.ui.console.open {
+                    if let Some((x, y)) = renderer.input.last_cursor {
+                        let size = window.inner_size();
+                        renderer.ui.console.editor.dragging =
+                            renderer
+                                .ui
+                                .console
+                                .input_hit(size.width, size.height, x, y, false);
+                    }
+                    return;
+                }
                 if renderer.overview_open && !renderer.ui.console.open {
                     renderer.overview_dragging = true;
                     renderer.overview_dragged = false;
@@ -191,6 +197,7 @@ impl ApplicationHandler for App {
                 button: MouseButton::Left,
                 ..
             } => {
+                renderer.ui.console.editor.dragging = false;
                 if renderer.overview_open && !renderer.ui.console.open && !renderer.overview_dragged
                 {
                     renderer.click_map_teleport();
@@ -216,8 +223,19 @@ impl ApplicationHandler for App {
                 renderer.overview_zoom =
                     (renderer.overview_zoom * (1.0 - amount * 0.1)).clamp(1.08, 8.0);
                 renderer.refresh_earth_marker();
+                renderer.refresh_earth_globe_lod();
             }
             WindowEvent::CursorMoved { position, .. } => {
+                if renderer.ui.console.open && renderer.ui.console.editor.dragging {
+                    let size = window.inner_size();
+                    renderer.ui.console.input_hit(
+                        size.width,
+                        size.height,
+                        position.x,
+                        position.y,
+                        true,
+                    );
+                }
                 if renderer.overview_open && renderer.overview_dragging && !renderer.ui.console.open
                 {
                     if let Some((x, y)) = renderer.input.last_cursor {
@@ -407,6 +425,7 @@ pub fn run(options: crate::options::ClientOptions) -> Result<(), Box<dyn Error>>
         options,
         data_dir,
         startup_error: None,
+        modifiers: winit::keyboard::ModifiersState::default(),
     };
     let event_result = event_loop.run_app(&mut app);
     let cleanup_result = app

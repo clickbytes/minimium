@@ -107,11 +107,8 @@ pub(crate) fn help_lines() -> impl Iterator<Item = &'static str> {
     registry().commands.iter().map(|command| command.usage)
 }
 
-pub(crate) fn completion_candidates() -> impl Iterator<Item = &'static str> {
-    registry()
-        .commands
-        .iter()
-        .flat_map(|command| std::iter::once(command.name).chain(command.alias))
+pub(crate) fn command_specs() -> &'static [CommandSpec] {
+    &registry().commands
 }
 
 fn command_id(first: &str, second: Option<&str>) -> Option<CommandId> {
@@ -278,11 +275,11 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
 
 #[cfg(test)]
 mod tests {
-    use super::{completion_candidates, parse_command, ClientCommand};
+    use super::{command_specs, parse_command, ClientCommand};
 
     #[test]
     fn portal_is_available_to_the_text_console_and_completion() {
         assert_eq!(parse_command("portal"), Ok(Some(ClientCommand::UsePortal)));
-        assert!(completion_candidates().any(|candidate| candidate == "portal"));
+        assert!(command_specs().iter().any(|spec| spec.name == "portal"));
     }
 }

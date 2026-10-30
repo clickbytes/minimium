@@ -2,8 +2,8 @@ use super::GpuResources;
 use std::borrow::Cow;
 use wgpu::util::DeviceExt;
 
-const WIDTH: u32 = 2048;
-const HEIGHT: u32 = 1024;
+const WIDTH: u32 = 4096;
+const HEIGHT: u32 = 2048;
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -17,6 +17,7 @@ pub(super) struct GlobeGpu {
     pub(super) bind_group: wgpu::BindGroup,
     pub(super) vertices: wgpu::Buffer,
     pub(super) vertex_count: u32,
+    lod: u8,
 }
 
 /// Samples the pinned package on a worker thread, away from redraw handling.
@@ -62,13 +63,22 @@ pub(super) fn pixels(height_scale_permille: u32, sea_level_mm: i64) -> Vec<u8> {
     pixels
 }
 
-fn vertices(radius: f32) -> Vec<GlobeVertex> {
-    const LONGITUDES: u32 = 160;
-    const LATITUDES: u32 = 80;
-    let mut out = Vec::with_capacity((LONGITUDES * LATITUDES * 6) as usize);
+fn mesh_resolution(zoom: f32) -> (u32, u32, u8) {
+    if zoom >= 5.0 {
+        (768, 384, 2)
+    } else if zoom >= 3.0 {
+        (512, 256, 1)
+    } else {
+        (256, 128, 0)
+    }
+}
+
+fn vertices(radius: f32, zoom: f32) -> Vec<GlobeVertex> {
+    let (longitudes, latitudes, _) = mesh_resolution(zoom);
+    let mut out = Vec::with_capacity((longitudes * latitudes * 6) as usize);
     let point = |x: u32, y: u32| {
-        let u = x as f32 / LONGITUDES as f32;
-        let v = y as f32 / LATITUDES as f32;
+        let u = x as f32 / longitudes as f32;
+        let v = y as f32 / latitudes as f32;
         let lon = (u * 360.0 - 180.0).to_radians();
         let lat = (90.0 - v * 180.0).to_radians();
         GlobeVertex {
@@ -80,8 +90,8 @@ fn vertices(radius: f32) -> Vec<GlobeVertex> {
             uv: [u, v],
         }
     };
-    for y in 0..LATITUDES {
-        for x in 0..LONGITUDES {
+    for y in 0..latitudes {
+        for x in 0..longitudes {
             let (a, b, c, d) = (
                 point(x, y),
                 point(x + 1, y),
@@ -95,9 +105,9 @@ fn vertices(radius: f32) -> Vec<GlobeVertex> {
 }
 
 impl GpuResources {
-    pub(super) fn install_globe(&mut self, pixels: &[u8], radius: f32) {
+    pub(super) fn install_globe(&mut self, pixels: &[u8], radius: f32, zoom: f32) {
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("GEBCO 2048x1024 overview"),
+            label: Some("GEBCO 4096x2048 overview"),
             size: wgpu::Extent3d {
                 width: WIDTH,
                 height: HEIGHT,
@@ -230,7 +240,8 @@ impl GpuResources {
                 multiview_mask: None,
                 cache: None,
             });
-        let mesh = vertices(radius);
+        let mesh = vertices(radius, zoom);
+        let (_, _, lod) = mesh_resolution(zoom);
         let vertex_count = mesh.len() as u32;
         let vertex_buffer = self
             .device
@@ -245,6 +256,36 @@ impl GpuResources {
             bind_group,
             vertices: vertex_buffer,
             vertex_count,
+            lod,
         });
+    }
+
+    pub(super) fn refresh_globe_lod(&mut self, radius: f32, zoom: f32) {
+        let (_, _, lod) = mesh_resolution(zoom);
+        let Some(globe) = self.globe.as_mut() else {
+            return;
+        };
+        if globe.lod == lod {
+            return;
+        }
+        let mesh = vertices(radius, zoom);
+        let vertex_count = mesh.len() as u32;
+        let buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("globe sphere LOD"),
+                contents: bytemuck::cast_slice(&mesh),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        let Some(globe) = self.globe.as_mut() else {
+            return;
+        };
+        self.fixed_gpu_bytes = self
+            .fixed_gpu_bytes
+            .saturating_sub(globe.vertices.size())
+            .saturating_add(buffer.size());
+        globe.vertices = buffer;
+        globe.vertex_count = vertex_count;
+        globe.lod = lod;
     }
 }
