@@ -311,3 +311,56 @@ impl EntityStore {
         Ok(Some((entity, kind, upgraded)))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn migrate(version: SchemaVersion, bytes: &[u8]) -> Option<Vec<u8>> {
+        (version.get() == 1).then(|| [bytes, &[2]].concat())
+    }
+
+    fn descriptor(id: u32, name: &'static str) -> ComponentDescriptor {
+        ComponentDescriptor {
+            id: ComponentTypeId::new(id).unwrap(),
+            name,
+            schema: SchemaVersion::new(2).unwrap(),
+            replication: ReplicationPolicy::default(),
+            migrate: Some(migrate),
+        }
+    }
+
+    #[test]
+    fn registry_rejects_type_and_name_collisions() {
+        let mut registry = ComponentRegistry::default();
+        registry.register(descriptor(1, "item.stack")).unwrap();
+        assert_eq!(
+            registry.register(descriptor(1, "item.other")),
+            Err(ComponentError::DuplicateType)
+        );
+        assert_eq!(
+            registry.register(descriptor(2, "item.stack")),
+            Err(ComponentError::DuplicateName)
+        );
+    }
+
+    #[test]
+    fn migrations_and_restored_components_preserve_world_scoped_ids() {
+        let mut registry = ComponentRegistry::default();
+        registry.register(descriptor(1, "item.stack")).unwrap();
+        let kind = ComponentTypeId::new(1).unwrap();
+        let old = SchemaVersion::new(1).unwrap();
+        let mut store = EntityStore::default();
+        let entity = EntityId::new(7).unwrap();
+        store
+            .restore_component(&registry, entity, kind, old, &[9])
+            .unwrap();
+        assert_eq!(store.get(entity, kind).unwrap().bytes, vec![9, 2]);
+        assert_eq!(store.iter_changed_components().count(), 0);
+        assert_eq!(store.spawn().unwrap().get(), 8);
+        store.insert(&registry, entity, kind, old, &[8]).unwrap();
+        assert_eq!(store.iter_changed_components().count(), 1);
+        assert!(store.despawn(entity));
+        assert_eq!(store.iter_changed_components().count(), 0);
+    }
+}
