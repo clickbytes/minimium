@@ -380,15 +380,16 @@ impl ClientSession {
                             transition_id,
                             context,
                         } => {
-                            if self
+                            if !self
                                 .pending_transition
                                 .is_some_and(|(pending, _)| pending == *transition_id)
-                                && Some(*context) == self.world_context
+                                || Some(*context) != self.world_context
                             {
-                                self.pending_transition = None;
-                                self.ready_transition = None;
-                                self.cancel_pending_environment(*transition_id);
+                                continue;
                             }
+                            self.pending_transition = None;
+                            self.ready_transition = None;
+                            self.cancel_pending_environment(*transition_id);
                         }
                         ServerMessage::EnvironmentSync {
                             context,
