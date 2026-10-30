@@ -1,16 +1,17 @@
-use super::environment::EnvironmentFrame;
+use super::environment::PreparedEnvironmentFrame;
 use super::GpuResources;
 
 impl GpuResources {
     /// Keeps every GPU pass on the one immutable snapshot prepared for this frame.
     pub(super) fn render(
         &mut self,
-        environment: &EnvironmentFrame,
+        prepared: &PreparedEnvironmentFrame,
         map: Option<&minimium_core::world::WorldMap>,
         player_position_m: [f64; 3],
     ) -> Result<u32, wgpu::CurrentSurfaceTexture> {
         self.environment_draw_calls = super::sky::EnvironmentDrawCalls::default();
-        self.last_shadow_prepare_cpu = std::time::Duration::ZERO;
+        self.last_shadow_prepare_cpu = None;
+        self.last_environment_upload_cpu = None;
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) => frame,
             wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
@@ -28,23 +29,20 @@ impl GpuResources {
         let surface_view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
+        let environment = &prepared.frame;
+        let upload_started = std::time::Instant::now();
+        prepared.upload(self);
+        self.last_environment_upload_cpu = Some(upload_started.elapsed());
+        // Includes local map caster selection/build/allocation/upload and shadow
+        // uniform upload. Remote-player preparation occurs earlier in update().
+        // This scope is disjoint from environment preparation and upload.
         let shadow_started = std::time::Instant::now();
         self.prepare_shadow_frame(environment, map, player_position_m);
-        self.last_shadow_prepare_cpu = shadow_started.elapsed();
+        self.last_shadow_prepare_cpu = Some(shadow_started.elapsed());
         let scene_view = self
             .output_encoder
             .as_ref()
             .map_or(&surface_view, |output| output.target_view());
-        self.queue.write_buffer(
-            &self.camera_buffer,
-            0,
-            bytemuck::bytes_of(&environment.camera_uniform),
-        );
-        self.queue.write_buffer(
-            &self.environment_buffer,
-            0,
-            bytemuck::bytes_of(&super::environment_gpu::environment_uniform(environment)),
-        );
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {

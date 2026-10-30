@@ -118,7 +118,12 @@ konwertowane całkowitoliczbowym odejmowaniem epoki J2000 i podzieleniem przez
 nie odczytuje zegara systemowego i nie stosuje stref czasowych ani DST.
 
 `SkyCalculator` jest właścicielem cache efemeryd i nie implementuje `Send` ani
-`Sync`. Obliczenia C są zamknięte w prywatnym module FFI. Mostek sprawdza statusy,
+`Sync`. Prywatny moduł FFI serializuje wszystkie cztery wejścia do C jednym
+procesowym `Mutex<()>`, pobieranym dokładnie raz na wywołanie. To chroni również
+niezależne kalkulatory utworzone w różnych wątkach przed wyścigiem globalnego
+licznika `_CalcMoonCount` upstream. Zatruta blokada odzyskuje guard: nie chroni
+stanu Rust ani transakcji, a C nie wykonuje callbacków/unwind do Rust.
+Mostek sprawdza statusy,
 wartości skończone oraz argumenty; Rust waliduje długości i ortonormalność
 wektorów, macierzy, obserwatora oraz rekordów gwiazd. Błąd zwracany jest jako
 `SkyError`, bez częściowego `SkyState`.
@@ -130,6 +135,10 @@ refrakcji (`geometric`) oraz po pojedynczej korekcie standardowej refrakcji
 faza wynika z wektorów do Słońca i obserwatora. `geocentric_sun_direction_world`
 jest osobnym kierunkiem do oświetlenia globu i nie zależy od refrakcji lokalnego
 obserwatora. Kierunki używają wspólnej macierzy EQJ→HOR→world z ramką #56.
+Astronomy Engine przechowuje rotację jako `rot[input][output]`; bridge transponuje
+ją do rustowego `[output][input]`. EQJ→HOR jest rotacją o wyznaczniku +1,
+natomiast HOR=N/W/U → world ma wyznacznik −1 wynikający z konwencji osi gry.
+Walidacja odróżnia te dwie transformacje; odbicie widoku Earth pozostaje w kamerze.
 
 Promień Księżyca przyjęty przez minimium wynosi 1737,4 km jako jawny promień
 średni modelu tarczy. Przypięty nagłówek upstream podaje promienie równikowy

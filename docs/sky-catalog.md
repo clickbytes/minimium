@@ -9,6 +9,11 @@ lub zależności od crate’u astronomicznego.
 
 ## Źródło i odtwarzanie
 
+Przypięte teksty licencji i deterministyczne produkty mają reguły `eol=lf`
+w `.gitattributes`. Dzięki temu Windows checkout nie zmienia bajtów, do których
+odnoszą się hashe i kontrola odtwarzalności. Ta sama reguła chroni vendor C i MIT
+w backendzie astronomii; nie zmienia przypiętych źródeł ani manifestów hashy.
+
 Importer korzysta wyłącznie z lokalnego wejścia; nie pobiera plików podczas
 uruchamiania gry ani budowania crate’ów. Produkcyjny asset wygenerowano z:
 

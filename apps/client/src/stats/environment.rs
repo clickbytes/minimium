@@ -8,6 +8,7 @@ const ENVIRONMENT_BOUNDS_US: [u64; 13] = [
 pub(crate) struct HistogramSnapshot {
     pub(crate) samples: u64,
     pub(crate) average_us: Option<f64>,
+    pub(crate) p50_us: Option<u64>,
     pub(crate) p95_us: Option<u64>,
     pub(crate) p99_us: Option<u64>,
     pub(crate) max_us: Option<f64>,
@@ -41,6 +42,7 @@ impl MicrosecondHistogram {
         HistogramSnapshot {
             samples: self.samples,
             average_us: Some(self.total_nanoseconds as f64 / self.samples as f64 / 1_000.0),
+            p50_us: self.percentile(50),
             p95_us: self.percentile(95),
             p99_us: self.percentile(99),
             max_us: Some(self.maximum_nanoseconds as f64 / 1_000.0),
@@ -73,6 +75,7 @@ impl MicrosecondHistogram {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub(crate) struct EnvironmentStatsSnapshot {
     pub(crate) cpu: HistogramSnapshot,
+    pub(crate) upload_cpu: HistogramSnapshot,
     pub(crate) shadow_cpu: HistogramSnapshot,
     pub(crate) ephemeris_evaluations: u64,
     pub(crate) ephemeris_cache_hits: u64,
@@ -89,6 +92,7 @@ pub(crate) struct EnvironmentStatsSnapshot {
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct EnvironmentStats {
     cpu: MicrosecondHistogram,
+    upload_cpu: MicrosecondHistogram,
     shadow_cpu: MicrosecondHistogram,
     counters: EnvironmentStatsSnapshot,
     astronomy_latest: [u64; 4],
@@ -101,9 +105,11 @@ impl EnvironmentStats {
     }
 
     pub(crate) fn record_shadow_cpu(&mut self, duration: Duration) {
-        if !duration.is_zero() {
-            self.shadow_cpu.record(duration);
-        }
+        self.shadow_cpu.record(duration);
+    }
+
+    pub(crate) fn record_upload_cpu(&mut self, duration: Duration) {
+        self.upload_cpu.record(duration);
     }
 
     pub(crate) fn set_astronomy_counters(
@@ -161,6 +167,7 @@ impl EnvironmentStats {
     pub(crate) fn snapshot(self) -> EnvironmentStatsSnapshot {
         EnvironmentStatsSnapshot {
             cpu: self.cpu.snapshot(),
+            upload_cpu: self.upload_cpu.snapshot(),
             shadow_cpu: self.shadow_cpu.snapshot(),
             ..self.counters
         }

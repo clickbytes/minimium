@@ -4,24 +4,56 @@
 import json
 import subprocess
 import sys
+from collections import deque
+
+
+def production_graph(metadata: dict) -> dict:
+    """Keep normal/build edges, including external and target-specific crates."""
+    return {
+        node["id"]: [
+            (dependency["pkg"], kind["kind"] or "normal")
+            for dependency in node["deps"]
+            for kind in dependency["dep_kinds"]
+            if kind["kind"] in (None, "build")
+        ]
+        for node in metadata["resolve"]["nodes"]
+    }
+
+
+def forbidden_paths(root: str, targets: set, graph: dict, names: dict) -> list:
+    pending = deque([(root, names[root])])
+    seen = {root}
+    violations = []
+    while pending:
+        package, path = pending.popleft()
+        for dependency, kind in sorted(graph[package]):
+            if dependency in seen:
+                continue
+            seen.add(dependency)
+            next_path = f"{path} -[{kind}]-> {names[dependency]}"
+            if names[dependency] in targets:
+                violations.append(next_path)
+            pending.append((dependency, next_path))
+    return violations
 
 
 def main() -> int:
     try:
         output = subprocess.check_output(
-            ["cargo", "metadata", "--no-deps", "--locked", "--offline", "--format-version", "1"],
+            ["cargo", "metadata", "--locked", "--all-features", "--format-version", "1"],
             text=True,
         )
-        packages = json.loads(output)["packages"]
-    except (OSError, subprocess.CalledProcessError, ValueError, KeyError) as error:
+        metadata = json.loads(output)
+        names = {package["id"]: package["name"] for package in metadata["packages"]}
+        workspace = {names[package]: package for package in metadata["workspace_members"]}
+        graph = production_graph(metadata)
+    except (OSError, subprocess.CalledProcessError, ValueError, KeyError, TypeError) as error:
         print(f"Cannot inspect Cargo metadata: {error}", file=sys.stderr)
         return 1
 
-    graph = {package["name"]: {dep["name"] for dep in package["dependencies"]}
-             for package in packages}
     required = {"minimium-core", "minimium-astronomy", "minimium-procgen", "minimium-sectors", "minimium-assets", "minimium-platform",
-                "minimium-protocol", "minimium-telemetry", "minimium-server"}
-    missing = required - graph.keys()
+                "minimium-protocol", "minimium-telemetry", "minimium-server", "minimiumctl"}
+    missing = required - workspace.keys()
     if missing:
         print(f"Missing packages: {', '.join(sorted(missing))}", file=sys.stderr)
         return 1
@@ -30,23 +62,18 @@ def main() -> int:
         "minimium-core": {"minimium-astronomy", "minimium-protocol", "minimium-platform", "minimium-assets",
                           "minimium-procgen", "minimium-sectors", "minimium-telemetry"},
         "minimium-assets": {"minimium-astronomy"},
-        "minimium-server": {"minimium-astronomy", "wgpu", "winit"},
     }
+    client_only = {"minimium-astronomy", "wgpu", "wgpu-core", "wgpu-hal", "winit"}
+    for package in ("minimium-core", "minimium-protocol", "minimium-server", "minimiumctl"):
+        forbidden.setdefault(package, set()).update(client_only)
     violations = []
     for root, targets in forbidden.items():
-        seen = set()
-        pending = list(graph[root])
-        while pending:
-            dependency = pending.pop()
-            if dependency in seen:
-                continue
-            seen.add(dependency)
-            pending.extend(graph.get(dependency, ()))
-        violations.extend(f"{root} reaches {dependency}" for dependency in sorted(seen & targets))
+        violations.extend(forbidden_paths(workspace[root], targets, graph, names))
     if violations:
         print("Architecture violations:\n" + "\n".join(violations), file=sys.stderr)
         return 1
-    print("Architecture dependency check passed (workspace graph; external transitive dependencies not inspected).")
+    print("Architecture dependency check passed (full Cargo graph, all features/targets, "
+          "transitive normal/build edges; dev edges excluded).")
     return 0
 
 

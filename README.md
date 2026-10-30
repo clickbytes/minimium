@@ -10,7 +10,7 @@ The workspace contains a desktop 3D client, a separate authoritative server, ser
 
 The default client and server generate the same seeded planet and separate dungeon instance. A portal transfers players between them; membership epochs prevent stale input from affecting the destination. Custom static maps use the validated map format, and `--world-definition PATH` loads a validated hand-authored dungeon. Server movement collision and client collision/rendering use bounded ticketed sector payloads. Portal readiness waits for target sectors, collision and GPU buffers. The server retains a full map index for hitscan, and the client retains source maps in CPU memory for deterministic slicing. Save v8 persists revisioned logical object-state sets per sector and the shared world clock; the demo currently has no interaction that changes sector objects. See [world contracts](docs/worlds.md) and [map format](docs/maps.md).
 
-Game traffic uses binary protocol v12 over prototype TCP. A client sends its 16-byte local profile ID first; this lets the server restore that profile's world location but is not account authentication. Save format v8 stores manifests and map fingerprints for every loaded instance, player locations and return points, revisioned logical object-state sets per sector, and one clock record in the same atomic snapshot. v2–v7 snapshots retain their migration rules and start a RealTime clock at current UTC; the next completed save writes v8. A v8 RealTime clock resumes at current UTC, TimeScale/Pause resumes its saved date, and TimeScale/Advance adds checked, nonnegative wall-clock downtime at the saved rate. Controlled shutdown requests a final save; autosave runs every 300 seconds by default (`--autosave-seconds 0` disables periodic saves). Manual saves complete asynchronously, so a crash or power loss can lose changes since the last completed save. Public-game authentication and encryption, geometry edits, inventory, audio, browser clients and multi-zone hosting remain future work. Epic 003's workspace tests cover deterministic generation, sector streaming, planet-to-dungeon travel, save migration and profile-location restoration; a full rendered client transfer and restart reconnect still need a manual demo review. The 500 connected player / Pentium-class 500 MHz target remains unmeasured.
+Game traffic uses binary protocol v12 over prototype TCP. A client sends its 16-byte local profile ID first; this lets the server restore that profile's world location but is not account authentication. Save format v8 stores manifests and map fingerprints for every loaded instance, player locations and return points, revisioned logical object-state sets per sector, and one clock record in the same atomic snapshot. v2–v7 snapshots retain their migration rules and start a RealTime clock at current UTC; the next completed save writes v8. A v8 RealTime clock resumes at current UTC, TimeScale/Pause resumes its saved date, and TimeScale/Advance adds checked, nonnegative wall-clock downtime at the saved rate. Controlled shutdown requests a final save; autosave runs every 300 seconds by default (`--autosave-seconds 0` disables periodic saves). Manual saves complete asynchronously, so a crash or power loss can lose changes since the last completed save. Public-game authentication and encryption, geometry edits, inventory, audio, browser clients and multi-zone hosting remain future work. Historical E002/E003 results cover deterministic generation, sector streaming, transfers, save migration and profile restoration. They do not verify the E004 time/sky changes: its runtime, GPU and visual acceptance remain NOT RUN pending separate authorization of E004-16. The 500 connected player / Pentium-class 500 MHz target remains unmeasured.
 
 New server data directories create a procedural planet with a seed-derived
 617.5–682.5 km radius; existing revision-2 directories retain their 10 km
@@ -24,10 +24,23 @@ available through `import-gebco.ps1`.
 
 ## Build and run
 
-Requires Rust and Cargo.
+Requires Rust/Cargo (the toolchain in `rust-toolchain.toml`) and a C compiler
+for the client's statically linked Astronomy Engine backend. Generated bindings
+are checked in; ordinary builds do not require bindgen or libclang. The headless
+server and admin CLI do not depend on astronomy or GPU crates.
+
+On Windows, install Visual Studio Build Tools with the C++ workload and Windows
+SDK, then build from an x64 developer shell for `x86_64-pc-windows-msvc`.
+MSVC `cl` is supported; `clang-cl` can be selected with `CC=clang-cl` when the
+matching MSVC libraries and Windows SDK are available. On Linux, install GCC or
+Clang and the distribution's C development/linker packages, then run the same
+workspace build from the repository root. On Linux, select Clang with
+`CC=clang cargo build --workspace --locked`. Windows compilation and linking are recorded
+in the [E004 audit](docs/plan/epic-004-audit.md); Linux is a documented procedure,
+not a recorded build result.
 
 ~~~text
-cargo build --workspace
+cargo build --workspace --locked
 ~~~
 
 Run the desktop client with its default local server behavior:

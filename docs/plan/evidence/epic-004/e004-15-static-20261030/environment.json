@@ -1,0 +1,13 @@
+﻿{
+    "sha":  "8a0a33d703ae356fe3774df7cf5461e52d296975",
+    "initial_checkout":  "clean",
+    "utc":  "2026-10-30T17:57:24.6435344Z",
+    "platform":  "Microsoft Windows NT 10.0.19044.0",
+    "target":  "x86_64-pc-windows-msvc",
+    "cargo_target_dir":  "D:/Git/minimium/target/e004-15-a1",
+    "rustc":  "rustc 1.99.0 (b940084d7 2026-09-28)\r\nbinary: rustc\r\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\r\ncommit-date: 2026-09-28\r\nhost: x86_64-pc-windows-msvc\r\nrelease: 1.99.0\r\nLLVM version: 23.1.1",
+    "cargo":  "cargo 1.99.0 (5f94df478 2026-08-27)",
+    "c_compiler":  "D:/Apps/VC/Tools/MSVC/14.51.36231/bin/HostX64/x64/cl.exe",
+    "c_compiler_file_version":  "19.51.36260.0",
+    "runtime":  "NOT RUN"
+}

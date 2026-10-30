@@ -1,16 +1,21 @@
 # Epic 004 — plan i rejestr weryfikacji
 
 **Epic:** [#51](https://github.com/clickbytes/minimium/issues/51). **Właściciel finalnego odbioru:** [E004-16 / #68](https://github.com/clickbytes/minimium/issues/68).
-**Baza planu:** `aad2c8298606a46dc3a286b4eac7f1de45759851`. **Kodowy baseline E004-00:** `cd816c2d32bd4b1447f14ac04a9ec99e44c0e4af` (merge `main@30ff278` into integration). **Status:** kontrakty zatwierdzone; E004-01 zintegrowane w PR #73; E004-02 w PR #74 (`c9a6855`); E004-03 zintegrowane w PR #75 (`c7d6000`, merge `77218a6`); E004-06 zintegrowane w PR #76 (`15ac4d2`, merge `dfbc795`); E004-07 zintegrowane w PR #77 (`61956b6`, merge `69a633e`); E004-08 zintegrowane w PR #78 (`38157c0`, merge `cb3d70a`); E004-04 zintegrowane w PR #79 (`7c49d92`, merge `a69ff33`); E004-05 zintegrowane w PR #80 (`2d58ac2`, merge `c40db94`); E004-09 zintegrowane w PR #81 (`6c19d2e`, merge `3155a2c`); E004-10 zintegrowane w PR #82 (`951b8b2`, merge `45b4f29`); E004-11 zintegrowane w PR #83 (`eee83e8`, merge `325ab46`); E004-12 zintegrowane w PR #84 (`0d162e1`, merge `4750485`); E004-13 zintegrowane w PR #85 (merge `a27e79f`); E004-14 implementacja przechodzi kontrole statyczne, PR w przygotowaniu; późniejsze zadania NOT STARTED; runtime NOT RUN.
+**Baza planu:** `aad2c8298606a46dc3a286b4eac7f1de45759851`. **Kodowy baseline E004-00:** `cd816c2d32bd4b1447f14ac04a9ec99e44c0e4af` (integracja `main@30ff278`). **Stan:** E004-00–14 zintegrowane; ostatni PR [#86](https://github.com/clickbytes/minimium/pull/86), merge `93b1264502e33f01a9769901fbbc72697bf904e0`. #67: STATIC PASS na 8a0a33d703ae356fe3774df7cf5461e52d296975; #68 oczekuje na osobną zgodę użytkownika po #67; #69 oczekuje na #68. **RUNTIME NOT RUN.**
 
-## Rejestr początkowy
+[Audyt i rzeczywiste merge SHA wszystkich przyrostów](epic-004-audit.md).
+[Kompletna procedura końcowego odbioru, właściciele i artefakty](epic-004-final-verification.md).
+Poniższy rejestr przyrostów jest historyczny; końcowe kontrole E004-15 są zapisane
+w audycie. Wcześniejsze wyniki E002/E003 nie zaliczają żadnego V-ID E004.
+
+## Historyczny rejestr przyrostów
 
 | Obszar | Stan | Dowód / następny krok |
 | --- | --- | --- |
 | Kompletność 18 opisów i graf zależności | Przegląd planu wykonany | Cele, pliki, kroki, kontrakty, kryteria, zależności i zakres; graf acykliczny. To nie jest kontrola kodu E004. |
 | Referencje do kodu | Sprawdzone | Issues zawierają historyczne ścieżki bazowe do `aad2c82`; aktualny punkt integracji `cd816c2` zachowuje zmiany main `30ff278`, w tym nowsze pliki konsoli i globusa. |
-| Rust/C toolchain, target, ostrzeżenia bazowe | CAPTURED | Windows, target `x86_64-pc-windows-msvc`; `rustc 1.99.0 (b940084d7 2026-09-28)`, `cargo 1.99.0 (5f94df478 2026-08-27)`, toolchain z `rust-toolchain.toml`. Clang i GCC dostępne, MSVC `cl.exe` niewykryty; zgodność C/FFI z targetem pozostaje do ustalenia w E004-07. Cargo incremental hard-link warnings na `D:\Git\minimium\target`, fallback kopiowania. `cargo check` 0 errors / 12 warnings; Clippy 0 errors / 11 warnings. |
-| Implementacja funkcji | E004-01 w PR #73; pozostałe PLANNED | Zintegrowany kontrakt core obejmuje typy i czyste funkcje; runtime nie był uruchamiany. |
+| Rust/C toolchain, target, ostrzeżenia bazowe | CAPTURED | Windows, target `x86_64-pc-windows-msvc`; `rustc 1.99.0 (b940084d7 2026-09-28)`, `cargo 1.99.0 (5f94df478 2026-08-27)`, toolchain z `rust-toolchain.toml`. Clang i GCC dostępne, MSVC `cl.exe` niewykryty; była to obserwacja PATH z E004-00; kompilację C/FFI Windows potwierdzono w E004-07, a bieżący capture zapisuje audyt E004-15. Cargo incremental hard-link warnings na `D:\Git\minimium\target`, fallback kopiowania. `cargo check` 0 errors / 12 warnings; Clippy 0 errors / 11 warnings. |
+| Implementacja funkcji | E004-00–14 zintegrowane | Audyt #67 obejmuje pełną implementację; runtime pozostaje NOT RUN. |
 | Kompilacja, fmt, clippy, architektura, limity plików | BASELINE PASS | Head `cd816c2`; `cargo fmt --all -- --check`, `cargo check --workspace --locked` (0 errors, 12 warnings), `cargo clippy --workspace --locked` (0 errors, 11 warnings), `python scripts/check_architecture.py`, `python scripts/check_file_lengths.py` (163 pliki, max 500 linii). Nie używano `-D warnings`. To baseline gałęzi epica, nie odbiór późniejszej implementacji. |
 | E004-01 statyczne kontrole | PASS na `a8577b4` | `cargo fmt --all -- --check`, `cargo check --workspace --locked` (0 errors; 12 warnings o hard-link cache), `cargo clippy --workspace --locked` (0 errors; 12 ostrzeżeń o hard-link cache, bez lint diagnostics), `python scripts/check_architecture.py`, `python scripts/check_file_lengths.py` (167 plików, max 500 linii), `git diff --check`. Żadne testy ani aplikacja nie były uruchamiane. |
 | E004-02 statyczne kontrole | PASS na `c9a6855` | `cargo fmt --all -- --check`, `cargo check --workspace --locked` (0 errors; 11 ostrzeżeń o Windows incremental hard-link fallback), `cargo clippy --workspace --locked` (0 errors; 11 tych samych ostrzeżeń, bez diagnostyk lintów), `python scripts/check_architecture.py`, `python scripts/check_file_lengths.py` (174 pliki, max 500 linii), `git diff --check`. Żadne testy ani aplikacja nie były uruchamiane. |
@@ -31,35 +36,35 @@
 | E004-12 static implementation | PASS on `0d162e1` (PR [#84](https://github.com/clickbytes/minimium/pull/84), merge `4750485`) | `cargo fmt --all -- --check`; `cargo check --workspace --locked` (0 errors; 14 Windows incremental hard-link fallback warnings); `cargo clippy --workspace --locked -- -D warnings` (pass; same Cargo cache warnings, no lint diagnostics); `cargo build --workspace --release --locked` with isolated `CARGO_TARGET_DIR` (pass; 1 crate rebuilt after Moon shader changes); Naga 30.0.1 parser/validator over Moon plus stars and existing renderer WGSL (all PASS); `python scripts/check_architecture.py`; `python scripts/check_file_lengths.py` (232 source files, max 500 lines); `git diff --check`. GPU device pipeline validation, tests, app runs and visual QA NOT RUN; final scenarios remain deferred to E004-16. |
 | E004-13 integration | PASS | PR [#85](https://github.com/clickbytes/minimium/pull/85), merge `a27e79f2c1f92d0a973e5fb503355aac7b15194d`; issue #65 closed with final verification pending. |
 | E004-13 static implementation | PASS on `f1e0d6b` (PR [#85](https://github.com/clickbytes/minimium/pull/85), merge `a27e79f`) | `cargo fmt --all -- --check`; `cargo check --workspace --locked` (0 errors; 14 Windows incremental hard-link fallback warnings); `cargo clippy --workspace --locked -- -D warnings` (pass; same warnings, no lint diagnostics); `cargo build --workspace --release --locked` with isolated temporary `CARGO_TARGET_DIR` (pass; shared target could not replace a locked `minimium-server.exe`); Naga 30.0.1 parser/validator over the shadow-depth shader and combined world sampling shader (both PASS); `python scripts/check_architecture.py`; `python scripts/check_file_lengths.py` (240 source files, max 500 lines); `git diff --check`. An ancillary `cargo check --workspace --all-targets` did not compile because `crates/protocol/src/tests.rs` shadows its `environment` helper with a local binding (E0618); no test binary or application was run. GPU device pipeline validation and visual QA remain NOT RUN and are deferred to E004-16. |
-| E004-14 static implementation | PASS before PR | `cargo fmt --all -- --check`, `cargo check --workspace --locked` (0 errors; 14 Windows incremental hard-link fallback warnings), `cargo clippy --workspace --locked -- -D warnings` (0 lint errors; same cache warnings), isolated `cargo build --workspace --release --locked`, `python scripts/check_architecture.py`, `python scripts/check_file_lengths.py` (248 source files, max 500 lines), and `git diff --check` pass. No tests or app were run; GPU/visual behavior remains NOT RUN and deferred to E004-16. |
+| E004-14 static implementation | PASS on `cdb649793a390462aed89949eeaf2259f38888af`, PR #86, merge `93b1264502e33f01a9769901fbbc72697bf904e0` | `cargo fmt --all -- --check`, `cargo check --workspace --locked` (0 errors; 14 Windows incremental hard-link fallback warnings), `cargo clippy --workspace --locked -- -D warnings` (0 lint errors; same cache warnings), isolated `cargo build --workspace --release --locked`, `python scripts/check_architecture.py`, `python scripts/check_file_lengths.py` (248 source files, max 500 lines), and `git diff --check` pass. No tests or app were run; GPU/visual behavior remains NOT RUN and deferred to E004-16. |
 | Unit/integration/e2e, aplikacja i loadtest | NOT RUN | Wyraźne rozpoczęcie końcowej fazy przez użytkownika oraz ukończone E004-15. |
 | Wizualne QA i astronomiczne referencje | NOT RUN | Nie zastępować wartościami z planu ani wcześniejszymi wynikami E002/E003. |
 | Sprzęt historyczny / 500 graczy | NOT MEASURED | Raportować dostępność platformy i realne pomiary; nie deklarować na podstawie planu. |
 
 ## Wypełniany ledger scenariuszy
 
-| Scenariusz | Wynik | Head SHA | Środowisko / wejścia | Dowód / defekt |
+| Scenariusz / właściciel | Wynik | Head SHA | Środowisko / wejścia | Dowód / defekt |
 | --- | --- | --- | --- | --- |
-| V01 | NOT RUN | — | — | — |
-| V02 | NOT RUN | — | — | — |
-| V03 | NOT RUN | — | — | — |
-| V04 | NOT RUN | — | — | — |
-| V05 | NOT RUN | — | — | — |
-| V06 | NOT RUN | — | — | — |
-| V07 | NOT RUN | — | — | — |
-| V08 | NOT RUN | — | — | — |
-| V09 | NOT RUN | — | — | — |
-| V10 | NOT RUN | — | — | — |
-| V11 | NOT RUN | — | — | — |
-| V12 | NOT RUN | — | — | — |
-| V13 | NOT RUN | — | — | — |
-| V14 | NOT RUN | — | — | — |
-| V15 | NOT RUN | — | — | — |
-| V16 | NOT RUN | — | — | — |
-| V17 | NOT RUN | — | — | — |
-| V18 | NOT RUN | — | — | — |
-| V19 | NOT RUN | — | — | — |
-| V20 | NOT RUN | — | — | — |
+| V01 / A2 | NOT RUN | — | — | — |
+| V02 / A2 | NOT RUN | — | — | — |
+| V03 / A2 | NOT RUN | — | — | — |
+| V04 / A2 | NOT RUN | — | — | — |
+| V05 / A2 | NOT RUN | — | — | — |
+| V06 / A2 | NOT RUN | — | — | — |
+| V07 / A2 + A4 | NOT RUN | — | — | — |
+| V08 / A2 | NOT RUN | — | — | — |
+| V09 / A2 | NOT RUN | — | — | — |
+| V10 / A2 | NOT RUN | — | — | — |
+| V11 / A3 | NOT RUN | — | — | — |
+| V12 / A3 | NOT RUN | — | — | — |
+| V13 / A4 | NOT RUN | — | — | — |
+| V14 / A4 | NOT RUN | — | — | — |
+| V15 / A4 | NOT RUN | — | — | — |
+| V16 / A4 | NOT RUN | — | — | — |
+| V17 / A4 | NOT RUN | — | — | — |
+| V18 / A4 | NOT RUN | — | — | — |
+| V19 / A2 + A4 | NOT RUN | — | — | — |
+| V20 / A2 + A4 | NOT RUN | — | — | — |
 
 Wyniki dopisywać z poleceniem, datą, rzeczywistym integration SHA, parametrami i trwałym artefaktem.
 Dopuszczalne stany: PASS, FAIL, BLOCKED, NOT RUN. N/A wymaga konkretnego uzasadnienia; nie wyłącza obowiązkowej funkcji.

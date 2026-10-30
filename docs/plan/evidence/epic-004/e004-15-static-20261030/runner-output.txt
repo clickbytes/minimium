@@ -1,0 +1,73 @@
+fmt: exit=0 seconds=0.49
+Get-FileHash : The term 'Get-FileHash' is not recognized as the name of a cmdlet, function, script file, or operable
+program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At D:\Git\minimium-e004-static.ps1:44 char:17
++         sha256=(Get-FileHash -LiteralPath $log -Algorithm SHA256).Has ...
++                 ~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (Get-FileHash:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+check: exit=0 seconds=18.81
+Get-FileHash : The term 'Get-FileHash' is not recognized as the name of a cmdlet, function, script file, or operable
+program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At D:\Git\minimium-e004-static.ps1:44 char:17
++         sha256=(Get-FileHash -LiteralPath $log -Algorithm SHA256).Has ...
++                 ~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (Get-FileHash:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+clippy: exit=0 seconds=2.27
+Get-FileHash : The term 'Get-FileHash' is not recognized as the name of a cmdlet, function, script file, or operable
+program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At D:\Git\minimium-e004-static.ps1:44 char:17
++         sha256=(Get-FileHash -LiteralPath $log -Algorithm SHA256).Has ...
++                 ~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (Get-FileHash:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+release: exit=0 seconds=60.92
+Get-FileHash : The term 'Get-FileHash' is not recognized as the name of a cmdlet, function, script file, or operable
+program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At D:\Git\minimium-e004-static.ps1:44 char:17
++         sha256=(Get-FileHash -LiteralPath $log -Algorithm SHA256).Has ...
++                 ~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (Get-FileHash:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+allocation-check: exit=0 seconds=4.54
+Get-FileHash : The term 'Get-FileHash' is not recognized as the name of a cmdlet, function, script file, or operable
+program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At D:\Git\minimium-e004-static.ps1:44 char:17
++         sha256=(Get-FileHash -LiteralPath $log -Algorithm SHA256).Has ...
++                 ~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (Get-FileHash:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+allocation-release: exit=0 seconds=22.37
+Get-FileHash : The term 'Get-FileHash' is not recognized as the name of a cmdlet, function, script file, or operable
+program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At D:\Git\minimium-e004-static.ps1:44 char:17
++         sha256=(Get-FileHash -LiteralPath $log -Algorithm SHA256).Has ...
++                 ~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (Get-FileHash:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+architecture: exit=0 seconds=0.35
+Get-FileHash : The term 'Get-FileHash' is not recognized as the name of a cmdlet, function, script file, or operable
+program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At D:\Git\minimium-e004-static.ps1:44 char:17
++         sha256=(Get-FileHash -LiteralPath $log -Algorithm SHA256).Has ...
++                 ~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (Get-FileHash:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+file-lengths: exit=0 seconds=0.11
+Get-FileHash : The term 'Get-FileHash' is not recognized as the name of a cmdlet, function, script file, or operable
+program. Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+At D:\Git\minimium-e004-static.ps1:44 char:17
++         sha256=(Get-FileHash -LiteralPath $log -Algorithm SHA256).Has ...
++                 ~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (Get-FileHash:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+
+diff: exit=0 seconds=0.08

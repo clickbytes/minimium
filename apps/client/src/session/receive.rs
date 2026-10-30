@@ -372,24 +372,24 @@ impl ClientSession {
                             self.world_context = Some(*context);
                             self.pending_transition = None;
                             self.ready_transition = None;
-                            self.send_buffer.clear();
-                            self.send_offset = 0;
-                            self.pending_ping_at = None;
-                            self.pending_ping_end = None;
+                            // Keep queued bytes: a partially sent frame must be completed.
+                            // The server rejects world inputs carrying the old context;
+                            // heartbeat and clock probes remain valid across the transfer.
                         }
                         ServerMessage::TransitionCancelled {
                             transition_id,
                             context,
                         } => {
-                            if self
+                            if !self
                                 .pending_transition
                                 .is_some_and(|(pending, _)| pending == *transition_id)
-                                && Some(*context) == self.world_context
+                                || Some(*context) != self.world_context
                             {
-                                self.pending_transition = None;
-                                self.ready_transition = None;
-                                self.cancel_pending_environment(*transition_id);
+                                continue;
                             }
+                            self.pending_transition = None;
+                            self.ready_transition = None;
+                            self.cancel_pending_environment(*transition_id);
                         }
                         ServerMessage::EnvironmentSync {
                             context,

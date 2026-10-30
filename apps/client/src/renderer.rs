@@ -131,7 +131,8 @@ struct GpuResources {
     overview_buffer: Option<(wgpu::Buffer, u32)>,
     overview_marker_buffer: Option<(wgpu::Buffer, u32)>,
     environment_draw_calls: sky::EnvironmentDrawCalls,
-    last_shadow_prepare_cpu: Duration,
+    last_shadow_prepare_cpu: Option<Duration>,
+    last_environment_upload_cpu: Option<Duration>,
     overview_active: bool,
     overview_globe: bool,
     scene_visible: bool,
@@ -237,9 +238,11 @@ struct Renderer {
 
 #[derive(Clone, Copy)]
 struct PendingSectorTransition {
+    source_context: minimium_protocol::WorldContext,
     context: minimium_protocol::WorldContext,
     destination: [f32; 3],
     manifest: WorldManifest,
+    ready_sent: bool,
 }
 
 pub use window::run;
