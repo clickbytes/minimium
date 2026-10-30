@@ -33,7 +33,7 @@ For PR-backed cards, the linked GitHub **Files** view is the authoritative exact
 | [#116](https://github.com/clickbytes/minimium/issues/116) | Separate client game state and render snapshot | [PR #137 files](https://github.com/clickbytes/minimium/pull/137/files) | `9d3bc401c58ebc4eddf58aa2591f17883f70dfac` | CODE; runtime/render behavior NOT RUN |
 | [#117](https://github.com/clickbytes/minimium/issues/117) | Deterministic precise-position batches | [PR #135 files](https://github.com/clickbytes/minimium/pull/135/files) | `25f205c92bc46ec0d58df0c4fd90b0d8d3a691b0` | CODE |
 | [#118](https://github.com/clickbytes/minimium/issues/118) | Contract audit, docs and static gates | [PR #139 files](https://github.com/clickbytes/minimium/pull/139/files): `docs/plan/epic-005.md`, `docs/architecture.md`, `docs/worlds.md`, `docs/commands.md`, `README.md`, `scripts/check_architecture.py`, `scripts/check_static_refactor.py` | `e47a327c2beff41b1305b219abd22f0ef217e74d` | CODE; static checks PASS below; final tests NOT RUN |
-| [#119](https://github.com/clickbytes/minimium/issues/119) | Final runtime and performance verification | Issue-defined test and evidence paths; see [verification ledger](epic-005-verification.md) | — | IN PROGRESS; workspace test FAIL and remaining scenarios NOT RUN |
+| [#119](https://github.com/clickbytes/minimium/issues/119) | Final runtime and performance verification | Issue-defined test and evidence paths; see [verification ledger](epic-005-verification.md) | — | IN PROGRESS; workspace tests, Naga and six load scenarios executed; GPU/visual, golden E2E and isolated cost comparisons NOT RUN |
 | [#120](https://github.com/clickbytes/minimium/issues/120) | Final review and merge to main | Final PR/documentation paths in issue | — | Blocked on #119 |
 
 ## Dependencies
@@ -65,10 +65,10 @@ For PR-backed cards, the linked GitHub **Files** view is the authoritative exact
 | File length | `python scripts/check_file_lengths.py` — PASS, 272 source files, max 500 lines |
 | Diff whitespace | `git diff --check` — PASS on this PR's final diff |
 | Static refactor ABI/export/parser checker | `python scripts/check_static_refactor.py` — PASS on this PR's final source |
-| Unit/integration/E2E, server runtime, shader/GPU validation, visual checks, and performance measurements | **NOT RUN**; reserved for explicitly authorized E005-19 |
+| Unit/integration/E2E, server runtime, shader/GPU validation, visual checks, and performance measurements | **PARTIAL**; workspace tests, Naga and six server load scenarios have results in the E005-19 ledger; GPU/visual, golden E2E and isolated cost comparisons remain **NOT RUN** |
 
 The Cargo checks were run on the code tree that became this integration head; GitHub merge metadata assigns aggregate tree SHA `bcbd561c112cadb9373a8549d128e0f012419d3f`. Do not present compilation or lint as runtime acceptance. The `concat.xz.b64` untracked workspace file is not part of Epic 005 and is intentionally not included in any PR.
 
 ## Final gate
 
-E005-19 starts only after the user explicitly says: **“projekt gotowy do finalnych testów”**. Until then all functional, runtime, GPU, visual and performance evidence remains `NOT RUN`. E005-20 must re-check current `main`, the aggregate PR head and all required gates before merging; only that gate can close the epic.
+E005-19 started after the user's explicit instruction to do everything possible to finish the goal, including review and merge. The exact example phrase **“projekt gotowy do finalnych testów”** was not repeated. Results and outstanding gates are recorded in the [verification ledger](epic-005-verification.md). E005-20 must re-check current `main`, the aggregate PR head and all required gates before merging; only that gate can close the epic.
