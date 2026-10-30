@@ -1,6 +1,6 @@
 # Epic 004 — audyt integracji E004-15
 
-Etap [#67](https://github.com/clickbytes/minimium/issues/67), stan: **IN AUDIT**.
+Etap [#67](https://github.com/clickbytes/minimium/issues/67), stan: **STATIC PASS / RUNTIME NOT RUN**.
 Baseline oraz head epica przy rozpoczęciu: `93b1264502e33f01a9769901fbbc72697bf904e0`.
 `origin/main`: `30ff278f9a0020f93d2567b2ca5c05a290bc605e`.
 Fetch nie wykazał nowych zmian epica względem planu. Główny checkout i istniejący
@@ -102,6 +102,49 @@ następnie odtworzenie zegara w konstruktorze runtime przed przyjmowaniem klient
 Odczyt `git merge-base --is-ancestor <merge_SHA> HEAD` potwierdził wszystkie
 16 merge SHA PR #71–86. [Bieżący odczyt hashy i 500 ID](evidence/epic-004/e004-15-static-20261030/provenance.json)
 potwierdza zgodność plików na dysku, katalogu i lokalnego przypiętego CSV.
+
+## Wspólny odbiór statyczny
+
+Wszystkie poniższe komendy wykonano na jednym czystym SHA
+`8a0a33d703ae356fe3774df7cf5461e52d296975`, 2026-10-30, od 17:57:24 UTC.
+Późniejsze commity tego etapu uzupełniają wyłącznie dokumentację i dowody.
+Izolowany `CARGO_TARGET_DIR=D:/Git/minimium/target/e004-15-a1`; nie zatrzymywano
+procesów użytkownika ani nie używano współdzielonego release do linkowania.
+
+| Polecenie | Wynik | Czas wall s |
+| --- | --- | --- |
+| `rtk cargo fmt --all -- --check` | PASS / exit 0 | 0,49 |
+| `rtk cargo check --workspace --locked` | PASS / exit 0 | 18,81 |
+| `rtk cargo clippy --workspace --locked -- -D warnings` | PASS / exit 0 | 2,27 |
+| `rtk cargo build --workspace --release --locked` | PASS / exit 0 | 60,92 |
+| `rtk cargo check -p minimium-server --features allocation-metrics --locked` | PASS / exit 0 | 4,54 |
+| `rtk cargo build -p minimium-server --features allocation-metrics --release --locked` | PASS / exit 0 | 22,37 |
+| `rtk python scripts/check_architecture.py` | PASS / exit 0 | 0,35 |
+| `rtk python scripts/check_file_lengths.py` | PASS / exit 0; 249 plików, limit 500 | 0,11 |
+| `rtk git diff --check` | PASS / exit 0 | 0,08 |
+
+[Manifest komend, kodów wyjścia i hashy logów](evidence/epic-004/e004-15-static-20261030/checks.json),
+[platforma i toolchain](evidence/epic-004/e004-15-static-20261030/environment.json).
+Windows NT 10.0.19044, `x86_64-pc-windows-msvc`, rustc 1.99.0
+(`b940084d7`, LLVM 23.1.1), cargo 1.99.0 (`5f94df478`). Kompilator C odkryty
+przez cc: MSVC `D:/Apps/VC/Tools/MSVC/14.51.36231/bin/HostX64/x64/cl.exe`,
+file version 19.51.36260.0. Workspace release skompilował i zlinkował wszystkie
+aplikacje, w tym backend C klienta. Linux i clang-cl nie zostały tu zbudowane.
+
+Wspólna seria nie wypisała ostrzeżeń Cargo/cache ani lintów. Oddzielne przebiegi
+A3/A4 odnotowały pojedyncze ostrzeżenie Windows incremental hard-link/copy fallback;
+nie było ono lintem Clippy. Git wypisywał `unable to find all commit-graph files`
+przy odczycie historii; ancestry SHA i operacje zakończyły się poprawnie.
+PowerShell nie udostępnił `Get-FileHash` przy zbieraniu artefaktów: dziewięć
+exit codes zachowano w [wyjściu runnera](evidence/epic-004/e004-15-static-20261030/runner-output.txt),
+a hashe logów uzupełniono Python hashlib po konwersji do UTF-8/LF. Otoczki
+`NativeCommandError` w logach są formatowaniem zwykłego Cargo stderr przez
+PowerShell; rzeczywiste kody wyjścia komend wynoszą 0.
+
+A2 i A4 zaakceptowali końcowy `8a0a33d` po włączeniu obu poprawek Cancel.
+A3 zaakceptował niezmieniony kod FFI/jednostek z `190fa3e`; późniejsze zmiany kodu
+dotyczyły wyłącznie lifecycle klienta, ponownie przejrzanego przez A2/A4.
+Brak nierozstrzygniętych ustaleń statycznych w przypisanych domenach.
 
 ## Następna bramka
 

@@ -1,0 +1,8 @@
+rtk.exe : cargo check (10 crates compiled)
+At D:\Git\minimium-e004-static.ps1:38 char:5
++     & rtk @arguments *> $log
++     ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (cargo check (10 crates compiled):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.46s

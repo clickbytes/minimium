@@ -1,0 +1,80 @@
+{
+  "sha": "8a0a33d703ae356fe3774df7cf5461e52d296975",
+  "initial_checkout": "clean",
+  "runtime": "NOT RUN",
+  "capture_note": "PowerShell Get-FileHash unavailable in runner; all command exit codes captured from runner output. Artifact SHA-256 populated afterward with Python. Logs converted from PowerShell UTF-16 to UTF-8 with normalized line endings. NativeCommandError wrappers in logs are PowerShell formatting of ordinary Cargo stderr, not nonzero command exits.",
+  "checks": [
+    {
+      "name": "fmt",
+      "exit_code": 0,
+      "seconds": 0.49,
+      "command": "rtk cargo fmt --all -- --check",
+      "log": "fmt.txt",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "check",
+      "exit_code": 0,
+      "seconds": 18.81,
+      "command": "rtk cargo check --workspace --locked",
+      "log": "check.txt",
+      "sha256": "091417db3c590d7f1960bfc949d828e3553719e466ffe209436ed21bdccd4f14"
+    },
+    {
+      "name": "clippy",
+      "exit_code": 0,
+      "seconds": 2.27,
+      "command": "rtk cargo clippy --workspace --locked -- -D warnings",
+      "log": "clippy.txt",
+      "sha256": "caa636ec9c7cba2c4f265005f356629e3a1e8fe35395de581375a782de9931bc"
+    },
+    {
+      "name": "release",
+      "exit_code": 0,
+      "seconds": 60.92,
+      "command": "rtk cargo build --workspace --release --locked",
+      "log": "release.txt",
+      "sha256": "2d23011e8cd26fe31a711da8cb2ccfff0268a2832f0ac1e5c2ab1bcaa560a09b"
+    },
+    {
+      "name": "allocation-check",
+      "exit_code": 0,
+      "seconds": 4.54,
+      "command": "rtk cargo check -p minimium-server --features allocation-metrics --locked",
+      "log": "allocation-check.txt",
+      "sha256": "1b95b8d5a91160cad865d47636af95ed80f1538a46eb85a8457e187ef288cddb"
+    },
+    {
+      "name": "allocation-release",
+      "exit_code": 0,
+      "seconds": 22.37,
+      "command": "rtk cargo build -p minimium-server --features allocation-metrics --release --locked",
+      "log": "allocation-release.txt",
+      "sha256": "752a6f28a007c61476735e41cc5568a6a6467db57fca2803973ed90df0a6b0f6"
+    },
+    {
+      "name": "architecture",
+      "exit_code": 0,
+      "seconds": 0.35,
+      "command": "rtk python scripts/check_architecture.py",
+      "log": "architecture.txt",
+      "sha256": "372aa134ef454ddd211a0e2e1fd6e5e283730dc5ee32b2a6643d83453175cf32"
+    },
+    {
+      "name": "file-lengths",
+      "exit_code": 0,
+      "seconds": 0.11,
+      "command": "rtk python scripts/check_file_lengths.py",
+      "log": "file-lengths.txt",
+      "sha256": "71fa8d6b24246b6d1be9ff62cd650dd2d06d5edc110ed62149327e595a599541"
+    },
+    {
+      "name": "diff",
+      "exit_code": 0,
+      "seconds": 0.08,
+      "command": "rtk git diff --check",
+      "log": "diff.txt",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    }
+  ]
+}

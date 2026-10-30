@@ -1,7 +1,7 @@
 # Epic 004 — plan i rejestr weryfikacji
 
 **Epic:** [#51](https://github.com/clickbytes/minimium/issues/51). **Właściciel finalnego odbioru:** [E004-16 / #68](https://github.com/clickbytes/minimium/issues/68).
-**Baza planu:** `aad2c8298606a46dc3a286b4eac7f1de45759851`. **Kodowy baseline E004-00:** `cd816c2d32bd4b1447f14ac04a9ec99e44c0e4af` (integracja `main@30ff278`). **Stan:** E004-00–14 zintegrowane; ostatni PR [#86](https://github.com/clickbytes/minimium/pull/86), merge `93b1264502e33f01a9769901fbbc72697bf904e0`. #67 w audycie; #68 oczekuje na osobną zgodę użytkownika po #67; #69 oczekuje na #68. **RUNTIME NOT RUN.**
+**Baza planu:** `aad2c8298606a46dc3a286b4eac7f1de45759851`. **Kodowy baseline E004-00:** `cd816c2d32bd4b1447f14ac04a9ec99e44c0e4af` (integracja `main@30ff278`). **Stan:** E004-00–14 zintegrowane; ostatni PR [#86](https://github.com/clickbytes/minimium/pull/86), merge `93b1264502e33f01a9769901fbbc72697bf904e0`. #67: STATIC PASS na 8a0a33d703ae356fe3774df7cf5461e52d296975; #68 oczekuje na osobną zgodę użytkownika po #67; #69 oczekuje na #68. **RUNTIME NOT RUN.**
 
 [Audyt i rzeczywiste merge SHA wszystkich przyrostów](epic-004-audit.md).
 [Kompletna procedura końcowego odbioru, właściciele i artefakty](epic-004-final-verification.md).
