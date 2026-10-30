@@ -40,5 +40,5 @@ struct VertexOutput {
         direct += environment.local_moon_rgb_visibility.xyz * moon_diffuse * visibility;
     }
     let linear = albedo * (environment.ambient_rgb_exposure.xyz + direct);
-    return vec4<f32>(tone_map_linear(linear * environment.ambient_rgb_exposure.w), 1.0);
+    return vec4<f32>(tone_map_linear(linear), 1.0);
 }

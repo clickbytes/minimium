@@ -295,7 +295,7 @@ impl GpuResources {
                 draw_calls += 1;
             }
         }
-        if self.ui_vertex_count > 0 {
+        if self.ui_vertex_count > 0 && self.ui_output_pipeline.is_none() {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("minimium-console-ui-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -339,6 +339,31 @@ impl GpuResources {
             pass.set_bind_group(0, output.bind_group(), &[]);
             pass.draw(0..3, 0..1);
             draw_calls += 1;
+        }
+        if self.ui_vertex_count > 0 {
+            if let Some(pipeline) = &self.ui_output_pipeline {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("minimium-console-ui-output-pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &surface_view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Load,
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                pass.set_pipeline(pipeline);
+                pass.set_bind_group(0, &self.ui_bind_group, &[]);
+                pass.set_vertex_buffer(0, self.ui_vertex_buffer.slice(..));
+                pass.draw(0..self.ui_vertex_count, 0..1);
+                draw_calls += 1;
+            }
         }
         self.queue.submit(Some(encoder.finish()));
         self.queue.present(frame);

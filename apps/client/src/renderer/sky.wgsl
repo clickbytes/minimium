@@ -21,8 +21,7 @@ struct SkyVertexOutput {
     let far_point = camera.inverse_sky_view_projection * vec4<f32>(ndc, 1.0, 1.0);
     let ray_world = normalize(far_point.xyz / max(abs(far_point.w), 1.0e-6));
     let sample = sample_clear_sky(ray_world);
-    let exposure = environment.ambient_rgb_exposure.w;
-    let sky = tone_map_linear(sample.scattering_rgb * exposure);
+    let sky = tone_map_linear(sample.scattering_rgb);
     let ground = HORIZON_OCCLUSION_RGB;
     let visibility = horizon_visibility(ray_world);
     return vec4<f32>(mix(ground, sky, visibility), 1.0);

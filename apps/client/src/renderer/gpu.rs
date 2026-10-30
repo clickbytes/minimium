@@ -1,6 +1,5 @@
-use super::{sector_scene::ClientSectorScene, GpuResources, Vertex, UI_VERTEX_CAPACITY};
-use crate::console::{font_atlas_pixels, UiVertex};
-use std::{borrow::Cow, error::Error, sync::Arc};
+use super::{sector_scene::ClientSectorScene, GpuResources, Vertex};
+use std::{error::Error, sync::Arc};
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
 
@@ -191,13 +190,36 @@ impl GpuResources {
             .get_default_config(&adapter, size.width.max(1), size.height.max(1))
             .ok_or("graphics adapter does not support this surface")?;
         surface.configure(&device, &config);
-        let output_encoder = (!super::gpu_surface::is_srgb(config.format))
-            .then(|| super::output::OutputEncoder::new(&device, size, config.format));
-        let scene_color_format = if output_encoder.is_some() {
+        let hdr_format = adapter.get_texture_format_features(wgpu::TextureFormat::Rgba16Float);
+        let hdr_usage =
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING;
+        let hdr_enabled = hdr_format.allowed_usages.contains(hdr_usage)
+            && hdr_format
+                .flags
+                .contains(wgpu::TextureFormatFeatureFlags::BLENDABLE)
+            && adapter.limits().max_texture_dimension_2d >= size.width.max(size.height);
+        if !hdr_enabled {
+            eprintln!(
+                "renderer_hdr mode=ldr fallback_reason=rgba16float_unavailable_or_surface_limit"
+            );
+        }
+        let scene_color_format = if hdr_enabled {
+            wgpu::TextureFormat::Rgba16Float
+        } else if !super::gpu_surface::is_srgb(config.format) {
             wgpu::TextureFormat::Rgba8Unorm
         } else {
             config.format
         };
+        let output_encoder =
+            (hdr_enabled || !super::gpu_surface::is_srgb(config.format)).then(|| {
+                super::output::OutputEncoder::new(
+                    &device,
+                    size,
+                    config.format,
+                    scene_color_format,
+                    hdr_enabled,
+                )
+            });
         let frame_bindings = super::environment_gpu::EnvironmentGpuBindings::create(&device);
         let environment_pipelines = super::sky_gpu::EnvironmentPipelines::new(
             &device,
@@ -236,8 +258,16 @@ impl GpuResources {
             immediate_size: 0,
         });
         let pipeline = super::world_pipeline::create(&device, &pipeline_layout, scene_color_format);
-        let (ui_pipeline, ui_bind_group, ui_vertex_buffer) =
-            create_ui_resources(&device, &queue, scene_color_format);
+        let (ui_pipeline, ui_bind_group, ui_vertex_buffer, ui_bind_group_layout) =
+            super::gpu_surface::create_ui_resources(&device, &queue, scene_color_format);
+        let ui_output_pipeline = hdr_enabled.then(|| {
+            super::gpu_surface::create_ui_output_pipeline(
+                &device,
+                &ui_bind_group_layout,
+                config.format,
+                super::gpu_surface::is_srgb(config.format),
+            )
+        });
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("sample-world-geometry"),
             contents: bytemuck::cast_slice(vertices),
@@ -267,6 +297,7 @@ impl GpuResources {
             queue,
             config,
             scene_color_format,
+            hdr_enabled,
             pipeline,
             shadow_gpu,
             shadow_state: super::shadows::ShadowState::default(),
@@ -276,6 +307,7 @@ impl GpuResources {
             moon,
             moon_sphere,
             ui_pipeline,
+            ui_output_pipeline,
             ui_bind_group,
             ui_vertex_buffer,
             ui_vertex_count: 0,
@@ -336,146 +368,4 @@ impl GpuResources {
                 .saturating_add(output.size_bytes());
         }
     }
-}
-
-fn create_ui_resources(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    format: wgpu::TextureFormat,
-) -> (wgpu::RenderPipeline, wgpu::BindGroup, wgpu::Buffer) {
-    let atlas_width = crate::console::ATLAS_WIDTH;
-    let atlas_height = crate::console::ATLAS_HEIGHT;
-    let atlas = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("minimium-console-font-atlas"),
-        size: wgpu::Extent3d {
-            width: atlas_width as u32,
-            height: atlas_height as u32,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::R8Unorm,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
-    });
-    let font = font_atlas_pixels();
-    let bytes_per_row = atlas_width.div_ceil(256) * 256;
-    let mut upload = vec![0; bytes_per_row * atlas_height];
-    for row in 0..atlas_height {
-        let row_start = row * bytes_per_row;
-        let font_start = row * atlas_width;
-        upload[row_start..row_start + atlas_width]
-            .copy_from_slice(&font[font_start..font_start + atlas_width]);
-    }
-    queue.write_texture(
-        wgpu::TexelCopyTextureInfo {
-            texture: &atlas,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        &upload,
-        wgpu::TexelCopyBufferLayout {
-            offset: 0,
-            bytes_per_row: Some(bytes_per_row as u32),
-            rows_per_image: Some(atlas_height as u32),
-        },
-        wgpu::Extent3d {
-            width: atlas_width as u32,
-            height: atlas_height as u32,
-            depth_or_array_layers: 1,
-        },
-    );
-    let atlas_view = atlas.create_view(&wgpu::TextureViewDescriptor::default());
-    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        label: Some("minimium-console-font-sampler"),
-        address_mode_u: wgpu::AddressMode::ClampToEdge,
-        address_mode_v: wgpu::AddressMode::ClampToEdge,
-        address_mode_w: wgpu::AddressMode::ClampToEdge,
-        mag_filter: wgpu::FilterMode::Linear,
-        min_filter: wgpu::FilterMode::Linear,
-        mipmap_filter: wgpu::MipmapFilterMode::Nearest,
-        ..Default::default()
-    });
-    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: Some("minimium-console-ui-bind-layout"),
-        entries: &[
-            wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Texture {
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                    multisampled: false,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 1,
-                visibility: wgpu::ShaderStages::FRAGMENT,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                count: None,
-            },
-        ],
-    });
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("minimium-console-ui-bind-group"),
-        layout: &bind_group_layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&atlas_view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::Sampler(&sampler),
-            },
-        ],
-    });
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("minimium-console-ui-shader"),
-        source: wgpu::ShaderSource::Wgsl(Cow::Owned(super::shader_source::ui())),
-    });
-    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("minimium-console-ui-pipeline-layout"),
-        bind_group_layouts: &[Some(&bind_group_layout)],
-        immediate_size: 0,
-    });
-    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("minimium-console-ui-pipeline"),
-        layout: Some(&pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &shader,
-            entry_point: Some("vs_main"),
-            compilation_options: Default::default(),
-            buffers: &[Some(UiVertex::layout())],
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &shader,
-            entry_point: Some("fs_main"),
-            compilation_options: Default::default(),
-            targets: &[Some(wgpu::ColorTargetState {
-                format,
-                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-        }),
-        primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
-            cull_mode: None,
-            ..Default::default()
-        },
-        depth_stencil: None,
-        multisample: Default::default(),
-        multiview_mask: None,
-        cache: None,
-    });
-    let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("minimium-console-ui-vertices"),
-        size: (UI_VERTEX_CAPACITY * std::mem::size_of::<UiVertex>()) as u64,
-        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    (pipeline, bind_group, vertex_buffer)
 }

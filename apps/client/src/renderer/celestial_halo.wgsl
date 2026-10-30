@@ -86,6 +86,5 @@ fn halo_direction(body: u32) -> vec3<f32> {
     } else if shape == 4u {
         radiance *= 1.25;
     }
-    let color = tone_map_linear(radiance * visibility * horizon * environment.ambient_rgb_exposure.w);
-    return vec4<f32>(color, 0.0);
+    return vec4<f32>(tone_map_linear(radiance * visibility * horizon), 0.0);
 }
