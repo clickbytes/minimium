@@ -96,6 +96,7 @@ impl WorldRegistry {
         Ok(registry)
     }
 
+    #[cfg(test)]
     pub(crate) fn from_generated_worlds(worlds: Vec<GeneratedWorld>) -> Self {
         Self::try_from_generated_worlds(worlds)
             .expect("checked generated worlds are nonempty and have unique IDs")

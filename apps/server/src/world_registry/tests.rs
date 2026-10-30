@@ -415,8 +415,7 @@ fn component_sector_state_rehydrates_without_claiming_legacy_objects() {
             ObjectOriginId::new(7).unwrap(),
             &components,
             kind,
-            schema,
-            &[1, 2, 3],
+            &minimium_core::entity::ComponentBlob::new(schema, vec![1, 2, 3]).unwrap(),
         )
         .unwrap();
     let saved = owner.sector_states();

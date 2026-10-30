@@ -127,6 +127,10 @@ impl RuntimeMetrics {
         }
     }
 
+    #[expect(
+        dead_code,
+        reason = "component candidate metrics activate with replication opt-in"
+    )]
     pub(crate) fn record_component_candidates(&mut self, queued: usize, filtered: usize) {
         self.component_candidates_queued = self
             .component_candidates_queued

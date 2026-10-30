@@ -11,6 +11,10 @@ use minimium_protocol::{
 };
 
 /// Reads bounded component candidates into staging metrics without creating wire messages.
+#[expect(
+    dead_code,
+    reason = "component candidate collection awaits replication opt-in"
+)]
 pub(crate) fn collect_component_candidates(
     worlds: &WorldRegistry,
     registry: &ComponentRegistry,
