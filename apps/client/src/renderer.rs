@@ -238,9 +238,11 @@ struct Renderer {
 
 #[derive(Clone, Copy)]
 struct PendingSectorTransition {
+    source_context: minimium_protocol::WorldContext,
     context: minimium_protocol::WorldContext,
     destination: [f32; 3],
     manifest: WorldManifest,
+    ready_sent: bool,
 }
 
 pub use window::run;
