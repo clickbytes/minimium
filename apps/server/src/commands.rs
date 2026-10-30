@@ -1,13 +1,14 @@
 mod time;
 mod world;
 
+use crate::runtime::schedule::{ScheduleDiagnostics, ServerSchedule, SystemFn};
 use minimium_platform::modules::{CommandScope, ModuleRegistry};
 use std::sync::OnceLock;
 
 type ModuleHandler = fn(&mut CommandContext<'_>, &[&str]) -> CommandReply;
 
-fn extensions() -> &'static ModuleRegistry<ModuleHandler, ()> {
-    static REGISTRY: OnceLock<ModuleRegistry<ModuleHandler, ()>> = OnceLock::new();
+fn extensions() -> &'static ModuleRegistry<ModuleHandler, SystemFn> {
+    static REGISTRY: OnceLock<ModuleRegistry<ModuleHandler, SystemFn>> = OnceLock::new();
     REGISTRY.get_or_init(|| {
         let mut registry = ModuleRegistry::default();
         registry
@@ -19,6 +20,10 @@ fn extensions() -> &'static ModuleRegistry<ModuleHandler, ()> {
 
 pub fn initialize_modules() {
     let _ = extensions();
+}
+
+pub(crate) fn build_schedule() -> ServerSchedule {
+    ServerSchedule::from_systems(extensions().systems())
 }
 
 fn execute_registered(line: &str, context: &mut CommandContext<'_>) -> CommandReply {
@@ -58,6 +63,7 @@ pub struct CommandContext<'a> {
     pub metrics: &'a RuntimeMetrics,
     pub environment_clock: &'a mut EnvironmentClock,
     pub monotonic_ms: MonotonicMs,
+    pub schedule_diagnostics: ScheduleDiagnostics,
 }
 
 pub struct CommandReply {
@@ -80,6 +86,7 @@ pub fn execute(command: &ServerCommand, mut context: CommandContext<'_>) -> Comm
         metrics,
         environment_clock,
         monotonic_ms,
+        schedule_diagnostics,
     } = context;
     match command {
         ServerCommand::Help => CommandReply {
@@ -91,13 +98,15 @@ pub fn execute(command: &ServerCommand, mut context: CommandContext<'_>) -> Comm
         ServerCommand::Status => CommandReply {
             success: true,
             text: format!(
-                "running players={} lanes={lanes} ticks={} clock_probe_requests={} clock_probe_accepted={} clock_probe_rejected={} environment_sync_messages={} {}",
+                "running players={} lanes={lanes} ticks={} clock_probe_requests={} clock_probe_accepted={} clock_probe_rejected={} environment_sync_messages={} scheduled_world_instances={} startup_system_runs={} {}",
                 worlds.total_players(),
                 metrics.ticks,
                 metrics.clock_probe_requests,
                 metrics.clock_probe_accepted,
                 metrics.clock_probe_rejected,
                 metrics.environment_sync_messages,
+                schedule_diagnostics.world_instance_count,
+                schedule_diagnostics.startup_system_runs,
                 persistence.summary()
             ),
             stop: false,
