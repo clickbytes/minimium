@@ -56,7 +56,8 @@ Frame samples include redraw callbacks where presentation was skipped; those inc
 
 `sky info` formats a versioned snapshot only when requested. Astronomy evaluation/cache counters, star-epoch updates/cache hits, clock-probe accept/reject counts, and environment draw-call totals use bounded counters. Environment CPU uses a fixed microsecond histogram with upper-bound buckets at 1, 2, 5, 10, 20, 50, 100, 250, 500, 1,000, 2,500, 5,000 and 10,000 microseconds plus overflow; percentiles use nearest-rank and the bucket upper bound. Shadow preparation has a separate histogram. No text formatting or unbounded storage occurs in the per-frame collection path.
 
-Diagnostic schema version **2** separates three disjoint CPU scopes. Each exposes
+Diagnostic schema version **3** retains three disjoint CPU scopes and adds a
+separate halo draw-call counter. Each CPU scope exposes
 `_us_avg`, `_us_p50`, `_us_p95`, `_us_p99`, `_us_max` and its own `_samples` count:
 
 | Prefix | Scope |
@@ -73,15 +74,15 @@ The optional star batch is discarded on a skip; the unchanged GPU stamp requires
 preparation again before the next draw. `environment_gpu_elapsed_us=n/a` because
 CPU queue writes are not a GPU timestamp measurement.
 
-`draw_calls_sky`, `draw_calls_stars`, `draw_calls_sun`, `draw_calls_moon`, and
-`draw_calls_shadows` count commands encoded for presented frames;
+`draw_calls_sky`, `draw_calls_stars`, `draw_calls_sun`, `draw_calls_moon`,
+`draw_calls_halos`, and `draw_calls_shadows` count commands encoded for presented frames;
 `render_frames_skipped` counts redraws without presentation. Requested/effective
 quality changes reset all three environment histograms and astronomy baselines;
-general `fps show` counters remain cumulative. These schema-v2 scopes cannot be
+general `fps show` counters remain cumulative. These CPU scopes cannot be
 compared directly with the former combined environment timing.
 
 `environment_GPU_estimate_bytes` sums the 500-star instance buffer,
-camera/environment/shadow uniforms (208/320/128 B), shadow texture and dedicated
+camera/environment/shadow uniforms (224/352/128 B), shadow texture and dedicated
 map/player caster buffers. Breakdown keys are `environment_GPU_star_instance_buffer_bytes`,
 `environment_GPU_uniform_bytes`, `environment_GPU_shadow_texture_bytes`,
 `environment_GPU_map_caster_buffer_bytes`, `environment_GPU_player_caster_buffer_bytes`.

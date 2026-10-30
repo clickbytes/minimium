@@ -111,6 +111,8 @@ pub struct SkyState {
     pub observer_model_revision: u32,
     pub sun: CelestialBodyState,
     pub moon: MoonState,
+    /// Geocentric lunar position in the game world axes, in physical metres.
+    pub geocentric_moon_position_world_m: [f64; 3],
     pub geocentric_sun_direction_world: [f64; 3],
     pub catalog_epoch_to_world: [[f64; 3]; 3],
     pub ephemeris_revision: u32,

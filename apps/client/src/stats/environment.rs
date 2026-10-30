@@ -85,8 +85,19 @@ pub(crate) struct EnvironmentStatsSnapshot {
     pub(crate) star_draw_calls: u64,
     pub(crate) sun_draw_calls: u64,
     pub(crate) moon_draw_calls: u64,
+    pub(crate) halo_draw_calls: u64,
     pub(crate) shadow_draw_calls: u64,
     pub(crate) frames_skipped: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct EnvironmentDrawCounts {
+    pub(crate) sky: u32,
+    pub(crate) stars: u32,
+    pub(crate) sun: u32,
+    pub(crate) moon: u32,
+    pub(crate) halos: u32,
+    pub(crate) shadows: u32,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -135,33 +146,35 @@ impl EnvironmentStats {
             self.astronomy_latest[3].saturating_sub(self.astronomy_baseline[3]);
     }
 
-    pub(crate) fn record_frame(
-        &mut self,
-        presented: bool,
-        sky: u32,
-        stars: u32,
-        sun: u32,
-        moon: u32,
-        shadows: u32,
-    ) {
+    pub(crate) fn record_frame(&mut self, presented: bool, draws: EnvironmentDrawCounts) {
         if !presented {
             self.counters.frames_skipped = self.counters.frames_skipped.saturating_add(1);
             return;
         }
-        self.counters.sky_draw_calls = self.counters.sky_draw_calls.saturating_add(u64::from(sky));
+        self.counters.sky_draw_calls = self
+            .counters
+            .sky_draw_calls
+            .saturating_add(u64::from(draws.sky));
         self.counters.star_draw_calls = self
             .counters
             .star_draw_calls
-            .saturating_add(u64::from(stars));
-        self.counters.sun_draw_calls = self.counters.sun_draw_calls.saturating_add(u64::from(sun));
+            .saturating_add(u64::from(draws.stars));
+        self.counters.sun_draw_calls = self
+            .counters
+            .sun_draw_calls
+            .saturating_add(u64::from(draws.sun));
         self.counters.moon_draw_calls = self
             .counters
             .moon_draw_calls
-            .saturating_add(u64::from(moon));
+            .saturating_add(u64::from(draws.moon));
+        self.counters.halo_draw_calls = self
+            .counters
+            .halo_draw_calls
+            .saturating_add(u64::from(draws.halos));
         self.counters.shadow_draw_calls = self
             .counters
             .shadow_draw_calls
-            .saturating_add(u64::from(shadows));
+            .saturating_add(u64::from(draws.shadows));
     }
 
     pub(crate) fn snapshot(self) -> EnvironmentStatsSnapshot {

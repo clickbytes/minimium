@@ -271,6 +271,7 @@ fn push_counter_fields(
     snapshot.push("draw_calls_stars", stats.star_draw_calls);
     snapshot.push("draw_calls_sun", stats.sun_draw_calls);
     snapshot.push("draw_calls_moon", stats.moon_draw_calls);
+    snapshot.push("draw_calls_halos", stats.halo_draw_calls);
     snapshot.push("draw_calls_shadows", stats.shadow_draw_calls);
     snapshot.push("render_frames_skipped", stats.frames_skipped);
 }

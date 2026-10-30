@@ -108,6 +108,11 @@ w [epic-004-verification.md](epic-004-verification.md); poniżej są instrukcje,
   migotanie gwiazd bez zmiany po `timescale`, brak migotania nieba/tła oraz stabilny
   koszt 500 instancji. V15: sceny A3, obie półkule, dzienny Księżyc,
   jasna strona/rozmiar i brak czarnego wycięcia na dziennym niebie.
+  W globie potwierdzić geocentryczną orbitę sfery Moon przy zmianie UTC,
+  promień i dystans skalowane jednakowo względem Earth, fazę z normalnych
+  powierzchni oraz głębię/zasłanianie przez glob. Sprawdzić osobne ciepłe
+  halo Sun i chłodniejsze halo Moon: pełnia, kwadry, sierpy, nów, obie
+  orientacje jasnej strony i zachowanie przy horyzoncie.
   W V13/V15 obrócić kamerę globu: Słońce i Księżyc mają pojawiać się we
   właściwych kierunkach, a glob zasłaniać ich tarcze po przeciwnej stronie.
   Zmierzyć średnicę obu tarcz w pikselach względem promienia kątowego z

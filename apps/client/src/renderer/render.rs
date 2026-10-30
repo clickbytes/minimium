@@ -146,6 +146,14 @@ impl GpuResources {
                     draw_calls += 1;
                     self.environment_draw_calls.stars += 1;
                 }
+                if super::sky::should_draw_overview_sun(environment)
+                    || super::sky::should_draw_overview_moon(environment)
+                {
+                    pass.set_pipeline(&self.celestial_halo.pipeline);
+                    pass.draw(0..6, 0..2);
+                    draw_calls += 1;
+                    self.environment_draw_calls.halos += 1;
+                }
                 if super::sky::should_draw_overview_sun(environment) {
                     pass.set_pipeline(&self.environment_pipelines.sun);
                     pass.draw(0..6, 0..1);
@@ -153,7 +161,7 @@ impl GpuResources {
                     self.environment_draw_calls.sun += 1;
                 }
                 if super::sky::should_draw_overview_moon(environment) {
-                    pass.set_pipeline(&self.moon.pipeline);
+                    pass.set_pipeline(&self.moon_sphere.pipeline);
                     pass.draw(0..6, 0..1);
                     draw_calls += 1;
                     self.environment_draw_calls.moon += 1;
@@ -205,6 +213,10 @@ impl GpuResources {
                         draw_calls += 1;
                         self.environment_draw_calls.stars += 1;
                     }
+                    pass.set_pipeline(&self.celestial_halo.pipeline);
+                    pass.draw(0..6, 0..2);
+                    draw_calls += 1;
+                    self.environment_draw_calls.halos += 1;
                     if super::sky::should_draw_sun(environment) {
                         pass.set_pipeline(&self.environment_pipelines.sun);
                         pass.draw(0..6, 0..1);
@@ -243,6 +255,10 @@ impl GpuResources {
                         draw_calls += 1;
                         self.environment_draw_calls.stars += 1;
                     }
+                    pass.set_pipeline(&self.celestial_halo.pipeline);
+                    pass.draw(0..6, 0..2);
+                    draw_calls += 1;
+                    self.environment_draw_calls.halos += 1;
                     if super::sky::should_draw_sun(environment) {
                         pass.set_pipeline(&self.environment_pipelines.sun);
                         pass.draw(0..6, 0..1);

@@ -69,6 +69,7 @@ pub(super) fn from_sky_state(
         || !valid_vector(sky.moon.moon_to_sun_world)
         || !valid_vector(sky.moon.pole_world)
         || !valid_vector(sky.geocentric_sun_direction_world)
+        || !valid_vector(sky.geocentric_moon_position_world_m)
         || !valid_vector(sky.sun.geometric_direction_world)
         || !valid_vector(sky.sun.apparent_direction_world)
         || !valid_vector(sky.moon.body.geometric_direction_world)
@@ -135,6 +136,7 @@ pub(super) fn from_sky_state(
         linear_rgb: settings.global_sun_rgb,
         strength: settings.global_sun_strength,
     };
+    let moon_orbit_world = super::orbit::moon_orbit_world(sky, render_view)?;
     let environment_uniform = EnvironmentUniform {
         sun_geometric_world: direction_altitude(
             sky.sun.geometric_direction_world,
@@ -187,6 +189,7 @@ pub(super) fn from_sky_state(
         eqj_to_world: matrix4(sky.catalog_epoch_to_world)?,
         moon_disk_radiance: super::super::moon_lighting::moon_disk_radiance(moon_flux),
         star_animation: [0.0; 4],
+        moon_orbit_world,
     };
     Ok(EnvironmentFrame {
         context: Some(context),

@@ -246,8 +246,8 @@ Serwer używa tylko lekkiego id/hash z assets, bez C. Reader waliduje katalog ra
 
 | Layout | Kontrakt |
 | --- | --- |
-| Group0 binding0 | CameraUniform 208 B: viewProj, skyViewProj, inverseSkyViewProj, viewport. |
-| Group0 binding1 | EnvironmentUniform 336 B: lokalne/globalne Sun, Moon, geometria/faza, RGB, horyzont, flags, macierz EQJ, radiancja tarczy Moon i monotoniczny czas animacji gwiazd. |
+| Group0 binding0 | CameraUniform 224 B: viewProj, skyViewProj, inverseSkyViewProj, viewport i pozycja kamery w świecie. |
+| Group0 binding1 | EnvironmentUniform 352 B: lokalne/globalne Sun, Moon, geometria/faza, RGB, horyzont, flags, macierz EQJ, radiancja tarczy Moon, czas animacji gwiazd i pozycja/promień orbitalnej sfery Moon. |
 | Group1 | Materiał / istniejąca tekstura globusa. |
 | Group2 | Shadow depth, comparison sampler, ShadowUniform 128 B; szczegóły [E004-13 / #65](https://github.com/clickbytes/minimium/issues/65). |
 | StarInstance | 32 B ×500 = 16 000 B, vertex instancing; jeden draw call. |
@@ -259,6 +259,8 @@ E004-10 adds versioned clear-sky appearance nodes at solar altitudes −18°, �
 E004-12 adds the analytic Moon disk and phase lighting. `EnvironmentUniform` grows from 304 to 320 bytes with `moon_disk_radiance`; the WGSL and Rust offsets are compile-time checked. The disk is drawn after stars and the Sun, with the whole sphere occluding stars and premultiplied-alpha blending. Moon direct light uses the same geometric local direction and is not applied to the overview.
 
 Later star-display work extends the current `EnvironmentUniform` to 336 bytes with a monotonic animation-time vector at offset 320. The E004-12 size above records the original delivery; star animation does not alter astronomical time or the 500-record catalog.
+
+The orbital Moon adds a center/radius vector at offset 336, bringing the current environment uniform to 352 bytes. The camera uniform grows from 208 to 224 bytes with its world-space eye for analytic ray/sphere intersection. In the globe view the physical Moon sphere replaces the earlier screen-space disk; the disk remains for the surface sky. Both buffers keep 16-byte alignment.
 
 E004-13 adds one 1024² `Depth32Float` target and a depth-only pass before the main color pass. `ShadowUniform` is 128 bytes; its light matrix is built from the geometric local direction in render-origin-relative coordinates, snapped to a 514/1024 m texel, and shares the 0.02/0.04/0.10 m bias and 112–128 m receiver fade with the 3×3 comparison PCF shader. The source is selected from already visibility-scaled local Sun/Moon RGB with 5% hysteresis. Only that source's direct diffuse term is shadowed; ambient and the other body are unchanged. Group 0 remains the frame layout, group 1 is an explicit empty world-material slot, and group 2 holds depth, comparison sampler and shadow uniform; the globe keeps its independent group 1 texture pipeline. Planet shadow casters reuse the active render-patch GPU catalog, including patches outside the camera frustum, filtered by stored geometry bounds. Authored map primitives are selected by precise AABB/sphere intersection, while remote player boxes use the same 256 m caster radius. Missing world context, active geometry or caster data disables the map for that frame without interrupting scene rendering or touching collision state. The authored-map vertex upload is capped at 2 MiB; crossing that budget makes the frame unshadowed. Low quality uses a 1×1 binding fallback and performs no shadow pass or caster upload. Runtime visual behavior and GPU cost remain unverified until E004-16.
 

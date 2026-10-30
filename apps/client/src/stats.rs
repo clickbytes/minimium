@@ -89,14 +89,9 @@ impl FrameStats {
     pub(crate) fn record_environment_frame(
         &mut self,
         presented: bool,
-        sky: u32,
-        stars: u32,
-        sun: u32,
-        moon: u32,
-        shadows: u32,
+        draws: environment::EnvironmentDrawCounts,
     ) {
-        self.environment
-            .record_frame(presented, sky, stars, sun, moon, shadows);
+        self.environment.record_frame(presented, draws);
     }
 
     pub(crate) fn environment_snapshot(&self) -> environment::EnvironmentStatsSnapshot {
