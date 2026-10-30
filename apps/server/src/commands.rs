@@ -71,7 +71,7 @@ pub fn execute(command: &ServerCommand, mut context: CommandContext<'_>) -> Comm
         return execute_registered(line, &mut context);
     }
     let CommandContext {
-        world,
+        world: _,
         worlds,
         player_store,
         persistence,
@@ -92,7 +92,7 @@ pub fn execute(command: &ServerCommand, mut context: CommandContext<'_>) -> Comm
             success: true,
             text: format!(
                 "running players={} lanes={lanes} ticks={} clock_probe_requests={} clock_probe_accepted={} clock_probe_rejected={} environment_sync_messages={} {}",
-                world.player_count(),
+                worlds.total_players(),
                 metrics.ticks,
                 metrics.clock_probe_requests,
                 metrics.clock_probe_accepted,
@@ -103,15 +103,15 @@ pub fn execute(command: &ServerCommand, mut context: CommandContext<'_>) -> Comm
             stop: false,
         },
         ServerCommand::Players => {
-            let players = world.snapshot();
+            let players = worlds.player_snapshots();
             let text = if players.is_empty() {
                 "no players".to_owned()
             } else {
                 players
                     .iter()
-                    .map(|player| {
+                    .map(|(instance_id, player)| {
                         format!(
-                            "{}:{}@{:.1},{:.1},{:.1}",
+                            "{}:{}:world={instance_id}@{:.1},{:.1},{:.1}",
                             player.id,
                             player.name,
                             player.position[0],
@@ -130,7 +130,7 @@ pub fn execute(command: &ServerCommand, mut context: CommandContext<'_>) -> Comm
         }
         ServerCommand::Metrics => CommandReply {
             success: true,
-            text: metrics.summary(world.player_count()),
+            text: metrics.summary(worlds.total_players()),
             stop: false,
         },
         ServerCommand::Save => {
