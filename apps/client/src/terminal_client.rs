@@ -13,10 +13,11 @@ use std::{
     error::Error,
     io::{self, Write},
     sync::mpsc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 const INPUT_QUEUE_CAPACITY: usize = 64;
+const ENVIRONMENT_STATUS_REFRESH: Duration = Duration::from_secs(5);
 
 pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
     let map_path = options.map_path.clone();
@@ -84,6 +85,8 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
     let mut events = Vec::with_capacity(16);
     let mut prompt_needed = true;
     let mut last_snapshot: Option<ServerMessage> = None;
+    let mut last_environment_status = None;
+    let mut last_environment_status_at = None;
 
     if let Some(address) = options.connect.as_ref() {
         start_remote(&mut connection, address);
@@ -95,7 +98,11 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
                 waiting_for_cleanup: true,
             } => println!("{}", Text::WaitingForCancelledCleanup),
             ConnectionEvent::TimedOut => println!("{}", Text::AttemptTimedOut),
-            ConnectionEvent::SessionStarted => println!("{}", Text::AwaitingWelcome),
+            ConnectionEvent::SessionStarted => {
+                last_environment_status = None;
+                last_environment_status_at = None;
+                println!("{}", Text::AwaitingWelcome)
+            }
             ConnectionEvent::SetupFailed(error) => {
                 println!("{}", Text::ConnectionSetupFailed(error.to_string()))
             }
@@ -122,6 +129,30 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
                 connection.take_session();
                 last_snapshot = None;
             }
+        }
+        if let Some(frame) = connection
+            .session()
+            .filter(|session| session.state() == SessionState::Connected)
+            .map(|session| session.environment_frame())
+        {
+            let signature = frame.status_signature();
+            let changed = last_environment_status != Some(signature);
+            let date_refresh_due = frame.render_world_utc_ms.is_some()
+                && last_environment_status_at
+                    .is_none_or(|last: Instant| last.elapsed() >= ENVIRONMENT_STATUS_REFRESH);
+            if changed || date_refresh_due {
+                println!("{}", frame.status_line());
+                last_environment_status = Some(signature);
+                last_environment_status_at = Some(Instant::now());
+            }
+        } else if last_environment_status.is_some() {
+            let unavailable = crate::environment::EnvironmentFrameInput::unavailable();
+            let signature = unavailable.status_signature();
+            if last_environment_status != Some(signature) {
+                println!("{}", unavailable.status_line());
+            }
+            last_environment_status = Some(signature);
+            last_environment_status_at = Some(Instant::now());
         }
 
         if prompt_needed {

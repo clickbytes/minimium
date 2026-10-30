@@ -104,6 +104,13 @@ Each option may appear once. Unknown options and missing values are errors. `--t
 
 The seeded demo worlds are used unless `--map PATH` or `--world-definition PATH` is supplied. Provide the same custom file to each client and the server. Welcome validates the map fingerprint and generator digest; these detect accidental mismatch and are not authentication.
 
+The text client reports the environment clock's quality, estimated UTC date,
+rate and revision when one of those status fields changes, and refreshes a usable
+date at most every five seconds. It does not print a clock line each poll. The
+desktop title shows the current quality and render UTC.
+Explicit `--demo` mode uses a separate local UTC anchor and reports `LocalDemo`;
+network sessions use only their server sample and monotonic probe estimate.
+
 In the desktop Earth client, press F1 and enter `map_telepo`. The command opens
 the `M` overview; click a land point to request a server-authoritative teleport.
 Drag to rotate the globe, scroll to zoom (down to 1.08 planet radii), and press Escape to cancel selection.

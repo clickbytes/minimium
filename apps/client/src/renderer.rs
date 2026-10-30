@@ -3,6 +3,7 @@ use crate::{
     connection_controller::{ConnectionController, ConnectionEvent},
     connector::StartError,
     console::{Console, UiVertex},
+    environment::{EnvironmentFrameInput, LocalDemoEnvironment},
     session::{ClientSession, DisconnectReason, SessionEvent, SessionState},
 };
 use minimium_core::{
@@ -147,6 +148,7 @@ struct ClientSettings {
     world_definition_path: Option<PathBuf>,
     threads: crate::options::ThreadLane,
     require_earth: bool,
+    demo: bool,
 }
 
 struct Renderer {
@@ -157,6 +159,8 @@ struct Renderer {
     metrics: FrameMetrics,
     settings: ClientSettings,
     connection: ConnectionController,
+    environment_frame: EnvironmentFrameInput,
+    demo_environment: Option<LocalDemoEnvironment>,
     world_catalog: std::collections::HashMap<minimium_core::world::WorldInstanceId, WorldMap>,
     world_manifests:
         std::collections::HashMap<minimium_core::world::WorldInstanceId, WorldManifest>,

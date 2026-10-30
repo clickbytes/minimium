@@ -18,6 +18,7 @@ impl ClientSession {
         self.clock_sample = Some(sample);
         self.environment_descriptor = Some(descriptor);
         self.pending_environment = None;
+        self.clock.begin_session(sample);
         Ok(())
     }
 
@@ -32,6 +33,8 @@ impl ClientSession {
         validate_descriptor(manifest, sample, descriptor)?;
         self.validate_sample_progress(sample)?;
         self.pending_environment = Some((transition_id, context, sample, descriptor));
+        self.clock_sample = Some(sample);
+        self.clock.note_sample(sample);
         Ok(())
     }
 
@@ -56,6 +59,8 @@ impl ClientSession {
         self.clock_sample = Some(sample);
         self.environment_descriptor = Some(descriptor);
         self.pending_environment = None;
+        self.clock.note_sample(sample);
+        self.clock.cancel_inflight_for_transition();
         Ok(())
     }
 
@@ -74,6 +79,7 @@ impl ClientSession {
         validate_pair(sample, descriptor)?;
         self.validate_sample_progress(sample)?;
         self.clock_sample = Some(sample);
+        self.clock.note_sample(sample);
         Ok(true)
     }
 
@@ -81,10 +87,7 @@ impl ClientSession {
         &self,
         nonce: minimium_core::time::SessionNonce,
     ) -> Result<(), DisconnectReason> {
-        if self
-            .clock_sample
-            .is_some_and(|sample| sample.session_nonce() == nonce)
-        {
+        if self.clock.session_nonce_matches(nonce) {
             Ok(())
         } else {
             Err(DisconnectReason::EnvironmentMismatch)

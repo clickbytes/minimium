@@ -13,6 +13,7 @@ pub(super) struct RendererSetup {
     pub(super) world_definition_path: Option<PathBuf>,
     pub(super) threads: crate::options::ThreadLane,
     pub(super) require_earth: bool,
+    pub(super) demo: bool,
 }
 
 impl Renderer {
@@ -28,6 +29,7 @@ impl Renderer {
             world_definition_path,
             threads,
             require_earth,
+            demo,
         } = setup;
         let map_fingerprint = map.fingerprint();
         let current_instance = world_catalog
@@ -133,8 +135,11 @@ impl Renderer {
                 world_definition_path,
                 threads,
                 require_earth,
+                demo,
             },
             connection,
+            environment_frame: EnvironmentFrameInput::unavailable(),
+            demo_environment: demo.then(LocalDemoEnvironment::new).flatten(),
             world_catalog,
             world_manifests,
             sector_cache,

@@ -1,7 +1,12 @@
 use super::GpuResources;
+use crate::environment::EnvironmentFrameInput;
 
 impl GpuResources {
-    pub(super) fn render(&mut self) -> Result<u32, wgpu::CurrentSurfaceTexture> {
+    /// Keeps every GPU pass on the one immutable snapshot prepared for this frame.
+    pub(super) fn render(
+        &mut self,
+        _environment: &EnvironmentFrameInput,
+    ) -> Result<u32, wgpu::CurrentSurfaceTexture> {
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) => frame,
             wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
