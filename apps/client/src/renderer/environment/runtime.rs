@@ -1,5 +1,5 @@
 use super::super::Renderer;
-use super::{EnvironmentFrame, EnvironmentSettings, RenderViewFrame};
+use super::{EnvironmentFrame, EnvironmentSettings, RenderViewFrame, StarFrameStamp};
 use minimium_astronomy::{SkyInvalidation, SkySampleContext};
 use minimium_core::{
     environment::{AstronomyModelRevision, CatalogueId},
@@ -142,6 +142,38 @@ impl Renderer {
             );
             return;
         }
+        let Some(catalogue) = self.sky_catalogue.as_ref() else {
+            self.publish_unavailable(render_view, "embedded star catalog is unavailable");
+            return;
+        };
+        let corrected = match self
+            .sky_calculator
+            .update_star_epoch(utc_ms, catalogue.astrometry())
+        {
+            Ok(directions) => directions,
+            Err(error) => {
+                self.publish_unavailable(render_view, error.to_string());
+                return;
+            }
+        };
+        let star_stamp = StarFrameStamp {
+            context,
+            clock_revision: revision,
+            utc_day: utc_ms.get().div_euclid(86_400_000),
+            epoch_revision: corrected.star_epoch_revision,
+        };
+        if self.gpu.stars.uploaded_stamp() != Some(star_stamp) {
+            let instances = match catalogue.prepare_gpu_instances(&corrected) {
+                Ok(instances) => instances,
+                Err(error) => {
+                    self.publish_unavailable(render_view, error.to_string());
+                    return;
+                }
+            };
+            self.gpu
+                .stars
+                .upload(&self.gpu.queue, &instances, star_stamp);
+        }
         match EnvironmentFrame::from_sky_state(
             &sky,
             observer,
@@ -151,7 +183,10 @@ impl Renderer {
             render_view,
             EnvironmentSettings::planetary(),
         ) {
-            Ok(frame) => self.publish_environment(frame),
+            Ok(mut frame) => {
+                frame.diagnostics.star_frame = Some(star_stamp);
+                self.publish_environment(frame);
+            }
             Err(error) => self.publish_unavailable(render_view, error.to_string()),
         }
     }

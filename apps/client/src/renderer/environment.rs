@@ -189,6 +189,15 @@ pub(crate) enum EnvironmentFrameStatus {
 pub(crate) struct EnvironmentFrameDiagnostics {
     pub(crate) eye_below_planet_radius: bool,
     pub(crate) clear_sky_model_revision: u32,
+    pub(crate) star_frame: Option<StarFrameStamp>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct StarFrameStamp {
+    pub(crate) context: WorldContext,
+    pub(crate) clock_revision: ClockRevision,
+    pub(crate) utc_day: i64,
+    pub(crate) epoch_revision: u64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

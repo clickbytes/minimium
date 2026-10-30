@@ -189,6 +189,7 @@ pub(super) fn from_sky_state(
         diagnostics: EnvironmentFrameDiagnostics {
             eye_below_planet_radius: below_radius,
             clear_sky_model_revision: super::super::lighting::CLEAR_SKY_MODEL_REVISION,
+            star_frame: None,
         },
         status: EnvironmentFrameStatus::Available,
         camera_uniform: camera_uniform(render_view),
@@ -223,6 +224,7 @@ pub(super) fn interior(
         diagnostics: EnvironmentFrameDiagnostics {
             eye_below_planet_radius: below_radius,
             clear_sky_model_revision: 0,
+            star_frame: None,
         },
         status: EnvironmentFrameStatus::Interior,
         camera_uniform: camera_uniform(render_view),

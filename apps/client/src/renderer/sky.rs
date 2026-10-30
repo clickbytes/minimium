@@ -3,6 +3,7 @@ use super::environment::{EnvironmentFrame, EnvironmentFrameStatus, EnvironmentVi
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub(super) struct EnvironmentDrawCalls {
     pub(super) sky: u32,
+    pub(super) stars: u32,
     pub(super) sun: u32,
     pub(super) overview_marker: u32,
 }
@@ -18,6 +19,12 @@ pub(super) fn should_draw_sun(frame: &EnvironmentFrame) -> bool {
         && frame
             .local_sun
             .is_some_and(|sun| sun.visible_fraction > 0.0)
+}
+
+pub(super) fn should_draw_stars(frame: &EnvironmentFrame) -> bool {
+    should_draw_surface_sky(frame)
+        && frame.diagnostics.star_frame.is_some()
+        && frame.environment_uniform.sky_horizon_rgb_star_visibility[3] > 0.0
 }
 
 pub(super) fn clear_color(scene_visible: bool, overview_active: bool) -> wgpu::Color {
