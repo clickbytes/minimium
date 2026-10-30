@@ -21,17 +21,17 @@ Platform: Windows `x86_64-pc-windows-msvc`, Rust 1.99.0, Intel Core i5-12600K (1
 
 ## Server load scenarios
 
-The unchanged `docs/scenarios/*.toml` commands launched `target/debug/minimium-server.exe` and `target/debug/minimium-loadtest.exe` on 2026-10-30 at code SHA `c2d83c2` (after #142, before the shader-only #143). Each run lasted 60 seconds and used the scenario's exact address, player count, thread mode, generator flags, and data directory. The server was stopped through `minimiumctl`. Raw JSON, server logs and metrics remain local under `.minimium-loadtest/<scenario>/`; they are intentionally untracked. The values below come from `report.json` (for clustered 2: `report2.json`) and post-run `metrics.txt`.
+The unchanged `docs/scenarios/*.toml` commands launched `target/debug/minimium-server.exe` and `target/debug/minimium-loadtest.exe` on 2026-10-30. Both binaries were built at code SHA `c2d83c2` (after #142, before the shader-only #143); the later dispersed reruns used those same binaries. Each run lasted 60 seconds and used the scenario's exact address, player count, thread mode, generator flags, and data directory. The server was stopped through `minimiumctl`. Raw JSON, server logs and metrics remain local under `.minimium-loadtest/<scenario>/`; they are intentionally untracked. The accepted values below come from `report.json` for clustered 100/500 and `report2.json` for clustered 2 and all dispersed runs, plus matching post-run `metrics.txt` or `metrics2.txt`.
 
 | Scenario (`docs/scenarios/`) | Clients | Client errors / timeouts / disconnects | RTT p95 / p99 (ms) | Server missed ticks / dropped messages | Server simulation / snapshot p99 (µs) | Result |
 |---|---:|---:|---:|---:|---:|---|
 | `clustered-2-lanes-1.toml` | 2/2 | 0 / 0 / 0 | 20 / 20 | 0 / 0 | 250 / 50 | PASS; embedded server samples present |
 | `clustered-100-lanes-1.toml` | 100/100 | 0 / 0 / 0 | 20 / 20 | 0 / 0 | 2500 / 50000 | PASS; embedded server samples present |
 | `clustered-500-lanes-1.toml` | 500/500 | 0 / 0 / 0 | 100 / 100 | 0 / 0 | 50000 / 65582 | PASS for completion; latency and server tail cost recorded, not asserted against an unstated target |
-| `dispersed-2-lanes-auto.toml` | 2/2 | 0 / 0 / 0 | 20 / 20 | 0 / 0 | 1000 / 250 | PARTIAL; generator server samples unavailable |
-| `dispersed-100-lanes-auto.toml` | 100/100 | 0 / 0 / 0 | 20 / 20 | 0 / 0 | 50000 / 2500 | PARTIAL; generator server samples unavailable |
-| `dispersed-500-lanes-auto.toml` | 500/500 | 0 / 0 / 0 | 50 / 50 | 0 / 0 | 50000 / 50000 | PARTIAL; generator server samples unavailable |
+| `dispersed-2-lanes-auto.toml` | 2/2 | 0 / 0 / 0 | 20 / 20 | 0 / 0 | 500 / 100 | PASS; embedded server samples present on rerun |
+| `dispersed-100-lanes-auto.toml` | 100/100 | 0 / 0 / 0 | 20 / 20 | 0 / 0 | 50000 / 2500 | PASS; embedded server samples present on rerun |
+| `dispersed-500-lanes-auto.toml` | 500/500 | 0 / 0 / 0 | 50 / 50 | 0 / 0 | 50000 / 50000 | PASS; embedded server samples present on rerun |
 
-For all dispersed runs, loadtest logged `server sample before unavailable: address match or endpoint continuity could not be verified`; the client measurement still exited 0, and the separately captured `minimiumctl metrics show` produced the server values above. Endpoint identity continuity within the generator report is therefore unverified. No comparison to a pre-E005 performance baseline is claimed.
+The initial dispersed `report.json` runs exited 0 but logged `server sample before unavailable: address match or endpoint continuity could not be verified`. A direct endpoint probe showed the address and token were consistent once the admin endpoint was ready. We repeated all three runs with `minimiumctl status` readiness checked before launching the unchanged generator command. The accepted `report2.json` files contain before, measurement-start and after server samples. The earlier incomplete reports are retained locally as evidence. No comparison to a pre-E005 performance baseline is claimed.
 
 The two portal failures were caused by test fixture assumptions and are repaired within the E005-19 allowed test file. Their initial FAIL and the `main` comparison remain recorded above. PR #121 stays draft until all required verification gates are resolved. No baseline performance claim is inferred from the available unit tests.
