@@ -32,7 +32,7 @@ Nie tworzymy 500 encji, świateł ani okresowych wiadomości z pozycjami gwiazd.
 | --- | --- |
 | UTC | `WorldTimeMs(i64)`, POSIX ms, `946684800000 <= t < 4133980800000`. |
 | Daty | Od 2000-01-01T00:00:00Z do końca 2100; 2101-01-01 wyłączone. |
-| Skala | `TimeScalePpm(u32)`, 0..=1 440 000 000; 1×=1 000 000. |
+| Skala | `TimeScalePpm(u64)`, 0..=1 000 000 000 000; 1×=1 000 000. Komendy i nowa konfiguracja dopuszczają 0 lub 0,1..1 000 000×. Niższe dawne wartości pozostają odczytywalne z v8. |
 | ClockId | Niezerowy u64; obecnie jedynie 1 dla wszystkich instancji. |
 | Revision | Niezerowy u64; rośnie przy przyjętej mutacji/korekcie, nie przy odczycie lub heartbeat. |
 | Tryb | `RealTime=0`, `TimeScale=1`. |
@@ -114,46 +114,46 @@ status synchronizacji oraz liczniki zaakceptowanych/odrzuconych probe'ów.
 Serwerowe `status` i `metrics show` udostępniają łączne liczniki żądań,
 odpowiedzi przyjętych/odrzuconych i wysłanych `EnvironmentSync`.
 
-## 4. Zapis v8
+## 4. Zapis v9 (v8 nadal odczytywany)
 
 Jeden rekord CLOCK po WORLD, przed SECTOR/graczami, w tym samym atomowym snapshotcie:
 
-    CLOCK\t1\t<revision:u64>\t<mode:u8>\t<world_utc_ms:i64>\t<saved_wall_utc_ms:i64>\t<rate_ppm:u32>\t<offline_policy:u8>
+    CLOCK\t1\t<revision:u64>\t<mode:u8>\t<world_utc_ms:i64>\t<saved_wall_utc_ms:i64>\t<rate_ppm:u64>\t<offline_policy:u8>
 
 Sekwencja `\t` powyżej opisuje rzeczywisty separator tabulacji.
-V8 wymaga dokładnie jednego poprawnego rekordu; brak/duplikat/zła kolejność lub zakres są błędem.
+V8/V9 wymagają dokładnie jednego poprawnego rekordu; brak/duplikat/zła kolejność lub zakres są błędem.
 Limit całego snapshotu pozostaje 16 MiB. Worker serializuje próbkę pobraną na wątku właściciela stanu;
 nie odczytuje zegara ponownie po oczekiwaniu w kolejce.
 
 | Przypadek | Odtworzenie |
 | --- | --- |
 | V2–v7 | Dotychczasowe reguły migracji + nowy RealTime bieżącego UTC, revision 1. |
-| V8 RealTime | Aktualne UTC; zachowany numer revision, nowy nonce i kotwica monotoniczna. |
-| V8 TimeScale/Pause | Dokładnie data snapshotu i zapisana skala. |
-| V8 TimeScale/Advance | Data snapshotu + max(0, teraz_wall − zapis_wall) × skala. |
+| V8/V9 RealTime | Aktualne UTC; zachowany numer revision, nowy nonce i kotwica monotoniczna. |
+| V8/V9 TimeScale/Pause | Dokładnie data snapshotu i zapisana skala. |
+| V8/V9 TimeScale/Advance | Data snapshotu + max(0, teraz_wall − zapis_wall) × skala. |
 
 Cofnięty wallclock daje zerowy przyrost offline i jawne ostrzeżenie.
 Zakres/overflow przy odtworzeniu blokuje start, pozostawiając poprzedni plik.
 Migracja nie usuwa danych graczy/sektorów, nie zmienia generatora ani promienia i nie nadpisuje save przy samym odczycie.
 
-## 5. Protokół v12
+## 5. Protokół v13
 
-Nagłówek 4 B, payload maks. 4096 B, jawne little-endian; v11/v12 są niekompatybilne.
+Nagłówek 4 B, payload maks. 4096 B, jawne little-endian; v12/v13 są niekompatybilne.
 ClockSample i EnvironmentDescriptor są dopisywane na końcu Welcome, TransitionPrepare i TransitionCommitted.
 
 | Element | Pola / payload |
 | --- | --- |
-| ClockSample, 54 B | clock_id:u64, revision:u64, nonce[16], server_monotonic_ms:u64, world_utc_ms:i64, mode:u8, rate_ppm:u32, offline_policy:u8. |
+| ClockSample, 58 B | clock_id:u64, revision:u64, nonce[16], server_monotonic_ms:u64, world_utc_ms:i64, mode:u8, rate_ppm:u64, offline_policy:u8. |
 | Descriptor, 49 B | clock_id:u64, profile:u8, astronomy_model_revision:u32, catalogue_id:u32, catalogue_sha256[32]. |
-| Suffix, 103 B | ClockSample + Descriptor. |
+| Suffix, 107 B | ClockSample + Descriptor. |
 | TimeProbe 0x0c, 12 B | seq:u32, t1:u64. |
 | TimeProbeReply 0x8f, 44 B | seq:u32, echo_t1:u64, t2:u64, t3:u64, nonce[16]. |
-| EnvironmentSync 0x8e, 135 B | WorldContext 32 B + ClockSample + Descriptor. |
+| EnvironmentSync 0x8e, 139 B | WorldContext 32 B + ClockSample + Descriptor. |
 
 Kody i wersje są wolne w bazie; równoległa kolizja wymaga aktualizacji kontraktu przed implementacją.
 Nie zmieniać semantyki Ping/Pong ani Snapshot.server_time_ms (uptime).
 Przeliczyć maksymalne rozmiary/prealokacje dla wszystkich wariantów.
-Desktop, terminal i loadtest są obowiązkowymi konsumentami v12.
+Desktop, terminal i loadtest są obowiązkowymi konsumentami v13.
 
 Nie wysyłać środowiska przed Welcome. Okresowy sync co 5 realnych sekund; mutacja wysyła najnowszy stan
 w najbliższym outbound, z konsolidacją kolejki. Próbka przy commit jest świeża, nie zachowana z prepare.

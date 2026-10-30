@@ -5,7 +5,7 @@ pub(super) struct EstimateKey {
     revision: u64,
     anchor_monotonic_ms: u64,
     anchor_world_utc_ms: i64,
-    rate_ppm: u32,
+    rate_ppm: u64,
     mode: u8,
     offline_policy: u8,
     offset_twice_ms: Option<i128>,

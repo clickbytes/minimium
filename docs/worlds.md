@@ -141,7 +141,7 @@ use the same clock evaluation and astronomical model. Physics, cooldowns and
 network deadlines continue on real time. Interior instances retain the shared
 clock identity even when their profile does not render the planetary sky.
 
-The protocol v12 client estimator uses one local monotonic epoch per
+The protocol v13 client estimator uses one local monotonic epoch per
 `ClientSession` and exposes one immutable `EnvironmentFrameInput` after polling
 and portal installation. Its date, active descriptor, context, clock revision,
 rate and synchronization quality are shared by renderer environment consumers.
@@ -161,19 +161,19 @@ digest, then waits for target sector data, collision and GPU buffers before
 acknowledging readiness. It switches its active sector scene and input state
 without recreating the window, GPU device or TCP session.
 
-Protocol v12 wraps gameplay inputs and snapshots in instance, content revision and
+Protocol v13 wraps gameplay inputs and snapshots in instance, content revision and
 membership epoch. Inputs and snapshots from an older membership context are
-discarded. Save v8 records every loaded world's manifest and map fingerprint,
+discarded. Save v9 records every loaded world's manifest and map fingerprint,
 each player's instance, millimeter position, orientation, health and return
 location, revisioned sector state, and the shared world clock. v2/v3 snapshots
 are attached only to a loaded legacy map with a matching fingerprint; they are
 never guessed onto the procedural planet. The intermediate v4 format is accepted
 only for locations in the primary instance, because it did not pin manifests for
 target worlds. Every valid v2–v7 snapshot remains readable and starts a RealTime
-clock at current UTC; its data is rewritten as v8 only when the next snapshot
+clock at current UTC; its data is rewritten as v9 only when the next snapshot
 completes.
 
-The v8 `CLOCK` record is stored after `WORLD` records and before sector or player
+The v8/v9 `CLOCK` record is stored after `WORLD` records and before sector or player
 records in the same atomic snapshot. RealTime uses the current UTC after restart.
 TimeScale/Pause resumes `saved_world_utc_ms`; TimeScale/Advance adds
 `floor(max(0, current_wall_utc_ms - saved_wall_utc_ms) * rate_ppm / 1_000_000)`
@@ -198,7 +198,7 @@ buffers before the client acknowledges. The client retains source maps in CPU
 memory so it can create deterministic sectors locally. An existing v1 demo
 snapshot is loaded with its original generator, copied to
 `world.snapshot.legacy-v1`, and rewritten with positions projected along their
-saved radial directions. Save v8 stores complete,
+saved radial directions. Save v9 stores complete,
 revisioned logical object-state sets by sector; the server registry checks
 topology, revision order and size limits when committing or restoring them. The
 demo currently has no interaction that changes sector objects. Geometry edits

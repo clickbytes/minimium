@@ -35,7 +35,7 @@ use std::{
     sync::Arc,
 };
 
-pub(crate) const SAVE_VERSION: u8 = 8;
+pub(crate) const SAVE_VERSION: u8 = 9;
 pub(super) const MAX_STORED_PLAYERS: usize = 100_000;
 const MAX_WORLD_SNAPSHOT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_SAVED_COORDINATE: f32 = 7_000_000.0;
@@ -72,7 +72,7 @@ pub(super) fn load(
     if version == Some("1") {
         return Err(invalid_world_snapshot("snapshot version 1 has no client profile IDs; back up or remove the old snapshot before starting"));
     }
-    if !matches!(version, Some("2" | "3" | "4" | "5" | "6" | "7" | "8")) {
+    if !matches!(version, Some("2" | "3" | "4" | "5" | "6" | "7" | "8" | "9")) {
         return Err(invalid_world_snapshot("unsupported snapshot version"));
     }
     let source_version = version
@@ -87,7 +87,7 @@ pub(super) fn load(
             )
         })?;
     match version {
-        Some("4" | "5" | "6" | "7" | "8") => {
+        Some("4" | "5" | "6" | "7" | "8" | "9") => {
             let saved_manifest = parse_manifest(&mut header_fields)?;
             let Some((_, primary_map, primary_manifest)) = worlds.first() else {
                 return Err(invalid_world_snapshot("no primary world is loaded"));
@@ -110,7 +110,7 @@ pub(super) fn load(
 
     let mut store = PlayerStore::default();
     let mut saved_world_instances = HashSet::new();
-    if matches!(version, Some("5" | "6" | "7" | "8")) {
+    if matches!(version, Some("5" | "6" | "7" | "8" | "9")) {
         let (primary_instance, _, _) = worlds
             .first()
             .ok_or_else(|| invalid_world_snapshot("no primary world is loaded"))?;
@@ -125,7 +125,7 @@ pub(super) fn load(
     let mut lines = lines.peekable();
     while let Some(line) = lines.next() {
         if line == "CLOCK" || line.starts_with("CLOCK\t") {
-            if source_version != 8 {
+            if source_version < 8 {
                 return Err(invalid_world_snapshot(
                     "CLOCK record is not allowed in a legacy snapshot",
                 ));
@@ -138,10 +138,10 @@ pub(super) fn load(
                     "CLOCK record appears after state records",
                 ));
             }
-            saved_clock = Some(parse_saved_clock(line)?);
+            saved_clock = Some(parse_saved_clock(line, source_version)?);
             continue;
         }
-        if matches!(version, Some("5" | "6" | "7" | "8")) && line.starts_with("WORLD\t") {
+        if matches!(version, Some("5" | "6" | "7" | "8" | "9")) && line.starts_with("WORLD\t") {
             if player_records_started || sector_records_started || saved_clock.is_some() {
                 return Err(invalid_world_snapshot(
                     "world manifest appears after clock or state records",
@@ -154,16 +154,14 @@ pub(super) fn load(
             }
             continue;
         }
-        if matches!(version, Some("6" | "7" | "8")) && line.starts_with("SECTOR\t") {
+        if matches!(version, Some("6" | "7" | "8" | "9")) && line.starts_with("SECTOR\t") {
             if player_records_started {
                 return Err(invalid_world_snapshot(
                     "sector state appears after player records",
                 ));
             }
-            if source_version == 8 && saved_clock.is_none() {
-                return Err(invalid_world_snapshot(
-                    "missing CLOCK record in v8 snapshot",
-                ));
+            if source_version >= 8 && saved_clock.is_none() {
+                return Err(invalid_world_snapshot("missing CLOCK record in snapshot"));
             }
             sector_records_started = true;
             let (instance, state) = parse_saved_sector(line, &mut lines)?;
@@ -216,10 +214,8 @@ pub(super) fn load(
             store.sector_states.push((instance, state));
             continue;
         }
-        if source_version == 8 && saved_clock.is_none() {
-            return Err(invalid_world_snapshot(
-                "missing CLOCK record in v8 snapshot",
-            ));
+        if source_version >= 8 && saved_clock.is_none() {
+            return Err(invalid_world_snapshot("missing CLOCK record in snapshot"));
         }
         player_records_started = true;
         if store.profile_by_player.len() >= MAX_STORED_PLAYERS {
@@ -239,7 +235,7 @@ pub(super) fn load(
         let name = StoredName::new(name)
             .ok_or_else(|| invalid_world_snapshot("invalid saved player name"))?;
         let (location, return_location, health) =
-            if matches!(version, Some("4" | "5" | "6" | "7" | "8")) {
+            if matches!(version, Some("4" | "5" | "6" | "7" | "8" | "9")) {
                 let location = parse_location(&mut fields)?;
                 let health = parse_saved_health(fields.next())?;
                 let return_location = parse_location(&mut fields)?;
@@ -271,7 +267,7 @@ pub(super) fn load(
                 ));
             }
         }
-        if matches!(version, Some("5" | "6" | "7" | "8"))
+        if matches!(version, Some("5" | "6" | "7" | "8" | "9"))
             && (!saved_world_instances.contains(&location.instance())
                 || !saved_world_instances.contains(&return_location.instance()))
         {
@@ -319,10 +315,8 @@ pub(super) fn load(
             return Err(invalid_world_snapshot("duplicate saved player identity"));
         }
     }
-    if source_version == 8 && saved_clock.is_none() {
-        return Err(invalid_world_snapshot(
-            "missing CLOCK record in v8 snapshot",
-        ));
+    if source_version >= 8 && saved_clock.is_none() {
+        return Err(invalid_world_snapshot("missing CLOCK record in snapshot"));
     }
     Ok(LoadedState::from_snapshot(
         store,

@@ -101,9 +101,9 @@ Zgodnie z [AGENTS.md](https://github.com/clickbytes/minimium/blob/aad2c8298606a4
 
 | ID | Przypadek i spodziewany wynik |
 | --- | --- |
-| V01 | CoreClock: 0/1/60/240/1440x, zmiany skali, set date, RealTime vs TimeScale1, granice dat, overflow i niepoprawne ppm; brak zależności od liczby ticków. |
+| V01 | CoreClock: 0/0.1/1/60/240/1440/1000000x, zmiany skali, set date, RealTime vs TimeScale1, granice dat, overflow i niepoprawne ppm; brak zależności od liczby ticków. |
 | V02 | Server: pominięte ticki i długie przerwy, brak graczy, korekty SystemTime w obie strony; fizyka/cooldown/timeout/autosave nie otrzymują skali. |
-| V03 | Wire: round-trip wszystkich nowych ramek, maksymalne długości i ucięcie, niewłaściwe tagi/nonce/id/revision/context, wersja11↔12, rate limit; v12 obsługuje wszystkie aplikacje. |
+| V03 | Wire: round-trip wszystkich nowych ramek, maksymalne długości i ucięcie, niewłaściwe tagi/nonce/id/revision/context, wersja12↔13, rate limit; v13 obsługuje wszystkie aplikacje. |
 | V04 | Dwa klienty z innym zegarem systemowym: ta sama próbka świata i niezależna lokalizacja; 4-probe bootstrap, pojedyncze inflight i okres 5 s, brak nieograniczonego ruchu. |
 | V05 | Kontrolowane symetryczne RTT 0/50/200ms i jitter; po stabilizacji (8 ważnych próbek) oszacowanie monotonicznego offsetu w granicy max(10ms, połowa mierzonego jitteru). Test asymetrii raportuje niepewność, nie udaje gwarancji niemożliwej bez zewnętrznej synchronizacji. |
 | V06 | Reconnect i restart server nonce, spóźnione odpowiedzi, stary context/revision; nie wraca stara data ani opis świata. |
@@ -112,7 +112,7 @@ Zgodnie z [AGENTS.md](https://github.com/clickbytes/minimium/blob/aad2c8298606a4
 | V09 | Migracja wszystkich aktualnie obsługiwanych save v2–v7 z zachowaniem ich własnych reguł fingerprint/manifest; dane niezgodne nadal odrzucone, brak resetu danych przy błędzie. |
 | V10 | Atomowość: błąd zapisu, za duży snapshot, nieznane pola/duplikaty zegara; poprzedni poprawny zapis pozostaje dostępny. |
 | V11 | Astronomia: miejsca i daty z referencji, obu półkul, precesja/ruch własny, granica±180°, bieguny/zenit; geometryczna i pozorna pozycja rozróżnione. |
-| V12 | Interpolacja: porównanie direct backend vs cache przy skali0..1440 i skoku lat; błąd interpolacji kierunku <=0.001° względem bezpośredniego backendu, lokalne obroty co klatkę, brak odtwarzania pominiętych przedziałów. |
+| V12 | Interpolacja: porównanie direct backend vs cache przy skali0..1000000 i skoku lat; błąd interpolacji kierunku <=0.001° względem bezpośredniego backendu, lokalne obroty co klatkę, brak odtwarzania pominiętych przedziałów. |
 | V13 | Niebo: wschód/zachód we właściwym kierunku, zmierzchy i polar day/night, brak sztucznej zmiany o stałej godzinie; globus i FPP mają zgodny kierunek dnia. |
 | V14 | Gwiazdy: low i standard mają te same 500 ID/kierunki; jeden batch; horyzont/teren zasłania; brak punktów przez planetę i ciemną tarczę Księżyca. |
 | V15 | Księżyc: rzeczywiste pełnia/nów/kwadry/sierpy, orientacja obu półkul, widoczność w dzień, angular size, brak czarnego wycięcia w jasnym niebie. |

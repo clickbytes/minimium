@@ -33,7 +33,7 @@ derived inward-facing normals. E004-09 corrected those normals.
   pauses the environment. `TimeScale` at 1x does not mean current UTC.
 - Supported world time is POSIX UTC milliseconds in the half-open range
   `[2000-01-01T00:00:00Z, 2101-01-01T00:00:00Z)`. Scales use parts per million:
-  1x is 1,000,000 and the maximum 1440x is 1,440,000,000. Arithmetic is checked
+  1x is 1,000,000 and the maximum 1,000,000x is 1,000,000,000,000. Arithmetic is checked
   in `i128`; absolute dates are not sent to GPU as `f32`.
 - Rate changes and switches into `TimeScale` establish a new anchor at the
   currently evaluated world time. Setting a date is explicit. Switching into
@@ -123,13 +123,14 @@ astronomical state to sky, terrain, water and globe shading.
 
 ### Versioning and persistence
 
-- The integrated implementation uses protocol v12 and save v8, delivered by
-  E004-04 and E004-03 respectively. Protocol v11 peers are rejected.
-- Save v8 stores a clock anchor and offline policy without process nonce or
+- E004-04 and E004-03 delivered protocol v12 and save v8. The current
+  implementation uses protocol v13 and save v9 for the wider time scale;
+  protocol v12 peers are rejected.
+- Save v9 stores a clock anchor and offline policy without process nonce or
   monotonic timestamp. Migration preserves all existing player, manifest and
   sector data; malformed or mismatched snapshots fail without clearing user
   data.
-- Protocol v12 carries clock identity/revision, session nonce, sample UTC and
+- Protocol v13 carries clock identity/revision, session nonce, sample UTC and
   matching monotonic time plus environment/catalogue identifiers. State is sent
   on join and world transfer, and on change and periodic synchronization.
 - Clock changes never alter map fingerprints, seeds, generator revisions,
@@ -165,7 +166,7 @@ of scope.
 
 ## Consequences and risks
 
-- Requires checked time conversions, protocol v12 and save v8 migrations.
+- Requires checked time conversions, protocol v13 and save v9 migrations.
 - Windows target `x86_64-pc-windows-msvc` compiled and linked the pinned C
   backend in E004-07 (PR #77), including a workspace release build. The earlier
   E004-00 shell PATH did not expose `cl.exe`; that historical observation is not

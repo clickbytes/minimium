@@ -6,7 +6,7 @@ const MAX_SMOOTHING_EPISODE_MS: u64 = 30_000;
 
 pub(super) struct SmoothInput {
     pub(super) raw_world_ms: f64,
-    pub(super) rate_ppm: u32,
+    pub(super) rate_ppm: u64,
     pub(super) revision: u64,
     pub(super) changed: bool,
     pub(super) is_new_revision: bool,
@@ -27,7 +27,7 @@ impl ClientClock {
             now_ms,
             dt_s,
         } = input;
-        let rate = f64::from(rate_ppm) / 1_000_000.0;
+        let rate = rate_ppm as f64 / 1_000_000.0;
         if is_new_revision || self.previous_revision.is_none() {
             self.smoothing_bias_ms = 0.0;
             self.smoothing_started_at_ms = None;

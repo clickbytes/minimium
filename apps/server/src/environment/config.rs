@@ -32,7 +32,7 @@ struct EnvironmentConfigFile {
     #[serde(default)]
     initial_utc: Option<String>,
     #[serde(default = "default_scale_ppm")]
-    scale_ppm: u32,
+    scale_ppm: u64,
     #[serde(default)]
     offline_policy: ConfigOfflinePolicy,
 }
@@ -79,6 +79,12 @@ pub(crate) fn load(path: &Path) -> io::Result<EnvironmentConfig> {
             format!("environment config: {error}"),
         )
     })?;
+    if raw.scale_ppm != 0 && raw.scale_ppm < 100_000 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "environment config scale_ppm must be 0 or at least 100000 (0.1x)",
+        ));
+    }
     let initial_utc = raw
         .initial_utc
         .as_deref()
@@ -113,6 +119,6 @@ pub(crate) fn load(path: &Path) -> io::Result<EnvironmentConfig> {
     })
 }
 
-const fn default_scale_ppm() -> u32 {
+const fn default_scale_ppm() -> u64 {
     1_000_000
 }

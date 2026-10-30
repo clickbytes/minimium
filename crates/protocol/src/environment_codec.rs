@@ -7,7 +7,7 @@ use minimium_core::{
     },
 };
 
-pub(crate) const CLOCK_SAMPLE_BYTES: usize = 54;
+pub(crate) const CLOCK_SAMPLE_BYTES: usize = 58;
 pub(crate) const ENVIRONMENT_DESCRIPTOR_BYTES: usize = 49;
 pub(crate) const ENVIRONMENT_SUFFIX_BYTES: usize =
     CLOCK_SAMPLE_BYTES + ENVIRONMENT_DESCRIPTOR_BYTES;
@@ -50,7 +50,7 @@ pub(crate) fn read_pair(
     let world_time =
         WorldTimeMs::try_from(reader.i64()?).map_err(|_| ProtocolError::InvalidPayload)?;
     let mode = ClockMode::try_from(reader.byte()?).map_err(|_| ProtocolError::InvalidPayload)?;
-    let rate = TimeScalePpm::try_from(reader.u32()?).map_err(|_| ProtocolError::InvalidPayload)?;
+    let rate = TimeScalePpm::try_from(reader.u64()?).map_err(|_| ProtocolError::InvalidPayload)?;
     let offline =
         OfflinePolicy::try_from(reader.byte()?).map_err(|_| ProtocolError::InvalidPayload)?;
     let sample = ClockSample::new(

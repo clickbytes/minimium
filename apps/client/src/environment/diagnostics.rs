@@ -92,7 +92,7 @@ pub(crate) fn clock_status_line(
     quality: SynchronizationQuality,
     revision: Option<u64>,
     utc_ms: Option<i64>,
-    rate_ppm: Option<u32>,
+    rate_ppm: Option<u64>,
 ) -> String {
     let clock = clock.unwrap_or_else(|| ClockDiagnostics::unavailable(ClockSource::Server));
     format!(

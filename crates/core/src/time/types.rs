@@ -2,14 +2,14 @@ use std::fmt;
 
 pub const MIN_WORLD_TIME_MS: i64 = 946_684_800_000;
 pub const MAX_WORLD_TIME_MS_EXCLUSIVE: i64 = 4_133_980_800_000;
-pub const ONE_X_PPM: u32 = 1_000_000;
-pub const MAX_TIME_SCALE_PPM: u32 = 1_440_000_000;
+pub const ONE_X_PPM: u64 = 1_000_000;
+pub const MAX_TIME_SCALE_PPM: u64 = 1_000_000_000_000;
 pub const SESSION_NONCE_BYTES: usize = 16;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TimeError {
     OutOfSupportedRange(i128),
-    InvalidScale(u32),
+    InvalidScale(u64),
     InvalidMode(u8),
     InvalidPolicy(u8),
     UnsupportedClockId(u64),
@@ -173,14 +173,14 @@ impl SessionNonce {
 
 /// A nonnegative multiplier in parts per million; zero pauses the world clock.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct TimeScalePpm(u32);
+pub struct TimeScalePpm(u64);
 
 impl TimeScalePpm {
     pub const PAUSED: Self = Self(0);
     pub const ONE_X: Self = Self(ONE_X_PPM);
     pub const MAX: Self = Self(MAX_TIME_SCALE_PPM);
 
-    pub const fn new(value: u32) -> Result<Self, TimeError> {
+    pub const fn new(value: u64) -> Result<Self, TimeError> {
         if value > MAX_TIME_SCALE_PPM {
             Err(TimeError::InvalidScale(value))
         } else {
@@ -188,15 +188,15 @@ impl TimeScalePpm {
         }
     }
 
-    pub const fn get(self) -> u32 {
+    pub const fn get(self) -> u64 {
         self.0
     }
 }
 
-impl TryFrom<u32> for TimeScalePpm {
+impl TryFrom<u64> for TimeScalePpm {
     type Error = TimeError;
 
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
         Self::new(value)
     }
 }
