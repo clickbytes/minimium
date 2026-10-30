@@ -34,6 +34,15 @@ pub(super) fn sun() -> String {
     ])
 }
 
+pub(super) fn stars() -> String {
+    combine(&[
+        include_str!("frame.wgsl"),
+        include_str!("output_color.wgsl"),
+        include_str!("sky_common.wgsl"),
+        include_str!("stars.wgsl"),
+    ])
+}
+
 pub(super) fn marker() -> String {
     combine(&[
         include_str!("frame.wgsl"),

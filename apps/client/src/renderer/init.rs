@@ -76,7 +76,13 @@ impl Renderer {
         let mut console = Console::new();
         console.push_line("F1 opens the command console. Type help for commands.");
         console.push_line("M toggles the world overview.");
-        let sky_catalogue = environment::stars::StarCatalogueAdapter::load_embedded().ok();
+        let sky_catalogue = match environment::stars::StarCatalogueAdapter::load_embedded() {
+            Ok(catalogue) => Some(catalogue),
+            Err(error) => {
+                console.push_error(format!("Embedded star catalog unavailable: {error}"));
+                None
+            }
+        };
         let fingerprints = world_catalog
             .iter()
             .map(|(instance, map)| (*instance, map.fingerprint()))

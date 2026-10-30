@@ -171,6 +171,8 @@ impl GpuResources {
             &frame_bindings.layout,
             scene_color_format,
         );
+        let stars =
+            super::stars_gpu::StarGpu::new(&device, &frame_bindings.layout, scene_color_format);
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("minimium-basic-3d-shader"),
             source: wgpu::ShaderSource::Wgsl(Cow::Owned(super::shader_source::world())),
@@ -230,6 +232,7 @@ impl GpuResources {
             + vertex_buffer.size()
             + player_buffer.size()
             + ui_vertex_buffer.size()
+            + stars.buffer.size()
             + output_encoder
                 .as_ref()
                 .map_or(0, |output| output.size_bytes())
@@ -242,6 +245,7 @@ impl GpuResources {
             scene_color_format,
             pipeline,
             environment_pipelines,
+            stars,
             ui_pipeline,
             ui_bind_group,
             ui_vertex_buffer,

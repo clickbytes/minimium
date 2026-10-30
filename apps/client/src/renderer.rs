@@ -51,6 +51,7 @@ mod session;
 mod shader_source;
 mod sky;
 mod sky_gpu;
+mod stars_gpu;
 mod window;
 
 use environment::{EnvironmentFrame, RenderViewFrame, RenderViewInput};
@@ -78,6 +79,7 @@ struct GpuResources {
     scene_color_format: wgpu::TextureFormat,
     pipeline: wgpu::RenderPipeline,
     environment_pipelines: sky_gpu::EnvironmentPipelines,
+    stars: stars_gpu::StarGpu,
     ui_pipeline: wgpu::RenderPipeline,
     ui_bind_group: wgpu::BindGroup,
     ui_vertex_buffer: wgpu::Buffer,
