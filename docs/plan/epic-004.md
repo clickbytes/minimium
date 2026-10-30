@@ -48,7 +48,7 @@ Pomniejszony glob i relief zmieniają widoczny horyzont; pozycje astronomiczne i
 
 Każde poniższe issue ma własny cel, konkretne istniejące i nowe pliki, kontrakty, kolejność zmian, walidację i błędy, przypadki brzegowe, kryteria odbioru, wyłączenia zakresu oraz sposób dostarczenia PR. Zależności odnoszą się do zakończonej integracji blokera w branchu epica.
 
-- [ ] #52 — **E004-00**: Zamrożenie kontraktów czasu i nieba, ADR oraz baseline integracji
+- [x] #52 — **E004-00**: Zamrożenie kontraktów czasu i nieba, ADR oraz baseline integracji
 - [ ] #53 — **E004-01**: Wprowadzić czyste typy czasu świata i kontrakt środowiska w minimium-core
 - [ ] #54 — **E004-02**: Uruchomić autorytatywny zegar serwera i parametryczne polecenia administracyjne czasu
 - [ ] #55 — **E004-03**: Zapisywać zegar świata w save v8 i zachować dane podczas migracji oraz restartu
@@ -71,7 +71,7 @@ Każde poniższe issue ma własny cel, konkretne istniejące i nowe pliki, kontr
 
 | Zadanie | Blokery przed rozpoczęciem | Status implementacji |
 | --- | --- | --- |
-| [E004-00 / #52](https://github.com/clickbytes/minimium/issues/52) | brak | PLANNED |
+| [E004-00 / #52](https://github.com/clickbytes/minimium/issues/52) | brak | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#71](https://github.com/clickbytes/minimium/pull/71), merge `12f84a7`) |
 | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53) | [E004-00 / #52](https://github.com/clickbytes/minimium/issues/52) | PLANNED |
 | [E004-02 / #54](https://github.com/clickbytes/minimium/issues/54) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53) | PLANNED |
 | [E004-03 / #55](https://github.com/clickbytes/minimium/issues/55) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53), [E004-02 / #54](https://github.com/clickbytes/minimium/issues/54) | PLANNED |
@@ -121,7 +121,8 @@ Branch integracyjny: `epic/004-realistic-sky-time`. Każdy task ma osobny branch
 
 ## Stan przygotowania
 
-E004-00 zatwierdza [ADR 0006](../adr/0006-world-time-and-sky.md), wspólne kontrakty
-i baseline w [rejestrze weryfikacji](epic-004-verification.md). Wykonano formatowanie
+E004-00 / #52 zostało scalone przez PR [#71](https://github.com/clickbytes/minimium/pull/71)
+do gałęzi integracyjnej (`12f84a7`). Zatwierdza [ADR 0006](../adr/0006-world-time-and-sky.md),
+wspólne kontrakty i baseline w [rejestrze weryfikacji](epic-004-verification.md). Wykonano formatowanie
 kontrolne, kompilację workspace, Clippy i kontrole statyczne bez testów i uruchamiania
 aplikacji. Implementacja funkcji E004-01..14 pozostaje PLANNED; wyniki runtime są NOT RUN.
