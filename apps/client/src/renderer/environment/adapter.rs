@@ -59,7 +59,7 @@ pub(super) fn from_sky_state(
         return Err(EnvironmentFrameError::ObserverMismatch);
     }
     if !render_view.is_finite()
-        || !valid_settings(settings)
+        || settings.validate().is_err()
         || !valid_body(sky.sun)
         || !valid_body(sky.moon.body)
         || !sky.moon.illuminated_fraction.is_finite()
@@ -99,7 +99,7 @@ pub(super) fn from_sky_state(
         super::super::lighting::evaluate_clear_sky_parameters(sky, &observer, &settings);
     let disk_sun = super::body_frame(
         sky.sun,
-        settings.local_sun_rgb,
+        settings.sunlight.local_rgb,
         clear_sky.direct_sun_factor,
         sun_visible,
     );
@@ -110,12 +110,12 @@ pub(super) fn from_sky_state(
         sky.moon.body.apparent_altitude_rad,
         sky.moon.body.angular_radius_rad,
         observer.geographic.height_m(),
-        settings.moon_full_phase_strength,
+        settings.moonlight.full_phase_strength,
     )
     .ok_or(EnvironmentFrameError::SkyStateInvalid)?;
     let disk_moon = super::body_frame(
         sky.moon.body,
-        settings.local_moon_rgb,
+        settings.moonlight.local_rgb,
         moon_scale,
         moon_visible,
     );
@@ -133,11 +133,11 @@ pub(super) fn from_sky_state(
     .ok_or(EnvironmentFrameError::SkyStateInvalid)?;
     let global_sun = GlobalSunFrame {
         direction_world: sky.geocentric_sun_direction_world,
-        linear_rgb: settings.global_sun_rgb,
-        strength: settings.global_sun_strength,
+        linear_rgb: settings.sunlight.global_rgb,
+        strength: settings.sunlight.global_strength,
     };
     let (observed_bodies, halo_sources, halo_count, moon_orbit_world) =
-        super::halo::prepare_halos(sky, render_view, disk_sun, disk_moon, moon_to_sun)?;
+        super::halo::prepare_halos(sky, render_view, disk_sun, disk_moon, moon_to_sun, settings)?;
     let environment_uniform = EnvironmentUniform {
         sun_geometric_world: direction_altitude(
             sky.sun.geometric_direction_world,
@@ -168,8 +168,9 @@ pub(super) fn from_sky_state(
         global_sun_direction: direction_zero(sky.geocentric_sun_direction_world)?,
         global_sun_rgb: color_zero(
             settings
-                .global_sun_rgb
-                .map(|channel| channel * settings.global_sun_strength),
+                .sunlight
+                .global_rgb
+                .map(|channel| channel * settings.sunlight.global_strength),
         )?,
         ambient_rgb_exposure: color_exposure(clear_sky.ambient_rgb, clear_sky.exposure)?,
         sky_zenith_rgb_sun_altitude: color_altitude(
@@ -253,7 +254,7 @@ pub(super) fn interior(
         status: EnvironmentFrameStatus::Interior,
         camera_uniform: camera_uniform(render_view),
         environment_uniform: EnvironmentUniform {
-            ambient_rgb_exposure: color_exposure(settings.ambient_rgb, settings.exposure)?,
+            ambient_rgb_exposure: color_exposure(settings.ambient, settings.exposure)?,
             observer_up_horizon_cos: direction_fraction(observer_up, horizon_cos)?,
             flags: [
                 EnvironmentProfile::Interior as u32,
@@ -330,22 +331,6 @@ fn rotate_shortest_arc(from: [f64; 3], to: [f64; 3], vector: [f64; 3]) -> Option
     let first = cross(axis, vector);
     let second = cross(axis, first);
     normalize(add(add(vector, first), scale(second, 1.0 / (1.0 + cosine))))
-}
-
-fn valid_settings(settings: EnvironmentSettings) -> bool {
-    settings
-        .global_sun_rgb
-        .iter()
-        .chain(settings.local_sun_rgb.iter())
-        .chain(settings.local_moon_rgb.iter())
-        .chain(settings.ambient_rgb.iter())
-        .all(|value| value.is_finite() && *value >= 0.0)
-        && settings.global_sun_strength.is_finite()
-        && settings.global_sun_strength >= 0.0
-        && settings.moon_full_phase_strength.is_finite()
-        && settings.moon_full_phase_strength >= 0.0
-        && settings.exposure.is_finite()
-        && settings.exposure > 0.0
 }
 
 fn valid_body(body: minimium_astronomy::CelestialBodyState) -> bool {

@@ -4,6 +4,7 @@ mod halo;
 pub mod observer;
 mod orbit;
 mod prepared;
+mod profiles;
 mod runtime;
 #[allow(dead_code)]
 pub mod stars;
@@ -27,6 +28,7 @@ pub(crate) struct HaloSource {
 
 pub(crate) use adapter::EnvironmentFrameError;
 pub(super) use prepared::{PreparedEnvironmentFrame, PreparedStarUpload};
+pub(crate) use profiles::{ClearSkyNode, LightingProfile as EnvironmentSettings};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
@@ -134,45 +136,6 @@ impl RenderViewFrame {
                 .all(|value| value.is_finite())
             && self.game_planet_radius_m.is_finite()
             && self.game_planet_radius_m >= 0.0
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct EnvironmentSettings {
-    /// Linear RGB values in the renderer's relative, unit-sun scale.
-    pub(crate) global_sun_rgb: [f32; 3],
-    pub(crate) global_sun_strength: f32,
-    pub(crate) local_sun_rgb: [f32; 3],
-    pub(crate) local_moon_rgb: [f32; 3],
-    /// Full-Moon illumination coefficient relative to unit-sun irradiance.
-    pub(crate) moon_full_phase_strength: f32,
-    pub(crate) ambient_rgb: [f32; 3],
-    pub(crate) exposure: f32,
-}
-
-impl EnvironmentSettings {
-    pub(crate) const fn planetary() -> Self {
-        Self {
-            global_sun_rgb: [1.0, 0.97, 0.90],
-            global_sun_strength: 1.0,
-            local_sun_rgb: [1.0, 0.97, 0.90],
-            local_moon_rgb: [0.25, 0.32, 0.50],
-            moon_full_phase_strength: 2.0e-6,
-            ambient_rgb: [1.0, 1.0, 1.0],
-            exposure: 1.0,
-        }
-    }
-
-    pub(crate) const fn interior() -> Self {
-        Self {
-            global_sun_rgb: [0.0; 3],
-            global_sun_strength: 0.0,
-            local_sun_rgb: [0.0; 3],
-            local_moon_rgb: [0.0; 3],
-            moon_full_phase_strength: 0.0,
-            ambient_rgb: [0.32, 0.32, 0.32],
-            exposure: 1.0,
-        }
     }
 }
 
