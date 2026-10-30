@@ -1,5 +1,6 @@
 mod decoding;
 mod encoding;
+mod environment_codec;
 mod error_code;
 mod framing;
 mod kinds;

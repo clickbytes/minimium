@@ -6,7 +6,10 @@
 //! event collection on each frame. Events are appended; clear the vector before
 //! polling if it should contain only the latest poll's events.
 
-use minimium_core::{identity::PlayerProfileId, world::TransitionId};
+use minimium_core::{
+    environment::EnvironmentDescriptor, identity::PlayerProfileId, time::ClockSample,
+    world::TransitionId,
+};
 use minimium_protocol::{
     decode_server, encode_client, ClientMessage, ClientWorldInput, ProtocolError, ServerMessage,
     WorldContext, MAX_FRAME_BYTES,
@@ -18,6 +21,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod environment;
 mod receive;
 
 /// Maximum retained receive or pending send data.
@@ -49,6 +53,7 @@ pub enum DisconnectReason {
     MapMismatch { expected: u64, actual: u64 },
     GeneratorMismatch,
     EarthPackage(String),
+    EnvironmentMismatch,
     Io(io::ErrorKind),
     BufferLimit,
 }
@@ -91,6 +96,14 @@ pub struct ClientSession {
     world_fingerprints: HashMap<minimium_core::world::WorldInstanceId, u64>,
     pending_transition: Option<(TransitionId, WorldContext)>,
     ready_transition: Option<(TransitionId, WorldContext)>,
+    clock_sample: Option<ClockSample>,
+    environment_descriptor: Option<EnvironmentDescriptor>,
+    pending_environment: Option<(
+        TransitionId,
+        WorldContext,
+        ClockSample,
+        EnvironmentDescriptor,
+    )>,
     state_since: Instant,
     last_heartbeat_at: Instant,
     pending_ping_at: Option<Instant>,
@@ -124,6 +137,9 @@ impl ClientSession {
             )]),
             pending_transition: None,
             ready_transition: None,
+            clock_sample: None,
+            environment_descriptor: None,
+            pending_environment: None,
             state_since: now,
             last_heartbeat_at: now,
             pending_ping_at: None,
@@ -145,6 +161,16 @@ impl ClientSession {
 
     pub fn metrics(&self) -> SessionMetrics {
         self.metrics
+    }
+
+    #[allow(dead_code)] // E004-05 consumes the estimate input through this accessor.
+    pub fn clock_sample(&self) -> Option<ClockSample> {
+        self.clock_sample
+    }
+
+    #[allow(dead_code)] // E004-05 consumes this session identity in its clock estimator.
+    pub fn environment_descriptor(&self) -> Option<EnvironmentDescriptor> {
+        self.environment_descriptor
     }
 
     pub(crate) fn set_world_fingerprints(
@@ -191,6 +217,9 @@ impl ClientSession {
         self.world_context = None;
         self.pending_transition = None;
         self.ready_transition = None;
+        self.clock_sample = None;
+        self.environment_descriptor = None;
+        self.pending_environment = None;
         self.receive_buffer.clear();
         self.send_buffer.clear();
         self.send_offset = 0;
@@ -289,6 +318,9 @@ mod tests {
             world_fingerprints: HashMap::new(),
             pending_transition: None,
             ready_transition: None,
+            clock_sample: None,
+            environment_descriptor: None,
+            pending_environment: None,
             state_since: now,
             last_heartbeat_at: now,
             pending_ping_at: None,

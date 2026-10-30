@@ -206,6 +206,8 @@ impl ClientSession {
                             map_fingerprint,
                             context,
                             manifest,
+                            clock_sample,
+                            environment,
                             ..
                         } => {
                             if self.state != SessionState::AwaitingWelcome {
@@ -241,6 +243,14 @@ impl ClientSession {
                                 self.disconnect(DisconnectReason::GeneratorMismatch, events);
                                 return;
                             }
+                            if let Err(reason) = self.install_initial_environment(
+                                *manifest,
+                                *clock_sample,
+                                *environment,
+                            ) {
+                                self.disconnect(reason, events);
+                                return;
+                            }
                             self.world_context = Some(*context);
                             self.pending_transition = None;
                             self.ready_transition = None;
@@ -254,6 +264,8 @@ impl ClientSession {
                             target_context,
                             map_fingerprint,
                             manifest,
+                            clock_sample,
+                            environment,
                             ..
                         } => {
                             if self.state != SessionState::Connected {
@@ -289,6 +301,16 @@ impl ClientSession {
                                 self.disconnect(DisconnectReason::UnexpectedMessage, events);
                                 return;
                             }
+                            if let Err(reason) = self.prepare_environment(
+                                *transition_id,
+                                *target_context,
+                                *manifest,
+                                *clock_sample,
+                                *environment,
+                            ) {
+                                self.disconnect(reason, events);
+                                return;
+                            }
                             self.pending_transition = Some(transition);
                             self.ready_transition = None;
                         }
@@ -297,6 +319,8 @@ impl ClientSession {
                             context,
                             map_fingerprint,
                             manifest,
+                            clock_sample,
+                            environment,
                             ..
                         } => {
                             let expected_fingerprint =
@@ -320,6 +344,16 @@ impl ClientSession {
                             if self.pending_transition != Some((*transition_id, *context)) {
                                 continue;
                             }
+                            if let Err(reason) = self.commit_environment(
+                                *transition_id,
+                                *context,
+                                *manifest,
+                                *clock_sample,
+                                *environment,
+                            ) {
+                                self.disconnect(reason, events);
+                                return;
+                            }
                             self.world_context = Some(*context);
                             self.pending_transition = None;
                             self.ready_transition = None;
@@ -339,6 +373,32 @@ impl ClientSession {
                             {
                                 self.pending_transition = None;
                                 self.ready_transition = None;
+                                self.cancel_pending_environment(*transition_id);
+                            }
+                        }
+                        ServerMessage::EnvironmentSync {
+                            context,
+                            clock_sample,
+                            environment,
+                        } => {
+                            if self.state != SessionState::Connected {
+                                self.disconnect(DisconnectReason::UnexpectedMessage, events);
+                                return;
+                            }
+                            match self.apply_environment_sync(*context, *clock_sample, *environment)
+                            {
+                                Ok(true) => {}
+                                Ok(false) => continue,
+                                Err(reason) => {
+                                    self.disconnect(reason, events);
+                                    return;
+                                }
+                            }
+                        }
+                        ServerMessage::TimeProbeReply { session_nonce, .. } => {
+                            if let Err(reason) = self.validate_probe_nonce(*session_nonce) {
+                                self.disconnect(reason, events);
+                                return;
                             }
                         }
                         ServerMessage::Error(code)
@@ -377,6 +437,10 @@ impl ClientSession {
                     if self.receive_buffer.len() > MAX_FRAME_BYTES {
                         self.disconnect(DisconnectReason::BufferLimit, events);
                     }
+                    return;
+                }
+                Err(ProtocolError::UnsupportedEnvironment) => {
+                    self.disconnect(DisconnectReason::EnvironmentMismatch, events);
                     return;
                 }
                 Err(error) => {

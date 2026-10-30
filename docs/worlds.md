@@ -151,7 +151,7 @@ digest, then waits for target sector data, collision and GPU buffers before
 acknowledging readiness. It switches its active sector scene and input state
 without recreating the window, GPU device or TCP session.
 
-Protocol v11 wraps gameplay inputs and snapshots in instance, content revision and
+Protocol v12 wraps gameplay inputs and snapshots in instance, content revision and
 membership epoch. Inputs and snapshots from an older membership context are
 discarded. Save v8 records every loaded world's manifest and map fingerprint,
 each player's instance, millimeter position, orientation, health and return

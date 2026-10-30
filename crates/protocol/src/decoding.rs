@@ -1,5 +1,6 @@
 use super::{
     encoding::is_unit_direction,
+    environment_codec,
     framing::decode_frame,
     kinds::{ClientKind, ServerKind},
     limits::*,
@@ -65,6 +66,10 @@ pub fn decode_client(input: &[u8]) -> Result<Option<(ClientMessage, usize)>, Pro
         },
         ClientKind::UsePortal => ClientMessage::UsePortal,
         ClientKind::CancelTransition => ClientMessage::CancelTransition(reader.transition_id()?),
+        ClientKind::TimeProbe => ClientMessage::TimeProbe {
+            seq: reader.u32()?,
+            client_send_monotonic_ms: reader.u64()?,
+        },
         ClientKind::Quit => ClientMessage::Quit,
     };
     reader.finish()?;
@@ -93,6 +98,7 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
             } else {
                 None
             };
+            let (clock_sample, environment) = environment_codec::read_pair(&mut reader)?;
             ServerMessage::Welcome {
                 id,
                 map_fingerprint,
@@ -102,6 +108,8 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
                 context,
                 manifest,
                 transition_id,
+                clock_sample,
+                environment,
             }
         }
         ServerKind::Pong => ServerMessage::Pong,
@@ -212,6 +220,8 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
             let target_context = reader.world_context()?;
             let map_fingerprint = reader.u64()?;
             let destination_mm = reader.position_mm()?;
+            let manifest = reader.world_manifest()?;
+            let (clock_sample, environment) = environment_codec::read_pair(&mut reader)?;
             ServerMessage::TransitionPrepare {
                 transition_id,
                 source_context,
@@ -221,7 +231,9 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
                     .0
                     .map(|coordinate| coordinate as f32 / 1000.0),
                 destination_mm,
-                manifest: reader.world_manifest()?,
+                manifest,
+                clock_sample,
+                environment,
             }
         }
         ServerKind::TransitionCommitted => {
@@ -236,6 +248,8 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
             if health > 100 {
                 return Err(ProtocolError::InvalidPayload);
             }
+            let manifest = reader.world_manifest()?;
+            let (clock_sample, environment) = environment_codec::read_pair(&mut reader)?;
             ServerMessage::TransitionCommitted {
                 transition_id,
                 context,
@@ -243,7 +257,34 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
                 destination,
                 destination_mm,
                 health,
-                manifest: reader.world_manifest()?,
+                manifest,
+                clock_sample,
+                environment,
+            }
+        }
+        ServerKind::EnvironmentSync => {
+            let context = reader.world_context()?;
+            let (clock_sample, environment) = environment_codec::read_pair(&mut reader)?;
+            ServerMessage::EnvironmentSync {
+                context,
+                clock_sample,
+                environment,
+            }
+        }
+        ServerKind::TimeProbeReply => {
+            let seq = reader.u32()?;
+            let echoed_client_send_monotonic_ms = reader.u64()?;
+            let server_receive_monotonic_ms = reader.u64()?;
+            let server_send_monotonic_ms = reader.u64()?;
+            if server_send_monotonic_ms < server_receive_monotonic_ms {
+                return Err(ProtocolError::InvalidPayload);
+            }
+            ServerMessage::TimeProbeReply {
+                seq,
+                echoed_client_send_monotonic_ms,
+                server_receive_monotonic_ms,
+                server_send_monotonic_ms,
+                session_nonce: minimium_core::time::SessionNonce::new(reader.fixed()?),
             }
         }
         ServerKind::TransitionCancelled => ServerMessage::TransitionCancelled {

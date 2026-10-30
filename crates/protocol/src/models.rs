@@ -1,6 +1,7 @@
 use super::world_context::WorldContext;
 use super::{limits::MAX_VISIBLE_PLAYERS, ServerErrorCode};
 use minimium_core::world::{Position3Mm, TransitionId, WorldManifest};
+use minimium_core::{environment::EnvironmentDescriptor, time::ClockSample};
 use minimium_core::{identity::PlayerProfileId, ids::PlayerId};
 use std::{error::Error, fmt, sync::Arc};
 
@@ -29,6 +30,10 @@ pub enum ClientMessage {
         target_context: WorldContext,
     },
     CancelTransition(TransitionId),
+    TimeProbe {
+        seq: u32,
+        client_send_monotonic_ms: u64,
+    },
     UsePortal,
     Quit,
 }
@@ -146,6 +151,8 @@ pub enum ServerMessage {
         context: WorldContext,
         manifest: WorldManifest,
         transition_id: Option<TransitionId>,
+        clock_sample: ClockSample,
+        environment: EnvironmentDescriptor,
     },
     Pong,
     MapTeleportResult {
@@ -184,6 +191,8 @@ pub enum ServerMessage {
         destination: [f32; 3],
         destination_mm: Position3Mm,
         manifest: WorldManifest,
+        clock_sample: ClockSample,
+        environment: EnvironmentDescriptor,
     },
     TransitionCommitted {
         transition_id: TransitionId,
@@ -193,10 +202,24 @@ pub enum ServerMessage {
         destination_mm: Position3Mm,
         health: u16,
         manifest: WorldManifest,
+        clock_sample: ClockSample,
+        environment: EnvironmentDescriptor,
     },
     TransitionCancelled {
         transition_id: TransitionId,
         context: WorldContext,
+    },
+    EnvironmentSync {
+        context: WorldContext,
+        clock_sample: ClockSample,
+        environment: EnvironmentDescriptor,
+    },
+    TimeProbeReply {
+        seq: u32,
+        echoed_client_send_monotonic_ms: u64,
+        server_receive_monotonic_ms: u64,
+        server_send_monotonic_ms: u64,
+        session_nonce: minimium_core::time::SessionNonce,
     },
 }
 
@@ -207,6 +230,7 @@ pub enum ProtocolError {
     PayloadTooLarge,
     InvalidPayload,
     InvalidName,
+    UnsupportedEnvironment,
 }
 
 impl fmt::Display for ProtocolError {
@@ -219,6 +243,9 @@ impl fmt::Display for ProtocolError {
             Self::PayloadTooLarge => formatter.write_str("protocol payload exceeds limit"),
             Self::InvalidPayload => formatter.write_str("invalid protocol payload"),
             Self::InvalidName => formatter.write_str("invalid player name"),
+            Self::UnsupportedEnvironment => {
+                formatter.write_str("peer environment model or catalogue is unsupported")
+            }
         }
     }
 }

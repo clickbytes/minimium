@@ -1,8 +1,10 @@
 use crate::{
-    connection::{Client, CloseReason},
+    connection::{queue_close_response, Client, CloseReason},
     metrics::RuntimeMetrics,
 };
-use minimium_protocol::{decode_client, ClientMessage, MAX_FRAME_BYTES};
+use minimium_protocol::{
+    decode_client, ClientMessage, ProtocolError, ServerErrorCode, ServerMessage, MAX_FRAME_BYTES,
+};
 use std::{
     io::{self, Read},
     time::Instant,
@@ -41,6 +43,17 @@ pub(crate) fn poll_clients(
                         }
                     }
                     Ok(None) => break,
+                    Err(ProtocolError::UnsupportedVersion(_)) => {
+                        if !queue_close_response(
+                            client,
+                            metrics,
+                            ServerMessage::Error(ServerErrorCode::Protocol),
+                            Instant::now(),
+                        ) {
+                            disconnected.push(index);
+                        }
+                        break;
+                    }
                     Err(_) => {
                         client.disconnect_reason = Some(CloseReason::InvalidFrame);
                         disconnected.push(index);
@@ -48,7 +61,8 @@ pub(crate) fn poll_clients(
                     }
                 }
             }
-            if messages_this_poll >= MAX_MESSAGES_PER_CLIENT_PER_POLL
+            if client.close_deadline().is_some()
+                || messages_this_poll >= MAX_MESSAGES_PER_CLIENT_PER_POLL
                 || disconnected.last() == Some(&index)
             {
                 break;

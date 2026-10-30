@@ -50,6 +50,7 @@ impl ServerRuntime {
                 }
             }
         }
+        self.replicate_environment();
         send::send_clients(
             &mut self.connections.clients,
             &mut self.metrics,

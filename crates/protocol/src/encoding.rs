@@ -1,4 +1,5 @@
 use super::{
+    environment_codec,
     framing::encode_frame,
     kinds::{ClientKind, ServerKind},
     limits::*,
@@ -73,6 +74,14 @@ pub fn encode_client(message: &ClientMessage) -> Result<Vec<u8>, ProtocolError> 
             payload.extend_from_slice(&transition_id.get().to_le_bytes());
             ClientKind::CancelTransition
         }
+        ClientMessage::TimeProbe {
+            seq,
+            client_send_monotonic_ms,
+        } => {
+            payload.extend_from_slice(&seq.to_le_bytes());
+            payload.extend_from_slice(&client_send_monotonic_ms.to_le_bytes());
+            ClientKind::TimeProbe
+        }
         ClientMessage::Quit => ClientKind::Quit,
     };
     encode_frame(kind.into(), &payload)
@@ -102,6 +111,8 @@ pub fn encode_server_into(
                 context,
                 manifest,
                 transition_id,
+                clock_sample,
+                environment,
             } => {
                 if *health > 100 {
                     return Err(ProtocolError::InvalidPayload);
@@ -117,6 +128,7 @@ pub fn encode_server_into(
                 if let Some(transition_id) = transition_id {
                     frame.extend_from_slice(&transition_id.get().to_le_bytes());
                 }
+                environment_codec::write_pair(*clock_sample, *environment, frame)?;
                 ServerKind::Welcome
             }
             ServerMessage::Pong => ServerKind::Pong,
@@ -213,6 +225,8 @@ pub fn encode_server_into(
                 destination,
                 destination_mm,
                 manifest,
+                clock_sample,
+                environment,
             } => {
                 frame.extend_from_slice(&transition_id.get().to_le_bytes());
                 write_world_context(*source_context, frame);
@@ -221,6 +235,7 @@ pub fn encode_server_into(
                 let _ = destination;
                 write_position_mm(*destination_mm, frame);
                 write_world_manifest(*manifest, frame);
+                environment_codec::write_pair(*clock_sample, *environment, frame)?;
                 ServerKind::TransitionPrepare
             }
             ServerMessage::TransitionCommitted {
@@ -231,6 +246,8 @@ pub fn encode_server_into(
                 destination_mm,
                 health,
                 manifest,
+                clock_sample,
+                environment,
             } => {
                 if *health > 100 {
                     return Err(ProtocolError::InvalidPayload);
@@ -242,6 +259,7 @@ pub fn encode_server_into(
                 write_position_mm(*destination_mm, frame);
                 frame.extend_from_slice(&health.to_le_bytes());
                 write_world_manifest(*manifest, frame);
+                environment_codec::write_pair(*clock_sample, *environment, frame)?;
                 ServerKind::TransitionCommitted
             }
             ServerMessage::TransitionCancelled {
@@ -251,6 +269,32 @@ pub fn encode_server_into(
                 frame.extend_from_slice(&transition_id.get().to_le_bytes());
                 write_world_context(*context, frame);
                 ServerKind::TransitionCancelled
+            }
+            ServerMessage::EnvironmentSync {
+                context,
+                clock_sample,
+                environment,
+            } => {
+                write_world_context(*context, frame);
+                environment_codec::write_pair(*clock_sample, *environment, frame)?;
+                ServerKind::EnvironmentSync
+            }
+            ServerMessage::TimeProbeReply {
+                seq,
+                echoed_client_send_monotonic_ms,
+                server_receive_monotonic_ms,
+                server_send_monotonic_ms,
+                session_nonce,
+            } => {
+                if server_send_monotonic_ms < server_receive_monotonic_ms {
+                    return Err(ProtocolError::InvalidPayload);
+                }
+                frame.extend_from_slice(&seq.to_le_bytes());
+                frame.extend_from_slice(&echoed_client_send_monotonic_ms.to_le_bytes());
+                frame.extend_from_slice(&server_receive_monotonic_ms.to_le_bytes());
+                frame.extend_from_slice(&server_send_monotonic_ms.to_le_bytes());
+                frame.extend_from_slice(session_nonce.as_bytes());
+                ServerKind::TimeProbeReply
             }
         };
         Ok(kind)

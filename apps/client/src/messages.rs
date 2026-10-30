@@ -155,6 +155,9 @@ impl From<DisconnectReason> for ClientText {
             DisconnectReason::MapMismatch { expected, actual } => {
                 Self::MapMismatch { expected, actual }
             }
+            DisconnectReason::EnvironmentMismatch => Self::ConnectionLost(
+                "server environment model or star catalogue is incompatible".to_owned(),
+            ),
             DisconnectReason::PeerClosed => Self::PeerDisconnected,
             DisconnectReason::ServerClosed => Self::ServerClosed,
             DisconnectReason::EarthPackage(error) => Self::ConnectionLost(error),
