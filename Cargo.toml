@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/core",
+    "crates/astronomy",
     "crates/procgen",
     "crates/sectors",
     "crates/assets",

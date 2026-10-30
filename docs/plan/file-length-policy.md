@@ -23,3 +23,6 @@ Data assets such as maps, fixtures, images, audio, and scenario/data documents a
 ## Approved exceptions
 
 Record each active exception on its own line as an HTML comment containing the key `file-length-exception:`, followed by the repository-relative path, a vertical bar, and a specific reason. Keep this section empty when there are no exceptions. The checker rejects malformed, duplicate, and stale entries.
+
+<!-- file-length-exception: third_party/astronomy-engine/source/c/astronomy.c | Verbatim upstream Astronomy Engine v2.1.19 source, pinned by third_party/astronomy-engine/provenance.json; split would invalidate the audited vendor snapshot. -->
+<!-- file-length-exception: third_party/astronomy-engine/source/c/astronomy.h | Verbatim upstream Astronomy Engine v2.1.19 header, pinned by third_party/astronomy-engine/provenance.json; split would invalidate the audited vendor snapshot. -->

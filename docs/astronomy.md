@@ -96,3 +96,58 @@ i horyzont renderera pozostaje zgodne z pomniejszoną geometrią gry. Ten model 
 zgodności czasu wschodu lub zachodu co do sekundy, szczególnie przy górach i niskim Słońcu.
 Zmiana instancji, membership epoch lub manifestu unieważnia ramkę klienta; overview
 korzysta z obserwatora gracza, a nie z położenia kamery globusa.
+
+## Offline backend astronomiczny (E004-07)
+
+`minimium-astronomy` jest zależnością klienta i korzysta z lokalnego, przypiętego
+źródła Astronomy Engine C v2.1.19. Commit, URL-e i SHA-256 plików znajdują się
+w `third_party/astronomy-engine/provenance.json`; licencja MIT jest dołączona.
+Build wymaga kompilatora C, ale nie pobiera źródeł, nie uruchamia bindgen ani
+libclang. `build.rs` definiuje `ASTRONOMY_ENGINE_NO_CURRENT_TIME`. Serwer i
+`minimium-core` nie zależą od backendu.
+
+Deklaracje `repr(C)` dla własnego mostka są generowane przez lokalny skrypt
+wersji 1: `python scripts/generate_astronomy_bindings.py`. Wygenerowany plik ma
+mniej niż 500 linii, dlatego nie wymaga wyjątku od limitu. Wyjątki polityki
+rozmiaru dotyczą jedynie dwóch niezmienionych plików upstream.
+
+Publiczne API używa POSIX UTC w milisekundach, radianów, metrów i wektorów f64.
+Wejście UTC jest najpierw sprawdzane w zakresie core (2000–2100), a następnie
+konwertowane całkowitoliczbowym odejmowaniem epoki J2000 i podzieleniem przez
+86400000. `Astronomy_TimeFromDays` wyznacza TT swoim modelem delta-T; astronomia
+nie odczytuje zegara systemowego i nie stosuje stref czasowych ani DST.
+
+`SkyCalculator` jest właścicielem cache efemeryd i nie implementuje `Send` ani
+`Sync`. Obliczenia C są zamknięte w prywatnym module FFI. Mostek sprawdza statusy,
+wartości skończone oraz argumenty; Rust waliduje długości i ortonormalność
+wektorów, macierzy, obserwatora oraz rekordów gwiazd. Błąd zwracany jest jako
+`SkyError`, bez częściowego `SkyState`.
+
+`SkyState.sun` i `SkyState.moon.body` zawierają kierunki topocentryczne bez
+refrakcji (`geometric`) oraz po pojedynczej korekcie standardowej refrakcji
+(`apparent`). „Geometryczny” nie odwraca upstreamowych poprawek czasu biegu
+światła i aberracji. Księżyc jest topocentryczny, więc uwzględnia paralaksę;
+faza wynika z wektorów do Słońca i obserwatora. `geocentric_sun_direction_world`
+jest osobnym kierunkiem do oświetlenia globu i nie zależy od refrakcji lokalnego
+obserwatora. Kierunki używają wspólnej macierzy EQJ→HOR→world z ramką #56.
+
+Promień Księżyca przyjęty przez minimium wynosi 1737,4 km jako jawny promień
+średni modelu tarczy. Przypięty nagłówek upstream podaje promienie równikowy
+1738,1 km i polarny 1736,0 km, a nie tę wartość średnią. Jasność V pochodzi z
+upstreamowego modelu geocentrycznego; nie jest lux ani lokalną irradiancją.
+
+Cache efemeryd ma dwa końce przedziału co 300000 ms czasu świata. Interpoluje
+wektory EQJ, magnitudo liniowo, fazę ekliptyczną przez sinus i cosinus, a biegun
+normalizuje po interpolacji. Lokalna rotacja, paralaksa i kierunki topocentryczne
+są przeliczane dla bieżącego czasu i miejsca obserwatora. Skok czasu lub zmiana
+rewizji/świata unieważnia cache; kod wylicza tylko aktualny przedział.
+
+`update_star_epoch` przyjmuje do 500 ogólnych rekordów `StarAstrometry`, bez
+zależności od formatu assetu. Uwzględnia ruch własny w przestrzeni EQJ od epoki
+J2000 TT, zwraca osobny wynik z `star_epoch_revision` i buforuje go jako `Arc`.
+Aktualizacja następuje przy zmianie doby, cofnięciu/skoku czasu, zmianie danych
+lub jawnym unieważnieniu. W V1 gwiazdy nie mają paralaksy, aberracji ani
+refrakcji; ich wygaszanie i zasłanianie horyzontem należy do renderera.
+
+Dokładność backendu, referencje JPL/USNO i zachowanie GPU są częścią odroczonej
+końcowej weryfikacji E004-16. Na etapie E004-07 nie uruchamiamy testów ani gry.

@@ -1,0 +1,32 @@
+{
+  "name": "Astronomy Engine",
+  "version": "2.1.19",
+  "tag": "v2.1.19",
+  "tag_object": "03084ee684bdcc490273fe85f9df4f1c8fb66199",
+  "commit": "61dc07020aaa6885d2c7f688a4d82beaf6edb9ef",
+  "upstream": "https://github.com/cosinekitty/astronomy",
+  "license": "MIT",
+  "bridge_abi_version": 1,
+  "bindings_generator": {
+    "path": "scripts/generate_astronomy_bindings.py",
+    "version": 1,
+    "command": "python scripts/generate_astronomy_bindings.py"
+  },
+  "files": [
+    {
+      "path": "LICENSE",
+      "url": "https://github.com/cosinekitty/astronomy/blob/61dc07020aaa6885d2c7f688a4d82beaf6edb9ef/LICENSE",
+      "sha256": "690dd98cb13ba4db77c6327deea852a816892bb9debbad5943405c66972f8023"
+    },
+    {
+      "path": "source/c/astronomy.c",
+      "url": "https://github.com/cosinekitty/astronomy/blob/61dc07020aaa6885d2c7f688a4d82beaf6edb9ef/source/c/astronomy.c",
+      "sha256": "388920479d819713963ffd0f8ab0677944f66c6c94239ceddddd3b0d5d064432"
+    },
+    {
+      "path": "source/c/astronomy.h",
+      "url": "https://github.com/cosinekitty/astronomy/blob/61dc07020aaa6885d2c7f688a4d82beaf6edb9ef/source/c/astronomy.h",
+      "sha256": "83a31011957c2b87e22f0828820f370f1a495aa4d51357bb57d714cde839dc00"
+    }
+  ]
+}
