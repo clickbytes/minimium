@@ -1,17 +1,17 @@
 # Epic 004 — plan i rejestr weryfikacji
 
 **Epic:** [#51](https://github.com/clickbytes/minimium/issues/51). **Właściciel finalnego odbioru:** [E004-16 / #68](https://github.com/clickbytes/minimium/issues/68).
-**Baza planu:** `aad2c8298606a46dc3a286b4eac7f1de45759851`. **Status:** IMPLEMENTATION NOT STARTED / RUNTIME NOT RUN.
+**Baza planu:** `aad2c8298606a46dc3a286b4eac7f1de45759851`. **Kodowy baseline E004-00:** `cd816c2d32bd4b1447f14ac04a9ec99e44c0e4af` (merge `main@30ff278` into integration). **Status:** kontrakty zatwierdzone; implementacja E004-01..14 NOT STARTED; runtime NOT RUN.
 
 ## Rejestr początkowy
 
 | Obszar | Stan | Dowód / następny krok |
 | --- | --- | --- |
 | Kompletność 18 opisów i graf zależności | Przegląd planu wykonany | Cele, pliki, kroki, kontrakty, kryteria, zależności i zakres; graf acykliczny. To nie jest kontrola kodu E004. |
-| Referencje do kodu | Sprawdzone na bazie | Pinowane ścieżki w issues odnoszą się do main aad2c829. |
-| Rust/C toolchain, target, ostrzeżenia bazowe | NOT CAPTURED | Zebrać w E004-00 w środowisku wykonania. |
+| Referencje do kodu | Sprawdzone | Issues zawierają historyczne ścieżki bazowe do `aad2c82`; aktualny punkt integracji `cd816c2` zachowuje zmiany main `30ff278`, w tym nowsze pliki konsoli i globusa. |
+| Rust/C toolchain, target, ostrzeżenia bazowe | CAPTURED | Windows, target `x86_64-pc-windows-msvc`; `rustc 1.99.0 (b940084d7 2026-09-28)`, `cargo 1.99.0 (5f94df478 2026-08-27)`, toolchain z `rust-toolchain.toml`. Clang i GCC dostępne, MSVC `cl.exe` niewykryty; zgodność C/FFI z targetem pozostaje do ustalenia w E004-07. Cargo incremental hard-link warnings na `D:\Git\minimium\target`, fallback kopiowania. `cargo check` 0 errors / 12 warnings; Clippy 0 errors / 11 warnings. |
 | Implementacja funkcji | PLANNED | Zadania E004-01..14. |
-| Kompilacja, fmt, clippy, architektura, limity plików | NOT RUN dla E004 | Kod E004 jeszcze nie powstał; przyszłe kontrole zapisują rzeczywisty SHA i wynik. |
+| Kompilacja, fmt, clippy, architektura, limity plików | BASELINE PASS | Head `cd816c2`; `cargo fmt --all -- --check`, `cargo check --workspace --locked` (0 errors, 12 warnings), `cargo clippy --workspace --locked` (0 errors, 11 warnings), `python scripts/check_architecture.py`, `python scripts/check_file_lengths.py` (163 pliki, max 500 linii). Nie używano `-D warnings`. To baseline gałęzi epica, nie odbiór późniejszej implementacji. |
 | Unit/integration/e2e, aplikacja i loadtest | NOT RUN | Wyraźne rozpoczęcie końcowej fazy przez użytkownika oraz ukończone E004-15. |
 | Wizualne QA i astronomiczne referencje | NOT RUN | Nie zastępować wartościami z planu ani wcześniejszymi wynikami E002/E003. |
 | Sprzęt historyczny / 500 graczy | NOT MEASURED | Raportować dostępność platformy i realne pomiary; nie deklarować na podstawie planu. |
