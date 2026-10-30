@@ -38,23 +38,36 @@ impl ServerRuntime {
             if request_id.is_some_and(|id| !self.operations.admin.is_pending(id, Instant::now())) {
                 continue;
             }
-            let mut reply = commands::execute(
-                command,
-                commands::CommandContext {
-                    world: &self.game.worlds.primary().world,
-                    worlds: &self.game.worlds,
-                    player_store: &mut self.operations.player_store,
-                    persistence: &mut self.operations.persistence,
-                    map_fingerprint: self.map.fingerprint(),
-                    lanes,
-                    metrics: &self.metrics,
+            let monotonic_ms = self.monotonic_ms(Instant::now());
+            let mut reply = match monotonic_ms {
+                Ok(monotonic_ms) => commands::execute(
+                    command,
+                    commands::CommandContext {
+                        world: &self.game.worlds.primary().world,
+                        worlds: &self.game.worlds,
+                        player_store: &mut self.operations.player_store,
+                        persistence: &mut self.operations.persistence,
+                        map_fingerprint: self.map.fingerprint(),
+                        lanes,
+                        metrics: &self.metrics,
+                        environment_clock: &mut self.environment_clock,
+                        monotonic_ms,
+                    },
+                ),
+                Err(error) => commands::CommandReply {
+                    success: false,
+                    text: format!("monotonic clock: {error}"),
+                    stop: false,
                 },
-            );
-            if command == ServerCommand::Status {
+            };
+            self.environment_dirty_revision = self.environment_clock.dirty_revision();
+            if command.is_status() {
                 use std::fmt::Write as _;
                 let _ = write!(reply.text, " game_address={game_address} max_players={max_players} map_fingerprint={:016x} tick_ms={} snapshot_ms={} autosave_seconds={autosave_seconds} protocol_version={PROTOCOL_VERSION} save_version={SAVE_VERSION}", self.map.fingerprint(), TICK.as_millis(), SNAPSHOT_INTERVAL.as_millis());
+                reply.text.push_str(" environment_profiles=");
+                reply.text.push_str(&self.game.worlds.environment_summary());
             }
-            if command == ServerCommand::Metrics {
+            if command.is_metrics() {
                 use std::fmt::Write as _;
                 reply.text.push_str(" client_traffic=id:bytes_in:bytes_out:decoded_frames:queued_frames:encoding_us:connected_ms");
                 for client in &self.connections.clients {
@@ -83,7 +96,7 @@ impl ServerRuntime {
                     reply.text
                 );
             }
-            if matches!(command, ServerCommand::Save | ServerCommand::Stop) {
+            if command.is_save_or_stop() {
                 println!("admin {:?}: {}", command, reply.text);
             }
             self.stop |= reply.stop;
@@ -132,6 +145,20 @@ impl ServerRuntime {
             else {
                 continue;
             };
+            let (clock_sample, environment) = match self
+                .environment_state_for_instance(transfer.context.instance(), Instant::now())
+            {
+                Ok(state) => state,
+                Err(error) => {
+                    eprintln!("could not sample committed environment: {error}");
+                    if let Some(client) = self.connections.clients.get_mut(index) {
+                        client.disconnect_reason =
+                            Some(crate::connection::CloseReason::InvalidSequence);
+                    }
+                    self.connections.disconnected.push(index);
+                    continue;
+                }
+            };
             let Some(client) = self.connections.clients.get_mut(index) else {
                 continue;
             };
@@ -148,12 +175,20 @@ impl ServerRuntime {
                     destination_mm: transfer.destination_mm,
                     health: transfer.health,
                     manifest: transfer.manifest,
+                    clock_sample,
+                    environment,
                 },
             );
             if !queued {
                 self.metrics.dropped_messages = self.metrics.dropped_messages.saturating_add(1);
                 client.disconnect_reason = Some(crate::connection::CloseReason::Backpressure);
                 self.connections.disconnected.push(index);
+            } else {
+                client.mark_environment_sent(
+                    transfer.context,
+                    clock_sample.revision(),
+                    Instant::now(),
+                );
             }
         }
         committed_players

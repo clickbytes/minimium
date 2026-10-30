@@ -1,4 +1,4 @@
-# Game protocol v11
+# Game protocol v13
 
 `minimium-protocol` defines typed messages and binary encoding without depending
 on TCP, UDP, sockets or a runtime. The current server adapter carries frames over
@@ -10,14 +10,17 @@ Every frame begins with a four-byte header:
 
 | Offset | Size | Meaning |
 | --- | ---: | --- |
-| 0 | 1 byte | Protocol version (`11`) |
+| 0 | 1 byte | Protocol version (`13`) |
 | 1 | 1 byte | Message type |
 | 2 | 2 bytes | Payload length, unsigned little-endian |
 
 The payload follows immediately. Maximum payload is 4096 bytes. Receivers may
 provide partial or concatenated frames; decoders report incomplete input
 without consuming it. Unknown versions, message types, malformed fields and
-oversized payloads are rejected. Integers and `f32` values are little-endian.
+oversized payloads are rejected. v12 and v13 are intentionally incompatible;
+there is no fallback parser. The server returns the existing Protocol error for
+an unsupported client version; clients surface the unsupported version header
+when they receive a frame from an older server. Integers and `f32` values are little-endian.
 Movement and position values must be finite; names are 1–24 ASCII letters,
 digits or underscores.
 
@@ -54,7 +57,8 @@ server sends Welcome only after accepting that profile.
 | Client → server | `9` TransitionReady | 16-byte transition ID and target context |
 | Client → server | `10` UsePortal | empty; legacy unwrapped form is rejected by server admission |
 | Client → server | `11` CancelTransition | 16-byte transition ID |
-| Server → client | `0x81` Welcome | player ID, map fingerprint, health, restored position (`i64` millimeters x/y/z), context, manifest, optional transition ID |
+| Client → server | `0x0c` TimeProbe | sequence (`u32`) and client monotonic send time (`u64` ms) |
+| Server → client | `0x81` Welcome | player ID, map fingerprint, health, restored position (`i64` millimeters x/y/z), context, manifest, optional transition ID, then 107-byte environment suffix |
 | Server → client | `0x82` Pong | empty |
 | Server → client | `0x83` Accepted | empty |
 | Server → client | `0x84` Bye | empty |
@@ -63,10 +67,54 @@ server sends Welcome only after accepting that profile.
 | Server → client | `0x87` ShotResult | hit flag; on hit, target ID and remaining health; killed flag |
 | Server → client | `0x88` HealthUpdate | local-player health (`u16`, 0–100) |
 | Server → client | `0x89` Chat | sender ID/name and UTF-8 text |
-| Server → client | `0x8a` TransitionPrepare | transition ID, source/target contexts, fingerprint, destination, target manifest |
-| Server → client | `0x8b` TransitionCommitted | transition ID, target context, fingerprint, destination, health, target manifest |
+| Server → client | `0x8a` TransitionPrepare | transition ID, source/target contexts, fingerprint, destination, target manifest, then 107-byte environment suffix |
+| Server → client | `0x8b` TransitionCommitted | transition ID, target context, fingerprint, destination, health, target manifest, then 107-byte environment suffix |
 | Server → client | `0x8c` TransitionCancelled | transition ID and source context |
 | Server → client | `0x8d` MapTeleportResult | success flag; on success, destination (`i64` millimeters x/y/z) |
+| Server → client | `0x8e` EnvironmentSync | current `WorldContext` (32 bytes), `ClockSample` (58 bytes), and environment descriptor (49 bytes), total 139 bytes |
+| Server → client | `0x8f` TimeProbeReply | sequence, echoed client time, server receive/send monotonic ms and 16-byte session nonce, total 44 bytes |
+
+The Welcome and transition suffix contains a `ClockSample` in this exact order:
+`clock_id:u64`, `revision:u64`, `session_nonce:[u8;16]`,
+`server_monotonic_ms:u64`, `world_utc_ms:i64`, `mode:u8`, `rate_ppm:u64`,
+`offline_policy:u8` (58 bytes). The following descriptor is
+`clock_id:u64`, `profile:u8`, `astronomy_model_revision:u32`,
+`catalogue_id:u32`, `catalogue_sha256:[u8;32]` (49 bytes). All fields are
+little-endian except opaque byte arrays. Clock ID is 1; profiles are Interior=0,
+Earth=1 and EarthLike=2; current astronomy model and catalogue IDs are 1.
+Clients compare the catalogue ID and SHA-256 with the embedded catalogue,
+including for Interior worlds.
+
+EnvironmentSync follows Welcome and is sent only for the client's current
+context, at most once per five real seconds. A clock mutation can send the latest
+revision sooner; changes are coalesced and do not accumulate per-frame messages.
+TransitionPrepare carries the target descriptor as pending state; it becomes
+active only at TransitionCommitted, whose clock sample is captured at commit.
+The shared clock means the nonce remains stable through a portal transfer.
+
+Each client session keeps one monotonic `Instant`, a single TimeProbe in flight,
+and at most eight valid offset samples. It sends the first probe after Welcome,
+bootstraps at one-second intervals until four valid replies, then probes every
+five real seconds. Replies require the current Welcome nonce, sequence, exact
+echoed `t1`, checked timestamps, and corrected RTT in 0..=2000 ms. A local
+`EnvironmentFrameInput` carries the estimated and rendered UTC date, active
+descriptor/context, revision, rate and quality. It is calculated once per frame
+from the session anchor and monotonic offset; the text client reports status when
+quality, revision or rate changes and refreshes a usable date at most every five
+seconds. `Unavailable` carries no usable date.
+The explicit `--demo` path uses the same core clock evaluation from a local UTC
+anchor and reports `LocalDemo`; it is disabled before a network attempt, so a
+network session never falls back to the machine clock.
+
+Small same-revision phase corrections retain the displayed date and decay a
+presentation-only bias with a two-second time constant, capped to ten percent
+of the current world-clock rate per frame. A new revision applies immediately.
+Portals keep the source descriptor pending until commit and preserve the shared
+clock estimator; reconnect creates a new session-local epoch and clears its
+nonce, samples, in-flight probe and smoothing state. Poll gaps over ten seconds
+restart bootstrap without catch-up probes. Status becomes Stale after fifteen
+seconds without a fresh sample/probe and Unavailable after sixty seconds; there
+is no client-wall-clock fallback for network sessions.
 
 For `WorldInput`, subtypes are `1` SetName, `2` Move, `3` Fire, `4` Chat and
 `5` UsePortal and `6` MapTeleport (unit direction, three `f32` values). The client session wraps ordinary gameplay messages in this record
@@ -80,7 +128,9 @@ position (three `i64` millimeters) and velocity (three `f32` values), a grounded
 flag, and one-byte update/removal counts. Each update contains player ID, name
 and position (`i64` millimeters per axis); each removal contains a player ID. Both lists are bounded to 16.
 The server advances a per-client baseline only after queuing a snapshot
-successfully.
+successfully. The maximum legal snapshot is 1120 payload bytes (1124 including
+the header), with 16 updates and 16 removals; server output reservations cover
+that bound and every v13 message.
 Portal transition destinations also use three `i64` millimeter coordinates.
 
 ## Runtime policy and persistence
@@ -88,17 +138,29 @@ Portal transition destinations also use three `i64` millimeter coordinates.
 Fire uses authoritative server-side hitscan with 60-unit range and 34 damage.
 Chat is bounded UTF-8, rate-limited per sender and globally. Interactive clients
 send Ping every 10 seconds; server idle timeout is 30 seconds and the desktop
-client's Pong timeout is 20 seconds. These are runtime policies, not frame
-requirements.
+client's Pong timeout is 20 seconds. TimeProbe is separate from heartbeat: the
+server accepts at most two probes per active connection in each sliding second.
+`t2` is when the complete request is decoded; `t3` is the server's logical
+serialization/queue time, not the network card's transmit time. These are
+runtime policies, not frame requirements.
 
-Save format v7 records every loaded world's manifest and map fingerprint, plus
-each player's instance, quantized position, orientation, health and return
-location. v2/v3 snapshots are migrated only to a loaded legacy map whose
-fingerprint matches the saved header. The intermediate v4 format is accepted
-only when player and return locations use the primary instance because it did
-not pin target manifests. This prevents old coordinates from being assigned to
-a new procedural planet. Snapshots are limited to 16 MiB; an oversized write is
-rejected before replacing the previous snapshot.
+Save format v9 records every loaded world's manifest and map fingerprint, each
+player's instance, quantized position, orientation, health and return location,
+revisioned sector object state, and one `CLOCK` record. The record stores clock
+ID, revision, mode, saved world UTC, capture wall UTC, rate in ppm and offline
+policy. It appears after `WORLD` records and before any `SECTOR` or player
+record. It is part of the same bounded snapshot and atomic replacement; process
+nonce and monotonic timestamps are not persisted. The loader requires exactly
+one valid clock in v8/v9 and rejects the record in older versions. v2–v7 retain
+their migration rules and initialize a RealTime clock at current UTC; v8/v9
+RealTime also resumes at current UTC, while TimeScale follows its saved
+`pause` or nonnegative `advance` policy. v2/v3 snapshots are migrated only to a
+loaded legacy map whose fingerprint matches the saved header. The intermediate
+v4 format is accepted only when player and return locations use the primary
+instance because it did not pin target manifests. This prevents old coordinates
+from being assigned to a new procedural planet. Snapshots are limited to 16 MiB;
+an oversized write is rejected before replacing the previous snapshot.
+A v8 rate remains capped at 1440x when read; new v9 snapshots can store up to 1,000,000x.
 
 The current TCP adapter has no public-game authentication or encryption. The
 profile ID is a reconnect identifier, not proof of account ownership. Gameplay,

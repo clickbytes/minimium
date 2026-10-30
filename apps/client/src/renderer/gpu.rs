@@ -48,6 +48,10 @@ impl GpuResources {
             self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_add(buffer.size());
             self.world_vertex_catalog
                 .insert((instance, *key, *lod), (buffer, vertices.len() as u32));
+            if let Some(bounds) = super::shadows::geometry_bounds(geometry) {
+                self.world_geometry_bounds
+                    .insert((instance, *key, *lod), bounds);
+            }
         }
         self.world_vertex_catalog
             .retain(|(owner, key, lod), (buffer, _)| {
@@ -58,6 +62,8 @@ impl GpuResources {
                     false
                 }
             });
+        self.world_geometry_bounds
+            .retain(|(owner, key, lod), _| *owner != instance || required.contains(&(*key, *lod)));
         if scene.render_sectors.iter().any(|(key, lod, _)| {
             !self
                 .world_vertex_catalog
@@ -103,6 +109,11 @@ impl GpuResources {
                 }
             });
         self.world_sector_versions.remove(&instance);
+        self.world_geometry_bounds
+            .retain(|(owner, _, _), _| *owner != instance);
+        if self.shadow_map_instance == Some(instance) {
+            self.release_shadow_map_casters();
+        }
     }
 
     pub(super) fn update_remote_vertices(&mut self, vertices: &[Vertex]) {
@@ -122,13 +133,21 @@ impl GpuResources {
             self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_sub(buffer.size());
         }
         self.world_sector_versions.clear();
+        self.world_geometry_bounds.clear();
         self.active_sector_keys.clear();
+        self.shadow_player_vertex_count = 0;
+        self.shadow_remote_complete = false;
+        self.shadow_remote_dirty = true;
+        self.release_shadow_map_casters();
+        self.shadow_state
+            .invalidate(super::shadows::ShadowInvalidReason::StaleContext);
         true
     }
 
     pub(super) async fn new(
         window: Arc<Window>,
         vertices: &[Vertex],
+        requested_quality: crate::environment::quality::SkyQuality,
     ) -> Result<Self, Box<dyn Error>> {
         let size = window.inner_size();
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
@@ -141,6 +160,20 @@ impl GpuResources {
                 apply_limit_buckets: false,
             })
             .await?;
+        let shadow_usage =
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING;
+        let shadow_format = super::shadow_target::supported_format(&adapter, shadow_usage)
+            .ok_or("graphics adapter has no sampleable depth texture format")?;
+        let shadow_limit_supported = adapter.limits().max_texture_dimension_2d
+            >= requested_quality.profile().shadow_resolution;
+        let adapter_fallback_reason = (requested_quality.profile().shadows_enabled
+            && (shadow_format != wgpu::TextureFormat::Depth32Float || !shadow_limit_supported))
+            .then_some("adapter_limit_or_depth32float_unsupported");
+        let initial_quality = if adapter_fallback_reason.is_some() {
+            crate::environment::quality::SkyQuality::Low
+        } else {
+            requested_quality
+        };
         let mut required_limits = wgpu::Limits::downlevel_defaults();
         required_limits.max_texture_dimension_2d =
             adapter.limits().max_texture_dimension_2d.min(4096);
@@ -158,80 +191,53 @@ impl GpuResources {
             .get_default_config(&adapter, size.width.max(1), size.height.max(1))
             .ok_or("graphics adapter does not support this surface")?;
         surface.configure(&device, &config);
-
-        let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("camera-uniform"),
-            size: std::mem::size_of::<[[f32; 4]; 4]>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let camera_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("camera-layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("camera-bind-group"),
-            layout: &camera_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera_buffer.as_entire_binding(),
-            }],
-        });
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("minimium-basic-3d-shader"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("world.wgsl"))),
-        });
+        let output_encoder = (!super::gpu_surface::is_srgb(config.format))
+            .then(|| super::output::OutputEncoder::new(&device, size, config.format));
+        let scene_color_format = if output_encoder.is_some() {
+            wgpu::TextureFormat::Rgba8Unorm
+        } else {
+            config.format
+        };
+        let frame_bindings = super::environment_gpu::EnvironmentGpuBindings::create(&device);
+        let environment_pipelines = super::sky_gpu::EnvironmentPipelines::new(
+            &device,
+            &frame_bindings.layout,
+            scene_color_format,
+        );
+        let celestial_halo = super::celestial_halo_gpu::CelestialHaloGpu::new(
+            &device,
+            &frame_bindings.layout,
+            scene_color_format,
+        );
+        let stars =
+            super::stars_gpu::StarGpu::new(&device, &frame_bindings.layout, scene_color_format);
+        let moon =
+            super::moon_gpu::MoonGpu::new(&device, &frame_bindings.layout, scene_color_format);
+        let moon_sphere = super::moon_sphere_gpu::MoonSphereGpu::new(
+            &device,
+            &frame_bindings.layout,
+            scene_color_format,
+        );
+        let mut shadow_gpu = super::shadow_gpu::ShadowGpu::new(
+            &device,
+            super::shadows::ShadowSettings::for_quality(initial_quality),
+            shadow_format,
+        )?;
+        if adapter_fallback_reason.is_some() {
+            shadow_gpu.fallback_reason = adapter_fallback_reason;
+        }
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("minimium-pipeline-layout"),
-            bind_group_layouts: &[Some(&camera_layout)],
+            label: Some("minimium-world-shadow-pipeline-layout"),
+            bind_group_layouts: &[
+                Some(&frame_bindings.layout),
+                Some(&shadow_gpu.empty_layout),
+                Some(&shadow_gpu.group2_layout),
+            ],
             immediate_size: 0,
         });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("minimium-solid-3d-pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[Some(Vertex::layout())],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: Some(true),
-                depth_compare: Some(wgpu::CompareFunction::Less),
-                stencil: Default::default(),
-                bias: Default::default(),
-            }),
-            multisample: Default::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+        let pipeline = super::world_pipeline::create(&device, &pipeline_layout, scene_color_format);
         let (ui_pipeline, ui_bind_group, ui_vertex_buffer) =
-            create_ui_resources(&device, &queue, config.format);
+            create_ui_resources(&device, &queue, scene_color_format);
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("sample-world-geometry"),
             contents: bytemuck::cast_slice(vertices),
@@ -243,18 +249,32 @@ impl GpuResources {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let depth_view = create_depth_view(&device, size);
-        let fixed_gpu_bytes = camera_buffer.size()
+        let depth_view = super::gpu_surface::create_depth_view(&device, size);
+        let fixed_gpu_bytes = frame_bindings.camera_buffer.size()
+            + frame_bindings.environment_buffer.size()
             + vertex_buffer.size()
             + player_buffer.size()
+            + shadow_gpu.gpu_bytes()
             + ui_vertex_buffer.size()
+            + stars.buffer.size()
+            + output_encoder
+                .as_ref()
+                .map_or(0, |output| output.size_bytes())
             + (crate::console::ATLAS_WIDTH * crate::console::ATLAS_HEIGHT) as u64;
         Ok(Self {
             surface,
             device,
             queue,
             config,
+            scene_color_format,
             pipeline,
+            shadow_gpu,
+            shadow_state: super::shadows::ShadowState::default(),
+            environment_pipelines,
+            celestial_halo,
+            stars,
+            moon,
+            moon_sphere,
             ui_pipeline,
             ui_bind_group,
             ui_vertex_buffer,
@@ -263,22 +283,38 @@ impl GpuResources {
             vertex_count: vertices.len() as u32,
             player_buffer,
             remote_vertex_count: 0,
-            camera_buffer,
-            camera_bind_group,
+            shadow_player_buffer: None,
+            shadow_player_vertex_count: 0,
+            shadow_remote_complete: true,
+            shadow_remote_dirty: false,
+            camera_buffer: frame_bindings.camera_buffer,
+            environment_buffer: frame_bindings.environment_buffer,
+            camera_bind_group: frame_bindings.bind_group,
             depth_view,
             size,
             fixed_gpu_bytes,
             world_vertex_catalog: std::collections::HashMap::new(),
             world_sector_versions: std::collections::HashMap::new(),
+            world_geometry_bounds: std::collections::HashMap::new(),
             active_sector_keys: Vec::new(),
             active_world_instance: minimium_core::world::WorldInstanceId::new(1)
                 .expect("primary world ID is nonzero"),
             render_origin: [0.0; 3],
+            shadow_map_buffer: None,
+            shadow_map_instance: None,
+            shadow_map_fingerprint: None,
+            shadow_map_center: None,
+            shadow_map_vertex_count: 0,
             overview_buffer: None,
+            overview_marker_buffer: None,
+            environment_draw_calls: super::sky::EnvironmentDrawCalls::default(),
+            last_shadow_prepare_cpu: None,
+            last_environment_upload_cpu: None,
             overview_active: false,
             overview_globe: false,
             scene_visible: true,
             globe: None,
+            output_encoder,
         })
     }
 
@@ -290,7 +326,15 @@ impl GpuResources {
         self.config.width = size.width;
         self.config.height = size.height;
         self.surface.configure(&self.device, &self.config);
-        self.depth_view = create_depth_view(&self.device, size);
+        self.depth_view = super::gpu_surface::create_depth_view(&self.device, size);
+        if let Some(output) = &mut self.output_encoder {
+            let old_size = output.size_bytes();
+            output.resize(&self.device, size);
+            self.fixed_gpu_bytes = self
+                .fixed_gpu_bytes
+                .saturating_sub(old_size)
+                .saturating_add(output.size_bytes());
+        }
     }
 }
 
@@ -391,7 +435,7 @@ fn create_ui_resources(
     });
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("minimium-console-ui-shader"),
-        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("ui.wgsl"))),
+        source: wgpu::ShaderSource::Wgsl(Cow::Owned(super::shader_source::ui())),
     });
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("minimium-console-ui-pipeline-layout"),
@@ -434,23 +478,4 @@ fn create_ui_resources(
         mapped_at_creation: false,
     });
     (pipeline, bind_group, vertex_buffer)
-}
-
-fn create_depth_view(device: &wgpu::Device, size: PhysicalSize<u32>) -> wgpu::TextureView {
-    device
-        .create_texture(&wgpu::TextureDescriptor {
-            label: Some("depth-buffer"),
-            size: wgpu::Extent3d {
-                width: size.width.max(1),
-                height: size.height.max(1),
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Depth32Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        })
-        .create_view(&wgpu::TextureViewDescriptor::default())
 }

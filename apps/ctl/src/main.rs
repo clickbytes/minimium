@@ -30,9 +30,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         args.remove(index);
     }
     let command = args.join(" ");
-    ServerCommand::parse(&command)?;
+    let parsed = ServerCommand::parse(&command)?;
     let endpoint = ServerEndpoint::read(&data_dir)?;
-    if command == "stop" {
+    if parsed.is_stop() {
         admin_client::stop_and_wait(&data_dir, &endpoint)?;
         println!("server stopped cleanly");
     } else {

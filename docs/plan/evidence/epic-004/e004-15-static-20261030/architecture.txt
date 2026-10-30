@@ -1,0 +1,1 @@
+Architecture dependency check passed (full Cargo graph, all features/targets, transitive normal/build edges; dev edges excluded).

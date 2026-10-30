@@ -2,7 +2,7 @@ use super::*;
 use crate::messages::ClientText as Text;
 
 impl Renderer {
-    pub(super) fn update(&mut self) {
+    pub(super) fn update(&mut self) -> environment::PreparedEnvironmentFrame {
         if self.overview_open && self.overview_instance != Some(self.current_instance) {
             self.overview_open = false;
             self.gpu.overview_active = false;
@@ -109,6 +109,7 @@ impl Renderer {
             self.connection_status = "Earth: przeniesiono".into();
         }
         self.advance_pending_transitions();
+        self.update_environment_frame();
         self.update_remote_player_rendering(Instant::now());
 
         let (view, far) = if self.overview_open {
@@ -150,6 +151,13 @@ impl Renderer {
             };
             (glam::Mat4::look_to_rh(local_camera, direction, up), far)
         };
+        let camera_eye_local = view.inverse().transform_point3(glam::Vec3::ZERO);
+        let render_origin = if self.overview_open {
+            glam::Vec3::ZERO
+        } else {
+            glam::Vec3::from_array(self.gpu.render_origin)
+        };
+        let camera_eye_world = (camera_eye_local + render_origin).as_dvec3().to_array();
         // The overview camera is millions of metres from the globe. A 5 cm
         // near plane rounds its depth to 1.0 in f32 and hides the surface.
         let near = if self.overview_open
@@ -180,11 +188,49 @@ impl Renderer {
             near,
             far,
         );
-        self.gpu.queue.write_buffer(
-            &self.gpu.camera_buffer,
-            0,
-            bytemuck::cast_slice(&[(projection * view).to_cols_array_2d()]),
-        );
+        let game_planet_radius_m = self
+            .world_manifests
+            .get(&self.current_instance)
+            .filter(|manifest| manifest.topology() == WorldTopology::Planet)
+            .map(|manifest| {
+                manifest
+                    .planet()
+                    .map(|definition| definition.radius_mm)
+                    .unwrap_or_else(|| minimium_procgen::planet_surface_for(*manifest).radius_mm())
+                    as f64
+                    / 1000.0
+            })
+            .unwrap_or(0.0);
+        let render_origin_m = if self.overview_open {
+            [0.0; 3]
+        } else {
+            self.gpu.render_origin.map(f64::from)
+        };
+        let render_view = RenderViewFrame::from_camera(RenderViewInput {
+            view,
+            projection,
+            viewport: [self.gpu.size.width, self.gpu.size.height],
+            render_origin_m,
+            camera_eye_world_m: camera_eye_world,
+            game_planet_radius_m,
+            kind: if self.overview_open {
+                environment::EnvironmentViewKind::Overview
+            } else {
+                environment::EnvironmentViewKind::Surface
+            },
+            srgb_surface: matches!(
+                self.gpu.config.format,
+                wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb
+            ),
+        });
+        let prepared_environment = match render_view {
+            Some(view) => self.update_render_environment(view),
+            None => {
+                self.render_environment_frame =
+                    EnvironmentFrame::unavailable(RenderViewFrame::default());
+                environment::PreparedEnvironmentFrame::new(self.render_environment_frame, None)
+            }
+        };
 
         let vertex_count = {
             let vertices = self.ui.console.build_vertices(
@@ -214,6 +260,7 @@ impl Renderer {
             count
         };
         self.gpu.ui_vertex_count = vertex_count;
+        prepared_environment
     }
 }
 

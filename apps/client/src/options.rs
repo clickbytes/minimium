@@ -1,3 +1,4 @@
+use crate::environment::quality::SkyQuality;
 use std::path::PathBuf;
 
 const DEFAULT_LOCAL_DATA_DIR: &str = ".minimium-local";
@@ -40,6 +41,7 @@ pub struct ClientOptions {
     pub console: bool,
     pub help: bool,
     pub threads: ThreadLane,
+    pub sky_quality: SkyQuality,
     pub profile_dir: Option<PathBuf>,
     pub server_data_dir: Option<PathBuf>,
 }
@@ -56,6 +58,7 @@ impl ClientOptions {
             console: false,
             help: false,
             threads: ThreadLane::One,
+            sky_quality: SkyQuality::Standard,
             profile_dir: None,
             server_data_dir: None,
         };
@@ -67,6 +70,7 @@ impl ClientOptions {
         let mut seen_console = false;
         let mut seen_help = false;
         let mut seen_threads = false;
+        let mut seen_sky_quality = false;
         let mut seen_profile_dir = false;
         let mut seen_server_data_dir = false;
         let mut args = args.into_iter().peekable();
@@ -104,6 +108,12 @@ impl ClientOptions {
                     reject_duplicate(&mut seen_threads, "--threads")?;
                     let value = required_value(&mut args, "--threads")?;
                     options.threads = ThreadLane::parse(&value)?;
+                }
+                "--sky-quality" => {
+                    reject_duplicate(&mut seen_sky_quality, "--sky-quality")?;
+                    let value = required_value(&mut args, "--sky-quality")?;
+                    options.sky_quality = SkyQuality::parse(&value)
+                        .map_err(|_| "--sky-quality must be low or standard".to_owned())?;
                 }
                 "--demo" => {
                     reject_duplicate(&mut seen_demo, "--demo")?;

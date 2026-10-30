@@ -28,6 +28,7 @@ pub struct ServerConfig {
     pub map_path: Option<PathBuf>,
     pub world_definition_path: Option<PathBuf>,
     pub planet_config_path: Option<PathBuf>,
+    pub environment_config_path: Option<PathBuf>,
     pub bind_address: String,
     pub game_port: u16,
     pub max_players: usize,
@@ -47,6 +48,7 @@ impl ServerConfig {
             map_path: None,
             world_definition_path: None,
             planet_config_path: None,
+            environment_config_path: None,
             bind_address: String::from("127.0.0.1"),
             game_port: 0,
             max_players: MAX_PLAYERS,
@@ -116,6 +118,13 @@ impl ServerConfig {
                     index += 1;
                     config.planet_config_path = Some(PathBuf::from(
                         args.get(index).ok_or("--planet-config requires a path")?,
+                    ));
+                }
+                "--environment-config" => {
+                    index += 1;
+                    config.environment_config_path = Some(PathBuf::from(
+                        args.get(index)
+                            .ok_or("--environment-config requires a path")?,
                     ));
                 }
                 "--bind" => {

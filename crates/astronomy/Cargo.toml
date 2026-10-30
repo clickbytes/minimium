@@ -1,0 +1,12 @@
+[package]
+name = "minimium-astronomy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[dependencies]
+minimium-core = { path = "../core" }
+
+[build-dependencies]
+cc = "1.10"

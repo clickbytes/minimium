@@ -12,7 +12,9 @@ pub(super) struct RendererSetup {
     pub(super) map_path: Option<PathBuf>,
     pub(super) world_definition_path: Option<PathBuf>,
     pub(super) threads: crate::options::ThreadLane,
+    pub(super) sky_quality: crate::environment::quality::SkyQuality,
     pub(super) require_earth: bool,
+    pub(super) demo: bool,
 }
 
 impl Renderer {
@@ -27,7 +29,9 @@ impl Renderer {
             map_path,
             world_definition_path,
             threads,
+            sky_quality,
             require_earth,
+            demo,
         } = setup;
         let map_fingerprint = map.fingerprint();
         let current_instance = world_catalog
@@ -58,7 +62,17 @@ impl Renderer {
             .iter()
             .flat_map(|(_, geometry)| sector_geometry(geometry))
             .collect();
-        let mut gpu = GpuResources::new(window, &vertices).await?;
+        let mut gpu = GpuResources::new(window, &vertices, sky_quality).await?;
+        let effective_quality = if gpu.shadow_gpu.settings.enabled {
+            crate::environment::quality::SkyQuality::Standard
+        } else {
+            crate::environment::quality::SkyQuality::Low
+        };
+        let sky_quality_state = crate::environment::quality::SkyQualityState::new(
+            sky_quality,
+            effective_quality,
+            gpu.shadow_gpu.fallback_reason,
+        );
         gpu.scene_visible = !require_earth;
         if !gpu.cache_sector_scene(current_instance, &initial_scene)
             || !gpu.activate_sector_scene(current_instance, &initial_scene)
@@ -74,6 +88,13 @@ impl Renderer {
         let mut console = Console::new();
         console.push_line("F1 opens the command console. Type help for commands.");
         console.push_line("M toggles the world overview.");
+        let sky_catalogue = match environment::stars::StarCatalogueAdapter::load_embedded() {
+            Ok(catalogue) => Some(catalogue),
+            Err(error) => {
+                console.push_error(format!("Embedded star catalog unavailable: {error}"));
+                None
+            }
+        };
         let fingerprints = world_catalog
             .iter()
             .map(|(instance, map)| (*instance, map.fingerprint()))
@@ -89,6 +110,7 @@ impl Renderer {
             gpu,
             game: GameplayView {
                 remote_vertices: Vec::with_capacity(16 * 36),
+                remote_shadow_vertices: Vec::with_capacity(16 * 36),
                 remote_players: [None; MAX_VISIBLE_PLAYERS],
                 last_remote_snapshot_time_ms: None,
                 last_remote_snapshot_received_at: None,
@@ -133,8 +155,17 @@ impl Renderer {
                 world_definition_path,
                 threads,
                 require_earth,
+                demo,
             },
+            sky_quality: sky_quality_state,
             connection,
+            environment_frame: EnvironmentFrameInput::unavailable(),
+            render_environment_frame: EnvironmentFrame::unavailable(RenderViewFrame::default()),
+            environment_observer: environment::observer::ObserverAdapter::default(),
+            sky_calculator: minimium_astronomy::SkyCalculator::default(),
+            sky_catalogue,
+            environment_error: None,
+            demo_environment: demo.then(LocalDemoEnvironment::new).flatten(),
             world_catalog,
             world_manifests,
             sector_cache,

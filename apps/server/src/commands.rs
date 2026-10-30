@@ -1,8 +1,11 @@
-use crate::world_registry::WorldRegistry;
+mod time;
+
+use crate::{environment::EnvironmentClock, world_registry::WorldRegistry};
 use crate::{
     metrics::RuntimeMetrics,
     storage::{PersistenceWorker, PlayerStore},
 };
+use minimium_core::time::MonotonicMs;
 use minimium_core::world::World;
 use minimium_platform::commands::{server_help, ServerCommand};
 
@@ -14,6 +17,8 @@ pub struct CommandContext<'a> {
     pub map_fingerprint: u64,
     pub lanes: usize,
     pub metrics: &'a RuntimeMetrics,
+    pub environment_clock: &'a mut EnvironmentClock,
+    pub monotonic_ms: MonotonicMs,
 }
 
 pub struct CommandReply {
@@ -31,6 +36,8 @@ pub fn execute(command: ServerCommand, context: CommandContext<'_>) -> CommandRe
         map_fingerprint,
         lanes,
         metrics,
+        environment_clock,
+        monotonic_ms,
     } = context;
     match command {
         ServerCommand::Help => CommandReply {
@@ -41,9 +48,13 @@ pub fn execute(command: ServerCommand, context: CommandContext<'_>) -> CommandRe
         ServerCommand::Status => CommandReply {
             success: true,
             text: format!(
-                "running players={} lanes={lanes} ticks={} {}",
+                "running players={} lanes={lanes} ticks={} clock_probe_requests={} clock_probe_accepted={} clock_probe_rejected={} environment_sync_messages={} {}",
                 world.player_count(),
                 metrics.ticks,
+                metrics.clock_probe_requests,
+                metrics.clock_probe_accepted,
+                metrics.clock_probe_rejected,
+                metrics.environment_sync_messages,
                 persistence.summary()
             ),
             stop: false,
@@ -80,7 +91,14 @@ pub fn execute(command: ServerCommand, context: CommandContext<'_>) -> CommandRe
             stop: false,
         },
         ServerCommand::Save => {
-            match persistence.queue_world_save(player_store, worlds, map_fingerprint) {
+            let result = environment_clock
+                .capture_saved_state(monotonic_ms)
+                .and_then(|saved_clock| {
+                    persistence
+                        .queue_world_save(player_store, worlds, map_fingerprint, saved_clock)
+                        .map_err(|error| error.to_string())
+                });
+            match result {
                 Ok(()) => CommandReply {
                     success: true,
                     text: "world save queued; use status to check completion".to_owned(),
@@ -98,5 +116,6 @@ pub fn execute(command: ServerCommand, context: CommandContext<'_>) -> CommandRe
             text: "stopping".to_owned(),
             stop: true,
         },
+        ServerCommand::Time(command) => time::execute(command, environment_clock, monotonic_ms),
     }
 }

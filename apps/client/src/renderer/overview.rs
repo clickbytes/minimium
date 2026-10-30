@@ -30,7 +30,7 @@ impl Renderer {
         if earth && self.gpu.globe.is_none() {
             self.connection_status = "Earth: przygotowanie globu".into();
         }
-        let mut vertices = if earth {
+        let vertices = if earth {
             if self.gpu.globe.is_none() && self.globe_loading.is_none() {
                 let planet = manifest.planet().expect("Earth definition exists");
                 let (width, height) = self.gpu.texture_dimensions();
@@ -73,8 +73,9 @@ impl Renderer {
         } else {
             [1.0; 3]
         };
+        let mut marker_vertices = Vec::new();
         cube(
-            &mut vertices,
+            &mut marker_vertices,
             if earth {
                 let radial =
                     glam::Vec3::from_array(self.game.character.position).normalize_or_zero();
@@ -88,6 +89,7 @@ impl Renderer {
             [0.95, 0.2, 0.1],
         );
         self.gpu.install_overview(&vertices);
+        self.gpu.install_overview_marker(&marker_vertices);
         self.metrics.frame_stats.set_gpu_bytes(
             self.gpu.fixed_gpu_bytes
                 + u64::from(self.gpu.size.width.max(1))
@@ -141,7 +143,13 @@ impl Renderer {
             [radius * self.marker_scale(true); 3],
             [0.95, 0.2, 0.1],
         );
-        self.gpu.install_overview(&vertices);
+        self.gpu.install_overview_marker(&vertices);
+        self.metrics.frame_stats.set_gpu_bytes(
+            self.gpu.fixed_gpu_bytes
+                + u64::from(self.gpu.size.width.max(1))
+                    * u64::from(self.gpu.size.height.max(1))
+                    * 4,
+        );
     }
 
     pub(super) fn refresh_earth_globe_lod(&mut self) {
@@ -296,7 +304,8 @@ impl Renderer {
                     glam::Vec3::ZERO,
                     up,
                 ),
-                radius * (self.overview_zoom + 2.0),
+                // The physical Moon remains about 60 Earth radii away.
+                radius * 80.0,
             )
         } else {
             let Some(map) = self.world_catalog.get(&self.current_instance) else {
@@ -333,6 +342,10 @@ impl GpuResources {
         if let Some((old, _)) = self.overview_buffer.take() {
             self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_sub(old.size());
         }
+        if vertices.is_empty() {
+            self.overview_buffer = None;
+            return;
+        }
         let buffer = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -342,5 +355,23 @@ impl GpuResources {
             });
         self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_add(buffer.size());
         self.overview_buffer = Some((buffer, vertices.len() as u32));
+    }
+
+    fn install_overview_marker(&mut self, vertices: &[Vertex]) {
+        if let Some((old, _)) = self.overview_marker_buffer.take() {
+            self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_sub(old.size());
+        }
+        if vertices.is_empty() {
+            return;
+        }
+        let buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("world-overview-marker"),
+                contents: bytemuck::cast_slice(vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+        self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_add(buffer.size());
+        self.overview_marker_buffer = Some((buffer, vertices.len() as u32));
     }
 }

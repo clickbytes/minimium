@@ -5,6 +5,8 @@ use crate::messages::ClientText as Text;
 
 impl Renderer {
     pub(crate) fn start_remote_attempt(&mut self, address: &str) {
+        self.demo_environment = None;
+        self.environment_frame = crate::environment::EnvironmentFrameInput::unavailable();
         if self.settings.require_earth {
             self.connection_status = "Łączenie z Earth".into();
             self.gpu.scene_visible = false;
@@ -19,6 +21,8 @@ impl Renderer {
     }
 
     pub(crate) fn start_local_attempt(&mut self, threads: crate::options::ThreadLane) {
+        self.demo_environment = None;
+        self.environment_frame = crate::environment::EnvironmentFrameInput::unavailable();
         if self.settings.require_earth {
             self.connection_status = "Łączenie z Earth".into();
             self.gpu.scene_visible = false;
@@ -55,6 +59,12 @@ impl Renderer {
     }
 
     pub(super) fn poll_connector(&mut self) {
+        if let Some(result) = self.connection.poll_time_scale_result() {
+            match result {
+                Ok(response) => self.ui.console.push_line(response.trim()),
+                Err(error) => self.ui.console.push_error(format!("time scale: {error}")),
+            }
+        }
         match self.connection.poll_connector() {
             ConnectionEvent::TimedOut => {
                 self.connection_status = "Błąd połączenia: przekroczono czas".into();
@@ -63,6 +73,7 @@ impl Renderer {
                     .push_error(Text::AttemptTimedOut.to_string());
             }
             ConnectionEvent::SessionStarted => {
+                self.clear_pending_sector_transitions();
                 self.reset_remote_gameplay();
                 self.ui.console.push_line(Text::AwaitingWelcome.to_string());
             }
@@ -102,6 +113,7 @@ impl Renderer {
     }
 
     pub(super) fn clear_connection(&mut self) {
+        self.clear_pending_sector_transitions();
         self.map_teleport_pending = false;
         self.map_teleport_armed = false;
         self.teleport_loading = false;
@@ -246,6 +258,8 @@ impl Renderer {
         if self.connection.session().is_none() {
             self.game.clear_remote_players();
             self.gpu.remote_vertex_count = 0;
+            self.game.remote_shadow_vertices.clear();
+            self.gpu.update_remote_shadow_vertices(&[]);
             return;
         }
         if self
@@ -253,6 +267,44 @@ impl Renderer {
             .update_remote_vertices(now, self.gpu.render_origin)
         {
             self.gpu.update_remote_vertices(&self.game.remote_vertices);
+        }
+        let center = self.game.position_mm.map_or_else(
+            || self.game.character.position.map(f64::from),
+            |position| position.0.map(|value| value as f64 / 1000.0),
+        );
+        let mut shadow_vertices = Vec::with_capacity(self.game.remote_players.len() * 36);
+        for track in self.game.remote_players.iter().flatten() {
+            let feet = track
+                .displayed_position_mm
+                .map(|value| value as f64 / 1000.0);
+            let shape_center = [feet[0], feet[1] + 0.85, feet[2]];
+            let half = [0.3, 0.85, 0.3];
+            let distance_squared = (0..3)
+                .map(|axis| {
+                    let delta = (center[axis] - shape_center[axis]).abs() - half[axis];
+                    delta.max(0.0).powi(2)
+                })
+                .sum::<f64>();
+            if distance_squared > 256.0_f64.powi(2) {
+                continue;
+            }
+            let relative: [f32; 3] = std::array::from_fn(|axis| {
+                (feet[axis] - f64::from(self.gpu.render_origin[axis])) as f32
+            });
+            cube(
+                &mut shadow_vertices,
+                [relative[0], relative[1] + 0.85, relative[2]],
+                [0.6, 1.7, 0.6],
+                [0.82, 0.16, 0.12],
+            );
+        }
+        if self.gpu.shadow_remote_dirty
+            || bytemuck::cast_slice::<Vertex, u8>(&shadow_vertices)
+                != bytemuck::cast_slice::<Vertex, u8>(&self.game.remote_shadow_vertices)
+        {
+            self.game.remote_shadow_vertices = shadow_vertices;
+            self.gpu
+                .update_remote_shadow_vertices(&self.game.remote_shadow_vertices);
         }
     }
 }

@@ -914,6 +914,15 @@ version = "0.1.0"
 dependencies = [
  "minimium-core",
  "minimium-procgen",
+ "sha2",
+]
+
+[[package]]
+name = "minimium-astronomy"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "minimium-core",
 ]
 
 [[package]]
@@ -924,6 +933,7 @@ dependencies = [
  "bytemuck",
  "glam",
  "minimium-assets",
+ "minimium-astronomy",
  "minimium-core",
  "minimium-platform",
  "minimium-procgen",

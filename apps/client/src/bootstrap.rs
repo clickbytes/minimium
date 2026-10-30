@@ -34,6 +34,20 @@ pub struct OwnedServer {
 }
 
 impl LocalServer {
+    /// Returns the private admin endpoint only while the owned child is alive.
+    pub fn owned_admin_endpoint(&mut self) -> io::Result<Option<ServerEndpoint>> {
+        match self {
+            Self::Attached => Ok(None),
+            Self::Owned(server) => {
+                if server.is_running()? {
+                    Ok(server.endpoint.clone())
+                } else {
+                    Ok(None)
+                }
+            }
+        }
+    }
+
     /// Reports whether this guard still owns a running child process.
     pub fn is_owned_process_running(&mut self) -> io::Result<bool> {
         match self {

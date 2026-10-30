@@ -13,12 +13,16 @@ use std::{
     error::Error,
     io::{self, Write},
     sync::mpsc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 const INPUT_QUEUE_CAPACITY: usize = 64;
+const ENVIRONMENT_STATUS_REFRESH: Duration = Duration::from_secs(5);
 
 pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
+    if options.sky_quality != crate::environment::quality::SkyQuality::Standard {
+        println!("--sky-quality is available only in the desktop renderer");
+    }
     let map_path = options.map_path.clone();
     let world_definition_path = options.world_definition_path.clone();
     let (map, world_fingerprints) = if let Some(path) = map_path.as_deref() {
@@ -84,18 +88,30 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
     let mut events = Vec::with_capacity(16);
     let mut prompt_needed = true;
     let mut last_snapshot: Option<ServerMessage> = None;
+    let mut last_environment_status = None;
+    let mut last_environment_status_at = None;
 
     if let Some(address) = options.connect.as_ref() {
         start_remote(&mut connection, address);
     }
 
     loop {
+        if let Some(result) = connection.poll_time_scale_result() {
+            match result {
+                Ok(response) => println!("{}", response.trim()),
+                Err(error) => println!("time scale: {error}"),
+            }
+        }
         match connection.poll_connector() {
             ConnectionEvent::InProgress {
                 waiting_for_cleanup: true,
             } => println!("{}", Text::WaitingForCancelledCleanup),
             ConnectionEvent::TimedOut => println!("{}", Text::AttemptTimedOut),
-            ConnectionEvent::SessionStarted => println!("{}", Text::AwaitingWelcome),
+            ConnectionEvent::SessionStarted => {
+                last_environment_status = None;
+                last_environment_status_at = None;
+                println!("{}", Text::AwaitingWelcome)
+            }
             ConnectionEvent::SetupFailed(error) => {
                 println!("{}", Text::ConnectionSetupFailed(error.to_string()))
             }
@@ -122,6 +138,30 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
                 connection.take_session();
                 last_snapshot = None;
             }
+        }
+        if let Some(frame) = connection
+            .session()
+            .filter(|session| session.state() == SessionState::Connected)
+            .map(|session| session.environment_frame())
+        {
+            let signature = frame.status_signature();
+            let changed = last_environment_status != Some(signature);
+            let date_refresh_due = frame.render_world_utc_ms.is_some()
+                && last_environment_status_at
+                    .is_none_or(|last: Instant| last.elapsed() >= ENVIRONMENT_STATUS_REFRESH);
+            if changed || date_refresh_due {
+                println!("{}", frame.status_line());
+                last_environment_status = Some(signature);
+                last_environment_status_at = Some(Instant::now());
+            }
+        } else if last_environment_status.is_some() {
+            let unavailable = crate::environment::EnvironmentFrameInput::unavailable();
+            let signature = unavailable.status_signature();
+            if last_environment_status != Some(signature) {
+                println!("{}", unavailable.status_line());
+            }
+            last_environment_status = Some(signature);
+            last_environment_status_at = Some(Instant::now());
         }
 
         if prompt_needed {
@@ -228,6 +268,30 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
                         FrontendAction::Quit => break,
                         FrontendAction::MapTeleport => {
                             println!("map_telepo is available in the desktop Earth overview");
+                        }
+                        FrontendAction::SkyQuality(quality) => {
+                            println!(
+                                "sky quality {} is unavailable in the text client (desktop renderer required)",
+                                quality.label()
+                            );
+                        }
+                        FrontendAction::SkyInfo => {
+                            println!("sky info unavailable: desktop renderer required");
+                        }
+                        FrontendAction::TimeStatus => {
+                            let unavailable =
+                                crate::environment::EnvironmentFrameInput::unavailable();
+                            let status = connection
+                                .session()
+                                .map(|session| session.environment_frame().time_status_line())
+                                .unwrap_or_else(|| unavailable.time_status_line());
+                            println!("{status}");
+                        }
+                        FrontendAction::TimeScale(value) => {
+                            match connection.request_time_scale(value) {
+                                Ok(()) => println!("time scale request sent"),
+                                Err(error) => println!("time scale: {error}"),
+                            }
                         }
                     },
                 }
@@ -359,6 +423,7 @@ fn print_session_event(event: SessionEvent, show_snapshot: bool) {
             ServerMessage::TransitionPrepare { .. } => println!("world transfer prepared"),
             ServerMessage::TransitionCommitted { .. } => println!("world transfer committed"),
             ServerMessage::TransitionCancelled { .. } => println!("world transfer cancelled"),
+            ServerMessage::EnvironmentSync { .. } | ServerMessage::TimeProbeReply { .. } => {}
             ServerMessage::MapTeleportResult { .. } => {}
         },
     }

@@ -247,6 +247,8 @@ pub(super) fn wait_for_setup_message(
                                 "server sent duplicate Welcome",
                             ));
                         }
+                        (SetupExpectation::Accepted, ServerMessage::EnvironmentSync { .. })
+                        | (SetupExpectation::Accepted, ServerMessage::TimeProbeReply { .. }) => {}
                         (SetupExpectation::Accepted, _) => {}
                     }
                 }

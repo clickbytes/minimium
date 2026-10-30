@@ -44,6 +44,7 @@ impl ClientSession {
     /// buffers and connection state.
     pub fn poll(&mut self, events: &mut Vec<SessionEvent>) -> SessionState {
         let now = Instant::now();
+        self.clock.observe_poll(self.clock.local_monotonic_ms());
         if self.state == SessionState::AwaitingWelcome
             && now.saturating_duration_since(self.state_since) >= WELCOME_TIMEOUT
         {
@@ -74,6 +75,8 @@ impl ClientSession {
         }
 
         let now = Instant::now();
+        let now_ms = self.clock.local_monotonic_ms();
+        self.queue_due_time_probe(now_ms);
         if self.state == SessionState::Connected
             && self.pending_ping_at.is_none()
             && self.pending_ping_end.is_none()
@@ -83,6 +86,17 @@ impl ClientSession {
             self.last_heartbeat_at = now;
         }
         self.flush_send(events);
+        let now_ms = self.clock.local_monotonic_ms();
+        if self.state == SessionState::Connected {
+            self.clock.update_frame(
+                self.clock_sample,
+                self.environment_descriptor,
+                self.world_context,
+                now_ms,
+            );
+        } else {
+            self.clock.update_frame(None, None, None, now_ms);
+        }
         self.state
     }
 
@@ -188,6 +202,7 @@ impl ClientSession {
             match decode_server(&self.receive_buffer) {
                 Ok(Some((message, frame_bytes))) => {
                     self.receive_buffer.drain(..frame_bytes);
+                    let decoded_at_ms = self.clock.local_monotonic_ms();
                     let planet = match &message {
                         ServerMessage::Welcome { manifest, .. }
                         | ServerMessage::TransitionPrepare { manifest, .. }
@@ -206,6 +221,8 @@ impl ClientSession {
                             map_fingerprint,
                             context,
                             manifest,
+                            clock_sample,
+                            environment,
                             ..
                         } => {
                             if self.state != SessionState::AwaitingWelcome {
@@ -241,6 +258,14 @@ impl ClientSession {
                                 self.disconnect(DisconnectReason::GeneratorMismatch, events);
                                 return;
                             }
+                            if let Err(reason) = self.install_initial_environment(
+                                *manifest,
+                                *clock_sample,
+                                *environment,
+                            ) {
+                                self.disconnect(reason, events);
+                                return;
+                            }
                             self.world_context = Some(*context);
                             self.pending_transition = None;
                             self.ready_transition = None;
@@ -254,6 +279,8 @@ impl ClientSession {
                             target_context,
                             map_fingerprint,
                             manifest,
+                            clock_sample,
+                            environment,
                             ..
                         } => {
                             if self.state != SessionState::Connected {
@@ -289,6 +316,16 @@ impl ClientSession {
                                 self.disconnect(DisconnectReason::UnexpectedMessage, events);
                                 return;
                             }
+                            if let Err(reason) = self.prepare_environment(
+                                *transition_id,
+                                *target_context,
+                                *manifest,
+                                *clock_sample,
+                                *environment,
+                            ) {
+                                self.disconnect(reason, events);
+                                return;
+                            }
                             self.pending_transition = Some(transition);
                             self.ready_transition = None;
                         }
@@ -297,6 +334,8 @@ impl ClientSession {
                             context,
                             map_fingerprint,
                             manifest,
+                            clock_sample,
+                            environment,
                             ..
                         } => {
                             let expected_fingerprint =
@@ -320,26 +359,75 @@ impl ClientSession {
                             if self.pending_transition != Some((*transition_id, *context)) {
                                 continue;
                             }
+                            if let Err(reason) = self.commit_environment(
+                                *transition_id,
+                                *context,
+                                *manifest,
+                                *clock_sample,
+                                *environment,
+                            ) {
+                                self.disconnect(reason, events);
+                                return;
+                            }
                             self.world_context = Some(*context);
                             self.pending_transition = None;
                             self.ready_transition = None;
-                            self.send_buffer.clear();
-                            self.send_offset = 0;
-                            self.pending_ping_at = None;
-                            self.pending_ping_end = None;
+                            // Keep queued bytes: a partially sent frame must be completed.
+                            // The server rejects world inputs carrying the old context;
+                            // heartbeat and clock probes remain valid across the transfer.
                         }
                         ServerMessage::TransitionCancelled {
                             transition_id,
                             context,
                         } => {
-                            if self
+                            if !self
                                 .pending_transition
                                 .is_some_and(|(pending, _)| pending == *transition_id)
-                                && Some(*context) == self.world_context
+                                || Some(*context) != self.world_context
                             {
-                                self.pending_transition = None;
-                                self.ready_transition = None;
+                                continue;
                             }
+                            self.pending_transition = None;
+                            self.ready_transition = None;
+                            self.cancel_pending_environment(*transition_id);
+                        }
+                        ServerMessage::EnvironmentSync {
+                            context,
+                            clock_sample,
+                            environment,
+                        } => {
+                            if self.state != SessionState::Connected {
+                                self.disconnect(DisconnectReason::UnexpectedMessage, events);
+                                return;
+                            }
+                            match self.apply_environment_sync(*context, *clock_sample, *environment)
+                            {
+                                Ok(true) => {}
+                                Ok(false) => continue,
+                                Err(reason) => {
+                                    self.disconnect(reason, events);
+                                    return;
+                                }
+                            }
+                        }
+                        ServerMessage::TimeProbeReply {
+                            seq,
+                            echoed_client_send_monotonic_ms,
+                            server_receive_monotonic_ms,
+                            server_send_monotonic_ms,
+                            session_nonce,
+                        } => {
+                            if let Err(reason) = self.validate_probe_nonce(*session_nonce) {
+                                self.disconnect(reason, events);
+                                return;
+                            }
+                            self.clock.accept_probe_reply(
+                                *seq,
+                                *echoed_client_send_monotonic_ms,
+                                *server_receive_monotonic_ms,
+                                *server_send_monotonic_ms,
+                                decoded_at_ms,
+                            );
                         }
                         ServerMessage::Error(code)
                             if self.state == SessionState::AwaitingWelcome =>
@@ -377,6 +465,10 @@ impl ClientSession {
                     if self.receive_buffer.len() > MAX_FRAME_BYTES {
                         self.disconnect(DisconnectReason::BufferLimit, events);
                     }
+                    return;
+                }
+                Err(ProtocolError::UnsupportedEnvironment) => {
+                    self.disconnect(DisconnectReason::EnvironmentMismatch, events);
                     return;
                 }
                 Err(error) => {

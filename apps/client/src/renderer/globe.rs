@@ -163,7 +163,7 @@ impl GpuResources {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
@@ -239,7 +239,7 @@ impl GpuResources {
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some("globe shader"),
-                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("globe.wgsl"))),
+                source: wgpu::ShaderSource::Wgsl(Cow::Owned(super::shader_source::globe())),
             });
         let camera_layout = self.pipeline.get_bind_group_layout(0);
         let pipeline_layout = self
@@ -269,7 +269,7 @@ impl GpuResources {
                     entry_point: Some("fs_main"),
                     compilation_options: Default::default(),
                     targets: &[Some(wgpu::ColorTargetState {
-                        format: self.config.format,
+                        format: self.scene_color_format,
                         blend: None,
                         write_mask: wgpu::ColorWrites::ALL,
                     })],

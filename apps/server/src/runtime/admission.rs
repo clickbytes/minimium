@@ -8,7 +8,8 @@ use minimium_protocol::{ClientMessage, ClientWorldInput, ServerErrorCode, Server
 
 impl ServerRuntime {
     pub(super) fn admit_messages(&mut self) {
-        for (index, message, decoded_at) in self.connections.messages.drain(..) {
+        let mut messages = std::mem::take(&mut self.connections.messages);
+        for (index, message, decoded_at) in messages.drain(..) {
             if index >= self.connections.clients.len()
                 || self.connections.disconnected.contains(&index)
                 || self.connections.clients[index].close_deadline().is_some()
@@ -31,6 +32,8 @@ impl ServerRuntime {
                         .game
                         .worlds
                         .world_input_context_is_current(player, context)
+                        && self.game.pending_world_inputs.len() + self.connections.clients.len()
+                            < MAX_PENDING_WORLD_INPUTS
                     {
                         self.game
                             .pending_world_inputs
@@ -50,7 +53,8 @@ impl ServerRuntime {
                             .game
                             .worlds
                             .world_input_context_is_current(player, context)
-                            && self.game.pending_world_inputs.len() < MAX_PENDING_WORLD_INPUTS
+                            && self.game.pending_world_inputs.len() + self.connections.clients.len()
+                                < MAX_PENDING_WORLD_INPUTS
                         {
                             self.game.pending_world_inputs.push((
                                 WorldInput::MapTeleport(player, context, direction),
@@ -203,7 +207,19 @@ impl ServerRuntime {
                         },
                         Some(decoded_at),
                     ));
-                    if !queue_message(
+                    let now = Instant::now();
+                    let (clock_sample, environment) =
+                        match self.environment_state_for_instance(instance, now) {
+                            Ok(state) => state,
+                            Err(error) => {
+                                eprintln!("could not sample environment for Welcome: {error}");
+                                self.connections.clients[index].disconnect_reason =
+                                    Some(CloseReason::InvalidSequence);
+                                self.connections.disconnected.push(index);
+                                continue;
+                            }
+                        };
+                    let queued = queue_message(
                         &mut self.connections.clients[index],
                         &mut self.metrics,
                         ServerMessage::Welcome {
@@ -223,14 +239,22 @@ impl ServerRuntime {
                                 .manifest_for_player(player.id)
                                 .expect("reserved membership has a manifest"),
                             transition_id: None,
+                            clock_sample,
+                            environment,
                         },
-                    ) {
+                    );
+                    if !queued {
                         self.metrics.dropped_messages =
                             self.metrics.dropped_messages.saturating_add(1);
                         self.connections.clients[index].disconnect_reason =
                             Some(CloseReason::Backpressure);
                         self.connections.disconnected.push(index);
                     } else {
+                        self.connections.clients[index].mark_environment_sent(
+                            context,
+                            clock_sample.revision(),
+                            Instant::now(),
+                        );
                         println!("player {} connected", player.id);
                     }
                 }
@@ -245,6 +269,77 @@ impl ServerRuntime {
                         &mut self.metrics,
                         ServerMessage::Pong,
                     ) {
+                        self.metrics.dropped_messages =
+                            self.metrics.dropped_messages.saturating_add(1);
+                    }
+                }
+                ClientMessage::TimeProbe {
+                    seq,
+                    client_send_monotonic_ms,
+                } if player_id.is_some() => {
+                    self.metrics.clock_probe_requests =
+                        self.metrics.clock_probe_requests.saturating_add(1);
+                    let now = Instant::now();
+                    if !self.connections.clients[index].accept_time_probe(now) {
+                        self.metrics.clock_probe_rejected =
+                            self.metrics.clock_probe_rejected.saturating_add(1);
+                        self.metrics.rejected_inputs =
+                            self.metrics.rejected_inputs.saturating_add(1);
+                        let may_reply = self.connections.clients[index]
+                            .last_time_probe_rejection_at
+                            .is_none_or(|last| {
+                                now.saturating_duration_since(last) >= Duration::from_secs(1)
+                            });
+                        if may_reply
+                            && queue_message(
+                                &mut self.connections.clients[index],
+                                &mut self.metrics,
+                                ServerMessage::Error(ServerErrorCode::RateLimit),
+                            )
+                        {
+                            self.connections.clients[index].last_time_probe_rejection_at =
+                                Some(now);
+                        }
+                        continue;
+                    }
+                    let Ok(server_receive_monotonic_ms) = self.monotonic_ms(decoded_at) else {
+                        self.metrics.clock_probe_rejected =
+                            self.metrics.clock_probe_rejected.saturating_add(1);
+                        self.metrics.rejected_inputs =
+                            self.metrics.rejected_inputs.saturating_add(1);
+                        continue;
+                    };
+                    let send_at = Instant::now();
+                    let Ok(server_send_monotonic_ms) = self.monotonic_ms(send_at) else {
+                        self.metrics.clock_probe_rejected =
+                            self.metrics.clock_probe_rejected.saturating_add(1);
+                        self.metrics.rejected_inputs =
+                            self.metrics.rejected_inputs.saturating_add(1);
+                        continue;
+                    };
+                    let Ok(sample) = self.environment_clock.sample(server_send_monotonic_ms) else {
+                        self.metrics.clock_probe_rejected =
+                            self.metrics.clock_probe_rejected.saturating_add(1);
+                        self.metrics.rejected_inputs =
+                            self.metrics.rejected_inputs.saturating_add(1);
+                        continue;
+                    };
+                    if queue_message(
+                        &mut self.connections.clients[index],
+                        &mut self.metrics,
+                        ServerMessage::TimeProbeReply {
+                            seq,
+                            echoed_client_send_monotonic_ms: client_send_monotonic_ms,
+                            server_receive_monotonic_ms: server_receive_monotonic_ms.get(),
+                            server_send_monotonic_ms: server_send_monotonic_ms.get(),
+                            session_nonce: sample.session_nonce(),
+                        },
+                    ) {
+                        self.metrics.clock_probe_accepted =
+                            self.metrics.clock_probe_accepted.saturating_add(1);
+                    } else {
+                        self.metrics.clock_probe_rejected =
+                            self.metrics.clock_probe_rejected.saturating_add(1);
                         self.metrics.dropped_messages =
                             self.metrics.dropped_messages.saturating_add(1);
                     }
@@ -395,5 +490,6 @@ impl ServerRuntime {
                 }
             }
         }
+        self.connections.messages = messages;
     }
 }

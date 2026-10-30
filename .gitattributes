@@ -1,0 +1,13 @@
+# Pinned text bytes and deterministic generated products must survive Windows
+# checkouts unchanged: provenance/importer SHA-256 values refer to LF files.
+third_party/astronomy-engine/LICENSE text eol=lf
+third_party/astronomy-engine/source/c/astronomy.c text eol=lf
+third_party/astronomy-engine/source/c/astronomy.h text eol=lf
+crates/assets/data/sky/HYG-LICENSE-NOTICE.txt text eol=lf
+crates/assets/data/sky/LICENSE-CC-BY-SA-4.0.txt text eol=lf
+crates/assets/data/sky/ATTRIBUTION.md text eol=lf
+crates/assets/data/sky/stars-v1.manifest.json text eol=lf
+crates/assets/src/sky_catalog/identity.generated.rs text eol=lf
+crates/astronomy/src/ffi/bindings.generated.rs text eol=lf
+# Static evidence manifests hash the UTF-8/LF log bytes.
+docs/plan/evidence/epic-004/e004-15-static-20261030/*.txt text eol=lf

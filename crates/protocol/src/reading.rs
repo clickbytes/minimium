@@ -53,6 +53,14 @@ impl<'a> Reader<'a> {
         Ok(u64::from_le_bytes(bytes))
     }
 
+    pub(crate) fn i64(&mut self) -> Result<i64, ProtocolError> {
+        let bytes: [u8; 8] = self
+            .take(8)?
+            .try_into()
+            .map_err(|_| ProtocolError::InvalidPayload)?;
+        Ok(i64::from_le_bytes(bytes))
+    }
+
     pub(crate) fn u128(&mut self) -> Result<u128, ProtocolError> {
         let bytes: [u8; 16] = self
             .take(16)?

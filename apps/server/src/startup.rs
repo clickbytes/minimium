@@ -1,13 +1,17 @@
 use crate::{
     admin::AdminServer,
     config::ServerConfig,
+    environment::{self, EnvironmentConfig},
     lifecycle::{remove_if_exists, EndpointGuard},
     planet_config::{self, PlanetMode, ResolvedPlanetConfig},
     storage::{PersistenceWorker, PlayerStore},
 };
-use minimium_core::world::{
-    WorldContentRevision, WorldDefinitionId, WorldInstanceId, WorldManifest, WorldMap,
-    WorldTopology,
+use minimium_core::{
+    time::SavedClockState,
+    world::{
+        WorldContentRevision, WorldDefinitionId, WorldInstanceId, WorldManifest, WorldMap,
+        WorldTopology,
+    },
 };
 use minimium_platform::{
     admin_client::{SHUTDOWN_FILE, SHUTDOWN_OWNER_FILE},
@@ -34,6 +38,8 @@ pub(crate) struct Startup {
     pub(crate) endpoint_guard: EndpointGuard,
     pub(crate) data_lock: ServerDataLock,
     pub(crate) admin: AdminServer,
+    pub(crate) environment_config: EnvironmentConfig,
+    pub(crate) saved_clock: Option<SavedClockState>,
 }
 
 pub(crate) fn initialize(config: &ServerConfig) -> Result<Startup, Box<dyn std::error::Error>> {
@@ -51,6 +57,19 @@ pub(crate) fn initialize(config: &ServerConfig) -> Result<Startup, Box<dyn std::
     }
 
     let data_lock = ServerDataLock::acquire(data_dir)?;
+    if config.environment_config_path.is_some()
+        && ["world.seed", "world.planet.ron", "world.snapshot"]
+            .iter()
+            .any(|name| data_dir.join(name).exists())
+    {
+        return Err("--environment-config initializes a new world only; use time commands for an existing world".into());
+    }
+    let environment_config = config
+        .environment_config_path
+        .as_deref()
+        .map(environment::load_config)
+        .transpose()?
+        .unwrap_or_default();
     let seed_path = data_dir.join("world.seed");
     let existing_seed = match minimium_platform::files::read_bounded_file(&seed_path, 64) {
         Ok(bytes) => Some(
@@ -93,12 +112,15 @@ pub(crate) fn initialize(config: &ServerConfig) -> Result<Startup, Box<dyn std::
                         io::Error::new(io::ErrorKind::InvalidData, "snapshot is not UTF-8")
                     })?;
                     let fields: Vec<_> = source.lines().next().unwrap_or("").split('\t').collect();
-                    if fields.first() == Some(&"MINIMIUM_WORLD")
-                        && fields.get(1) == Some(&"6")
+                    let recognized_planet = fields.first() == Some(&"MINIMIUM_WORLD")
+                        && matches!(fields.get(1).copied(), Some("6" | "7" | "8"))
                         && fields.get(3) == Some(&"1")
                         && fields.get(4) == Some(&"0")
-                        && fields.get(6) == Some(&"2")
-                    {
+                        && fields
+                            .get(6)
+                            .and_then(|value| value.parse::<u32>().ok())
+                            .is_some_and(|revision| revision >= 2);
+                    if recognized_planet {
                         fields.get(5).and_then(|value| value.parse::<u128>().ok())
                     } else {
                         None
@@ -257,7 +279,12 @@ pub(crate) fn initialize(config: &ServerConfig) -> Result<Startup, Box<dyn std::
             generated_worlds.as_ref().expect("generated worlds exist"),
         )?;
     }
-    let mut player_store = PlayerStore::load(data_dir, &world_maps)?;
+    let loaded_state = PlayerStore::load(data_dir, &world_maps)?;
+    if let Some(version) = loaded_state.source_version.filter(|version| *version < 8) {
+        println!("legacy world snapshot v{version}: initializing world clock as real_time");
+    }
+    let saved_clock = loaded_state.saved_clock;
+    let mut player_store = loaded_state.player_store;
     if let Some(planet) = &planet {
         if !resolved_path.exists() {
             let source = ron::to_string(planet)?;
@@ -316,6 +343,8 @@ pub(crate) fn initialize(config: &ServerConfig) -> Result<Startup, Box<dyn std::
         endpoint_guard,
         data_lock,
         admin,
+        environment_config,
+        saved_clock,
     })
 }
 
@@ -336,7 +365,7 @@ fn migrate_legacy_demo(
         legacy_map.clone(),
         legacy_manifest(3, legacy_map.fingerprint()),
     ));
-    let mut players = PlayerStore::load(data_dir, &old_maps)?;
+    let mut players = PlayerStore::load(data_dir, &old_maps)?.player_store;
     players.migrate_legacy_planet_positions();
     let mut registry =
         crate::world_registry::WorldRegistry::from_generated_worlds(generated_worlds.to_vec());
@@ -348,7 +377,14 @@ fn migrate_legacy_demo(
                 format!("legacy sector state: {error:?}"),
             )
         })?;
-    let snapshot = players.save_snapshot(&registry, registry.primary().map.fingerprint())?;
+    let saved_clock = environment::initial_saved_clock_state().map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("environment clock: {error}"),
+        )
+    })?;
+    let snapshot =
+        players.save_snapshot(&registry, registry.primary().map.fingerprint(), saved_clock)?;
     let source = data_dir.join("world.snapshot");
     let backup = data_dir.join("world.snapshot.legacy-v1");
     if !backup.exists() {

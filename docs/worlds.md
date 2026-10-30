@@ -44,6 +44,10 @@ saves and snapshots; collision queries retain coarse `f32` broadphase cells.
   can contain players at the same coordinates without sharing state.
 - `WorldManifest` binds definition ID, topology, generation settings, content
   revision and a 32-byte generator digest.
+- Mutable time and sky configuration lives in `EnvironmentDescriptor`, outside
+  the immutable manifest. The planet and interior instances share `ClockId=1`;
+  each instance selects an `Interior`, `Earth` or `EarthLike` profile without
+  changing generation, content revision or map fingerprints.
 - `WorldLocation` carries an instance ID, signed integer millimeter position and
   canonical Q1.30 unit-quaternion orientation. Equivalent `q` and `-q` values
   canonicalize to one value.
@@ -130,6 +134,23 @@ room bounds, centers, origin IDs and connectivity before materialization.
 
 ## Runtime ownership and transfer
 
+Epic 004's clock contract is independent of the fixed simulation step and sector
+lifecycle. `RealTime` follows server UTC; `TimeScale` advances from an explicit
+UTC anchor at a nonnegative rate, with zero pausing the environment. Both modes
+use the same clock evaluation and astronomical model. Physics, cooldowns and
+network deadlines continue on real time. Interior instances retain the shared
+clock identity even when their profile does not render the planetary sky.
+
+The protocol v13 client estimator uses one local monotonic epoch per
+`ClientSession` and exposes one immutable `EnvironmentFrameInput` after polling
+and portal installation. Its date, active descriptor, context, clock revision,
+rate and synchronization quality are shared by renderer environment consumers.
+Quality progresses through Initializing, Synchronized, Stale and Unavailable;
+network sessions never fall back to local wall-clock time. Only explicit
+`--demo` mode uses a separate local UTC anchor, reported as `LocalDemo`. Starting
+a network attempt disables that demo source; reconnect always starts with a new
+session nonce, offset filter and smoothing state.
+
 The server's `WorldRegistry` owns isolated simulation state, memberships,
 membership epochs and pending transfers. Portal transfer follows prepare, target
 ready, then commit on a tick boundary. The server commits only after the client
@@ -140,14 +161,26 @@ digest, then waits for target sector data, collision and GPU buffers before
 acknowledging readiness. It switches its active sector scene and input state
 without recreating the window, GPU device or TCP session.
 
-Protocol v11 wraps gameplay inputs and snapshots in instance, content revision and
+Protocol v13 wraps gameplay inputs and snapshots in instance, content revision and
 membership epoch. Inputs and snapshots from an older membership context are
-discarded. Save v7 records every loaded world's manifest and map fingerprint,
-along with each player's instance, millimeter position, orientation, health and
-return location. v2/v3 snapshots are attached only to a loaded legacy map with a
-matching fingerprint; they are never guessed onto the procedural planet. The
-intermediate v4 format is accepted only for locations in the primary instance,
-because it did not pin manifests for target worlds.
+discarded. Save v9 records every loaded world's manifest and map fingerprint,
+each player's instance, millimeter position, orientation, health and return
+location, revisioned sector state, and the shared world clock. v2/v3 snapshots
+are attached only to a loaded legacy map with a matching fingerprint; they are
+never guessed onto the procedural planet. The intermediate v4 format is accepted
+only for locations in the primary instance, because it did not pin manifests for
+target worlds. Every valid v2–v7 snapshot remains readable and starts a RealTime
+clock at current UTC; its data is rewritten as v9 only when the next snapshot
+completes.
+
+The v8/v9 `CLOCK` record is stored after `WORLD` records and before sector or player
+records in the same atomic snapshot. RealTime uses the current UTC after restart.
+TimeScale/Pause resumes `saved_world_utc_ms`; TimeScale/Advance adds
+`floor(max(0, current_wall_utc_ms - saved_wall_utc_ms) * rate_ppm / 1_000_000)`
+with checked arithmetic. If wall UTC moved backwards, offline advance is zero
+and the server logs the saved and current values. Invalid or out-of-range clock
+state aborts startup without replacing the snapshot. The process nonce and
+monotonic clock are session-local and never stored.
 
 The server and client use the same topology-specific neighborhood and geometry
 generator. Both keep bounded ticketed caches. On the server, a sector becomes
@@ -165,7 +198,7 @@ buffers before the client acknowledges. The client retains source maps in CPU
 memory so it can create deterministic sectors locally. An existing v1 demo
 snapshot is loaded with its original generator, copied to
 `world.snapshot.legacy-v1`, and rewritten with positions projected along their
-saved radial directions. Save v7 stores complete,
+saved radial directions. Save v9 stores complete,
 revisioned logical object-state sets by sector; the server registry checks
 topology, revision order and size limits when committing or restoring them. The
 demo currently has no interaction that changes sector objects. Geometry edits

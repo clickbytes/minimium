@@ -1,3 +1,48 @@
+mod time;
+
+pub use time::{parse_scale_ppm, parse_world_time_utc, TimeCommand, TIME_USAGE};
+
+const SERVER_COMMANDS: [&str; 6] = [
+    "help",
+    "status",
+    "players list",
+    "metrics show",
+    "world save",
+    "stop",
+];
+
+const SERVER_HELP: [&str; 13] = [
+    "help",
+    "status",
+    "players list",
+    "metrics show",
+    "world save",
+    "stop",
+    "time status",
+    "time mode real_time",
+    "time mode time_scale",
+    "time set RFC3339_UTC",
+    "time scale DECIMAL",
+    "time offline pause",
+    "time offline advance",
+];
+
+const CONTROL_COMMANDS: [&str; 13] = [
+    "help",
+    "status",
+    "players list",
+    "metrics show",
+    "world save",
+    "stop",
+    "time status",
+    "time mode real_time",
+    "time mode time_scale",
+    "time set RFC3339_UTC",
+    "time scale DECIMAL",
+    "time offline pause",
+    "time offline advance",
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ServerCommand {
     Help,
@@ -6,6 +51,7 @@ pub enum ServerCommand {
     Metrics,
     Save,
     Stop,
+    Time(TimeCommand),
 }
 
 impl ServerCommand {
@@ -20,54 +66,56 @@ impl ServerCommand {
 
     pub const fn name(self) -> &'static str {
         match self {
-            Self::Help => "help",
-            Self::Status => "status",
-            Self::Players => "players list",
-            Self::Metrics => "metrics show",
-            Self::Save => "world save",
-            Self::Stop => "stop",
+            Self::Help => SERVER_COMMANDS[0],
+            Self::Status => SERVER_COMMANDS[1],
+            Self::Players => SERVER_COMMANDS[2],
+            Self::Metrics => SERVER_COMMANDS[3],
+            Self::Save => SERVER_COMMANDS[4],
+            Self::Stop => SERVER_COMMANDS[5],
+            Self::Time(_) => "time",
         }
     }
 
     pub fn parse(line: &str) -> Result<Self, String> {
-        if line.split_whitespace().next().is_none() {
+        let words: Vec<_> = line.split_whitespace().collect();
+        if words.is_empty() {
             return Err("empty command".into());
         }
-        Self::ALL
-            .into_iter()
-            .find(|command| {
-                command
-                    .name()
-                    .split_whitespace()
-                    .eq(line.split_whitespace())
+        if words[0] == "time" {
+            return TimeCommand::parse(&words[1..]).map(Self::Time);
+        }
+        SERVER_COMMANDS
+            .iter()
+            .zip(Self::ALL)
+            .find_map(|(name, command)| {
+                name.split_whitespace()
+                    .eq(words.iter().copied())
+                    .then_some(command)
             })
             .ok_or_else(|| "unknown command; use `help`".into())
+    }
+
+    pub const fn is_status(self) -> bool {
+        matches!(self, Self::Status)
+    }
+
+    pub const fn is_metrics(self) -> bool {
+        matches!(self, Self::Metrics)
+    }
+
+    pub const fn is_save_or_stop(self) -> bool {
+        matches!(self, Self::Save | Self::Stop)
+    }
+
+    pub const fn is_stop(self) -> bool {
+        matches!(self, Self::Stop)
     }
 }
 
 pub fn server_help() -> String {
-    let mut help = String::with_capacity(64);
-    for command in ServerCommand::ALL {
-        if !help.is_empty() {
-            help.push_str(" | ");
-        }
-        help.push_str(command.name());
-    }
-    help
+    SERVER_HELP.join(" | ")
 }
 
 pub fn control_usage_commands() -> String {
-    let mut names = String::with_capacity(64);
-    for command in ServerCommand::ALL
-        .into_iter()
-        .cycle()
-        .skip(1)
-        .take(ServerCommand::ALL.len())
-    {
-        if !names.is_empty() {
-            names.push('|');
-        }
-        names.push_str(command.name());
-    }
-    names
+    CONTROL_COMMANDS.join("|")
 }

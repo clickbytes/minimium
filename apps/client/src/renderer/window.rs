@@ -27,7 +27,7 @@ impl ApplicationHandler for App {
         }
         let attributes = WindowAttributes::default()
             .with_title(Text::WindowTitle.to_string())
-            .with_inner_size(PhysicalSize::new(1280, 720));
+            .with_inner_size(PhysicalSize::new(1920, 1080));
         let window = match event_loop.create_window(attributes) {
             Ok(window) => Arc::new(window),
             Err(error) => {
@@ -57,7 +57,9 @@ impl ApplicationHandler for App {
             map_path: self.options.map_path.clone(),
             world_definition_path: self.options.world_definition_path.clone(),
             threads: self.options.threads,
+            sky_quality: self.options.sky_quality,
             require_earth: self.options.require_earth,
+            demo: self.options.demo,
         })) {
             Ok(mut renderer) => {
                 if !self.options.demo {
@@ -289,20 +291,32 @@ impl ApplicationHandler for App {
                 let started = Instant::now();
                 let interval = started.saturating_duration_since(renderer.metrics.last_redraw);
                 renderer.metrics.last_redraw = started;
-                renderer.update();
-                let draws = match renderer.gpu.render() {
-                    Ok(draws) => draws,
-                    Err(
-                        wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated,
-                    ) => {
-                        renderer.resize(window.inner_size());
-                        0
-                    }
-                    Err(error) => {
-                        eprintln!("{}", Text::RenderFailed(format!("{error:?}")));
-                        0
-                    }
-                };
+                let prepared_environment = renderer.update();
+                let player_position_m = renderer.game.position_mm.map_or_else(
+                    || renderer.game.character.position.map(f64::from),
+                    |position| position.0.map(|value| value as f64 / 1000.0),
+                );
+                let world_map = renderer.world_catalog.get(&renderer.current_instance);
+                let draws =
+                    match renderer
+                        .gpu
+                        .render(&prepared_environment, world_map, player_position_m)
+                    {
+                        Ok(draws) => draws,
+                        Err(
+                            wgpu::CurrentSurfaceTexture::Lost
+                            | wgpu::CurrentSurfaceTexture::Outdated,
+                        ) => {
+                            renderer.resize(window.inner_size());
+                            0
+                        }
+                        Err(error) => {
+                            eprintln!("{}", Text::RenderFailed(format!("{error:?}")));
+                            0
+                        }
+                    };
+                renderer.update_gpu_memory_metric();
+                renderer.record_environment_render_metrics(draws > 0);
                 renderer
                     .metrics
                     .frame_stats
@@ -328,13 +342,14 @@ impl ApplicationHandler for App {
                             String::new()
                         };
                     window.set_title(&format!(
-                        "{} | {}{}",
+                        "{} | {}{} | {}",
                         Text::WindowTitleStatus {
                             fps,
                             health: renderer.game.health
                         },
                         renderer.connection_status,
-                        coordinates
+                        coordinates,
+                        renderer.environment_frame.title_suffix()
                     ));
                 }
             }

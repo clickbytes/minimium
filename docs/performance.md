@@ -18,7 +18,7 @@ The command reports space-separated `key=value` fields. Counters are cumulative 
 
 - **Simulation cadence:** `ticks`, `missed_ticks`, `tick_last_us`, `tick_avg_us`, `tick_p95_us`, `tick_p99_us`, plus `snapshots`, `missed_snapshots`.
 - **Loop phases:** `loop_avg_us/p95_us/p99_us`, `network_avg_us/p95_us/p99_us`, `input_avg_us/p95_us/p99_us`, `simulation_avg_us/p95_us/p99_us`, `snapshot_avg_us/p95_us/p99_us`, `encoding_avg_us/p95_us/p99_us`, and `input_wait_avg_us/p95_us/p99_us`.
-- **Traffic and outcomes:** `bytes_in`, `bytes_out`, `decoded_frames`, `queued_frames`, `dropped_messages`, `dropped_snapshots`, `rejected_inputs`, `idle_timeouts`, `handshake_timeouts`, `shots_fired`, `shots_hit`, and `player_kills`. Byte counters count application game bytes handled for admitted game clients; they exclude admin IPC and one-shot rejection writes. `queued_frames` counts frames admitted to output queues, not frames acknowledged by the remote peer.
+- **Traffic and outcomes:** `bytes_in`, `bytes_out`, `decoded_frames`, `queued_frames`, `dropped_messages`, `dropped_snapshots`, `rejected_inputs`, `clock_probe_requests`, `clock_probe_accepted`, `clock_probe_rejected`, `environment_sync_messages`, `idle_timeouts`, `handshake_timeouts`, `shots_fired`, `shots_hit`, and `player_kills`. Probe requests count decoded client time probes; accepted/rejected count replies successfully queued or requests rate-limited/invalid/otherwise unable to reply. Environment sync counts clock/descriptor messages admitted to client output queues. Byte counters count application game bytes handled for admitted game clients; they exclude admin IPC and one-shot rejection writes. `queued_frames` counts frames admitted to output queues, not frames acknowledged by the remote peer.
 - **Queue and output bounds:** `max_pending_inputs`, `max_client_input_bytes`, `max_client_output_bytes`, and `oldest_output_age_us`.
 - **Spatial query work:** `collision_queries`, `collision_cells`, `collision_cells_per_query`, `collision_max_cells_per_query`, `collision_aabb_candidates`, `collision_aabb_candidates_per_query`, `collision_max_aabb_candidates_per_query`, `collision_triangle_candidates`, `collision_triangle_candidates_per_query`, `collision_max_triangle_candidates_per_query`, and `collision_full_scan_queries`.
 - **Process samples:** `memory_samples`, `memory_rss_bytes`, `memory_peak_rss_bytes`, `memory_private_bytes`, `memory_peak_private_bytes`, `memory_rss_average_per_player_bytes`, `process_cpu_time_ms`, and `process_threads`. Memory and process values refresh at most once per second. Process CPU time is cumulative CPU time across the process's OS threads, not CPU utilization; unavailable platform values are `n/a`. RSS-per-player divides total process RSS, including fixed overhead, by current active players.
@@ -31,7 +31,7 @@ The save request channel has capacity one; the main lane captures copy-on-write 
 
 Movement batches retain their buffers across ticks. Core performs copy-on-write of player and cell indexes before dispatch, as in the prior implementation; snapshot references can therefore trigger copies. Worker completion order does not set merge order: the executor restores submission order before the main lane applies results. HashMap iteration is not a cross-run ordering guarantee, and equivalence across lane settings remains unverified.
 
-`status` provides the actual `game_address`, configured `lanes`, active `players`, `ticks`, `save_pending`, `save_last`, `max_players`, `map_fingerprint`, `tick_ms`, `snapshot_ms`, `autosave_seconds`, `protocol_version`, and `save_version`. `lanes` includes the main server lane. `save_pending` is 0 or 1; `save_last` is `never`, `pending`, `ok`, or `error_<message>`. These describe asynchronous persistence; `world save` reports queue acceptance, not disk completion.
+`status` provides the actual `game_address`, configured `lanes`, active `players`, `ticks`, `clock_probe_requests`, `clock_probe_accepted`, `clock_probe_rejected`, `environment_sync_messages`, `save_pending`, `save_last`, `max_players`, `map_fingerprint`, `tick_ms`, `snapshot_ms`, `autosave_seconds`, `protocol_version`, and `save_version`. `lanes` includes the main server lane. `save_pending` is 0 or 1; `save_last` is `never`, `pending`, `ok`, or `error_<message>`. These describe asynchronous persistence; `world save` reports queue acceptance, not disk completion.
 
 On Linux, process memory uses `/proc`; on Windows it reports working-set and private committed bytes. Process CPU time is cumulative OS-reported user plus kernel time. Sampling is cached for one second; it is not a per-tick CPU measurement.
 
@@ -41,8 +41,9 @@ The in-window `fps show` command reports:
 
 - `frames` and `presented` sample/presentation counts;
 - `presented_FPS_avg`;
-- `frame_ms(avg/p95/p99)`, wall time between redraw callbacks;
-- `cpu_work_ms(avg/p95/p99)`, wall-clock elapsed around renderer update and render work, not process CPU time;
+- `frame_ms(avg/p50/p95/p99/max)`, wall time between redraw callbacks;
+- `cpu_work_ms(avg/p50/p95/p99/max)`, wall-clock elapsed around renderer update and render work, not process CPU time;
+- `timing_samples`, sample count for both timing summaries (including skipped presentation);
 - `draw_calls_per_presented_frame`;
 - `process_cpu_time_ms`, cumulative CPU time across client process threads, sampled/cached about once per second;
 - `engine_GPU_estimate`, a renderer-side estimate from tracked resources and surface dimensions, not a driver-reported total.
@@ -50,6 +51,49 @@ The in-window `fps show` command reports:
 `net stats` reports `tx`/`rx` application bytes, the latest `rtt` sample, and current nearby-player count. These are client observations and are not a measurement of network-wide TCP overhead. `frame_ms` samples are wall time between redraw callbacks; `cpu_work_ms` samples wall time around renderer update/render work. Both use the frame histogram family.
 
 Frame samples include redraw callbacks where presentation was skipped; those increment `frames` but not `presented`. `frame_ms` and `cpu_work_ms` averages/percentiles are `n/a` before their first sample. The load generator measures RTT from sending a ping until receiving its pong, using monotonic elapsed time; setup pings are excluded from measurement statistics.
+
+### Environment diagnostics
+
+`sky info` formats a versioned snapshot only when requested. Astronomy evaluation/cache counters, star-epoch updates/cache hits, clock-probe accept/reject counts, and environment draw-call totals use bounded counters. Environment CPU uses a fixed microsecond histogram with upper-bound buckets at 1, 2, 5, 10, 20, 50, 100, 250, 500, 1,000, 2,500, 5,000 and 10,000 microseconds plus overflow; percentiles use nearest-rank and the bucket upper bound. Shadow preparation has a separate histogram. No text formatting or unbounded storage occurs in the per-frame collection path.
+
+Diagnostic schema version **3** retains three disjoint CPU scopes and adds a
+separate halo draw-call counter. Each CPU scope exposes
+`_us_avg`, `_us_p50`, `_us_p95`, `_us_p99`, `_us_max` and its own `_samples` count:
+
+| Prefix | Scope |
+| --- | --- |
+| `environment_cpu` | Observer, astronomy, immutable frame/uniform construction and optional bounded 500-star CPU preparation; no queue writes. |
+| `environment_upload_cpu` | CPU time in queue writes for stars, camera and environment uniforms after a surface frame is acquired. |
+| `shadow_prepare_cpu` | Local caster selection/build/allocation/upload and shadow uniform upload; excludes remote-player geometry preparation performed earlier in renderer update. |
+
+The corresponding `_scope` keys state these boundaries explicitly. The two upload
+costs belong to separate buffer sets and must not be counted twice. The CPU scopes
+are subsets of total frame CPU work, not values to add to it. Skipped surface
+acquisition contributes preparation and skip counts but no upload/shadow sample.
+The optional star batch is discarded on a skip; the unchanged GPU stamp requires
+preparation again before the next draw. `environment_gpu_elapsed_us=n/a` because
+CPU queue writes are not a GPU timestamp measurement.
+
+`draw_calls_sky`, `draw_calls_stars`, `draw_calls_sun`, `draw_calls_moon`,
+`draw_calls_halos`, and `draw_calls_shadows` count commands encoded for presented frames;
+`render_frames_skipped` counts redraws without presentation. Requested/effective
+quality changes reset all three environment histograms and astronomy baselines;
+general `fps show` counters remain cumulative. These CPU scopes cannot be
+compared directly with the former combined environment timing.
+
+`environment_GPU_estimate_bytes` sums the 500-star instance buffer,
+camera/environment/shadow uniforms (224/352/128 B), shadow texture and dedicated
+map/player caster buffers. Breakdown keys are `environment_GPU_star_instance_buffer_bytes`,
+`environment_GPU_uniform_bytes`, `environment_GPU_shadow_texture_bytes`,
+`environment_GPU_map_caster_buffer_bytes`, `environment_GPU_player_caster_buffer_bytes`.
+Shared sector buffers are already part of the total engine estimate, identified by
+`environment_GPU_shared_sector_buffers=included_in_total_engine_estimate`; they
+are not duplicated in this environment subtotal. This is not driver VRAM or RSS.
+A disabled shadow profile retains a 1×1 binding texture and no shadow pass.
+`requested_quality` and `effective_quality` distinguish standard from an
+adapter/allocation fallback to low. Profiles keep identical astronomy and stars.
+
+`time status` reads the active session's server sample and reports UTC, mode, rate, sample age, clock offset/RTT, accepted/rejected probe samples and synchronization state. Clock values are `n/a` if no sample is available. `sky info` reports observer and Sun/Moon values in degrees/radians, UTC in ISO-8601 milliseconds, catalogue identity, CPU timing summaries, shadow coverage/reason, and GPU estimate. Interior worlds report observer and ephemeris fields as `n/a`. These outputs are diagnostics, not benchmark results; all environment timing and graphics-cost examples remain **NOT MEASURED** until the authorized final verification phase.
 
 ## Load-test report v2
 

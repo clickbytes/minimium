@@ -20,6 +20,11 @@ Generated outputs are not hand-maintained code and are excluded when they live u
 
 Data assets such as maps, fixtures, images, audio, and scenario/data documents are not source files and are outside this line limit. If a text file is executable code or a shader, add its suffix to the checker's source list instead of treating it as data. Large data assets should follow their own format-specific validation and storage rules.
 
+The generated HYG catalogue binary and JSON manifest under `crates/assets/data/sky/` are production data, not source. Its `identity.generated.rs` is emitted by `scripts/import_hyg_stars.py` and uses the checker's conventional generated suffix exclusion. The importer, reader, and client adapter remain hand-maintained code and must stay within 500 lines each.
+
 ## Approved exceptions
 
 Record each active exception on its own line as an HTML comment containing the key `file-length-exception:`, followed by the repository-relative path, a vertical bar, and a specific reason. Keep this section empty when there are no exceptions. The checker rejects malformed, duplicate, and stale entries.
+
+<!-- file-length-exception: third_party/astronomy-engine/source/c/astronomy.c | Verbatim upstream Astronomy Engine v2.1.19 source, pinned by third_party/astronomy-engine/provenance.json; split would invalidate the audited vendor snapshot. -->
+<!-- file-length-exception: third_party/astronomy-engine/source/c/astronomy.h | Verbatim upstream Astronomy Engine v2.1.19 header, pinned by third_party/astronomy-engine/provenance.json; split would invalidate the audited vendor snapshot. -->

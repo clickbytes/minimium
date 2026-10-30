@@ -19,6 +19,10 @@ pub(crate) struct RuntimeMetrics {
     pub(crate) dropped_messages: u64,
     pub(crate) dropped_snapshots: u64,
     pub(crate) rejected_inputs: u64,
+    pub(crate) clock_probe_requests: u64,
+    pub(crate) clock_probe_accepted: u64,
+    pub(crate) clock_probe_rejected: u64,
+    pub(crate) environment_sync_messages: u64,
     pub(crate) idle_timeouts: u64,
     pub(crate) handshake_timeouts: u64,
     pub(crate) shots_fired: u64,
@@ -115,10 +119,12 @@ impl RuntimeMetrics {
             .then(|| self.memory_rss_bytes.map(|bytes| bytes / players as u64))
             .flatten();
         let mut summary = format!(
-            "ticks={} missed_ticks={} snapshots={} missed_snapshots={} players={} bytes_in={} bytes_out={} decoded_frames={} queued_frames={} dropped_messages={} dropped_snapshots={} rejected_inputs={} idle_timeouts={} handshake_timeouts={} shots_fired={} shots_hit={} player_kills={} tick_last_us={} tick_avg_us={} tick_p95_us={} tick_p99_us={} loop_avg_us={} loop_p95_us={} loop_p99_us={} network_avg_us={} network_p95_us={} network_p99_us={} input_avg_us={} input_p95_us={} input_p99_us={} simulation_avg_us={} simulation_p95_us={} simulation_p99_us={} snapshot_avg_us={} snapshot_p95_us={} snapshot_p99_us={} encoding_avg_us={} encoding_p95_us={} encoding_p99_us={} input_wait_avg_us={} input_wait_p95_us={} input_wait_p99_us={} oldest_output_age_us={} collision_queries={} collision_cells={} collision_cells_per_query={:.2} collision_max_cells_per_query={} collision_aabb_candidates={} collision_aabb_candidates_per_query={:.2} collision_max_aabb_candidates_per_query={} collision_triangle_candidates={} collision_triangle_candidates_per_query={:.2} collision_max_triangle_candidates_per_query={} collision_full_scan_queries={} max_pending_inputs={} max_client_input_bytes={} max_client_output_bytes={} memory_samples={} memory_rss_bytes={} memory_peak_rss_bytes={} memory_private_bytes={} memory_peak_private_bytes={} memory_rss_average_per_player_bytes={} process_cpu_time_ms={} process_threads={}",
+            "ticks={} missed_ticks={} snapshots={} missed_snapshots={} players={} bytes_in={} bytes_out={} decoded_frames={} queued_frames={} dropped_messages={} dropped_snapshots={} rejected_inputs={} clock_probe_requests={} clock_probe_accepted={} clock_probe_rejected={} environment_sync_messages={} idle_timeouts={} handshake_timeouts={} shots_fired={} shots_hit={} player_kills={} tick_last_us={} tick_avg_us={} tick_p95_us={} tick_p99_us={} loop_avg_us={} loop_p95_us={} loop_p99_us={} network_avg_us={} network_p95_us={} network_p99_us={} input_avg_us={} input_p95_us={} input_p99_us={} simulation_avg_us={} simulation_p95_us={} simulation_p99_us={} snapshot_avg_us={} snapshot_p95_us={} snapshot_p99_us={} encoding_avg_us={} encoding_p95_us={} encoding_p99_us={} input_wait_avg_us={} input_wait_p95_us={} input_wait_p99_us={} oldest_output_age_us={} collision_queries={} collision_cells={} collision_cells_per_query={:.2} collision_max_cells_per_query={} collision_aabb_candidates={} collision_aabb_candidates_per_query={:.2} collision_max_aabb_candidates_per_query={} collision_triangle_candidates={} collision_triangle_candidates_per_query={:.2} collision_max_triangle_candidates_per_query={} collision_full_scan_queries={} max_pending_inputs={} max_client_input_bytes={} max_client_output_bytes={} memory_samples={} memory_rss_bytes={} memory_peak_rss_bytes={} memory_private_bytes={} memory_peak_private_bytes={} memory_rss_average_per_player_bytes={} process_cpu_time_ms={} process_threads={}",
             self.ticks, self.missed_ticks, self.snapshots, self.missed_snapshots, players,
             self.bytes_in, self.bytes_out, self.frames_in, self.frames_out,
             self.dropped_messages, self.dropped_snapshots, self.rejected_inputs,
+            self.clock_probe_requests, self.clock_probe_accepted,
+            self.clock_probe_rejected, self.environment_sync_messages,
             self.idle_timeouts, self.handshake_timeouts, self.shots_fired, self.shots_hit,
             self.player_kills, format_duration_us((self.ticks > 0).then(|| self.last_tick.as_micros().min(u128::from(u64::MAX)) as u64)),
             format_duration_us(self.tick.average_microseconds()), format_duration_us(self.tick.percentile_microseconds(95)),

@@ -1,5 +1,3 @@
-struct Camera { view_projection: mat4x4<f32> };
-@group(0) @binding(0) var<uniform> camera: Camera;
 @group(1) @binding(0) var globe: texture_2d_array<f32>;
 @group(1) @binding(1) var globe_sampler: sampler;
 
@@ -31,12 +29,27 @@ struct Output {
 @fragment fn fs_main(input: Output) -> @location(0) vec4<f32> {
     let sample = sample_map(input.uv);
     let offset = vec2<f32>(1.0) / (vec2<f32>(textureDimensions(globe)) * 4.0);
-    let east = sample_map(input.uv + vec2<f32>(offset.x, 0.0)).a;
-    let west = sample_map(input.uv - vec2<f32>(offset.x, 0.0)).a;
-    let north = sample_map(input.uv - vec2<f32>(0.0, offset.y)).a;
-    let south = sample_map(input.uv + vec2<f32>(0.0, offset.y)).a;
-    let slope = vec3<f32>((west-east) * 6.0, (north-south) * 6.0, 1.0);
-    let relief = 0.7 + 0.3 * max(dot(normalize(slope), normalize(vec3<f32>(0.5, 0.7, 1.0))), 0.0);
-    let daylight = 0.43 + 0.57 * max(dot(input.normal, normalize(vec3<f32>(0.6, 0.7, 0.35))), 0.0);
-    return vec4<f32>(sample.rgb * relief * daylight, 1.0);
+    let east_height = sample_map(input.uv + vec2<f32>(offset.x, 0.0)).a;
+    let west_height = sample_map(input.uv - vec2<f32>(offset.x, 0.0)).a;
+    let north_height = sample_map(input.uv - vec2<f32>(0.0, offset.y)).a;
+    let south_height = sample_map(input.uv + vec2<f32>(0.0, offset.y)).a;
+    let latitude = (0.5 - input.uv.y) * 3.14159265;
+    let longitude = (input.uv.x - 0.5) * 6.28318530;
+    let up = normalize(input.normal);
+    let east_dir = vec3<f32>(-sin(longitude), 0.0, cos(longitude));
+    let north_dir = vec3<f32>(-sin(latitude) * cos(longitude), cos(latitude), -sin(latitude) * sin(longitude));
+    var relief_normal = up;
+    if abs(cos(latitude)) > 0.002 {
+        let east_slope = (east_height - west_height) * 6.0;
+        let north_slope = (north_height - south_height) * 6.0;
+        relief_normal = normalize(up - east_slope * east_dir - north_slope * north_dir);
+    }
+    if environment.flags.z == 0u {
+        let fallback = environment.ambient_rgb_exposure.xyz;
+        return vec4<f32>(tone_map_linear(fallback * environment.ambient_rgb_exposure.w), 1.0);
+    }
+    let sun_direction = normalize(environment.global_sun_direction.xyz);
+    let diffuse = max(dot(relief_normal, sun_direction), 0.0);
+    let linear = sample.rgb * environment.global_sun_rgb.xyz * diffuse;
+    return vec4<f32>(tone_map_linear(linear * environment.ambient_rgb_exposure.w), 1.0);
 }
