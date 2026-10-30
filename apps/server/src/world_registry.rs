@@ -17,6 +17,7 @@ use std::{
 };
 
 mod constructors;
+mod diagnostics;
 mod environment;
 mod sector_state;
 
