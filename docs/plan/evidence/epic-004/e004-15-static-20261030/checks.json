@@ -2,7 +2,7 @@
   "sha": "8a0a33d703ae356fe3774df7cf5461e52d296975",
   "initial_checkout": "clean",
   "runtime": "NOT RUN",
-  "capture_note": "PowerShell Get-FileHash unavailable in runner; all command exit codes captured from runner output. Artifact SHA-256 populated afterward with Python. Logs converted from PowerShell UTF-16 to UTF-8 with normalized line endings. NativeCommandError wrappers in logs are PowerShell formatting of ordinary Cargo stderr, not nonzero command exits.",
+  "capture_note": "PowerShell Get-FileHash unavailable in runner; all command exit codes captured from runner output. Artifact SHA-256 populated afterward with Python. Logs converted from PowerShell UTF-16 to UTF-8 with normalized line endings and trailing whitespace. NativeCommandError wrappers in logs are PowerShell formatting of ordinary Cargo stderr, not nonzero command exits.",
   "checks": [
     {
       "name": "fmt",
@@ -18,7 +18,7 @@
       "seconds": 18.81,
       "command": "rtk cargo check --workspace --locked",
       "log": "check.txt",
-      "sha256": "091417db3c590d7f1960bfc949d828e3553719e466ffe209436ed21bdccd4f14"
+      "sha256": "a8669d80ec68d3d873574774f8a30aed388c862654939ed144340e6d1ac98f41"
     },
     {
       "name": "clippy",
@@ -34,7 +34,7 @@
       "seconds": 60.92,
       "command": "rtk cargo build --workspace --release --locked",
       "log": "release.txt",
-      "sha256": "2d23011e8cd26fe31a711da8cb2ccfff0268a2832f0ac1e5c2ab1bcaa560a09b"
+      "sha256": "36a9f8a78b71e92741e2b919db5ab2703275a7d12f59402161f16fb7940c761b"
     },
     {
       "name": "allocation-check",
@@ -42,7 +42,7 @@
       "seconds": 4.54,
       "command": "rtk cargo check -p minimium-server --features allocation-metrics --locked",
       "log": "allocation-check.txt",
-      "sha256": "1b95b8d5a91160cad865d47636af95ed80f1538a46eb85a8457e187ef288cddb"
+      "sha256": "99d036d434019653f16f3d4a01288ac9d26b70dd0ea327f4d5bd62d73471ebdb"
     },
     {
       "name": "allocation-release",
@@ -50,7 +50,7 @@
       "seconds": 22.37,
       "command": "rtk cargo build -p minimium-server --features allocation-metrics --release --locked",
       "log": "allocation-release.txt",
-      "sha256": "752a6f28a007c61476735e41cc5568a6a6467db57fca2803973ed90df0a6b0f6"
+      "sha256": "cdf056fe98ab76c2d0bcd0ea1e85b0c618d9182ef379cb5cd0f1c597b8230ae1"
     },
     {
       "name": "architecture",

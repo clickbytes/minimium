@@ -154,4 +154,3 @@ Właściciele, scenariusze i format artefaktów: [ledger](epic-004-verification.
 Kompletne instrukcje przed przyszłym uruchomieniem: [procedura](epic-004-final-verification.md).
 Zamknięcie #67 potwierdza wyłącznie statyczny odbiór integracji; #68 i #69
 pozostają osobnymi bramkami.
-
