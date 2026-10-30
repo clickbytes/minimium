@@ -1,6 +1,8 @@
 use crate::{metrics::RuntimeMetrics, network};
 use minimium_core::identity::PlayerProfileId;
 use minimium_core::ids::PlayerId;
+use minimium_core::time::ClockRevision;
+use minimium_protocol::WorldContext;
 use minimium_protocol::{encode_server_into, RemotePlayers, ServerMessage, MAX_SERVER_FRAME_BYTES};
 use std::{
     collections::VecDeque,
@@ -11,6 +13,7 @@ use std::{
 pub(crate) const MAX_QUEUED_OUTPUT_BYTES: usize = 64 * 1024;
 pub(crate) const MAX_QUEUED_OUTPUT_FRAMES: usize = 256;
 pub(crate) const CLIENT_CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
+const TIME_PROBE_WINDOW: Duration = Duration::from_secs(1);
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum CloseReason {
@@ -64,6 +67,11 @@ pub(crate) struct Client {
     pub(crate) last_fire_at: Option<Instant>,
     pub(crate) last_chat_at: Option<Instant>,
     pub(crate) pending_health_update: Option<u16>,
+    time_probe_received_at: [Option<Instant>; 2],
+    pub(crate) last_environment_sync_at: Option<Instant>,
+    pub(crate) last_environment_context: Option<WorldContext>,
+    pub(crate) last_environment_revision: Option<ClockRevision>,
+    pub(crate) last_time_probe_rejection_at: Option<Instant>,
 }
 
 impl Client {
@@ -89,6 +97,11 @@ impl Client {
             last_fire_at: None,
             last_chat_at: None,
             pending_health_update: None,
+            time_probe_received_at: [None; 2],
+            last_environment_sync_at: None,
+            last_environment_context: None,
+            last_environment_revision: None,
+            last_time_probe_rejection_at: None,
         }
     }
 
@@ -114,6 +127,36 @@ impl Client {
     pub(crate) fn activate(&mut self, player: PlayerId, profile: PlayerProfileId) {
         debug_assert!(matches!(self.phase, ConnectionPhase::AwaitIdentify));
         self.phase = ConnectionPhase::Active(Identity { player, profile });
+    }
+
+    pub(crate) fn accept_time_probe(&mut self, now: Instant) -> bool {
+        for received_at in &mut self.time_probe_received_at {
+            if received_at.is_some_and(|at| now.saturating_duration_since(at) >= TIME_PROBE_WINDOW)
+            {
+                *received_at = None;
+            }
+        }
+        if let Some(slot) = self
+            .time_probe_received_at
+            .iter_mut()
+            .find(|received_at| received_at.is_none())
+        {
+            *slot = Some(now);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn mark_environment_sent(
+        &mut self,
+        context: WorldContext,
+        revision: ClockRevision,
+        now: Instant,
+    ) {
+        self.last_environment_sync_at = Some(now);
+        self.last_environment_context = Some(context);
+        self.last_environment_revision = Some(revision);
     }
 
     pub(crate) fn close_deadline(&self) -> Option<Instant> {

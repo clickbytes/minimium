@@ -145,6 +145,20 @@ impl ServerRuntime {
             else {
                 continue;
             };
+            let (clock_sample, environment) = match self
+                .environment_state_for_instance(transfer.context.instance(), Instant::now())
+            {
+                Ok(state) => state,
+                Err(error) => {
+                    eprintln!("could not sample committed environment: {error}");
+                    if let Some(client) = self.connections.clients.get_mut(index) {
+                        client.disconnect_reason =
+                            Some(crate::connection::CloseReason::InvalidSequence);
+                    }
+                    self.connections.disconnected.push(index);
+                    continue;
+                }
+            };
             let Some(client) = self.connections.clients.get_mut(index) else {
                 continue;
             };
@@ -161,12 +175,20 @@ impl ServerRuntime {
                     destination_mm: transfer.destination_mm,
                     health: transfer.health,
                     manifest: transfer.manifest,
+                    clock_sample,
+                    environment,
                 },
             );
             if !queued {
                 self.metrics.dropped_messages = self.metrics.dropped_messages.saturating_add(1);
                 client.disconnect_reason = Some(crate::connection::CloseReason::Backpressure);
                 self.connections.disconnected.push(index);
+            } else {
+                client.mark_environment_sent(
+                    transfer.context,
+                    clock_sample.revision(),
+                    Instant::now(),
+                );
             }
         }
         committed_players

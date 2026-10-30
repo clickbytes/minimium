@@ -364,6 +364,8 @@ pub(super) fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> Worker
                                             stats.chat_received =
                                                 stats.chat_received.saturating_add(1);
                                         }
+                                        ServerMessage::EnvironmentSync { .. }
+                                        | ServerMessage::TimeProbeReply { .. } => {}
                                         _ => {}
                                     }
                                 }

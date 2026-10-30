@@ -154,6 +154,16 @@ impl ServerRuntime {
                     self.game.worlds.cancel_transfer(id, offer.transition_id);
                     return None;
                 };
+                let (clock_sample, environment) = match self
+                    .environment_state_for_instance(offer.target_context.instance(), Instant::now())
+                {
+                    Ok(state) => state,
+                    Err(error) => {
+                        eprintln!("could not sample target environment for transfer: {error}");
+                        self.game.worlds.cancel_transfer(id, offer.transition_id);
+                        return None;
+                    }
+                };
                 if let Some(client) = self.connections.clients.get_mut(index) {
                     if !queue_message(
                         client,
@@ -166,6 +176,8 @@ impl ServerRuntime {
                             destination: offer.destination,
                             destination_mm: offer.destination_mm,
                             manifest: offer.manifest,
+                            clock_sample,
+                            environment,
                         },
                     ) {
                         self.game.worlds.cancel_transfer(id, offer.transition_id);

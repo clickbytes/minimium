@@ -62,7 +62,7 @@ cargo run -p minimiumctl -- --data-dir .minimium-epic001/server stop
 
 ## Current behavior and limits
 
-Game protocol v11 currently runs over prototype TCP. The server is authoritative for movement, collision, hitscan damage, chat validation, nearby-player snapshots, world membership and portal transfers. A client profile ID is a durable local identifier, not an account credential. Public game traffic is not authenticated or encrypted. The local admin endpoint is loopback-only and separately authenticated.
+Game protocol v12 currently runs over prototype TCP. The server is authoritative for movement, collision, hitscan damage, chat validation, nearby-player snapshots, world membership and portal transfers. A client profile ID is a durable local identifier, not an account credential. Public game traffic is not authenticated or encrypted. The local admin endpoint is loopback-only and separately authenticated.
 
 World snapshot format v6 stores every loaded world manifest and map fingerprint, the durable player profile, instance, quantized position/orientation, health and return location, and revisioned logical object-state sets per sector. It reads v2 through v5; v2/v3 data remains on a loaded legacy map selected by fingerprint. The server autosaves every 300 seconds by default; `--autosave-seconds 0` disables periodic saves, while controlled shutdown still requests a final snapshot. These behaviors do not establish crash-proof recovery. The demo has no object mutation interaction; geometry edits, accounts, TLS, inventory, NPCs, zones, audio, browser clients, and production hosting remain future work.
 

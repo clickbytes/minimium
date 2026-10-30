@@ -1,12 +1,46 @@
 use super::*;
 use minimium_core::{
+    environment::{
+        AstronomyModelRevision, CatalogueId, CatalogueSha256, EnvironmentDescriptor,
+        EnvironmentProfile,
+    },
     ids::PlayerId,
+    time::{
+        ClockId, ClockMode, ClockRevision, ClockSample, MonotonicMs, OfflinePolicy, SessionNonce,
+        TimeScalePpm, WorldTimeMs,
+    },
     world::{
         GenerationRevision, GenerationSpec, GeneratorDigest, MembershipEpoch, TransitionId,
         WorldContentRevision, WorldDefinitionId, WorldInstanceId, WorldManifest, WorldSeed,
         WorldTopology,
     },
 };
+
+fn environment(
+    profile: EnvironmentProfile,
+    monotonic_ms: u64,
+) -> (ClockSample, EnvironmentDescriptor) {
+    let clock_id = ClockId::MVP;
+    let sample = ClockSample::new(
+        clock_id,
+        ClockRevision::INITIAL,
+        SessionNonce::new([0x42; 16]),
+        MonotonicMs::new(monotonic_ms),
+        WorldTimeMs::try_from(1_800_000_000_000).unwrap(),
+        ClockMode::RealTime,
+        TimeScalePpm::ONE_X,
+        OfflinePolicy::Pause,
+    )
+    .unwrap();
+    let descriptor = EnvironmentDescriptor::new(
+        clock_id,
+        profile,
+        AstronomyModelRevision::CURRENT,
+        CatalogueId::CURRENT,
+        CatalogueSha256::new([0x5a; 32]),
+    );
+    (sample, descriptor)
+}
 
 fn manifest(topology: WorldTopology) -> WorldManifest {
     let generation = GenerationSpec::new(
@@ -34,6 +68,7 @@ fn context(instance: u128, epoch: u64) -> WorldContext {
 
 #[test]
 fn welcome_and_transition_frames_round_trip_full_world_context() {
+    let (clock_sample, environment) = environment(EnvironmentProfile::EarthLike, 10);
     let welcome = ServerMessage::Welcome {
         id: PlayerId::new(42),
         map_fingerprint: 0x1234,
@@ -43,12 +78,15 @@ fn welcome_and_transition_frames_round_trip_full_world_context() {
         context: context(1, 9),
         manifest: manifest(WorldTopology::Planet),
         transition_id: None,
+        clock_sample,
+        environment,
     };
     let frame = encode_server(&welcome).unwrap();
     let (decoded, consumed) = decode_server(&frame).unwrap().unwrap();
     assert_eq!(decoded, welcome);
     assert_eq!(consumed, frame.len());
 
+    let (clock_sample, environment) = environment(EnvironmentProfile::Interior, 11);
     let transition = ServerMessage::TransitionPrepare {
         transition_id: TransitionId::new(17).unwrap(),
         source_context: context(1, 9),
@@ -57,6 +95,8 @@ fn welcome_and_transition_frames_round_trip_full_world_context() {
         destination: [3.0, 0.0, 5.0],
         destination_mm: minimium_core::world::Position3Mm([3000, 0, 5000]),
         manifest: manifest(WorldTopology::Dungeon),
+        clock_sample,
+        environment,
     };
     let frame = encode_server(&transition).unwrap();
     let (decoded, consumed) = decode_server(&frame).unwrap().unwrap();
