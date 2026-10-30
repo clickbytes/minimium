@@ -9,7 +9,15 @@ impl ServerRuntime {
             let tick_started = Instant::now();
             self.apply_commands();
             self.apply_world_inputs();
+            self.schedule.run_stage(
+                minimium_platform::modules::Stage::FixedUpdate,
+                &self.game.worlds,
+            );
             self.simulate_tick();
+            self.schedule.run_stage(
+                minimium_platform::modules::Stage::Environment,
+                &self.game.worlds,
+            );
             self.metrics.ticks = self.metrics.ticks.saturating_add(1);
             self.metrics.last_tick = tick_started.elapsed();
             self.metrics.tick.record(self.metrics.last_tick);
@@ -39,6 +47,7 @@ impl ServerRuntime {
                 continue;
             }
             let monotonic_ms = self.monotonic_ms(Instant::now());
+            let schedule_diagnostics = self.schedule.diagnostics();
             let mut reply = match monotonic_ms {
                 Ok(monotonic_ms) => commands::execute(
                     &command,
@@ -52,6 +61,7 @@ impl ServerRuntime {
                         metrics: &self.metrics,
                         environment_clock: &mut self.environment_clock,
                         monotonic_ms,
+                        schedule_diagnostics,
                     },
                 ),
                 Err(error) => commands::CommandReply {

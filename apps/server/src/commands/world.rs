@@ -1,12 +1,14 @@
 //! Example extension: owns the registration, validation and execution of its commands.
 use super::{CommandContext, CommandReply, ModuleHandler};
+use crate::runtime::schedule::{ServerSystemContext, SystemFn};
 use minimium_platform::modules::{
     CommandDefinition, CommandScope, EngineModule, ModuleDescriptor, ModuleError, ModuleRegistrar,
+    Stage, SystemDefinition,
 };
 
 pub(super) struct WorldCommands;
 
-impl EngineModule<ModuleHandler, ()> for WorldCommands {
+impl EngineModule<ModuleHandler, SystemFn> for WorldCommands {
     fn descriptor(&self) -> ModuleDescriptor {
         ModuleDescriptor {
             id: "world",
@@ -17,7 +19,7 @@ impl EngineModule<ModuleHandler, ()> for WorldCommands {
 
     fn register(
         &self,
-        registry: &mut ModuleRegistrar<'_, ModuleHandler, ()>,
+        registry: &mut ModuleRegistrar<'_, ModuleHandler, SystemFn>,
     ) -> Result<(), ModuleError> {
         registry.command(CommandDefinition {
             name: "world list",
@@ -39,8 +41,20 @@ impl EngineModule<ModuleHandler, ()> for WorldCommands {
             usage: "entity list",
             scope: CommandScope::ServerAdmin,
             handler: entity_list,
+        })?;
+        registry.system(SystemDefinition {
+            id: "world.instance-count",
+            stage: Stage::Startup,
+            handler: record_instance_count,
         })
     }
+}
+
+fn record_instance_count(context: &mut ServerSystemContext<'_>) {
+    debug_assert_eq!(context.stage, Stage::Startup);
+    context.diagnostics.world_instance_count = context.worlds.iter().count();
+    context.diagnostics.startup_system_runs =
+        context.diagnostics.startup_system_runs.saturating_add(1);
 }
 
 fn success(text: String) -> CommandReply {
