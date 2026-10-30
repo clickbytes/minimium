@@ -20,5 +20,5 @@ struct VertexOutput {
 @fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let alpha = textureSample(font_atlas, font_sampler, input.uv).r;
     let linear = srgb_to_linear(input.color);
-    return vec4<f32>(tone_map_color(linear), alpha);
+    return vec4<f32>(linear, alpha);
 }

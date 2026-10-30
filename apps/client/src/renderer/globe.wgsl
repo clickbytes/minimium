@@ -46,10 +46,10 @@ struct Output {
     }
     if environment.flags.z == 0u {
         let fallback = environment.ambient_rgb_exposure.xyz;
-        return vec4<f32>(tone_map_linear(fallback * environment.ambient_rgb_exposure.w), 1.0);
+        return vec4<f32>(tone_map_linear(fallback), 1.0);
     }
     let sun_direction = normalize(environment.global_sun_direction.xyz);
     let diffuse = max(dot(relief_normal, sun_direction), 0.0);
     let linear = sample.rgb * environment.global_sun_rgb.xyz * diffuse;
-    return vec4<f32>(tone_map_linear(linear * environment.ambient_rgb_exposure.w), 1.0);
+    return vec4<f32>(tone_map_linear(linear), 1.0);
 }

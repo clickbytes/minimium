@@ -9,7 +9,10 @@ const HORIZON_OCCLUSION_RGB = vec3<f32>(0.008, 0.010, 0.014);
 const CLEAR_AIR_EXTINCTION = 0.08;
 
 fn tone_map_linear(rgb: vec3<f32>) -> vec3<f32> {
-    return tone_map_color(rgb);
+    if environment.flags.w != 0u {
+        return rgb;
+    }
+    return tone_map_color(rgb * environment.ambient_rgb_exposure.w);
 }
 
 fn horizon_visibility(ray_world: vec3<f32>) -> f32 {

@@ -42,10 +42,15 @@ impl PreparedEnvironmentFrame {
             0,
             bytemuck::bytes_of(&self.frame.camera_uniform),
         );
-        gpu.queue.write_buffer(
-            &gpu.environment_buffer,
-            0,
-            bytemuck::bytes_of(&self.uniform),
-        );
+        let mut uniform = self.uniform;
+        uniform.flags[3] = u32::from(gpu.hdr_enabled);
+        gpu.queue
+            .write_buffer(&gpu.environment_buffer, 0, bytemuck::bytes_of(&uniform));
+        if let Some(output) = &gpu.output_encoder {
+            output.update_exposure(
+                &gpu.queue,
+                self.frame.environment_uniform.ambient_rgb_exposure[3],
+            );
+        }
     }
 }
