@@ -46,6 +46,9 @@ pub(crate) struct RuntimeMetrics {
     pub(crate) collision_max_cell_visits: u64,
     pub(crate) collision_max_aabb_candidates: u64,
     pub(crate) collision_max_triangle_candidates: u64,
+    pub(crate) precise_serial_steps: u64,
+    pub(crate) precise_batched_steps: u64,
+    pub(crate) precise_batches: u64,
     pub(crate) memory_sampled_at: Option<Instant>,
     pub(crate) memory_samples: u64,
     pub(crate) memory_rss_bytes: Option<u64>,
@@ -113,13 +116,22 @@ impl RuntimeMetrics {
             .max(stats.max_triangle_candidates);
     }
 
+    pub(crate) fn record_precise_dispatch(&mut self, batched: bool, batches: usize) {
+        if batched {
+            self.precise_batched_steps = self.precise_batched_steps.saturating_add(1);
+            self.precise_batches = self.precise_batches.saturating_add(batches as u64);
+        } else {
+            self.precise_serial_steps = self.precise_serial_steps.saturating_add(1);
+        }
+    }
+
     pub(crate) fn summary(&self, players: usize) -> String {
         let collision_query_count = self.collision_queries.max(1) as f64;
         let rss_average_per_player = (players > 0)
             .then(|| self.memory_rss_bytes.map(|bytes| bytes / players as u64))
             .flatten();
         let mut summary = format!(
-            "ticks={} missed_ticks={} snapshots={} missed_snapshots={} players={} bytes_in={} bytes_out={} decoded_frames={} queued_frames={} dropped_messages={} dropped_snapshots={} rejected_inputs={} clock_probe_requests={} clock_probe_accepted={} clock_probe_rejected={} environment_sync_messages={} idle_timeouts={} handshake_timeouts={} shots_fired={} shots_hit={} player_kills={} tick_last_us={} tick_avg_us={} tick_p95_us={} tick_p99_us={} loop_avg_us={} loop_p95_us={} loop_p99_us={} network_avg_us={} network_p95_us={} network_p99_us={} input_avg_us={} input_p95_us={} input_p99_us={} simulation_avg_us={} simulation_p95_us={} simulation_p99_us={} snapshot_avg_us={} snapshot_p95_us={} snapshot_p99_us={} encoding_avg_us={} encoding_p95_us={} encoding_p99_us={} input_wait_avg_us={} input_wait_p95_us={} input_wait_p99_us={} oldest_output_age_us={} collision_queries={} collision_cells={} collision_cells_per_query={:.2} collision_max_cells_per_query={} collision_aabb_candidates={} collision_aabb_candidates_per_query={:.2} collision_max_aabb_candidates_per_query={} collision_triangle_candidates={} collision_triangle_candidates_per_query={:.2} collision_max_triangle_candidates_per_query={} collision_full_scan_queries={} max_pending_inputs={} max_client_input_bytes={} max_client_output_bytes={} memory_samples={} memory_rss_bytes={} memory_peak_rss_bytes={} memory_private_bytes={} memory_peak_private_bytes={} memory_rss_average_per_player_bytes={} process_cpu_time_ms={} process_threads={}",
+            "ticks={} missed_ticks={} snapshots={} missed_snapshots={} players={} bytes_in={} bytes_out={} decoded_frames={} queued_frames={} dropped_messages={} dropped_snapshots={} rejected_inputs={} clock_probe_requests={} clock_probe_accepted={} clock_probe_rejected={} environment_sync_messages={} idle_timeouts={} handshake_timeouts={} shots_fired={} shots_hit={} player_kills={} tick_last_us={} tick_avg_us={} tick_p95_us={} tick_p99_us={} loop_avg_us={} loop_p95_us={} loop_p99_us={} network_avg_us={} network_p95_us={} network_p99_us={} input_avg_us={} input_p95_us={} input_p99_us={} simulation_avg_us={} simulation_p95_us={} simulation_p99_us={} snapshot_avg_us={} snapshot_p95_us={} snapshot_p99_us={} encoding_avg_us={} encoding_p95_us={} encoding_p99_us={} input_wait_avg_us={} input_wait_p95_us={} input_wait_p99_us={} oldest_output_age_us={} collision_queries={} collision_cells={} collision_cells_per_query={:.2} collision_max_cells_per_query={} collision_aabb_candidates={} collision_aabb_candidates_per_query={:.2} collision_max_aabb_candidates_per_query={} collision_triangle_candidates={} collision_triangle_candidates_per_query={:.2} collision_max_triangle_candidates_per_query={} collision_full_scan_queries={} precise_serial_steps={} precise_batched_steps={} precise_batches={} max_pending_inputs={} max_client_input_bytes={} max_client_output_bytes={} memory_samples={} memory_rss_bytes={} memory_peak_rss_bytes={} memory_private_bytes={} memory_peak_private_bytes={} memory_rss_average_per_player_bytes={} process_cpu_time_ms={} process_threads={}",
             self.ticks, self.missed_ticks, self.snapshots, self.missed_snapshots, players,
             self.bytes_in, self.bytes_out, self.frames_in, self.frames_out,
             self.dropped_messages, self.dropped_snapshots, self.rejected_inputs,
@@ -150,6 +162,7 @@ impl RuntimeMetrics {
             self.collision_max_aabb_candidates, self.collision_triangle_candidates,
             self.collision_triangle_candidates as f64 / collision_query_count,
             self.collision_max_triangle_candidates, self.collision_fallback_queries,
+            self.precise_serial_steps, self.precise_batched_steps, self.precise_batches,
             self.max_pending_inputs, self.max_client_input_bytes, self.max_client_output_bytes,
             self.memory_samples, format_optional_bytes(self.memory_rss_bytes),
             format_optional_bytes(self.memory_peak_rss_bytes),

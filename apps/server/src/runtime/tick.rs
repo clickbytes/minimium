@@ -231,6 +231,9 @@ impl ServerRuntime {
                 TICK.as_secs_f32(),
                 &self.executor,
             ));
+            if let Some((batched, batches)) = instance.world.precise_dispatch_stats() {
+                self.metrics.record_precise_dispatch(batched, batches);
+            }
             if let Some(previous) = previous {
                 for player in previous {
                     if let Some(current) = instance.world.player(player.id) {
