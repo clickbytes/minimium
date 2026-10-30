@@ -2,14 +2,15 @@ use super::GpuResources;
 use std::borrow::Cow;
 use wgpu::util::DeviceExt;
 
-const WIDTH: u32 = 4096;
-const HEIGHT: u32 = 2048;
+const MAX_TILE_WIDTH: u32 = 2048;
+const TILES_PER_AXIS: u32 = 4;
+const TILE_COUNT: u32 = TILES_PER_AXIS * TILES_PER_AXIS;
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct GlobeVertex {
-    position: [f32; 3],
-    uv: [f32; 2],
+pub(super) struct GlobeVertex {
+    pub(super) position: [f32; 3],
+    pub(super) uv: [f32; 2],
 }
 
 pub(super) struct GlobeGpu {
@@ -18,15 +19,42 @@ pub(super) struct GlobeGpu {
     pub(super) vertices: wgpu::Buffer,
     pub(super) vertex_count: u32,
     lod: u8,
+    pub(super) detail: Option<super::globe_detail::DetailGpu>,
 }
 
 /// Samples the pinned package on a worker thread, away from redraw handling.
-pub(super) fn pixels(height_scale_permille: u32, sea_level_mm: i64) -> Vec<u8> {
-    let mut pixels = vec![0; (WIDTH * HEIGHT * 4) as usize];
-    for y in 0..HEIGHT {
-        let latitude = (90.0 - (f64::from(y) + 0.5) * 180.0 / f64::from(HEIGHT)).to_radians();
-        for x in 0..WIDTH {
-            let longitude = ((f64::from(x) + 0.5) * 360.0 / f64::from(WIDTH) - 180.0).to_radians();
+pub(super) fn pixels(
+    height_scale_permille: u32,
+    sea_level_mm: i64,
+    width: u32,
+    height: u32,
+) -> Vec<u8> {
+    pixels_region(
+        height_scale_permille,
+        sea_level_mm,
+        width,
+        height,
+        super::globe_detail::Region::FULL,
+    )
+}
+
+pub(super) fn pixels_region(
+    height_scale_permille: u32,
+    sea_level_mm: i64,
+    width: u32,
+    height: u32,
+    region: super::globe_detail::Region,
+) -> Vec<u8> {
+    let map_width = width * TILES_PER_AXIS;
+    let map_height = height * TILES_PER_AXIS;
+    let tile_bytes = (width * height * 4) as usize;
+    let mut pixels = vec![0; tile_bytes * TILE_COUNT as usize];
+    for y in 0..map_height {
+        let v = region.v_start + (f64::from(y) + 0.5) / f64::from(map_height) * region.v_span;
+        let latitude = (90.0 - v * 180.0).to_radians();
+        for x in 0..map_width {
+            let u = region.u_start + (f64::from(x) + 0.5) / f64::from(map_width) * region.u_span;
+            let longitude = (u * 360.0 - 180.0).to_radians();
             let direction = [
                 latitude.cos() * longitude.cos(),
                 latitude.sin(),
@@ -55,7 +83,9 @@ pub(super) fn pixels(height_scale_permille: u32, sea_level_mm: i64) -> Vec<u8> {
                     ((114.0 + 120.0 * snow) as u8),
                 ]
             };
-            let offset = ((y * WIDTH + x) * 4) as usize;
+            let layer = (y / height) * TILES_PER_AXIS + x / width;
+            let local = (y % height) * width + x % width;
+            let offset = layer as usize * tile_bytes + local as usize * 4;
             pixels[offset..offset + 3].copy_from_slice(&color);
             pixels[offset + 3] = ((metres + 500.0) / 1000.0 * 255.0).clamp(0.0, 255.0) as u8;
         }
@@ -64,9 +94,19 @@ pub(super) fn pixels(height_scale_permille: u32, sea_level_mm: i64) -> Vec<u8> {
 }
 
 fn mesh_resolution(zoom: f32) -> (u32, u32, u8) {
-    if zoom >= 5.0 {
-        (768, 384, 2)
-    } else if zoom >= 3.0 {
+    if zoom <= 1.05 {
+        (1280, 640, 7)
+    } else if zoom <= 1.10 {
+        (1152, 576, 6)
+    } else if zoom <= 1.20 {
+        (1024, 512, 5)
+    } else if zoom <= 1.50 {
+        (896, 448, 4)
+    } else if zoom <= 2.0 {
+        (768, 384, 3)
+    } else if zoom <= 3.0 {
+        (640, 320, 2)
+    } else if zoom <= 5.0 {
         (512, 256, 1)
     } else {
         (256, 128, 0)
@@ -105,13 +145,20 @@ fn vertices(radius: f32, zoom: f32) -> Vec<GlobeVertex> {
 }
 
 impl GpuResources {
-    pub(super) fn install_globe(&mut self, pixels: &[u8], radius: f32, zoom: f32) {
+    pub(super) fn install_globe(
+        &mut self,
+        pixels: &[u8],
+        width: u32,
+        height: u32,
+        radius: f32,
+        zoom: f32,
+    ) {
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("GEBCO 4096x2048 overview"),
+            label: Some("GEBCO overview"),
             size: wgpu::Extent3d {
-                width: WIDTH,
-                height: HEIGHT,
-                depth_or_array_layers: 1,
+                width,
+                height,
+                depth_or_array_layers: TILE_COUNT,
             },
             mip_level_count: 1,
             sample_count: 1,
@@ -130,13 +177,13 @@ impl GpuResources {
             pixels,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(WIDTH * 4),
-                rows_per_image: Some(HEIGHT),
+                bytes_per_row: Some(width * 4),
+                rows_per_image: Some(height),
             },
             wgpu::Extent3d {
-                width: WIDTH,
-                height: HEIGHT,
-                depth_or_array_layers: 1,
+                width,
+                height,
+                depth_or_array_layers: TILE_COUNT,
             },
         );
         let sampler = self.device.create_sampler(&wgpu::SamplerDescriptor {
@@ -156,7 +203,7 @@ impl GpuResources {
                         visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Texture {
                             sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
+                            view_dimension: wgpu::TextureViewDimension::D2Array,
                             multisampled: false,
                         },
                         count: None,
@@ -175,9 +222,12 @@ impl GpuResources {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(
-                        &texture.create_view(&wgpu::TextureViewDescriptor::default()),
-                    ),
+                    resource: wgpu::BindingResource::TextureView(&texture.create_view(
+                        &wgpu::TextureViewDescriptor {
+                            dimension: Some(wgpu::TextureViewDimension::D2Array),
+                            ..Default::default()
+                        },
+                    )),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -250,14 +300,24 @@ impl GpuResources {
                 contents: bytemuck::cast_slice(&mesh),
                 usage: wgpu::BufferUsages::VERTEX,
             });
-        self.fixed_gpu_bytes += vertex_buffer.size() + u64::from(WIDTH * HEIGHT * 4);
+        self.fixed_gpu_bytes += vertex_buffer.size() + pixels.len() as u64;
         self.globe = Some(GlobeGpu {
             pipeline,
             bind_group,
             vertices: vertex_buffer,
             vertex_count,
             lod,
+            detail: None,
         });
+    }
+
+    pub(super) fn texture_dimensions(&self) -> (u32, u32) {
+        let width = self
+            .device
+            .limits()
+            .max_texture_dimension_2d
+            .min(MAX_TILE_WIDTH);
+        (width, width / 2)
     }
 
     pub(super) fn refresh_globe_lod(&mut self, radius: f32, zoom: f32) {

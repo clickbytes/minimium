@@ -150,10 +150,12 @@ impl Renderer {
                 "Demo".into()
             },
             globe_loading: None,
+            globe_detail_loading: None,
             overview_yaw: 0.0,
             overview_pitch: 0.0,
             overview_zoom: 2.8,
             overview_dragging: false,
+            overview_slider_dragging: false,
             overview_dragged: false,
             overview_drag_distance: 0.0,
             map_teleport_armed: false,

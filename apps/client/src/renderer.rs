@@ -35,6 +35,7 @@ mod console_events;
 mod controller;
 mod geometry;
 mod globe;
+mod globe_detail;
 mod gpu;
 mod init;
 mod overview;
@@ -168,10 +169,12 @@ struct Renderer {
     overview_instance: Option<minimium_core::world::WorldInstanceId>,
     connection_status: String,
     globe_loading: Option<std::sync::mpsc::Receiver<Vec<u8>>>,
+    globe_detail_loading: Option<std::sync::mpsc::Receiver<(globe_detail::Region, Vec<u8>)>>,
     overview_yaw: f32,
     overview_pitch: f32,
     overview_zoom: f32,
     overview_dragging: bool,
+    overview_slider_dragging: bool,
     overview_dragged: bool,
     overview_drag_distance: f64,
     map_teleport_armed: bool,

@@ -5,6 +5,7 @@ use super::input_draw;
 use super::suggestions::Suggestions;
 use super::text::{self, DrawContext, TextDraw, UiVertex};
 use super::theme::*;
+use super::zoom;
 use std::collections::VecDeque;
 use std::time::Instant;
 
@@ -16,6 +17,11 @@ pub(super) struct ConsoleLine {
 pub(super) struct ChatLine {
     pub(super) text: String,
     pub(super) received_at: Instant,
+}
+
+pub struct Overlay<'a> {
+    pub status: Option<&'a str>,
+    pub overview_zoom: Option<f32>,
 }
 
 pub struct Console {
@@ -147,7 +153,7 @@ impl Console {
         health: u16,
         show_crosshair: bool,
         hit_feedback: bool,
-        status: Option<&str>,
+        overlay: Overlay<'_>,
     ) -> &[UiVertex] {
         self.vertices.clear();
         if width < 120 || height < 100 {
@@ -163,8 +169,11 @@ impl Console {
                 hit_feedback,
             },
         );
-        if let Some(status) = status {
+        if let Some(status) = overlay.status {
             hud::append_status(&mut self.vertices, context, status);
+        }
+        if let Some(zoom) = overlay.overview_zoom {
+            zoom::draw(&mut self.vertices, context, zoom);
         }
         if !self.open {
             self.append_chat(context);

@@ -15,6 +15,7 @@ impl Renderer {
             self.gpu.overview_active = false;
             self.gpu.overview_globe = false;
             self.overview_dragging = false;
+            self.overview_slider_dragging = false;
             self.map_teleport_armed = false;
             return;
         }
@@ -32,10 +33,15 @@ impl Renderer {
         let mut vertices = if earth {
             if self.gpu.globe.is_none() && self.globe_loading.is_none() {
                 let planet = manifest.planet().expect("Earth definition exists");
+                let (width, height) = self.gpu.texture_dimensions();
                 let (sender, receiver) = std::sync::mpsc::sync_channel(1);
                 std::thread::spawn(move || {
-                    let pixels =
-                        super::globe::pixels(planet.height_scale_permille, planet.sea_level_mm);
+                    let pixels = super::globe::pixels(
+                        planet.height_scale_permille,
+                        planet.sea_level_mm,
+                        width,
+                        height,
+                    );
                     let _ = sender.send(pixels);
                 });
                 self.globe_loading = Some(receiver);
@@ -99,6 +105,20 @@ impl Renderer {
         } else {
             0.035
         }
+    }
+
+    pub(super) fn overview_uses_zoom(&self) -> bool {
+        self.overview_open
+            && self
+                .world_manifests
+                .get(&self.current_instance)
+                .is_some_and(|manifest| manifest.topology() == WorldTopology::Planet)
+    }
+
+    pub(super) fn set_overview_zoom(&mut self, zoom: f32) {
+        self.overview_zoom = zoom.clamp(crate::console::MIN_ZOOM, crate::console::MAX_ZOOM);
+        self.refresh_earth_marker();
+        self.refresh_earth_globe_lod();
     }
 
     fn marker_height(&self) -> f32 {
@@ -231,7 +251,9 @@ impl Renderer {
             {
                 let radius =
                     minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0;
-                self.gpu.install_globe(&pixels, radius, self.overview_zoom);
+                let (width, height) = self.gpu.texture_dimensions();
+                self.gpu
+                    .install_globe(&pixels, width, height, radius, self.overview_zoom);
                 if self.settings.require_earth && self.gpu.scene_visible {
                     self.connection_status = "Earth: połączono".into();
                 }
