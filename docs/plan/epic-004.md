@@ -56,7 +56,7 @@ Każde poniższe issue ma własny cel, konkretne istniejące i nowe pliki, kontr
 - [ ] #60 — **E004-05**: Dodać klientowy estymator czasu, wygładzanie i poprawny lifecycle portali, reconnect oraz demo
 - [x] #56 — **E004-06**: Georeferencja obserwatora: Earth 650 km, ramka N/E/U i jawny model nieba
 - [x] #57 — **E004-07**: Astronomia offline: przypięty Astronomy Engine C, bezpieczny Rust FFI i wspólny SkyState
-- [ ] #58 — **E004-08**: Deterministyczny katalog 500 gwiazd HYG: importer, asset, tożsamość i licencja
+- [x] #58 — **E004-08**: Deterministyczny katalog 500 gwiazd HYG: importer, asset, tożsamość i licencja
 - [ ] #61 — **E004-09**: Wspólny EnvironmentFrame, kontrakt GPU i poprawne normalne geometrii
 - [ ] #62 — **E004-10**: Niebo, świt i zmierzch, Słońce oraz spójne oświetlenie sceny i globusa
 - [ ] #63 — **E004-11**: Katalog 500 gwiazd w jednym batchu, prawdziwa orientacja i jasność
@@ -78,8 +78,8 @@ Każde poniższe issue ma własny cel, konkretne istniejące i nowe pliki, kontr
 | [E004-04 / #59](https://github.com/clickbytes/minimium/issues/59) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53), [E004-02 / #54](https://github.com/clickbytes/minimium/issues/54), [E004-03 / #55](https://github.com/clickbytes/minimium/issues/55), [E004-08 / #58](https://github.com/clickbytes/minimium/issues/58) | PLANNED |
 | [E004-05 / #60](https://github.com/clickbytes/minimium/issues/60) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53), [E004-04 / #59](https://github.com/clickbytes/minimium/issues/59) | PLANNED |
 | [E004-06 / #56](https://github.com/clickbytes/minimium/issues/56) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#76](https://github.com/clickbytes/minimium/pull/76), code commit `15ac4d2`, merge `dfbc795`) |
-| [E004-07 / #57](https://github.com/clickbytes/minimium/issues/57) | [E004-06 / #56](https://github.com/clickbytes/minimium/issues/56) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#77](https://github.com/clickbytes/minimium/pull/77), commit `5da228e`; merge pending) |
-| [E004-08 / #58](https://github.com/clickbytes/minimium/issues/58) | [E004-07 / #57](https://github.com/clickbytes/minimium/issues/57) | PLANNED |
+| [E004-07 / #57](https://github.com/clickbytes/minimium/issues/57) | [E004-06 / #56](https://github.com/clickbytes/minimium/issues/56) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#77](https://github.com/clickbytes/minimium/pull/77), commit `5da228e`, merge `69a633e`) |
+| [E004-08 / #58](https://github.com/clickbytes/minimium/issues/58) | [E004-07 / #57](https://github.com/clickbytes/minimium/issues/57) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#78](https://github.com/clickbytes/minimium/pull/78), commit `38157c0`; merge pending) |
 | [E004-09 / #61](https://github.com/clickbytes/minimium/issues/61) | [E004-05 / #60](https://github.com/clickbytes/minimium/issues/60), [E004-06 / #56](https://github.com/clickbytes/minimium/issues/56), [E004-07 / #57](https://github.com/clickbytes/minimium/issues/57) | PLANNED |
 | [E004-10 / #62](https://github.com/clickbytes/minimium/issues/62) | [E004-09 / #61](https://github.com/clickbytes/minimium/issues/61) | PLANNED |
 | [E004-11 / #63](https://github.com/clickbytes/minimium/issues/63) | [E004-08 / #58](https://github.com/clickbytes/minimium/issues/58), [E004-09 / #61](https://github.com/clickbytes/minimium/issues/61), [E004-10 / #62](https://github.com/clickbytes/minimium/issues/62) | PLANNED |
@@ -129,5 +129,5 @@ komendami czasu, konfiguracją nowego świata i profilami instancji. Formatowani
 Clippy i kontrole statyczne przeszły; cargo zgłasza wyłącznie ostrzeżenia Windows o fallbacku
 hard-link cache. Nie uruchamiano testów ani aplikacji. E004-03 scalono przez PR #75
 (`77218a6`) i E004-06 (`dfbc795`). E004-07 jest gotowe w PR #77
-(`5da228e`); pozostałe zadania pozostają PLANNED, a wyniki runtime całego epica
-są NOT RUN.
+(`5da228e`, merge `69a633e`). E004-08 jest gotowe w PR #78 (`38157c0`);
+pozostałe zadania pozostają PLANNED, a wyniki runtime całego epica są NOT RUN.
