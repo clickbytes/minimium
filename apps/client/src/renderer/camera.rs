@@ -342,8 +342,5 @@ pub(super) fn camera_direction(character: CharacterState, yaw: f32, pitch: f32) 
 }
 
 pub(super) fn gravity_for_manifest(manifest: WorldManifest) -> CharacterGravity {
-    match manifest.topology() {
-        WorldTopology::Planet => CharacterGravity::Radial { center: [0.0; 3] },
-        WorldTopology::Dungeon => CharacterGravity::FixedY,
-    }
+    minimium_core::world::GravityPolicy::for_manifest(manifest).character_gravity()
 }

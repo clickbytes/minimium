@@ -1,15 +1,6 @@
 use super::*;
 use crate::environment::profile_for_manifest;
 
-fn gravity_for(topology: WorldTopology) -> minimium_core::world::CharacterGravity {
-    match topology {
-        WorldTopology::Planet => {
-            minimium_core::world::CharacterGravity::Radial { center: [0.0; 3] }
-        }
-        WorldTopology::Dungeon => minimium_core::world::CharacterGravity::FixedY,
-    }
-}
-
 impl WorldRegistry {
     pub(crate) fn legacy_primary(map: WorldMap) -> Self {
         let definition = WorldDefinitionId::new(1).expect("legacy definition ID is nonzero");
@@ -68,7 +59,9 @@ impl WorldRegistry {
         }
         let mut world = World::default();
         world.load_map_streamed(&map);
-        world.set_gravity(gravity_for(manifest.topology()));
+        world.set_gravity(
+            minimium_core::world::GravityPolicy::for_manifest(manifest).character_gravity(),
+        );
         world.set_precise_positions(manifest.planet().is_some());
         let map = Arc::new(map);
         let environment_profile = profile_for_manifest(manifest);
@@ -110,7 +103,9 @@ impl WorldRegistry {
         let map = Arc::new(world.map);
         let mut simulation = World::default();
         simulation.load_map_streamed(&map);
-        simulation.set_gravity(gravity_for(world.manifest.topology()));
+        simulation.set_gravity(
+            minimium_core::world::GravityPolicy::for_manifest(world.manifest).character_gravity(),
+        );
         simulation.set_precise_positions(world.manifest.planet().is_some());
         let mut instances = BTreeMap::new();
         instances.insert(
