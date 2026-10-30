@@ -58,7 +58,8 @@ w [epic-004-verification.md](epic-004-verification.md); poniżej są instrukcje,
   Dla asymetrii 90/10 raportować niepewność bez gwarancji dokładności.
 - V06: restart nonce, reconnect, spóźnione/zdublowane odpowiedzi, stare revision
   i context nie przywracają starego świata/czasu. V07: planet→dungeon→planet,
-  cancel przed commit, opóźnione ready, stale commit i teleport; środowisko zmienia
+  cancel przed i po Ready, stale Cancel (ID/context), opóźnione ready, stale commit
+  i teleport; środowisko zmienia
   się z aktywnym światem, czas biegnie w Interior.
 - V08–V10: manual/autosave/final, pause/advance offline, cofnięty wall clock,
   granice dat, opóźniony worker; osobny fixture każdej wersji v2–v7. Uszkodzenia,
@@ -111,6 +112,9 @@ w [epic-004-verification.md](epic-004-verification.md); poniżej są instrukcje,
   cienie i podaje przyczynę.
 - V18: 50 low↔standard cykli, resize, minimalizacja 60 s, skipped surface,
   odtworzenie zasobów i reconnect, bez wzrostu utrzymywanych zasobów silnika.
+  Wymusić skipped acquisition przy nowej epoce gwiazd: stamp publikować dopiero
+  po uploadzie. Cancel przed/po Ready i disconnect/reconnect mają zwolnić zasoby
+  przygotowanego celu; stale Cancel nie może zwolnić aktywnego świata.
   Błędy alokacji/loss wymuszać hookiem/adapterem bez wyczerpywania RAM hosta;
   syntetyczny fallback nie zastępuje realnego pipeline'u GPU.
 - V19: CLI wartości/duplikaty, F1/help/completion/time status/sky info/profile,

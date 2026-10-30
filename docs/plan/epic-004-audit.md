@@ -49,8 +49,6 @@ lokalnym klientem. Architektura opisuje crate astronomii, v12, aktualny rejestr
 poleceń i uniformy camera/environment/shadow 208/320/128 B. ADR 0006 oddziela
 historyczny brak `cl.exe` w PATH od wykonanej kompilacji Windows.
 
-## Weryfikacja końcowa
-
 ## Wyniki przeglądu domen
 
 Pełne raporty źródłowe i dokładne kontrole wykonane przed integracją:
@@ -68,6 +66,7 @@ Raporty zachowują SHA gałęzi roboczych; cherry-picki integracyjne to odpowied
 | Poprawna ramka world z determinant −1 odrzucana jako zła rotacja | A3: osobna walidacja rotacji +1 i transformacji world −1 | Naprawiony; bez rozluźniania ortonormalności/finite; V11–V17 NOT RUN. |
 | Commit portalu ucina resztę częściowo wysłanej ramki TCP | A2: zachowanie bufora, offsetu i inflight Ping/probe | Naprawiony; stare wejścia świata nadal odrzucane przez context; V03/V06/V07/V19 NOT RUN. |
 | Portal bez limitu kolejki, teleport bez rezerwy na Leave | A2: wspólny limit 4096 z rezerwą liczby klientów | Naprawiony; V03/V07/V19 NOT RUN. |
+| Cancel wskazuje źródło zamiast celu, a Ready usuwa dane potrzebne do zwolnienia zasobów | A4: zachowanie source/target i ready_sent do rozstrzygnięcia, cleanup przy Cancel/disconnect/reconnect; A2: nieprzekazywanie stale Cancel do renderera | Naprawiony w `da90bdc` i `2283340`; V06/V07/V18/V19 NOT RUN. |
 | Helper `environment` zasłaniany w istniejącym teście | A2: `environment_fixture` | Istniejący test skompilowany przez cargo check --tests, nie uruchomiony; V03 NOT RUN. |
 | Przygotowanie i upload łączone w metryce CPU; brak p50/próbek/caster bytes | A4: prepared frame, osobny upload i disjoint shadow scope, diagnostyka v2 | Naprawiony; V18/V20 NOT RUN, GPU elapsed n/a. |
 | Windows autocrlf zmienia bajty przypiętych tekstów i ich SHA-256 | A1/A3: dziewięć jawnych reguł LF | Hashe źródeł/blobów zgodne; odtworzenie katalogu pozostaje w #68. |
@@ -91,6 +90,18 @@ Przegląd world/globe/water nie wykazał dawnego minimalnego światła planetarn
 Kolory atmosfery, parametry radiancji i ambient Interior są celowym modelem wyglądu.
 Raport A4 rozlicza uniformy 208/320/128 B, odbicie Earth, brak translacji gwiazd,
 fallback, bounded caster resources oraz pomiary v2. Wygląd i GPU nie są zaliczone.
+
+Przegląd krzyżowy A3 zaakceptował FFI/jednostki na `190fa3e`. A2/A4 wykryli
+dodatkowy defekt Cancel opisany wyżej i dostarczyli poprawki (`90fe22d` i
+`5d6f350` w worktree). Niepasujący ID/context jest ignorowany przed publikacją
+zdarzenia; renderer zachowuje target również po Ready i zwalnia jego pins/bufory
+przy anulowaniu lub wymianie sesji. Poprawny commit instaluje target i czyści
+pending transitions. Opis startup poprawiono na faktyczny porządek: bind/publish,
+następnie odtworzenie zegara w konstruktorze runtime przed przyjmowaniem klientów.
+
+Odczyt `git merge-base --is-ancestor <merge_SHA> HEAD` potwierdził wszystkie
+16 merge SHA PR #71–86. [Bieżący odczyt hashy i 500 ID](evidence/epic-004/e004-15-static-20261030/provenance.json)
+potwierdza zgodność plików na dysku, katalogu i lokalnego przypiętego CSV.
 
 ## Następna bramka
 

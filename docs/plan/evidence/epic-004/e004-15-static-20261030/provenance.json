@@ -1,0 +1,46 @@
+﻿{
+  "vendor": {
+    "LICENSE": {
+      "sha256": "690dd98cb13ba4db77c6327deea852a816892bb9debbad5943405c66972f8023",
+      "matches_pin": true
+    },
+    "source/c/astronomy.c": {
+      "sha256": "388920479d819713963ffd0f8ab0677944f66c6c94239ceddddd3b0d5d064432",
+      "matches_pin": true
+    },
+    "source/c/astronomy.h": {
+      "sha256": "83a31011957c2b87e22f0828820f370f1a495aa4d51357bb57d714cde839dc00",
+      "matches_pin": true
+    }
+  },
+  "catalogue": {
+    "bytes": 32096,
+    "count_header": 500,
+    "count_records": 500,
+    "unique_ids": 500,
+    "ordered_ids_match_manifest": true,
+    "sha256": "81c8d6e0d01455f3416ab40b671831886e8b6dc60b872f504dbc85621dbee3db",
+    "matches_manifest": true,
+    "payload_sha256": "846c3194af1d5f3cff83a5e8ff30537aed6bb1145490e61b2c4dcc654a5995d6",
+    "payload_matches_manifest_and_header": true,
+    "source_sha256": "d9f69fd86bbf90a4e4d52b4c5c53eacfa6dfc0bfdef85bfd94f095e0bebe4ebd",
+    "source_matches_manifest": true
+  },
+  "licenses": {
+    "LICENSE-CC-BY-SA-4.0.txt": {
+      "sha256": "28a9529c7d0bb4dc51f4bf5c116a3d16ef247a052f7591466768ddf563fd1cf5",
+      "matches_manifest": true
+    },
+    "HYG-LICENSE-NOTICE.txt": {
+      "sha256": "f404190403d31e0ce7223f4cb7af954485ad88077358330754dc5c892a856627",
+      "matches_manifest": true
+    }
+  },
+  "source": {
+    "path": "C:\\Users\\ppotepa\\AppData\\Local\\Temp\\hygdata_v41.csv",
+    "size": 33932548,
+    "sha256": "d9f69fd86bbf90a4e4d52b4c5c53eacfa6dfc0bfdef85bfd94f095e0bebe4ebd",
+    "git_blob_sha1": "ba2dec4eb0f6768914c7fc1051258100214ddf84",
+    "matches_manifest": true
+  }
+}
