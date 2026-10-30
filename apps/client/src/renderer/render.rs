@@ -1,11 +1,11 @@
+use super::environment::EnvironmentFrame;
 use super::GpuResources;
-use crate::environment::EnvironmentFrameInput;
 
 impl GpuResources {
     /// Keeps every GPU pass on the one immutable snapshot prepared for this frame.
     pub(super) fn render(
         &mut self,
-        _environment: &EnvironmentFrameInput,
+        environment: &EnvironmentFrame,
     ) -> Result<u32, wgpu::CurrentSurfaceTexture> {
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) => frame,
@@ -21,9 +21,23 @@ impl GpuResources {
             }
             error @ wgpu::CurrentSurfaceTexture::Validation => return Err(error),
         };
-        let view = frame
+        let surface_view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
+        let scene_view = self
+            .output_encoder
+            .as_ref()
+            .map_or(&surface_view, |output| output.target_view());
+        self.queue.write_buffer(
+            &self.camera_buffer,
+            0,
+            bytemuck::bytes_of(&environment.camera_uniform),
+        );
+        self.queue.write_buffer(
+            &self.environment_buffer,
+            0,
+            bytemuck::bytes_of(&super::environment_gpu::environment_uniform(environment)),
+        );
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -34,7 +48,7 @@ impl GpuResources {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("main-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: scene_view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -109,7 +123,7 @@ impl GpuResources {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("minimium-console-ui-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: scene_view,
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -126,6 +140,28 @@ impl GpuResources {
             pass.set_bind_group(0, &self.ui_bind_group, &[]);
             pass.set_vertex_buffer(0, self.ui_vertex_buffer.slice(..));
             pass.draw(0..self.ui_vertex_count, 0..1);
+            draw_calls += 1;
+        }
+        if let Some(output) = &self.output_encoder {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("linear-output-srgb-encode-pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &surface_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(output.pipeline());
+            pass.set_bind_group(0, output.bind_group(), &[]);
+            pass.draw(0..3, 0..1);
             draw_calls += 1;
         }
         self.queue.submit(Some(encoder.finish()));

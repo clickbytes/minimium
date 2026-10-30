@@ -1,5 +1,3 @@
-struct Camera { view_projection: mat4x4<f32> };
-@group(0) @binding(0) var<uniform> camera: Camera;
 @group(1) @binding(0) var globe: texture_2d_array<f32>;
 @group(1) @binding(1) var globe_sampler: sampler;
 
@@ -37,6 +35,12 @@ struct Output {
     let south = sample_map(input.uv + vec2<f32>(0.0, offset.y)).a;
     let slope = vec3<f32>((west-east) * 6.0, (north-south) * 6.0, 1.0);
     let relief = 0.7 + 0.3 * max(dot(normalize(slope), normalize(vec3<f32>(0.5, 0.7, 1.0))), 0.0);
-    let daylight = 0.43 + 0.57 * max(dot(input.normal, normalize(vec3<f32>(0.6, 0.7, 0.35))), 0.0);
-    return vec4<f32>(sample.rgb * relief * daylight, 1.0);
+    var sun_direction = normalize(vec3<f32>(0.6, 0.7, 0.35));
+    var sun_color = vec3<f32>(1.0);
+    if environment.flags.z == 1u {
+        sun_direction = normalize(environment.global_sun_direction.xyz);
+        sun_color = environment.global_sun_rgb.xyz;
+    }
+    let daylight = 0.43 + 0.57 * max(dot(input.normal, sun_direction), 0.0);
+    return vec4<f32>(sample.rgb * relief * daylight * sun_color, 1.0);
 }

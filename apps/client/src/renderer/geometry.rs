@@ -69,6 +69,8 @@ fn append_geometry(out: &mut Vec<Vertex>, boxes: &[MapBox], triangles: &[MapTria
     for map_box in boxes {
         cube(out, map_box.center, map_box.size, map_box.color);
     }
+    // Preserve source triangle winding: procedural planet surfaces already face outward,
+    // while authored and dungeon surfaces use their own upward/side-face semantics.
     for triangle in triangles {
         let points = triangle
             .precise_vertices
@@ -106,12 +108,12 @@ pub(super) fn cube(out: &mut Vec<Vertex>, center: [f32; 3], size: [f32; 3], colo
         [cx - sx, cy + sy, cz + sz],
     ];
     for face in [
-        [0, 1, 2, 0, 2, 3],
-        [5, 4, 7, 5, 7, 6],
-        [4, 0, 3, 4, 3, 7],
-        [1, 5, 6, 1, 6, 2],
-        [3, 2, 6, 3, 6, 7],
-        [4, 5, 1, 4, 1, 0],
+        [0, 2, 1, 0, 3, 2],
+        [5, 7, 4, 5, 6, 7],
+        [4, 3, 0, 4, 7, 3],
+        [1, 6, 5, 1, 2, 6],
+        [3, 6, 2, 3, 7, 6],
+        [4, 1, 5, 4, 0, 1],
     ] {
         let a = glam::Vec3::from_array(p[face[0]]);
         let b = glam::Vec3::from_array(p[face[1]]);

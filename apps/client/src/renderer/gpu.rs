@@ -158,43 +158,19 @@ impl GpuResources {
             .get_default_config(&adapter, size.width.max(1), size.height.max(1))
             .ok_or("graphics adapter does not support this surface")?;
         surface.configure(&device, &config);
-
-        let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("camera-uniform"),
-            size: std::mem::size_of::<[[f32; 4]; 4]>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let camera_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("camera-layout"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }],
-        });
-        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("camera-bind-group"),
-            layout: &camera_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera_buffer.as_entire_binding(),
-            }],
-        });
+        let output_encoder = (!is_srgb(config.format))
+            .then(|| super::output::OutputEncoder::new(&device, size, config.format));
+        let scene_color_format = if output_encoder.is_some() {
+            wgpu::TextureFormat::Rgba8Unorm
+        } else {
+            config.format
+        };
+        let frame_bindings = super::environment_gpu::EnvironmentGpuBindings::create(&device);
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("minimium-basic-3d-shader"),
-            source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("world.wgsl"))),
+            source: wgpu::ShaderSource::Wgsl(Cow::Owned(super::shader_source::world())),
         });
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("minimium-pipeline-layout"),
-            bind_group_layouts: &[Some(&camera_layout)],
-            immediate_size: 0,
-        });
+        let pipeline_layout = frame_bindings.pipeline_layout(&device);
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("minimium-solid-3d-pipeline"),
             layout: Some(&pipeline_layout),
@@ -209,7 +185,7 @@ impl GpuResources {
                 entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: config.format,
+                    format: scene_color_format,
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
@@ -231,7 +207,7 @@ impl GpuResources {
             cache: None,
         });
         let (ui_pipeline, ui_bind_group, ui_vertex_buffer) =
-            create_ui_resources(&device, &queue, config.format);
+            create_ui_resources(&device, &queue, scene_color_format);
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("sample-world-geometry"),
             contents: bytemuck::cast_slice(vertices),
@@ -244,16 +220,21 @@ impl GpuResources {
             mapped_at_creation: false,
         });
         let depth_view = create_depth_view(&device, size);
-        let fixed_gpu_bytes = camera_buffer.size()
+        let fixed_gpu_bytes = frame_bindings.camera_buffer.size()
+            + frame_bindings.environment_buffer.size()
             + vertex_buffer.size()
             + player_buffer.size()
             + ui_vertex_buffer.size()
+            + output_encoder
+                .as_ref()
+                .map_or(0, |output| output.size_bytes())
             + (crate::console::ATLAS_WIDTH * crate::console::ATLAS_HEIGHT) as u64;
         Ok(Self {
             surface,
             device,
             queue,
             config,
+            scene_color_format,
             pipeline,
             ui_pipeline,
             ui_bind_group,
@@ -263,8 +244,9 @@ impl GpuResources {
             vertex_count: vertices.len() as u32,
             player_buffer,
             remote_vertex_count: 0,
-            camera_buffer,
-            camera_bind_group,
+            camera_buffer: frame_bindings.camera_buffer,
+            environment_buffer: frame_bindings.environment_buffer,
+            camera_bind_group: frame_bindings.bind_group,
             depth_view,
             size,
             fixed_gpu_bytes,
@@ -279,6 +261,7 @@ impl GpuResources {
             overview_globe: false,
             scene_visible: true,
             globe: None,
+            output_encoder,
         })
     }
 
@@ -291,6 +274,14 @@ impl GpuResources {
         self.config.height = size.height;
         self.surface.configure(&self.device, &self.config);
         self.depth_view = create_depth_view(&self.device, size);
+        if let Some(output) = &mut self.output_encoder {
+            let old_size = output.size_bytes();
+            output.resize(&self.device, size);
+            self.fixed_gpu_bytes = self
+                .fixed_gpu_bytes
+                .saturating_sub(old_size)
+                .saturating_add(output.size_bytes());
+        }
     }
 }
 
@@ -453,4 +444,11 @@ fn create_depth_view(device: &wgpu::Device, size: PhysicalSize<u32>) -> wgpu::Te
             view_formats: &[],
         })
         .create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+fn is_srgb(format: wgpu::TextureFormat) -> bool {
+    matches!(
+        format,
+        wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb
+    )
 }
