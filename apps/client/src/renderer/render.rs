@@ -132,6 +132,20 @@ impl GpuResources {
                 pass.set_pipeline(&self.pipeline);
                 pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
                 pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
+                // Draw distant disks before the globe so its surface covers
+                // whichever body is on the far side as the camera rotates.
+                if super::sky::should_draw_overview_sun(environment) {
+                    pass.set_pipeline(&self.environment_pipelines.sun);
+                    pass.draw(0..6, 0..1);
+                    draw_calls += 1;
+                    self.environment_draw_calls.sun += 1;
+                }
+                if super::sky::should_draw_overview_moon(environment) {
+                    pass.set_pipeline(&self.moon.pipeline);
+                    pass.draw(0..6, 0..1);
+                    draw_calls += 1;
+                    self.environment_draw_calls.moon += 1;
+                }
                 if let Some(globe) = self.globe.as_ref().filter(|_| self.overview_globe) {
                     pass.set_pipeline(&globe.pipeline);
                     pass.set_bind_group(1, &globe.bind_group, &[]);

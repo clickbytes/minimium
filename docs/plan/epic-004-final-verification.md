@@ -106,6 +106,8 @@ w [epic-004-verification.md](epic-004-verification.md); poniżej są instrukcje,
   V14: te same 500 gwiazd w obu jakościach, jeden batch, zasłanianie przez planetę,
   teren i całą tarczę Moon. V15: sceny A3, obie półkule, dzienny Księżyc,
   jasna strona/rozmiar i brak czarnego wycięcia na dziennym niebie.
+  W V13/V15 obrócić kamerę globu: Słońce i Księżyc mają pojawiać się we
+  właściwych kierunkach, a glob zasłaniać ich tarcze po przeciwnej stronie.
 - V16: wszystkie normalne cube/terrain, local/global, nocna woda, Interior bez
   planetarnego światła. V17: caster poza frustum, niskie Sun, Sun→Moon→none,
   bias/PCF/fade, teleport/rebase, incomplete coverage/budżet; fallback wyłącza

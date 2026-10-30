@@ -37,6 +37,22 @@ pub(super) fn should_draw_moon(frame: &EnvironmentFrame) -> bool {
         && frame.environment_uniform.moon_apparent_world[3] > 0.0
 }
 
+// The overview camera can see across the globe's player horizon. The planet
+// itself covers disks behind it when its geometry is drawn after these passes.
+pub(super) fn should_draw_overview_sun(frame: &EnvironmentFrame) -> bool {
+    frame.status == EnvironmentFrameStatus::Available
+        && frame.render_view.kind == EnvironmentViewKind::Overview
+        && frame.sky.is_some()
+        && frame.environment_uniform.sun_apparent_world[3] > 0.0
+}
+
+pub(super) fn should_draw_overview_moon(frame: &EnvironmentFrame) -> bool {
+    frame.status == EnvironmentFrameStatus::Available
+        && frame.render_view.kind == EnvironmentViewKind::Overview
+        && frame.sky.is_some()
+        && frame.environment_uniform.moon_apparent_world[3] > 0.0
+}
+
 pub(super) fn clear_color(scene_visible: bool, overview_active: bool) -> wgpu::Color {
     if !scene_visible {
         return wgpu::Color::BLACK;
