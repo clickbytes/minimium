@@ -166,6 +166,11 @@ impl GpuResources {
             config.format
         };
         let frame_bindings = super::environment_gpu::EnvironmentGpuBindings::create(&device);
+        let environment_pipelines = super::sky_gpu::EnvironmentPipelines::new(
+            &device,
+            &frame_bindings.layout,
+            scene_color_format,
+        );
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("minimium-basic-3d-shader"),
             source: wgpu::ShaderSource::Wgsl(Cow::Owned(super::shader_source::world())),
@@ -236,6 +241,7 @@ impl GpuResources {
             config,
             scene_color_format,
             pipeline,
+            environment_pipelines,
             ui_pipeline,
             ui_bind_group,
             ui_vertex_buffer,
@@ -257,6 +263,8 @@ impl GpuResources {
                 .expect("primary world ID is nonzero"),
             render_origin: [0.0; 3],
             overview_buffer: None,
+            overview_marker_buffer: None,
+            environment_draw_calls: super::sky::EnvironmentDrawCalls::default(),
             overview_active: false,
             overview_globe: false,
             scene_visible: true,
@@ -382,7 +390,7 @@ fn create_ui_resources(
     });
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("minimium-console-ui-shader"),
-        source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("ui.wgsl"))),
+        source: wgpu::ShaderSource::Wgsl(Cow::Owned(super::shader_source::ui())),
     });
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("minimium-console-ui-pipeline-layout"),

@@ -57,7 +57,7 @@ Każde poniższe issue ma własny cel, konkretne istniejące i nowe pliki, kontr
 - [x] #56 — **E004-06**: Georeferencja obserwatora: Earth 650 km, ramka N/E/U i jawny model nieba
 - [x] #57 — **E004-07**: Astronomia offline: przypięty Astronomy Engine C, bezpieczny Rust FFI i wspólny SkyState
 - [x] #58 — **E004-08**: Deterministyczny katalog 500 gwiazd HYG: importer, asset, tożsamość i licencja
-- [ ] #61 — **E004-09**: Wspólny EnvironmentFrame, kontrakt GPU i poprawne normalne geometrii
+- [x] #61 — **E004-09**: Wspólny EnvironmentFrame, kontrakt GPU i poprawne normalne geometrii
 - [ ] #62 — **E004-10**: Niebo, świt i zmierzch, Słońce oraz spójne oświetlenie sceny i globusa
 - [ ] #63 — **E004-11**: Katalog 500 gwiazd w jednym batchu, prawdziwa orientacja i jasność
 - [ ] #64 — **E004-12**: Tarcza Księżyca z rzeczywistą fazą i orientacją oraz światło księżycowe
@@ -80,7 +80,7 @@ Każde poniższe issue ma własny cel, konkretne istniejące i nowe pliki, kontr
 | [E004-06 / #56](https://github.com/clickbytes/minimium/issues/56) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#76](https://github.com/clickbytes/minimium/pull/76), code commit `15ac4d2`, merge `dfbc795`) |
 | [E004-07 / #57](https://github.com/clickbytes/minimium/issues/57) | [E004-06 / #56](https://github.com/clickbytes/minimium/issues/56) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#77](https://github.com/clickbytes/minimium/pull/77), commit `5da228e`, merge `69a633e`) |
 | [E004-08 / #58](https://github.com/clickbytes/minimium/issues/58) | [E004-07 / #57](https://github.com/clickbytes/minimium/issues/57) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#78](https://github.com/clickbytes/minimium/pull/78), commit `38157c0`; merge `cb3d70a`) |
-| [E004-09 / #61](https://github.com/clickbytes/minimium/issues/61) | [E004-05 / #60](https://github.com/clickbytes/minimium/issues/60), [E004-06 / #56](https://github.com/clickbytes/minimium/issues/56), [E004-07 / #57](https://github.com/clickbytes/minimium/issues/57) | PLANNED |
+| [E004-09 / #61](https://github.com/clickbytes/minimium/issues/61) | [E004-05 / #60](https://github.com/clickbytes/minimium/issues/60), [E004-06 / #56](https://github.com/clickbytes/minimium/issues/56), [E004-07 / #57](https://github.com/clickbytes/minimium/issues/57) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#81](https://github.com/clickbytes/minimium/pull/81), commit `6c19d2e`, merge `3155a2c`) |
 | [E004-10 / #62](https://github.com/clickbytes/minimium/issues/62) | [E004-09 / #61](https://github.com/clickbytes/minimium/issues/61) | PLANNED |
 | [E004-11 / #63](https://github.com/clickbytes/minimium/issues/63) | [E004-08 / #58](https://github.com/clickbytes/minimium/issues/58), [E004-09 / #61](https://github.com/clickbytes/minimium/issues/61), [E004-10 / #62](https://github.com/clickbytes/minimium/issues/62) | PLANNED |
 | [E004-12 / #64](https://github.com/clickbytes/minimium/issues/64) | [E004-09 / #61](https://github.com/clickbytes/minimium/issues/61), [E004-10 / #62](https://github.com/clickbytes/minimium/issues/62) | PLANNED |
@@ -132,4 +132,5 @@ hard-link cache. Nie uruchamiano testów ani aplikacji. E004-03 scalono przez PR
 (`5da228e`, merge `69a633e`). E004-08 merged in PR #78 (`38157c0`, merge `cb3d70a`); E004-04
 was merged in PR #79 (`7c49d92`, merge `a69ff33`). E004-05 was merged in PR #80
 (`2d58ac2`, merge `c40db94`); its static checks pass, while runtime verification remains deferred to E004-16.
-Pozostałe zadania pozostają PLANNED, a wyniki runtime całego epica są NOT RUN.
+E004-09 merged in PR #81 (`6c19d2e`, merge `3155a2c`); runtime and visual verification remain deferred to E004-16.
+E004-10 and later implementation issues remain PLANNED until their PRs are integrated; runtime for the epic is NOT RUN.
