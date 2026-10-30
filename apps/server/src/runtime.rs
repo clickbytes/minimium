@@ -132,7 +132,14 @@ impl ServerRuntime {
         };
         let executor = Executor::new(lanes);
         let mut worlds = generated_worlds
-            .map(WorldRegistry::from_generated_worlds)
+            .map(WorldRegistry::try_from_generated_worlds)
+            .transpose()
+            .map_err(|error| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("generated world registry is invalid: {error:?}"),
+                )
+            })?
             .unwrap_or_else(|| WorldRegistry::legacy_primary(map.clone()));
         worlds
             .restore_sector_states(player_store.sector_states())
