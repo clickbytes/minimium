@@ -3,10 +3,11 @@ use crate::{
     connector::{AttemptId, Connector, PollEvent, StartError},
     messages::ClientText as Text,
     options::ThreadLane,
-    session::{ClientSession, QueueError, SessionEvent},
+    session::{ClientSession, QueueError, SessionEvent, SessionState},
 };
 use minimium_core::identity::PlayerProfileId;
 use minimium_core::world::WorldInstanceId;
+use minimium_platform::admin_client;
 use minimium_protocol::ClientMessage;
 use std::{
     collections::HashMap,
@@ -34,6 +35,8 @@ pub(crate) struct ConnectionController {
     active: Option<AttemptId>,
     session: Option<ClientSession>,
     local_server: Option<LocalServer>,
+    session_owns_server: bool,
+    time_scale_request: Option<JoinHandle<io::Result<String>>>,
     cleanup: Option<JoinHandle<Result<(), String>>>,
     profile: PlayerProfileId,
     fingerprint: u64,
@@ -47,6 +50,8 @@ impl ConnectionController {
             active: None,
             session: None,
             local_server: None,
+            session_owns_server: false,
+            time_scale_request: None,
             cleanup: None,
             profile,
             fingerprint,
@@ -74,7 +79,52 @@ impl ConnectionController {
     }
 
     pub(crate) fn take_session(&mut self) -> Option<ClientSession> {
+        self.session_owns_server = false;
         self.session.take()
+    }
+
+    /// Sends a server-authoritative time change without blocking the UI loop.
+    pub(crate) fn request_time_scale(&mut self, value: String) -> Result<(), String> {
+        if !self
+            .session
+            .as_ref()
+            .is_some_and(|session| session.state() == SessionState::Connected)
+            || !self.session_owns_server
+        {
+            return Err(String::from(
+                "time scale requires a connection to a server started by this client",
+            ));
+        }
+        if self.time_scale_request.is_some() {
+            return Err(String::from("a time scale request is already in progress"));
+        }
+        let endpoint = self
+            .local_server
+            .as_mut()
+            .ok_or("owned server is unavailable")?
+            .owned_admin_endpoint()
+            .map_err(|error| error.to_string())?
+            .ok_or("owned server is not running")?;
+        self.time_scale_request = Some(thread::spawn(move || {
+            admin_client::request(&endpoint, &format!("time scale {value}"))
+        }));
+        Ok(())
+    }
+
+    pub(crate) fn poll_time_scale_result(&mut self) -> Option<Result<String, String>> {
+        if !self
+            .time_scale_request
+            .as_ref()
+            .is_some_and(JoinHandle::is_finished)
+        {
+            return None;
+        }
+        let worker = self.time_scale_request.take()?;
+        Some(match worker.join() {
+            Ok(Ok(response)) => Ok(response),
+            Ok(Err(error)) => Err(error.to_string()),
+            Err(_) => Err(String::from("time scale request worker panicked")),
+        })
     }
 
     pub(crate) fn queue(&mut self, message: &ClientMessage) -> Result<(), QueueError> {
@@ -150,6 +200,9 @@ impl ConnectionController {
                 local_server,
             } if self.active == Some(attempt_id) => {
                 self.active = None;
+                self.session_owns_server = local_server
+                    .as_ref()
+                    .is_some_and(|server| matches!(server, LocalServer::Owned(_)));
                 if let Some(server) = local_server {
                     self.retain_local_server(server);
                 }
@@ -159,7 +212,10 @@ impl ConnectionController {
                         self.session = Some(session);
                         ConnectionEvent::SessionStarted
                     }
-                    Err(error) => ConnectionEvent::SetupFailed(error),
+                    Err(error) => {
+                        self.session_owns_server = false;
+                        ConnectionEvent::SetupFailed(error)
+                    }
                 }
             }
             PollEvent::Failed { attempt_id, error } if self.active == Some(attempt_id) => {

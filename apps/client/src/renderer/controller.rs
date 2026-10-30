@@ -136,6 +136,10 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
             .ui
             .console
             .push_line(renderer.environment_frame.time_status_line()),
+        FrontendAction::TimeScale(value) => match renderer.connection.request_time_scale(value) {
+            Ok(()) => renderer.ui.console.push_line("time scale request sent"),
+            Err(error) => renderer.ui.console.push_error(error),
+        },
         FrontendAction::Quit => return true,
     }
     false

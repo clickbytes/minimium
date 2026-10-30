@@ -19,6 +19,12 @@ const COMMANDS: &[CommandSpec] = &[
         alias: None,
         usage: "time status",
     },
+    CommandSpec {
+        id: CommandId::TimeScale,
+        name: "time scale",
+        alias: Some("timescale"),
+        usage: "time scale DECIMAL (alias timescale; owned local server; 0-1440x)",
+    },
 ];
 
 pub(super) fn register(registry: &mut CommandRegistry) {
