@@ -91,6 +91,29 @@ Domyślnie RealTime/1×/Pause; mutable czas nie trafia do `world.planet.ron`.
 Klient ma odczytowe `time status` oraz `sky info` i `sky quality low|standard`.
 Zwykły gracz nie otrzymuje prawa do zmiany globalnego zegara.
 
+`SkyQualityProfile` jest lokalną tabelą prezentacji: `low` wyłącza przebieg cieni,
+a `standard` używa jednej mapy 1024×1024 `Depth32Float`; oba profile zachowują
+identyczny zegar, efemerydy, katalog gwiazd i pozycje ciał. Gdy adapter nie
+obsługuje standardowej tekstury albo jej alokacja zostanie odrzucona, klient
+utrzymuje poprawną teksturę wiążącą, przechodzi na efektywne `low` i pokazuje
+powód w `sky info`. Zmiana profilu odbywa się w obsłudze zdarzenia klienta,
+zwalnia poprzedni zasób, aktualizuje szacunek GPU i rozpoczyna nową epokę
+metryk środowiska.
+
+Snapshot `sky info` ma wersję schematu, stabilne klucze i jest formatowany
+wyłącznie na żądanie. Histogram czasu CPU środowiska używa mikrosekundowych
+granic `[1,2,5,10,20,50,100,250,500,1000,2500,5000,10000]` plus overflow;
+percentyle to nearest-rank z górną granicą koszyka. CPU przygotowania cieni jest
+raportowane oddzielnie. Rzeczywiste draw calls są zliczane tylko dla
+zakodowanych przebiegów pokazanych klatek; wysłanie poleceń GPU nie jest
+raportowane jako GPU time. Estymata pamięci środowiska pokazuje bufory gwiazd,
+uniformy i teksturę cieni, i nie jest pomiarem VRAM sterownika.
+
+`time status` klienta odczytuje próbkę aktywnej sesji, offset/RTT probe'ów,
+status synchronizacji oraz liczniki zaakceptowanych/odrzuconych probe'ów.
+Serwerowe `status` i `metrics show` udostępniają łączne liczniki żądań,
+odpowiedzi przyjętych/odrzuconych i wysłanych `EnvironmentSync`.
+
 ## 4. Zapis v8
 
 Jeden rekord CLOCK po WORLD, przed SECTOR/graczami, w tym samym atomowym snapshotcie:

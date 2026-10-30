@@ -34,6 +34,7 @@ use winit::{
 mod camera;
 mod console_events;
 mod controller;
+mod diagnostics;
 mod environment;
 mod environment_gpu;
 mod geometry;
@@ -47,6 +48,7 @@ mod moon_lighting;
 mod output;
 mod overview;
 mod planet_visibility;
+mod quality;
 mod render;
 mod sector_scene;
 mod session;
@@ -54,6 +56,7 @@ mod shader_source;
 mod shadow_casters;
 mod shadow_gpu;
 mod shadow_map_cache;
+mod shadow_target;
 mod shadows;
 mod sky;
 mod sky_gpu;
@@ -128,6 +131,7 @@ struct GpuResources {
     overview_buffer: Option<(wgpu::Buffer, u32)>,
     overview_marker_buffer: Option<(wgpu::Buffer, u32)>,
     environment_draw_calls: sky::EnvironmentDrawCalls,
+    last_shadow_prepare_cpu: Duration,
     overview_active: bool,
     overview_globe: bool,
     scene_visible: bool,
@@ -196,6 +200,7 @@ struct Renderer {
     ui: UiState,
     metrics: FrameMetrics,
     settings: ClientSettings,
+    sky_quality: crate::environment::quality::SkyQualityState,
     connection: ConnectionController,
     environment_frame: EnvironmentFrameInput,
     render_environment_frame: EnvironmentFrame,

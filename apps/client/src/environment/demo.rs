@@ -1,4 +1,7 @@
-use super::{EnvironmentFrameInput, SynchronizationQuality};
+use super::{
+    diagnostics::{ClockDiagnostics, ClockSource},
+    EnvironmentFrameInput, SynchronizationQuality,
+};
 use minimium_core::{
     environment::{
         AstronomyModelRevision, CatalogueId, CatalogueSha256, EnvironmentDescriptor,
@@ -82,6 +85,17 @@ impl LocalDemoEnvironment {
             revision: Some(self.anchor.revision().get()),
             rate_ppm: Some(self.anchor.rate_ppm().get()),
             quality: SynchronizationQuality::LocalDemo,
+            clock_diagnostics: Some(ClockDiagnostics {
+                source: ClockSource::Demo,
+                clock_id: Some(self.anchor.clock_id()),
+                mode: Some(self.anchor.mode()),
+                offline_policy: Some(self.anchor.offline_policy()),
+                sample_age_real_ms: None,
+                clock_offset_ms: None,
+                probe_rtt_ms: None,
+                samples_accepted: Some(0),
+                samples_rejected: Some(0),
+            }),
         }
     }
 }

@@ -57,6 +57,7 @@ impl ApplicationHandler for App {
             map_path: self.options.map_path.clone(),
             world_definition_path: self.options.world_definition_path.clone(),
             threads: self.options.threads,
+            sky_quality: self.options.sky_quality,
             require_earth: self.options.require_earth,
             demo: self.options.demo,
         })) {
@@ -314,6 +315,7 @@ impl ApplicationHandler for App {
                     }
                 };
                 renderer.update_gpu_memory_metric();
+                renderer.record_environment_render_metrics(draws > 0);
                 renderer
                     .metrics
                     .frame_stats

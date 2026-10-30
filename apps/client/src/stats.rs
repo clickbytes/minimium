@@ -2,6 +2,8 @@ use minimium_telemetry::duration::DurationStats;
 use minimium_telemetry::process::ProcessSampler;
 use std::time::{Duration, Instant};
 
+pub(crate) mod environment;
+
 /// Fixed-storage frame histograms; periodic process sampling may allocate on
 /// platforms that read process data from files.
 pub struct FrameStats {
@@ -12,6 +14,7 @@ pub struct FrameStats {
     presented_frames: u64,
     total_draw_calls: u64,
     gpu_bytes: Option<u64>,
+    environment: environment::EnvironmentStats,
     process: ProcessSampler,
     process_cpu_time: Option<Duration>,
 }
@@ -26,6 +29,7 @@ impl Default for FrameStats {
             presented_frames: 0,
             total_draw_calls: 0,
             gpu_bytes: None,
+            environment: environment::EnvironmentStats::default(),
             process: ProcessSampler::default(),
             process_cpu_time: None,
         }
@@ -53,6 +57,50 @@ impl FrameStats {
     /// Sets the renderer's current engine-side GPU memory estimate.
     pub fn set_gpu_bytes(&mut self, bytes: u64) {
         self.gpu_bytes = Some(bytes);
+    }
+
+    pub(crate) fn record_environment_cpu(&mut self, duration: Duration) {
+        self.environment.record_cpu(duration);
+    }
+
+    pub(crate) fn record_shadow_cpu(&mut self, duration: Duration) {
+        self.environment.record_shadow_cpu(duration);
+    }
+
+    pub(crate) fn set_astronomy_counters(
+        &mut self,
+        ephemeris_evaluations: u64,
+        ephemeris_cache_hits: u64,
+        star_epoch_updates: u64,
+        star_epoch_cache_hits: u64,
+    ) {
+        self.environment.set_astronomy_counters(
+            ephemeris_evaluations,
+            ephemeris_cache_hits,
+            star_epoch_updates,
+            star_epoch_cache_hits,
+        );
+    }
+
+    pub(crate) fn record_environment_frame(
+        &mut self,
+        presented: bool,
+        sky: u32,
+        stars: u32,
+        sun: u32,
+        moon: u32,
+        shadows: u32,
+    ) {
+        self.environment
+            .record_frame(presented, sky, stars, sun, moon, shadows);
+    }
+
+    pub(crate) fn environment_snapshot(&self) -> environment::EnvironmentStatsSnapshot {
+        self.environment.snapshot()
+    }
+
+    pub(crate) fn reset_environment_epoch(&mut self) {
+        self.environment.reset_epoch();
     }
 
     /// Formats the accumulated frame and CPU-work timing summaries.

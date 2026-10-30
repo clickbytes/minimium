@@ -66,12 +66,18 @@ impl EphemerisValues {
 pub(crate) struct EphemerisCache {
     key: Option<CacheKey>,
     endpoints: Option<[Endpoint; 2]>,
+    evaluations: u64,
+    cache_hits: u64,
 }
 
 impl EphemerisCache {
     pub fn invalidate(&mut self) {
         self.key = None;
         self.endpoints = None;
+    }
+
+    pub fn diagnostics(&self) -> (u64, u64) {
+        (self.evaluations, self.cache_hits)
     }
 
     pub fn sample(
@@ -102,13 +108,22 @@ impl EphemerisCache {
                 .copied()
                 .find(|point| point.utc_ms == upper_utc_ms)
         });
+        if lower.is_some() && upper.is_some() {
+            self.cache_hits = self.cache_hits.saturating_add(1);
+        }
         let lower = match lower {
             Some(point) => point,
-            None => compute_endpoint(lower_utc_ms)?,
+            None => {
+                self.evaluations = self.evaluations.saturating_add(1);
+                compute_endpoint(lower_utc_ms)?
+            }
         };
         let upper = match upper {
             Some(point) => point,
-            None => compute_endpoint(upper_utc_ms)?,
+            None => {
+                self.evaluations = self.evaluations.saturating_add(1);
+                compute_endpoint(upper_utc_ms)?
+            }
         };
         self.endpoints = Some([lower, upper]);
         interpolate(lower, upper, current)

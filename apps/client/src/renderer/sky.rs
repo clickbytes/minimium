@@ -6,6 +6,7 @@ pub(super) struct EnvironmentDrawCalls {
     pub(super) stars: u32,
     pub(super) sun: u32,
     pub(super) moon: u32,
+    pub(super) shadows: u32,
     pub(super) overview_marker: u32,
 }
 

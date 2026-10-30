@@ -20,6 +20,9 @@ const INPUT_QUEUE_CAPACITY: usize = 64;
 const ENVIRONMENT_STATUS_REFRESH: Duration = Duration::from_secs(5);
 
 pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
+    if options.sky_quality != crate::environment::quality::SkyQuality::Standard {
+        println!("--sky-quality is available only in the desktop renderer");
+    }
     let map_path = options.map_path.clone();
     let world_definition_path = options.world_definition_path.clone();
     let (map, world_fingerprints) = if let Some(path) = map_path.as_deref() {
@@ -259,6 +262,24 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
                         FrontendAction::Quit => break,
                         FrontendAction::MapTeleport => {
                             println!("map_telepo is available in the desktop Earth overview");
+                        }
+                        FrontendAction::SkyQuality(quality) => {
+                            println!(
+                                "sky quality {} is unavailable in the text client (desktop renderer required)",
+                                quality.label()
+                            );
+                        }
+                        FrontendAction::SkyInfo => {
+                            println!("sky info unavailable: desktop renderer required");
+                        }
+                        FrontendAction::TimeStatus => {
+                            let unavailable =
+                                crate::environment::EnvironmentFrameInput::unavailable();
+                            let status = connection
+                                .session()
+                                .map(|session| session.environment_frame().time_status_line())
+                                .unwrap_or_else(|| unavailable.time_status_line());
+                            println!("{status}");
                         }
                     },
                 }

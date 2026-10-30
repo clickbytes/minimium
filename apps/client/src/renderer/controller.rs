@@ -123,6 +123,19 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
         ),
         FrontendAction::MapTeleport => renderer.arm_map_teleport(),
         FrontendAction::Clear => renderer.ui.console.clear_lines(),
+        FrontendAction::SkyQuality(quality) => {
+            let status = renderer.set_sky_quality(quality);
+            renderer.ui.console.push_line(status);
+        }
+        FrontendAction::SkyInfo => {
+            for line in renderer.sky_info_lines() {
+                renderer.ui.console.push_line(line);
+            }
+        }
+        FrontendAction::TimeStatus => renderer
+            .ui
+            .console
+            .push_line(renderer.environment_frame.time_status_line()),
         FrontendAction::Quit => return true,
     }
     false

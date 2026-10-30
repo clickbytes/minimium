@@ -1,9 +1,12 @@
 mod demo;
+pub(crate) mod diagnostics;
+pub(crate) mod quality;
 
 use minimium_core::environment::EnvironmentDescriptor;
 use minimium_protocol::WorldContext;
 
 pub(crate) use demo::LocalDemoEnvironment;
+pub(crate) use diagnostics::{ClockDiagnostics, ClockSource, SkyDiagnosticsSnapshot};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum SynchronizationQuality {
@@ -36,6 +39,7 @@ pub(crate) struct EnvironmentFrameInput {
     pub(crate) revision: Option<u64>,
     pub(crate) rate_ppm: Option<u32>,
     pub(crate) quality: SynchronizationQuality,
+    pub(crate) clock_diagnostics: Option<ClockDiagnostics>,
 }
 
 impl EnvironmentFrameInput {
@@ -48,6 +52,7 @@ impl EnvironmentFrameInput {
             revision: None,
             rate_ppm: None,
             quality: SynchronizationQuality::Unavailable,
+            clock_diagnostics: None,
         }
     }
 
@@ -82,6 +87,16 @@ impl EnvironmentFrameInput {
             .map(format_utc)
             .unwrap_or_else(|| "UTC --".to_owned());
         format!("{} | {date}", self.quality.label())
+    }
+
+    pub(crate) fn time_status_line(self) -> String {
+        diagnostics::clock_status_line(
+            self.clock_diagnostics,
+            self.quality,
+            self.revision,
+            self.render_world_utc_ms,
+            self.rate_ppm,
+        )
     }
 }
 
