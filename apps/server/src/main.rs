@@ -67,6 +67,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
     let config = config::ServerConfig::parse(&args)?;
+    commands::initialize_modules();
     let startup = startup::initialize(&config)?;
     runtime::ServerRuntime::new(config, startup)?.run()?;
     Ok(())

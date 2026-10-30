@@ -41,6 +41,7 @@ impl WorldRegistry {
                 manifest,
                 map,
                 world,
+                entities: minimium_core::entity::EntityStore::default(),
                 portal: None,
             },
         );
@@ -78,6 +79,7 @@ impl WorldRegistry {
                 manifest,
                 map,
                 world,
+                entities: minimium_core::entity::EntityStore::default(),
                 portal: None,
             },
         );
@@ -112,6 +114,7 @@ impl WorldRegistry {
                 manifest: world.manifest,
                 map,
                 world: simulation,
+                entities: minimium_core::entity::EntityStore::default(),
                 portal: world.portal,
             },
         );

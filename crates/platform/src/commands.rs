@@ -43,7 +43,7 @@ const CONTROL_COMMANDS: [&str; 13] = [
     "time offline advance",
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServerCommand {
     Help,
     Status,
@@ -52,6 +52,8 @@ pub enum ServerCommand {
     Save,
     Stop,
     Time(TimeCommand),
+    /// A validated administrative line owned by its registering server module.
+    Registered(String),
 }
 
 impl ServerCommand {
@@ -64,7 +66,7 @@ impl ServerCommand {
         Self::Stop,
     ];
 
-    pub const fn name(self) -> &'static str {
+    pub const fn name(&self) -> &'static str {
         match self {
             Self::Help => SERVER_COMMANDS[0],
             Self::Status => SERVER_COMMANDS[1],
@@ -73,6 +75,7 @@ impl ServerCommand {
             Self::Save => SERVER_COMMANDS[4],
             Self::Stop => SERVER_COMMANDS[5],
             Self::Time(_) => "time",
+            Self::Registered(_) => "registered",
         }
     }
 
@@ -92,22 +95,26 @@ impl ServerCommand {
                     .eq(words.iter().copied())
                     .then_some(command)
             })
-            .ok_or_else(|| "unknown command; use `help`".into())
+            .or_else(|| {
+                (line.len() <= 512 && line.chars().all(|c| !c.is_control()))
+                    .then(|| Self::Registered(line.trim().to_owned()))
+            })
+            .ok_or_else(|| "invalid command; use `help`".into())
     }
 
-    pub const fn is_status(self) -> bool {
+    pub const fn is_status(&self) -> bool {
         matches!(self, Self::Status)
     }
 
-    pub const fn is_metrics(self) -> bool {
+    pub const fn is_metrics(&self) -> bool {
         matches!(self, Self::Metrics)
     }
 
-    pub const fn is_save_or_stop(self) -> bool {
+    pub const fn is_save_or_stop(&self) -> bool {
         matches!(self, Self::Save | Self::Stop)
     }
 
-    pub const fn is_stop(self) -> bool {
+    pub const fn is_stop(&self) -> bool {
         matches!(self, Self::Stop)
     }
 }
@@ -117,5 +124,5 @@ pub fn server_help() -> String {
 }
 
 pub fn control_usage_commands() -> String {
-    CONTROL_COMMANDS.join("|")
+    format!("{}|<module command>", CONTROL_COMMANDS.join("|"))
 }

@@ -41,7 +41,7 @@ impl ServerRuntime {
             let monotonic_ms = self.monotonic_ms(Instant::now());
             let mut reply = match monotonic_ms {
                 Ok(monotonic_ms) => commands::execute(
-                    command,
+                    &command,
                     commands::CommandContext {
                         world: &self.game.worlds.primary().world,
                         worlds: &self.game.worlds,

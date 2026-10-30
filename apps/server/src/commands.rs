@@ -1,4 +1,43 @@
 mod time;
+mod world;
+
+use std::sync::OnceLock;
+use minimium_platform::modules::{CommandScope, EngineModule, ModuleRegistry};
+
+type ModuleHandler = fn(&mut CommandContext<'_>, &[&str]) -> CommandReply;
+
+fn extensions() -> &'static ModuleRegistry<ModuleHandler, ()> {
+    static REGISTRY: OnceLock<ModuleRegistry<ModuleHandler, ()>> = OnceLock::new();
+    REGISTRY.get_or_init(|| {
+        let mut registry = ModuleRegistry::default();
+        registry.install(&world::WorldCommands)
+            .expect("built-in world commands register without collisions");
+        registry
+    })
+}
+
+pub fn initialize_modules() {
+    let _ = extensions();
+}
+
+fn execute_registered(line: &str, context: &mut CommandContext<'_>) -> CommandReply {
+    match extensions().resolve(line) {
+        Some((command, args)) if command.definition.scope == CommandScope::ServerAdmin => {
+            (command.definition.handler)(context, &args)
+        }
+        Some(_) => CommandReply {
+            success: false,
+            text: "command not permitted in the server admin console".into(),
+            stop: false,
+        },
+        None => CommandReply {
+            success: false,
+            text: "unknown command; use `help`".into(),
+            stop: false,
+        },
+    }
+}
+
 
 use crate::{environment::EnvironmentClock, world_registry::WorldRegistry};
 use crate::{
@@ -27,7 +66,10 @@ pub struct CommandReply {
     pub stop: bool,
 }
 
-pub fn execute(command: ServerCommand, context: CommandContext<'_>) -> CommandReply {
+pub fn execute(command: &ServerCommand, mut context: CommandContext<'_>) -> CommandReply {
+    if let ServerCommand::Registered(line) = command {
+        return execute_registered(line, &mut context);
+    }
     let CommandContext {
         world,
         worlds,
@@ -42,7 +84,8 @@ pub fn execute(command: ServerCommand, context: CommandContext<'_>) -> CommandRe
     match command {
         ServerCommand::Help => CommandReply {
             success: true,
-            text: server_help(),
+            text: format!("{} | {}", server_help(), extensions().commands().iter()
+                .map(|command| command.definition.usage).collect::<Vec<_>>().join(" | ")),
             stop: false,
         },
         ServerCommand::Status => CommandReply {
@@ -116,6 +159,7 @@ pub fn execute(command: ServerCommand, context: CommandContext<'_>) -> CommandRe
             text: "stopping".to_owned(),
             stop: true,
         },
-        ServerCommand::Time(command) => time::execute(command, environment_clock, monotonic_ms),
+        ServerCommand::Time(command) => time::execute(*command, environment_clock, monotonic_ms),
+        ServerCommand::Registered(_) => unreachable!("registered commands dispatched above"),
     }
 }

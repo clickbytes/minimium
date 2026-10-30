@@ -29,6 +29,8 @@ pub(crate) struct WorldInstance {
     pub(crate) manifest: WorldManifest,
     pub(crate) map: Arc<WorldMap>,
     pub(crate) world: World,
+    /// Optional per-instance component state (legacy world simulation remains authoritative).
+    pub(crate) entities: minimium_core::entity::EntityStore,
     pub(crate) portal: Option<DemoPortal>,
 }
 
