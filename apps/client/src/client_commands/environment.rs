@@ -53,6 +53,12 @@ const COMMANDS: &[CommandSpec] = &[
         parser: parse,
     },
     CommandSpec {
+        name: "weather simulated",
+        alias: None,
+        usage: "weather simulated (Earth model, no network)",
+        parser: parse,
+    },
+    CommandSpec {
         name: "weather preset",
         alias: None,
         usage: "weather preset clear|partly|overcast|rain (local)",
@@ -105,6 +111,7 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
         ("weather status", []) => Ok(ClientCommand::Weather(WeatherCommand::Status)),
         ("weather live", ["on"]) => Ok(ClientCommand::Weather(WeatherCommand::Live(true))),
         ("weather live", ["off"]) => Ok(ClientCommand::Weather(WeatherCommand::Live(false))),
+        ("weather simulated", []) => Ok(ClientCommand::Weather(WeatherCommand::Simulated)),
         ("weather preset", ["clear"]) => Ok(ClientCommand::Weather(WeatherCommand::Preset(
             WeatherPreset::Clear,
         ))),
@@ -117,7 +124,9 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
         ("weather preset", ["rain"]) => Ok(ClientCommand::Weather(WeatherCommand::Preset(
             WeatherPreset::Rain,
         ))),
-        ("weather status" | "weather live" | "weather preset", _) => Err(ParseError::WeatherUsage),
+        ("weather status" | "weather live" | "weather simulated" | "weather preset", _) => {
+            Err(ParseError::WeatherUsage)
+        }
         ("time status", []) => Ok(ClientCommand::TimeStatus),
         ("time scale", [value]) => {
             parse_scale_ppm(value).map_err(|_| ParseError::TimeScaleUsage)?;

@@ -138,7 +138,7 @@ The desktop client requests a 1920×1080 physical-pixel window by default; the w
 
 The desktop console accepts `fov` to display the current vertical field of view and `fov DEGREES` to set it from 30 to 110 degrees (default: 70). `show_celestial_names true|false` toggles on-screen labels for the Sun, Moon, visible catalog bodies, and up to 32 bright stars (default: false). The star display uses a fixed 1000-star HYG catalog. Both settings are local to the current client session.
 
-`weather status` reports the local weather source and cloud/rain values. `weather preset clear|partly|overcast|rain` selects a local visual preset (default: `partly`) and turns off live weather. `weather live on|off` controls the optional MET Norway forecast for the current in-game Earth position; `off` returns to the last local preset. The desktop client fetches in the background and uses the local preset while forecast data is unavailable. See [weather](weather.md) for data, privacy, and rendering details.
+`weather status` reports the weather source. `weather simulated` selects the deterministic Earth model (default for `start-earth.ps1`); `weather preset clear|partly|overcast|rain` selects a local visual preset (default: `partly` in other client modes). `weather live on|off` controls the optional MET Norway forecast for the current in-game Earth position; `off` returns to the simulation. The desktop client fetches in the background and uses the local preset while forecast data is unavailable. See [weather](weather.md) for data, privacy, and rendering details.
 
 ## Load generator
 
