@@ -1,5 +1,9 @@
+use super::collision_queries::CollisionQueryStats;
+use super::geometry::update_cell_index;
 use super::model::Position3Mm;
+use super::world_state::{SimulationBatch, World};
 use super::{step_character, Aabb, CharacterGravity, CharacterInput, CharacterState, MapTriangle};
+use std::sync::Arc;
 
 pub fn step_character_mm(
     state: &mut CharacterState,
@@ -57,4 +61,33 @@ pub fn step_character_mm(
     });
     state.position = position_mm.0.map(|value| (value as f64 / 1000.0) as f32);
     state.gravity = original_gravity;
+}
+
+impl World {
+    pub(super) fn apply_step_results(
+        &mut self,
+        processed_batches: Vec<SimulationBatch>,
+    ) -> CollisionQueryStats {
+        let players = Arc::make_mut(&mut self.players);
+        let cells = Arc::make_mut(&mut self.cells);
+        let player_cells = Arc::make_mut(&mut self.player_cells);
+        let mut collision_stats = CollisionQueryStats::default();
+        let mut results = Vec::new();
+        for batch in &processed_batches {
+            collision_stats.accumulate(batch.collision_stats);
+            results.extend(batch.results.iter().copied());
+        }
+        results.sort_unstable_by_key(|result| result.id);
+        for result in results {
+            if let Some(player) = players.get_mut(&result.id) {
+                player.position = result.state.position;
+                player.position_mm = result.position_mm;
+                player.velocity = result.state.velocity;
+                player.grounded = result.state.grounded;
+                update_cell_index(cells, player_cells, result.id, player.position);
+            }
+        }
+        self.simulation_batches = processed_batches;
+        collision_stats
+    }
 }
