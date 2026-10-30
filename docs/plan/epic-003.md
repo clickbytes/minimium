@@ -52,9 +52,9 @@ generatora i trwałego kontekstu członkostwa.
   `TransitionId`. Niezgodny digest blokuje wejście do świata.
 - Snapshot gracza zapisuje instancję i punkt powrotu. Dane v2/v3 pozostają
   odizolowanym światem legacy i nie są przypisywane do nowej planety.
-- Testy i uruchamianie aplikacji pozostają odłożone do osobnego, wyraźnego
-  polecenia rozpoczęcia końcowej fazy testowej. Faza została rozpoczęta poleceniem
-  użytkownika „dokoncz caly epic”.
+- Testy i uruchamianie aplikacji wymagają osobnego, wyraźnego polecenia
+  rozpoczęcia końcowej fazy testowej. Wcześniejsze próby są zapisane poniżej,
+  lecz ogólne polecenie „dokoncz caly epic” nie stanowi takiego polecenia.
 
 ## Etapy
 
@@ -79,6 +79,8 @@ generatora i trwałego kontekstu członkostwa.
 Każdy etap kończy się przeglądem i osobnym PR do gałęzi integracyjnej epica.
 Integracja do `main` następuje dopiero po bramkach i osobno rozpoczętej fazie
 testowej.
+
+Macierz odbioru E003-06..14 i otwarte bramki: [epic-003-acceptance.md](epic-003-acceptance.md).
 
 ## Rejestr pracy
 
@@ -114,8 +116,8 @@ testowej.
   cache inkrementalnego, bo filesystem nie obsługuje hardlinków.
 - Przegląd `unsafe` znalazł wyłącznie istniejące wywołania FFI i alokatora w
   `platform` oraz `telemetry`; nowe moduły epica nie wprowadzają bloków `unsafe`.
-- Po wyraźnym poleceniu rozpoczęto końcową fazę testową. Wyniki i zakres są
-  zapisane poniżej.
+- Wcześniej wykonane próby testowe są zapisane poniżej. Formalna końcowa faza
+  testowa wymaga osobnego polecenia użytkownika.
 - Zapis v6 przechowuje kompletne, rewizjonowane zestawy logicznego stanu
   obiektów na sektor; rejestr odrzuca starsze rewizje, niezgodną topologię i
   przekroczenie limitów. Demonstrator nie tworzy zmian obiektów. Źródłowe mapy
@@ -182,7 +184,7 @@ testowej.
   manifestów zostały zweryfikowane; profil po restarcie wrócił do zapisanej
   planety. Próba ujawniła i pomogła naprawić kwantyzację lokalizacji radialnej.
 
-## Wyniki końcowej fazy testowej
+## Wyniki wcześniejszych prób testowych
 
 - `cargo test --workspace --locked --offline --message-format short`: 33 testy
   jednostkowych przeszło; wszystkie doc-testy przeszły.
