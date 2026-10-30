@@ -149,6 +149,9 @@ Macierz odbioru E003-06..14 i otwarte bramki: [epic-003-acceptance.md](epic-003-
   rozmiaru sektora dla adresowania, selekcji sąsiadów i materializacji planu.
 - Po anulowaniu transferu klient zwalnia zainteresowanie sektorami i bufory GPU
   celu. Przy zmianie członkostwa czyści lokalne wejścia i historię predykcji.
+- Serwer sprawdza punkt docelowy transferu względem pełnej geometrii i lokalnego
+  pionu celu przed przydzieleniem epoki oraz `TransitionId`. Nie przygotowuje
+  przejścia, jeśli cel nie może przyjąć kapsuły gracza.
 - Zapis v6 wiąże lokalizacje graczy i punkty powrotu z manifestami oraz
   fingerprintami każdej instancji, a także zapisuje ograniczone, rewizjonowane
   zestawy stanu obiektów sektorów. Wersje 4 i 5 zachowują dotychczasowe reguły

@@ -100,9 +100,6 @@ impl WorldRegistry {
         let target = self.instances.get(&anchor.target_instance)?;
         let target_manifest = target.manifest;
         let target_fingerprint = target.map.fingerprint();
-        let target_epoch = self.allocate_epoch().ok()?;
-        let transition_id = TransitionId::new(self.next_transition)?;
-        self.next_transition = self.next_transition.checked_add(1)?;
         let destination = return_location
             .filter(|location| location.instance() == anchor.target_instance)
             .map(|location| {
@@ -112,6 +109,15 @@ impl WorldRegistry {
                     .map(|value| value as f32 / 1000.0)
             })
             .unwrap_or(anchor.destination);
+        if !target
+            .map
+            .can_place_player_with_gravity(destination, target.world.gravity())
+        {
+            return None;
+        }
+        let target_epoch = self.allocate_epoch().ok()?;
+        let transition_id = TransitionId::new(self.next_transition)?;
+        self.next_transition = self.next_transition.checked_add(1)?;
         let offer = TransferOffer {
             transition_id,
             source_context,
