@@ -53,6 +53,7 @@ impl WorldRegistry {
             transfers: HashMap::new(),
             next_transition: 1,
             sector_states: BTreeMap::new(),
+            persisted_totals: super::sector_state::PersistedTotals::default(),
         }
     }
 
@@ -132,6 +133,7 @@ impl WorldRegistry {
             transfers: HashMap::new(),
             next_transition: 1,
             sector_states: BTreeMap::new(),
+            persisted_totals: super::sector_state::PersistedTotals::default(),
         }
     }
 
