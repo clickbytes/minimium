@@ -16,6 +16,18 @@ const COMMANDS: &[CommandSpec] = &[
         parser: parse,
     },
     CommandSpec {
+        name: "sky bodies",
+        alias: None,
+        usage: "sky bodies",
+        parser: parse,
+    },
+    CommandSpec {
+        name: "sky demo",
+        alias: None,
+        usage: "sky demo on|off (local rendering demo)",
+        parser: parse,
+    },
+    CommandSpec {
         name: "time status",
         alias: None,
         usage: "time status",
@@ -44,6 +56,9 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
         )),
         ("sky quality", _) => Err(ParseError::SkyQualityUsage),
         ("sky info", []) => Ok(ClientCommand::SkyInfo),
+        ("sky bodies", []) => Ok(ClientCommand::SkyBodies),
+        ("sky demo", ["on"]) => Ok(ClientCommand::SkyDemo(true)),
+        ("sky demo", ["off"]) => Ok(ClientCommand::SkyDemo(false)),
         ("time status", []) => Ok(ClientCommand::TimeStatus),
         ("time scale", [value]) => {
             parse_scale_ppm(value).map_err(|_| ParseError::TimeScaleUsage)?;

@@ -1,13 +1,13 @@
 use super::super::environment_gpu::{camera_uniform, EnvironmentUniform};
 use super::{
     EnvironmentFrame, EnvironmentFrameDiagnostics, EnvironmentFrameStatus, EnvironmentSettings,
-    GlobalSunFrame, RenderViewFrame,
+    GlobalSunFrame, RenderViewFrame, SkyFrameInput,
 };
 use bytemuck::Zeroable;
 use minimium_astronomy::{SkyState, ASTRONOMY_MODEL_REVISION};
 use minimium_core::{
     environment::{EnvironmentDescriptor, EnvironmentProfile},
-    sky::{ObserverFrame, SkyModel},
+    sky::SkyModel,
     time::{ClockId, ClockRevision},
 };
 use minimium_protocol::WorldContext;
@@ -37,13 +37,17 @@ impl Error for EnvironmentFrameError {}
 
 pub(super) fn from_sky_state(
     sky: &SkyState,
-    observer: ObserverFrame,
-    context: WorldContext,
-    clock_revision: ClockRevision,
-    descriptor: EnvironmentDescriptor,
-    render_view: RenderViewFrame,
-    settings: EnvironmentSettings,
+    input: SkyFrameInput,
 ) -> Result<EnvironmentFrame, EnvironmentFrameError> {
+    let SkyFrameInput {
+        observer,
+        context,
+        clock_revision,
+        descriptor,
+        render_view,
+        observed_bodies,
+        settings,
+    } = input;
     if descriptor.profile() == EnvironmentProfile::Interior
         || descriptor.astronomy_model_revision().get() != ASTRONOMY_MODEL_REVISION
         || descriptor.validate_clock(ClockId::MVP).is_err()
@@ -136,8 +140,15 @@ pub(super) fn from_sky_state(
         linear_rgb: settings.sunlight.global_rgb,
         strength: settings.sunlight.global_strength,
     };
-    let (observed_bodies, halo_sources, halo_count, moon_orbit_world) =
-        super::halo::prepare_halos(sky, render_view, disk_sun, disk_moon, moon_to_sun, settings)?;
+    let (halo_sources, halo_count, moon_orbit_world) = super::halo::prepare_halos(
+        sky,
+        render_view,
+        disk_sun,
+        disk_moon,
+        moon_to_sun,
+        &observed_bodies,
+        settings,
+    )?;
     let environment_uniform = EnvironmentUniform {
         sun_geometric_world: direction_altitude(
             sky.sun.geometric_direction_world,

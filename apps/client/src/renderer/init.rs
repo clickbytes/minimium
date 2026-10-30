@@ -157,6 +157,7 @@ impl Renderer {
                 require_earth,
                 demo,
             },
+            demo_universe_enabled: false,
             sky_quality: sky_quality_state,
             connection,
             environment_frame: EnvironmentFrameInput::unavailable(),

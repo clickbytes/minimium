@@ -13,12 +13,7 @@ enum HaloShape {
     Atmosphere = 4,
 }
 
-type HaloPreparation = (
-    Vec<ObservedBody>,
-    [HaloSource; MAX_HALO_BODIES],
-    u32,
-    [f32; 4],
-);
+type HaloPreparation = ([HaloSource; MAX_HALO_BODIES], u32, [f32; 4]);
 
 #[derive(Clone, Copy)]
 struct HaloContext {
@@ -37,10 +32,10 @@ pub(super) fn prepare_halos(
     sun: LocalBodyFrame,
     moon: LocalBodyFrame,
     moon_source: [f64; 3],
+    bodies: &[ObservedBody],
     profile: EnvironmentSettings,
 ) -> Result<HaloPreparation, super::EnvironmentFrameError> {
     let moon_orbit_world = super::orbit::moon_orbit_world(sky, view)?;
-    let bodies = minimium_astronomy::observed_bodies(sky, None);
     let overview_moon_direction = std::array::from_fn(|axis| {
         f64::from(moon_orbit_world[axis]) - view.camera_eye_world_m[axis]
     });
@@ -53,8 +48,8 @@ pub(super) fn prepare_halos(
         moon_source,
         profile,
     };
-    let (sources, count) = build_halos(&bodies, context);
-    Ok((bodies, sources, count, moon_orbit_world))
+    let (sources, count) = build_halos(bodies, context);
+    Ok((sources, count, moon_orbit_world))
 }
 
 fn build_halos(

@@ -1,7 +1,7 @@
 use super::super::Renderer;
 use super::{
     EnvironmentFrame, EnvironmentSettings, PreparedEnvironmentFrame, PreparedStarUpload,
-    RenderViewFrame, StarFrameStamp,
+    RenderViewFrame, SkyFrameInput, StarFrameStamp,
 };
 use minimium_astronomy::{SkyInvalidation, SkySampleContext};
 use minimium_core::{
@@ -207,18 +207,28 @@ impl Renderer {
         } else {
             None
         };
-        let observations = minimium_astronomy::observed_bodies(&sky, None);
+        let demo_catalogue = self
+            .demo_universe_enabled
+            .then(super::catalogue::demo_catalogue);
+        let catalog_observer =
+            super::catalogue::observer_epoch_position(&sky, observer.game_eye_world_m);
+        let time_seconds = utc_ms.get() as f64 / 1000.0;
+        let catalog_input =
+            demo_catalogue.map(|demo| (&demo.catalog, demo.system, catalog_observer, time_seconds));
+        let observations = minimium_astronomy::observed_bodies(&sky, catalog_input);
         match EnvironmentFrame::from_sky_state(
             &sky,
-            observer,
-            context,
-            revision,
-            descriptor,
-            render_view,
-            EnvironmentSettings::planetary(),
+            SkyFrameInput {
+                observer,
+                context,
+                clock_revision: revision,
+                descriptor,
+                render_view,
+                observed_bodies: observations,
+                settings: EnvironmentSettings::planetary(),
+            },
         ) {
             Ok(mut frame) => {
-                frame.observed_bodies = observations;
                 frame.diagnostics.star_frame = Some(star_stamp);
                 self.publish_environment(frame);
                 star_upload

@@ -206,6 +206,7 @@ struct Renderer {
     ui: UiState,
     metrics: FrameMetrics,
     settings: ClientSettings,
+    demo_universe_enabled: bool,
     sky_quality: crate::environment::quality::SkyQualityState,
     connection: ConnectionController,
     environment_frame: EnvironmentFrameInput,
