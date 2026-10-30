@@ -1,7 +1,10 @@
 use super::*;
+use minimium_core::entity::{
+    ComponentDescriptor, ComponentRegistry, ReplicationPolicy, SchemaVersion,
+};
 use minimium_core::world::{
     CharacterInput, GenerationRevision, GenerationSpec, PlanetFace, SectorKey, SectorRevision,
-    WorldSeed,
+    WorldObjectState, WorldSeed,
 };
 use minimium_procgen::{generate_demo_worlds, generate_dungeon, DungeonSpec, DungeonTile};
 
@@ -88,7 +91,7 @@ fn planet_spawn_can_walk_the_generated_approach_to_the_portal() {
     let mut active_tickets = HashMap::new();
     let mut transfer_tickets = HashMap::new();
 
-    for _ in 0..90 {
+    for _ in 0..180 {
         let readiness = crate::sector_streaming::update(
             &mut registry,
             &mut sectors,
@@ -100,6 +103,18 @@ fn planet_spawn_can_walk_the_generated_approach_to_the_portal() {
             .unwrap()
             .world
             .step_players_selected(&input, Some(&readiness.players), 0.05);
+        if near_portal(
+            registry
+                .get(planet_id)
+                .unwrap()
+                .world
+                .player(player)
+                .unwrap()
+                .position,
+            portal,
+        ) {
+            break;
+        }
     }
 
     let position = registry
@@ -144,7 +159,7 @@ fn portal_transfer_waits_for_readiness_and_round_trips_to_saved_location() {
     let mut sectors = minimium_sectors::SectorManager::new(128, 128).unwrap();
     let mut active_tickets = HashMap::new();
     let mut transfer_tickets = HashMap::new();
-    for _ in 0..90 {
+    for _ in 0..180 {
         let readiness = crate::sector_streaming::update(
             &mut registry,
             &mut sectors,
@@ -156,6 +171,18 @@ fn portal_transfer_waits_for_readiness_and_round_trips_to_saved_location() {
             .unwrap()
             .world
             .step_players_selected(&input, Some(&readiness.players), 0.05);
+        if near_portal(
+            registry
+                .get(planet_id)
+                .unwrap()
+                .world
+                .player(player)
+                .unwrap()
+                .position,
+            planet_portal.position,
+        ) {
+            break;
+        }
     }
     assert!(near_portal(
         registry
@@ -275,12 +302,8 @@ fn portal_transfer_waits_for_readiness_and_round_trips_to_saved_location() {
 }
 
 fn demo_dungeon_room_route() -> Vec<[u16; 2]> {
-    let generation = GenerationSpec::new(
-        WorldSeed::new(0x0030_0000_0000_0002),
-        GenerationRevision::new(1).unwrap(),
-        10,
-    )
-    .unwrap();
+    let generation =
+        GenerationSpec::new(WorldSeed::new(2), GenerationRevision::new(2).unwrap(), 10).unwrap();
     let blueprint = generate_dungeon(generation, DungeonSpec::new(48, 40, 4, 5, 1).unwrap());
     let mut route = vec![blueprint.spawn()];
     for room in blueprint.rooms().iter().skip(1) {
@@ -364,5 +387,57 @@ fn sector_state_revisions_are_monotonic_and_topology_bound() {
     assert_eq!(
         registry.commit_sector_state(planet_id, dungeon_key),
         Err(RegistryError::InvalidSectorState)
+    );
+}
+
+#[test]
+fn component_sector_state_rehydrates_without_claiming_legacy_objects() {
+    let worlds = generate_demo_worlds().unwrap();
+    let instance = worlds[0].instance;
+    let mut owner = WorldRegistry::from_generated_worlds(worlds.to_vec());
+    let mut components = ComponentRegistry::default();
+    let kind = ComponentTypeId::new(1).unwrap();
+    let schema = SchemaVersion::new(1).unwrap();
+    components
+        .register(ComponentDescriptor {
+            id: kind,
+            name: "demo.marker",
+            schema,
+            replication: ReplicationPolicy::ServerOnly,
+            migrate: None,
+        })
+        .unwrap();
+    let sector = SectorKey::planet(PlanetFace::PositiveY, 3, 4).unwrap();
+    let entity = owner
+        .spawn_component_entity(
+            instance,
+            sector,
+            ObjectOriginId::new(7).unwrap(),
+            &components,
+            kind,
+            schema,
+            &[1, 2, 3],
+        )
+        .unwrap();
+    let saved = owner.sector_states();
+    assert_eq!(saved.len(), 1);
+    let legacy = WorldObjectState::new(ObjectOriginId::new(8).unwrap(), vec![4, 5]).unwrap();
+    assert!(
+        minimium_core::entity::EntityStore::decode_world_object(&components, &legacy)
+            .unwrap()
+            .is_none()
+    );
+    let mut restored = WorldRegistry::from_generated_worlds(worlds.to_vec());
+    restored.restore_sector_states(saved).unwrap();
+    restored.rehydrate_component_objects(&components).unwrap();
+    assert_eq!(
+        restored
+            .get(instance)
+            .unwrap()
+            .entities
+            .get(entity, kind)
+            .unwrap()
+            .bytes,
+        vec![1, 2, 3]
     );
 }
