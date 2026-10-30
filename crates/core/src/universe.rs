@@ -3,6 +3,8 @@
 use crate::world::WorldDefinitionId;
 use std::{collections::BTreeMap, f64::consts::PI};
 
+pub const MAX_CELESTIAL_BODIES: usize = 256;
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SolarSystemId(u64);
 impl SolarSystemId {
@@ -25,6 +27,10 @@ impl CelestialBodyId {
             Some(Self(value))
         }
     }
+
+    pub const fn get(self) -> u64 {
+        self.0
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -37,7 +43,7 @@ pub enum BodyKind {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Ephemeris {
-    /// Position relative to parent, in metres, within the system's inertial frame.
+    /// Position relative to parent, in metres, in J2000 EQJ axes.
     Fixed([f64; 3]),
     /// Simplified circular orbit used until a precise ephemeris provider exists.
     Circular {
@@ -107,6 +113,7 @@ pub struct CelestialBodyDefinition {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CatalogError {
+    BodyLimit,
     UnknownSystem,
     DuplicateSystem,
     DuplicateBody,
@@ -176,6 +183,9 @@ impl UniverseCatalog {
     pub fn register(&mut self, body: CelestialBodyDefinition) -> Result<(), CatalogError> {
         if self.bodies.contains_key(&body.id) {
             return Err(CatalogError::DuplicateBody);
+        }
+        if self.bodies.len() >= MAX_CELESTIAL_BODIES {
+            return Err(CatalogError::BodyLimit);
         }
         if !self.systems.contains_key(&body.system) {
             return Err(CatalogError::UnknownSystem);

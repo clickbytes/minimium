@@ -196,6 +196,7 @@ pub(super) fn from_sky_state(
         descriptor: Some(descriptor),
         clock_revision: Some(clock_revision),
         sky: Some(*sky),
+        observed_bodies: Vec::new(),
         observer: Some(observer),
         render_view,
         global_sun: Some(global_sun),
@@ -231,6 +232,7 @@ pub(super) fn interior(
         descriptor: Some(descriptor),
         clock_revision: Some(clock_revision),
         sky: None,
+        observed_bodies: Vec::new(),
         observer: None,
         render_view,
         global_sun: None,
@@ -263,6 +265,7 @@ pub(super) fn unavailable(render_view: RenderViewFrame) -> EnvironmentFrame {
         descriptor: None,
         clock_revision: None,
         sky: None,
+        observed_bodies: Vec::new(),
         observer: None,
         render_view,
         global_sun: None,
@@ -492,7 +495,6 @@ fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 fn scale(vector: [f64; 3], factor: f64) -> [f64; 3] {
     vector.map(|value| value * factor)
 }
-
 fn add(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     std::array::from_fn(|axis| a[axis] + b[axis])
 }
