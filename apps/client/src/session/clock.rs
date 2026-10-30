@@ -255,18 +255,6 @@ impl ClientClock {
         }
     }
 
-    pub(super) fn cancel_inflight_for_transition(&mut self) {
-        if self.inflight.take().is_some() {
-            let now_ms = self.local_monotonic_ms();
-            let retry_after_timeout = now_ms.saturating_add(PROBE_TIMEOUT_MS);
-            self.next_probe_at_ms = Some(
-                self.next_probe_at_ms
-                    .unwrap_or(retry_after_timeout)
-                    .max(retry_after_timeout),
-            );
-        }
-    }
-
     pub(super) fn reset(&mut self) {
         *self = Self::new(Instant::now());
     }
