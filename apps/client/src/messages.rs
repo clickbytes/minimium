@@ -239,6 +239,7 @@ impl fmt::Display for ClientText {
                 ParseError::SkyQualityUsage => "usage: sky quality low|standard",
                 ParseError::FovUsage => "usage: fov [30..110] (degrees)",
                 ParseError::CelestialNamesUsage => "usage: show_celestial_names true|false",
+                ParseError::WeatherUsage => "usage: weather status | weather live on|off | weather preset clear|partly|overcast|rain",
                 ParseError::TimeScaleUsage => {
                     "usage: time scale DECIMAL (or timescale DECIMAL; 0.1-1000000 or 0 to pause, at most 6 fractional digits)"
                 }

@@ -71,6 +71,24 @@ pub(super) fn celestial_halo() -> String {
     ])
 }
 
+pub(super) fn clouds() -> String {
+    combine(&[
+        include_str!("frame.wgsl"),
+        include_str!("output_color.wgsl"),
+        include_str!("sky_common.wgsl"),
+        include_str!("weather_frame.wgsl"),
+        include_str!("clouds.wgsl"),
+    ])
+}
+
+pub(super) fn rain() -> String {
+    combine(&[
+        include_str!("frame.wgsl"),
+        include_str!("weather_frame.wgsl"),
+        include_str!("rain.wgsl"),
+    ])
+}
+
 pub(super) fn marker() -> String {
     combine(&[
         include_str!("frame.wgsl"),

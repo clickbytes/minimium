@@ -1,0 +1,11 @@
+# Local weather and Earth forecast
+
+The client draws three directional cloud layers (low, middle, high) over the surface sky and screen-space rain over the world. Clouds drift using east/north wind. The layers use deterministic tileable noise generated once on the client; no cloud texture or weather state is sent over the game protocol or stored in the world save. Cloud coverage and rainfall affect the picture only; they do not change lighting, terrain, physics, or the shared server world.
+
+The default is local `partly` weather. Use `weather preset clear|partly|overcast|rain` to select a visual scene. `weather status` shows the current source and values. `weather live on` opts the desktop client into a location forecast for its **in-game Earth observer**, not the computer's real-world location. `weather live off` returns to the chosen local preset. Only the Earth environment profile can request live data. Other worlds use the local preset.
+
+Live data comes from [MET Norway Locationforecast 2.0](https://api.met.no/weatherapi/locationforecast/2.0/documentation), provided by the Norwegian Meteorological Institute under [CC BY 4.0](https://api.met.no/doc/License). The client uses the first forecast time step's low, medium, and high cloud fractions, wind speed and direction, plus next-hour precipitation. This is a model forecast at the in-game coordinate, not a measurement from the nearest station. Forecast time follows real UTC and does not scale with the game's clock.
+
+When live mode is enabled, the client sends the in-game Earth latitude and longitude rounded to 0.01° to `api.met.no`. MET Norway receives the request's IP address and the application User-Agent. The request is made on a background thread, refreshes at most once per hour for a stationary location, retries failures after ten minutes, and falls back to the local preset after three hours without fresh data. Changing locations can trigger a new request after a ten-minute interval. Live weather requires internet access; it is disabled by default.
+
+The current clouds approximate layer coverage and motion from forecast values. They are stylized flat sky layers, not volumetric clouds or a meteorological simulation. Rain streaks are a camera effect proportional to forecast precipitation. Visual and runtime validation remain part of the project's final testing phase.

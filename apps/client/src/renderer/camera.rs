@@ -226,6 +226,23 @@ impl Renderer {
             }
         };
 
+        let earth_location = prepared_environment
+            .frame
+            .descriptor
+            .filter(|descriptor| {
+                descriptor.profile() == minimium_core::environment::EnvironmentProfile::Earth
+            })
+            .and(prepared_environment.frame.observer)
+            .map(|observer| {
+                let geographic = observer.geographic;
+                (
+                    geographic.latitude_rad().to_degrees(),
+                    geographic.longitude_rad().to_degrees(),
+                )
+            });
+        let weather = self.weather.update(earth_location);
+        self.gpu.weather_gpu.upload(&self.gpu.queue, weather);
+
         let celestial_labels = if self.show_celestial_names {
             celestial_labels::prepare(&prepared_environment.frame, self.sky_catalogue.as_ref())
         } else {

@@ -1,5 +1,6 @@
 use super::{ClientCommand, CommandRegistry, CommandSpec, ParseError};
 use crate::environment::quality::SkyQuality;
+use crate::environment::weather::{WeatherCommand, WeatherPreset};
 use minimium_platform::commands::parse_scale_ppm;
 
 const COMMANDS: &[CommandSpec] = &[
@@ -37,6 +38,24 @@ const COMMANDS: &[CommandSpec] = &[
         name: "show_celestial_names",
         alias: None,
         usage: "show_celestial_names true|false",
+        parser: parse,
+    },
+    CommandSpec {
+        name: "weather status",
+        alias: None,
+        usage: "weather status",
+        parser: parse,
+    },
+    CommandSpec {
+        name: "weather live",
+        alias: None,
+        usage: "weather live on|off (MET Norway; sends rounded Earth coordinates)",
+        parser: parse,
+    },
+    CommandSpec {
+        name: "weather preset",
+        alias: None,
+        usage: "weather preset clear|partly|overcast|rain (local)",
         parser: parse,
     },
     CommandSpec {
@@ -83,6 +102,22 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
         ("show_celestial_names", ["true"]) => Ok(ClientCommand::ShowCelestialNames(true)),
         ("show_celestial_names", ["false"]) => Ok(ClientCommand::ShowCelestialNames(false)),
         ("show_celestial_names", _) => Err(ParseError::CelestialNamesUsage),
+        ("weather status", []) => Ok(ClientCommand::Weather(WeatherCommand::Status)),
+        ("weather live", ["on"]) => Ok(ClientCommand::Weather(WeatherCommand::Live(true))),
+        ("weather live", ["off"]) => Ok(ClientCommand::Weather(WeatherCommand::Live(false))),
+        ("weather preset", ["clear"]) => Ok(ClientCommand::Weather(WeatherCommand::Preset(
+            WeatherPreset::Clear,
+        ))),
+        ("weather preset", ["partly"]) => Ok(ClientCommand::Weather(WeatherCommand::Preset(
+            WeatherPreset::PartlyCloudy,
+        ))),
+        ("weather preset", ["overcast"]) => Ok(ClientCommand::Weather(WeatherCommand::Preset(
+            WeatherPreset::Overcast,
+        ))),
+        ("weather preset", ["rain"]) => Ok(ClientCommand::Weather(WeatherCommand::Preset(
+            WeatherPreset::Rain,
+        ))),
+        ("weather status" | "weather live" | "weather preset", _) => Err(ParseError::WeatherUsage),
         ("time status", []) => Ok(ClientCommand::TimeStatus),
         ("time scale", [value]) => {
             parse_scale_ppm(value).map_err(|_| ParseError::TimeScaleUsage)?;
