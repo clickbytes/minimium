@@ -1,5 +1,8 @@
 use super::super::Renderer;
-use super::{EnvironmentFrame, EnvironmentSettings, RenderViewFrame, StarFrameStamp};
+use super::{
+    EnvironmentFrame, EnvironmentSettings, PreparedEnvironmentFrame, PreparedStarUpload,
+    RenderViewFrame, StarFrameStamp,
+};
 use minimium_astronomy::{SkyInvalidation, SkySampleContext};
 use minimium_core::{
     environment::{AstronomyModelRevision, CatalogueId},
@@ -10,9 +13,13 @@ use minimium_core::{
 use minimium_protocol::WorldContext;
 
 impl Renderer {
-    pub(in crate::renderer) fn update_render_environment(&mut self, render_view: RenderViewFrame) {
+    pub(in crate::renderer) fn update_render_environment(
+        &mut self,
+        render_view: RenderViewFrame,
+    ) -> PreparedEnvironmentFrame {
         let started = std::time::Instant::now();
-        self.update_render_environment_inner(render_view);
+        let stars = self.update_render_environment_inner(render_view);
+        let prepared = PreparedEnvironmentFrame::new(self.render_environment_frame, stars);
         self.metrics
             .frame_stats
             .record_environment_cpu(started.elapsed());
@@ -23,47 +30,51 @@ impl Renderer {
             counters.star_epoch_updates,
             counters.star_epoch_cache_hits,
         );
+        prepared
     }
 
-    fn update_render_environment_inner(&mut self, render_view: RenderViewFrame) {
+    fn update_render_environment_inner(
+        &mut self,
+        render_view: RenderViewFrame,
+    ) -> Option<PreparedStarUpload> {
         if !self.gpu.scene_visible {
             self.environment_observer.clear();
             self.render_environment_frame = EnvironmentFrame::unavailable(render_view);
             self.environment_error = None;
-            return;
+            return None;
         }
         let input = self.environment_frame;
         let Some(descriptor) = input.descriptor else {
             self.environment_observer.clear();
             self.render_environment_frame = EnvironmentFrame::unavailable(render_view);
             self.environment_error = None;
-            return;
+            return None;
         };
         let Some(context) = input.context else {
             self.publish_unavailable(render_view, "active world context is unavailable");
-            return;
+            return None;
         };
         let Some(utc_ms) = input
             .render_world_utc_ms
             .filter(|_| input.estimated_world_utc_ms.is_some())
         else {
             self.publish_unavailable(render_view, "world UTC is unavailable");
-            return;
+            return None;
         };
         let Some(revision) = input
             .revision
             .and_then(|value| ClockRevision::new(value).ok())
         else {
             self.publish_unavailable(render_view, "clock revision is invalid");
-            return;
+            return None;
         };
         let Ok(utc_ms) = WorldTimeMs::new(utc_ms) else {
             self.publish_unavailable(render_view, "world UTC is outside the astronomy range");
-            return;
+            return None;
         };
         let Some(manifest) = self.world_manifests.get(&self.current_instance).copied() else {
             self.publish_unavailable(render_view, "world manifest is unavailable");
-            return;
+            return None;
         };
         if context.instance() != self.current_instance
             || context.content_revision() != manifest.content_revision()
@@ -72,11 +83,11 @@ impl Renderer {
                 render_view,
                 "world context does not match the active manifest",
             );
-            return;
+            return None;
         }
         if !self.descriptor_matches_catalogue(descriptor) {
             self.publish_unavailable(render_view, "environment model or catalogue does not match");
-            return;
+            return None;
         }
 
         match resolve_sky_model(manifest, descriptor) {
@@ -85,6 +96,7 @@ impl Renderer {
                     Ok(frame) => self.publish_environment(frame),
                     Err(error) => self.publish_unavailable(render_view, error.to_string()),
                 }
+                None
             }
             Ok(_) => self.build_planet_frame(
                 context,
@@ -94,7 +106,10 @@ impl Renderer {
                 manifest,
                 render_view,
             ),
-            Err(error) => self.publish_unavailable(render_view, error.to_string()),
+            Err(error) => {
+                self.publish_unavailable(render_view, error.to_string());
+                None
+            }
         }
     }
 
@@ -106,7 +121,7 @@ impl Renderer {
         utc_ms: WorldTimeMs,
         manifest: minimium_core::world::WorldManifest,
         render_view: RenderViewFrame,
-    ) {
+    ) -> Option<PreparedStarUpload> {
         let feet_position_mm = self.game.position_mm.or_else(|| {
             (self.environment_frame.quality
                 == crate::environment::SynchronizationQuality::LocalDemo)
@@ -123,11 +138,11 @@ impl Renderer {
             Ok(Some(observer)) => observer,
             Ok(None) => {
                 self.publish_unavailable(render_view, "planet observer is unavailable");
-                return;
+                return None;
             }
             Err(error) => {
                 self.publish_unavailable(render_view, error.to_string());
-                return;
+                return None;
             }
         };
         let sample = SkySampleContext {
@@ -147,7 +162,7 @@ impl Renderer {
             Ok(sky) => sky,
             Err(error) => {
                 self.publish_unavailable(render_view, error.to_string());
-                return;
+                return None;
             }
         };
         if sky.observer_model_revision != observer.height_reference_revision {
@@ -155,11 +170,11 @@ impl Renderer {
                 render_view,
                 "sky result does not match the observer profile",
             );
-            return;
+            return None;
         }
         let Some(catalogue) = self.sky_catalogue.as_ref() else {
             self.publish_unavailable(render_view, "embedded star catalog is unavailable");
-            return;
+            return None;
         };
         let corrected = match self
             .sky_calculator
@@ -168,7 +183,7 @@ impl Renderer {
             Ok(directions) => directions,
             Err(error) => {
                 self.publish_unavailable(render_view, error.to_string());
-                return;
+                return None;
             }
         };
         let star_stamp = StarFrameStamp {
@@ -177,18 +192,21 @@ impl Renderer {
             utc_day: utc_ms.get().div_euclid(86_400_000),
             epoch_revision: corrected.star_epoch_revision,
         };
-        if self.gpu.stars.uploaded_stamp() != Some(star_stamp) {
+        let star_upload = if self.gpu.stars.uploaded_stamp() != Some(star_stamp) {
             let instances = match catalogue.prepare_gpu_instances(&corrected) {
                 Ok(instances) => instances,
                 Err(error) => {
                     self.publish_unavailable(render_view, error.to_string());
-                    return;
+                    return None;
                 }
             };
-            self.gpu
-                .stars
-                .upload(&self.gpu.queue, &instances, star_stamp);
-        }
+            Some(PreparedStarUpload {
+                instances,
+                stamp: star_stamp,
+            })
+        } else {
+            None
+        };
         match EnvironmentFrame::from_sky_state(
             &sky,
             observer,
@@ -201,8 +219,12 @@ impl Renderer {
             Ok(mut frame) => {
                 frame.diagnostics.star_frame = Some(star_stamp);
                 self.publish_environment(frame);
+                star_upload
             }
-            Err(error) => self.publish_unavailable(render_view, error.to_string()),
+            Err(error) => {
+                self.publish_unavailable(render_view, error.to_string());
+                None
+            }
         }
     }
 

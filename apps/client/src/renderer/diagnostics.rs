@@ -205,6 +205,7 @@ fn push_counter_fields(
         format_optional_float(stats.cpu.average_us),
     );
     snapshot.push("environment_cpu_us_p95", format_optional(stats.cpu.p95_us));
+    snapshot.push("environment_cpu_us_p50", format_optional(stats.cpu.p50_us));
     snapshot.push("environment_cpu_us_p99", format_optional(stats.cpu.p99_us));
     snapshot.push(
         "environment_cpu_us_max",
@@ -212,8 +213,41 @@ fn push_counter_fields(
     );
     snapshot.push("environment_cpu_samples", stats.cpu.samples);
     snapshot.push(
+        "environment_cpu_scope",
+        "observer_astronomy_frame_star_preparation",
+    );
+    snapshot.push(
+        "environment_upload_cpu_us_avg",
+        format_optional_float(stats.upload_cpu.average_us),
+    );
+    snapshot.push(
+        "environment_upload_cpu_us_p50",
+        format_optional(stats.upload_cpu.p50_us),
+    );
+    snapshot.push(
+        "environment_upload_cpu_us_p95",
+        format_optional(stats.upload_cpu.p95_us),
+    );
+    snapshot.push(
+        "environment_upload_cpu_us_p99",
+        format_optional(stats.upload_cpu.p99_us),
+    );
+    snapshot.push(
+        "environment_upload_cpu_us_max",
+        format_optional_float(stats.upload_cpu.max_us),
+    );
+    snapshot.push("environment_upload_cpu_samples", stats.upload_cpu.samples);
+    snapshot.push(
+        "environment_upload_cpu_scope",
+        "queue_writes_stars_camera_environment",
+    );
+    snapshot.push(
         "shadow_prepare_cpu_us_avg",
         format_optional_float(stats.shadow_cpu.average_us),
+    );
+    snapshot.push(
+        "shadow_prepare_cpu_us_p50",
+        format_optional(stats.shadow_cpu.p50_us),
     );
     snapshot.push(
         "shadow_prepare_cpu_us_p95",
@@ -227,6 +261,12 @@ fn push_counter_fields(
         "shadow_prepare_cpu_us_max",
         format_optional_float(stats.shadow_cpu.max_us),
     );
+    snapshot.push("shadow_prepare_cpu_samples", stats.shadow_cpu.samples);
+    snapshot.push(
+        "shadow_prepare_cpu_scope",
+        "local_casters_and_uniform_including_upload_excludes_remote_players",
+    );
+    snapshot.push("environment_gpu_elapsed_us", "n/a");
     snapshot.push("draw_calls_sky", stats.sky_draw_calls);
     snapshot.push("draw_calls_stars", stats.star_draw_calls);
     snapshot.push("draw_calls_sun", stats.sun_draw_calls);
@@ -291,13 +331,27 @@ fn push_gpu_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
         + gpu.camera_buffer.size()
         + gpu.shadow_gpu.uniform_buffer.size();
     let shadow_texture_bytes = gpu.shadow_gpu.texture_bytes();
+    let map_caster_bytes = gpu.shadow_map_buffer.as_ref().map_or(0, wgpu::Buffer::size);
+    let player_caster_bytes = gpu
+        .shadow_player_buffer
+        .as_ref()
+        .map_or(0, wgpu::Buffer::size);
     snapshot.push(
         "environment_GPU_estimate_bytes",
-        star_bytes + uniform_bytes + shadow_texture_bytes,
+        star_bytes + uniform_bytes + shadow_texture_bytes + map_caster_bytes + player_caster_bytes,
     );
     snapshot.push("environment_GPU_star_instance_buffer_bytes", star_bytes);
     snapshot.push("environment_GPU_uniform_bytes", uniform_bytes);
     snapshot.push("environment_GPU_shadow_texture_bytes", shadow_texture_bytes);
+    snapshot.push("environment_GPU_map_caster_buffer_bytes", map_caster_bytes);
+    snapshot.push(
+        "environment_GPU_player_caster_buffer_bytes",
+        player_caster_bytes,
+    );
+    snapshot.push(
+        "environment_GPU_shared_sector_buffers",
+        "included_in_total_engine_estimate",
+    );
     snapshot.push(
         "environment_GPU_measurement",
         "engine_estimate_not_driver_VRAM",

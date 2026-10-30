@@ -113,7 +113,7 @@ impl StarCatalogueAdapter {
     pub fn prepare_gpu_instances(
         &self,
         corrected: &CorrectedStarDirections,
-    ) -> Result<Box<[StarInstanceGpu]>, StarPrepareError> {
+    ) -> Result<Box<[StarInstanceGpu; STAR_GPU_RECORD_COUNT]>, StarPrepareError> {
         if corrected.star_epoch_revision == 0 {
             return Err(StarPrepareError::InvalidEpochRevision);
         }
@@ -128,7 +128,7 @@ impl StarCatalogueAdapter {
                 directions: directions.len(),
             });
         }
-        let mut instances = Vec::with_capacity(STAR_GPU_RECORD_COUNT);
+        let mut instances = Box::new([StarInstanceGpu::default(); STAR_GPU_RECORD_COUNT]);
         for (index, ((record, astrometry), direction)) in self
             .records
             .iter()
@@ -170,14 +170,14 @@ impl StarCatalogueAdapter {
             {
                 return Err(StarPrepareError::InvalidAstrometry { index });
             }
-            instances.push(StarInstanceGpu {
+            instances[index] = StarInstanceGpu {
                 direction_eqj,
                 visual_magnitude: record.apparent_v_mag,
                 color_linear,
                 catalog_star_id: record.hyg_id,
-            });
+            };
         }
-        Ok(instances.into_boxed_slice())
+        Ok(instances)
     }
 }
 

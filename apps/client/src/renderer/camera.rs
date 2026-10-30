@@ -2,7 +2,7 @@ use super::*;
 use crate::messages::ClientText as Text;
 
 impl Renderer {
-    pub(super) fn update(&mut self) {
+    pub(super) fn update(&mut self) -> environment::PreparedEnvironmentFrame {
         if self.overview_open && self.overview_instance != Some(self.current_instance) {
             self.overview_open = false;
             self.gpu.overview_active = false;
@@ -223,12 +223,13 @@ impl Renderer {
                 wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb
             ),
         });
-        self.render_environment_frame = match render_view {
-            Some(view) => {
-                self.update_render_environment(view);
-                self.render_environment_frame
+        let prepared_environment = match render_view {
+            Some(view) => self.update_render_environment(view),
+            None => {
+                self.render_environment_frame =
+                    EnvironmentFrame::unavailable(RenderViewFrame::default());
+                environment::PreparedEnvironmentFrame::new(self.render_environment_frame, None)
             }
-            None => EnvironmentFrame::unavailable(RenderViewFrame::default()),
         };
 
         let vertex_count = {
@@ -259,6 +260,7 @@ impl Renderer {
             count
         };
         self.gpu.ui_vertex_count = vertex_count;
+        prepared_environment
     }
 }
 
