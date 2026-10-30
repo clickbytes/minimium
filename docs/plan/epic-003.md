@@ -152,6 +152,8 @@ Macierz odbioru E003-06..14 i otwarte bramki: [epic-003-acceptance.md](epic-003-
 - Serwer sprawdza punkt docelowy transferu względem pełnej geometrii i lokalnego
   pionu celu przed przydzieleniem epoki oraz `TransitionId`. Nie przygotowuje
   przejścia, jeśli cel nie może przyjąć kapsuły gracza.
+- Dołączenie gracza do radialnego świata sprawdza pudełka kapsułą ustawioną
+  w lokalnym pionie; stały pion zachowuje dotychczasową regułę dołączenia.
 - Zapis v6 wiąże lokalizacje graczy i punkty powrotu z manifestami oraz
   fingerprintami każdej instancji, a także zapisuje ograniczone, rewizjonowane
   zestawy stanu obiektów sektorów. Wersje 4 i 5 zachowują dotychczasowe reguły

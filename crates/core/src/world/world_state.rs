@@ -1,9 +1,13 @@
 use super::collision_index::{Aabb, Cell, CollisionIndex};
 use super::collision_queries::{CollisionQuery, CollisionQueryStats};
-use super::geometry::{cell_for, intersects_player, update_cell_index};
+use super::geometry::{
+    cell_for, intersects_player, oriented_capsule_intersects, update_cell_index,
+};
 use super::map::{MapTriangle, WorldMap};
 use super::raycast::{MapRayQuery, PlayerRayQuery};
-use super::rules::{step_character, CharacterGravity, CharacterInput, CharacterState, Player};
+use super::rules::{
+    character_frame, step_character, CharacterGravity, CharacterInput, CharacterState, Player,
+};
 use super::snapshot::WorldSnapshot;
 use super::{
     MAX_PLAYER_NAME_CHARS, PARALLEL_SIMULATION_MIN_PLAYERS, PLAYERS_PER_SIMULATION_BATCH,
@@ -79,17 +83,22 @@ impl World {
             self.leave(id);
         }
         self.next_id = self.next_id.max(id.get());
-        let position = if position.iter().all(|value| value.is_finite())
-            && self
-                .collision_index
-                .colliders
-                .iter()
-                .all(|collider| !intersects_player(position, *collider))
-        {
-            position
-        } else {
-            self.spawn
-        };
+        let clear_of_boxes = position.iter().all(|value| value.is_finite())
+            && match self.gravity {
+                CharacterGravity::Radial { .. } => {
+                    let up = character_frame(self.gravity, position).0;
+                    self.collision_index
+                        .colliders
+                        .iter()
+                        .all(|collider| !oriented_capsule_intersects(position, up, *collider))
+                }
+                CharacterGravity::FixedY => self
+                    .collision_index
+                    .colliders
+                    .iter()
+                    .all(|collider| !intersects_player(position, *collider)),
+            };
+        let position = if clear_of_boxes { position } else { self.spawn };
         let player = Player {
             id,
             name: Arc::from(name),
