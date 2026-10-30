@@ -1,6 +1,7 @@
 use super::{
     invalid_world_snapshot,
     player_store::{PlayerStore, SaveSnapshot, SavedWorldManifest, StoredName, StoredPlayer},
+    LoadedState,
 };
 use minimium_core::{
     identity::PlayerProfileId,
@@ -13,12 +14,14 @@ use minimium_core::{
         MAX_PERSISTED_WORLD_SECTORS, PLAYER_MAX_HEALTH,
     },
 };
+mod clock;
 mod locations;
 mod sectors;
 mod worlds;
 
 #[cfg(test)]
 mod tests;
+use clock::{parse_saved_clock, write_saved_clock};
 use locations::{legacy_location, parse_location, position_from_location, write_location};
 use sectors::{parse_saved_sector, write_saved_sector};
 use worlds::{
@@ -32,7 +35,7 @@ use std::{
     sync::Arc,
 };
 
-pub(crate) const SAVE_VERSION: u8 = 7;
+pub(crate) const SAVE_VERSION: u8 = 8;
 pub(super) const MAX_STORED_PLAYERS: usize = 100_000;
 const MAX_WORLD_SNAPSHOT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_SAVED_COORDINATE: f32 = 7_000_000.0;
@@ -42,11 +45,11 @@ pub(super) const PLAYER_STORE_SHARDS: usize = 256;
 pub(super) fn load(
     data_dir: &Path,
     worlds: &[(WorldInstanceId, WorldMap, WorldManifest)],
-) -> io::Result<PlayerStore> {
+) -> io::Result<LoadedState> {
     let path = data_dir.join("world.snapshot");
     let bytes = match minimium_platform::files::read_bounded_file(&path, MAX_WORLD_SNAPSHOT_BYTES) {
         Ok(bytes) => bytes,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(PlayerStore::default()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(LoadedState::empty()),
         Err(error) => return Err(error),
     };
     let source = String::from_utf8(bytes)
@@ -69,9 +72,12 @@ pub(super) fn load(
     if version == Some("1") {
         return Err(invalid_world_snapshot("snapshot version 1 has no client profile IDs; back up or remove the old snapshot before starting"));
     }
-    if !matches!(version, Some("2" | "3" | "4" | "5" | "6" | "7")) {
+    if !matches!(version, Some("2" | "3" | "4" | "5" | "6" | "7" | "8")) {
         return Err(invalid_world_snapshot("unsupported snapshot version"));
     }
+    let source_version = version
+        .and_then(|value| value.parse::<u8>().ok())
+        .ok_or_else(|| invalid_world_snapshot("invalid snapshot version"))?;
     let legacy_world = worlds
         .iter()
         .find(|(_, map, _)| map.fingerprint() == fingerprint)
@@ -81,7 +87,7 @@ pub(super) fn load(
             )
         })?;
     match version {
-        Some("4" | "5" | "6" | "7") => {
+        Some("4" | "5" | "6" | "7" | "8") => {
             let saved_manifest = parse_manifest(&mut header_fields)?;
             let Some((_, primary_map, primary_manifest)) = worlds.first() else {
                 return Err(invalid_world_snapshot("no primary world is loaded"));
@@ -104,7 +110,7 @@ pub(super) fn load(
 
     let mut store = PlayerStore::default();
     let mut saved_world_instances = HashSet::new();
-    if matches!(version, Some("5" | "6" | "7")) {
+    if matches!(version, Some("5" | "6" | "7" | "8")) {
         let (primary_instance, _, _) = worlds
             .first()
             .ok_or_else(|| invalid_world_snapshot("no primary world is loaded"))?;
@@ -115,12 +121,30 @@ pub(super) fn load(
     let mut saved_sector_addresses = std::collections::HashSet::new();
     let mut saved_object_count = 0_usize;
     let mut saved_object_bytes = 0_usize;
+    let mut saved_clock = None;
     let mut lines = lines.peekable();
     while let Some(line) = lines.next() {
-        if matches!(version, Some("5" | "6" | "7")) && line.starts_with("WORLD\t") {
+        if line == "CLOCK" || line.starts_with("CLOCK\t") {
+            if source_version != 8 {
+                return Err(invalid_world_snapshot(
+                    "CLOCK record is not allowed in a legacy snapshot",
+                ));
+            }
+            if saved_clock.is_some() {
+                return Err(invalid_world_snapshot("duplicate CLOCK record"));
+            }
             if player_records_started || sector_records_started {
                 return Err(invalid_world_snapshot(
-                    "world manifest appears after state records",
+                    "CLOCK record appears after state records",
+                ));
+            }
+            saved_clock = Some(parse_saved_clock(line)?);
+            continue;
+        }
+        if matches!(version, Some("5" | "6" | "7" | "8")) && line.starts_with("WORLD\t") {
+            if player_records_started || sector_records_started || saved_clock.is_some() {
+                return Err(invalid_world_snapshot(
+                    "world manifest appears after clock or state records",
                 ));
             }
             let saved_world = parse_saved_world(line)?;
@@ -130,10 +154,15 @@ pub(super) fn load(
             }
             continue;
         }
-        if matches!(version, Some("6" | "7")) && line.starts_with("SECTOR\t") {
+        if matches!(version, Some("6" | "7" | "8")) && line.starts_with("SECTOR\t") {
             if player_records_started {
                 return Err(invalid_world_snapshot(
                     "sector state appears after player records",
+                ));
+            }
+            if source_version == 8 && saved_clock.is_none() {
+                return Err(invalid_world_snapshot(
+                    "missing CLOCK record in v8 snapshot",
                 ));
             }
             sector_records_started = true;
@@ -187,6 +216,11 @@ pub(super) fn load(
             store.sector_states.push((instance, state));
             continue;
         }
+        if source_version == 8 && saved_clock.is_none() {
+            return Err(invalid_world_snapshot(
+                "missing CLOCK record in v8 snapshot",
+            ));
+        }
         player_records_started = true;
         if store.profile_by_player.len() >= MAX_STORED_PLAYERS {
             return Err(invalid_world_snapshot("snapshot has too many players"));
@@ -204,26 +238,26 @@ pub(super) fn load(
             .ok_or_else(|| invalid_world_snapshot("missing player name"))?;
         let name = StoredName::new(name)
             .ok_or_else(|| invalid_world_snapshot("invalid saved player name"))?;
-        let (location, return_location, health) = if matches!(version, Some("4" | "5" | "6" | "7"))
-        {
-            let location = parse_location(&mut fields)?;
-            let health = parse_saved_health(fields.next())?;
-            let return_location = parse_location(&mut fields)?;
-            (location, return_location, health)
-        } else {
-            let position = [
-                parse_saved_coordinate(fields.next())?,
-                parse_saved_coordinate(fields.next())?,
-                parse_saved_coordinate(fields.next())?,
-            ];
-            let health = if version == Some("3") {
-                parse_saved_health(fields.next())?
+        let (location, return_location, health) =
+            if matches!(version, Some("4" | "5" | "6" | "7" | "8")) {
+                let location = parse_location(&mut fields)?;
+                let health = parse_saved_health(fields.next())?;
+                let return_location = parse_location(&mut fields)?;
+                (location, return_location, health)
             } else {
-                PLAYER_MAX_HEALTH
+                let position = [
+                    parse_saved_coordinate(fields.next())?,
+                    parse_saved_coordinate(fields.next())?,
+                    parse_saved_coordinate(fields.next())?,
+                ];
+                let health = if version == Some("3") {
+                    parse_saved_health(fields.next())?
+                } else {
+                    PLAYER_MAX_HEALTH
+                };
+                let location = legacy_location(legacy_world.0, position);
+                (location, location, health)
             };
-            let location = legacy_location(legacy_world.0, position);
-            (location, location, health)
-        };
         if version == Some("4") {
             let primary_instance = worlds
                 .first()
@@ -237,7 +271,7 @@ pub(super) fn load(
                 ));
             }
         }
-        if matches!(version, Some("5" | "6" | "7"))
+        if matches!(version, Some("5" | "6" | "7" | "8"))
             && (!saved_world_instances.contains(&location.instance())
                 || !saved_world_instances.contains(&return_location.instance()))
         {
@@ -285,7 +319,16 @@ pub(super) fn load(
             return Err(invalid_world_snapshot("duplicate saved player identity"));
         }
     }
-    Ok(store)
+    if source_version == 8 && saved_clock.is_none() {
+        return Err(invalid_world_snapshot(
+            "missing CLOCK record in v8 snapshot",
+        ));
+    }
+    Ok(LoadedState::from_snapshot(
+        store,
+        saved_clock,
+        source_version,
+    ))
 }
 
 pub(super) fn write(snapshot: SaveSnapshot, data_dir: &Path) -> io::Result<()> {
@@ -318,6 +361,8 @@ pub(super) fn write(snapshot: SaveSnapshot, data_dir: &Path) -> io::Result<()> {
             write_saved_world(&mut bytes, world)?;
             writeln!(bytes)?;
         }
+        write_saved_clock(&mut bytes, snapshot.saved_clock)?;
+        writeln!(bytes)?;
         for (instance, state) in &snapshot.sector_states {
             write_saved_sector(&mut bytes, *instance, state)?;
         }

@@ -20,7 +20,7 @@ minimium-server --version
 
 The defaults are one execution lane, 512 active players, loopback bind (`127.0.0.1`), an OS-selected game port (`0`), data directory `.minimium`, seeded planet/dungeon demo worlds, and autosave every 300 seconds. `--threads` accepts 1 through 64 lanes or `auto`; `--max-players` accepts 1 through 512. `--autosave-seconds` accepts 0 through 604800; zero disables periodic saves. `--headless` leaves the server in the foreground but disables terminal commands. Without it, terminal commands use the same command registry as the admin CLI. Game traffic binds to the selected IP; the administrative listener is loopback-only.
 
-`--environment-config PATH` reads at most 16 KiB of UTF-8 RON schema 1 with unknown fields rejected. It initializes `mode`, optional `initial_utc`, `scale_ppm`, and `offline_policy` for a new world. `real_time` requires no initial date and exactly 1x; `time_scale` uses the configured date or the current UTC. Examples are [real-time.ron](../presets/environment/real-time.ron) and [time-scale.ron](../presets/environment/time-scale.ron). The option is rejected if `world.seed`, `world.planet.ron`, or `world.snapshot` already exists. This task does not persist clock state; that is added by E004-03, so an existing world without a saved clock starts in default RealTime mode.
+`--environment-config PATH` reads at most 16 KiB of UTF-8 RON schema 1 with unknown fields rejected. It initializes `mode`, optional `initial_utc`, `scale_ppm`, and `offline_policy` for a new world. `real_time` requires no initial date and exactly 1x; `time_scale` uses the configured date or the current UTC. Examples are [real-time.ron](../presets/environment/real-time.ron) and [time-scale.ron](../presets/environment/time-scale.ron). The option is rejected if `world.seed`, `world.planet.ron`, or `world.snapshot` already exists. Existing v8 snapshots restore their saved clock; v2–v7 snapshots initialize RealTime from current UTC and retain that value in the next completed save.
 
 `--seed` accepts a decimal or `0x` hexadecimal 128-bit value for a new generated
 world. If omitted, the server draws one random seed. It records the seed in
@@ -71,14 +71,14 @@ The same commands are available through the server terminal (unless `--headless`
 | `status` | Report running state, active players, configured lanes, ticks, save state, player cap, map fingerprint, tick/snapshot intervals, autosave interval, protocol version, and save version. |
 | `players list` | List connected player IDs, names, and positions, or report no players. |
 | `metrics show` | Print runtime, network, queue, collision, memory, process, and optional allocation metrics. Field names are documented in [performance policy](performance.md). |
-| `world save` | Queue one snapshot on the persistence worker. A successful reply means queued, not completed; use `status` to inspect `save_pending` and `save_last`. A second save is rejected while one is pending. |
+| `world save` | Capture players, sectors and the clock together, then queue one v8 snapshot on the persistence worker. A successful reply means queued, not completed; use `status` to inspect `save_pending` and `save_last`. A second save is rejected while one is pending. |
 | `stop` | Request controlled shutdown. The server saves a final snapshot, reports the final result, and releases the data-directory lock. |
 | `time status` | Show clock ID, revision, session nonce, mode, UTC milliseconds, rate in ppm and decimal form, offline policy, fault, last UTC correction and pending sync revision. |
 | `time mode real_time` | Anchor to current server UTC at 1x. |
 | `time mode time_scale` | Continue from the current world date, preserving its TimeScale rate or using 1x when switching from RealTime. |
 | `time set RFC3339_UTC` | Set a UTC date and switch to TimeScale; preserve an existing TimeScale rate or use 1x. |
 | `time scale DECIMAL` | Set a nonnegative 0–1440x rate and switch to TimeScale; zero pauses only the environment clock. |
-| `time offline pause` / `time offline advance` | Set the future restart policy. Save/restart persistence is added in E004-03. |
+| `time offline pause` / `time offline advance` | Set the restart policy persisted in save v8. `pause` resumes the saved world date; `advance` adds nonnegative wall-clock downtime multiplied by the saved scale. |
 
 Rates accept decimal digits and an optional dot with one to six fractional digits, parsed exactly as ppm. Dates accept RFC3339 UTC with `Z` or `+00:00`, zero to three millisecond digits, and no leap second. Every accepted mutation increments the clock revision; invalid input is rejected without applying a change. Physical simulation, cooldowns, heartbeat and deadlines continue in real time.
 

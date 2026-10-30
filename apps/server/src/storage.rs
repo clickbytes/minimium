@@ -1,8 +1,10 @@
 mod format;
+mod loaded_state;
 mod persistence;
 mod player_store;
 
 pub(crate) use format::SAVE_VERSION;
+pub(crate) use loaded_state::LoadedState;
 pub(crate) use persistence::PersistenceWorker;
 pub(crate) use player_store::PlayerStore;
 

@@ -51,7 +51,7 @@ Każde poniższe issue ma własny cel, konkretne istniejące i nowe pliki, kontr
 - [x] #52 — **E004-00**: Zamrożenie kontraktów czasu i nieba, ADR oraz baseline integracji
 - [x] #53 — **E004-01**: Wprowadzić czyste typy czasu świata i kontrakt środowiska w minimium-core
 - [x] #54 — **E004-02**: Uruchomić autorytatywny zegar serwera i parametryczne polecenia administracyjne czasu
-- [ ] #55 — **E004-03**: Zapisywać zegar świata w save v8 i zachować dane podczas migracji oraz restartu
+- [x] #55 — **E004-03**: Zapisywać zegar świata w save v8 i zachować dane podczas migracji oraz restartu
 - [ ] #59 — **E004-04**: Rozszerzyć protokół do v12 o stan środowiska i synchronizację czasu we wszystkich aplikacjach
 - [ ] #60 — **E004-05**: Dodać klientowy estymator czasu, wygładzanie i poprawny lifecycle portali, reconnect oraz demo
 - [ ] #56 — **E004-06**: Georeferencja obserwatora: Earth 650 km, ramka N/E/U i jawny model nieba
@@ -74,7 +74,7 @@ Każde poniższe issue ma własny cel, konkretne istniejące i nowe pliki, kontr
 | [E004-00 / #52](https://github.com/clickbytes/minimium/issues/52) | brak | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#71](https://github.com/clickbytes/minimium/pull/71), merge `12f84a7`) |
 | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53) | [E004-00 / #52](https://github.com/clickbytes/minimium/issues/52) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#73](https://github.com/clickbytes/minimium/pull/73), commit `a8577b4`) |
 | [E004-02 / #54](https://github.com/clickbytes/minimium/issues/54) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#74](https://github.com/clickbytes/minimium/pull/74), code commit `c9a6855`) |
-| [E004-03 / #55](https://github.com/clickbytes/minimium/issues/55) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53), [E004-02 / #54](https://github.com/clickbytes/minimium/issues/54) | PLANNED |
+| [E004-03 / #55](https://github.com/clickbytes/minimium/issues/55) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53), [E004-02 / #54](https://github.com/clickbytes/minimium/issues/54) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#75](https://github.com/clickbytes/minimium/pull/75), code commit `c7d6000`; merge pending) |
 | [E004-04 / #59](https://github.com/clickbytes/minimium/issues/59) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53), [E004-02 / #54](https://github.com/clickbytes/minimium/issues/54), [E004-03 / #55](https://github.com/clickbytes/minimium/issues/55), [E004-08 / #58](https://github.com/clickbytes/minimium/issues/58) | PLANNED |
 | [E004-05 / #60](https://github.com/clickbytes/minimium/issues/60) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53), [E004-04 / #59](https://github.com/clickbytes/minimium/issues/59) | PLANNED |
 | [E004-06 / #56](https://github.com/clickbytes/minimium/issues/56) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53) | PLANNED |
@@ -127,5 +127,5 @@ do gałęzi integracyjnej (`12f84a7`). E004-01 dostarcza czysty kontrakt core pr
 [#74](https://github.com/clickbytes/minimium/pull/74), z osobnym adapterem serwerowym,
 komendami czasu, konfiguracją nowego świata i profilami instancji. Formatowanie, kompilacja,
 Clippy i kontrole statyczne przeszły; cargo zgłasza wyłącznie ostrzeżenia Windows o fallbacku
-hard-link cache. Nie uruchamiano testów ani aplikacji. E004-03..14 pozostają PLANNED, a wyniki
-runtime całego epica są NOT RUN.
+hard-link cache. Nie uruchamiano testów ani aplikacji. E004-03 jest w PR #75; E004-04..14
+pozostają PLANNED, a wyniki runtime całego epica są NOT RUN.

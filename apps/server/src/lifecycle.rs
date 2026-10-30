@@ -1,9 +1,11 @@
 use crate::{
     admin::AdminServer,
     connection::Client,
+    environment::EnvironmentClock,
     storage::{compact_error, PersistenceWorker, PlayerStore},
     world_registry::WorldRegistry,
 };
+use minimium_core::time::MonotonicMs;
 use minimium_platform::{
     admin_client::{SHUTDOWN_FILE, SHUTDOWN_OWNER_FILE},
     endpoint::ServerEndpoint,
@@ -22,6 +24,8 @@ pub(crate) struct ShutdownContext<'a> {
     pub clients: &'a mut [Client],
     pub player_store: &'a mut PlayerStore,
     pub persistence: &'a mut PersistenceWorker,
+    pub environment_clock: &'a mut EnvironmentClock,
+    pub server_started: Instant,
     pub worlds: &'a WorldRegistry,
     pub map_fingerprint: u64,
     pub endpoint: &'a ServerEndpoint,
@@ -49,10 +53,32 @@ pub(crate) fn shutdown(mut context: ShutdownContext<'_>) -> io::Result<()> {
     for client in context.clients {
         let _ = client.stream.shutdown(std::net::Shutdown::Both);
     }
-    let save_result = match context
-        .player_store
-        .save_snapshot(context.worlds, context.map_fingerprint)
-    {
+    let capture_at = Instant::now();
+    let monotonic_ms = u64::try_from(
+        capture_at
+            .saturating_duration_since(context.server_started)
+            .as_millis(),
+    )
+    .map(MonotonicMs::new)
+    .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "server monotonic time overflow"));
+    let snapshot = monotonic_ms
+        .and_then(|at| {
+            context
+                .environment_clock
+                .capture_saved_state(at)
+                .map_err(|error| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("environment clock: {error}"),
+                    )
+                })
+        })
+        .and_then(|saved_clock| {
+            context
+                .player_store
+                .save_snapshot(context.worlds, context.map_fingerprint, saved_clock)
+        });
+    let save_result = match snapshot {
         Ok(snapshot) => context.persistence.shutdown(Some(snapshot)),
         Err(error) => {
             if let Err(cleanup_error) = context.persistence.shutdown(None) {

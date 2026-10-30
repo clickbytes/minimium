@@ -11,8 +11,8 @@ Minimium runs authoritative simulation on a fixed-step server, but the current
 `Snapshot.server_time_ms` is elapsed monotonic process time. Missed simulation
 ticks are skipped under load, so tick count and accumulated simulation deltas
 cannot provide a calendar clock. The renderer has static lighting and a fixed
-sky background. The wire format is protocol v11 and the persistent world
-snapshot is save v7.
+sky background. At the implementation baseline, the wire format was protocol
+v11 and the persistent world snapshot was save v7.
 
 Earth is represented by a 650 km game radius and a reflected camera view. Its
 geographic mapping is `latitude = asin(y / r)` and
@@ -123,8 +123,8 @@ astronomical state to sky, terrain, water and globe shading.
 
 ### Versioning and persistence
 
-- The implementation target is protocol v12 and save v8. Existing baseline is
-  protocol v11 and save v7; this ADR does not itself change either version.
+- The implementation target is protocol v12 and save v8. E004-03 has delivered
+  save v8; protocol remains v11 until its planned E004-04 change.
 - Save v8 stores a clock anchor and offline policy without process nonce or
   monotonic timestamp. Migration preserves all existing player, manifest and
   sector data; malformed or mismatched snapshots fail without clearing user

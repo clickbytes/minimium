@@ -34,14 +34,25 @@ impl ServerRuntime {
             self.scheduler.next_autosave =
                 Some(autosave_check_at + self.scheduler.autosave_interval);
             if !self.operations.persistence.has_pending_save() {
-                if let Err(error) = self.operations.persistence.queue_world_save(
-                    &mut self.operations.player_store,
-                    &self.game.worlds,
-                    self.map.fingerprint(),
-                ) {
-                    eprintln!("could not queue automatic world save: {error}");
-                } else {
-                    println!("automatic world save queued");
+                let capture_at = self.monotonic_ms(Instant::now())?;
+                let snapshot_clock = self.environment_clock.capture_saved_state(capture_at);
+                self.environment_dirty_revision = self.environment_clock.dirty_revision();
+                match snapshot_clock {
+                    Ok(saved_clock) => {
+                        if let Err(error) = self.operations.persistence.queue_world_save(
+                            &mut self.operations.player_store,
+                            &self.game.worlds,
+                            self.map.fingerprint(),
+                            saved_clock,
+                        ) {
+                            eprintln!("could not queue automatic world save: {error}");
+                        } else {
+                            println!("automatic world save queued");
+                        }
+                    }
+                    Err(error) => {
+                        eprintln!("could not capture environment clock for autosave: {error}");
+                    }
                 }
             } else {
                 eprintln!("automatic world save skipped because another save is pending");

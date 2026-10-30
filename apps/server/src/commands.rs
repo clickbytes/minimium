@@ -87,7 +87,14 @@ pub fn execute(command: ServerCommand, context: CommandContext<'_>) -> CommandRe
             stop: false,
         },
         ServerCommand::Save => {
-            match persistence.queue_world_save(player_store, worlds, map_fingerprint) {
+            let result = environment_clock
+                .capture_saved_state(monotonic_ms)
+                .and_then(|saved_clock| {
+                    persistence
+                        .queue_world_save(player_store, worlds, map_fingerprint, saved_clock)
+                        .map_err(|error| error.to_string())
+                });
+            match result {
                 Ok(()) => CommandReply {
                     success: true,
                     text: "world save queued; use status to check completion".to_owned(),
