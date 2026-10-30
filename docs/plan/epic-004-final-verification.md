@@ -108,6 +108,10 @@ w [epic-004-verification.md](epic-004-verification.md); poniżej są instrukcje,
   jasna strona/rozmiar i brak czarnego wycięcia na dziennym niebie.
   W V13/V15 obrócić kamerę globu: Słońce i Księżyc mają pojawiać się we
   właściwych kierunkach, a glob zasłaniać ich tarcze po przeciwnej stronie.
+  Zmierzyć średnicę obu tarcz w pikselach względem promienia kątowego z
+  astronomii i FOV kamery, przy kilku rozdzielczościach i zoomach. Sprawdzić
+  jasność Księżyca dla pełni, kwadr i sierpów na tle przestrzeni oraz brak
+  powiększonego artefaktu Słońca za kamerą.
 - V16: wszystkie normalne cube/terrain, local/global, nocna woda, Interior bez
   planetarnego światła. V17: caster poza frustum, niskie Sun, Sun→Moon→none,
   bias/PCF/fade, teleport/rebase, incomplete coverage/budżet; fallback wyłącza

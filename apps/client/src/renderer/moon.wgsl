@@ -88,11 +88,17 @@ fn lambert_phase_fraction(cos_phase: f32) -> f32 {
     let moon_to_observer = -input.moon_direction;
     let phase_fraction = lambert_phase_fraction(dot(input.moon_to_sun, moon_to_observer));
     let normalized_lambert = lambert / phase_fraction;
-    let atmosphere = sample_clear_sky(ray_world);
     let disk_color = environment.moon_disk_radiance.xyz;
     let relative_flux = environment.moon_disk_radiance.w;
-    let lunar_radiance = disk_color * relative_flux * FULL_MOON_DISK_GAIN * normalized_lambert;
-    let linear_color = atmosphere.scattering_rgb + atmosphere.transmittance * lunar_radiance;
+    // The overview has a black space background, so use a separate display
+    // calibration while preserving the astronomical flux, phase and disk size.
+    let display_gain = select(FULL_MOON_DISK_GAIN, 2.0, environment.flags.y == 1u);
+    let lunar_radiance = disk_color * relative_flux * display_gain * normalized_lambert;
+    var linear_color = lunar_radiance;
+    if environment.flags.y == 0u {
+        let atmosphere = sample_clear_sky(ray_world);
+        linear_color = atmosphere.scattering_rgb + atmosphere.transmittance * lunar_radiance;
+    }
     let alpha = coverage * horizon;
     let output_color = tone_map_linear(linear_color * environment.ambient_rgb_exposure.w);
     return vec4<f32>(output_color * alpha, alpha);
