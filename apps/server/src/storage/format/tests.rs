@@ -2,6 +2,10 @@ use super::*;
 use crate::world_registry::WorldRegistry;
 use minimium_core::{
     identity::PlayerProfileId,
+    time::{
+        ClockId, ClockMode, ClockRevision, OfflinePolicy, SavedClockState, TimeScalePpm,
+        WorldTimeMs,
+    },
     world::{CharacterGravity, Position3Mm, WorldOrientationQ30},
 };
 use std::{
@@ -22,8 +26,22 @@ fn temporary_directory(label: &str) -> std::path::PathBuf {
     directory
 }
 
+fn saved_clock() -> SavedClockState {
+    let utc = WorldTimeMs::new(1_800_000_000_000).unwrap();
+    SavedClockState::new(
+        ClockId::MVP,
+        ClockRevision::INITIAL,
+        ClockMode::RealTime,
+        utc,
+        utc,
+        TimeScalePpm::ONE_X,
+        OfflinePolicy::Pause,
+    )
+    .unwrap()
+}
+
 #[test]
-fn v6_save_restores_instance_position_and_portal_return_location() {
+fn v8_save_restores_instance_position_and_portal_return_location() {
     let generated = minimium_procgen::generate_demo_worlds().unwrap();
     let primary = generated[0].instance;
     let dungeon = generated[1].instance;
@@ -57,12 +75,12 @@ fn v6_save_restores_instance_position_and_portal_return_location() {
         .map(|(instance, owner)| (instance, (*owner.map).clone(), owner.manifest))
         .collect::<Vec<_>>();
     let snapshot = store
-        .save_snapshot(&registry, generated[0].map.fingerprint())
+        .save_snapshot(&registry, generated[0].map.fingerprint(), saved_clock())
         .unwrap();
-    let directory = temporary_directory("v6");
+    let directory = temporary_directory("v8");
     snapshot.write(&directory).unwrap();
 
-    let mut restored = load(&directory, &worlds).unwrap();
+    let mut restored = load(&directory, &worlds).unwrap().player_store;
     let mut next_id = restored.next_player_id().unwrap();
     let player = restored
         .claim(
@@ -83,7 +101,7 @@ fn v6_save_restores_instance_position_and_portal_return_location() {
 }
 
 #[test]
-fn v6_roundtrip_keeps_a_live_planet_position_clear_after_quantization() {
+fn v8_roundtrip_keeps_a_live_planet_position_clear_after_quantization() {
     let generated = minimium_procgen::generate_demo_worlds().unwrap();
     let primary = generated[0].instance;
     let gravity = CharacterGravity::Radial { center: [0.0; 3] };
@@ -124,12 +142,12 @@ fn v6_roundtrip_keeps_a_live_planet_position_clear_after_quantization() {
         .map(|(instance, owner)| (instance, (*owner.map).clone(), owner.manifest))
         .collect::<Vec<_>>();
     let snapshot = store
-        .save_snapshot(&registry, generated[0].map.fingerprint())
+        .save_snapshot(&registry, generated[0].map.fingerprint(), saved_clock())
         .unwrap();
     let directory = temporary_directory("radial-contact");
     snapshot.write(&directory).unwrap();
 
-    let mut restored = load(&directory, &worlds).unwrap();
+    let mut restored = load(&directory, &worlds).unwrap().player_store;
     let mut next_id = restored.next_player_id().unwrap();
     let player = restored
         .claim(profile, &mut next_id, [0.0; 3], None, primary, gravity)
@@ -177,7 +195,7 @@ fn v2_and_v3_snapshots_migrate_only_to_the_matching_legacy_world() {
             profile.to_hex()
         );
         fs::write(directory.join("world.snapshot"), snapshot).unwrap();
-        let mut restored = load(&directory, &worlds).unwrap();
+        let mut restored = load(&directory, &worlds).unwrap().player_store;
         let mut next_id = restored.next_player_id().unwrap();
         let player = restored
             .claim(

@@ -1,8 +1,9 @@
 use super::EnvironmentConfig;
 use minimium_core::time::{
-    evaluate_clock, sample_clock, set_clock_mode, set_offline_policy, set_time_scale,
-    set_world_time, ClockAnchor, ClockMode, ClockRevision, ClockSample, MonotonicMs, OfflinePolicy,
-    SessionNonce, TimeError, TimeScalePpm, WorldTimeMs,
+    evaluate_clock, restore_clock_state, sample_clock, save_clock_state, set_clock_mode,
+    set_offline_policy, set_time_scale, set_world_time, ClockAnchor, ClockMode, ClockRevision,
+    ClockSample, MonotonicMs, OfflinePolicy, SavedClockState, SessionNonce, TimeError,
+    TimeScalePpm, WorldTimeMs,
 };
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -33,30 +34,51 @@ pub(crate) struct EnvironmentClock {
 }
 
 impl EnvironmentClock {
-    pub(crate) fn new(config: EnvironmentConfig, server_started: Instant) -> Result<Self, String> {
+    pub(crate) fn new(
+        config: EnvironmentConfig,
+        saved_clock: Option<SavedClockState>,
+        server_started: Instant,
+    ) -> Result<Self, String> {
         let nonce = minimium_platform::endpoint::new_random_bytes::<16>()
             .map(SessionNonce::new)
             .map_err(|error| format!("could not create server session nonce: {error}"))?;
-        let world_time = match (config.mode, config.initial_utc) {
-            (ClockMode::RealTime, _) => system_world_time_now()?,
-            (ClockMode::TimeScale, Some(initial)) => initial,
-            (ClockMode::TimeScale, None) => system_world_time_now()?,
-        };
         let monotonic_ms = u64::try_from(server_started.elapsed().as_millis())
             .map(MonotonicMs::new)
             .map_err(|_| "server monotonic time overflow".to_owned())?;
-        let anchor = ClockAnchor::initial(
-            config.mode,
-            world_time,
-            monotonic_ms,
-            config.scale_ppm,
-            config.offline_policy,
-        )
-        .map_err(|error| error.to_string())?;
+        let anchor = if let Some(saved) = saved_clock {
+            let wall_utc_now = system_world_time_now()?;
+            let restored = restore_clock_state(saved, wall_utc_now, monotonic_ms)
+                .map_err(|error| format!("could not restore saved environment clock: {error}"))?;
+            if saved.mode() == ClockMode::TimeScale
+                && saved.offline_policy() == OfflinePolicy::Advance
+                && restored.wall_clock_went_backwards()
+            {
+                eprintln!(
+                    "offline time advance skipped because system UTC moved backward saved_wall_utc_ms={} current_wall_utc_ms={}",
+                    saved.saved_wall_utc_ms().get(),
+                    wall_utc_now.get()
+                );
+            }
+            restored.anchor()
+        } else {
+            let world_time = match (config.mode, config.initial_utc) {
+                (ClockMode::RealTime, _) => system_world_time_now()?,
+                (ClockMode::TimeScale, Some(initial)) => initial,
+                (ClockMode::TimeScale, None) => system_world_time_now()?,
+            };
+            ClockAnchor::initial(
+                config.mode,
+                world_time,
+                monotonic_ms,
+                config.scale_ppm,
+                config.offline_policy,
+            )
+            .map_err(|error| error.to_string())?
+        };
         Ok(Self {
             anchor,
             session_nonce: nonce,
-            last_valid_world_time: world_time,
+            last_valid_world_time: anchor.world_utc_ms(),
             last_correction_ms: None,
             fault: None,
             dirty_revision: None,
@@ -163,6 +185,18 @@ impl EnvironmentClock {
             return Err(ClockFault::RevisionExhausted.code().to_owned());
         }
         sample_clock(self.anchor, self.session_nonce, now).map_err(|error| error.to_string())
+    }
+
+    pub(crate) fn capture_saved_state(
+        &mut self,
+        now: MonotonicMs,
+    ) -> Result<SavedClockState, String> {
+        self.observe(now);
+        if self.fault == Some(ClockFault::RevisionExhausted) {
+            return Err(ClockFault::RevisionExhausted.code().to_owned());
+        }
+        let wall_utc = system_world_time_now()?;
+        save_clock_state(self.anchor, now, wall_utc).map_err(|error| error.to_string())
     }
 
     pub(crate) fn set_date(
@@ -281,6 +315,20 @@ impl EnvironmentClock {
             }
         }
     }
+}
+
+pub(crate) fn initial_saved_clock_state() -> Result<SavedClockState, String> {
+    let world_utc = system_world_time_now()?;
+    let monotonic = MonotonicMs::new(0);
+    let anchor = ClockAnchor::initial(
+        ClockMode::RealTime,
+        world_utc,
+        monotonic,
+        TimeScalePpm::ONE_X,
+        OfflinePolicy::Pause,
+    )
+    .map_err(|error| error.to_string())?;
+    save_clock_state(anchor, monotonic, world_utc).map_err(|error| error.to_string())
 }
 
 fn map_clock_error(

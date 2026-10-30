@@ -91,14 +91,22 @@ send Ping every 10 seconds; server idle timeout is 30 seconds and the desktop
 client's Pong timeout is 20 seconds. These are runtime policies, not frame
 requirements.
 
-Save format v7 records every loaded world's manifest and map fingerprint, plus
-each player's instance, quantized position, orientation, health and return
-location. v2/v3 snapshots are migrated only to a loaded legacy map whose
-fingerprint matches the saved header. The intermediate v4 format is accepted
-only when player and return locations use the primary instance because it did
-not pin target manifests. This prevents old coordinates from being assigned to
-a new procedural planet. Snapshots are limited to 16 MiB; an oversized write is
-rejected before replacing the previous snapshot.
+Save format v8 records every loaded world's manifest and map fingerprint, each
+player's instance, quantized position, orientation, health and return location,
+revisioned sector object state, and one `CLOCK` record. The record stores clock
+ID, revision, mode, saved world UTC, capture wall UTC, rate in ppm and offline
+policy. It appears after `WORLD` records and before any `SECTOR` or player
+record. It is part of the same bounded snapshot and atomic replacement; process
+nonce and monotonic timestamps are not persisted. The loader requires exactly
+one valid clock in v8 and rejects the record in older versions. v2–v7 retain
+their migration rules and initialize a RealTime clock at current UTC; v8
+RealTime also resumes at current UTC, while TimeScale follows its saved
+`pause` or nonnegative `advance` policy. v2/v3 snapshots are migrated only to a
+loaded legacy map whose fingerprint matches the saved header. The intermediate
+v4 format is accepted only when player and return locations use the primary
+instance because it did not pin target manifests. This prevents old coordinates
+from being assigned to a new procedural planet. Snapshots are limited to 16 MiB;
+an oversized write is rejected before replacing the previous snapshot.
 
 The current TCP adapter has no public-game authentication or encryption. The
 profile ID is a reconnect identifier, not proof of account ownership. Gameplay,

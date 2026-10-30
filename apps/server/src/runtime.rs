@@ -116,6 +116,7 @@ impl ServerRuntime {
             data_lock,
             admin,
             environment_config,
+            saved_clock,
         } = startup;
         println!("Minimium server started: game={}:{} admin=127.0.0.1:{} players={} lanes={lanes} autosave={}s map={:016x}", config.bind_address, endpoint.game_port, endpoint.admin_port, config.max_players, config.autosave_seconds, map.fingerprint());
         println!(
@@ -171,12 +172,14 @@ impl ServerRuntime {
         let metrics = RuntimeMetrics::default();
         let server_started = Instant::now();
         let environment_clock =
-            EnvironmentClock::new(environment_config, server_started).map_err(|error| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("environment clock: {error}"),
-                )
-            })?;
+            EnvironmentClock::new(environment_config, saved_clock, server_started).map_err(
+                |error| {
+                    io::Error::new(
+                        io::ErrorKind::InvalidData,
+                        format!("environment clock: {error}"),
+                    )
+                },
+            )?;
         let autosave_interval = Duration::from_secs(config.autosave_seconds);
         Ok(Self {
             game,
@@ -234,6 +237,8 @@ impl ServerRuntime {
             clients: &mut self.connections.clients,
             player_store: &mut self.operations.player_store,
             persistence: &mut self.operations.persistence,
+            environment_clock: &mut self.environment_clock,
+            server_started: self.scheduler.server_started,
             worlds: &self.game.worlds,
             map_fingerprint: self.map.fingerprint(),
             endpoint: &self.endpoint,

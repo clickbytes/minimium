@@ -1,8 +1,9 @@
 use super::{
     format::{self, MAX_STORED_PLAYERS, PLAYER_STORE_SHARDS},
-    invalid_world_snapshot, valid_player_name,
+    invalid_world_snapshot, valid_player_name, LoadedState,
 };
 use minimium_core::ids::PlayerId;
+use minimium_core::time::SavedClockState;
 use minimium_core::{
     identity::PlayerProfileId,
     world::{
@@ -60,6 +61,7 @@ pub(crate) struct PlayerStore {
 }
 
 pub(crate) struct SaveSnapshot {
+    pub(super) saved_clock: SavedClockState,
     pub(super) primary_instance: WorldInstanceId,
     pub(super) map_fingerprint: u64,
     pub(super) manifest: WorldManifest,
@@ -127,7 +129,7 @@ impl PlayerStore {
     pub(crate) fn load(
         data_dir: &Path,
         worlds: &[(WorldInstanceId, WorldMap, WorldManifest)],
-    ) -> io::Result<Self> {
+    ) -> io::Result<LoadedState> {
         format::load(data_dir, worlds)
     }
 
@@ -274,6 +276,7 @@ impl PlayerStore {
         &mut self,
         worlds: &crate::world_registry::WorldRegistry,
         map_fingerprint: u64,
+        saved_clock: SavedClockState,
     ) -> io::Result<SaveSnapshot> {
         let _storage_phase =
             minimium_telemetry::allocations::enter(minimium_telemetry::allocations::Phase::Storage);
@@ -299,6 +302,7 @@ impl PlayerStore {
             .collect();
         let sector_states = worlds.sector_states();
         Ok(SaveSnapshot {
+            saved_clock,
             primary_instance: worlds.primary_id(),
             map_fingerprint,
             manifest: worlds.primary().manifest,

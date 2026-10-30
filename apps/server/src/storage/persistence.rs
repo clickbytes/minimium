@@ -2,6 +2,7 @@ use super::{
     compact_error,
     player_store::{PlayerStore, SaveSnapshot},
 };
+use minimium_core::time::SavedClockState;
 use minimium_telemetry::allocations::{self, Phase};
 use std::{io, path::PathBuf, sync::mpsc, thread};
 
@@ -94,6 +95,7 @@ impl PersistenceWorker {
         player_store: &mut PlayerStore,
         worlds: &crate::world_registry::WorldRegistry,
         map_fingerprint: u64,
+        saved_clock: SavedClockState,
     ) -> io::Result<()> {
         if self.pending_saves > 0 {
             return Err(io::Error::new(
@@ -101,7 +103,7 @@ impl PersistenceWorker {
                 "a world save is already pending",
             ));
         }
-        let snapshot = player_store.save_snapshot(worlds, map_fingerprint)?;
+        let snapshot = player_store.save_snapshot(worlds, map_fingerprint, saved_clock)?;
         self.queue_save(snapshot)
     }
 
