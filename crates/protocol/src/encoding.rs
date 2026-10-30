@@ -2,7 +2,7 @@ use super::{
     framing::encode_frame,
     kinds::{ClientKind, ServerKind},
     limits::*,
-    models::{ClientMessage, ProtocolError, ServerMessage},
+    models::{ClientMessage, ClientWorldInput, ProtocolError, ServerMessage},
     validation::{valid_chat, valid_direction_component, valid_name},
 };
 
@@ -31,6 +31,43 @@ pub fn encode_client(message: &ClientMessage) -> Result<Vec<u8>, ProtocolError> 
             write_chat_text(text, &mut payload)?;
             ClientKind::Chat
         }
+        ClientMessage::WorldInput { context, input } => {
+            write_world_context(*context, &mut payload);
+            match input {
+                ClientWorldInput::SetName(name) => {
+                    payload.push(1);
+                    write_name(name, &mut payload)?;
+                }
+                ClientWorldInput::Move { direction, jump } => {
+                    payload.push(2);
+                    write_direction(*direction, &mut payload)?;
+                    payload.push(u8::from(*jump));
+                }
+                ClientWorldInput::Fire { direction } => {
+                    payload.push(3);
+                    write_unit_direction(*direction, &mut payload)?;
+                }
+                ClientWorldInput::Chat(text) => {
+                    payload.push(4);
+                    write_chat_text(text, &mut payload)?;
+                }
+                ClientWorldInput::UsePortal => payload.push(5),
+            }
+            ClientKind::WorldInput
+        }
+        ClientMessage::TransitionReady {
+            transition_id,
+            target_context,
+        } => {
+            payload.extend_from_slice(&transition_id.get().to_le_bytes());
+            write_world_context(*target_context, &mut payload);
+            ClientKind::TransitionReady
+        }
+        ClientMessage::UsePortal => ClientKind::UsePortal,
+        ClientMessage::CancelTransition(transition_id) => {
+            payload.extend_from_slice(&transition_id.get().to_le_bytes());
+            ClientKind::CancelTransition
+        }
         ClientMessage::Quit => ClientKind::Quit,
     };
     encode_frame(kind.into(), &payload)
@@ -55,6 +92,10 @@ pub fn encode_server_into(
                 id,
                 map_fingerprint,
                 health,
+                position,
+                context,
+                manifest,
+                transition_id,
             } => {
                 if *health > 100 {
                     return Err(ProtocolError::InvalidPayload);
@@ -62,6 +103,13 @@ pub fn encode_server_into(
                 frame.extend_from_slice(&id.get().to_le_bytes());
                 frame.extend_from_slice(&map_fingerprint.to_le_bytes());
                 frame.extend_from_slice(&health.to_le_bytes());
+                write_vector(*position, frame)?;
+                write_world_context(*context, frame);
+                write_world_manifest(*manifest, frame);
+                frame.push(u8::from(transition_id.is_some()));
+                if let Some(transition_id) = transition_id {
+                    frame.extend_from_slice(&transition_id.get().to_le_bytes());
+                }
                 ServerKind::Welcome
             }
             ServerMessage::Pong => ServerKind::Pong,
@@ -108,6 +156,7 @@ pub fn encode_server_into(
             }
             ServerMessage::Snapshot {
                 server_time_ms,
+                context,
                 full_snapshot,
                 self_position,
                 self_velocity,
@@ -123,6 +172,7 @@ pub fn encode_server_into(
                     return Err(ProtocolError::InvalidPayload);
                 }
                 frame.extend_from_slice(&server_time_ms.to_le_bytes());
+                write_world_context(*context, frame);
                 write_vector(*self_position, frame)?;
                 write_vector(*self_velocity, frame)?;
                 frame.push(u8::from(*self_grounded));
@@ -138,6 +188,49 @@ pub fn encode_server_into(
                     frame.extend_from_slice(&id.get().to_le_bytes());
                 }
                 ServerKind::Snapshot
+            }
+            ServerMessage::TransitionPrepare {
+                transition_id,
+                source_context,
+                target_context,
+                map_fingerprint,
+                destination,
+                manifest,
+            } => {
+                frame.extend_from_slice(&transition_id.get().to_le_bytes());
+                write_world_context(*source_context, frame);
+                write_world_context(*target_context, frame);
+                frame.extend_from_slice(&map_fingerprint.to_le_bytes());
+                write_vector(*destination, frame)?;
+                write_world_manifest(*manifest, frame);
+                ServerKind::TransitionPrepare
+            }
+            ServerMessage::TransitionCommitted {
+                transition_id,
+                context,
+                map_fingerprint,
+                destination,
+                health,
+                manifest,
+            } => {
+                if *health > 100 {
+                    return Err(ProtocolError::InvalidPayload);
+                }
+                frame.extend_from_slice(&transition_id.get().to_le_bytes());
+                write_world_context(*context, frame);
+                frame.extend_from_slice(&map_fingerprint.to_le_bytes());
+                write_vector(*destination, frame)?;
+                frame.extend_from_slice(&health.to_le_bytes());
+                write_world_manifest(*manifest, frame);
+                ServerKind::TransitionCommitted
+            }
+            ServerMessage::TransitionCancelled {
+                transition_id,
+                context,
+            } => {
+                frame.extend_from_slice(&transition_id.get().to_le_bytes());
+                write_world_context(*context, frame);
+                ServerKind::TransitionCancelled
             }
         };
         Ok(kind)
@@ -169,6 +262,26 @@ pub(crate) fn write_name(name: &str, output: &mut Vec<u8>) -> Result<(), Protoco
     output.push(name.len() as u8);
     output.extend_from_slice(name.as_bytes());
     Ok(())
+}
+
+fn write_world_context(context: super::world_context::WorldContext, output: &mut Vec<u8>) {
+    output.extend_from_slice(&context.instance().get().to_le_bytes());
+    output.extend_from_slice(&context.content_revision().get().to_le_bytes());
+    output.extend_from_slice(&context.membership_epoch().get().to_le_bytes());
+}
+
+fn write_world_manifest(manifest: minimium_core::world::WorldManifest, output: &mut Vec<u8>) {
+    output.extend_from_slice(&manifest.definition_id().get().to_le_bytes());
+    output.push(match manifest.topology() {
+        minimium_core::world::WorldTopology::Planet => 0,
+        minimium_core::world::WorldTopology::Dungeon => 1,
+    });
+    let generation = manifest.generation();
+    output.extend_from_slice(&generation.seed().get().to_le_bytes());
+    output.extend_from_slice(&generation.revision().get().to_le_bytes());
+    output.extend_from_slice(&generation.position_quantum_mm().to_le_bytes());
+    output.extend_from_slice(&manifest.content_revision().get().to_le_bytes());
+    output.extend_from_slice(manifest.generator_digest().as_bytes());
 }
 
 pub(crate) fn write_chat_text(text: &str, output: &mut Vec<u8>) -> Result<(), ProtocolError> {

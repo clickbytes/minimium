@@ -6,14 +6,19 @@
 //! event collection on each frame. Events are appended; clear the vector before
 //! polling if it should contain only the latest poll's events.
 
+use minimium_core::{identity::PlayerProfileId, world::TransitionId};
 use minimium_protocol::{
-    decode_server, encode_client, ClientMessage, ProtocolError, ServerMessage, MAX_FRAME_BYTES,
+    decode_server, encode_client, ClientMessage, ClientWorldInput, ProtocolError, ServerMessage,
+    WorldContext, MAX_FRAME_BYTES,
 };
 use std::{
+    collections::HashMap,
     io::{self, Read, Write},
     net::TcpStream,
     time::{Duration, Instant},
 };
+
+mod receive;
 
 /// Maximum retained receive or pending send data.
 pub const MAX_SESSION_BUFFER_BYTES: usize = 64 * 1024;
@@ -42,6 +47,7 @@ pub enum DisconnectReason {
     UnexpectedMessage,
     Rejected(minimium_protocol::ServerErrorCode),
     MapMismatch { expected: u64, actual: u64 },
+    GeneratorMismatch,
     Io(io::ErrorKind),
     BufferLimit,
 }
@@ -68,6 +74,7 @@ pub enum QueueError {
     Disconnected,
     AwaitingWelcome,
     IdentifyReserved,
+    StaleWorldContext,
     BufferFull,
     Protocol(ProtocolError),
 }
@@ -77,6 +84,10 @@ pub struct ClientSession {
     stream: Option<TcpStream>,
     state: SessionState,
     expected_map_fingerprint: u64,
+    world_context: Option<WorldContext>,
+    world_fingerprints: HashMap<minimium_core::world::WorldInstanceId, u64>,
+    pending_transition: Option<(TransitionId, WorldContext)>,
+    ready_transition: Option<(TransitionId, WorldContext)>,
     state_since: Instant,
     last_heartbeat_at: Instant,
     pending_ping_at: Option<Instant>,
@@ -102,6 +113,14 @@ impl ClientSession {
             stream: Some(stream),
             state: SessionState::AwaitingWelcome,
             expected_map_fingerprint,
+            world_context: None,
+            world_fingerprints: HashMap::from([(
+                minimium_core::world::WorldInstanceId::new(1)
+                    .expect("primary world identifier is nonzero"),
+                expected_map_fingerprint,
+            )]),
+            pending_transition: None,
+            ready_transition: None,
             state_since: now,
             last_heartbeat_at: now,
             pending_ping_at: None,
@@ -125,12 +144,50 @@ impl ClientSession {
         self.metrics
     }
 
+    pub(crate) fn set_world_fingerprints(
+        &mut self,
+        fingerprints: HashMap<minimium_core::world::WorldInstanceId, u64>,
+    ) {
+        self.world_fingerprints = fingerprints;
+    }
+
+    pub(crate) fn cancel_pending_transition(&mut self) -> bool {
+        let Some((transition_id, _)) = self.pending_transition else {
+            return false;
+        };
+        self.queue(&ClientMessage::CancelTransition(transition_id))
+            .is_ok()
+    }
+
+    pub(crate) fn queue_transition_ready(
+        &mut self,
+        transition_id: TransitionId,
+        target_context: WorldContext,
+    ) -> Result<(), QueueError> {
+        let transition = (transition_id, target_context);
+        if self.pending_transition != Some(transition) {
+            return Err(QueueError::StaleWorldContext);
+        }
+        if self.ready_transition == Some(transition) {
+            return Ok(());
+        }
+        self.queue(&ClientMessage::TransitionReady {
+            transition_id,
+            target_context,
+        })?;
+        self.ready_transition = Some(transition);
+        Ok(())
+    }
+
     /// Close the current socket and discard all buffered data.
     pub fn close(&mut self) {
         self.stream = None;
         self.state = SessionState::Disconnected;
         self.pending_ping_at = None;
         self.pending_ping_end = None;
+        self.world_context = None;
+        self.pending_transition = None;
+        self.ready_transition = None;
         self.receive_buffer.clear();
         self.send_buffer.clear();
         self.send_offset = 0;
@@ -148,7 +205,39 @@ impl ClientSession {
         if matches!(message, ClientMessage::Identify(_)) {
             return Err(QueueError::IdentifyReserved);
         }
-        let frame = encode_client(message).map_err(QueueError::Protocol)?;
+        let contextual = match message {
+            ClientMessage::SetName(name) => Some(ClientMessage::WorldInput {
+                context: self.world_context.ok_or(QueueError::AwaitingWelcome)?,
+                input: ClientWorldInput::SetName(name.clone()),
+            }),
+            ClientMessage::Move { direction, jump } => Some(ClientMessage::WorldInput {
+                context: self.world_context.ok_or(QueueError::AwaitingWelcome)?,
+                input: ClientWorldInput::Move {
+                    direction: *direction,
+                    jump: *jump,
+                },
+            }),
+            ClientMessage::Fire { direction } => Some(ClientMessage::WorldInput {
+                context: self.world_context.ok_or(QueueError::AwaitingWelcome)?,
+                input: ClientWorldInput::Fire {
+                    direction: *direction,
+                },
+            }),
+            ClientMessage::Chat(text) => Some(ClientMessage::WorldInput {
+                context: self.world_context.ok_or(QueueError::AwaitingWelcome)?,
+                input: ClientWorldInput::Chat(text.clone()),
+            }),
+            ClientMessage::UsePortal => Some(ClientMessage::WorldInput {
+                context: self.world_context.ok_or(QueueError::AwaitingWelcome)?,
+                input: ClientWorldInput::UsePortal,
+            }),
+            ClientMessage::WorldInput { context, .. } if Some(*context) != self.world_context => {
+                return Err(QueueError::StaleWorldContext);
+            }
+            _ => None,
+        };
+        let frame =
+            encode_client(contextual.as_ref().unwrap_or(message)).map_err(QueueError::Protocol)?;
         self.append_frame(&frame)
             .map_err(|()| QueueError::BufferFull)?;
         if matches!(message, ClientMessage::Ping)
@@ -159,224 +248,79 @@ impl ClientSession {
         }
         Ok(())
     }
+}
 
-    /// Performs bounded nonblocking reads, flushes queued writes (including
-    /// partial writes), validates protocol state, and maintains heartbeat
-    /// timers. Appends events to caller-owned storage and returns the current
-    /// state. Fatal conditions append one Disconnected event and clear all
-    /// buffers and connection state.
-    pub fn poll(&mut self, events: &mut Vec<SessionEvent>) -> SessionState {
+fn manifest_matches_generator(manifest: &minimium_core::world::WorldManifest) -> bool {
+    manifest.generator_digest()
+        == minimium_procgen::generator_digest(manifest.topology(), manifest.generation())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use minimium_core::world::{
+        GeneratorDigest, MembershipEpoch, WorldContentRevision, WorldInstanceId,
+    };
+
+    fn context(epoch: u64) -> WorldContext {
+        WorldContext::new(
+            WorldInstanceId::new(1).unwrap(),
+            WorldContentRevision::new(1).unwrap(),
+            MembershipEpoch::new(epoch).unwrap(),
+        )
+    }
+
+    fn connected_session(context: WorldContext) -> ClientSession {
         let now = Instant::now();
-        if self.state == SessionState::AwaitingWelcome
-            && now.saturating_duration_since(self.state_since) >= WELCOME_TIMEOUT
-        {
-            self.disconnect(DisconnectReason::WelcomeTimeout, events);
-            return self.state;
-        }
-        if self.state == SessionState::Connected
-            && self
-                .pending_ping_at
-                .is_some_and(|sent| now.saturating_duration_since(sent) >= HEARTBEAT_TIMEOUT)
-        {
-            self.disconnect(DisconnectReason::HeartbeatTimeout, events);
-            return self.state;
-        }
-
-        self.flush_send(events);
-        if self.state == SessionState::Disconnected {
-            return self.state;
-        }
-
-        self.read_available(events);
-        if self.state == SessionState::Disconnected {
-            return self.state;
-        }
-        self.decode_available(events);
-        if self.state == SessionState::Disconnected {
-            return self.state;
-        }
-
-        let now = Instant::now();
-        if self.state == SessionState::Connected
-            && self.pending_ping_at.is_none()
-            && self.pending_ping_end.is_none()
-            && now.saturating_duration_since(self.last_heartbeat_at) >= HEARTBEAT_INTERVAL
-            && self.queue(&ClientMessage::Ping).is_ok()
-        {
-            self.last_heartbeat_at = now;
-        }
-        self.flush_send(events);
-        self.state
-    }
-
-    fn append_encoded(&mut self, message: &ClientMessage) -> Result<(), ProtocolError> {
-        let frame = encode_client(message)?;
-        self.append_frame(&frame)
-            .map_err(|()| ProtocolError::PayloadTooLarge)
-    }
-
-    fn append_frame(&mut self, frame: &[u8]) -> Result<(), ()> {
-        if self.send_offset > 0 {
-            if let Some(end) = &mut self.pending_ping_end {
-                *end = end.saturating_sub(self.send_offset);
-            }
-            self.send_buffer.drain(..self.send_offset);
-            self.send_offset = 0;
-        }
-        if self.send_buffer.len().saturating_add(frame.len()) > MAX_SESSION_BUFFER_BYTES {
-            return Err(());
-        }
-        self.send_buffer.extend_from_slice(frame);
-        Ok(())
-    }
-
-    fn flush_send(&mut self, events: &mut Vec<SessionEvent>) {
-        while self.send_offset < self.send_buffer.len() {
-            let result = match self.stream.as_mut() {
-                Some(stream) => stream.write(&self.send_buffer[self.send_offset..]),
-                None => return,
-            };
-            match result {
-                Ok(0) => {
-                    self.disconnect(DisconnectReason::Io(io::ErrorKind::WriteZero), events);
-                    return;
-                }
-                Ok(count) => {
-                    self.send_offset += count;
-                    self.metrics.bytes_sent = self.metrics.bytes_sent.saturating_add(count as u64);
-                    if self
-                        .pending_ping_end
-                        .is_some_and(|end| self.send_offset >= end)
-                    {
-                        self.pending_ping_end = None;
-                        self.pending_ping_at = Some(Instant::now());
-                    }
-                }
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                Err(error) => {
-                    self.disconnect(DisconnectReason::Io(error.kind()), events);
-                    return;
-                }
-            }
-        }
-        if self.send_offset == self.send_buffer.len() {
-            self.send_buffer.clear();
-            self.send_offset = 0;
+        ClientSession {
+            stream: None,
+            state: SessionState::Connected,
+            expected_map_fingerprint: 1,
+            world_context: Some(context),
+            world_fingerprints: HashMap::new(),
+            pending_transition: None,
+            ready_transition: None,
+            state_since: now,
+            last_heartbeat_at: now,
+            pending_ping_at: None,
+            pending_ping_end: None,
+            receive_buffer: Vec::new(),
+            send_buffer: Vec::new(),
+            send_offset: 0,
+            metrics: SessionMetrics::default(),
         }
     }
 
-    fn read_available(&mut self, events: &mut Vec<SessionEvent>) {
-        let mut chunk = [0u8; 4096];
-        let mut total_read = 0;
-        loop {
-            let available = (MAX_SESSION_READ_BYTES_PER_POLL - total_read).min(chunk.len());
-            if available == 0 {
-                break;
-            }
-            let result = match self.stream.as_mut() {
-                Some(stream) => stream.read(&mut chunk[..available]),
-                None => return,
-            };
-            match result {
-                Ok(0) => {
-                    self.decode_available(events);
-                    if self.state != SessionState::Disconnected {
-                        self.disconnect(DisconnectReason::PeerClosed, events);
-                    }
-                    return;
-                }
-                Ok(count) => {
-                    total_read += count;
-                    self.metrics.bytes_received =
-                        self.metrics.bytes_received.saturating_add(count as u64);
-                    if self.receive_buffer.len().saturating_add(count) > MAX_SESSION_BUFFER_BYTES {
-                        self.disconnect(DisconnectReason::BufferLimit, events);
-                        return;
-                    }
-                    self.receive_buffer.extend_from_slice(&chunk[..count]);
-                }
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                Err(error) => {
-                    self.disconnect(DisconnectReason::Io(error.kind()), events);
-                    return;
-                }
-            }
-        }
+    #[test]
+    fn world_inputs_from_a_previous_membership_epoch_are_rejected() {
+        let current = context(8);
+        let old = context(7);
+        let mut session = connected_session(current);
+        let input = ClientMessage::WorldInput {
+            context: old,
+            input: ClientWorldInput::UsePortal,
+        };
+        assert_eq!(session.queue(&input), Err(QueueError::StaleWorldContext));
+
+        let current_input = ClientMessage::WorldInput {
+            context: current,
+            input: ClientWorldInput::UsePortal,
+        };
+        assert_eq!(session.queue(&current_input), Ok(()));
     }
 
-    fn decode_available(&mut self, events: &mut Vec<SessionEvent>) {
-        loop {
-            match decode_server(&self.receive_buffer) {
-                Ok(Some((message, frame_bytes))) => {
-                    self.receive_buffer.drain(..frame_bytes);
-                    match &message {
-                        ServerMessage::Welcome {
-                            map_fingerprint, ..
-                        } => {
-                            if self.state != SessionState::AwaitingWelcome {
-                                self.disconnect(DisconnectReason::UnexpectedMessage, events);
-                                return;
-                            }
-                            if *map_fingerprint != self.expected_map_fingerprint {
-                                self.disconnect(
-                                    DisconnectReason::MapMismatch {
-                                        expected: self.expected_map_fingerprint,
-                                        actual: *map_fingerprint,
-                                    },
-                                    events,
-                                );
-                                return;
-                            }
-                            self.state = SessionState::Connected;
-                            self.state_since = Instant::now();
-                            self.last_heartbeat_at = self.state_since;
-                        }
-                        ServerMessage::Error(code)
-                            if self.state == SessionState::AwaitingWelcome =>
-                        {
-                            let code = *code;
-                            self.disconnect(DisconnectReason::Rejected(code), events);
-                            return;
-                        }
-                        ServerMessage::Bye if self.state == SessionState::Connected => {
-                            self.disconnect(DisconnectReason::ServerClosed, events);
-                            return;
-                        }
-                        _ if self.state != SessionState::Connected => {
-                            self.disconnect(DisconnectReason::UnexpectedMessage, events);
-                            return;
-                        }
-                        _ => {}
-                    }
-                    if matches!(&message, ServerMessage::Pong) {
-                        if let Some(sent_at) = self.pending_ping_at.take() {
-                            let rtt = Instant::now().saturating_duration_since(sent_at);
-                            self.metrics.ping_round_trip = Some(rtt);
-                            events.push(SessionEvent::PingRoundTrip(rtt));
-                            continue;
-                        }
-                    }
-                    events.push(SessionEvent::Message(message));
-                }
-                Ok(None) => {
-                    if self.receive_buffer.len() > MAX_FRAME_BYTES {
-                        self.disconnect(DisconnectReason::BufferLimit, events);
-                    }
-                    return;
-                }
-                Err(error) => {
-                    self.disconnect(DisconnectReason::Protocol(error), events);
-                    return;
-                }
-            }
-        }
-    }
-
-    fn disconnect(&mut self, reason: DisconnectReason, events: &mut Vec<SessionEvent>) {
-        self.close();
-        events.push(SessionEvent::Disconnected(reason));
+    #[test]
+    fn client_rejects_a_manifest_with_an_unknown_generator_digest() {
+        let generated = minimium_procgen::generate_demo_worlds().unwrap();
+        let manifest = generated[0].manifest;
+        assert!(manifest_matches_generator(&manifest));
+        let mismatched = minimium_core::world::WorldManifest::new(
+            manifest.definition_id(),
+            manifest.topology(),
+            manifest.generation(),
+            manifest.content_revision(),
+            GeneratorDigest::new([0xff; 32]),
+        );
+        assert!(!manifest_matches_generator(&mismatched));
     }
 }
-use minimium_core::identity::PlayerProfileId;

@@ -19,7 +19,7 @@ def main() -> int:
 
     graph = {package["name"]: {dep["name"] for dep in package["dependencies"]}
              for package in packages}
-    required = {"minimium-core", "minimium-assets", "minimium-platform",
+    required = {"minimium-core", "minimium-procgen", "minimium-sectors", "minimium-assets", "minimium-platform",
                 "minimium-protocol", "minimium-telemetry", "minimium-server"}
     missing = required - graph.keys()
     if missing:
@@ -28,7 +28,7 @@ def main() -> int:
 
     forbidden = {
         "minimium-core": {"minimium-protocol", "minimium-platform", "minimium-assets",
-                          "minimium-telemetry"},
+                          "minimium-procgen", "minimium-sectors", "minimium-telemetry"},
         "minimium-server": {"wgpu", "winit"},
     }
     violations = []

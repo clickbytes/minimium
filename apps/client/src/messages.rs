@@ -128,6 +128,7 @@ pub enum QueueProblem {
     Disconnected,
     AwaitingWelcome,
     IdentifyReserved,
+    StaleWorldContext,
     BufferFull,
     Protocol(ProtocolError),
 }
@@ -138,6 +139,7 @@ impl From<QueueError> for QueueProblem {
             QueueError::Disconnected => Self::Disconnected,
             QueueError::AwaitingWelcome => Self::AwaitingWelcome,
             QueueError::IdentifyReserved => Self::IdentifyReserved,
+            QueueError::StaleWorldContext => Self::StaleWorldContext,
             QueueError::BufferFull => Self::BufferFull,
             QueueError::Protocol(error) => Self::Protocol(error),
         }
@@ -176,6 +178,7 @@ impl fmt::Display for QueueProblem {
             Self::Disconnected => "not connected",
             Self::AwaitingWelcome => "waiting for server welcome",
             Self::IdentifyReserved => "identify is reserved for connection setup",
+            Self::StaleWorldContext => "world changed; reconnect or retry the command",
             Self::BufferFull => "outgoing queue is full",
             Self::Protocol(error) => return write!(f, "message could not be encoded: {error}"),
         })
@@ -237,7 +240,7 @@ impl fmt::Display for ClientText {
                 f.write_str("Minimium client console. Type `help` for commands.")
             }
             Self::CommandLineHelp => f.write_str(
-                "minimium-client [--connect HOST:PORT] [--map PATH] [--profile-dir PATH] [--server-data-dir PATH] [--threads 1|2|auto] [--demo] [--console]\nDefault: desktop client with a local server. F1 opens the console. --console selects the text client; host local starts/attaches its server.",
+                "minimium-client [--connect HOST:PORT] [--map PATH | --world-definition PATH] [--profile-dir PATH] [--server-data-dir PATH] [--threads 1|2|auto] [--demo] [--console]\nDefault: desktop client with a local server. F1 opens the console. --console selects the text client; host local starts/attaches its server.",
             ),
             Self::InputPrompt => f.write_str("> "),
             Self::ClientError(error) => write!(f, "client error: {error}"),

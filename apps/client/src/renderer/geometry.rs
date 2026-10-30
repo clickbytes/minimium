@@ -1,4 +1,5 @@
 use super::*;
+use minimium_core::world::{MapBox, MapTriangle};
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -30,12 +31,17 @@ impl UiVertex {
         }
     }
 }
-pub(super) fn map_geometry(map: &WorldMap) -> Vec<Vertex> {
-    let mut out = Vec::with_capacity(map.boxes().len() * 36 + map.triangles().len() * 3);
-    for map_box in map.boxes() {
-        cube(&mut out, map_box.center, map_box.size, map_box.color);
+pub(super) fn sector_geometry(geometry: &minimium_procgen::SectorGeometry) -> Vec<Vertex> {
+    let mut out = Vec::with_capacity(geometry.boxes.len() * 36 + geometry.triangles.len() * 3);
+    append_geometry(&mut out, &geometry.boxes, &geometry.triangles);
+    out
+}
+
+fn append_geometry(out: &mut Vec<Vertex>, boxes: &[MapBox], triangles: &[MapTriangle]) {
+    for map_box in boxes {
+        cube(out, map_box.center, map_box.size, map_box.color);
     }
-    for triangle in map.triangles() {
+    for triangle in triangles {
         for position in triangle.vertices {
             out.push(Vertex {
                 position,
@@ -43,7 +49,6 @@ pub(super) fn map_geometry(map: &WorldMap) -> Vec<Vertex> {
             });
         }
     }
-    out
 }
 
 pub(super) fn cube(out: &mut Vec<Vertex>, center: [f32; 3], size: [f32; 3], color: [f32; 3]) {

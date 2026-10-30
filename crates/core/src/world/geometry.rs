@@ -242,26 +242,141 @@ pub(super) fn update_cell_index(
 }
 
 pub(super) fn horizontal_overlap(position: [f32; 3], collider: Aabb) -> bool {
-    position[0] - PLAYER_RADIUS < collider.max[0]
-        && position[0] + PLAYER_RADIUS > collider.min[0]
-        && position[2] - PLAYER_RADIUS < collider.max[2]
-        && position[2] + PLAYER_RADIUS > collider.min[2]
+    let closest_x = position[0].clamp(collider.min[0], collider.max[0]);
+    let closest_z = position[2].clamp(collider.min[2], collider.max[2]);
+    let delta_x = position[0] - closest_x;
+    let delta_z = position[2] - closest_z;
+    delta_x * delta_x + delta_z * delta_z <= PLAYER_RADIUS * PLAYER_RADIUS
 }
 
 pub(super) fn intersects_player(position: [f32; 3], collider: Aabb) -> bool {
-    let player_min = [
-        position[0] - PLAYER_RADIUS,
-        position[1],
-        position[2] - PLAYER_RADIUS,
-    ];
-    let player_max = [
-        position[0] + PLAYER_RADIUS,
-        position[1] + PLAYER_HEIGHT,
-        position[2] + PLAYER_RADIUS,
-    ];
-    (0..3)
-        .all(|axis| player_min[axis] < collider.max[axis] && player_max[axis] > collider.min[axis])
+    oriented_capsule_intersects(position, [0.0, 1.0, 0.0], collider)
 }
+
+pub(super) fn oriented_capsule_intersects(
+    position: [f32; 3],
+    up: [f32; 3],
+    collider: Aabb,
+) -> bool {
+    let half_segment = (PLAYER_HEIGHT * 0.5 - PLAYER_RADIUS).max(0.0);
+    let center = [
+        position[0] + up[0] * PLAYER_HEIGHT * 0.5,
+        position[1] + up[1] * PLAYER_HEIGHT * 0.5,
+        position[2] + up[2] * PLAYER_HEIGHT * 0.5,
+    ];
+    let offset = [
+        up[0] * half_segment,
+        up[1] * half_segment,
+        up[2] * half_segment,
+    ];
+    let segment_start = vector_subtract(center, offset);
+    let segment_end = [
+        center[0] + offset[0],
+        center[1] + offset[1],
+        center[2] + offset[2],
+    ];
+    segment_aabb_distance_squared(segment_start, segment_end, collider)
+        < PLAYER_RADIUS * PLAYER_RADIUS
+}
+
+pub(super) fn oriented_capsule_intersects_triangle(
+    position: [f32; 3],
+    up: [f32; 3],
+    triangle: MapTriangle,
+) -> bool {
+    if !is_valid_solid_triangle(triangle) {
+        return false;
+    }
+    let half_segment = (PLAYER_HEIGHT * 0.5 - PLAYER_RADIUS).max(0.0);
+    let center = [
+        position[0] + up[0] * PLAYER_HEIGHT * 0.5,
+        position[1] + up[1] * PLAYER_HEIGHT * 0.5,
+        position[2] + up[2] * PLAYER_HEIGHT * 0.5,
+    ];
+    let offset = up.map(|component| component * half_segment);
+    let start = vector_subtract(center, offset);
+    let end = [
+        center[0] + offset[0],
+        center[1] + offset[1],
+        center[2] + offset[2],
+    ];
+    triangle_distance::segment_triangle_distance_squared(start, end, triangle.vertices)
+        < PLAYER_RADIUS * PLAYER_RADIUS
+}
+
+fn dot3(first: [f32; 3], second: [f32; 3]) -> f32 {
+    first[0] * second[0] + first[1] * second[1] + first[2] * second[2]
+}
+
+fn segment_aabb_distance_squared(start: [f32; 3], end: [f32; 3], collider: Aabb) -> f32 {
+    let direction = vector_subtract(end, start);
+    let mut breakpoints = [0.0_f32; 8];
+    let mut breakpoint_count = 2;
+    breakpoints[1] = 1.0;
+    for axis in 0..3 {
+        if direction[axis] == 0.0 {
+            continue;
+        }
+        for boundary in [collider.min[axis], collider.max[axis]] {
+            let parameter = (boundary - start[axis]) / direction[axis];
+            if parameter > 0.0 && parameter < 1.0 {
+                breakpoints[breakpoint_count] = parameter;
+                breakpoint_count += 1;
+            }
+        }
+    }
+    breakpoints[..breakpoint_count].sort_by(f32::total_cmp);
+
+    let mut minimum = f32::INFINITY;
+    for interval in breakpoints[..breakpoint_count].windows(2) {
+        let lower = interval[0];
+        let upper = interval[1];
+        let middle = (lower + upper) * 0.5;
+        let sample = [
+            start[0] + direction[0] * middle,
+            start[1] + direction[1] * middle,
+            start[2] + direction[2] * middle,
+        ];
+        let mut numerator = 0.0;
+        let mut denominator = 0.0;
+        for axis in 0..3 {
+            let boundary = if sample[axis] < collider.min[axis] {
+                Some(collider.min[axis])
+            } else if sample[axis] > collider.max[axis] {
+                Some(collider.max[axis])
+            } else {
+                None
+            };
+            if let Some(boundary) = boundary {
+                numerator += direction[axis] * (start[axis] - boundary);
+                denominator += direction[axis] * direction[axis];
+            }
+        }
+        let parameter = if denominator > 0.0 {
+            (-numerator / denominator).clamp(lower, upper)
+        } else {
+            lower
+        };
+        let point = [
+            start[0] + direction[0] * parameter,
+            start[1] + direction[1] * parameter,
+            start[2] + direction[2] * parameter,
+        ];
+        let mut distance_squared = 0.0;
+        for (axis, coordinate) in point.iter().enumerate() {
+            let closest = coordinate.clamp(collider.min[axis], collider.max[axis]);
+            let difference = *coordinate - closest;
+            distance_squared += difference * difference;
+        }
+        minimum = minimum.min(distance_squared);
+    }
+    minimum
+}
+
+mod triangle_distance;
+
+#[cfg(test)]
+mod tests;
 
 pub(super) fn cell_for(position: [f32; 3]) -> Cell {
     Cell(

@@ -20,17 +20,57 @@ const INPUT_QUEUE_CAPACITY: usize = 64;
 
 pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
     let map_path = options.map_path.clone();
-    let map = if let Some(path) = map_path.as_deref() {
-        minimium_assets::load_map(path).map_err(|error| {
+    let world_definition_path = options.world_definition_path.clone();
+    let (map, world_fingerprints) = if let Some(path) = map_path.as_deref() {
+        let map = minimium_assets::load_map(path).map_err(|error| {
             Text::MapLoadFailed {
                 path: path.display().to_string(),
                 detail: error.to_string(),
             }
             .to_string()
-        })?
+        })?;
+        let instance =
+            minimium_core::world::WorldInstanceId::new(1).expect("legacy instance ID is nonzero");
+        (
+            map.clone(),
+            std::collections::HashMap::from([(instance, map.fingerprint())]),
+        )
+    } else if let Some(path) = world_definition_path.as_deref() {
+        let definition = minimium_assets::load_world_definition(path).map_err(|error| {
+            Text::MapLoadFailed {
+                path: path.display().to_string(),
+                detail: error.to_string(),
+            }
+            .to_string()
+        })?;
+        let map = minimium_procgen::materialize_dungeon_map(definition.dungeon())
+            .map_err(|error| Text::BundledMapInvalid(error).to_string())?;
+        let instance = minimium_core::world::WorldInstanceId::new(4)
+            .expect("manual world instance ID is nonzero");
+        let legacy_map = minimium_assets::parse_map(crate::SAMPLE_MAP)
+            .map_err(|error| Text::BundledMapInvalid(error).to_string())?;
+        let legacy_instance =
+            minimium_core::world::WorldInstanceId::new(3).expect("legacy instance ID is nonzero");
+        (
+            map.clone(),
+            std::collections::HashMap::from([
+                (instance, map.fingerprint()),
+                (legacy_instance, legacy_map.fingerprint()),
+            ]),
+        )
     } else {
-        minimium_assets::parse_map(crate::SAMPLE_MAP)
-            .map_err(|error| Text::BundledMapInvalid(error.to_string()).to_string())?
+        let worlds = minimium_procgen::generate_demo_worlds()
+            .map_err(|error| Text::BundledMapInvalid(error).to_string())?;
+        let mut fingerprints = std::collections::HashMap::new();
+        for world in &worlds {
+            fingerprints.insert(world.instance, world.map.fingerprint());
+        }
+        let legacy_map = minimium_assets::parse_map(crate::SAMPLE_MAP)
+            .map_err(|error| Text::BundledMapInvalid(error).to_string())?;
+        let legacy_instance =
+            minimium_core::world::WorldInstanceId::new(3).expect("legacy instance ID is nonzero");
+        fingerprints.insert(legacy_instance, legacy_map.fingerprint());
+        (worlds[0].map.clone(), fingerprints)
     };
     let fingerprint = map.fingerprint();
     let (profile_dir, data_dir) = options.paths(fingerprint);
@@ -40,6 +80,7 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
     let (sender, receiver) = mpsc::sync_channel(INPUT_QUEUE_CAPACITY);
     super::spawn_console_input_reader(sender);
     let mut connection = ConnectionController::new(profile_id, fingerprint);
+    connection.set_world_fingerprints(world_fingerprints);
     let mut events = Vec::with_capacity(16);
     let mut prompt_needed = true;
     let mut last_snapshot: Option<ServerMessage> = None;
@@ -124,8 +165,12 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
                                 continue;
                             }
                             let lanes = requested_lanes.unwrap_or(options.threads);
-                            match connection.start_local(data_dir.clone(), map_path.clone(), lanes)
-                            {
+                            match connection.start_local(
+                                data_dir.clone(),
+                                map_path.clone(),
+                                world_definition_path.clone(),
+                                lanes,
+                            ) {
                                 Ok(()) => {
                                     println!("{}", Text::StartingLocalServer);
                                 }
@@ -292,6 +337,7 @@ fn print_session_event(event: SessionEvent, show_snapshot: bool) {
                 self_grounded,
                 players,
                 removed_players,
+                ..
             } if show_snapshot => {
                 println!(
                     "{}",
@@ -307,6 +353,9 @@ fn print_session_event(event: SessionEvent, show_snapshot: bool) {
                 );
             }
             ServerMessage::Snapshot { .. } => {}
+            ServerMessage::TransitionPrepare { .. } => println!("world transfer prepared"),
+            ServerMessage::TransitionCommitted { .. } => println!("world transfer committed"),
+            ServerMessage::TransitionCancelled { .. } => println!("world transfer cancelled"),
         },
     }
 }

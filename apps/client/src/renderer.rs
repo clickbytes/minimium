@@ -4,18 +4,18 @@ use crate::{
     connector::StartError,
     console::{Console, UiVertex},
     session::{ClientSession, DisconnectReason, SessionEvent, SessionState},
-    SAMPLE_MAP,
 };
 use minimium_core::{
     identity::PlayerProfileId,
     world::{
-        step_character, CharacterInput, CharacterState, CollisionIndex, CollisionQuery, WorldMap,
-        PLAYER_MAX_HEALTH,
+        character_frame, step_character, CharacterGravity, CharacterInput, CharacterState,
+        CollisionIndex, CollisionQuery, GenerationRevision, SectorKey, WorldContentRevision,
+        WorldManifest, WorldMap, WorldTopology, PLAYER_MAX_HEALTH,
     },
 };
 use minimium_protocol::{ClientMessage, ServerMessage, MAX_VISIBLE_PLAYERS};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     error::Error,
     path::PathBuf,
     sync::Arc,
@@ -36,10 +36,11 @@ mod geometry;
 mod gpu;
 mod init;
 mod render;
+mod sector_scene;
 mod session;
 mod window;
 
-use geometry::{cube, map_geometry, Vertex};
+use geometry::{cube, sector_geometry, Vertex};
 
 const UI_VERTEX_CAPACITY: usize = 8192;
 const REMOTE_INTERPOLATION_DELAY: Duration = Duration::from_millis(100);
@@ -74,6 +75,14 @@ struct GpuResources {
     depth_view: wgpu::TextureView,
     size: PhysicalSize<u32>,
     fixed_gpu_bytes: u64,
+    world_vertex_catalog: std::collections::HashMap<
+        (minimium_core::world::WorldInstanceId, SectorKey),
+        (wgpu::Buffer, u32),
+    >,
+    world_sector_versions:
+        HashMap<minimium_core::world::WorldInstanceId, (GenerationRevision, WorldContentRevision)>,
+    active_sector_keys: Vec<SectorKey>,
+    active_world_instance: minimium_core::world::WorldInstanceId,
 }
 
 struct GameplayView {
@@ -90,6 +99,7 @@ struct GameplayView {
     last_shot_sent_at: Option<Instant>,
     hit_confirmation_until: Option<Instant>,
     physics_accumulator: f32,
+    sectors_ready: bool,
 }
 
 struct InputState {
@@ -121,6 +131,7 @@ struct FrameMetrics {
 struct ClientSettings {
     data_dir: PathBuf,
     map_path: Option<PathBuf>,
+    world_definition_path: Option<PathBuf>,
     threads: crate::options::ThreadLane,
 }
 
@@ -132,6 +143,21 @@ struct Renderer {
     metrics: FrameMetrics,
     settings: ClientSettings,
     connection: ConnectionController,
+    world_catalog: std::collections::HashMap<minimium_core::world::WorldInstanceId, WorldMap>,
+    world_manifests:
+        std::collections::HashMap<minimium_core::world::WorldInstanceId, WorldManifest>,
+    sector_cache: sector_scene::ClientSectorCache,
+    active_sector_keys: Vec<SectorKey>,
+    pending_sector_transitions:
+        std::collections::HashMap<minimium_core::world::TransitionId, PendingSectorTransition>,
+    current_instance: minimium_core::world::WorldInstanceId,
+}
+
+#[derive(Clone, Copy)]
+struct PendingSectorTransition {
+    context: minimium_protocol::WorldContext,
+    destination: [f32; 3],
+    manifest: WorldManifest,
 }
 
 pub use window::run;

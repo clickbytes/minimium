@@ -5,6 +5,14 @@ struct App {
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
     world_map: Option<WorldMap>,
+    world_catalog:
+        Option<std::collections::HashMap<minimium_core::world::WorldInstanceId, WorldMap>>,
+    world_manifests: Option<
+        std::collections::HashMap<
+            minimium_core::world::WorldInstanceId,
+            minimium_core::world::WorldManifest,
+        >,
+    >,
     profile_id: PlayerProfileId,
     options: crate::options::ClientOptions,
     data_dir: PathBuf,
@@ -32,14 +40,23 @@ impl ApplicationHandler for App {
             .world_map
             .take()
             .unwrap_or_else(|| panic!("{}", Text::RendererAlreadyInitialized));
-        match pollster::block_on(Renderer::new(
-            Arc::clone(&window),
-            world_map,
-            self.profile_id,
-            self.data_dir.clone(),
-            self.options.map_path.clone(),
-            self.options.threads,
-        )) {
+        match pollster::block_on(Renderer::new(init::RendererSetup {
+            window: Arc::clone(&window),
+            map: world_map,
+            world_catalog: self
+                .world_catalog
+                .take()
+                .expect("world catalog is available before renderer startup"),
+            world_manifests: self
+                .world_manifests
+                .take()
+                .expect("world manifests are available before renderer startup"),
+            profile_id: self.profile_id,
+            data_dir: self.data_dir.clone(),
+            map_path: self.options.map_path.clone(),
+            world_definition_path: self.options.world_definition_path.clone(),
+            threads: self.options.threads,
+        })) {
             Ok(mut renderer) => {
                 if !self.options.demo {
                     if let Some(address) = &self.options.connect {
@@ -102,6 +119,7 @@ impl ApplicationHandler for App {
                         return;
                     }
                     if code == KeyCode::Escape && event.state == ElementState::Pressed {
+                        renderer.connection.cancel_transition();
                         let _ = window.set_cursor_grab(CursorGrabMode::None);
                         window.set_cursor_visible(true);
                         renderer.input.cursor_locked = false;
@@ -110,6 +128,9 @@ impl ApplicationHandler for App {
                         renderer.input.keys.insert(code);
                         if code == KeyCode::Space && !event.repeat {
                             renderer.input.jump_pending = true;
+                        }
+                        if code == KeyCode::KeyE && !event.repeat {
+                            renderer.queue_portal();
                         }
                     } else {
                         renderer.input.keys.remove(&code);
@@ -215,17 +236,62 @@ impl ApplicationHandler for App {
 
 pub fn run(options: crate::options::ClientOptions) -> Result<(), Box<dyn Error>> {
     let map_path = options.map_path.clone();
-    let map = if let Some(path) = map_path.as_deref() {
-        minimium_assets::load_map(path).map_err(|error| {
+    let world_definition_path = options.world_definition_path.clone();
+    let (map, world_catalog, world_manifests) = if let Some(path) = map_path.as_deref() {
+        let map = minimium_assets::load_map(path).map_err(|error| {
             Text::MapLoadFailed {
                 path: path.display().to_string(),
                 detail: error.to_string(),
             }
             .to_string()
-        })?
+        })?;
+        let mut catalog = std::collections::HashMap::new();
+        let instance = minimium_core::world::WorldInstanceId::new(1)
+            .expect("legacy world instance is nonzero");
+        catalog.insert(instance, map.clone());
+        let manifests = std::collections::HashMap::from([(instance, legacy_manifest(1, &map))]);
+        (map, catalog, manifests)
+    } else if let Some(path) = world_definition_path.as_deref() {
+        let definition = minimium_assets::load_world_definition(path).map_err(|error| {
+            Text::MapLoadFailed {
+                path: path.display().to_string(),
+                detail: error.to_string(),
+            }
+            .to_string()
+        })?;
+        let map = minimium_procgen::materialize_dungeon_map(definition.dungeon())
+            .map_err(|error| Text::BundledMapInvalid(error).to_string())?;
+        let instance = minimium_core::world::WorldInstanceId::new(4)
+            .expect("manual world instance ID is nonzero");
+        let mut catalog = std::collections::HashMap::from([(instance, map.clone())]);
+        let mut manifests = std::collections::HashMap::from([(instance, definition.manifest())]);
+        let legacy_map = minimium_assets::parse_map(crate::SAMPLE_MAP)
+            .map_err(|error| Text::BundledMapInvalid(error).to_string())?;
+        let legacy_instance =
+            minimium_core::world::WorldInstanceId::new(3).expect("legacy instance ID is nonzero");
+        manifests.insert(legacy_instance, legacy_manifest(3, &legacy_map));
+        catalog.insert(legacy_instance, legacy_map);
+        (map, catalog, manifests)
     } else {
-        minimium_assets::parse_map(SAMPLE_MAP)
-            .map_err(|error| Text::BundledMapInvalid(error.to_string()).to_string())?
+        let worlds = minimium_procgen::generate_demo_worlds()
+            .map_err(|error| Text::BundledMapInvalid(error).to_string())?;
+        let mut catalog = std::collections::HashMap::new();
+        let mut manifests = std::collections::HashMap::new();
+        for world in worlds {
+            manifests.insert(world.instance, world.manifest);
+            catalog.insert(world.instance, world.map);
+        }
+        let legacy_map = minimium_assets::parse_map(crate::SAMPLE_MAP)
+            .map_err(|error| Text::BundledMapInvalid(error).to_string())?;
+        let legacy_instance =
+            minimium_core::world::WorldInstanceId::new(3).expect("legacy ID is nonzero");
+        manifests.insert(legacy_instance, legacy_manifest(3, &legacy_map));
+        catalog.insert(legacy_instance, legacy_map);
+        let map = catalog
+            .get(&minimium_core::world::WorldInstanceId::new(1).expect("planet ID is nonzero"))
+            .expect("demo generator always returns a planet")
+            .clone();
+        (map, catalog, manifests)
     };
     let (profile_dir, data_dir) = options.paths(map.fingerprint());
     let profile_id = minimium_platform::identity_store::load_or_create(&profile_dir)?;
@@ -237,6 +303,8 @@ pub fn run(options: crate::options::ClientOptions) -> Result<(), Box<dyn Error>>
         window: None,
         renderer: None,
         world_map: Some(map),
+        world_catalog: Some(world_catalog),
+        world_manifests: Some(world_manifests),
         profile_id,
         options,
         data_dir,
@@ -253,4 +321,24 @@ pub fn run(options: crate::options::ClientOptions) -> Result<(), Box<dyn Error>>
         return Err(error.into());
     }
     Ok(())
+}
+
+fn legacy_manifest(id: u128, map: &WorldMap) -> minimium_core::world::WorldManifest {
+    use minimium_core::world::{
+        GenerationRevision, GenerationSpec, GeneratorDigest, WorldContentRevision,
+        WorldDefinitionId, WorldManifest, WorldSeed, WorldTopology,
+    };
+    let generation = GenerationSpec::new(
+        WorldSeed::new(0),
+        GenerationRevision::new(1).expect("legacy generator revision is nonzero"),
+        1,
+    )
+    .expect("legacy position quantum is nonzero");
+    WorldManifest::new(
+        WorldDefinitionId::new(id).expect("legacy definition ID is nonzero"),
+        WorldTopology::Dungeon,
+        generation,
+        WorldContentRevision::new(1).expect("legacy content revision is nonzero"),
+        GeneratorDigest::legacy_map_fingerprint(map.fingerprint()),
+    )
 }

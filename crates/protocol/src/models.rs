@@ -1,4 +1,6 @@
+use super::world_context::WorldContext;
 use super::{limits::MAX_VISIBLE_PLAYERS, ServerErrorCode};
+use minimium_core::world::{TransitionId, WorldManifest};
 use minimium_core::{identity::PlayerProfileId, ids::PlayerId};
 use std::{error::Error, fmt, sync::Arc};
 
@@ -7,10 +9,34 @@ pub enum ClientMessage {
     Identify(PlayerProfileId),
     Ping,
     SetName(String),
+    Move {
+        direction: [f32; 2],
+        jump: bool,
+    },
+    Fire {
+        direction: [f32; 3],
+    },
+    Chat(String),
+    WorldInput {
+        context: WorldContext,
+        input: ClientWorldInput,
+    },
+    TransitionReady {
+        transition_id: TransitionId,
+        target_context: WorldContext,
+    },
+    CancelTransition(TransitionId),
+    UsePortal,
+    Quit,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ClientWorldInput {
+    SetName(String),
     Move { direction: [f32; 2], jump: bool },
     Fire { direction: [f32; 3] },
     Chat(String),
-    Quit,
+    UsePortal,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -110,6 +136,10 @@ pub enum ServerMessage {
         id: PlayerId,
         map_fingerprint: u64,
         health: u16,
+        position: [f32; 3],
+        context: WorldContext,
+        manifest: WorldManifest,
+        transition_id: Option<TransitionId>,
     },
     Pong,
     Accepted,
@@ -128,12 +158,33 @@ pub enum ServerMessage {
     },
     Snapshot {
         server_time_ms: u64,
+        context: WorldContext,
         full_snapshot: bool,
         self_position: [f32; 3],
         self_velocity: [f32; 3],
         self_grounded: bool,
         players: RemotePlayers,
         removed_players: RemotePlayerIds,
+    },
+    TransitionPrepare {
+        transition_id: TransitionId,
+        source_context: WorldContext,
+        target_context: WorldContext,
+        map_fingerprint: u64,
+        destination: [f32; 3],
+        manifest: WorldManifest,
+    },
+    TransitionCommitted {
+        transition_id: TransitionId,
+        context: WorldContext,
+        map_fingerprint: u64,
+        destination: [f32; 3],
+        health: u16,
+        manifest: WorldManifest,
+    },
+    TransitionCancelled {
+        transition_id: TransitionId,
+        context: WorldContext,
     },
 }
 

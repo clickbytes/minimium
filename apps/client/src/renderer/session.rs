@@ -1,3 +1,5 @@
+mod message_handling;
+
 use super::*;
 use crate::messages::ClientText as Text;
 
@@ -16,6 +18,7 @@ impl Renderer {
         match self.connection.start_local(
             self.settings.data_dir.clone(),
             self.settings.map_path.clone(),
+            self.settings.world_definition_path.clone(),
             threads,
         ) {
             Ok(()) => self
@@ -160,109 +163,6 @@ impl Renderer {
         self.ui.session_events = events;
     }
 
-    fn handle_server_message(&mut self, message: ServerMessage) {
-        match message {
-            ServerMessage::Welcome {
-                id,
-                map_fingerprint: _,
-                health,
-            } => {
-                self.game.health = health;
-                if self.ui.console.open {
-                    self.ui
-                        .console
-                        .push_line(Text::Connected { id, health }.to_string());
-                }
-            }
-            ServerMessage::Pong => {
-                if self.ui.console.open {
-                    self.ui.console.push_line(Text::Pong.to_string());
-                }
-            }
-            ServerMessage::Accepted if self.ui.console.open => {
-                self.ui.console.push_line(Text::Accepted.to_string());
-            }
-            ServerMessage::Error(code) => {
-                self.ui
-                    .console
-                    .push_error(Text::ServerError { code }.to_string());
-            }
-            ServerMessage::ShotResult {
-                target_id,
-                remaining_health,
-                killed,
-            } => {
-                if target_id.is_some() {
-                    self.game.hit_confirmation_until =
-                        Some(Instant::now() + Duration::from_millis(180));
-                }
-                if self.ui.console.open {
-                    match (target_id, remaining_health, killed) {
-                        (Some(target_id), Some(health), true) => self
-                            .ui
-                            .console
-                            .push_line(Text::TargetRespawned { target_id, health }.to_string()),
-                        (Some(target_id), Some(health), false) => self
-                            .ui
-                            .console
-                            .push_line(Text::Hit { target_id, health }.to_string()),
-                        _ => self.ui.console.push_line(Text::ShotMissed.to_string()),
-                    }
-                }
-            }
-            ServerMessage::HealthUpdate(health) => {
-                self.game.health = health;
-                if self.ui.console.open {
-                    self.ui
-                        .console
-                        .push_line(Text::Health { health }.to_string());
-                }
-            }
-            ServerMessage::Chat {
-                sender_id,
-                sender_name,
-                text,
-            } => self.ui.console.push_chat_line(
-                &Text::Chat {
-                    sender_name,
-                    sender_id,
-                    text,
-                }
-                .to_string(),
-            ),
-            ServerMessage::Bye => {
-                if self.ui.console.open {
-                    self.ui.console.push_line(Text::ServerClosed.to_string());
-                }
-                self.clear_connection();
-            }
-            ServerMessage::Snapshot {
-                server_time_ms,
-                full_snapshot,
-                self_position,
-                self_velocity,
-                self_grounded,
-                players,
-                removed_players,
-            } => {
-                let snapshot = SnapshotUpdate {
-                    server_time_ms,
-                    full_snapshot,
-                    self_position,
-                    self_velocity,
-                    self_grounded,
-                    players,
-                    removed_players,
-                };
-                if !self.game.apply_snapshot(snapshot) {
-                    eprintln!("{}", Text::VisiblePlayerLimitExceeded);
-                    self.fail_connection(Text::VisiblePlayerLimitExceeded.to_string());
-                }
-            }
-            _ => {}
-        }
-    }
-
     pub(super) fn queue_fire(&mut self) {
         if !self
             .connection
@@ -279,13 +179,10 @@ impl Renderer {
         {
             return;
         }
-        let direction = glam::Vec3::new(
-            self.input.yaw.cos() * self.input.pitch.cos(),
-            self.input.pitch.sin(),
-            self.input.yaw.sin() * self.input.pitch.cos(),
-        )
-        .normalize()
-        .to_array();
+        let direction =
+            super::camera::camera_direction(self.game.character, self.input.yaw, self.input.pitch)
+                .normalize()
+                .to_array();
         if let Some(session) = self.connection.session_mut() {
             match session.queue(&ClientMessage::Fire { direction }) {
                 Ok(()) => {
@@ -300,6 +197,15 @@ impl Renderer {
                     .push_error(Text::CouldNotFire(error.into()).to_string()),
                 Err(_) => {}
             }
+        }
+    }
+
+    pub(crate) fn queue_portal(&mut self) {
+        let Some(session) = self.connection.session_mut() else {
+            return;
+        };
+        if session.state() == SessionState::Connected {
+            let _ = session.queue(&ClientMessage::UsePortal);
         }
     }
 

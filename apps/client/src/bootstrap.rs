@@ -172,6 +172,7 @@ impl Drop for OwnedServer {
 pub fn connect_or_start_until(
     data_dir: &Path,
     map_path: Option<&Path>,
+    world_definition_path: Option<&Path>,
     threads: ThreadLane,
     deadline: Instant,
 ) -> Result<(TcpStream, LocalServer), Box<dyn Error>> {
@@ -186,7 +187,13 @@ pub fn connect_or_start_until(
 
     remaining(deadline)?;
     let expected_token = new_admin_token()?;
-    let child = start_local_server(data_dir, map_path, threads, &expected_token)?;
+    let child = start_local_server(
+        data_dir,
+        map_path,
+        world_definition_path,
+        threads,
+        &expected_token,
+    )?;
     // This guard is established immediately after spawn, before any fallible startup work.
     let mut owned = OwnedServer {
         child: Some(child),
@@ -318,6 +325,7 @@ fn remaining(deadline: Instant) -> io::Result<Duration> {
 fn start_local_server(
     data_dir: &Path,
     map_path: Option<&Path>,
+    world_definition_path: Option<&Path>,
     threads: ThreadLane,
     token: &str,
 ) -> io::Result<Child> {
@@ -347,6 +355,9 @@ fn start_local_server(
         .env("MINIMIUM_ADMIN_TOKEN", token);
     if let Some(map_path) = map_path {
         command.arg("--map").arg(map_path);
+    }
+    if let Some(world_definition_path) = world_definition_path {
+        command.arg("--world-definition").arg(world_definition_path);
     }
     command
         .stdin(Stdio::null())

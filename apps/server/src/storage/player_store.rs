@@ -5,7 +5,10 @@ use super::{
 use minimium_core::ids::PlayerId;
 use minimium_core::{
     identity::PlayerProfileId,
-    world::{Player, World, WorldMap, PLAYER_MAX_HEALTH},
+    world::{
+        CharacterGravity, Player, WorldInstanceId, WorldLocation, WorldManifest, WorldMap,
+        WorldSectorState, WorldTopology, PLAYER_MAX_HEALTH,
+    },
 };
 use minimium_protocol::MAX_PLAYER_NAME_BYTES;
 use std::{
@@ -21,6 +24,8 @@ pub(crate) struct StoredPlayer {
     pub(crate) name: StoredName,
     pub(crate) position: [f32; 3],
     pub(crate) health: u16,
+    pub(crate) location: WorldLocation,
+    pub(crate) return_location: WorldLocation,
 }
 
 #[derive(Clone, Copy)]
@@ -51,11 +56,22 @@ pub(crate) struct PlayerStore {
     pub(super) players: Vec<Arc<HashMap<PlayerProfileId, StoredPlayer>>>,
     pub(super) profile_by_player: HashMap<PlayerId, PlayerProfileId>,
     active_players: HashSet<PlayerId>,
+    pub(super) sector_states: Vec<(WorldInstanceId, WorldSectorState)>,
 }
 
 pub(crate) struct SaveSnapshot {
+    pub(super) primary_instance: WorldInstanceId,
     pub(super) map_fingerprint: u64,
+    pub(super) manifest: WorldManifest,
+    pub(super) world_manifests: Vec<SavedWorldManifest>,
+    pub(super) sector_states: Vec<(WorldInstanceId, WorldSectorState)>,
     pub(super) player_shards: Vec<Arc<HashMap<PlayerProfileId, StoredPlayer>>>,
+}
+
+pub(super) struct SavedWorldManifest {
+    pub(super) instance: WorldInstanceId,
+    pub(super) map_fingerprint: u64,
+    pub(super) manifest: WorldManifest,
 }
 
 impl Default for PlayerStore {
@@ -66,6 +82,7 @@ impl Default for PlayerStore {
                 .collect(),
             profile_by_player: HashMap::new(),
             active_players: HashSet::new(),
+            sector_states: Vec::new(),
         }
     }
 }
@@ -90,8 +107,11 @@ impl PlayerStore {
     pub(crate) fn profile_for_player(&self, player: PlayerId) -> Option<PlayerProfileId> {
         self.profile_by_player.get(&player).copied()
     }
-    pub(crate) fn load(data_dir: &Path, map: &WorldMap) -> io::Result<Self> {
-        format::load(data_dir, map)
+    pub(crate) fn load(
+        data_dir: &Path,
+        worlds: &[(WorldInstanceId, WorldMap, WorldManifest)],
+    ) -> io::Result<Self> {
+        format::load(data_dir, worlds)
     }
 
     pub(crate) fn next_player_id(&self) -> io::Result<u64> {
@@ -110,6 +130,8 @@ impl PlayerStore {
         profile_id: PlayerProfileId,
         next_id: &mut u64,
         spawn: [f32; 3],
+        spawn_instance: WorldInstanceId,
+        spawn_gravity: CharacterGravity,
     ) -> io::Result<StoredPlayer> {
         let shard = player_store_shard(profile_id);
         if let Some(existing) = self.players[shard].get(&profile_id) {
@@ -138,6 +160,16 @@ impl PlayerStore {
                 name,
                 position: spawn,
                 health: PLAYER_MAX_HEALTH,
+                location: crate::world_location::world_location(
+                    spawn_instance,
+                    spawn,
+                    spawn_gravity,
+                ),
+                return_location: crate::world_location::world_location(
+                    spawn_instance,
+                    spawn,
+                    spawn_gravity,
+                ),
             };
             Arc::make_mut(&mut self.players[shard]).insert(profile_id, player);
             self.profile_by_player.insert(PlayerId::new(id), profile_id);
@@ -159,7 +191,16 @@ impl PlayerStore {
         self.active_players.remove(&player_id);
     }
 
-    pub(crate) fn update_from_player(&mut self, player: &Player) -> io::Result<()> {
+    pub(crate) fn sector_states(&self) -> Vec<(WorldInstanceId, WorldSectorState)> {
+        self.sector_states.clone()
+    }
+
+    pub(crate) fn update_from_player(
+        &mut self,
+        player: &Player,
+        instance: WorldInstanceId,
+        gravity: CharacterGravity,
+    ) -> io::Result<()> {
         let profile_id = self
             .profile_by_player
             .get(&player.id)
@@ -173,7 +214,26 @@ impl PlayerStore {
             .ok_or_else(|| invalid_world_snapshot("active player has an invalid name"))?;
         stored.position = player.position;
         stored.health = player.health;
+        stored.location = crate::world_location::world_location(instance, player.position, gravity);
         Ok(())
+    }
+
+    pub(crate) fn set_return_location(&mut self, player: PlayerId, location: WorldLocation) {
+        let Some(profile_id) = self.profile_by_player.get(&player).copied() else {
+            return;
+        };
+        let shard = player_store_shard(profile_id);
+        if let Some(stored) = Arc::make_mut(&mut self.players[shard]).get_mut(&profile_id) {
+            stored.return_location = location;
+        }
+    }
+
+    pub(crate) fn return_location_for(&self, player: PlayerId) -> Option<WorldLocation> {
+        let profile_id = self.profile_by_player.get(&player)?;
+        let shard = player_store_shard(*profile_id);
+        self.players[shard]
+            .get(profile_id)
+            .map(|stored| stored.return_location)
     }
 
     pub(crate) fn name_for_player(&self, player_id: PlayerId) -> Option<&str> {
@@ -197,19 +257,47 @@ impl PlayerStore {
 
     pub(crate) fn save_snapshot(
         &mut self,
-        world: &World,
+        worlds: &crate::world_registry::WorldRegistry,
         map_fingerprint: u64,
     ) -> io::Result<SaveSnapshot> {
         let _storage_phase =
             minimium_telemetry::allocations::enter(minimium_telemetry::allocations::Phase::Storage);
-        for player in world.snapshot() {
-            self.update_from_player(&player)?;
+        if worlds.primary().map.fingerprint() != map_fingerprint {
+            return Err(invalid_world_snapshot(
+                "primary map fingerprint changed while saving",
+            ));
+        }
+        for (instance, owner) in worlds.iter() {
+            let gravity = gravity_for(owner.manifest.topology());
+            for player in owner.world.snapshot() {
+                self.update_from_player(&player, instance, gravity)?;
+            }
         }
         let player_shards = self.players.iter().map(Arc::clone).collect();
+        let world_manifests = worlds
+            .iter()
+            .map(|(instance, owner)| SavedWorldManifest {
+                instance,
+                map_fingerprint: owner.map.fingerprint(),
+                manifest: owner.manifest,
+            })
+            .collect();
+        let sector_states = worlds.sector_states();
         Ok(SaveSnapshot {
+            primary_instance: worlds.primary_id(),
             map_fingerprint,
+            manifest: worlds.primary().manifest,
+            world_manifests,
+            sector_states,
             player_shards,
         })
+    }
+}
+
+fn gravity_for(topology: WorldTopology) -> CharacterGravity {
+    match topology {
+        WorldTopology::Planet => CharacterGravity::Radial { center: [0.0; 3] },
+        WorldTopology::Dungeon => CharacterGravity::FixedY,
     }
 }
 

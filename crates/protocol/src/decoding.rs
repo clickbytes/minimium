@@ -31,6 +31,33 @@ pub fn decode_client(input: &[u8]) -> Result<Option<(ClientMessage, usize)>, Pro
             ClientMessage::Fire { direction }
         }
         ClientKind::Chat => ClientMessage::Chat(reader.chat_text()?.to_owned()),
+        ClientKind::WorldInput => {
+            let context = reader.world_context()?;
+            let input = match reader.byte()? {
+                1 => super::models::ClientWorldInput::SetName(reader.name()?),
+                2 => super::models::ClientWorldInput::Move {
+                    direction: reader.direction()?,
+                    jump: reader.boolean()?,
+                },
+                3 => {
+                    let direction = reader.vector()?;
+                    if !is_unit_direction(direction) {
+                        return Err(ProtocolError::InvalidPayload);
+                    }
+                    super::models::ClientWorldInput::Fire { direction }
+                }
+                4 => super::models::ClientWorldInput::Chat(reader.chat_text()?.to_owned()),
+                5 => super::models::ClientWorldInput::UsePortal,
+                _ => return Err(ProtocolError::InvalidPayload),
+            };
+            ClientMessage::WorldInput { context, input }
+        }
+        ClientKind::TransitionReady => ClientMessage::TransitionReady {
+            transition_id: reader.transition_id()?,
+            target_context: reader.world_context()?,
+        },
+        ClientKind::UsePortal => ClientMessage::UsePortal,
+        ClientKind::CancelTransition => ClientMessage::CancelTransition(reader.transition_id()?),
         ClientKind::Quit => ClientMessage::Quit,
     };
     reader.finish()?;
@@ -47,13 +74,25 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
             let id = PlayerId::new(reader.u64()?);
             let map_fingerprint = reader.u64()?;
             let health = reader.u16()?;
+            let position = reader.vector()?;
             if health > 100 {
                 return Err(ProtocolError::InvalidPayload);
             }
+            let context = reader.world_context()?;
+            let manifest = reader.world_manifest()?;
+            let transition_id = if reader.boolean()? {
+                Some(reader.transition_id()?)
+            } else {
+                None
+            };
             ServerMessage::Welcome {
                 id,
                 map_fingerprint,
                 health,
+                position,
+                context,
+                manifest,
+                transition_id,
             }
         }
         ServerKind::Pong => ServerMessage::Pong,
@@ -96,6 +135,7 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
         },
         ServerKind::Snapshot => {
             let server_time_ms = reader.u64()?;
+            let context = reader.world_context()?;
             let self_position = reader.vector()?;
             let self_velocity = reader.vector()?;
             let self_grounded = reader.boolean()?;
@@ -132,6 +172,7 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
             }
             ServerMessage::Snapshot {
                 server_time_ms,
+                context,
                 full_snapshot,
                 self_position,
                 self_velocity,
@@ -140,6 +181,36 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
                 removed_players,
             }
         }
+        ServerKind::TransitionPrepare => ServerMessage::TransitionPrepare {
+            transition_id: reader.transition_id()?,
+            source_context: reader.world_context()?,
+            target_context: reader.world_context()?,
+            map_fingerprint: reader.u64()?,
+            destination: reader.vector()?,
+            manifest: reader.world_manifest()?,
+        },
+        ServerKind::TransitionCommitted => {
+            let transition_id = reader.transition_id()?;
+            let context = reader.world_context()?;
+            let map_fingerprint = reader.u64()?;
+            let destination = reader.vector()?;
+            let health = reader.u16()?;
+            if health > 100 {
+                return Err(ProtocolError::InvalidPayload);
+            }
+            ServerMessage::TransitionCommitted {
+                transition_id,
+                context,
+                map_fingerprint,
+                destination,
+                health,
+                manifest: reader.world_manifest()?,
+            }
+        }
+        ServerKind::TransitionCancelled => ServerMessage::TransitionCancelled {
+            transition_id: reader.transition_id()?,
+            context: reader.world_context()?,
+        },
     };
     reader.finish()?;
     Ok(Some((message, frame_bytes)))

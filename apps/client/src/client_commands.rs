@@ -19,6 +19,7 @@ pub(crate) enum ClientCommand {
     Ping,
     Move([f32; 2]),
     Jump,
+    UsePortal,
     Fire,
     Chat(String),
     SetName(String),
@@ -38,6 +39,7 @@ enum CommandId {
     Ping,
     Move,
     Jump,
+    UsePortal,
     Fire,
     Chat,
     SetName,
@@ -109,6 +111,12 @@ pub(crate) const COMMAND_CATALOG: &[CommandSpec] = &[
         name: "jump",
         alias: None,
         usage: "jump",
+    },
+    CommandSpec {
+        id: CommandId::UsePortal,
+        name: "portal",
+        alias: None,
+        usage: "portal",
     },
     CommandSpec {
         id: CommandId::Fire,
@@ -225,6 +233,7 @@ pub(crate) fn parse_command(input: &str) -> Result<Option<ClientCommand>, ParseE
             ClientCommand::Move([parse_coordinate(x)?, parse_coordinate(z)?])
         }
         (Some(CommandId::Jump), (_, None, None, None, None)) => ClientCommand::Jump,
+        (Some(CommandId::UsePortal), (_, None, None, None, None)) => ClientCommand::UsePortal,
         (Some(CommandId::Fire), (_, None, None, None, None)) => ClientCommand::Fire,
         (Some(CommandId::SetName), (_, Some(name), None, None, None)) => {
             ClientCommand::SetName(name.into())
@@ -289,6 +298,7 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
             direction: [0.0; 2],
             jump: true,
         },
+        ClientCommand::UsePortal => ClientMessage::UsePortal,
         ClientCommand::Fire => ClientMessage::Fire {
             direction: context.fire_direction,
         },
@@ -311,5 +321,16 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
     match context.connection.queue(&message) {
         Ok(()) => CommandResult::Sent,
         Err(error) => CommandResult::QueueError(error),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{completion_candidates, parse_command, ClientCommand};
+
+    #[test]
+    fn portal_is_available_to_the_text_console_and_completion() {
+        assert_eq!(parse_command("portal"), Ok(Some(ClientCommand::UsePortal)));
+        assert!(completion_candidates().any(|candidate| candidate == "portal"));
     }
 }

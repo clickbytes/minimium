@@ -766,6 +766,7 @@ name = "minimium-assets"
 version = "0.1.0"
 dependencies = [
  "minimium-core",
+ "minimium-procgen",
 ]
 
 [[package]]
@@ -777,7 +778,9 @@ dependencies = [
  "minimium-assets",
  "minimium-core",
  "minimium-platform",
+ "minimium-procgen",
  "minimium-protocol",
+ "minimium-sectors",
  "minimium-telemetry",
  "pollster",
  "wgpu",
@@ -806,7 +809,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "minimium-procgen"
+version = "0.1.0"
+dependencies = [
+ "minimium-core",
+]
+
+[[package]]
 name = "minimium-protocol"
+version = "0.1.0"
+dependencies = [
+ "minimium-core",
+]
+
+[[package]]
+name = "minimium-sectors"
 version = "0.1.0"
 dependencies = [
  "minimium-core",
@@ -819,7 +836,9 @@ dependencies = [
  "minimium-assets",
  "minimium-core",
  "minimium-platform",
+ "minimium-procgen",
  "minimium-protocol",
+ "minimium-sectors",
  "minimium-telemetry",
 ]
 

@@ -9,15 +9,29 @@ impl Renderer {
             .as_secs_f32()
             .min(0.05);
         self.metrics.last_frame = now;
-        let direction = self.input.movement(self.ui.console.open);
+        let direction = if self.game.sectors_ready {
+            self.input
+                .movement(self.ui.console.open, self.game.character)
+        } else {
+            [0.0; 2]
+        };
         self.game.physics_accumulator += dt;
         while self.game.physics_accumulator >= 0.05 {
-            let input = CharacterInput {
-                direction: [direction.x, direction.z],
-                jump: self.input.jump_pending,
+            let mut input = CharacterInput {
+                direction: if self.game.sectors_ready {
+                    direction
+                } else {
+                    [0.0; 2]
+                },
+                jump: self.input.jump_pending && self.game.sectors_ready,
             };
             self.input.jump_pending = false;
+            let previous_state = self.game.character;
             self.game.predict(input);
+            if !self.refresh_active_sector_scene() {
+                self.game.character = previous_state;
+                input = CharacterInput::default();
+            }
             self.input.input_keepalive += 0.05;
             let moving = input.direction != [0.0, 0.0];
             let input_changed = input.direction != self.input.last_sent_direction;
@@ -44,20 +58,17 @@ impl Renderer {
         }
         self.poll_connector();
         self.poll_session();
+        self.refresh_active_sector_scene();
+        self.advance_pending_transitions();
         self.update_remote_player_rendering(Instant::now());
 
-        let direction = glam::Vec3::new(
-            self.input.yaw.cos() * self.input.pitch.cos(),
-            self.input.pitch.sin(),
-            self.input.yaw.sin() * self.input.pitch.cos(),
-        )
-        .normalize();
-        let camera_position = glam::Vec3::new(
-            self.game.character.position[0],
-            self.game.character.position[1] + 1.7,
-            self.game.character.position[2],
+        let direction =
+            camera_direction(self.game.character, self.input.yaw, self.input.pitch).normalize();
+        let up = glam::Vec3::from_array(
+            character_frame(self.game.character.gravity, self.game.character.position).0,
         );
-        let view = glam::Mat4::look_to_rh(camera_position, direction, glam::Vec3::Y);
+        let camera_position = glam::Vec3::from_array(self.game.character.position) + up * 1.7;
+        let view = glam::Mat4::look_to_rh(camera_position, direction, up);
         let projection = glam::Mat4::perspective_rh(
             70f32.to_radians(),
             self.gpu.size.width as f32 / self.gpu.size.height as f32,
@@ -109,9 +120,13 @@ impl GameplayView {
 }
 
 impl InputState {
-    fn movement(&self, console_open: bool) -> glam::Vec3 {
-        let forward = glam::Vec3::new(self.yaw.cos(), 0.0, self.yaw.sin());
-        let right = glam::Vec3::new(-forward.z, 0.0, forward.x);
+    fn movement(&self, console_open: bool, character: CharacterState) -> [f32; 2] {
+        let (up, base_right, base_forward) = character_frame(character.gravity, character.position);
+        let base_right = glam::Vec3::from_array(base_right);
+        let base_forward = glam::Vec3::from_array(base_forward);
+        let _up = glam::Vec3::from_array(up);
+        let forward = base_forward * self.yaw.cos() + base_right * self.yaw.sin();
+        let right = base_right * self.yaw.cos() - base_forward * self.yaw.sin();
         let mut movement = glam::Vec3::ZERO;
         if !console_open {
             if self.keys.contains(&KeyCode::KeyW) {
@@ -128,9 +143,26 @@ impl InputState {
             }
         }
         if movement.length_squared() > 1.0 {
-            movement.normalize()
-        } else {
-            movement
+            movement = movement.normalize();
         }
+        if matches!(character.gravity, CharacterGravity::Radial { .. }) {
+            [movement.dot(base_right), movement.dot(base_forward)]
+        } else {
+            [movement.x, movement.z]
+        }
+    }
+}
+
+pub(super) fn camera_direction(character: CharacterState, yaw: f32, pitch: f32) -> glam::Vec3 {
+    let (up, right, forward) = character_frame(character.gravity, character.position);
+    glam::Vec3::from_array(forward) * (yaw.cos() * pitch.cos())
+        + glam::Vec3::from_array(right) * (yaw.sin() * pitch.cos())
+        + glam::Vec3::from_array(up) * pitch.sin()
+}
+
+pub(super) fn gravity_for_manifest(manifest: WorldManifest) -> CharacterGravity {
+    match manifest.topology() {
+        WorldTopology::Planet => CharacterGravity::Radial { center: [0.0; 3] },
+        WorldTopology::Dungeon => CharacterGravity::FixedY,
     }
 }

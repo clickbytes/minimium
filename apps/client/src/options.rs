@@ -34,6 +34,7 @@ impl ThreadLane {
 pub struct ClientOptions {
     pub connect: Option<String>,
     pub map_path: Option<PathBuf>,
+    pub world_definition_path: Option<PathBuf>,
     pub demo: bool,
     pub console: bool,
     pub help: bool,
@@ -48,6 +49,7 @@ impl ClientOptions {
         let mut options = Self {
             connect: None,
             map_path: None,
+            world_definition_path: None,
             demo: false,
             console: false,
             help: false,
@@ -57,6 +59,7 @@ impl ClientOptions {
         };
         let mut seen_connect = false;
         let mut seen_map = false;
+        let mut seen_world_definition = false;
         let mut seen_demo = false;
         let mut seen_console = false;
         let mut seen_help = false;
@@ -74,6 +77,13 @@ impl ClientOptions {
                 "--map" => {
                     reject_duplicate(&mut seen_map, "--map")?;
                     options.map_path = Some(PathBuf::from(required_value(&mut args, "--map")?));
+                }
+                "--world-definition" => {
+                    reject_duplicate(&mut seen_world_definition, "--world-definition")?;
+                    options.world_definition_path = Some(PathBuf::from(required_value(
+                        &mut args,
+                        "--world-definition",
+                    )?));
                 }
                 "--profile-dir" => {
                     reject_duplicate(&mut seen_profile_dir, "--profile-dir")?;
@@ -114,13 +124,16 @@ impl ClientOptions {
         if options.demo && options.console {
             return Err("--demo cannot be used with --console".to_owned());
         }
+        if options.map_path.is_some() && options.world_definition_path.is_some() {
+            return Err("--map and --world-definition cannot be used together".to_owned());
+        }
 
         Ok(options)
     }
 
     /// Resolve independent profile and server storage directories.
     pub fn paths(&self, map_fingerprint: u64) -> (PathBuf, PathBuf) {
-        let default_dir = if self.map_path.is_some() {
+        let default_dir = if self.map_path.is_some() || self.world_definition_path.is_some() {
             PathBuf::from(DEFAULT_LOCAL_DATA_DIR).join(format!("map-{map_fingerprint:016x}"))
         } else {
             PathBuf::from(DEFAULT_LOCAL_DATA_DIR)
