@@ -11,6 +11,21 @@ use minimium_protocol::WorldContext;
 
 impl Renderer {
     pub(in crate::renderer) fn update_render_environment(&mut self, render_view: RenderViewFrame) {
+        let started = std::time::Instant::now();
+        self.update_render_environment_inner(render_view);
+        self.metrics
+            .frame_stats
+            .record_environment_cpu(started.elapsed());
+        let counters = self.sky_calculator.diagnostics();
+        self.metrics.frame_stats.set_astronomy_counters(
+            counters.ephemeris_evaluations,
+            counters.ephemeris_cache_hits,
+            counters.star_epoch_updates,
+            counters.star_epoch_cache_hits,
+        );
+    }
+
+    fn update_render_environment_inner(&mut self, render_view: RenderViewFrame) {
         if !self.gpu.scene_visible {
             self.environment_observer.clear();
             self.render_environment_frame = EnvironmentFrame::unavailable(render_view);

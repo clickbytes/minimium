@@ -22,6 +22,13 @@ pub(super) enum ShadowSource {
 }
 
 impl ShadowSource {
+    pub(super) const fn label(self) -> &'static str {
+        match self {
+            Self::Sun => "sun",
+            Self::Moon => "moon",
+        }
+    }
+
     fn id(self) -> u32 {
         match self {
             Self::Sun => SHADOW_SOURCE_SUN,
@@ -53,12 +60,24 @@ pub(super) enum ShadowInvalidReason {
     StaleContext,
 }
 
+impl ShadowInvalidReason {
+    pub(super) const fn label(self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::NoSource => "no_source",
+            Self::InvalidFrame => "invalid_frame",
+            Self::IncompleteCasters => "incomplete_casters",
+            Self::BudgetExceeded => "budget_exceeded",
+            Self::StaleContext => "stale_context",
+        }
+    }
+}
+
 #[derive(Default)]
 pub(super) struct ShadowState {
     pub(super) previous_source: Option<ShadowSource>,
     pub(super) source: Option<ShadowSource>,
     pub(super) valid: bool,
-    #[allow(dead_code)]
     pub(super) invalid_reason: Option<ShadowInvalidReason>,
     pub(super) caster_keys: Vec<(minimium_core::world::SectorKey, u8)>,
 }
@@ -85,30 +104,17 @@ pub(super) struct ShadowSettings {
 }
 
 impl ShadowSettings {
-    #[allow(dead_code)]
-    pub(super) const fn off() -> Self {
+    pub(super) fn for_quality(quality: crate::environment::quality::SkyQuality) -> Self {
+        let profile = quality.profile();
         Self {
-            enabled: false,
-            resolution: 1,
-            receiver_radius_m: 128.0,
-            caster_radius_m: 256.0,
-            fade_start_m: 112.0,
-            constant_bias_m: 0.02,
-            slope_bias_m: 0.04,
-            max_bias_m: 0.10,
-        }
-    }
-
-    pub(super) const fn standard() -> Self {
-        Self {
-            enabled: true,
-            resolution: 1024,
-            receiver_radius_m: 128.0,
-            caster_radius_m: 256.0,
-            fade_start_m: 112.0,
-            constant_bias_m: 0.02,
-            slope_bias_m: 0.04,
-            max_bias_m: 0.10,
+            enabled: profile.shadows_enabled,
+            resolution: profile.shadow_resolution,
+            receiver_radius_m: profile.shadow_receiver_radius_m,
+            caster_radius_m: profile.shadow_caster_radius_m,
+            fade_start_m: profile.shadow_fade_start_m,
+            constant_bias_m: profile.shadow_constant_bias_m,
+            slope_bias_m: profile.shadow_slope_bias_m,
+            max_bias_m: profile.shadow_max_bias_m,
         }
     }
 }

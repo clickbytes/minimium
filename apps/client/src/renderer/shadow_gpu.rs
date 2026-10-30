@@ -1,16 +1,17 @@
 use super::{
     environment::{EnvironmentFrame, EnvironmentFrameStatus, EnvironmentViewKind},
     geometry::Vertex,
+    shadow_target::{create_target_checked, uniform_layout_entry, DEFAULT_RESOLUTION},
     shadows::{self, ShadowInvalidReason, ShadowSettings, ShadowUniform},
     GpuResources,
 };
 use bytemuck::Zeroable;
 use wgpu::util::DeviceExt;
 
-const DEFAULT_RESOLUTION: u32 = 1024;
-
 pub(super) struct ShadowGpu {
     pub(super) settings: ShadowSettings,
+    pub(super) fallback_reason: Option<&'static str>,
+    format: wgpu::TextureFormat,
     pub(super) depth_pipeline: wgpu::RenderPipeline,
     pub(super) depth_view: wgpu::TextureView,
     pub(super) uniform_bind_group: wgpu::BindGroup,
@@ -25,7 +26,11 @@ pub(super) struct ShadowGpu {
 }
 
 impl ShadowGpu {
-    pub(super) fn new(device: &wgpu::Device, settings: ShadowSettings) -> Self {
+    pub(super) fn new(
+        device: &wgpu::Device,
+        settings: ShadowSettings,
+        format: wgpu::TextureFormat,
+    ) -> Result<Self, &'static str> {
         let uniform_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("shadow-depth-uniform-layout"),
             entries: &[wgpu::BindGroupLayoutEntry {
@@ -119,7 +124,7 @@ impl ShadowGpu {
                 ..Default::default()
             },
             depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
+                format,
                 depth_write_enabled: Some(true),
                 depth_compare: Some(wgpu::CompareFunction::Less),
                 stencil: Default::default(),
@@ -129,10 +134,40 @@ impl ShadowGpu {
             multiview_mask: None,
             cache: None,
         });
-        let (texture, depth_view, sampling_bind_group, gpu_bytes) =
-            create_target(device, &group2_layout, &uniform_buffer, &sampler, settings);
-        Self {
+        let (settings, target, fallback_reason) = match create_target_checked(
+            device,
+            &group2_layout,
+            &uniform_buffer,
+            &sampler,
             settings,
+            format,
+        ) {
+            Ok(target) => (settings, target, None),
+            Err(_) if settings.enabled => {
+                let fallback =
+                    ShadowSettings::for_quality(crate::environment::quality::SkyQuality::Low);
+                let target = create_target_checked(
+                    device,
+                    &group2_layout,
+                    &uniform_buffer,
+                    &sampler,
+                    fallback,
+                    format,
+                )
+                .map_err(|_| "fallback_shadow_texture_creation_failed")?;
+                (
+                    fallback,
+                    target,
+                    Some("standard_shadow_texture_allocation_refused"),
+                )
+            }
+            Err(reason) => return Err(reason),
+        };
+        let (texture, depth_view, sampling_bind_group, gpu_bytes) = target;
+        Ok(Self {
+            settings,
+            fallback_reason,
+            format,
             depth_pipeline,
             depth_view,
             uniform_bind_group,
@@ -144,7 +179,7 @@ impl ShadowGpu {
             _texture: texture,
             sampler,
             gpu_bytes,
-        }
+        })
     }
 
     pub(super) fn write_uniform(&self, queue: &wgpu::Queue, uniform: &ShadowUniform) {
@@ -155,30 +190,57 @@ impl ShadowGpu {
         self.gpu_bytes + self.uniform_buffer.size()
     }
 
-    pub(super) fn reconfigure(&mut self, device: &wgpu::Device, settings: ShadowSettings) {
+    pub(super) fn reconfigure(
+        &mut self,
+        device: &wgpu::Device,
+        settings: ShadowSettings,
+    ) -> Result<(), &'static str> {
         if self.settings == settings {
-            return;
+            self.fallback_reason = None;
+            return Ok(());
         }
-        let (texture, depth_view, sampling_bind_group, gpu_bytes) = create_target(
+        if settings.enabled && self.format != wgpu::TextureFormat::Depth32Float {
+            return Err("standard_profile_requires_depth32float");
+        }
+        let (texture, depth_view, sampling_bind_group, gpu_bytes) = create_target_checked(
             device,
             &self.group2_layout,
             &self.uniform_buffer,
             &self.sampler,
             settings,
-        );
+            self.format,
+        )?;
         self._texture = texture;
         self.depth_view = depth_view;
         self.sampling_bind_group = sampling_bind_group;
         self.gpu_bytes = gpu_bytes;
         self.settings = settings;
+        self.fallback_reason = None;
+        Ok(())
+    }
+
+    pub(super) fn texture_bytes(&self) -> u64 {
+        let resolution = if self.settings.enabled {
+            self.settings.resolution.min(DEFAULT_RESOLUTION)
+        } else {
+            1
+        };
+        let bytes_per_pixel = if self.format == wgpu::TextureFormat::Depth16Unorm {
+            2
+        } else {
+            4
+        };
+        u64::from(resolution) * u64::from(resolution) * bytes_per_pixel
     }
 }
 
 impl GpuResources {
-    #[allow(dead_code)]
-    pub(super) fn set_shadow_settings(&mut self, settings: ShadowSettings) {
+    pub(super) fn set_shadow_settings(
+        &mut self,
+        settings: ShadowSettings,
+    ) -> Result<(), &'static str> {
         let previous_bytes = self.shadow_gpu.gpu_bytes();
-        self.shadow_gpu.reconfigure(&self.device, settings);
+        self.shadow_gpu.reconfigure(&self.device, settings)?;
         let current_bytes = self.shadow_gpu.gpu_bytes();
         self.fixed_gpu_bytes = self
             .fixed_gpu_bytes
@@ -194,6 +256,7 @@ impl GpuResources {
             self.shadow_remote_dirty = true;
             self.shadow_state.invalidate(ShadowInvalidReason::Disabled);
         }
+        Ok(())
     }
 
     pub(super) fn update_remote_shadow_vertices(&mut self, vertices: &[Vertex]) {
@@ -371,70 +434,5 @@ impl GpuResources {
         self.shadow_state.valid = true;
         self.shadow_state.invalid_reason = None;
         self.shadow_gpu.write_uniform(&self.queue, &uniform);
-    }
-}
-
-fn create_target(
-    device: &wgpu::Device,
-    layout: &wgpu::BindGroupLayout,
-    uniform: &wgpu::Buffer,
-    sampler: &wgpu::Sampler,
-    settings: ShadowSettings,
-) -> (wgpu::Texture, wgpu::TextureView, wgpu::BindGroup, u64) {
-    let resolution = if settings.enabled {
-        settings.resolution.clamp(1, DEFAULT_RESOLUTION)
-    } else {
-        1
-    };
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("local-shadow-depth-map"),
-        size: wgpu::Extent3d {
-            width: resolution,
-            height: resolution,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Depth32Float,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-        view_formats: &[],
-    });
-    let depth_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    let sampling_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("world-shadow-sampling-bind-group"),
-        layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&depth_view),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::Sampler(sampler),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: uniform.as_entire_binding(),
-            },
-        ],
-    });
-    let bytes = u64::from(resolution) * u64::from(resolution) * 4;
-    (texture, depth_view, sampling_bind_group, bytes)
-}
-
-fn uniform_layout_entry(
-    binding: u32,
-    visibility: wgpu::ShaderStages,
-) -> wgpu::BindGroupLayoutEntry {
-    wgpu::BindGroupLayoutEntry {
-        binding,
-        visibility,
-        ty: wgpu::BindingType::Buffer {
-            ty: wgpu::BufferBindingType::Uniform,
-            has_dynamic_offset: false,
-            min_binding_size: wgpu::BufferSize::new(128),
-        },
-        count: None,
     }
 }

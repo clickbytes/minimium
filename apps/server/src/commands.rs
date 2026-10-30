@@ -48,9 +48,13 @@ pub fn execute(command: ServerCommand, context: CommandContext<'_>) -> CommandRe
         ServerCommand::Status => CommandReply {
             success: true,
             text: format!(
-                "running players={} lanes={lanes} ticks={} {}",
+                "running players={} lanes={lanes} ticks={} clock_probe_requests={} clock_probe_accepted={} clock_probe_rejected={} environment_sync_messages={} {}",
                 world.player_count(),
                 metrics.ticks,
+                metrics.clock_probe_requests,
+                metrics.clock_probe_accepted,
+                metrics.clock_probe_rejected,
+                metrics.environment_sync_messages,
                 persistence.summary()
             ),
             stop: false,

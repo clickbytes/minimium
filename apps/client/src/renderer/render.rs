@@ -9,6 +9,8 @@ impl GpuResources {
         map: Option<&minimium_core::world::WorldMap>,
         player_position_m: [f64; 3],
     ) -> Result<u32, wgpu::CurrentSurfaceTexture> {
+        self.environment_draw_calls = super::sky::EnvironmentDrawCalls::default();
+        self.last_shadow_prepare_cpu = std::time::Duration::ZERO;
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) => frame,
             wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
@@ -26,7 +28,9 @@ impl GpuResources {
         let surface_view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
+        let shadow_started = std::time::Instant::now();
         self.prepare_shadow_frame(environment, map, player_position_m);
+        self.last_shadow_prepare_cpu = shadow_started.elapsed();
         let scene_view = self
             .output_encoder
             .as_ref()
@@ -73,6 +77,7 @@ impl GpuResources {
                     pass.set_vertex_buffer(0, buffer.slice(..));
                     pass.draw(0..*vertex_count, 0..1);
                     draw_calls += 1;
+                    self.environment_draw_calls.shadows += 1;
                 }
             }
             if let Some(buffer) = &self.shadow_map_buffer {
@@ -80,6 +85,7 @@ impl GpuResources {
                     pass.set_vertex_buffer(0, buffer.slice(..));
                     pass.draw(0..self.shadow_map_vertex_count, 0..1);
                     draw_calls += 1;
+                    self.environment_draw_calls.shadows += 1;
                 }
             }
             if self.shadow_player_vertex_count > 0 {
@@ -87,10 +93,10 @@ impl GpuResources {
                     pass.set_vertex_buffer(0, buffer.slice(..));
                     pass.draw(0..self.shadow_player_vertex_count, 0..1);
                     draw_calls += 1;
+                    self.environment_draw_calls.shadows += 1;
                 }
             }
         }
-        self.environment_draw_calls = super::sky::EnvironmentDrawCalls::default();
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("main-pass"),

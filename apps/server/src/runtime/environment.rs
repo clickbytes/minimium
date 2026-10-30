@@ -101,6 +101,8 @@ impl ServerRuntime {
                 self.connections.disconnected.push(index);
                 continue;
             }
+            self.metrics.environment_sync_messages =
+                self.metrics.environment_sync_messages.saturating_add(1);
             self.connections.clients[index].mark_environment_sent(context, sample.revision(), now);
         }
     }

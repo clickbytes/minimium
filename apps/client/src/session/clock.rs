@@ -1,5 +1,6 @@
 use super::{ClientSession, QueueError, SessionState};
 use crate::environment::{EnvironmentFrameInput, SynchronizationQuality};
+use diagnostics::clock_diagnostics;
 use estimate::{
     estimate_key, estimate_welcome_time, estimate_world_time, rounded_time, EstimateKey,
     OffsetSample,
@@ -9,6 +10,7 @@ use minimium_protocol::ClientMessage;
 use smoothing::SmoothInput;
 use std::{collections::VecDeque, time::Instant};
 
+mod diagnostics;
 mod estimate;
 mod smoothing;
 
@@ -59,6 +61,8 @@ pub(super) struct ClientClock {
     next_sequence: u32,
     inflight: Option<InflightProbe>,
     valid_probe_count: u32,
+    accepted_probe_count: u64,
+    rejected_probe_count: u64,
     last_valid_probe_at_ms: Option<u64>,
     offsets: VecDeque<OffsetSample>,
     previous_input: Option<EstimateKey>,
@@ -84,6 +88,8 @@ impl ClientClock {
             next_sequence: 1,
             inflight: None,
             valid_probe_count: 0,
+            accepted_probe_count: 0,
+            rejected_probe_count: 0,
             last_valid_probe_at_ms: None,
             offsets: VecDeque::with_capacity(MAX_OFFSET_SAMPLES),
             previous_input: None,
@@ -144,6 +150,7 @@ impl ClientClock {
             .inflight
             .is_some_and(|probe| now_ms.saturating_sub(probe.sent_at_ms) >= PROBE_TIMEOUT_MS)
         {
+            self.rejected_probe_count = self.rejected_probe_count.saturating_add(1);
             self.inflight = None;
             self.next_probe_at_ms = Some(now_ms.saturating_add(self.probe_interval_ms()));
             self.diagnostic(now_ms, "probe_timeout");
@@ -186,14 +193,17 @@ impl ClientClock {
         received_at_ms: u64,
     ) {
         let Some(inflight) = self.inflight else {
+            self.rejected_probe_count = self.rejected_probe_count.saturating_add(1);
             self.diagnostic(received_at_ms, "stale_reply_without_probe");
             return;
         };
         if sequence != inflight.sequence {
+            self.rejected_probe_count = self.rejected_probe_count.saturating_add(1);
             self.diagnostic(received_at_ms, "stale_reply_sequence");
             return;
         }
         if echoed_client_send_ms != inflight.sent_at_ms {
+            self.rejected_probe_count = self.rejected_probe_count.saturating_add(1);
             self.diagnostic(received_at_ms, "probe_echo_mismatch");
             return;
         }
@@ -230,6 +240,7 @@ impl ClientClock {
         };
         self.inflight = None;
         self.valid_probe_count = self.valid_probe_count.saturating_add(1);
+        self.accepted_probe_count = self.accepted_probe_count.saturating_add(1);
         self.last_valid_probe_at_ms = Some(received_at_ms);
         if self.valid_probe_count == 4 {
             self.next_probe_at_ms = Some(received_at_ms.saturating_add(NORMAL_INTERVAL_MS));
@@ -280,6 +291,7 @@ impl ClientClock {
         }
 
         self.prune_offsets(now_ms);
+        let clock_diagnostics = Some(clock_diagnostics(self, sample, now_ms));
         let offset = self.best_offset();
         let mut quality = self.quality(sample, descriptor, now_ms);
         if quality == SynchronizationQuality::Unavailable {
@@ -291,6 +303,7 @@ impl ClientClock {
                 revision: Some(sample.revision().get()),
                 rate_ppm: Some(sample.rate_ppm().get()),
                 quality,
+                clock_diagnostics,
             };
             self.reset_smoothing();
             return;
@@ -308,6 +321,7 @@ impl ClientClock {
                         revision: Some(sample.revision().get()),
                         rate_ppm: Some(sample.rate_ppm().get()),
                         quality: SynchronizationQuality::Unavailable,
+                        clock_diagnostics,
                     };
                     self.reset_smoothing();
                     return;
@@ -325,6 +339,7 @@ impl ClientClock {
                 revision: Some(sample.revision().get()),
                 rate_ppm: Some(sample.rate_ppm().get()),
                 quality: SynchronizationQuality::Unavailable,
+                clock_diagnostics,
             };
             self.reset_smoothing();
             return;
@@ -388,6 +403,7 @@ impl ClientClock {
             revision: Some(revision),
             rate_ppm: Some(sample.rate_ppm().get()),
             quality,
+            clock_diagnostics,
         };
     }
 
@@ -439,6 +455,7 @@ impl ClientClock {
     }
 
     fn finish_invalid_probe(&mut self, now_ms: u64, reason: &'static str) {
+        self.rejected_probe_count = self.rejected_probe_count.saturating_add(1);
         self.inflight = None;
         self.next_probe_at_ms = Some(now_ms.saturating_add(self.probe_interval_ms()));
         self.diagnostic(now_ms, reason);

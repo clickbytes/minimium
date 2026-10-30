@@ -40,6 +40,14 @@ pub struct SkyCalculator {
     not_send_or_sync: PhantomData<Rc<()>>,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct SkyCalculatorDiagnostics {
+    pub ephemeris_evaluations: u64,
+    pub ephemeris_cache_hits: u64,
+    pub star_epoch_updates: u64,
+    pub star_epoch_cache_hits: u64,
+}
+
 impl Default for SkyCalculator {
     fn default() -> Self {
         Self::new(RefractionMode::Standard)
@@ -154,6 +162,17 @@ impl SkyCalculator {
         }
         let terrestrial_days = ffi::terrestrial_days(ut_days(utc_ms)?).map_err(map_status)?;
         self.star_epoch.update(utc_ms, terrestrial_days, records)
+    }
+
+    pub fn diagnostics(&self) -> SkyCalculatorDiagnostics {
+        let (ephemeris_evaluations, ephemeris_cache_hits) = self.ephemeris.diagnostics();
+        let (star_epoch_updates, star_epoch_cache_hits) = self.star_epoch.diagnostics();
+        SkyCalculatorDiagnostics {
+            ephemeris_evaluations,
+            ephemeris_cache_hits,
+            star_epoch_updates,
+            star_epoch_cache_hits,
+        }
     }
 
     pub fn invalidate_star_epoch(&mut self) {

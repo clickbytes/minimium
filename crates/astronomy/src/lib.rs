@@ -9,7 +9,7 @@ mod model;
 mod stars;
 mod time;
 
-pub use calculator::{SkyCalculator, SkyInvalidation};
+pub use calculator::{SkyCalculator, SkyCalculatorDiagnostics, SkyInvalidation};
 pub use model::{
     AstronomyContextKey, CelestialBodyState, CorrectedStarDirections, MoonState, RefractionMode,
     SkyError, SkySampleContext, SkyState, StarAstrometry, StarDirection, ASTRONOMY_MODEL_REVISION,

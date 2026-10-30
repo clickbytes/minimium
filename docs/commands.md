@@ -68,7 +68,7 @@ The same commands are available through the server terminal (unless `--headless`
 | Command | Meaning |
 | --- | --- |
 | `help` | Print the command list. |
-| `status` | Report running state, active players, configured lanes, ticks, save state, player cap, map fingerprint, tick/snapshot intervals, autosave interval, protocol version, and save version. |
+| `status` | Report running state, active players, configured lanes, ticks, accepted/rejected clock probes, environment-sync messages, save state, player cap, map fingerprint, tick/snapshot intervals, autosave interval, protocol version, and save version. |
 | `players list` | List connected player IDs, names, and positions, or report no players. |
 | `metrics show` | Print runtime, network, queue, collision, memory, process, and optional allocation metrics. Field names are documented in [performance policy](performance.md). |
 | `world save` | Capture players, sectors and the clock together, then queue one v8 snapshot on the persistence worker. A successful reply means queued, not completed; use `status` to inspect `save_pending` and `save_last`. A second save is rejected while one is pending. |
@@ -95,10 +95,10 @@ The data directory defaults to `.minimium`. `minimiumctl stop` waits up to 120 s
 ## Client
 
 ~~~text
-minimium-client [--connect HOST:PORT] [--map PATH | --world-definition PATH] [--profile-dir PATH] [--server-data-dir PATH] [--threads 1|2|auto] [--demo] [--console]
+minimium-client [--connect HOST:PORT] [--map PATH | --world-definition PATH] [--profile-dir PATH] [--server-data-dir PATH] [--threads 1|2|auto] [--sky-quality low|standard] [--demo] [--console]
 ~~~
 
-Each option may appear once. Unknown options and missing values are errors. `--threads` accepts `1`, `2`, or `auto`; it controls a server started by local play and defaults to `1`. `--connect` connects to an explicit game address and does not start or own a server. Without `--connect` or `--demo`, the desktop client starts a local server if needed and connects through the normal game protocol. `--demo` renders without a game connection and cannot be combined with `--connect` or `--console`. `--console` selects the text client instead of the desktop renderer.
+Each option may appear once. Unknown options and missing values are errors. `--threads` accepts `1`, `2`, or `auto`; it controls a server started by local play and defaults to `1`. `--sky-quality` accepts `low` or `standard` and defaults to `standard`; `low` disables the local shadow map while keeping the same astronomy and star catalogue. It changes renderer resources without restarting the window, device, server, or connection. The text client accepts this shared option but reports that rendering quality is unavailable there. `--connect` connects to an explicit game address and does not start or own a server. Without `--connect` or `--demo`, the desktop client starts a local server if needed and connects through the normal game protocol. `--demo` renders without a game connection and cannot be combined with `--connect` or `--console`. `--console` selects the text client instead of the desktop renderer.
 
 `--profile-dir PATH` selects this client's durable local player profile. `--server-data-dir PATH` selects the shared local server's storage and discovery directory. They are independent: use separate profile directories for separate local players and the same server data directory when they should share one server. If omitted, both resolve to `.minimium-local`; with `--map` or `--world-definition`, both default to `.minimium-local/map-<map-fingerprint>`. The persisted profile ID is a reconnect identifier, not account authentication.
 
@@ -121,13 +121,16 @@ Both frontends use one connection controller. It starts a background connector w
 
 ### Text-client commands
 
-The text client and in-window console use one startup command registry and parser. The interface, connection, and gameplay modules each register their own commands. Both accept `help`, `host local [--threads 1|2|auto]`, `connect HOST:PORT`, `disconnect`, `fps show`, `net stats`, `ping`, `move X Z`, `jump`, `portal`, `map_telepo`, `fire`, `say TEXT` (alias `chat`), `name NAME`, `state`, `clear`, and `quit` (alias `exit`). `help` lists every registered command, and tab completion uses the same registry. `portal` requests a transfer when the player is near a portal; the desktop client also binds this action to E. `host local` starts or attaches to the local server configured by startup paths. It stores an owned server guard before later connection setup; only an owned child is stopped on exit. An attached server is left running. The terminal frontend renders state/events as text; the desktop frontend provides F1 console history and tab completion.
+The text client and in-window console use one startup command registry and parser. The interface, connection, gameplay, and environment modules each register their own commands. Both accept `help`, `host local [--threads 1|2|auto]`, `connect HOST:PORT`, `disconnect`, `fps show`, `net stats`, `time status`, `sky info`, `sky quality low|standard`, `ping`, `move X Z`, `jump`, `portal`, `map_telepo`, `fire`, `say TEXT` (alias `chat`), `name NAME`, `state`, `clear`, and `quit` (alias `exit`). `help` lists every registered command, and tab completion uses the same registry. `portal` requests a transfer when the player is near a portal; the desktop client also binds this action to E. `host local` starts or attaches to the local server configured by startup paths. It stores an owned server guard before later connection setup; only an owned child is stopped on exit. An attached server is left running. The terminal frontend renders state/events as text; the desktop frontend provides F1 console history and tab completion.
 
 `fps show` reports that frame statistics are unavailable in the text client.
+`sky info` and `sky quality` report that renderer diagnostics and quality controls require the desktop client. `time status` remains available and reports `Unavailable` when no server clock sample is present.
 
 ### In-window console commands
 
 Press F1 to open or close the console. It uses the shared registry above and renders text in Roboto Mono. Arrow keys browse history; PageUp/PageDown or the mouse wheel scroll the console, Home jumps to the oldest lines, End returns to the newest lines, and Tab suggests canonical commands and aliases. Lock the mouse and left-click to fire. `fps show` reports frame interval and render-loop work summaries; `net stats` reports application bytes, latest round-trip time, and nearby-player count.
+
+`sky quality low|standard` changes only local rendering quality: `low` disables shadows and `standard` enables one 1024×1024 local shadow map. If the adapter refuses that resource, the client uses `low` and `sky info` shows requested/effective quality and the fallback reason. `sky info` prints a versioned, on-demand snapshot of clock synchronization, observer and celestial values, CPU timings, actual environment draw calls, shadow coverage, and estimated environment GPU bytes. `time status` prints the current session's read-only clock sample and synchronization state. Neither command grants administrative time controls.
 
 ## Load generator
 

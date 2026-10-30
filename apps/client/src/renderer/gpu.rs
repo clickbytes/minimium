@@ -147,6 +147,7 @@ impl GpuResources {
     pub(super) async fn new(
         window: Arc<Window>,
         vertices: &[Vertex],
+        requested_quality: crate::environment::quality::SkyQuality,
     ) -> Result<Self, Box<dyn Error>> {
         let size = window.inner_size();
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
@@ -159,6 +160,20 @@ impl GpuResources {
                 apply_limit_buckets: false,
             })
             .await?;
+        let shadow_usage =
+            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING;
+        let shadow_format = super::shadow_target::supported_format(&adapter, shadow_usage)
+            .ok_or("graphics adapter has no sampleable depth texture format")?;
+        let shadow_limit_supported = adapter.limits().max_texture_dimension_2d
+            >= requested_quality.profile().shadow_resolution;
+        let adapter_fallback_reason = (requested_quality.profile().shadows_enabled
+            && (shadow_format != wgpu::TextureFormat::Depth32Float || !shadow_limit_supported))
+            .then_some("adapter_limit_or_depth32float_unsupported");
+        let initial_quality = if adapter_fallback_reason.is_some() {
+            crate::environment::quality::SkyQuality::Low
+        } else {
+            requested_quality
+        };
         let mut required_limits = wgpu::Limits::downlevel_defaults();
         required_limits.max_texture_dimension_2d =
             adapter.limits().max_texture_dimension_2d.min(4096);
@@ -193,8 +208,14 @@ impl GpuResources {
             super::stars_gpu::StarGpu::new(&device, &frame_bindings.layout, scene_color_format);
         let moon =
             super::moon_gpu::MoonGpu::new(&device, &frame_bindings.layout, scene_color_format);
-        let shadow_gpu =
-            super::shadow_gpu::ShadowGpu::new(&device, super::shadows::ShadowSettings::standard());
+        let mut shadow_gpu = super::shadow_gpu::ShadowGpu::new(
+            &device,
+            super::shadows::ShadowSettings::for_quality(initial_quality),
+            shadow_format,
+        )?;
+        if adapter_fallback_reason.is_some() {
+            shadow_gpu.fallback_reason = adapter_fallback_reason;
+        }
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("minimium-world-shadow-pipeline-layout"),
             bind_group_layouts: &[
@@ -275,6 +296,7 @@ impl GpuResources {
             overview_buffer: None,
             overview_marker_buffer: None,
             environment_draw_calls: super::sky::EnvironmentDrawCalls::default(),
+            last_shadow_prepare_cpu: std::time::Duration::ZERO,
             overview_active: false,
             overview_globe: false,
             scene_visible: true,

@@ -18,9 +18,15 @@ pub(crate) struct StarEpochCache {
     records: Vec<StarAstrometry>,
     result: Option<CorrectedStarDirections>,
     invalidated: bool,
+    updates: u64,
+    cache_hits: u64,
 }
 
 impl StarEpochCache {
+    pub fn diagnostics(&self) -> (u64, u64) {
+        (self.updates, self.cache_hits)
+    }
+
     pub fn invalidate(&mut self) {
         self.invalidated = true;
     }
@@ -47,6 +53,9 @@ impl StarEpochCache {
     }
 
     pub fn cached(&mut self, utc_ms: WorldTimeMs) -> Option<CorrectedStarDirections> {
+        if self.result.is_some() {
+            self.cache_hits = self.cache_hits.saturating_add(1);
+        }
         self.last_utc_day = Some(utc_ms.get().div_euclid(STAR_DAY_MS));
         self.last_utc_ms = Some(utc_ms.get());
         self.result.clone()
@@ -92,6 +101,7 @@ impl StarEpochCache {
         self.last_utc_ms = Some(utc_ms.get());
         self.invalidated = false;
         self.result = Some(result.clone());
+        self.updates = self.updates.saturating_add(1);
         Ok(result)
     }
 }
