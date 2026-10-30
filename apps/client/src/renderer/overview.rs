@@ -4,8 +4,9 @@ use wgpu::util::DeviceExt;
 
 impl Renderer {
     pub(super) fn is_earth_world(&self) -> bool {
-        self.world_manifests
-            .get(&self.current_instance)
+        self.game
+            .world_manifests
+            .get(&self.game.current_instance)
             .is_some_and(|manifest| manifest.planet().is_some_and(|planet| planet.mode == 1))
     }
 
@@ -19,10 +20,15 @@ impl Renderer {
             self.map_teleport_armed = false;
             return;
         }
-        let Some(manifest) = self.world_manifests.get(&self.current_instance).copied() else {
+        let Some(manifest) = self
+            .game
+            .world_manifests
+            .get(&self.game.current_instance)
+            .copied()
+        else {
             return;
         };
-        let Some(map) = self.world_catalog.get(&self.current_instance) else {
+        let Some(map) = self.world_catalog.get(&self.game.current_instance) else {
             return;
         };
         let earth = manifest.planet().is_some_and(|planet| planet.mode == 1);
@@ -96,7 +102,7 @@ impl Renderer {
                     * u64::from(self.gpu.size.height.max(1))
                     * 4,
         );
-        self.overview_instance = Some(self.current_instance);
+        self.overview_instance = Some(self.game.current_instance);
         self.overview_open = true;
         self.gpu.overview_active = true;
     }
@@ -112,8 +118,9 @@ impl Renderer {
     pub(super) fn overview_uses_zoom(&self) -> bool {
         self.overview_open
             && self
+                .game
                 .world_manifests
-                .get(&self.current_instance)
+                .get(&self.game.current_instance)
                 .is_some_and(|manifest| manifest.topology() == WorldTopology::Planet)
     }
 
@@ -131,7 +138,7 @@ impl Renderer {
         if !self.overview_open || !self.is_earth_world() {
             return;
         }
-        let Some(manifest) = self.world_manifests.get(&self.current_instance) else {
+        let Some(manifest) = self.game.world_manifests.get(&self.game.current_instance) else {
             return;
         };
         let radius = minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0;
@@ -156,7 +163,7 @@ impl Renderer {
         if !self.overview_open || !self.is_earth_world() {
             return;
         }
-        let Some(manifest) = self.world_manifests.get(&self.current_instance) else {
+        let Some(manifest) = self.game.world_manifests.get(&self.game.current_instance) else {
             return;
         };
         let radius = minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0;
@@ -177,8 +184,9 @@ impl Renderer {
             return;
         }
         let earth = self
+            .game
             .world_manifests
-            .get(&self.current_instance)
+            .get(&self.game.current_instance)
             .is_some_and(|manifest| manifest.planet().is_some_and(|planet| planet.mode == 1));
         if !earth || self.connection.session().is_none() || !self.gpu.scene_visible {
             self.ui
@@ -205,7 +213,7 @@ impl Renderer {
         let Some((x, y)) = self.input.last_cursor else {
             return;
         };
-        let Some(manifest) = self.world_manifests.get(&self.current_instance) else {
+        let Some(manifest) = self.game.world_manifests.get(&self.game.current_instance) else {
             return;
         };
         let radius = minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0;
@@ -253,8 +261,9 @@ impl Renderer {
         };
         if let Ok(pixels) = receiver.try_recv() {
             if let Some(manifest) = self
+                .game
                 .world_manifests
-                .get(&self.current_instance)
+                .get(&self.game.current_instance)
                 .filter(|manifest| manifest.planet().is_some_and(|planet| planet.mode == 1))
             {
                 let radius =
@@ -272,8 +281,9 @@ impl Renderer {
 
     pub(super) fn overview_camera(&self) -> (glam::Mat4, f32) {
         let topology = self
+            .game
             .world_manifests
-            .get(&self.current_instance)
+            .get(&self.game.current_instance)
             .map(|manifest| manifest.topology());
         if topology == Some(WorldTopology::Planet) {
             let radial = glam::Vec3::from_array(self.game.character.position).normalize_or_zero();
@@ -284,8 +294,9 @@ impl Renderer {
             };
             let up = glam::Vec3::Y;
             let radius = self
+                .game
                 .world_manifests
-                .get(&self.current_instance)
+                .get(&self.game.current_instance)
                 .map(|manifest| {
                     minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0
                 })
@@ -308,7 +319,7 @@ impl Renderer {
                 radius * 80.0,
             )
         } else {
-            let Some(map) = self.world_catalog.get(&self.current_instance) else {
+            let Some(map) = self.world_catalog.get(&self.game.current_instance) else {
                 return (glam::Mat4::IDENTITY, 1000.0);
             };
             let mut min = glam::Vec3::splat(f32::INFINITY);

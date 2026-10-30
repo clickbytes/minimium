@@ -72,11 +72,16 @@ impl Renderer {
             self.publish_unavailable(render_view, "world UTC is outside the astronomy range");
             return None;
         };
-        let Some(manifest) = self.world_manifests.get(&self.current_instance).copied() else {
+        let Some(manifest) = self
+            .game
+            .world_manifests
+            .get(&self.game.current_instance)
+            .copied()
+        else {
             self.publish_unavailable(render_view, "world manifest is unavailable");
             return None;
         };
-        if context.instance() != self.current_instance
+        if context.instance() != self.game.current_instance
             || context.content_revision() != manifest.content_revision()
         {
             self.publish_unavailable(
