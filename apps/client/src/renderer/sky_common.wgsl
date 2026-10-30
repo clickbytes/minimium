@@ -38,7 +38,16 @@ fn sample_clear_sky(ray_world: vec3<f32>) -> SkySample {
     let sun_direction = normalize(environment.sun_apparent_world.xyz);
     let sun_angle = acos(clamp(dot(ray, sun_direction), -1.0, 1.0));
     let horizon_glow = exp(-sun_angle * 7.0) * day_factor;
-    let scattering = mix(zenith, horizon, horizon_weight)
+    var scattering = mix(zenith, horizon, horizon_weight)
         + vec3<f32>(0.34, 0.16, 0.055) * horizon_glow * 0.28;
+    let moon_direction = environment.moon_apparent_world.xyz;
+    if environment.local_moon_rgb_visibility.w > 0.0 && length(moon_direction) > 1.0e-8 {
+        let moon_angle = acos(clamp(dot(ray, normalize(moon_direction)), -1.0, 1.0));
+        let halo_width = max(radians(7.0), environment.moon_apparent_world.w * 16.0);
+        let moon_halo = exp(-moon_angle / halo_width);
+        let moon_scatter = environment.local_moon_rgb_visibility.xyz
+            * (vec3<f32>(18.0, 24.0, 42.0) + vec3<f32>(44.0, 58.0, 86.0) * moon_halo);
+        scattering += moon_scatter * clear_air_transmittance(altitude);
+    }
     return SkySample(scattering, clear_air_transmittance(altitude));
 }

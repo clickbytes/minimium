@@ -42,6 +42,8 @@ mod globe_detail;
 mod gpu;
 mod init;
 mod lighting;
+mod moon_gpu;
+mod moon_lighting;
 mod output;
 mod overview;
 mod planet_visibility;
@@ -80,6 +82,7 @@ struct GpuResources {
     pipeline: wgpu::RenderPipeline,
     environment_pipelines: sky_gpu::EnvironmentPipelines,
     stars: stars_gpu::StarGpu,
+    moon: moon_gpu::MoonGpu,
     ui_pipeline: wgpu::RenderPipeline,
     ui_bind_group: wgpu::BindGroup,
     ui_vertex_buffer: wgpu::Buffer,

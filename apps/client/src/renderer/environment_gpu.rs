@@ -30,6 +30,7 @@ pub(super) struct EnvironmentUniform {
     pub(super) observer_up_horizon_cos: [f32; 4],
     pub(super) flags: [u32; 4],
     pub(super) eqj_to_world: [[f32; 4]; 4],
+    pub(super) moon_disk_radiance: [f32; 4],
 }
 
 pub(super) struct EnvironmentGpuBindings {
@@ -136,7 +137,7 @@ const _: () = {
     assert!(std::mem::offset_of!(CameraUniform, inverse_sky_view_projection) == 128);
     assert!(std::mem::offset_of!(CameraUniform, viewport) == 192);
 
-    assert!(std::mem::size_of::<EnvironmentUniform>() == 304);
+    assert!(std::mem::size_of::<EnvironmentUniform>() == 320);
     assert!(std::mem::align_of::<EnvironmentUniform>() == 16);
     assert!(std::mem::offset_of!(EnvironmentUniform, sun_geometric_world) == 0);
     assert!(std::mem::offset_of!(EnvironmentUniform, sun_apparent_world) == 16);
@@ -154,4 +155,5 @@ const _: () = {
     assert!(std::mem::offset_of!(EnvironmentUniform, observer_up_horizon_cos) == 208);
     assert!(std::mem::offset_of!(EnvironmentUniform, flags) == 224);
     assert!(std::mem::offset_of!(EnvironmentUniform, eqj_to_world) == 240);
+    assert!(std::mem::offset_of!(EnvironmentUniform, moon_disk_radiance) == 304);
 };

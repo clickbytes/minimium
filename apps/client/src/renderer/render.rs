@@ -129,6 +129,12 @@ impl GpuResources {
                         draw_calls += 1;
                         self.environment_draw_calls.sun += 1;
                     }
+                    if super::sky::should_draw_moon(environment) {
+                        pass.set_pipeline(&self.moon.pipeline);
+                        pass.draw(0..6, 0..1);
+                        draw_calls += 1;
+                        self.environment_draw_calls.moon += 1;
+                    }
                 }
                 pass.set_pipeline(&self.pipeline);
                 pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
@@ -158,6 +164,12 @@ impl GpuResources {
                         pass.draw(0..6, 0..1);
                         draw_calls += 1;
                         self.environment_draw_calls.sun += 1;
+                    }
+                    if super::sky::should_draw_moon(environment) {
+                        pass.set_pipeline(&self.moon.pipeline);
+                        pass.draw(0..6, 0..1);
+                        draw_calls += 1;
+                        self.environment_draw_calls.moon += 1;
                     }
                 }
                 pass.set_pipeline(&self.pipeline);

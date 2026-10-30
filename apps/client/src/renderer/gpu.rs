@@ -173,6 +173,8 @@ impl GpuResources {
         );
         let stars =
             super::stars_gpu::StarGpu::new(&device, &frame_bindings.layout, scene_color_format);
+        let moon =
+            super::moon_gpu::MoonGpu::new(&device, &frame_bindings.layout, scene_color_format);
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("minimium-basic-3d-shader"),
             source: wgpu::ShaderSource::Wgsl(Cow::Owned(super::shader_source::world())),
@@ -246,6 +248,7 @@ impl GpuResources {
             pipeline,
             environment_pipelines,
             stars,
+            moon,
             ui_pipeline,
             ui_bind_group,
             ui_vertex_buffer,

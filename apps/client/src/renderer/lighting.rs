@@ -3,7 +3,6 @@ use minimium_astronomy::SkyState;
 use minimium_core::sky::ObserverFrame;
 
 pub(super) const CLEAR_SKY_MODEL_REVISION: u32 = 1;
-const CLEAR_AIR_EXTINCTION: f64 = 0.08;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct ClearSkyParameters {
@@ -82,14 +81,15 @@ pub(super) fn evaluate_clear_sky_parameters(
 ) -> ClearSkyParameters {
     let altitude = sky.sun.apparent_altitude_rad;
     let node = interpolate(altitude);
-    let atmospheric_density = (-observer.geographic.height_m().max(0.0) / 8_500.0)
-        .exp()
-        .clamp(0.55, 1.0);
     let upper_limb_altitude = altitude + sky.sun.angular_radius_rad;
     let transmittance = if upper_limb_altitude <= -1.0_f64.to_radians() {
         0.0
     } else {
-        direct_transmittance(upper_limb_altitude, atmospheric_density)
+        super::moon_lighting::atmospheric_transmittance(
+            upper_limb_altitude,
+            observer.geographic.height_m(),
+        )
+        .unwrap_or(f32::NAN)
     };
     ClearSkyParameters {
         ambient_rgb: multiply(node.ambient_rgb, settings.ambient_rgb),
@@ -123,13 +123,6 @@ fn interpolate(altitude: f64) -> Node {
         stars: mix_scalar(a.stars, b.stars, t),
         direct: mix_scalar(a.direct, b.direct, t),
     }
-}
-
-fn direct_transmittance(altitude: f64, density: f64) -> f32 {
-    let zenith_degrees = (90.0 - altitude.to_degrees()).clamp(0.0, 90.0);
-    let correction = (96.07995 - zenith_degrees).max(1.0).powf(-1.6364) * 0.50572;
-    let air_mass = (1.0 / (altitude.sin() + correction).max(0.025)).clamp(1.0, 40.0);
-    (-CLEAR_AIR_EXTINCTION * air_mass * density).exp() as f32
 }
 
 fn multiply(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
