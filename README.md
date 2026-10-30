@@ -34,8 +34,8 @@ SDK, then build from an x64 developer shell for `x86_64-pc-windows-msvc`.
 MSVC `cl` is supported; `clang-cl` can be selected with `CC=clang-cl` when the
 matching MSVC libraries and Windows SDK are available. On Linux, install GCC or
 Clang and the distribution's C development/linker packages, then run the same
-workspace build from the repository root. `CC=clang cargo build --workspace
---locked` selects Clang on Linux. Windows compilation and linking are recorded
+workspace build from the repository root. On Linux, select Clang with
+`CC=clang cargo build --workspace --locked`. Windows compilation and linking are recorded
 in the [E004 audit](docs/plan/epic-004-audit.md); Linux is a documented procedure,
 not a recorded build result.
 

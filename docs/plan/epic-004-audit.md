@@ -1,6 +1,7 @@
 # Epic 004 — audyt integracji E004-15
 
 Etap [#67](https://github.com/clickbytes/minimium/issues/67), stan: **STATIC PASS / RUNTIME NOT RUN**.
+Przyrost: [PR #87](https://github.com/clickbytes/minimium/pull/87) do `epic/004-realistic-sky-time`.
 Baseline oraz head epica przy rozpoczęciu: `93b1264502e33f01a9769901fbbc72697bf904e0`.
 `origin/main`: `30ff278f9a0020f93d2567b2ca5c05a290bc605e`.
 Fetch nie wykazał nowych zmian epica względem planu. Główny checkout i istniejący
@@ -107,7 +108,8 @@ potwierdza zgodność plików na dysku, katalogu i lokalnego przypiętego CSV.
 
 Wszystkie poniższe komendy wykonano na jednym czystym SHA
 `8a0a33d703ae356fe3774df7cf5461e52d296975`, 2026-10-30, od 17:57:24 UTC.
-Późniejsze commity tego etapu uzupełniają wyłącznie dokumentację i dowody.
+Późniejsze commity tego etapu uzupełniają wyłącznie dokumentację i dowody,
+w tym regułę LF chroniącą bajty hashowanych logów przy Windows checkout.
 Izolowany `CARGO_TARGET_DIR=D:/Git/minimium/target/e004-15-a1`; nie zatrzymywano
 procesów użytkownika ani nie używano współdzielonego release do linkowania.
 
