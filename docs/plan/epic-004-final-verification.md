@@ -1,6 +1,6 @@
 # E004-16 — procedura końcowego odbioru
 
-**Status: NOT STARTED / RUNTIME NOT RUN.** Ten dokument przygotowano w E004-15.
+**Status: NOT RUN; #68 closed without execution at user direction.** Ten dokument przygotowano w E004-15. [Rejestr zamknięcia](epic-004-closeout.md) zapisuje merge i ograniczenia.
 Wykonanie wymaga zakończenia #67 oraz osobnego polecenia użytkownika rozpoczynającego
 fazę testową. Akceptacja planu E004-15 nie jest taką zgodą. Ledger wyników pozostaje
 w [epic-004-verification.md](epic-004-verification.md); poniżej są instrukcje, nie wyniki.

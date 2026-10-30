@@ -1,13 +1,13 @@
 # Epic 004 — Realistyczny czas i niebo
 
 **Rodzic:** [#51](https://github.com/clickbytes/minimium/issues/51). **Gałąź:** `epic/004-realistic-sky-time`.
-Draft PR integracyjny do main jest podlinkowany w rodzicu. Data przygotowania planu: 2026-10-30.
+Scalony PR integracyjny do main to [#70](https://github.com/clickbytes/minimium/pull/70). Data przygotowania planu: 2026-10-30.
 
 ## Cel i rezultat dla gracza
 
 Dodać do Minimium wspólny czas świata, płynny dzień/noc, podstawowe niebo, Słońce, Księżyc z rzeczywistą fazą, 500 rzeczywistych gwiazd oraz zgodne z nimi oświetlenie i lokalne cienie. Dla ustalonej daty UTC i geograficznej pozycji gracza na Earth układ nieba ma odpowiadać rzeczywistemu niebu w zadanym budżecie błędu.
 
-**Stan: W REALIZACJI.** E004-00..14 są zintegrowane, ostatni PR #86 ma merge `93b1264502e33f01a9769901fbbc72697bf904e0`. E004-15 ma kompletny audyt i STATIC PASS na 8a0a33d; E004-16 oczekuje na osobną zgodę użytkownika, a E004-17 na wynik E004-16. Funkcje czasu i nieba czekają na końcowy odbiór runtime w E004-16.
+**Stan: ZAMKNIĘTY NA POLECENIE UŻYTKOWNIKA.** Kod scalono do `main` w [PR #70](https://github.com/clickbytes/minimium/pull/70), merge `33efd93ef3691b7e73f13531db4f549fdc1ebc0f`. E004-15 ma STATIC PASS. E004-16 zamknięto bez wykonania V01–V20; runtime, GPU i QA wizualne pozostają NOT RUN. [Rejestr zamknięcia](epic-004-closeout.md) rozróżnia dostarczenie kodu od weryfikacji.
 
 Baza planu: [`main@aad2c82`](https://github.com/clickbytes/minimium/commit/aad2c8298606a46dc3a286b4eac7f1de45759851). Przed implementacją gałąź integracyjna została porównana i zsynchronizowana z [`main@30ff278`](https://github.com/clickbytes/minimium/commit/30ff278f9a0020f93d2567b2ca5c05a290bc605e) przez `cd816c2`. Zachowuje to nowszą konsolę, suwak zoomu i kafelkowany LOD globusa. Historyczny baseline miał protokół v11, save v7 i statyczne światło. Obecna integracja ma v13/v9 oraz implementację zegara i nieba; jej runtime pozostaje NOT RUN.
 
@@ -87,8 +87,8 @@ Każde poniższe issue ma własny cel, konkretne istniejące i nowe pliki, kontr
 | [E004-13 / #65](https://github.com/clickbytes/minimium/issues/65) | [E004-12 / #64](https://github.com/clickbytes/minimium/issues/64) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#85](https://github.com/clickbytes/minimium/pull/85), merge `a27e79f`) |
 | [E004-14 / #66](https://github.com/clickbytes/minimium/issues/66) | [E004-03 / #55](https://github.com/clickbytes/minimium/issues/55), [E004-05 / #60](https://github.com/clickbytes/minimium/issues/60), [E004-11 / #63](https://github.com/clickbytes/minimium/issues/63), [E004-12 / #64](https://github.com/clickbytes/minimium/issues/64), [E004-13 / #65](https://github.com/clickbytes/minimium/issues/65) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#86](https://github.com/clickbytes/minimium/pull/86), merge `93b1264502e33f01a9769901fbbc72697bf904e0`) |
 | [E004-15 / #67](https://github.com/clickbytes/minimium/issues/67) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53), [E004-02 / #54](https://github.com/clickbytes/minimium/issues/54), [E004-03 / #55](https://github.com/clickbytes/minimium/issues/55), [E004-04 / #59](https://github.com/clickbytes/minimium/issues/59), [E004-05 / #60](https://github.com/clickbytes/minimium/issues/60), [E004-06 / #56](https://github.com/clickbytes/minimium/issues/56), [E004-07 / #57](https://github.com/clickbytes/minimium/issues/57), [E004-08 / #58](https://github.com/clickbytes/minimium/issues/58), [E004-09 / #61](https://github.com/clickbytes/minimium/issues/61), [E004-10 / #62](https://github.com/clickbytes/minimium/issues/62), [E004-11 / #63](https://github.com/clickbytes/minimium/issues/63), [E004-12 / #64](https://github.com/clickbytes/minimium/issues/64), [E004-13 / #65](https://github.com/clickbytes/minimium/issues/65), [E004-14 / #66](https://github.com/clickbytes/minimium/issues/66) | STATIC PASS / FINAL VERIFICATION PENDING (accepted SHA 8a0a33d) |
-| [E004-16 / #68](https://github.com/clickbytes/minimium/issues/68) | [E004-15 / #67](https://github.com/clickbytes/minimium/issues/67) | WAITING FOR SEPARATE USER AUTHORIZATION AFTER #67 |
-| [E004-17 / #69](https://github.com/clickbytes/minimium/issues/69) | [E004-16 / #68](https://github.com/clickbytes/minimium/issues/68) | WAITING FOR #68 |
+| [E004-16 / #68](https://github.com/clickbytes/minimium/issues/68) | [E004-15 / #67](https://github.com/clickbytes/minimium/issues/67) | CLOSED AS NOT PLANNED FOR THIS CLOSEOUT; V01–V20 NOT RUN |
+| [E004-17 / #69](https://github.com/clickbytes/minimium/issues/69) | [E004-16 / #68](https://github.com/clickbytes/minimium/issues/68) | MERGED TO MAIN IN PR #70; VERIFICATION WAIVED FOR CLOSEOUT |
 
 Kolejność numeryczna nie zastępuje zależności: protokół E004-04 wymaga rzeczywistego hasha katalogu E004-08.
 Gałęzie 02–03 i 06–08 można rozwijać po wspólnym core; oba przyrosty muszą być zintegrowane przed 04.
@@ -96,7 +96,7 @@ E004-11 i E004-12 mają wspólny punkt wejścia po 10, a 13 wymaga księżycoweg
 
 ## Zasady realizacji i statusów
 
-Branch integracyjny: `epic/004-realistic-sky-time`. Każdy task ma osobny branch od aktualnej integracji i własny PR do tej gałęzi. Wspólny draft PR do `main` pozostaje otwarty do końcowego przeglądu. Ten plan nie scala teraz kodu do `main`.
+Branch integracyjny: `epic/004-realistic-sky-time`. Każdy task ma osobny branch od aktualnej integracji i własny PR do tej gałęzi. PR #70 scalono do `main`; szczegóły i rzeczywisty merge SHA są w [rejestrze zamknięcia](epic-004-closeout.md).
 
 `PLANNED` oznacza opisane zadanie; `IMPLEMENTED / FINAL VERIFICATION PENDING` oznacza scalony task i rzeczywiste dowody statyczne; `VERIFIED` wymaga końcowych wyników. Zamknięcie zadania implementacyjnego nie jest dowodem przetestowania funkcji.
 
@@ -134,4 +134,4 @@ hard-link cache. Nie uruchamiano testów ani aplikacji. E004-03 scalono przez PR
 was merged in PR #79 (`7c49d92`, merge `a69ff33`). E004-05 was merged in PR #80
 (`2d58ac2`, merge `c40db94`); its static checks pass, while runtime verification remains deferred to E004-16.
 E004-09 merged in PR #81 (`6c19d2e`, merge `3155a2c`); runtime and visual verification remain deferred to E004-16.
-E004-10 was merged in PR #82 (`951b8b2`, merge `45b4f29`), E004-11 in PR #83 (`eee83e8`, merge `325ab46`), E004-12 in PR #84 (`0d162e1`, merge `4750485`), and E004-13 in PR #85 (merge `a27e79f`). E004-14 merged in PR #86 (`93b1264`). E004-15 completed the source audit and static checks, fixing integration defects; see [audit](epic-004-audit.md). E004-16 waits for separate user authorization and E004-17 waits for E004-16. Runtime for the epic is NOT RUN.
+E004-10 was merged in PR #82 (`951b8b2`, merge `45b4f29`), E004-11 in PR #83 (`eee83e8`, merge `325ab46`), E004-12 in PR #84 (`0d162e1`, merge `4750485`), and E004-13 in PR #85 (merge `a27e79f`). E004-14 merged in PR #86 (`93b1264`). E004-15 completed the source audit and static checks, fixing integration defects; see [audit](epic-004-audit.md). The user directed closeout without E004-16 verification. Runtime for the epic is NOT RUN; see [closeout](epic-004-closeout.md).
