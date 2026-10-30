@@ -1,13 +1,17 @@
-use super::{HaloSource, LocalBodyFrame, RenderViewFrame, MAX_HALO_BODIES};
+use super::{EnvironmentSettings, HaloSource, LocalBodyFrame, RenderViewFrame, MAX_HALO_BODIES};
 use bytemuck::Zeroable;
 use minimium_astronomy::{ObservedBody, SKY_MOON_ID, SKY_SUN_ID};
 use std::f64::consts::PI;
 
-const SUN_PROFILE: u32 = 0;
-const MOON_PROFILE: u32 = 1;
-const EMISSION_PROFILE: u32 = 2;
-const REFLECTION_PROFILE: u32 = 3;
-const ATMOSPHERE_PROFILE: u32 = 4;
+#[derive(Clone, Copy, Eq, PartialEq)]
+#[repr(u32)]
+enum HaloShape {
+    Sun = 0,
+    Moon = 1,
+    Emission = 2,
+    Reflection = 3,
+    Atmosphere = 4,
+}
 
 type HaloPreparation = (
     Vec<ObservedBody>,
@@ -16,52 +20,50 @@ type HaloPreparation = (
     [f32; 4],
 );
 
-pub(super) fn prepare_halos(
-    sky: &minimium_astronomy::SkyState,
-    view: RenderViewFrame,
-    sun: LocalBodyFrame,
-    moon: LocalBodyFrame,
-    moon_source: [f64; 3],
-) -> Result<HaloPreparation, super::EnvironmentFrameError> {
-    let moon_orbit_world = super::orbit::moon_orbit_world(sky, view)?;
-    let bodies = minimium_astronomy::observed_bodies(sky, None);
-    let overview_moon_direction = std::array::from_fn(|axis| {
-        f64::from(moon_orbit_world[axis]) - view.camera_eye_world_m[axis]
-    });
-    let (sources, count) = build_halos(
-        &bodies,
-        view,
-        sun,
-        moon,
-        sky.geocentric_sun_direction_world,
-        overview_moon_direction,
-        moon_source,
-    );
-    Ok((bodies, sources, count, moon_orbit_world))
-}
-
-pub(super) fn build_halos(
-    bodies: &[ObservedBody],
+#[derive(Clone, Copy)]
+struct HaloContext {
     view: RenderViewFrame,
     sun: LocalBodyFrame,
     moon: LocalBodyFrame,
     overview_sun_direction: [f64; 3],
     overview_moon_direction: [f64; 3],
     moon_source: [f64; 3],
+    profile: EnvironmentSettings,
+}
+
+pub(super) fn prepare_halos(
+    sky: &minimium_astronomy::SkyState,
+    view: RenderViewFrame,
+    sun: LocalBodyFrame,
+    moon: LocalBodyFrame,
+    moon_source: [f64; 3],
+    profile: EnvironmentSettings,
+) -> Result<HaloPreparation, super::EnvironmentFrameError> {
+    let moon_orbit_world = super::orbit::moon_orbit_world(sky, view)?;
+    let bodies = minimium_astronomy::observed_bodies(sky, None);
+    let overview_moon_direction = std::array::from_fn(|axis| {
+        f64::from(moon_orbit_world[axis]) - view.camera_eye_world_m[axis]
+    });
+    let context = HaloContext {
+        view,
+        sun,
+        moon,
+        overview_sun_direction: sky.geocentric_sun_direction_world,
+        overview_moon_direction,
+        moon_source,
+        profile,
+    };
+    let (sources, count) = build_halos(&bodies, context);
+    Ok((bodies, sources, count, moon_orbit_world))
+}
+
+fn build_halos(
+    bodies: &[ObservedBody],
+    context: HaloContext,
 ) -> ([HaloSource; MAX_HALO_BODIES], u32) {
     let mut candidates = bodies
         .iter()
-        .filter_map(|body| {
-            source_for(
-                *body,
-                view,
-                sun,
-                moon,
-                overview_sun_direction,
-                overview_moon_direction,
-                moon_source,
-            )
-        })
+        .filter_map(|body| source_for(*body, context))
         .collect::<Vec<_>>();
     candidates.sort_by(|left, right| {
         right
@@ -78,15 +80,16 @@ pub(super) fn build_halos(
     (sources, count as u32)
 }
 
-fn source_for(
-    body: ObservedBody,
-    view: RenderViewFrame,
-    sun: LocalBodyFrame,
-    moon: LocalBodyFrame,
-    overview_sun_direction: [f64; 3],
-    overview_moon_direction: [f64; 3],
-    moon_source: [f64; 3],
-) -> Option<(u64, f32, HaloSource)> {
+fn source_for(body: ObservedBody, context: HaloContext) -> Option<(u64, f32, HaloSource)> {
+    let HaloContext {
+        view,
+        sun,
+        moon,
+        overview_sun_direction,
+        overview_moon_direction,
+        moon_source,
+        profile,
+    } = context;
     let is_sun = body.id == SKY_SUN_ID;
     let is_moon = body.id == SKY_MOON_ID;
     let (direction, visibility, source_direction, shape, phase, color, extent) = if is_sun {
@@ -102,10 +105,10 @@ fn source_for(
                 sun.visible_fraction
             },
             [0.0; 3],
-            SUN_PROFILE,
+            HaloShape::Sun,
             1.0,
-            [0.32, 0.15, 0.045],
-            8.0_f64.to_radians(),
+            profile.halos.sun_rgb,
+            profile.halos.sun_extent_rad,
         )
     } else if is_moon {
         (
@@ -120,10 +123,10 @@ fn source_for(
                 moon.visible_fraction
             },
             moon_source,
-            MOON_PROFILE,
+            HaloShape::Moon,
             body.phase.clamp(0.0, 1.0) as f32,
-            [0.09, 0.12, 0.18],
-            4.0_f64.to_radians(),
+            profile.halos.moon_rgb,
+            profile.halos.moon_extent_rad,
         )
     } else {
         if !body.visible || !body.phase.is_finite() {
@@ -132,7 +135,7 @@ fn source_for(
         let emission = body.emitted_linear_rgb;
         let reflection = body.reflected_linear_rgb.map(|value| value * body.phase);
         let scattering = body.scattered_linear_rgb;
-        let (color, shape) = dominant_profile(emission, reflection, scattering)?;
+        let (color, shape) = dominant_profile(emission, reflection, scattering, profile)?;
         let up = normalize(view.camera_eye_world_m)?;
         let direction = normalize(body.direction_world)?;
         let altitude = dot(direction, up).clamp(-1.0, 1.0).asin();
@@ -146,9 +149,11 @@ fn source_for(
         } else {
             visible_disk_fraction(altitude, body.angular_radius_rad, horizon)
         };
-        let extent =
-            (body.angular_radius_rad * 12.0).clamp(0.3_f64.to_radians(), 4.0_f64.to_radians());
-        let source_direction = if shape == REFLECTION_PROFILE || shape == ATMOSPHERE_PROFILE {
+        let extent = (body.angular_radius_rad * profile.halos.body_extent_scale).clamp(
+            profile.halos.min_body_extent_rad,
+            profile.halos.max_body_extent_rad,
+        );
+        let source_direction = if shape == HaloShape::Reflection || shape == HaloShape::Atmosphere {
             overview_sun_direction
         } else {
             [0.0; 3]
@@ -173,9 +178,9 @@ fn source_for(
     }
     let visibility = visibility.clamp(0.0, 1.0);
     let importance = if is_sun {
-        1.0
+        profile.halos.sun_importance
     } else if is_moon {
-        0.5 * visibility
+        profile.halos.moon_importance * visibility
     } else {
         color.into_iter().fold(0.0_f32, f32::max) * visibility
     };
@@ -193,7 +198,7 @@ fn source_for(
             source_direction[2] as f32,
             0.0,
         ],
-        parameters: [shape as f32, phase, 0.0, 0.0],
+        parameters: [shape as u32 as f32, phase, 0.0, 0.0],
     };
     Some((body.id.get(), importance, source))
 }
@@ -202,22 +207,35 @@ fn dominant_profile(
     emission: [f64; 3],
     reflection: [f64; 3],
     scattering: [f64; 3],
-) -> Option<([f32; 3], u32)> {
+    profile: EnvironmentSettings,
+) -> Option<([f32; 3], HaloShape)> {
     let candidates = [
-        (emission, EMISSION_PROFILE),
-        (reflection, REFLECTION_PROFILE),
-        (scattering, ATMOSPHERE_PROFILE),
+        (
+            emission,
+            profile.halo_thresholds.emission,
+            HaloShape::Emission,
+        ),
+        (
+            reflection,
+            profile.halo_thresholds.reflection,
+            HaloShape::Reflection,
+        ),
+        (
+            scattering,
+            profile.halo_thresholds.atmosphere,
+            HaloShape::Atmosphere,
+        ),
     ];
     candidates
         .into_iter()
-        .filter_map(|(rgb, shape)| {
+        .filter_map(|(rgb, threshold, shape)| {
             let rgb = rgb.map(|value| value.max(0.0));
             let brightness = max_component(rgb);
-            (brightness > 1.0e-4 && brightness.is_finite()).then_some((rgb, shape, brightness))
+            (brightness > threshold && brightness.is_finite()).then_some((rgb, shape, brightness))
         })
         .max_by(|a, b| a.2.total_cmp(&b.2))
         .and_then(|(rgb, shape, _)| {
-            let color = rgb.map(|value| value.min(10_000.0) as f32);
+            let color = rgb.map(|value| value.min(profile.halos.max_body_radiance) as f32);
             color
                 .iter()
                 .all(|value| value.is_finite())
@@ -266,10 +284,8 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
     (0..3).map(|axis| a[axis] * b[axis]).sum()
 }
 
-fn max_component(rgb: [f64; 3]) -> f32 {
-    rgb.into_iter()
-        .fold(0.0_f64, f64::max)
-        .min(f64::from(f32::MAX)) as f32
+fn max_component(rgb: [f64; 3]) -> f64 {
+    rgb.into_iter().fold(0.0_f64, f64::max)
 }
 
 fn to_f32(value: f64) -> Option<f32> {
