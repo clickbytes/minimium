@@ -1,0 +1,7 @@
+(
+    schema_version: 1,
+    mode: time_scale,
+    initial_utc: Some("2026-10-30T20:00:00Z"),
+    scale_ppm: 60000000,
+    offline_policy: pause,
+)

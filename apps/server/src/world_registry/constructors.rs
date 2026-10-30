@@ -1,4 +1,14 @@
 use super::*;
+use crate::environment::profile_for_manifest;
+
+fn gravity_for(topology: WorldTopology) -> minimium_core::world::CharacterGravity {
+    match topology {
+        WorldTopology::Planet => {
+            minimium_core::world::CharacterGravity::Radial { center: [0.0; 3] }
+        }
+        WorldTopology::Dungeon => minimium_core::world::CharacterGravity::FixedY,
+    }
+}
 
 impl WorldRegistry {
     pub(crate) fn legacy_primary(map: WorldMap) -> Self {
@@ -26,6 +36,8 @@ impl WorldRegistry {
         instances.insert(
             instance,
             WorldInstance {
+                clock_id: ClockId::MVP,
+                environment_profile: profile_for_manifest(manifest),
                 manifest,
                 map,
                 world,
@@ -57,9 +69,12 @@ impl WorldRegistry {
         world.set_gravity(gravity_for(manifest.topology()));
         world.set_precise_positions(manifest.planet().is_some());
         let map = Arc::new(map);
+        let environment_profile = profile_for_manifest(manifest);
         self.instances.insert(
             instance,
             WorldInstance {
+                clock_id: ClockId::MVP,
+                environment_profile,
                 manifest,
                 map,
                 world,
@@ -92,6 +107,8 @@ impl WorldRegistry {
         instances.insert(
             world.instance,
             WorldInstance {
+                clock_id: ClockId::MVP,
+                environment_profile: profile_for_manifest(world.manifest),
                 manifest: world.manifest,
                 map,
                 world: simulation,

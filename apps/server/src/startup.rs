@@ -1,6 +1,7 @@
 use crate::{
     admin::AdminServer,
     config::ServerConfig,
+    environment::{self, EnvironmentConfig},
     lifecycle::{remove_if_exists, EndpointGuard},
     planet_config::{self, PlanetMode, ResolvedPlanetConfig},
     storage::{PersistenceWorker, PlayerStore},
@@ -34,6 +35,7 @@ pub(crate) struct Startup {
     pub(crate) endpoint_guard: EndpointGuard,
     pub(crate) data_lock: ServerDataLock,
     pub(crate) admin: AdminServer,
+    pub(crate) environment_config: EnvironmentConfig,
 }
 
 pub(crate) fn initialize(config: &ServerConfig) -> Result<Startup, Box<dyn std::error::Error>> {
@@ -51,6 +53,19 @@ pub(crate) fn initialize(config: &ServerConfig) -> Result<Startup, Box<dyn std::
     }
 
     let data_lock = ServerDataLock::acquire(data_dir)?;
+    if config.environment_config_path.is_some()
+        && ["world.seed", "world.planet.ron", "world.snapshot"]
+            .iter()
+            .any(|name| data_dir.join(name).exists())
+    {
+        return Err("--environment-config initializes a new world only; use time commands for an existing world".into());
+    }
+    let environment_config = config
+        .environment_config_path
+        .as_deref()
+        .map(environment::load_config)
+        .transpose()?
+        .unwrap_or_default();
     let seed_path = data_dir.join("world.seed");
     let existing_seed = match minimium_platform::files::read_bounded_file(&seed_path, 64) {
         Ok(bytes) => Some(
@@ -316,6 +331,7 @@ pub(crate) fn initialize(config: &ServerConfig) -> Result<Startup, Box<dyn std::
         endpoint_guard,
         data_lock,
         admin,
+        environment_config,
     })
 }
 

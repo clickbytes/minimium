@@ -3,6 +3,7 @@ mod admin;
 mod commands;
 mod config;
 mod connection;
+mod environment;
 mod executor;
 mod lifecycle;
 mod metrics;
@@ -48,7 +49,17 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().skip(1).collect();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
-        println!("minimium-server run [--seed DECIMAL|0xHEX] [--planet-config PATH] [--threads 1..64|auto] [--max-players N] [--bind IP] [--game-port PORT] [--data-dir PATH] [--map PATH | --world-definition PATH] [--autosave-seconds N] [--headless]\nminimium-server --version\n--max-players defaults to {MAX_PLAYERS}; --game-port 0 selects an available port (default); --autosave-seconds 0 disables periodic saves (default: {DEFAULT_AUTOSAVE_SECONDS}); --headless disables stdin commands; administer with minimiumctl.");
+        println!(
+            "minimium-server run [--seed DECIMAL|0xHEX] [--planet-config PATH] \
+             [--environment-config PATH] [--threads 1..64|auto] [--max-players N] \
+             [--bind IP] [--game-port PORT] [--data-dir PATH] \
+             [--map PATH | --world-definition PATH] [--autosave-seconds N] [--headless]\n\
+             minimium-server --version\n\
+             --max-players defaults to {MAX_PLAYERS}; --game-port 0 selects an available port (default); \
+             --autosave-seconds 0 disables periodic saves (default: {DEFAULT_AUTOSAVE_SECONDS}); \
+             --environment-config initializes clock mode/date/scale for a new world only; \
+             --headless disables stdin commands; administer with minimiumctl."
+        );
         return Ok(());
     }
     if args.iter().any(|arg| arg == "--version") {

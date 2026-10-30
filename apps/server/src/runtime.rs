@@ -9,6 +9,7 @@ use crate::{
     admin::{AdminServer, RequestId},
     config::ServerConfig,
     connection::Client,
+    environment::EnvironmentClock,
     executor::Executor,
     lifecycle::{self, EndpointGuard},
     metrics::RuntimeMetrics,
@@ -23,6 +24,7 @@ use crate::{
 use minimium_core::{
     identity::PlayerProfileId,
     ids::PlayerId,
+    time::{ClockRevision, MonotonicMs},
     world::{CharacterInput, CollisionQueryStats, WorldMap},
 };
 use minimium_platform::{
@@ -67,6 +69,7 @@ struct OperationsState {
 }
 struct Scheduler {
     server_started: Instant,
+    next_utc_check: Instant,
     next_tick: Instant,
     next_snapshot: Instant,
     next_autosave: Option<Instant>,
@@ -75,6 +78,7 @@ struct Scheduler {
 pub(crate) struct ServerRuntime {
     executor: Executor,
     game: GameState,
+    environment_clock: EnvironmentClock,
     connections: ConnectionState,
     operations: OperationsState,
     scheduler: Scheduler,
@@ -87,6 +91,8 @@ pub(crate) struct ServerRuntime {
     max_players: usize,
     max_client_connections: usize,
     lanes: usize,
+    #[allow(dead_code)]
+    environment_dirty_revision: Option<ClockRevision>,
     autosave_seconds: u64,
     stop: bool,
     // Endpoint must be removed while the data lock is still held.
@@ -109,6 +115,7 @@ impl ServerRuntime {
             endpoint_guard,
             data_lock,
             admin,
+            environment_config,
         } = startup;
         println!("Minimium server started: game={}:{} admin=127.0.0.1:{} players={} lanes={lanes} autosave={}s map={:016x}", config.bind_address, endpoint.game_port, endpoint.admin_port, config.max_players, config.autosave_seconds, map.fingerprint());
         println!(
@@ -163,13 +170,22 @@ impl ServerRuntime {
         };
         let metrics = RuntimeMetrics::default();
         let server_started = Instant::now();
+        let environment_clock =
+            EnvironmentClock::new(environment_config, server_started).map_err(|error| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("environment clock: {error}"),
+                )
+            })?;
         let autosave_interval = Duration::from_secs(config.autosave_seconds);
         Ok(Self {
             game,
+            environment_clock,
             connections,
             operations,
             scheduler: Scheduler {
                 server_started,
+                next_utc_check: server_started + Duration::from_secs(5),
                 next_tick: server_started + TICK,
                 next_snapshot: Instant::now() + SNAPSHOT_INTERVAL,
                 next_autosave: (!autosave_interval.is_zero())
@@ -186,6 +202,7 @@ impl ServerRuntime {
             max_players: config.max_players,
             max_client_connections,
             lanes,
+            environment_dirty_revision: None,
             autosave_seconds: config.autosave_seconds,
             stop: false,
             _endpoint_guard: endpoint_guard,
@@ -223,6 +240,14 @@ impl ServerRuntime {
             data_dir: &self.data_dir,
             runtime_error,
         })
+    }
+
+    pub(super) fn monotonic_ms(&self, now: Instant) -> io::Result<MonotonicMs> {
+        let elapsed = now.saturating_duration_since(self.scheduler.server_started);
+        let millis = u64::try_from(elapsed.as_millis()).map_err(|_| {
+            io::Error::new(io::ErrorKind::InvalidData, "server monotonic time overflow")
+        })?;
+        Ok(MonotonicMs::new(millis))
     }
 
     fn plan_sleep(&self) {
