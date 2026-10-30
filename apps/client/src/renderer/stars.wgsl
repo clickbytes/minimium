@@ -14,14 +14,14 @@ struct StarVertexOutput {
 };
 
 const STAR_REFERENCE_MAGNITUDE = 1.0;
-const STAR_RADIANCE_SCALE = 0.6;
+const STAR_RADIANCE_SCALE = 3.0;
 
 fn star_prominence(visual_magnitude: f32) -> f32 {
     return clamp((5.0 - visual_magnitude) / 6.5, 0.0, 1.0);
 }
 
 fn star_radius_pixels(visual_magnitude: f32) -> f32 {
-    return mix(0.85, 3.4, pow(star_prominence(visual_magnitude), 1.2));
+    return mix(1.4, 6.5, pow(star_prominence(visual_magnitude), 1.1));
 }
 
 fn star_hash(id: u32) -> f32 {
@@ -84,11 +84,15 @@ fn star_hash(id: u32) -> f32 {
         discard;
     }
     let prominence = star_prominence(input.visual_magnitude);
-    let profile = (exp(-9.0 * radius_squared)
-        + prominence * 0.32 * exp(-2.5 * radius_squared))
+    let core = exp(-9.0 * radius_squared);
+    let glow = prominence * 0.34 * exp(-3.5 * radius_squared);
+    let glint = pow(prominence, 4.0) * 0.28
+        * exp(-42.0 * min(abs(input.local_position.x), abs(input.local_position.y)))
+        * exp(-3.0 * radius_squared);
+    let profile = (core + glow + glint)
         * (1.0 - smoothstep(0.72, 1.0, radius_squared));
     let radius_pixels = star_radius_pixels(input.visual_magnitude);
-    let inverse_area = 1.0 / (radius_pixels * radius_pixels);
+    let area_compensation = inverseSqrt(radius_pixels * 0.5);
     let relative_flux = pow(10.0, -0.4 * (input.visual_magnitude - STAR_REFERENCE_MAGNITUDE));
     let seed = star_hash(input.catalog_star_id);
     let second_seed = star_hash(input.catalog_star_id ^ 0x68bc21ebu);
@@ -101,9 +105,9 @@ fn star_hash(id: u32) -> f32 {
     );
     let base = tone_map_linear(background);
     let star_radiance = input.color_linear * relative_flux * STAR_RADIANCE_SCALE
-        * inverse_area * profile * visibility * twinkle;
+        * area_compensation * profile * visibility * twinkle;
     if environment.flags.w != 0u {
-        return vec4<f32>(star_radiance * visibility * twinkle, 0.0);
+        return vec4<f32>(star_radiance, 0.0);
     }
     let with_star = tone_map_linear(background + star_radiance);
     let linear_delta = max(with_star - base, vec3<f32>(0.0));
