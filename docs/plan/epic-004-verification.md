@@ -1,7 +1,7 @@
 # Epic 004 — plan i rejestr weryfikacji
 
 **Epic:** [#51](https://github.com/clickbytes/minimium/issues/51). **Właściciel finalnego odbioru:** [E004-16 / #68](https://github.com/clickbytes/minimium/issues/68).
-**Baza planu:** `aad2c8298606a46dc3a286b4eac7f1de45759851`. **Kodowy baseline E004-00:** `cd816c2d32bd4b1447f14ac04a9ec99e44c0e4af` (merge `main@30ff278` into integration). **Status:** kontrakty zatwierdzone; E004-01 zintegrowane w PR #73; E004-02 w PR #74 (`c9a6855`); E004-03..14 NOT STARTED; runtime NOT RUN.
+**Baza planu:** `aad2c8298606a46dc3a286b4eac7f1de45759851`. **Kodowy baseline E004-00:** `cd816c2d32bd4b1447f14ac04a9ec99e44c0e4af` (merge `main@30ff278` into integration). **Status:** kontrakty zatwierdzone; E004-01 zintegrowane w PR #73; E004-02 w PR #74 (`c9a6855`); E004-03 w PR #75 (`c7d6000`, merge pending); E004-04..14 NOT STARTED; runtime NOT RUN.
 
 ## Rejestr początkowy
 
@@ -14,6 +14,7 @@
 | Kompilacja, fmt, clippy, architektura, limity plików | BASELINE PASS | Head `cd816c2`; `cargo fmt --all -- --check`, `cargo check --workspace --locked` (0 errors, 12 warnings), `cargo clippy --workspace --locked` (0 errors, 11 warnings), `python scripts/check_architecture.py`, `python scripts/check_file_lengths.py` (163 pliki, max 500 linii). Nie używano `-D warnings`. To baseline gałęzi epica, nie odbiór późniejszej implementacji. |
 | E004-01 statyczne kontrole | PASS na `a8577b4` | `cargo fmt --all -- --check`, `cargo check --workspace --locked` (0 errors; 12 warnings o hard-link cache), `cargo clippy --workspace --locked` (0 errors; 12 ostrzeżeń o hard-link cache, bez lint diagnostics), `python scripts/check_architecture.py`, `python scripts/check_file_lengths.py` (167 plików, max 500 linii), `git diff --check`. Żadne testy ani aplikacja nie były uruchamiane. |
 | E004-02 statyczne kontrole | PASS na `c9a6855` | `cargo fmt --all -- --check`, `cargo check --workspace --locked` (0 errors; 11 ostrzeżeń o Windows incremental hard-link fallback), `cargo clippy --workspace --locked` (0 errors; 11 tych samych ostrzeżeń, bez diagnostyk lintów), `python scripts/check_architecture.py`, `python scripts/check_file_lengths.py` (174 pliki, max 500 linii), `git diff --check`. Żadne testy ani aplikacja nie były uruchamiane. |
+| E004-03 statyczne kontrole | PASS na `c7d6000` | PR [#75](https://github.com/clickbytes/minimium/pull/75), branch `epic/004-03-save-clock`; `cargo fmt --all -- --check`, `cargo check --workspace --locked` (0 errors; 11 ostrzeżeń o Windows incremental hard-link fallback), `cargo clippy --workspace --locked` (0 errors; 11 tych samych ostrzeżeń, bez diagnostyk lintów), `python scripts/check_architecture.py`, `python scripts/check_file_lengths.py` (176 plików, max 500 linii), `git diff --check`. Żadne testy ani aplikacja nie były uruchamiane. |
 | Unit/integration/e2e, aplikacja i loadtest | NOT RUN | Wyraźne rozpoczęcie końcowej fazy przez użytkownika oraz ukończone E004-15. |
 | Wizualne QA i astronomiczne referencje | NOT RUN | Nie zastępować wartościami z planu ani wcześniejszymi wynikami E002/E003. |
 | Sprzęt historyczny / 500 graczy | NOT MEASURED | Raportować dostępność platformy i realne pomiary; nie deklarować na podstawie planu. |
