@@ -1,8 +1,9 @@
+use crate::executor::Executor;
 use crate::{
     connection::{queue_message, Client},
     metrics::RuntimeMetrics,
 };
-use minimium_core::{executor::Executor, world::World};
+use minimium_core::world::World;
 use minimium_protocol::{
     RemotePlayer, RemotePlayerIds, RemotePlayers, ServerMessage, MAX_VISIBLE_PLAYERS,
 };
@@ -35,8 +36,8 @@ pub(crate) fn replicate_snapshots(
         .iter()
         .enumerate()
         .filter_map(|(index, client)| {
-            (client.close_deadline.is_none())
-                .then(|| client.player_id.map(|id| (index, id)))
+            (client.close_deadline().is_none())
+                .then(|| client.player_id().map(|id| (index, id)))
                 .flatten()
         })
         .collect();

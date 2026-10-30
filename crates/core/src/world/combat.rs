@@ -4,10 +4,15 @@ use super::raycast::ray_aabb_distance;
 use super::rules::ShotOutcome;
 use super::world_state::World;
 use super::{HITSCAN_DAMAGE, HITSCAN_RANGE, PLAYER_HEIGHT, PLAYER_MAX_HEALTH, PLAYER_RADIUS};
+use crate::ids::PlayerId;
 use std::sync::Arc;
 
 impl World {
-    pub fn fire_hitscan(&mut self, attacker_id: u64, direction: [f32; 3]) -> Option<ShotOutcome> {
+    pub fn fire_hitscan(
+        &mut self,
+        attacker_id: PlayerId,
+        direction: [f32; 3],
+    ) -> Option<ShotOutcome> {
         if direction.iter().any(|value| !value.is_finite()) {
             return None;
         }
@@ -37,7 +42,7 @@ impl World {
         combat_player_query.fill(cells, origin, direction, HITSCAN_RANGE);
         combat_map_query.fill(collision_index, origin, direction, HITSCAN_RANGE);
 
-        let mut nearest_player: Option<(u64, f32)> = None;
+        let mut nearest_player: Option<(PlayerId, f32)> = None;
         for candidate_id in &combat_player_query.candidates {
             if *candidate_id == attacker_id {
                 continue;

@@ -3,17 +3,19 @@ use crate::{
     lifecycle::{remove_if_exists, EndpointGuard},
     storage::{PersistenceWorker, PlayerStore},
 };
-use minimium_core::{
+use minimium_core::world::WorldMap;
+use minimium_platform::{
     admin_client::{SHUTDOWN_FILE, SHUTDOWN_OWNER_FILE},
     endpoint::{new_admin_token, ServerEndpoint},
     server_lock::ServerDataLock,
-    world::{WorldMap, SAMPLE_MAP},
 };
 use std::{
     env, io,
     net::{TcpListener, ToSocketAddrs},
     path::{Path, PathBuf},
 };
+
+const SAMPLE_MAP: &str = include_str!("../../../games/sample/maps/demo.map");
 
 pub(crate) struct Startup {
     pub(crate) map: WorldMap,
@@ -41,14 +43,14 @@ pub(crate) fn initialize(
     }
 
     let map = if let Some(path) = map_path {
-        WorldMap::load_file(path).map_err(|error| {
+        minimium_assets::load_map(path).map_err(|error| {
             io::Error::new(
                 error.kind(),
                 format!("could not load map {}: {error}", path.display()),
             )
         })?
     } else {
-        WorldMap::parse(SAMPLE_MAP)
+        minimium_assets::parse_map(SAMPLE_MAP)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
     };
 
@@ -56,7 +58,7 @@ pub(crate) fn initialize(
     remove_if_exists(&data_dir.join(SHUTDOWN_FILE))?;
     remove_if_exists(&data_dir.join(SHUTDOWN_OWNER_FILE))?;
     let mut player_store = PlayerStore::load(data_dir, &map)?;
-    player_store.active_players.reserve(max_players);
+    player_store.reserve_active(max_players);
     let persistence = PersistenceWorker::spawn(data_dir.to_path_buf())?;
     let next_player = player_store.next_player_id()?;
     let game_listener = TcpListener::bind(bind_addresses.as_slice())?;

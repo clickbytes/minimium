@@ -301,28 +301,35 @@ impl Connector {
         match active.receiver.try_recv() {
             Ok(worker_result) => {
                 let id = active.id;
-                let result = worker_result.result;
                 let on_time = worker_result.completed_at <= active.deadline;
+                if !on_time {
+                    if active.local {
+                        active.discard = Some(DiscardReason::TimedOut);
+                        active.discard_reported = true;
+                        finalize_discard(active, worker_result);
+                    } else {
+                        drop(worker_result);
+                        self.active = None;
+                    }
+                    return PollEvent::TimedOut { attempt_id: id };
+                }
+                let result = worker_result.result;
                 if active.local {
                     if let Some(finalize) = active.finalize.take() {
                         let _ = finalize.send(WorkerFinalization::Accept);
                     }
                 }
                 self.active = None;
-                if !on_time {
-                    PollEvent::TimedOut { attempt_id: id }
-                } else {
-                    match result {
-                        Ok(connected) => PollEvent::Connected {
-                            attempt_id: id,
-                            stream: connected.stream,
-                            local_server: connected.local_server,
-                        },
-                        Err(error) => PollEvent::Failed {
-                            attempt_id: id,
-                            error,
-                        },
-                    }
+                match result {
+                    Ok(connected) => PollEvent::Connected {
+                        attempt_id: id,
+                        stream: connected.stream,
+                        local_server: connected.local_server,
+                    },
+                    Err(error) => PollEvent::Failed {
+                        attempt_id: id,
+                        error,
+                    },
                 }
             }
             Err(TryRecvError::Empty) if Instant::now() >= active.deadline => {

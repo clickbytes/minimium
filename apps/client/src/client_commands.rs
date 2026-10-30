@@ -5,10 +5,7 @@
 //! queues protocol messages directly and reports UI/process work as a typed
 //! [`FrontendAction`], leaving each front end in control of its own event loop.
 
-use crate::{
-    options::ThreadLane,
-    session::{ClientSession, QueueError},
-};
+use crate::{options::ThreadLane, session::QueueError};
 use minimium_protocol::ClientMessage;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -31,7 +28,27 @@ pub(crate) enum ClientCommand {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CommandId {
+    Help,
+    HostLocal,
+    Connect,
+    Disconnect,
+    FpsShow,
+    NetStats,
+    Ping,
+    Move,
+    Jump,
+    Fire,
+    Chat,
+    SetName,
+    State,
+    Clear,
+    Quit,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct CommandSpec {
+    id: CommandId,
     pub name: &'static str,
     pub alias: Option<&'static str>,
     pub usage: &'static str,
@@ -40,76 +57,91 @@ pub(crate) struct CommandSpec {
 /// Canonical command names, aliases, and syntax used by help and completion.
 pub(crate) const COMMAND_CATALOG: &[CommandSpec] = &[
     CommandSpec {
+        id: CommandId::Help,
         name: "help",
         alias: None,
         usage: "help",
     },
     CommandSpec {
+        id: CommandId::HostLocal,
         name: "host local",
         alias: None,
         usage: "host local [--threads 1|2|auto]",
     },
     CommandSpec {
+        id: CommandId::Connect,
         name: "connect",
         alias: None,
         usage: "connect HOST:PORT",
     },
     CommandSpec {
+        id: CommandId::Disconnect,
         name: "disconnect",
         alias: None,
         usage: "disconnect",
     },
     CommandSpec {
+        id: CommandId::FpsShow,
         name: "fps show",
         alias: None,
         usage: "fps show",
     },
     CommandSpec {
+        id: CommandId::NetStats,
         name: "net stats",
         alias: None,
         usage: "net stats",
     },
     CommandSpec {
+        id: CommandId::Ping,
         name: "ping",
         alias: None,
         usage: "ping",
     },
     CommandSpec {
+        id: CommandId::Move,
         name: "move",
         alias: None,
         usage: "move X Z",
     },
     CommandSpec {
+        id: CommandId::Jump,
         name: "jump",
         alias: None,
         usage: "jump",
     },
     CommandSpec {
+        id: CommandId::Fire,
         name: "fire",
         alias: None,
         usage: "fire",
     },
     CommandSpec {
+        id: CommandId::Chat,
         name: "say",
         alias: Some("chat"),
         usage: "say TEXT (alias: chat)",
     },
     CommandSpec {
+        id: CommandId::SetName,
         name: "name",
         alias: None,
         usage: "name NAME",
     },
     CommandSpec {
+        id: CommandId::State,
         name: "state",
         alias: None,
         usage: "state",
     },
     CommandSpec {
+        id: CommandId::Clear,
         name: "clear",
         alias: None,
         usage: "clear",
     },
     CommandSpec {
+        id: CommandId::Quit,
         name: "quit",
         alias: Some("exit"),
         usage: "quit (alias: exit)",
@@ -126,10 +158,17 @@ pub(crate) fn completion_candidates() -> impl Iterator<Item = &'static str> {
         .flat_map(|command| std::iter::once(command.name).chain(command.alias))
 }
 
-fn is_command(input: &str, canonical: &str) -> bool {
-    COMMAND_CATALOG.iter().any(|command| {
-        command.name == canonical && (input == command.name || command.alias == Some(input))
-    })
+fn command_id(first: &str, second: Option<&str>) -> Option<CommandId> {
+    COMMAND_CATALOG
+        .iter()
+        .find(|spec| {
+            if let Some((verb, subcommand)) = spec.name.split_once(' ') {
+                first == verb && second == Some(subcommand)
+            } else {
+                first == spec.name || spec.alias == Some(first)
+            }
+        })
+        .map(|spec| spec.id)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -148,7 +187,7 @@ pub(crate) enum ParseError {
 pub(crate) fn parse_command(input: &str) -> Result<Option<ClientCommand>, ParseError> {
     let trimmed = input.trim();
     if let Some((verb, text)) = trimmed.split_once(char::is_whitespace) {
-        if is_command(verb, "say") {
+        if command_id(verb, None) == Some(CommandId::Chat) {
             let text = text.trim();
             return if text.is_empty() {
                 Err(ParseError::MissingChat)
@@ -165,36 +204,39 @@ pub(crate) fn parse_command(input: &str) -> Result<Option<ClientCommand>, ParseE
         words.next(),
         words.next(),
     );
-    let command = match parts {
-        (None, None, None, None, None) => return Ok(None),
-        (Some("help"), None, None, None, None) => ClientCommand::Help,
-        (Some("host"), Some("local"), None, None, None) => ClientCommand::HostLocal(None),
-        (Some("host"), Some("local"), Some("--threads"), Some(lane), None) => {
+    let id = parts.0.and_then(|first| command_id(first, parts.1));
+    let command = match (id, parts) {
+        (_, (None, None, None, None, None)) => return Ok(None),
+        (Some(CommandId::Help), (_, None, None, None, None)) => ClientCommand::Help,
+        (Some(CommandId::HostLocal), (_, _, None, None, None)) => ClientCommand::HostLocal(None),
+        (Some(CommandId::HostLocal), (_, _, Some("--threads"), Some(lane), None)) => {
             ClientCommand::HostLocal(Some(
                 ThreadLane::parse(lane).map_err(|_| ParseError::InvalidLane)?,
             ))
         }
-        (Some("connect"), Some(address), None, None, None) => {
+        (Some(CommandId::Connect), (_, Some(address), None, None, None)) => {
             ClientCommand::Connect(address.into())
         }
-        (Some("disconnect"), None, None, None, None) => ClientCommand::Disconnect,
-        (Some("fps"), Some("show"), None, None, None) => ClientCommand::FpsShow,
-        (Some("net"), Some("stats"), None, None, None) => ClientCommand::NetStats,
-        (Some("ping"), None, None, None, None) => ClientCommand::Ping,
-        (Some("move"), Some(x), Some(z), None, None) => {
+        (Some(CommandId::Disconnect), (_, None, None, None, None)) => ClientCommand::Disconnect,
+        (Some(CommandId::FpsShow), (_, _, None, None, None)) => ClientCommand::FpsShow,
+        (Some(CommandId::NetStats), (_, _, None, None, None)) => ClientCommand::NetStats,
+        (Some(CommandId::Ping), (_, None, None, None, None)) => ClientCommand::Ping,
+        (Some(CommandId::Move), (_, Some(x), Some(z), None, None)) => {
             ClientCommand::Move([parse_coordinate(x)?, parse_coordinate(z)?])
         }
-        (Some("jump"), None, None, None, None) => ClientCommand::Jump,
-        (Some("fire"), None, None, None, None) => ClientCommand::Fire,
-        (Some("name"), Some(name), None, None, None) => ClientCommand::SetName(name.into()),
-        (Some("state"), None, None, None, None) => ClientCommand::State,
-        (Some("clear"), None, None, None, None) => ClientCommand::Clear,
-        (Some(verb), None, None, None, None) if is_command(verb, "quit") => ClientCommand::Quit,
-        (Some("host"), Some("local"), ..) => return Err(ParseError::HostUsage),
-        (Some("connect"), ..) => return Err(ParseError::ConnectUsage),
-        (Some("move"), ..) => return Err(ParseError::MoveUsage),
-        (Some("name"), ..) => return Err(ParseError::NameUsage),
-        (Some(verb), ..) if is_command(verb, "say") => return Err(ParseError::MissingChat),
+        (Some(CommandId::Jump), (_, None, None, None, None)) => ClientCommand::Jump,
+        (Some(CommandId::Fire), (_, None, None, None, None)) => ClientCommand::Fire,
+        (Some(CommandId::SetName), (_, Some(name), None, None, None)) => {
+            ClientCommand::SetName(name.into())
+        }
+        (Some(CommandId::State), (_, None, None, None, None)) => ClientCommand::State,
+        (Some(CommandId::Clear), (_, None, None, None, None)) => ClientCommand::Clear,
+        (Some(CommandId::Quit), (_, None, None, None, None)) => ClientCommand::Quit,
+        (Some(CommandId::HostLocal), _) => return Err(ParseError::HostUsage),
+        (Some(CommandId::Connect), _) => return Err(ParseError::ConnectUsage),
+        (Some(CommandId::Move), _) => return Err(ParseError::MoveUsage),
+        (Some(CommandId::SetName), _) => return Err(ParseError::NameUsage),
+        (Some(CommandId::Chat), _) => return Err(ParseError::MissingChat),
         _ => return Err(ParseError::UnknownCommand),
     };
     Ok(Some(command))
@@ -211,7 +253,7 @@ fn parse_coordinate(value: &str) -> Result<f32, ParseError> {
 }
 
 pub(crate) struct CommandContext<'a> {
-    pub session: &'a mut Option<ClientSession>,
+    pub connection: &'a mut crate::connection_controller::ConnectionController,
     /// Direction used for `fire`; terminal callers pass [1, 0, 0].
     pub fire_direction: [f32; 3],
 }
@@ -266,11 +308,8 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
         ClientCommand::Clear => return CommandResult::Action(FrontendAction::Clear),
         ClientCommand::Quit => return CommandResult::Action(FrontendAction::Quit),
     };
-    match context.session.as_mut() {
-        Some(session) => match session.queue(&message) {
-            Ok(()) => CommandResult::Sent,
-            Err(error) => CommandResult::QueueError(error),
-        },
-        None => CommandResult::QueueError(QueueError::Disconnected),
+    match context.connection.queue(&message) {
+        Ok(()) => CommandResult::Sent,
+        Err(error) => CommandResult::QueueError(error),
     }
 }

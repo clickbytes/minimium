@@ -45,7 +45,7 @@ impl ApplicationHandler for App {
                     if let Some(address) = &self.options.connect {
                         renderer.start_remote_attempt(address);
                     } else {
-                        renderer.start_local_attempt(renderer.threads);
+                        renderer.start_local_attempt(renderer.settings.threads);
                     }
                 }
                 self.window = Some(window);
@@ -70,31 +70,31 @@ impl ApplicationHandler for App {
                 if let PhysicalKey::Code(code) = event.physical_key {
                     if code == KeyCode::F1 && event.state == ElementState::Pressed && !event.repeat
                     {
-                        renderer.console.open = !renderer.console.open;
+                        renderer.ui.console.open = !renderer.ui.console.open;
                         let _ = window.set_cursor_grab(CursorGrabMode::None);
                         window.set_cursor_visible(true);
-                        renderer.cursor_locked = false;
-                        renderer.last_cursor = None;
-                        renderer.keys.clear();
-                        renderer.jump_pending = false;
+                        renderer.input.cursor_locked = false;
+                        renderer.input.last_cursor = None;
+                        renderer.input.keys.clear();
+                        renderer.input.jump_pending = false;
                         return;
                     }
-                    if renderer.console.open {
+                    if renderer.ui.console.open {
                         if event.state == ElementState::Pressed {
                             match code {
-                                KeyCode::Escape => renderer.console.open = false,
+                                KeyCode::Escape => renderer.ui.console.open = false,
                                 KeyCode::Enter => {
                                     if super::controller::execute_console_input(renderer) {
                                         event_loop.exit();
                                     }
                                 }
-                                KeyCode::Backspace => renderer.console.backspace(),
-                                KeyCode::ArrowUp => renderer.console.history_up(),
-                                KeyCode::ArrowDown => renderer.console.history_down(),
-                                KeyCode::Tab => renderer.console.complete_input(),
+                                KeyCode::Backspace => renderer.ui.console.backspace(),
+                                KeyCode::ArrowUp => renderer.ui.console.history_up(),
+                                KeyCode::ArrowDown => renderer.ui.console.history_down(),
+                                KeyCode::Tab => renderer.ui.console.complete_input(),
                                 _ => {
                                     if let Some(text) = event.text.as_ref() {
-                                        renderer.console.append_text(text.as_str());
+                                        renderer.ui.console.append_text(text.as_str());
                                     }
                                 }
                             }
@@ -104,15 +104,15 @@ impl ApplicationHandler for App {
                     if code == KeyCode::Escape && event.state == ElementState::Pressed {
                         let _ = window.set_cursor_grab(CursorGrabMode::None);
                         window.set_cursor_visible(true);
-                        renderer.cursor_locked = false;
-                        renderer.last_cursor = None;
+                        renderer.input.cursor_locked = false;
+                        renderer.input.last_cursor = None;
                     } else if event.state == ElementState::Pressed {
-                        renderer.keys.insert(code);
+                        renderer.input.keys.insert(code);
                         if code == KeyCode::Space && !event.repeat {
-                            renderer.jump_pending = true;
+                            renderer.input.jump_pending = true;
                         }
                     } else {
-                        renderer.keys.remove(&code);
+                        renderer.input.keys.remove(&code);
                     }
                 }
             }
@@ -121,34 +121,34 @@ impl ApplicationHandler for App {
                 button: MouseButton::Left,
                 ..
             } => {
-                if !renderer.console.open {
-                    if renderer.cursor_locked {
+                if !renderer.ui.console.open {
+                    if renderer.input.cursor_locked {
                         renderer.queue_fire();
                     } else if window.set_cursor_grab(CursorGrabMode::Locked).is_ok()
                         || window.set_cursor_grab(CursorGrabMode::Confined).is_ok()
                     {
                         window.set_cursor_visible(false);
-                        renderer.cursor_locked = true;
-                        renderer.last_cursor = None;
+                        renderer.input.cursor_locked = true;
+                        renderer.input.last_cursor = None;
                     }
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
-                if renderer.cursor_locked && !renderer.console.open {
-                    if let Some((x, y)) = renderer.last_cursor {
-                        renderer.yaw += ((position.x - x) as f32) * 0.0025;
-                        renderer.pitch -= ((position.y - y) as f32) * 0.0025;
-                        renderer.pitch = renderer.pitch.clamp(-1.5, 1.5);
+                if renderer.input.cursor_locked && !renderer.ui.console.open {
+                    if let Some((x, y)) = renderer.input.last_cursor {
+                        renderer.input.yaw += ((position.x - x) as f32) * 0.0025;
+                        renderer.input.pitch -= ((position.y - y) as f32) * 0.0025;
+                        renderer.input.pitch = renderer.input.pitch.clamp(-1.5, 1.5);
                     }
                 }
-                renderer.last_cursor = Some((position.x, position.y));
+                renderer.input.last_cursor = Some((position.x, position.y));
             }
             WindowEvent::RedrawRequested => {
                 let started = Instant::now();
-                let interval = started.saturating_duration_since(renderer.last_redraw);
-                renderer.last_redraw = started;
+                let interval = started.saturating_duration_since(renderer.metrics.last_redraw);
+                renderer.metrics.last_redraw = started;
                 renderer.update();
-                let draws = match renderer.render() {
+                let draws = match renderer.gpu.render() {
                     Ok(draws) => draws,
                     Err(
                         wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated,
@@ -162,20 +162,21 @@ impl ApplicationHandler for App {
                     }
                 };
                 renderer
+                    .metrics
                     .frame_stats
                     .record_frame(interval, started.elapsed(), draws);
                 if draws > 0 {
-                    renderer.fps_frames += 1;
+                    renderer.metrics.fps_frames += 1;
                 }
-                let sample_time = renderer.fps_time.elapsed().as_secs_f64();
+                let sample_time = renderer.metrics.fps_time.elapsed().as_secs_f64();
                 if sample_time >= 1.0 {
-                    let fps = renderer.fps_frames as f64 / sample_time;
-                    renderer.fps_frames = 0;
-                    renderer.fps_time = Instant::now();
+                    let fps = renderer.metrics.fps_frames as f64 / sample_time;
+                    renderer.metrics.fps_frames = 0;
+                    renderer.metrics.fps_time = Instant::now();
                     window.set_title(
                         &Text::WindowTitleStatus {
                             fps,
-                            health: renderer.health,
+                            health: renderer.game.health,
                         }
                         .to_string(),
                     );
@@ -193,10 +194,10 @@ impl ApplicationHandler for App {
     ) {
         if let DeviceEvent::MouseMotion { delta } = event {
             if let Some(renderer) = &mut self.renderer {
-                if renderer.cursor_locked && !renderer.console.open {
-                    renderer.yaw += (delta.0 as f32) * 0.0025;
-                    renderer.pitch -= (delta.1 as f32) * 0.0025;
-                    renderer.pitch = renderer.pitch.clamp(-1.5, 1.5);
+                if renderer.input.cursor_locked && !renderer.ui.console.open {
+                    renderer.input.yaw += (delta.0 as f32) * 0.0025;
+                    renderer.input.pitch -= (delta.1 as f32) * 0.0025;
+                    renderer.input.pitch = renderer.input.pitch.clamp(-1.5, 1.5);
                 }
             }
         }
@@ -215,7 +216,7 @@ impl ApplicationHandler for App {
 pub fn run(options: crate::options::ClientOptions) -> Result<(), Box<dyn Error>> {
     let map_path = options.map_path.clone();
     let map = if let Some(path) = map_path.as_deref() {
-        WorldMap::load_file(path).map_err(|error| {
+        minimium_assets::load_map(path).map_err(|error| {
             Text::MapLoadFailed {
                 path: path.display().to_string(),
                 detail: error.to_string(),
@@ -223,11 +224,11 @@ pub fn run(options: crate::options::ClientOptions) -> Result<(), Box<dyn Error>>
             .to_string()
         })?
     } else {
-        WorldMap::parse(SAMPLE_MAP)
+        minimium_assets::parse_map(SAMPLE_MAP)
             .map_err(|error| Text::BundledMapInvalid(error.to_string()).to_string())?
     };
     let (profile_dir, data_dir) = options.paths(map.fingerprint());
-    let profile_id = PlayerProfileId::load_or_create(&profile_dir)?;
+    let profile_id = minimium_platform::identity_store::load_or_create(&profile_dir)?;
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
         Instant::now() + Duration::from_millis(16),

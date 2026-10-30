@@ -1,14 +1,13 @@
 use crate::{
-    bootstrap::LocalServer,
     client_commands::{
         execute, help_lines, parse_command, CommandContext, CommandResult, FrontendAction,
     },
-    connector::{AttemptId, Connector, PollEvent, StartError},
+    connection_controller::{ConnectionController, ConnectionEvent},
+    connector::StartError,
     messages::ClientText as Text,
     options::ClientOptions,
-    session::{ClientSession, SessionEvent, SessionState},
+    session::{SessionEvent, SessionState},
 };
-use minimium_core::{identity::PlayerProfileId, world::WorldMap};
 use minimium_protocol::ServerMessage;
 use std::{
     error::Error,
@@ -17,13 +16,12 @@ use std::{
     time::Duration,
 };
 
-const ATTEMPT_TIMEOUT: Duration = Duration::from_secs(10);
 const INPUT_QUEUE_CAPACITY: usize = 64;
 
 pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
     let map_path = options.map_path.clone();
     let map = if let Some(path) = map_path.as_deref() {
-        WorldMap::load_file(path).map_err(|error| {
+        minimium_assets::load_map(path).map_err(|error| {
             Text::MapLoadFailed {
                 path: path.display().to_string(),
                 detail: error.to_string(),
@@ -31,40 +29,43 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
             .to_string()
         })?
     } else {
-        WorldMap::parse(crate::SAMPLE_MAP)
+        minimium_assets::parse_map(crate::SAMPLE_MAP)
             .map_err(|error| Text::BundledMapInvalid(error.to_string()).to_string())?
     };
     let fingerprint = map.fingerprint();
     let (profile_dir, data_dir) = options.paths(fingerprint);
-    let profile_id = PlayerProfileId::load_or_create(&profile_dir)?;
+    let profile_id = minimium_platform::identity_store::load_or_create(&profile_dir)?;
 
     println!("{}", Text::TerminalIntro);
     let (sender, receiver) = mpsc::sync_channel(INPUT_QUEUE_CAPACITY);
     super::spawn_console_input_reader(sender);
-    let mut connector = Connector::default();
-    let mut active_attempt: Option<AttemptId> = None;
-    let mut session: Option<ClientSession> = None;
-    let mut local_server: Option<LocalServer> = None;
+    let mut connection = ConnectionController::new(profile_id, fingerprint);
     let mut events = Vec::with_capacity(16);
     let mut prompt_needed = true;
     let mut last_snapshot: Option<ServerMessage> = None;
 
     if let Some(address) = options.connect.as_ref() {
-        start_remote(&mut connector, &mut active_attempt, address);
+        start_remote(&mut connection, address);
     }
 
     loop {
-        poll_connector(
-            &mut connector,
-            &mut active_attempt,
-            &mut session,
-            &mut local_server,
-            &profile_id,
-            fingerprint,
-        );
-        if let Some(current) = session.as_mut() {
+        match connection.poll_connector() {
+            ConnectionEvent::InProgress {
+                waiting_for_cleanup: true,
+            } => println!("{}", Text::WaitingForCancelledCleanup),
+            ConnectionEvent::TimedOut => println!("{}", Text::AttemptTimedOut),
+            ConnectionEvent::SessionStarted => println!("{}", Text::AwaitingWelcome),
+            ConnectionEvent::SetupFailed(error) => {
+                println!("{}", Text::ConnectionSetupFailed(error.to_string()))
+            }
+            ConnectionEvent::Failed(error) => {
+                println!("{}", Text::ConnectFailed(error.to_string()))
+            }
+            _ => {}
+        }
+        if connection.session().is_some() {
             events.clear();
-            current.poll(&mut events);
+            connection.poll_session(&mut events);
             for event in events.drain(..) {
                 match event {
                     SessionEvent::Message(message @ ServerMessage::Snapshot { .. }) => {
@@ -73,8 +74,11 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
                     other => print_session_event(other, false),
                 }
             }
-            if current.state() == SessionState::Disconnected {
-                session = None;
+            if connection
+                .session()
+                .is_some_and(|current| current.state() == SessionState::Disconnected)
+            {
+                connection.take_session();
                 last_snapshot = None;
             }
         }
@@ -98,7 +102,7 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
                 let result = execute(
                     command,
                     &mut CommandContext {
-                        session: &mut session,
+                        connection: &mut connection,
                         fire_direction: [1.0, 0.0, 0.0],
                     },
                 );
@@ -115,43 +119,36 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
                             println!("{}", Text::FpsUnavailable);
                         }
                         FrontendAction::HostLocal(requested_lanes) => {
-                            if session.is_some() || active_attempt.is_some() {
+                            if connection.busy() {
                                 println!("{}", Text::DisconnectOrWait);
                                 continue;
                             }
                             let lanes = requested_lanes.unwrap_or(options.threads);
-                            match connector.start_local(
-                                data_dir.clone(),
-                                map_path.clone(),
-                                lanes,
-                                ATTEMPT_TIMEOUT,
-                            ) {
-                                Ok(id) => {
-                                    active_attempt = Some(id);
+                            match connection.start_local(data_dir.clone(), map_path.clone(), lanes)
+                            {
+                                Ok(()) => {
                                     println!("{}", Text::StartingLocalServer);
                                 }
                                 Err(error) => print_start_error(error),
                             }
                         }
                         FrontendAction::Connect(address) => {
-                            if session.is_some() || active_attempt.is_some() {
+                            if connection.busy() {
                                 println!("{}", Text::DisconnectOrWait);
                             } else {
-                                start_remote(&mut connector, &mut active_attempt, &address);
+                                start_remote(&mut connection, &address);
                             }
                         }
                         FrontendAction::Disconnect => {
-                            if let Some(id) = active_attempt.take() {
-                                connector.cancel(id);
-                            }
-                            if let Some(mut current) = session.take() {
+                            connection.cancel();
+                            if let Some(mut current) = connection.take_session() {
                                 current.close();
                             }
                             last_snapshot = None;
                             println!("{}", Text::Disconnected);
                         }
                         FrontendAction::State => {
-                            if session.is_none() {
+                            if connection.session().is_none() {
                                 println!("{}", Text::NotConnected);
                             } else if let Some(snapshot) = &last_snapshot {
                                 print_session_event(SessionEvent::Message(snapshot.clone()), true);
@@ -162,7 +159,7 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
                         FrontendAction::FpsShow => {
                             println!("{}", Text::FpsUnavailable);
                         }
-                        FrontendAction::NetStats => match session.as_ref() {
+                        FrontendAction::NetStats => match connection.session() {
                             Some(current) => {
                                 let metrics = current.metrics();
                                 println!(
@@ -192,23 +189,13 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
         }
     }
 
-    if let Some(id) = active_attempt.take() {
-        connector.cancel(id);
-    }
-    connector.finish_on_exit();
-    drop(session.take());
-    if let Some(mut server) = local_server.take() {
-        server.shutdown()?;
-    }
+    connection.finish()?;
     Ok(())
 }
 
-fn start_remote(connector: &mut Connector, active: &mut Option<AttemptId>, address: &str) {
-    match connector.start(address.to_owned(), ATTEMPT_TIMEOUT) {
-        Ok(id) => {
-            *active = Some(id);
-            println!("{}", Text::ConnectingTo(address.to_owned()));
-        }
+fn start_remote(connection: &mut ConnectionController, address: &str) {
+    match connection.start_remote(address.to_owned()) {
+        Ok(()) => println!("{}", Text::ConnectingTo(address.to_owned())),
         Err(error) => print_start_error(error),
     }
 }
@@ -229,58 +216,6 @@ fn print_start_error(error: StartError) {
         StartError::WorkerSpawn(error) => {
             println!("{}", Text::WorkerStartFailed(error.to_string()))
         }
-    }
-}
-
-fn poll_connector(
-    connector: &mut Connector,
-    active: &mut Option<AttemptId>,
-    session: &mut Option<ClientSession>,
-    local_server: &mut Option<LocalServer>,
-    profile_id: &PlayerProfileId,
-    fingerprint: u64,
-) {
-    match connector.poll() {
-        PollEvent::Idle => {
-            *active = None;
-        }
-        PollEvent::InProgress {
-            attempt_id,
-            discarding_result,
-        } => {
-            if discarding_result && *active != Some(attempt_id) {
-                println!("{}", Text::WaitingForCancelledCleanup);
-            }
-            *active = Some(attempt_id);
-        }
-        PollEvent::TimedOut { attempt_id } if *active == Some(attempt_id) => {
-            println!("{}", Text::AttemptTimedOut);
-        }
-        PollEvent::Cancelled { attempt_id } if *active == Some(attempt_id) => {
-            *active = None;
-        }
-        PollEvent::Connected {
-            attempt_id,
-            stream,
-            local_server: server,
-        } if *active == Some(attempt_id) => {
-            *active = None;
-            if let Some(server) = server {
-                super::retain_local_server(local_server, server);
-            }
-            match ClientSession::new(stream, *profile_id.as_bytes(), fingerprint) {
-                Ok(connected) => {
-                    *session = Some(connected);
-                    println!("{}", Text::AwaitingWelcome);
-                }
-                Err(error) => println!("{}", Text::ConnectionSetupFailed(error.to_string())),
-            }
-        }
-        PollEvent::Failed { attempt_id, error } if *active == Some(attempt_id) => {
-            *active = None;
-            println!("{}", Text::ConnectFailed(error.to_string()));
-        }
-        _ => {}
     }
 }
 

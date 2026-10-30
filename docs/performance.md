@@ -8,6 +8,8 @@ The current instrumentation can report observations. It does not establish that 
 
 Histogram boundaries are in microseconds. Server ticks and work phases use `50, 100, 250, 500, 1,000, 2,500, 5,000, 50,000`, then overflow. Client frame intervals and render work use `4,000, 6,000, 8,000, 10,000, 12,000, 14,000, 16,000, 18,000, 20,000, 22,000, 25,000, 28,000, 33,000, 40,000, 50,000`, then overflow; this provides boundaries around 8, 16, 20, and 33 ms frame targets. Load-generator RTT uses `50, 100, 250, 500, 1,000, 2,000, 5,000, 10,000, 20,000, 50,000, 100,000, 250,000, 500,000, 1,000,000, 2,500,000, 5,000,000`, then overflow. Buckets compare the full nanosecond duration against these boundaries; this changes sub-microsecond boundary placement from the earlier truncated RTT histogram. Histogram recording uses fixed-size counters and does not allocate; periodic process sampling may allocate on platforms that read process files.
 
+Static review identifies potential allocation costs in executor batch vectors and shared jobs, copy-on-write world maps, snapshot candidate vectors and player clones, and growing network or renderer buffers. These are candidates for measurement, not measured regressions or savings. Allocation phase attribution follows submitted jobs into executor workers when `allocation-metrics` is enabled; the feature remains off by default.
+
 The source families are `TickDurationStats` (`DurationStats::ticks`) for server tick and phase durations, `FrameDurationStats` (`DurationStats::frames`) for client redraw intervals and render work, and `RttDurationStats` (`DurationStats::rtt`) for load-generator ping/pong latency. Their boundaries are deliberately source-specific; values from the three families should not be compared as though they had equal resolution. The client session's latest interactive ping RTT is a single sample exposed by `net stats`, not a histogram percentile.
 
 ## Server `metrics show`
@@ -24,6 +26,10 @@ The command reports space-separated `key=value` fields. Counters are cumulative 
 - **Optional allocation counters:** with the server's `allocation-metrics` feature enabled, `alloc_<phase>_allocations`, `alloc_<phase>_reallocations`, and `alloc_<phase>_bytes` are included for `other`, `network`, `commands`, `input`, `simulation`, `snapshot`, and `storage`, followed by `allocation_metrics=enabled`. Otherwise counters are absent and `allocation_metrics=disabled`. Counts cover successful allocation/reallocation requests and requested sizes; they are cumulative and are not live or retained-memory totals.
 
 Executor jobs inherit the submitting thread's allocation phase. Preparing a save snapshot and writing it on the storage worker are attributed to `storage`. Parallel simulation still creates executor dispatch containers and closures; snapshot preparation also allocates a bounded recipient list and executor containers. These are candidates for later measurement, not evidence of allocation-free ticks. Client frame timing and console vertex buffers use fixed or reusable storage; formatting messages can allocate when events occur.
+
+The save request channel has capacity one; the main lane captures copy-on-write shard views, while traversal, sorting and disk writes occur on the worker. The status reports a failed pending save if the completion channel disconnects; it does not prove durability or successful recovery after a crash.
+
+Movement batches retain their buffers across ticks. Core performs copy-on-write of player and cell indexes before dispatch, as in the prior implementation; snapshot references can therefore trigger copies. Worker completion order does not set merge order: the executor restores submission order before the main lane applies results. HashMap iteration is not a cross-run ordering guarantee, and equivalence across lane settings remains unverified.
 
 `status` provides the actual `game_address`, configured `lanes`, active `players`, `ticks`, `save_pending`, `save_last`, `max_players`, `map_fingerprint`, `tick_ms`, `snapshot_ms`, `autosave_seconds`, `protocol_version`, and `save_version`. `lanes` includes the main server lane. `save_pending` is 0 or 1; `save_last` is `never`, `pending`, `ok`, or `error_<message>`. These describe asynchronous persistence; `world save` reports queue acceptance, not disk completion.
 
@@ -67,6 +73,8 @@ For the 500 MHz research case, use a documented Pentium-class 500 MHz machine, r
 The prepared 18-run matrix is `clustered` and `dispersed` movement × 2/100/500 clients × server lanes 1/2/`auto` × 60 seconds. Run the load generator's worker threads independently from server lanes and record both. It has not been run.
 
 The current movement path uses inline work for one lane and dispatches player movement in batches at 32 or more active players. This threshold and batch size (16 players per batch) are current implementation details, not a claim that parallel execution improves throughput.
+
+The TCP sender rotates its starting client, limits each client to 16 KiB per poll and limits the iteration to 256 KiB; the receiver limits each client to 1024 bytes and 32 frames. Slow-consumer, partial-write, EOF and fairness behavior requires the deferred network scenarios; these budgets alone do not establish fairness under load.
 
 Final verification must also compare authoritative outcomes under lanes 1, 2, and `auto` with at least 32 active players, exercise the demo route and snapshot full/delta/removal behavior, and record high-percentile latency alongside averages. The 500 MHz target remains research work until measurements on specified hardware and repeatable scenarios support a conclusion.
 

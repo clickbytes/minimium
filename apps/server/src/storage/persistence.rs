@@ -12,12 +12,30 @@ enum PersistenceRequest {
     Stop,
 }
 
+enum SaveStatus {
+    Never,
+    Pending,
+    Complete,
+    Failed(String),
+}
+
+impl std::fmt::Display for SaveStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Never => f.write_str("never"),
+            Self::Pending => f.write_str("pending"),
+            Self::Complete => f.write_str("ok"),
+            Self::Failed(message) => write!(f, "error_{message}"),
+        }
+    }
+}
+
 pub(crate) struct PersistenceWorker {
     sender: mpsc::SyncSender<PersistenceRequest>,
     completions: mpsc::Receiver<io::Result<()>>,
     thread: Option<thread::JoinHandle<()>>,
-    pub(crate) pending_saves: usize,
-    last_save: String,
+    pending_saves: usize,
+    last_save: SaveStatus,
 }
 
 impl PersistenceWorker {
@@ -48,7 +66,7 @@ impl PersistenceWorker {
             completions,
             thread: Some(worker),
             pending_saves: 0,
-            last_save: String::from("never"),
+            last_save: SaveStatus::Never,
         })
     }
 
@@ -56,17 +74,19 @@ impl PersistenceWorker {
         match self.sender.try_send(PersistenceRequest::Save(snapshot)) {
             Ok(()) => {
                 self.pending_saves = self.pending_saves.saturating_add(1);
-                self.last_save = String::from("pending");
+                self.last_save = SaveStatus::Pending;
                 Ok(())
             }
             Err(mpsc::TrySendError::Full(_)) => Err(io::Error::new(
                 io::ErrorKind::WouldBlock,
                 "a world save is already queued",
             )),
-            Err(mpsc::TrySendError::Disconnected(_)) => Err(io::Error::new(
-                io::ErrorKind::BrokenPipe,
-                "world storage worker stopped",
-            )),
+            Err(mpsc::TrySendError::Disconnected(_)) => {
+                let error =
+                    io::Error::new(io::ErrorKind::BrokenPipe, "world storage worker stopped");
+                self.last_save = SaveStatus::Failed(compact_error(&error));
+                Err(error)
+            }
         }
     }
 
@@ -87,20 +107,38 @@ impl PersistenceWorker {
     }
 
     pub(crate) fn poll_completions(&mut self) {
-        while let Ok(result) = self.completions.try_recv() {
-            self.pending_saves = self.pending_saves.saturating_sub(1);
-            match result {
-                Ok(()) => {
-                    self.last_save = String::from("ok");
-                    println!("world save completed");
+        loop {
+            match self.completions.try_recv() {
+                Ok(result) => {
+                    self.pending_saves = self.pending_saves.saturating_sub(1);
+                    match result {
+                        Ok(()) => {
+                            self.last_save = SaveStatus::Complete;
+                            println!("world save completed");
+                        }
+                        Err(error) => {
+                            let message = compact_error(&error);
+                            self.last_save = SaveStatus::Failed(message);
+                            eprintln!("world save failed: {error}");
+                        }
+                    }
                 }
-                Err(error) => {
-                    let message = compact_error(&error);
-                    self.last_save = format!("error_{message}");
-                    eprintln!("world save failed: {error}");
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    if self.pending_saves > 0 {
+                        self.pending_saves = 0;
+                        self.last_save =
+                            SaveStatus::Failed(String::from("world_storage_worker_stopped"));
+                        eprintln!("world storage worker stopped before completing a save");
+                    }
+                    break;
                 }
             }
         }
+    }
+
+    pub(crate) fn has_pending_save(&self) -> bool {
+        self.pending_saves != 0
     }
 
     pub(crate) fn summary(&self) -> String {
@@ -132,9 +170,19 @@ impl PersistenceWorker {
         };
         let join_result = self.join_worker();
         self.poll_completions();
+        if let Err(error) = &join_result {
+            if send_result.is_err() || save_result.is_err() {
+                eprintln!("storage worker join also failed: {error}");
+            }
+        }
+        if let Err(error) = &save_result {
+            if send_result.is_err() {
+                eprintln!("final save also failed: {error}");
+            }
+        }
         send_result?;
-        join_result?;
-        save_result
+        save_result?;
+        join_result
     }
 
     fn join_worker(&mut self) -> io::Result<()> {

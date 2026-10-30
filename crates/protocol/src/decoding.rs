@@ -1,36 +1,37 @@
 use super::{
     encoding::is_unit_direction,
     framing::decode_frame,
+    kinds::{ClientKind, ServerKind},
     limits::*,
     models::{
         ClientMessage, ProtocolError, RemotePlayer, RemotePlayerIds, RemotePlayers, ServerMessage,
     },
     reading::Reader,
 };
+use minimium_core::ids::PlayerId;
 
 pub fn decode_client(input: &[u8]) -> Result<Option<(ClientMessage, usize)>, ProtocolError> {
     let Some((kind, payload, frame_bytes)) = decode_frame(input)? else {
         return Ok(None);
     };
     let mut reader = Reader::new(payload);
-    let message = match kind {
-        CLIENT_IDENTIFY => ClientMessage::Identify(reader.profile_id()?),
-        CLIENT_PING => ClientMessage::Ping,
-        CLIENT_SET_NAME => ClientMessage::SetName(reader.name()?),
-        CLIENT_MOVE => ClientMessage::Move {
+    let message = match ClientKind::try_from(kind)? {
+        ClientKind::Identify => ClientMessage::Identify(reader.profile_id()?),
+        ClientKind::Ping => ClientMessage::Ping,
+        ClientKind::SetName => ClientMessage::SetName(reader.name()?),
+        ClientKind::Move => ClientMessage::Move {
             direction: reader.direction()?,
             jump: reader.boolean()?,
         },
-        CLIENT_FIRE => {
+        ClientKind::Fire => {
             let direction = reader.vector()?;
             if !is_unit_direction(direction) {
                 return Err(ProtocolError::InvalidPayload);
             }
             ClientMessage::Fire { direction }
         }
-        CLIENT_CHAT => ClientMessage::Chat(reader.chat_text()?.to_owned()),
-        CLIENT_QUIT => ClientMessage::Quit,
-        other => return Err(ProtocolError::UnknownMessage(other)),
+        ClientKind::Chat => ClientMessage::Chat(reader.chat_text()?.to_owned()),
+        ClientKind::Quit => ClientMessage::Quit,
     };
     reader.finish()?;
     Ok(Some((message, frame_bytes)))
@@ -41,9 +42,9 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
         return Ok(None);
     };
     let mut reader = Reader::new(payload);
-    let message = match kind {
-        SERVER_WELCOME => {
-            let id = reader.u64()?;
+    let message = match ServerKind::try_from(kind)? {
+        ServerKind::Welcome => {
+            let id = PlayerId::new(reader.u64()?);
             let map_fingerprint = reader.u64()?;
             let health = reader.u16()?;
             if health > 100 {
@@ -55,14 +56,14 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
                 health,
             }
         }
-        SERVER_PONG => ServerMessage::Pong,
-        SERVER_ACCEPTED => ServerMessage::Accepted,
-        SERVER_BYE => ServerMessage::Bye,
-        SERVER_ERROR => ServerMessage::Error(reader.byte()?),
-        SERVER_SHOT_RESULT => {
+        ServerKind::Pong => ServerMessage::Pong,
+        ServerKind::Accepted => ServerMessage::Accepted,
+        ServerKind::Bye => ServerMessage::Bye,
+        ServerKind::Error => ServerMessage::Error(reader.byte()?.into()),
+        ServerKind::ShotResult => {
             let hit = reader.boolean()?;
             let (target_id, remaining_health) = if hit {
-                let id = reader.u64()?;
+                let id = PlayerId::new(reader.u64()?);
                 let health = reader.u16()?;
                 if health > 100 {
                     return Err(ProtocolError::InvalidPayload);
@@ -81,19 +82,19 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
                 killed,
             }
         }
-        SERVER_HEALTH_UPDATE => {
+        ServerKind::HealthUpdate => {
             let health = reader.u16()?;
             if health > 100 {
                 return Err(ProtocolError::InvalidPayload);
             }
             ServerMessage::HealthUpdate(health)
         }
-        SERVER_CHAT => ServerMessage::Chat {
-            sender_id: reader.u64()?,
+        ServerKind::Chat => ServerMessage::Chat {
+            sender_id: PlayerId::new(reader.u64()?),
             sender_name: reader.name()?,
             text: reader.chat_text()?.to_owned(),
         },
-        SERVER_SNAPSHOT => {
+        ServerKind::Snapshot => {
             let server_time_ms = reader.u64()?;
             let self_position = reader.vector()?;
             let self_velocity = reader.vector()?;
@@ -110,7 +111,7 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
             let mut players = RemotePlayers::default();
             for _ in 0..count {
                 if !players.push(RemotePlayer {
-                    id: reader.u64()?,
+                    id: PlayerId::new(reader.u64()?),
                     name: reader.shared_name()?,
                     position: reader.vector()?,
                 }) {
@@ -119,7 +120,7 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
             }
             let mut removed_players = RemotePlayerIds::default();
             for _ in 0..removed_count {
-                if !removed_players.push(reader.u64()?) {
+                if !removed_players.push(PlayerId::new(reader.u64()?)) {
                     return Err(ProtocolError::InvalidPayload);
                 }
             }
@@ -139,7 +140,6 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
                 removed_players,
             }
         }
-        other => return Err(ProtocolError::UnknownMessage(other)),
     };
     reader.finish()?;
     Ok(Some((message, frame_bytes)))

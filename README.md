@@ -1,5 +1,7 @@
 # Minimium
 
+The current command-line options, defaults, command aliases and per-program thread limits are documented in [the command reference](docs/commands.md).
+
 Minimium is a resource-conscious Rust engine for networked first-person games in full 3D. Local play uses separate client and server processes and the same protocol as remote play. See [the vision](docs/vision.md), [architecture](docs/architecture.md), and [prototype operating procedures](docs/prototype.md).
 
 ## Current state

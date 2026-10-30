@@ -40,7 +40,7 @@ pub enum DisconnectReason {
     HeartbeatTimeout,
     Protocol(ProtocolError),
     UnexpectedMessage,
-    Rejected(u8),
+    Rejected(minimium_protocol::ServerErrorCode),
     MapMismatch { expected: u64, actual: u64 },
     Io(io::ErrorKind),
     BufferLimit,
@@ -92,7 +92,7 @@ impl ClientSession {
     /// the required Identify handshake frame. The first poll writes it.
     pub fn new(
         stream: TcpStream,
-        profile_id: [u8; 16],
+        profile_id: PlayerProfileId,
         expected_map_fingerprint: u64,
     ) -> io::Result<Self> {
         stream.set_nonblocking(true)?;
@@ -379,3 +379,4 @@ impl ClientSession {
         events.push(SessionEvent::Disconnected(reason));
     }
 }
+use minimium_core::identity::PlayerProfileId;

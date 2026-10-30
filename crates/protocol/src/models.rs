@@ -1,9 +1,10 @@
-use super::limits::{MAX_VISIBLE_PLAYERS, PLAYER_PROFILE_ID_BYTES};
+use super::{limits::MAX_VISIBLE_PLAYERS, ServerErrorCode};
+use minimium_core::{identity::PlayerProfileId, ids::PlayerId};
 use std::{error::Error, fmt, sync::Arc};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClientMessage {
-    Identify([u8; PLAYER_PROFILE_ID_BYTES]),
+    Identify(PlayerProfileId),
     Ping,
     SetName(String),
     Move { direction: [f32; 2], jump: bool },
@@ -14,7 +15,7 @@ pub enum ClientMessage {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RemotePlayer {
-    pub id: u64,
+    pub id: PlayerId,
     pub name: Arc<str>,
     pub position: [f32; 3],
 }
@@ -52,7 +53,7 @@ impl RemotePlayers {
         self.len == 0
     }
 
-    pub fn get(&self, id: u64) -> Option<&RemotePlayer> {
+    pub fn get(&self, id: PlayerId) -> Option<&RemotePlayer> {
         self.iter().find(|player| player.id == id)
     }
 
@@ -63,7 +64,7 @@ impl RemotePlayers {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RemotePlayerIds {
-    entries: [Option<u64>; MAX_VISIBLE_PLAYERS],
+    entries: [Option<PlayerId>; MAX_VISIBLE_PLAYERS],
     len: usize,
 }
 
@@ -77,7 +78,7 @@ impl Default for RemotePlayerIds {
 }
 
 impl RemotePlayerIds {
-    pub fn push(&mut self, id: u64) -> bool {
+    pub fn push(&mut self, id: PlayerId) -> bool {
         if self.len == MAX_VISIBLE_PLAYERS || self.contains(id) {
             return false;
         }
@@ -94,11 +95,11 @@ impl RemotePlayerIds {
         self.len == 0
     }
 
-    pub fn contains(&self, id: u64) -> bool {
+    pub fn contains(&self, id: PlayerId) -> bool {
         self.iter().any(|candidate| *candidate == id)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &u64> {
+    pub fn iter(&self) -> impl Iterator<Item = &PlayerId> {
         self.entries[..self.len].iter().filter_map(Option::as_ref)
     }
 }
@@ -106,22 +107,22 @@ impl RemotePlayerIds {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ServerMessage {
     Welcome {
-        id: u64,
+        id: PlayerId,
         map_fingerprint: u64,
         health: u16,
     },
     Pong,
     Accepted,
     Bye,
-    Error(u8),
+    Error(ServerErrorCode),
     ShotResult {
-        target_id: Option<u64>,
+        target_id: Option<PlayerId>,
         remaining_health: Option<u16>,
         killed: bool,
     },
     HealthUpdate(u16),
     Chat {
-        sender_id: u64,
+        sender_id: PlayerId,
         sender_name: String,
         text: String,
     },

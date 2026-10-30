@@ -1,8 +1,9 @@
-use super::{PersistenceWorker, PlayerStore, RuntimeMetrics};
-use minimium_core::{
-    commands::{ServerCommand, SERVER_HELP},
-    world::World,
+use crate::{
+    metrics::RuntimeMetrics,
+    storage::{PersistenceWorker, PlayerStore},
 };
+use minimium_core::world::World;
+use minimium_platform::commands::{server_help, ServerCommand};
 
 pub struct CommandContext<'a> {
     pub world: &'a World,
@@ -31,7 +32,7 @@ pub fn execute(command: ServerCommand, context: CommandContext<'_>) -> CommandRe
     match command {
         ServerCommand::Help => CommandReply {
             success: true,
-            text: SERVER_HELP.to_owned(),
+            text: server_help(),
             stop: false,
         },
         ServerCommand::Status => CommandReply {

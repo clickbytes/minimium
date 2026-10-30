@@ -1,9 +1,10 @@
 use super::collision_index::{Aabb, Cell};
 use super::map::MapTriangle;
 use super::{CELL_SIZE, COLLISION_EPSILON, PLAYER_HEIGHT, PLAYER_RADIUS};
+use crate::ids::PlayerId;
 use std::collections::HashMap;
 
-pub(super) fn triangle_area_squared(vertices: [[f32; 3]; 3]) -> f32 {
+pub fn triangle_area_squared(vertices: [[f32; 3]; 3]) -> f32 {
     let cross = triangle_normal(vertices);
     cross[0] * cross[0] + cross[1] * cross[1] + cross[2] * cross[2]
 }
@@ -214,9 +215,9 @@ pub(super) fn vector_subtract(left: [f32; 3], right: [f32; 3]) -> [f32; 3] {
 }
 
 pub(super) fn update_cell_index(
-    cells: &mut HashMap<Cell, Vec<u64>>,
-    player_cells: &mut HashMap<u64, Cell>,
-    id: u64,
+    cells: &mut HashMap<Cell, Vec<PlayerId>>,
+    player_cells: &mut HashMap<PlayerId, Cell>,
+    id: PlayerId,
     position: [f32; 3],
 ) {
     let new_cell = cell_for(position);

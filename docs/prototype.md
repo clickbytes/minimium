@@ -1,6 +1,6 @@
 # Prototype operation and verification
 
-This page gives procedures for the current prototype. They are not test results. The 500 connected player / Pentium-class 500 MHz target and the runtime scenarios below remain unverified.
+This page gives procedures for the current prototype. Recorded outcomes are in the [Epic 002 verification ledger](plan/epic-002-verification.md). The Pentium-class 500 MHz target remains unverified; use the ledger to distinguish completed runtime scenarios from the procedures below.
 
 ## Build and map
 
@@ -31,6 +31,8 @@ cargo run -p minimium-client -- --map games/sample/maps/demo.map --server-data-d
 ~~~
 
 The second client authenticates the local admin endpoint and verifies the server lock before attaching. It does not stop the server when it exits. The first client owns the child and requests controlled shutdown on exit; graceful stop can take up to 120 seconds, after which the owner may kill and reap only its own child if necessary. Do not close the owner while the attached client still needs the server.
+
+Terminal and desktop clients share the same connection controller and session. Ownership, cancellation, late-result cleanup and timeout behavior remain scenarios for final verification.
 
 Both clients can be text clients by adding `--console`. In that mode, type `host local` in each terminal; the first starts the server and the second attaches. `--threads` applies when a local child is started.
 
@@ -64,18 +66,10 @@ Game protocol v8 currently runs over prototype TCP. The server is authoritative 
 
 World snapshot format v3 stores map fingerprint and durable local profile ID, name, position, and health. The server autosaves every 300 seconds by default; `--autosave-seconds 0` disables periodic saves, while controlled shutdown still requests a final snapshot. These behaviors do not establish crash-proof saving or recovery in every failure mode. Protocol v8 and snapshot v3 remain the scope of this implementation; accounts, TLS, inventory, NPCs, zones, an editor, audio, browser clients, and production hosting remain future work.
 
-## Deferred verification plan
+## Runtime verification coverage
 
-No runtime or load scenarios are confirmed by this document. After an explicit final-verification instruction, cover:
+The final runtime phase ran on 2026-10-28. The [verification ledger](plan/epic-002-verification.md) records commands, evidence paths, results, and remaining limits. It covers two independent profiles and duplicate rejection, the demo-map route and triangle collision, Owned/Attached lifecycle, data-directory locking, save/restart/recovery and v2 migration, admin request bounds and a delayed 21,398-byte admin response with a concurrent `status`, 32-player lane equivalence, and all 18 prepared load runs. The controlled slow-reader run confirmed bounded snapshot drops but did not identify whether the 64 KiB byte cap or 256-frame cap rejected them; deterministic queue tests cover the two guards independently. A 512-client single-reader pressure probe did not fill the application queue on Windows loopback.
 
-- Two independent profiles on one server and rejection of a duplicate active profile.
-- The ground-to-stairs-to-platform-to-bridge path, travel beneath the bridge, ramps, and triangle collision.
-- Owned-child and attached-server shutdown, plus window/renderer errors without orphaned children.
-- Slow admin clients, oversized inputs/outputs, token rejection, and partial I/O.
-- Two server launches targeting one data directory.
-- Save, restart, recovery, final-save failure, and shutdown error handling.
-- Full snapshots, deltas, and player removals.
-- Equivalent authoritative outcomes with server lanes 1, 2, and `auto`, using at least 32 active players.
-- The 18 prepared load runs: `clustered` and `dispersed` movement, each at 2, 100, and 500 clients, with server lanes 1, 2, and `auto`, for 60 seconds per run. Keep generator worker settings separate from server lane settings and record hardware/configuration.
+Still outstanding are desktop visual inspection, reaching the byte cap with real network traffic, and verification on Pentium-class 500 MHz hardware. The server flush unit test exercises `WriteZero` and partial-write handling through a deterministic writer; it does not inject those outcomes from an OS TCP socket. No gameplay or capacity claim should be inferred for the unverified cases.
 
-The scenario and report format are described in [report v2](scenarios/report-v2.md). The matrix is prepared, not run; there are no results here demonstrating gameplay correctness, lane equivalence, capacity, or the 500 MHz research target.
+The scenario and report format are described in [report v2](scenarios/report-v2.md). The 18 prepared 60-second workloads have now been run on one Windows 10 IoT Enterprise LTSC x86_64 host; the outcomes and machine are recorded in the [Epic 002 verification ledger](plan/epic-002-verification.md). A raw client also traversed the demo-map stairs, upper deck, bridge and far platform, climbed a walkable triangle ramp, and stopped at a vertical triangle. A forced snapshot write failure preserved the prior v3 file across a process restart. A 64-client slow-reader run caused bounded snapshot drops; it did not establish whether the 64 KiB byte limit is the rejecting guard. A controlled network run confirmed bitwise lane equivalence for 32 clients and 100 movement updates. These runs do not establish the Pentium-class 500 MHz target; visual behavior remains unverified.

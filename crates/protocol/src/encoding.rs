@@ -1,37 +1,39 @@
 use super::{
     framing::encode_frame,
+    kinds::{ClientKind, ServerKind},
     limits::*,
     models::{ClientMessage, ProtocolError, ServerMessage},
+    validation::{valid_chat, valid_direction_component, valid_name},
 };
 
 pub fn encode_client(message: &ClientMessage) -> Result<Vec<u8>, ProtocolError> {
     let mut payload = Vec::with_capacity(16);
     let kind = match message {
         ClientMessage::Identify(profile_id) => {
-            payload.extend_from_slice(profile_id);
-            CLIENT_IDENTIFY
+            payload.extend_from_slice(profile_id.as_bytes());
+            ClientKind::Identify
         }
-        ClientMessage::Ping => CLIENT_PING,
+        ClientMessage::Ping => ClientKind::Ping,
         ClientMessage::SetName(name) => {
             write_name(name, &mut payload)?;
-            CLIENT_SET_NAME
+            ClientKind::SetName
         }
         ClientMessage::Move { direction, jump } => {
             write_direction(*direction, &mut payload)?;
             payload.push(u8::from(*jump));
-            CLIENT_MOVE
+            ClientKind::Move
         }
         ClientMessage::Fire { direction } => {
             write_unit_direction(*direction, &mut payload)?;
-            CLIENT_FIRE
+            ClientKind::Fire
         }
         ClientMessage::Chat(text) => {
             write_chat_text(text, &mut payload)?;
-            CLIENT_CHAT
+            ClientKind::Chat
         }
-        ClientMessage::Quit => CLIENT_QUIT,
+        ClientMessage::Quit => ClientKind::Quit,
     };
-    encode_frame(kind, &payload)
+    encode_frame(kind.into(), &payload)
 }
 
 pub fn encode_server(message: &ServerMessage) -> Result<Vec<u8>, ProtocolError> {
@@ -57,17 +59,17 @@ pub fn encode_server_into(
                 if *health > 100 {
                     return Err(ProtocolError::InvalidPayload);
                 }
-                frame.extend_from_slice(&id.to_le_bytes());
+                frame.extend_from_slice(&id.get().to_le_bytes());
                 frame.extend_from_slice(&map_fingerprint.to_le_bytes());
                 frame.extend_from_slice(&health.to_le_bytes());
-                SERVER_WELCOME
+                ServerKind::Welcome
             }
-            ServerMessage::Pong => SERVER_PONG,
-            ServerMessage::Accepted => SERVER_ACCEPTED,
-            ServerMessage::Bye => SERVER_BYE,
+            ServerMessage::Pong => ServerKind::Pong,
+            ServerMessage::Accepted => ServerKind::Accepted,
+            ServerMessage::Bye => ServerKind::Bye,
             ServerMessage::Error(code) => {
-                frame.push(*code);
-                SERVER_ERROR
+                frame.push((*code).into());
+                ServerKind::Error
             }
             ServerMessage::ShotResult {
                 target_id,
@@ -81,28 +83,28 @@ pub fn encode_server_into(
                 }
                 frame.push(u8::from(target_id.is_some()));
                 if let (Some(id), Some(health)) = (target_id, remaining_health) {
-                    frame.extend_from_slice(&id.to_le_bytes());
+                    frame.extend_from_slice(&id.get().to_le_bytes());
                     frame.extend_from_slice(&health.to_le_bytes());
                 }
                 frame.push(u8::from(*killed));
-                SERVER_SHOT_RESULT
+                ServerKind::ShotResult
             }
             ServerMessage::HealthUpdate(health) => {
                 if *health > 100 {
                     return Err(ProtocolError::InvalidPayload);
                 }
                 frame.extend_from_slice(&health.to_le_bytes());
-                SERVER_HEALTH_UPDATE
+                ServerKind::HealthUpdate
             }
             ServerMessage::Chat {
                 sender_id,
                 sender_name,
                 text,
             } => {
-                frame.extend_from_slice(&sender_id.to_le_bytes());
+                frame.extend_from_slice(&sender_id.get().to_le_bytes());
                 write_name(sender_name, frame)?;
                 write_chat_text(text, frame)?;
-                SERVER_CHAT
+                ServerKind::Chat
             }
             ServerMessage::Snapshot {
                 server_time_ms,
@@ -128,14 +130,14 @@ pub fn encode_server_into(
                 frame.push(players.len() as u8);
                 frame.push(removed_players.len() as u8);
                 for player in players.iter() {
-                    frame.extend_from_slice(&player.id.to_le_bytes());
+                    frame.extend_from_slice(&player.id.get().to_le_bytes());
                     write_name(&player.name, frame)?;
                     write_vector(player.position, frame)?;
                 }
                 for id in removed_players.iter() {
-                    frame.extend_from_slice(&id.to_le_bytes());
+                    frame.extend_from_slice(&id.get().to_le_bytes());
                 }
-                SERVER_SNAPSHOT
+                ServerKind::Snapshot
             }
         };
         Ok(kind)
@@ -154,19 +156,14 @@ pub fn encode_server_into(
         return Err(ProtocolError::PayloadTooLarge);
     }
     frame[frame_start] = PROTOCOL_VERSION;
-    frame[frame_start + 1] = kind;
+    frame[frame_start + 1] = kind.into();
     frame[frame_start + 2..frame_start + HEADER_BYTES]
         .copy_from_slice(&(payload_bytes as u16).to_le_bytes());
     Ok(())
 }
 
 pub(crate) fn write_name(name: &str, output: &mut Vec<u8>) -> Result<(), ProtocolError> {
-    if name.is_empty()
-        || name.len() > MAX_PLAYER_NAME_BYTES
-        || !name
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-    {
+    if !valid_name(name) {
         return Err(ProtocolError::InvalidName);
     }
     output.push(name.len() as u8);
@@ -175,7 +172,7 @@ pub(crate) fn write_name(name: &str, output: &mut Vec<u8>) -> Result<(), Protoco
 }
 
 pub(crate) fn write_chat_text(text: &str, output: &mut Vec<u8>) -> Result<(), ProtocolError> {
-    if text.is_empty() || text.len() > MAX_CHAT_BYTES || text.chars().any(char::is_control) {
+    if !valid_chat(text) {
         return Err(ProtocolError::InvalidPayload);
     }
     output.push(text.len() as u8);
@@ -199,7 +196,7 @@ pub(crate) fn write_direction(
 ) -> Result<(), ProtocolError> {
     if !direction
         .iter()
-        .all(|value| value.is_finite() && (-1.0..=1.0).contains(value))
+        .all(|value| valid_direction_component(*value))
     {
         return Err(ProtocolError::InvalidPayload);
     }

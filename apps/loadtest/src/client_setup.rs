@@ -1,4 +1,5 @@
 use super::{scenarios::Scenario, stats::WorkerStats, worker::*};
+use minimium_core::identity::{PlayerProfileId, PLAYER_PROFILE_ID_BYTES};
 use minimium_protocol::{decode_server, encode_client, ClientMessage, ServerMessage};
 use std::{
     io::{Read, Write},
@@ -68,9 +69,10 @@ pub(super) fn prepare_client(
         return None;
     }
 
-    let mut profile_id = [0u8; 16];
+    let mut profile_id = [0u8; PLAYER_PROFILE_ID_BYTES];
     profile_id[..8].copy_from_slice(&(client_id as u64).to_le_bytes());
     profile_id[8..].copy_from_slice(&process_salt[..8]);
+    let profile_id = PlayerProfileId::from_bytes(profile_id);
     let identity_frame = match encode_client(&ClientMessage::Identify(profile_id)) {
         Ok(frame) => frame,
         Err(_) => {

@@ -2,6 +2,7 @@ use super::{
     format::{self, MAX_STORED_PLAYERS, PLAYER_STORE_SHARDS},
     invalid_world_snapshot, valid_player_name,
 };
+use minimium_core::ids::PlayerId;
 use minimium_core::{
     identity::PlayerProfileId,
     world::{Player, World, WorldMap, PLAYER_MAX_HEALTH},
@@ -16,7 +17,7 @@ use std::{
 
 #[derive(Clone, Copy)]
 pub(crate) struct StoredPlayer {
-    pub(crate) id: u64,
+    pub(crate) id: PlayerId,
     pub(crate) name: StoredName,
     pub(crate) position: [f32; 3],
     pub(crate) health: u16,
@@ -47,9 +48,9 @@ impl StoredName {
 }
 
 pub(crate) struct PlayerStore {
-    pub(crate) players: Vec<Arc<HashMap<PlayerProfileId, StoredPlayer>>>,
-    pub(crate) profile_by_player: HashMap<u64, PlayerProfileId>,
-    pub(crate) active_players: HashSet<u64>,
+    pub(super) players: Vec<Arc<HashMap<PlayerProfileId, StoredPlayer>>>,
+    pub(super) profile_by_player: HashMap<PlayerId, PlayerProfileId>,
+    active_players: HashSet<PlayerId>,
 }
 
 pub(crate) struct SaveSnapshot {
@@ -74,6 +75,21 @@ fn player_store_shard(profile_id: PlayerProfileId) -> usize {
 }
 
 impl PlayerStore {
+    pub(crate) fn reserve_active(&mut self, capacity: usize) {
+        self.active_players.reserve(capacity);
+    }
+
+    pub(crate) fn active_count(&self) -> usize {
+        self.active_players.len()
+    }
+
+    pub(crate) fn is_active(&self, player: PlayerId) -> bool {
+        self.active_players.contains(&player)
+    }
+
+    pub(crate) fn profile_for_player(&self, player: PlayerId) -> Option<PlayerProfileId> {
+        self.profile_by_player.get(&player).copied()
+    }
     pub(crate) fn load(data_dir: &Path, map: &WorldMap) -> io::Result<Self> {
         format::load(data_dir, map)
     }
@@ -82,7 +98,7 @@ impl PlayerStore {
         self.players
             .iter()
             .flat_map(|shard| shard.values())
-            .map(|player| player.id)
+            .map(|player| player.id.get())
             .max()
             .unwrap_or(0)
             .checked_add(1)
@@ -118,13 +134,13 @@ impl PlayerStore {
                 .or_else(|| StoredName::new(&format!("P{id}")))
                 .ok_or_else(|| io::Error::other("could not create default player name"))?;
             let player = StoredPlayer {
-                id,
+                id: PlayerId::new(id),
                 name,
                 position: spawn,
                 health: PLAYER_MAX_HEALTH,
             };
             Arc::make_mut(&mut self.players[shard]).insert(profile_id, player);
-            self.profile_by_player.insert(id, profile_id);
+            self.profile_by_player.insert(PlayerId::new(id), profile_id);
         }
         let player = self.players[shard]
             .get(&profile_id)
@@ -139,7 +155,7 @@ impl PlayerStore {
         Ok(player)
     }
 
-    pub(crate) fn release(&mut self, player_id: u64) {
+    pub(crate) fn release(&mut self, player_id: PlayerId) {
         self.active_players.remove(&player_id);
     }
 
@@ -160,7 +176,7 @@ impl PlayerStore {
         Ok(())
     }
 
-    pub(crate) fn name_for_player(&self, player_id: u64) -> Option<&str> {
+    pub(crate) fn name_for_player(&self, player_id: PlayerId) -> Option<&str> {
         let profile_id = self.profile_by_player.get(&player_id)?;
         let shard = player_store_shard(*profile_id);
         self.players[shard]
@@ -168,7 +184,7 @@ impl PlayerStore {
             .map(|player| player.name.as_str())
     }
 
-    pub(crate) fn rename(&mut self, player_id: u64, name: String) {
+    pub(crate) fn rename(&mut self, player_id: PlayerId, name: String) {
         if let Some(profile_id) = self.profile_by_player.get(&player_id).copied() {
             let shard = player_store_shard(profile_id);
             if let Some(player) = Arc::make_mut(&mut self.players[shard]).get_mut(&profile_id) {
