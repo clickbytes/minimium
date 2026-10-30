@@ -109,6 +109,7 @@ impl Renderer {
             self.connection_status = "Earth: przeniesiono".into();
         }
         self.advance_pending_transitions();
+        self.update_environment_frame();
         self.update_remote_player_rendering(Instant::now());
 
         let (view, far) = if self.overview_open {

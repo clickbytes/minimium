@@ -76,7 +76,7 @@ Każde poniższe issue ma własny cel, konkretne istniejące i nowe pliki, kontr
 | [E004-02 / #54](https://github.com/clickbytes/minimium/issues/54) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#74](https://github.com/clickbytes/minimium/pull/74), code commit `c9a6855`) |
 | [E004-03 / #55](https://github.com/clickbytes/minimium/issues/55) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53), [E004-02 / #54](https://github.com/clickbytes/minimium/issues/54) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#75](https://github.com/clickbytes/minimium/pull/75), merge `77218a6`) |
 | [E004-04 / #59](https://github.com/clickbytes/minimium/issues/59) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53), [E004-02 / #54](https://github.com/clickbytes/minimium/issues/54), [E004-03 / #55](https://github.com/clickbytes/minimium/issues/55), [E004-08 / #58](https://github.com/clickbytes/minimium/issues/58) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#79](https://github.com/clickbytes/minimium/pull/79), commit `7c49d92`) |
-| [E004-05 / #60](https://github.com/clickbytes/minimium/issues/60) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53), [E004-04 / #59](https://github.com/clickbytes/minimium/issues/59) | PLANNED |
+| [E004-05 / #60](https://github.com/clickbytes/minimium/issues/60) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53), [E004-04 / #59](https://github.com/clickbytes/minimium/issues/59) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#80](https://github.com/clickbytes/minimium/pull/80), commit `2d58ac2`) |
 | [E004-06 / #56](https://github.com/clickbytes/minimium/issues/56) | [E004-01 / #53](https://github.com/clickbytes/minimium/issues/53) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#76](https://github.com/clickbytes/minimium/pull/76), code commit `15ac4d2`, merge `dfbc795`) |
 | [E004-07 / #57](https://github.com/clickbytes/minimium/issues/57) | [E004-06 / #56](https://github.com/clickbytes/minimium/issues/56) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#77](https://github.com/clickbytes/minimium/pull/77), commit `5da228e`, merge `69a633e`) |
 | [E004-08 / #58](https://github.com/clickbytes/minimium/issues/58) | [E004-07 / #57](https://github.com/clickbytes/minimium/issues/57) | IMPLEMENTED / FINAL VERIFICATION PENDING (PR [#78](https://github.com/clickbytes/minimium/pull/78), commit `38157c0`; merge `cb3d70a`) |
@@ -129,5 +129,7 @@ komendami czasu, konfiguracją nowego świata i profilami instancji. Formatowani
 Clippy i kontrole statyczne przeszły; cargo zgłasza wyłącznie ostrzeżenia Windows o fallbacku
 hard-link cache. Nie uruchamiano testów ani aplikacji. E004-03 scalono przez PR #75
 (`77218a6`) i E004-06 (`dfbc795`). E004-07 jest gotowe w PR #77
-(`5da228e`, merge `69a633e`). E004-08 merged in PR #78 (`38157c0`, merge `cb3d70a`); E004-04 implementation is in PR #79 (`7c49d92`);
-pozostałe zadania pozostają PLANNED, a wyniki runtime całego epica są NOT RUN.
+(`5da228e`, merge `69a633e`). E004-08 merged in PR #78 (`38157c0`, merge `cb3d70a`); E004-04
+was merged in PR #79 (`7c49d92`, merge `a69ff33`). E004-05 implementation is in PR #80
+(`2d58ac2`); its static checks pass, while runtime verification remains deferred to E004-16.
+Pozostałe zadania pozostają PLANNED, a wyniki runtime całego epica są NOT RUN.

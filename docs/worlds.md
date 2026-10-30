@@ -141,6 +141,16 @@ use the same clock evaluation and astronomical model. Physics, cooldowns and
 network deadlines continue on real time. Interior instances retain the shared
 clock identity even when their profile does not render the planetary sky.
 
+The protocol v12 client estimator uses one local monotonic epoch per
+`ClientSession` and exposes one immutable `EnvironmentFrameInput` after polling
+and portal installation. Its date, active descriptor, context, clock revision,
+rate and synchronization quality are shared by renderer environment consumers.
+Quality progresses through Initializing, Synchronized, Stale and Unavailable;
+network sessions never fall back to local wall-clock time. Only explicit
+`--demo` mode uses a separate local UTC anchor, reported as `LocalDemo`. Starting
+a network attempt disables that demo source; reconnect always starts with a new
+session nonce, offset filter and smoothing state.
+
 The server's `WorldRegistry` owns isolated simulation state, memberships,
 membership epochs and pending transfers. Portal transfer follows prepare, target
 ready, then commit on a tick boundary. The server commits only after the client

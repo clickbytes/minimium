@@ -58,6 +58,7 @@ impl ApplicationHandler for App {
             world_definition_path: self.options.world_definition_path.clone(),
             threads: self.options.threads,
             require_earth: self.options.require_earth,
+            demo: self.options.demo,
         })) {
             Ok(mut renderer) => {
                 if !self.options.demo {
@@ -290,7 +291,7 @@ impl ApplicationHandler for App {
                 let interval = started.saturating_duration_since(renderer.metrics.last_redraw);
                 renderer.metrics.last_redraw = started;
                 renderer.update();
-                let draws = match renderer.gpu.render() {
+                let draws = match renderer.gpu.render(&renderer.environment_frame) {
                     Ok(draws) => draws,
                     Err(
                         wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated,
@@ -328,13 +329,14 @@ impl ApplicationHandler for App {
                             String::new()
                         };
                     window.set_title(&format!(
-                        "{} | {}{}",
+                        "{} | {}{} | {}",
                         Text::WindowTitleStatus {
                             fps,
                             health: renderer.game.health
                         },
                         renderer.connection_status,
-                        coordinates
+                        coordinates,
+                        renderer.environment_frame.title_suffix()
                     ));
                 }
             }

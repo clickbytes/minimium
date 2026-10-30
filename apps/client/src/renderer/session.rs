@@ -5,6 +5,8 @@ use crate::messages::ClientText as Text;
 
 impl Renderer {
     pub(crate) fn start_remote_attempt(&mut self, address: &str) {
+        self.demo_environment = None;
+        self.environment_frame = crate::environment::EnvironmentFrameInput::unavailable();
         if self.settings.require_earth {
             self.connection_status = "Łączenie z Earth".into();
             self.gpu.scene_visible = false;
@@ -19,6 +21,8 @@ impl Renderer {
     }
 
     pub(crate) fn start_local_attempt(&mut self, threads: crate::options::ThreadLane) {
+        self.demo_environment = None;
+        self.environment_frame = crate::environment::EnvironmentFrameInput::unavailable();
         if self.settings.require_earth {
             self.connection_status = "Łączenie z Earth".into();
             self.gpu.scene_visible = false;

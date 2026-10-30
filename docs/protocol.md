@@ -92,6 +92,30 @@ TransitionPrepare carries the target descriptor as pending state; it becomes
 active only at TransitionCommitted, whose clock sample is captured at commit.
 The shared clock means the nonce remains stable through a portal transfer.
 
+Each client session keeps one monotonic `Instant`, a single TimeProbe in flight,
+and at most eight valid offset samples. It sends the first probe after Welcome,
+bootstraps at one-second intervals until four valid replies, then probes every
+five real seconds. Replies require the current Welcome nonce, sequence, exact
+echoed `t1`, checked timestamps, and corrected RTT in 0..=2000 ms. A local
+`EnvironmentFrameInput` carries the estimated and rendered UTC date, active
+descriptor/context, revision, rate and quality. It is calculated once per frame
+from the session anchor and monotonic offset; the text client reports status when
+quality, revision or rate changes and refreshes a usable date at most every five
+seconds. `Unavailable` carries no usable date.
+The explicit `--demo` path uses the same core clock evaluation from a local UTC
+anchor and reports `LocalDemo`; it is disabled before a network attempt, so a
+network session never falls back to the machine clock.
+
+Small same-revision phase corrections retain the displayed date and decay a
+presentation-only bias with a two-second time constant, capped to ten percent
+of the current world-clock rate per frame. A new revision applies immediately.
+Portals keep the source descriptor pending until commit and preserve the shared
+clock estimator; reconnect creates a new session-local epoch and clears its
+nonce, samples, in-flight probe and smoothing state. Poll gaps over ten seconds
+restart bootstrap without catch-up probes. Status becomes Stale after fifteen
+seconds without a fresh sample/probe and Unavailable after sixty seconds; there
+is no client-wall-clock fallback for network sessions.
+
 For `WorldInput`, subtypes are `1` SetName, `2` Move, `3` Fire, `4` Chat and
 `5` UsePortal and `6` MapTeleport (unit direction, three `f32` values). The client session wraps ordinary gameplay messages in this record
 using its current context. `TransitionReady` is sent only after the client

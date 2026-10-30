@@ -44,6 +44,7 @@ impl ClientSession {
     /// buffers and connection state.
     pub fn poll(&mut self, events: &mut Vec<SessionEvent>) -> SessionState {
         let now = Instant::now();
+        self.clock.observe_poll(self.clock.local_monotonic_ms());
         if self.state == SessionState::AwaitingWelcome
             && now.saturating_duration_since(self.state_since) >= WELCOME_TIMEOUT
         {
@@ -74,6 +75,8 @@ impl ClientSession {
         }
 
         let now = Instant::now();
+        let now_ms = self.clock.local_monotonic_ms();
+        self.queue_due_time_probe(now_ms);
         if self.state == SessionState::Connected
             && self.pending_ping_at.is_none()
             && self.pending_ping_end.is_none()
@@ -83,6 +86,17 @@ impl ClientSession {
             self.last_heartbeat_at = now;
         }
         self.flush_send(events);
+        let now_ms = self.clock.local_monotonic_ms();
+        if self.state == SessionState::Connected {
+            self.clock.update_frame(
+                self.clock_sample,
+                self.environment_descriptor,
+                self.world_context,
+                now_ms,
+            );
+        } else {
+            self.clock.update_frame(None, None, None, now_ms);
+        }
         self.state
     }
 
@@ -188,6 +202,7 @@ impl ClientSession {
             match decode_server(&self.receive_buffer) {
                 Ok(Some((message, frame_bytes))) => {
                     self.receive_buffer.drain(..frame_bytes);
+                    let decoded_at_ms = self.clock.local_monotonic_ms();
                     let planet = match &message {
                         ServerMessage::Welcome { manifest, .. }
                         | ServerMessage::TransitionPrepare { manifest, .. }
@@ -395,11 +410,24 @@ impl ClientSession {
                                 }
                             }
                         }
-                        ServerMessage::TimeProbeReply { session_nonce, .. } => {
+                        ServerMessage::TimeProbeReply {
+                            seq,
+                            echoed_client_send_monotonic_ms,
+                            server_receive_monotonic_ms,
+                            server_send_monotonic_ms,
+                            session_nonce,
+                        } => {
                             if let Err(reason) = self.validate_probe_nonce(*session_nonce) {
                                 self.disconnect(reason, events);
                                 return;
                             }
+                            self.clock.accept_probe_reply(
+                                *seq,
+                                *echoed_client_send_monotonic_ms,
+                                *server_receive_monotonic_ms,
+                                *server_send_monotonic_ms,
+                                decoded_at_ms,
+                            );
                         }
                         ServerMessage::Error(code)
                             if self.state == SessionState::AwaitingWelcome =>

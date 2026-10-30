@@ -125,6 +125,7 @@ mod bootstrap;
 mod client_commands;
 mod connection_controller;
 mod connector;
+mod environment;
 mod messages;
 mod options;
 mod session;

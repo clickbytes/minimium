@@ -21,6 +21,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod clock;
 mod environment;
 mod receive;
 
@@ -104,6 +105,7 @@ pub struct ClientSession {
         ClockSample,
         EnvironmentDescriptor,
     )>,
+    clock: clock::ClientClock,
     state_since: Instant,
     last_heartbeat_at: Instant,
     pending_ping_at: Option<Instant>,
@@ -140,6 +142,7 @@ impl ClientSession {
             clock_sample: None,
             environment_descriptor: None,
             pending_environment: None,
+            clock: clock::ClientClock::new(now),
             state_since: now,
             last_heartbeat_at: now,
             pending_ping_at: None,
@@ -171,6 +174,10 @@ impl ClientSession {
     #[allow(dead_code)] // E004-05 consumes this session identity in its clock estimator.
     pub fn environment_descriptor(&self) -> Option<EnvironmentDescriptor> {
         self.environment_descriptor
+    }
+
+    pub(crate) fn environment_frame(&self) -> crate::environment::EnvironmentFrameInput {
+        self.clock.frame()
     }
 
     pub(crate) fn set_world_fingerprints(
@@ -220,6 +227,7 @@ impl ClientSession {
         self.clock_sample = None;
         self.environment_descriptor = None;
         self.pending_environment = None;
+        self.clock.reset();
         self.receive_buffer.clear();
         self.send_buffer.clear();
         self.send_offset = 0;
@@ -321,6 +329,7 @@ mod tests {
             clock_sample: None,
             environment_descriptor: None,
             pending_environment: None,
+            clock: clock::ClientClock::new(now),
             state_since: now,
             last_heartbeat_at: now,
             pending_ping_at: None,
