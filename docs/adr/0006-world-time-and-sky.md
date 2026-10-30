@@ -10,16 +10,16 @@
 Minimium runs authoritative simulation on a fixed-step server, but the current
 `Snapshot.server_time_ms` is elapsed monotonic process time. Missed simulation
 ticks are skipped under load, so tick count and accumulated simulation deltas
-cannot provide a calendar clock. The renderer has static lighting and a fixed
-sky background. At the implementation baseline, the wire format was protocol
+cannot provide a calendar clock. At the implementation baseline, the renderer
+had static lighting and a fixed sky background, and the wire format was protocol
 v11 and the persistent world snapshot was save v7.
 
 Earth is represented by a 650 km game radius and a reflected camera view. Its
 geographic mapping is `latitude = asin(y / r)` and
 `longitude = atan2(z, x)`. The game radius is a presentation and simulation
 scale; it is not the physical Earth radius used by astronomical calculations.
-The vertex format already carries normals, though the cube helper currently
-derives inward-facing normals. E004-09 owns correcting those normals.
+The vertex format already carried normals, though the baseline cube helper
+derived inward-facing normals. E004-09 corrected those normals.
 
 ## Decision
 
@@ -123,8 +123,8 @@ astronomical state to sky, terrain, water and globe shading.
 
 ### Versioning and persistence
 
-- The implementation target is protocol v12 and save v8. E004-03 has delivered
-  save v8; protocol remains v11 until its planned E004-04 change.
+- The integrated implementation uses protocol v12 and save v8, delivered by
+  E004-04 and E004-03 respectively. Protocol v11 peers are rejected.
 - Save v8 stores a clock anchor and offline policy without process nonce or
   monotonic timestamp. Migration preserves all existing player, manifest and
   sector data; malformed or mismatched snapshots fail without clearing user
@@ -166,11 +166,14 @@ of scope.
 ## Consequences and risks
 
 - Requires checked time conversions, protocol v12 and save v8 migrations.
-- The E004-00 baseline is Windows target `x86_64-pc-windows-msvc` with Clang and
-  GCC available, but MSVC `cl.exe` not found. Compatibility of either available
-  compiler with this target and the pinned C source is unverified. E004-07 must
-  demonstrate a reproducible supported C toolchain or report the build as
-  unsupported; it must not add a C dependency to server/core.
+- Windows target `x86_64-pc-windows-msvc` compiled and linked the pinned C
+  backend in E004-07 (PR #77), including a workspace release build. The earlier
+  E004-00 shell PATH did not expose `cl.exe`; that historical observation is not
+  the current build status. See the E004-15 audit for the fresh compiler capture.
+  Windows needs MSVC or compatible clang-cl plus the SDK/libraries; Linux needs
+  GCC/Clang and the C development toolchain. Linux has not been built in this
+  audit. Ordinary builds need neither bindgen nor libclang. C remains absent
+  from the server/core dependency path.
 - HYG-derived asset redistribution requires correct attribution and share-alike
   licensing. The generated asset hash must be measured, never fabricated.
 - Small server-clock corrections can be smoothed; large corrections and
