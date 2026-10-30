@@ -204,6 +204,12 @@ topology, revision order and size limits when committing or restoring them. The
 demo currently has no interaction that changes sector objects. Geometry edits
 and network replication of object state remain future work.
 
+## Component and universe catalogs
+
+`EntityStore` holds component blobs per world instance. Components use stable nonzero entity/type IDs, a schema version and a bounded payload. The `MEC1` envelope is opt-in inside the existing opaque world-object data; unrecognized legacy objects are left to their prior decoder. Rehydration validates registered types and supported schema upgrades before restoring the entity and sector ownership. Replication policy is explicit (`ServerOnly` by default). Changed replicated components can be collected as a bounded staging view, but that view is not attached to snapshots and no component wire message exists.
+
+`UniverseCatalog` is a bounded in-memory solar-system graph. It validates body IDs, parent ownership/cycles, finite values and body limits, then evaluates fixed positions or simplified circular orbits into observations. It is a catalog for renderer inputs, not a persisted world definition, a precise astronomy engine, or an N-body simulation. The client adapts observations from the existing astronomy `SkyState` path for sky rendering.
+
 Planet movement derives local up from the radial direction, uses a tangent
 movement frame and substeps collision checks. Dungeon movement keeps fixed Y-up.
 Collision bounds use the corresponding capsule orientation. Workspace tests now
