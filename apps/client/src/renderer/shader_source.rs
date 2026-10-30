@@ -3,6 +3,7 @@ pub(super) fn world() -> String {
         include_str!("frame.wgsl"),
         include_str!("output_color.wgsl"),
         include_str!("sky_common.wgsl"),
+        include_str!("shadow_sampling.wgsl"),
         include_str!("world.wgsl"),
     ])
 }

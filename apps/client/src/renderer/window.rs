@@ -291,7 +291,16 @@ impl ApplicationHandler for App {
                 let interval = started.saturating_duration_since(renderer.metrics.last_redraw);
                 renderer.metrics.last_redraw = started;
                 renderer.update();
-                let draws = match renderer.gpu.render(&renderer.render_environment_frame) {
+                let player_position_m = renderer.game.position_mm.map_or_else(
+                    || renderer.game.character.position.map(f64::from),
+                    |position| position.0.map(|value| value as f64 / 1000.0),
+                );
+                let world_map = renderer.world_catalog.get(&renderer.current_instance);
+                let draws = match renderer.gpu.render(
+                    &renderer.render_environment_frame,
+                    world_map,
+                    player_position_m,
+                ) {
                     Ok(draws) => draws,
                     Err(
                         wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated,
@@ -304,6 +313,7 @@ impl ApplicationHandler for App {
                         0
                     }
                 };
+                renderer.update_gpu_memory_metric();
                 renderer
                     .metrics
                     .frame_stats

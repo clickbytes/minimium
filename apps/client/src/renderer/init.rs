@@ -98,6 +98,7 @@ impl Renderer {
             gpu,
             game: GameplayView {
                 remote_vertices: Vec::with_capacity(16 * 36),
+                remote_shadow_vertices: Vec::with_capacity(16 * 36),
                 remote_players: [None; MAX_VISIBLE_PLAYERS],
                 last_remote_snapshot_time_ms: None,
                 last_remote_snapshot_received_at: None,

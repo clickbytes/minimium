@@ -7,12 +7,14 @@ struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) color: vec3<f32>,
     @location(1) normal: vec3<f32>,
+    @location(2) world_position: vec3<f32>,
 };
 @vertex fn vs_main(input: VertexInput) -> VertexOutput {
     var out: VertexOutput;
     out.clip_position = camera.view_projection * vec4<f32>(input.position, 1.0);
     out.color = input.color;
     out.normal = input.normal;
+    out.world_position = input.position;
     return out;
 }
 @fragment fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
@@ -22,12 +24,20 @@ struct VertexOutput {
     let sun_direction = environment.sun_geometric_world.xyz;
     if length(sun_direction) > 1.0e-8 {
         let sun_diffuse = max(dot(normal, normalize(sun_direction)), 0.0);
-        direct = environment.local_sun_rgb_visibility.xyz * sun_diffuse;
+        var visibility = 1.0;
+        if shadow.flags.x != 0u && shadow.flags.y == 1u {
+            visibility = shadow_visibility(input.world_position, normal, sun_direction);
+        }
+        direct = environment.local_sun_rgb_visibility.xyz * sun_diffuse * visibility;
     }
     let moon_direction = environment.moon_geometric_world.xyz;
     if length(moon_direction) > 1.0e-8 {
         let moon_diffuse = max(dot(normal, normalize(moon_direction)), 0.0);
-        direct += environment.local_moon_rgb_visibility.xyz * moon_diffuse;
+        var visibility = 1.0;
+        if shadow.flags.x != 0u && shadow.flags.y == 2u {
+            visibility = shadow_visibility(input.world_position, normal, moon_direction);
+        }
+        direct += environment.local_moon_rgb_visibility.xyz * moon_diffuse * visibility;
     }
     let linear = albedo * (environment.ambient_rgb_exposure.xyz + direct);
     return vec4<f32>(tone_map_linear(linear * environment.ambient_rgb_exposure.w), 1.0);

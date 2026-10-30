@@ -250,6 +250,8 @@ impl Renderer {
         if self.connection.session().is_none() {
             self.game.clear_remote_players();
             self.gpu.remote_vertex_count = 0;
+            self.game.remote_shadow_vertices.clear();
+            self.gpu.update_remote_shadow_vertices(&[]);
             return;
         }
         if self
@@ -257,6 +259,44 @@ impl Renderer {
             .update_remote_vertices(now, self.gpu.render_origin)
         {
             self.gpu.update_remote_vertices(&self.game.remote_vertices);
+        }
+        let center = self.game.position_mm.map_or_else(
+            || self.game.character.position.map(f64::from),
+            |position| position.0.map(|value| value as f64 / 1000.0),
+        );
+        let mut shadow_vertices = Vec::with_capacity(self.game.remote_players.len() * 36);
+        for track in self.game.remote_players.iter().flatten() {
+            let feet = track
+                .displayed_position_mm
+                .map(|value| value as f64 / 1000.0);
+            let shape_center = [feet[0], feet[1] + 0.85, feet[2]];
+            let half = [0.3, 0.85, 0.3];
+            let distance_squared = (0..3)
+                .map(|axis| {
+                    let delta = (center[axis] - shape_center[axis]).abs() - half[axis];
+                    delta.max(0.0).powi(2)
+                })
+                .sum::<f64>();
+            if distance_squared > 256.0_f64.powi(2) {
+                continue;
+            }
+            let relative: [f32; 3] = std::array::from_fn(|axis| {
+                (feet[axis] - f64::from(self.gpu.render_origin[axis])) as f32
+            });
+            cube(
+                &mut shadow_vertices,
+                [relative[0], relative[1] + 0.85, relative[2]],
+                [0.6, 1.7, 0.6],
+                [0.82, 0.16, 0.12],
+            );
+        }
+        if self.gpu.shadow_remote_dirty
+            || bytemuck::cast_slice::<Vertex, u8>(&shadow_vertices)
+                != bytemuck::cast_slice::<Vertex, u8>(&self.game.remote_shadow_vertices)
+        {
+            self.game.remote_shadow_vertices = shadow_vertices;
+            self.gpu
+                .update_remote_shadow_vertices(&self.game.remote_shadow_vertices);
         }
     }
 }

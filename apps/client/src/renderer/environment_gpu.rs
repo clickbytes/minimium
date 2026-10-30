@@ -80,14 +80,6 @@ impl EnvironmentGpuBindings {
             bind_group,
         }
     }
-
-    pub(super) fn pipeline_layout(&self, device: &wgpu::Device) -> wgpu::PipelineLayout {
-        device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("minimium-world-pipeline-layout"),
-            bind_group_layouts: &[Some(&self.layout)],
-            immediate_size: 0,
-        })
-    }
 }
 
 pub(super) fn camera_uniform(view: RenderViewFrame) -> CameraUniform {
