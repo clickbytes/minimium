@@ -259,3 +259,67 @@ impl<H, S> ModuleRegistry<H, S> {
             .map(|(entry, len)| (entry, parts[len..].to_vec()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct SampleModule {
+        id: &'static str,
+        requires: &'static [&'static str],
+        command: &'static str,
+    }
+
+    impl EngineModule<(), ()> for SampleModule {
+        fn descriptor(&self) -> ModuleDescriptor {
+            ModuleDescriptor {
+                id: self.id,
+                version: 1,
+                requires: self.requires,
+            }
+        }
+
+        fn register(&self, registrar: &mut ModuleRegistrar<'_, (), ()>) -> Result<(), ModuleError> {
+            registrar.command(CommandDefinition {
+                name: self.command,
+                aliases: &[],
+                usage: self.command,
+                scope: CommandScope::ServerAdmin,
+                handler: (),
+            })
+        }
+    }
+
+    #[test]
+    fn installation_is_transactional_and_rejects_dependency_and_name_collisions() {
+        let mut registry: ModuleRegistry<(), ()> = ModuleRegistry::default();
+        let first = SampleModule {
+            id: "first",
+            requires: &[],
+            command: "world list",
+        };
+        let dependent = SampleModule {
+            id: "second",
+            requires: &["first"],
+            command: "world inspect",
+        };
+        assert_eq!(
+            registry.install(&dependent),
+            Err(ModuleError::MissingDependency)
+        );
+        assert_eq!(registry.modules().count(), 0);
+        registry.install(&first).unwrap();
+        let collision = SampleModule {
+            id: "third",
+            requires: &[],
+            command: "world list",
+        };
+        assert_eq!(
+            registry.install(&collision),
+            Err(ModuleError::DuplicateCommand)
+        );
+        assert_eq!(registry.modules().count(), 1);
+        registry.install(&dependent).unwrap();
+        assert_eq!(registry.resolve("world inspect 12").unwrap().1, vec!["12"]);
+    }
+}

@@ -406,3 +406,86 @@ impl UniverseCatalog {
         Ok(observations)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn circular_child_position_and_nearer_occluder_are_deterministic() {
+        let system = SolarSystemId::new(1).unwrap();
+        let star = CelestialBodyId::new(1).unwrap();
+        let occluder = CelestialBodyId::new(2).unwrap();
+        let moon = CelestialBodyId::new(3).unwrap();
+        let mut catalog = UniverseCatalog::default();
+        catalog.add_system(system).unwrap();
+        let optics = SurfaceOptics {
+            albedo: 0.5,
+            atmosphere_scattering: 0.0,
+        };
+        catalog
+            .register(CelestialBodyDefinition {
+                id: star,
+                system,
+                kind: BodyKind::Star,
+                parent: None,
+                orbit: Ephemeris::Fixed([10.0, 0.0, 0.0]),
+                radius_m: 1.0,
+                emission: Some(LightEmitter {
+                    linear_rgb: [1.0; 3],
+                    reference_distance_m: 10.0,
+                }),
+                optics,
+                explorable: None,
+            })
+            .unwrap();
+        catalog
+            .register(CelestialBodyDefinition {
+                id: occluder,
+                system,
+                kind: BodyKind::Planet,
+                parent: None,
+                orbit: Ephemeris::Fixed([5.0, 0.0, 0.0]),
+                radius_m: 1.0,
+                emission: None,
+                optics,
+                explorable: None,
+            })
+            .unwrap();
+        catalog
+            .register(CelestialBodyDefinition {
+                id: moon,
+                system,
+                kind: BodyKind::Moon,
+                parent: Some(star),
+                orbit: Ephemeris::Circular {
+                    radius_m: 2.0,
+                    period_seconds: 4.0,
+                    phase_rad: 0.0,
+                },
+                radius_m: 0.5,
+                emission: None,
+                optics,
+                explorable: None,
+            })
+            .unwrap();
+        let at_quarter = catalog.position_at(moon, 1.0).unwrap();
+        assert!((at_quarter[0] - 10.0).abs() < 1e-12);
+        assert!((at_quarter[1] - 2.0).abs() < 1e-12);
+        let observations = catalog.observe(system, [0.0; 3], 0.0).unwrap();
+        assert!(
+            !observations
+                .iter()
+                .find(|body| body.id == star)
+                .unwrap()
+                .visible
+        );
+        assert!(
+            observations
+                .iter()
+                .find(|body| body.id == occluder)
+                .unwrap()
+                .visible
+        );
+    }
+}

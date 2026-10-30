@@ -286,3 +286,50 @@ fn max_component(rgb: [f64; 3]) -> f64 {
 fn to_f32(value: f64) -> Option<f32> {
     (value.is_finite() && value.abs() <= f64::from(f32::MAX)).then_some(value as f32)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use minimium_core::universe::{BodyKind, CelestialBodyId};
+
+    #[test]
+    fn halo_upload_keeps_the_eight_brightest_bodies() {
+        let bodies = (3..=12)
+            .map(|id| ObservedBody {
+                id: CelestialBodyId::new(id).unwrap(),
+                kind: BodyKind::Star,
+                direction_world: [0.0, 1.0, 0.0],
+                distance_m: 1.0e9,
+                angular_radius_rad: 0.01,
+                phase: 1.0,
+                emitted_linear_rgb: [id as f64, 0.0, 0.0],
+                reflected_linear_rgb: [0.0; 3],
+                scattered_linear_rgb: [0.0; 3],
+                visible: true,
+            })
+            .collect::<Vec<_>>();
+        let dummy = LocalBodyFrame {
+            geometric_direction_world: [0.0, 1.0, 0.0],
+            apparent_direction_world: [0.0, 1.0, 0.0],
+            geometric_altitude_rad: 0.0,
+            apparent_altitude_rad: 0.0,
+            angular_radius_rad: 0.01,
+            distance_m: 1.0e9,
+            visible_fraction: 1.0,
+            effective_linear_rgb: [1.0; 3],
+        };
+        let context = HaloContext {
+            view: RenderViewFrame::default(),
+            sun: dummy,
+            moon: dummy,
+            overview_sun_direction: [0.0, 1.0, 0.0],
+            overview_moon_direction: [0.0, 1.0, 0.0],
+            moon_source: [0.0, 1.0, 0.0],
+            profile: EnvironmentSettings::default(),
+        };
+        let (sources, count) = build_halos(&bodies, context);
+        assert_eq!(count, 8);
+        let brightness = sources.map(|source| source.linear_rgb_visibility[0]);
+        assert_eq!(brightness, [12.0, 11.0, 10.0, 9.0, 8.0, 7.0, 6.0, 5.0]);
+    }
+}
