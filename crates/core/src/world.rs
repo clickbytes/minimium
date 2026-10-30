@@ -18,6 +18,11 @@ const MAX_QUERY_CELLS: u64 = 512;
 const PARALLEL_SIMULATION_MIN_PLAYERS: usize = 32;
 const PLAYERS_PER_SIMULATION_BATCH: usize = 16;
 
+/// Fixed authoritative and predictive simulation step in milliseconds.
+pub const SIMULATION_STEP_MILLISECONDS: u64 = 50;
+/// Fixed simulation step in seconds, derived from the millisecond contract.
+pub const SIMULATION_STEP_SECONDS: f32 = SIMULATION_STEP_MILLISECONDS as f32 / 1000.0;
+
 mod addressing;
 mod collision_index;
 mod collision_queries;

@@ -11,7 +11,7 @@ impl Renderer {
         let dt = now
             .duration_since(self.metrics.last_frame)
             .as_secs_f32()
-            .min(0.05);
+            .min(minimium_core::world::SIMULATION_STEP_SECONDS);
         self.metrics.last_frame = now;
         let direction = if self.game.sectors_ready && !self.overview_open {
             self.input.movement(
@@ -23,7 +23,7 @@ impl Renderer {
             [0.0; 2]
         };
         self.game.physics_accumulator += dt;
-        while self.game.physics_accumulator >= 0.05 {
+        while self.game.physics_accumulator >= minimium_core::world::SIMULATION_STEP_SECONDS {
             let mut input = CharacterInput {
                 direction: if self.game.sectors_ready && !self.overview_open {
                     direction
@@ -61,14 +61,18 @@ impl Renderer {
                 self.game.position_mm = previous_mm;
                 input = CharacterInput::default();
             }
-            self.input.input_keepalive += 0.05;
+            self.input.input_keepalive += minimium_core::world::SIMULATION_STEP_SECONDS;
             let moving = input.direction != [0.0, 0.0];
             let input_changed = input.direction != self.input.last_sent_direction;
             if self
                 .connection
                 .session()
                 .is_some_and(|session| session.state() == SessionState::Connected)
-                && (input.jump || input_changed || (moving && self.input.input_keepalive >= 0.1))
+                && (input.jump
+                    || input_changed
+                    || (moving
+                        && self.input.input_keepalive
+                            >= 2.0 * minimium_core::world::SIMULATION_STEP_SECONDS))
             {
                 if let Some(session) = self.connection.session_mut() {
                     let result = session.queue(&ClientMessage::Move {
@@ -83,7 +87,7 @@ impl Renderer {
                     }
                 }
             }
-            self.game.physics_accumulator -= 0.05;
+            self.game.physics_accumulator -= minimium_core::world::SIMULATION_STEP_SECONDS;
         }
         let origin = if self
             .world_manifests
@@ -271,8 +275,11 @@ impl Renderer {
 
 impl GameplayView {
     fn predict(&mut self, input: CharacterInput) {
-        self.collision_query
-            .fill(&self.collision_index, self.character, 0.05);
+        self.collision_query.fill(
+            &self.collision_index,
+            self.character,
+            minimium_core::world::SIMULATION_STEP_SECONDS,
+        );
         if let Some(position_mm) = &mut self.position_mm {
             minimium_core::world::step_character_mm(
                 &mut self.character,
@@ -280,7 +287,7 @@ impl GameplayView {
                 input,
                 self.collision_query.candidates(),
                 self.collision_query.surface_candidates(),
-                0.05,
+                minimium_core::world::SIMULATION_STEP_SECONDS,
             );
         } else {
             step_character(
@@ -288,7 +295,7 @@ impl GameplayView {
                 input,
                 self.collision_query.candidates(),
                 self.collision_query.surface_candidates(),
-                0.05,
+                minimium_core::world::SIMULATION_STEP_SECONDS,
             );
         }
     }
