@@ -157,7 +157,8 @@ int32_t minimium_ae_calculate_local_frame(
         {
             if (!isfinite(rotation.rot[row][column]))
                 return BRIDGE_NONFINITE;
-            output->eqj_to_hor[row][column] = rotation.rot[row][column];
+            /* Astronomy Engine indexes [input][output]; Rust uses [row][column]. */
+            output->eqj_to_hor[row][column] = rotation.rot[column][row];
         }
     }
     output->tt_days = time.tt;

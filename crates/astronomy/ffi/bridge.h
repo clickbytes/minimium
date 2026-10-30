@@ -15,6 +15,7 @@ typedef struct {
 
 typedef struct {
     double observer_geocentric_eqj_m[3];
+    /* Row-major [output][input], transposed from Astronomy Engine storage. */
     double eqj_to_hor[3][3];
     double tt_days;
 } minimium_ae_local_frame_t;

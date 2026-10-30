@@ -7,7 +7,7 @@ use crate::{
     ffi,
     frames::{
         body_state, hor_to_world_matrix, matrix_multiply, matrix_vector, normalize,
-        validate_observer, validate_rotation, validate_vector,
+        validate_observer, validate_rotation, validate_vector, validate_world_transform,
     },
     lunar::{lunar_geometry, LunarGeometryInput},
     model::{
@@ -98,7 +98,7 @@ impl SkyCalculator {
         }
         let eqj_to_hor = validate_rotation(local.eqj_to_hor)?;
         let hor_to_world = hor_to_world_matrix(&observer);
-        let eqj_to_world = validate_rotation(matrix_multiply(hor_to_world, eqj_to_hor))?;
+        let eqj_to_world = validate_world_transform(matrix_multiply(hor_to_world, eqj_to_hor))?;
         let observer_eqj = validate_vector(local.observer_geocentric_eqj_m)?;
         let sun_topocentric = subtract(values.sun_geocentric_m, observer_eqj);
         let moon_topocentric = subtract(values.moon_geocentric_m, observer_eqj);

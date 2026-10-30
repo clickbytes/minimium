@@ -113,6 +113,16 @@ pub(crate) fn hor_to_world_matrix(observer: &ObserverFrame) -> Matrix3 {
 }
 
 pub(crate) fn validate_rotation(matrix: Matrix3) -> Result<Matrix3, SkyError> {
+    validate_transform(matrix, 1.0)
+}
+
+pub(crate) fn validate_world_transform(matrix: Matrix3) -> Result<Matrix3, SkyError> {
+    // The game's N/E/U frame is right-handed; Astronomy Engine HOR is N/W/U.
+    // Converting between them reflects one axis, exactly once, so det = -1.
+    validate_transform(matrix, -1.0)
+}
+
+fn validate_transform(matrix: Matrix3, handedness: f64) -> Result<Matrix3, SkyError> {
     if !matrix.iter().flatten().all(|value| value.is_finite()) {
         return Err(SkyError::NonFinite);
     }
@@ -124,7 +134,7 @@ pub(crate) fn validate_rotation(matrix: Matrix3) -> Result<Matrix3, SkyError> {
     if dot(matrix[0], matrix[1]).abs() > 1.0e-6
         || dot(matrix[0], matrix[2]).abs() > 1.0e-6
         || dot(matrix[1], matrix[2]).abs() > 1.0e-6
-        || dot(cross(matrix[0], matrix[1]), matrix[2]) < 0.999_99
+        || dot(cross(matrix[0], matrix[1]), matrix[2]) * handedness < 0.999_99
     {
         return Err(SkyError::InvalidUpstreamValue);
     }
