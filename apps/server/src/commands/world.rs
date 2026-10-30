@@ -43,7 +43,7 @@ impl EngineModule<ModuleHandler, SystemFn> for WorldCommands {
             handler: entity_list,
         })?;
         registry.system(SystemDefinition {
-            id: "world.instance-count",
+            id: "world-instance-count",
             stage: Stage::Startup,
             handler: record_instance_count,
         })
