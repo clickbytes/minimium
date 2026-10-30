@@ -914,6 +914,7 @@ version = "0.1.0"
 dependencies = [
  "minimium-core",
  "minimium-procgen",
+ "sha2",
 ]
 
 [[package]]
