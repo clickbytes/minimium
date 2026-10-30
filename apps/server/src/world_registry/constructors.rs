@@ -45,6 +45,8 @@ impl WorldRegistry {
             next_transition: 1,
             sector_states: BTreeMap::new(),
             persisted_totals: super::sector_state::PersistedTotals::default(),
+            entity_sectors: BTreeMap::new(),
+            entity_origins: BTreeMap::new(),
         }
     }
 
@@ -129,6 +131,8 @@ impl WorldRegistry {
             next_transition: 1,
             sector_states: BTreeMap::new(),
             persisted_totals: super::sector_state::PersistedTotals::default(),
+            entity_sectors: BTreeMap::new(),
+            entity_origins: BTreeMap::new(),
         }
     }
 

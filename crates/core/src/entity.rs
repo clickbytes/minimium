@@ -146,7 +146,7 @@ impl ComponentBlob {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct EntityStore {
     next_id: u64,
     entities: BTreeMap<EntityId, BTreeMap<ComponentTypeId, ComponentBlob>>,
@@ -188,6 +188,39 @@ impl EntityStore {
     }
     pub fn iter(&self) -> impl Iterator<Item = EntityId> + '_ {
         self.entities.keys().copied()
+    }
+
+    /// Iterates components in stable entity/type ID order for persistence export.
+    pub fn iter_components(
+        &self,
+    ) -> impl Iterator<Item = (EntityId, ComponentTypeId, &ComponentBlob)> + '_ {
+        self.entities.iter().flat_map(|(entity, components)| {
+            components
+                .iter()
+                .map(move |(kind, blob)| (*entity, *kind, blob))
+        })
+    }
+
+    /// Restores a component and its explicit world-scoped entity ID.
+    pub fn restore_component(
+        &mut self,
+        registry: &ComponentRegistry,
+        entity: EntityId,
+        kind: ComponentTypeId,
+        schema: SchemaVersion,
+        bytes: &[u8],
+    ) -> Result<(), ComponentError> {
+        let created_entity = !self.contains(entity);
+        if created_entity {
+            self.restore(entity)?;
+        }
+        if let Err(error) = self.insert(registry, entity, kind, schema, bytes) {
+            if created_entity {
+                self.despawn(entity);
+            }
+            return Err(error);
+        }
+        Ok(())
     }
 
     pub fn insert(

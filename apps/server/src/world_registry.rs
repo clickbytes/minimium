@@ -1,12 +1,13 @@
 use minimium_core::world::WorldMap;
 use minimium_core::{
+    entity::{ComponentError, ComponentTypeId, EntityId},
     environment::EnvironmentProfile,
     ids::PlayerId,
     time::ClockId,
     world::{
-        GenerationRevision, GenerationSpec, GeneratorDigest, MembershipEpoch, Position3Mm,
-        TransitionId, World, WorldContentRevision, WorldDefinitionId, WorldInstanceId,
-        WorldLocation, WorldManifest, WorldSectorState, WorldSeed, WorldTopology,
+        GenerationRevision, GenerationSpec, GeneratorDigest, MembershipEpoch, ObjectOriginId,
+        Position3Mm, SectorKey, TransitionId, World, WorldContentRevision, WorldDefinitionId,
+        WorldInstanceId, WorldLocation, WorldManifest, WorldSectorState, WorldSeed, WorldTopology,
     },
 };
 use minimium_procgen::{DemoPortal, GeneratedWorld};
@@ -19,6 +20,7 @@ use std::{
 mod accessors;
 mod constructors;
 mod diagnostics;
+mod entity_state;
 mod environment;
 mod sector_state;
 
@@ -45,6 +47,10 @@ pub(crate) enum RegistryError {
     InvalidSectorState,
     StaleSectorRevision,
     SectorStateCapacity,
+    Component(ComponentError),
+    EntitySectorConflict,
+    EntityOriginConflict,
+    SectorRevisionExhausted,
 }
 
 /// Server-owned collection of isolated simulation owners and memberships.
@@ -57,6 +63,8 @@ pub(crate) struct WorldRegistry {
     next_transition: u128,
     sector_states: BTreeMap<(WorldInstanceId, minimium_core::world::SectorKey), WorldSectorState>,
     persisted_totals: sector_state::PersistedTotals,
+    entity_sectors: BTreeMap<(WorldInstanceId, EntityId), SectorKey>,
+    entity_origins: BTreeMap<(WorldInstanceId, EntityId, ComponentTypeId), ObjectOriginId>,
 }
 
 #[derive(Clone, Copy)]
