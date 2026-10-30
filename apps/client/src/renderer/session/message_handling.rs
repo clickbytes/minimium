@@ -170,6 +170,7 @@ impl Renderer {
             }
             ServerMessage::TransitionPrepare {
                 transition_id,
+                source_context,
                 target_context,
                 map_fingerprint,
                 destination,
@@ -193,9 +194,11 @@ impl Renderer {
                 self.pending_sector_transitions.insert(
                     transition_id,
                     PendingSectorTransition {
+                        source_context,
                         context: target_context,
                         destination,
                         manifest,
+                        ready_sent: false,
                     },
                 );
                 if self.ui.console.open {
@@ -234,16 +237,17 @@ impl Renderer {
             ServerMessage::TransitionCancelled {
                 transition_id,
                 context,
-            } if self
-                .pending_sector_transitions
-                .remove(&transition_id)
-                .is_some()
-                && context.instance() != self.current_instance =>
-            {
-                self.sector_cache.release_interest(context.instance());
-                self.gpu.release_world_sectors(context.instance());
+            } => {
+                if let Some(pending) = self
+                    .pending_sector_transitions
+                    .get(&transition_id)
+                    .copied()
+                    .filter(|pending| pending.source_context == context)
+                {
+                    self.pending_sector_transitions.remove(&transition_id);
+                    self.release_prepared_target(pending.context.instance());
+                }
             }
-            ServerMessage::TransitionCancelled { .. } => {}
             _ => {}
         }
     }
@@ -425,6 +429,7 @@ impl Renderer {
         let pending: Vec<_> = self
             .pending_sector_transitions
             .iter()
+            .filter(|(_, pending)| !pending.ready_sent)
             .map(|(id, pending)| (*id, *pending))
             .collect();
         for (transition_id, pending) in pending {
@@ -448,8 +453,25 @@ impl Renderer {
                 .queue_transition_ready(transition_id, pending.context)
                 .is_ok()
             {
-                self.pending_sector_transitions.remove(&transition_id);
+                if let Some(pending) = self.pending_sector_transitions.get_mut(&transition_id) {
+                    // Keep the target until Commit/Cancel so cancellation can
+                    // release its pins and GPU buffers after Ready was queued.
+                    pending.ready_sent = true;
+                }
             }
+        }
+    }
+
+    pub(in crate::renderer) fn clear_pending_sector_transitions(&mut self) {
+        for (_, pending) in std::mem::take(&mut self.pending_sector_transitions) {
+            self.release_prepared_target(pending.context.instance());
+        }
+    }
+
+    fn release_prepared_target(&mut self, instance: minimium_core::world::WorldInstanceId) {
+        if instance != self.current_instance {
+            self.sector_cache.release_interest(instance);
+            self.gpu.release_world_sectors(instance);
         }
     }
 }

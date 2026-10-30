@@ -67,6 +67,7 @@ impl Renderer {
                     .push_error(Text::AttemptTimedOut.to_string());
             }
             ConnectionEvent::SessionStarted => {
+                self.clear_pending_sector_transitions();
                 self.reset_remote_gameplay();
                 self.ui.console.push_line(Text::AwaitingWelcome.to_string());
             }
@@ -106,6 +107,7 @@ impl Renderer {
     }
 
     pub(super) fn clear_connection(&mut self) {
+        self.clear_pending_sector_transitions();
         self.map_teleport_pending = false;
         self.map_teleport_armed = false;
         self.teleport_loading = false;
