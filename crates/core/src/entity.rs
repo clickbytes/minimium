@@ -3,7 +3,7 @@
 //! Durable component blobs use an opt-in envelope; unrecognized old blobs stay
 //! owned by their existing serializers.
 use crate::world::{ObjectOriginId, WorldObjectState, MAX_OBJECT_STATE_BYTES};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub const MAX_COMPONENT_BYTES: usize = 16 * 1024;
 const PERSISTENCE_MAGIC: [u8; 4] = *b"MEC1";
@@ -56,11 +56,19 @@ impl SchemaVersion {
 
 pub type SchemaMigration = fn(SchemaVersion, &[u8]) -> Option<Vec<u8>>;
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum ReplicationPolicy {
+    #[default]
+    ServerOnly,
+    Replicated,
+}
+
 #[derive(Clone, Copy)]
 pub struct ComponentDescriptor {
     pub id: ComponentTypeId,
     pub name: &'static str,
     pub schema: SchemaVersion,
+    pub replication: ReplicationPolicy,
     /// Must deterministically upgrade all supported previous versions.
     pub migrate: Option<SchemaMigration>,
 }
@@ -150,6 +158,7 @@ impl ComponentBlob {
 pub struct EntityStore {
     next_id: u64,
     entities: BTreeMap<EntityId, BTreeMap<ComponentTypeId, ComponentBlob>>,
+    changed: BTreeSet<(EntityId, ComponentTypeId)>,
 }
 
 impl EntityStore {
@@ -184,7 +193,11 @@ impl EntityStore {
         self.entities.is_empty()
     }
     pub fn despawn(&mut self, id: EntityId) -> bool {
-        self.entities.remove(&id).is_some()
+        let removed = self.entities.remove(&id).is_some();
+        if removed {
+            self.changed.retain(|(entity, _)| *entity != id);
+        }
+        removed
     }
     pub fn iter(&self) -> impl Iterator<Item = EntityId> + '_ {
         self.entities.keys().copied()
@@ -198,6 +211,15 @@ impl EntityStore {
             components
                 .iter()
                 .map(move |(kind, blob)| (*entity, *kind, blob))
+        })
+    }
+
+    /// Iterates changed components in stable entity/type ID order.
+    pub fn iter_changed_components(
+        &self,
+    ) -> impl Iterator<Item = (EntityId, ComponentTypeId, &ComponentBlob)> + '_ {
+        self.changed.iter().filter_map(|(entity, kind)| {
+            self.get(*entity, *kind).map(|blob| (*entity, *kind, blob))
         })
     }
 
@@ -220,6 +242,7 @@ impl EntityStore {
             }
             return Err(error);
         }
+        self.changed.remove(&(entity, kind));
         Ok(())
     }
 
@@ -236,6 +259,7 @@ impl EntityStore {
             .get_mut(&entity)
             .ok_or(ComponentError::UnknownEntity)?
             .insert(kind, blob);
+        self.changed.insert((entity, kind));
         Ok(())
     }
 

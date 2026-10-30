@@ -49,6 +49,8 @@ pub(crate) struct RuntimeMetrics {
     pub(crate) precise_serial_steps: u64,
     pub(crate) precise_batched_steps: u64,
     pub(crate) precise_batches: u64,
+    pub(crate) component_candidates_queued: u64,
+    pub(crate) component_candidates_filtered: u64,
     pub(crate) memory_sampled_at: Option<Instant>,
     pub(crate) memory_samples: u64,
     pub(crate) memory_rss_bytes: Option<u64>,
@@ -125,6 +127,15 @@ impl RuntimeMetrics {
         }
     }
 
+    pub(crate) fn record_component_candidates(&mut self, queued: usize, filtered: usize) {
+        self.component_candidates_queued = self
+            .component_candidates_queued
+            .saturating_add(queued as u64);
+        self.component_candidates_filtered = self
+            .component_candidates_filtered
+            .saturating_add(filtered as u64);
+    }
+
     pub(crate) fn summary(&self, players: usize) -> String {
         let collision_query_count = self.collision_queries.max(1) as f64;
         let rss_average_per_player = (players > 0)
@@ -172,6 +183,10 @@ impl RuntimeMetrics {
             self.process_cpu_time.map_or_else(|| "n/a".to_owned(), |time| time.as_millis().to_string()),
             self.process_threads.map_or_else(|| "n/a".to_owned(), |threads| threads.to_string()),
         );
+        summary.push_str(&format!(
+            " component_candidates_queued={} component_candidates_filtered={}",
+            self.component_candidates_queued, self.component_candidates_filtered
+        ));
         if ENABLED {
             for (phase, counts) in PHASES.into_iter().zip(allocations::snapshot()) {
                 summary.push_str(&format!(

@@ -1,8 +1,48 @@
 use super::*;
 use minimium_core::{
-    entity::{ComponentRegistry, EntityStore},
+    entity::{ComponentBlob, ComponentRegistry, EntityStore, ReplicationPolicy},
     world::{SectorRevision, WorldObjectState},
 };
+
+pub(crate) const MAX_REPLICATION_CANDIDATES: usize = 256;
+pub(crate) const MAX_REPLICATION_CANDIDATE_BYTES: usize = 64 * 1024;
+
+pub(crate) type ReplicationCandidate = (EntityId, ComponentTypeId, ComponentBlob);
+
+impl WorldRegistry {
+    /// Collects a bounded, read-only staging view of changed replicated components.
+    pub(crate) fn replication_candidates(
+        &self,
+        instance: WorldInstanceId,
+        registry: &ComponentRegistry,
+    ) -> Result<(Vec<ReplicationCandidate>, usize), RegistryError> {
+        let store = &self
+            .instances
+            .get(&instance)
+            .ok_or(RegistryError::UnknownInstance)?
+            .entities;
+        let mut candidates = Vec::new();
+        let mut filtered = 0usize;
+        let mut bytes = 0usize;
+        for (entity, kind, blob) in store.iter_changed_components() {
+            let policy = registry
+                .descriptor(kind)
+                .map(|descriptor| descriptor.replication)
+                .unwrap_or(ReplicationPolicy::ServerOnly);
+            let next_bytes = bytes.saturating_add(blob.bytes.len());
+            if policy != ReplicationPolicy::Replicated
+                || candidates.len() >= MAX_REPLICATION_CANDIDATES
+                || next_bytes > MAX_REPLICATION_CANDIDATE_BYTES
+            {
+                filtered = filtered.saturating_add(1);
+                continue;
+            }
+            bytes = next_bytes;
+            candidates.push((entity, kind, blob.clone()));
+        }
+        Ok((candidates, filtered))
+    }
+}
 
 impl WorldRegistry {
     /// Creates a component entity and persists its component into the selected sector.
