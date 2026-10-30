@@ -86,17 +86,23 @@ impl WorldRegistry {
         Ok(())
     }
 
-    pub(crate) fn from_generated_worlds(mut worlds: Vec<GeneratedWorld>) -> Self {
-        let primary = worlds.remove(0);
+    pub(crate) fn try_from_generated_worlds(
+        worlds: Vec<GeneratedWorld>,
+    ) -> Result<Self, RegistryError> {
+        let mut worlds = worlds.into_iter();
+        let primary = worlds.next().ok_or(RegistryError::EmptyWorlds)?;
         let primary_id = primary.instance;
         let mut registry = Self::from_generated(primary);
         for world in worlds {
-            registry
-                .register_generated(world)
-                .expect("generated world instance IDs are unique");
+            registry.register_generated(world)?;
         }
         registry.primary = primary_id;
-        registry
+        Ok(registry)
+    }
+
+    pub(crate) fn from_generated_worlds(worlds: Vec<GeneratedWorld>) -> Self {
+        Self::try_from_generated_worlds(worlds)
+            .expect("checked generated worlds are nonempty and have unique IDs")
     }
 
     fn from_generated(world: GeneratedWorld) -> Self {
