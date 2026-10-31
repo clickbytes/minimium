@@ -10,6 +10,10 @@ struct WeatherUniform {
     animation: vec4<f32>,
     cloud_region: vec4<f32>,
     presentation: vec4<f32>,
+    atmosphere_radii: vec4<f32>,
+    atmosphere_rayleigh: vec4<f32>,
+    atmosphere_mie: vec4<f32>,
+    atmosphere_ozone: vec4<f32>,
 };
 @group(1) @binding(0) var<uniform> weather: WeatherUniform;
 @group(1) @binding(1) var weather_atlas: texture_2d_array<f32>;

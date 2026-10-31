@@ -5,9 +5,36 @@ pub enum Condensable {
     Water,
 }
 
+/// Validated dry-gas molar fractions. Optical coefficients stay explicit.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GasComposition {
+    pub nitrogen: f64,
+    pub oxygen: f64,
+    pub argon: f64,
+    pub carbon_dioxide: f64,
+    pub other: f64,
+}
+
+impl GasComposition {
+    pub const fn earth() -> Self {
+        Self { nitrogen: 0.78084, oxygen: 0.20946, argon: 0.00934,
+            carbon_dioxide: 0.00036, other: 0.0 }
+    }
+    pub fn validate(self) -> Result<(), &'static str> {
+        let x = [self.nitrogen, self.oxygen, self.argon,
+            self.carbon_dioxide, self.other];
+        if x.iter().any(|v| !v.is_finite() || *v < 0.0 || *v > 1.0)
+            || (x.iter().sum::<f64>() - 1.0).abs() > 0.001 {
+            return Err("gas fractions must be nonnegative and sum to one");
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AtmosphereProfile {
     pub radius_m: f64,
+    pub composition: GasComposition,
     pub gravity_m_s2: f64,
     pub rotation_rad_s: f64,
     pub orbital_period_s: f64,
@@ -22,6 +49,9 @@ pub struct AtmosphereProfile {
     pub rayleigh_rgb_m_inv: [f64; 3],
     pub mie_m_inv: f64,
     pub ozone_rgb_m_inv: [f64; 3],
+    pub mie_anisotropy: f64,
+    pub ozone_peak_height_m: f64,
+    pub ozone_half_width_m: f64,
     pub condensable: Condensable,
 }
 
@@ -29,6 +59,7 @@ impl AtmosphereProfile {
     pub const fn earth() -> Self {
         Self {
             radius_m: 6_371_000.0,
+            composition: GasComposition::earth(),
             gravity_m_s2: 9.80665,
             rotation_rad_s: 7.2921159e-5,
             orbital_period_s: 365.2425 * 86_400.0,
@@ -43,17 +74,21 @@ impl AtmosphereProfile {
             rayleigh_rgb_m_inv: [5.802e-6, 13.558e-6, 33.1e-6],
             mie_m_inv: 4.44e-6,
             ozone_rgb_m_inv: [0.650e-6, 1.881e-6, 0.085e-6],
+            mie_anisotropy: 0.76,
+            ozone_peak_height_m: 25_000.0,
+            ozone_half_width_m: 15_000.0,
             condensable: Condensable::Water,
         }
     }
 
     pub fn validate(self) -> Result<(), &'static str> {
+        self.composition.validate()?;
         for value in [
             self.radius_m, self.gravity_m_s2, self.orbital_period_s,
             self.stellar_flux_w_m2, self.surface_pressure_pa,
             self.surface_temperature_k, self.heat_capacity_j_kg_k,
             self.atmospheric_top_m, self.rayleigh_scale_height_m,
-            self.aerosol_scale_height_m,
+            self.aerosol_scale_height_m, self.ozone_half_width_m,
         ] {
             if !value.is_finite() || value <= 0.0 {
                 return Err("positive finite atmosphere parameter required");
@@ -69,6 +104,12 @@ impl AtmosphereProfile {
             || self.surface_temperature_k < 50.0 || self.surface_temperature_k > 1000.0
         {
             return Err("planet atmosphere scale is unsupported");
+        }
+        if !self.mie_anisotropy.is_finite() || self.mie_anisotropy.abs() >= 0.99
+            || !self.ozone_peak_height_m.is_finite()
+            || self.ozone_peak_height_m < 0.0
+            || self.ozone_peak_height_m > self.atmospheric_top_m {
+            return Err("invalid aerosol phase or ozone layer geometry");
         }
         for value in self.rayleigh_rgb_m_inv.into_iter()
             .chain(self.ozone_rgb_m_inv)

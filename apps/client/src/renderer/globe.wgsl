@@ -14,6 +14,10 @@ struct GlobeWeatherUniform {
     animation: vec4<f32>,
     cloud_region: vec4<f32>,
     presentation: vec4<f32>,
+    atmosphere_radii: vec4<f32>,
+    atmosphere_rayleigh: vec4<f32>,
+    atmosphere_mie: vec4<f32>,
+    atmosphere_ozone: vec4<f32>,
 };
 @group(2) @binding(2) var<uniform> weather: GlobeWeatherUniform;
 

@@ -1,19 +1,16 @@
 // Bounded single scattering with a precomputed spherical optical-depth table.
 // No weather noise, cloud-density march or view-dependent history here.
-const AIR_RADIUS: f32 = 6371000.0;
-const AIR_TOP: f32 = 100000.0;
-const AIR_RAYLEIGH: vec3<f32> = vec3<f32>(5.802e-6, 13.558e-6, 33.100e-6);
-const AIR_OZONE: vec3<f32> = vec3<f32>(0.650e-6, 1.881e-6, 0.085e-6);
+// Profile coefficients are uploaded in the shared WeatherUniform.
 
 fn air_light(table: texture_2d<f32>, table_sampler: sampler,
     point: vec3<f32>, light: vec3<f32>, radius: f32) -> vec3<f32> {
-    let height = clamp((length(point) / radius - 1.0) * AIR_RADIUS, 0.0, AIR_TOP);
-    let r = AIR_RADIUS + height;
-    let horizon = -sqrt(max(1.0 - pow(AIR_RADIUS / r, 2.0), 0.0));
+    let height = clamp((length(point) / radius - 1.0) * weather.atmosphere_radii.x, 0.0, weather.atmosphere_radii.y);
+    let r = weather.atmosphere_radii.x + height;
+    let horizon = -sqrt(max(1.0 - pow(weather.atmosphere_radii.x / r, 2.0), 0.0));
     let cosine = dot(normalize(point), light);
     let disk = smoothstep(horizon - 0.00465, horizon + 0.00465, cosine);
     let u = sqrt(clamp((cosine - horizon) / (1.0 - horizon), 0.0, 1.0));
-    let v = sqrt(height / AIR_TOP);
+    let v = sqrt(height / weather.atmosphere_radii.y);
     let uv = (vec2<f32>(u, v) * vec2<f32>(127.0, 63.0) + 0.5) / vec2<f32>(128.0, 64.0);
     return exp(-textureSampleLevel(table, table_sampler, uv, 0.0).rgb) * disk;
 }
@@ -35,10 +32,10 @@ struct AirPath {
 
 fn air_path(table: texture_2d<f32>, table_sampler: sampler, eye_world: vec3<f32>,
     ray: vec3<f32>, distance_world: f32, radius: f32, steps: u32, readable: f32) -> AirPath {
-    let scale = AIR_RADIUS / max(radius, 1.0);
+    let scale = weather.atmosphere_radii.x / max(radius, 1.0);
     let eye = eye_world * scale;
     let b = dot(eye, ray);
-    let discriminant = b * b - dot(eye, eye) + pow(AIR_RADIUS + AIR_TOP, 2.0);
+    let discriminant = b * b - dot(eye, eye) + pow(weather.atmosphere_radii.x + weather.atmosphere_radii.y, 2.0);
     var result = AirPath(vec3<f32>(0.0), vec3<f32>(1.0));
     if discriminant <= 0.0 { return result; }
     let root = sqrt(discriminant);
@@ -48,24 +45,26 @@ fn air_path(table: texture_2d<f32>, table_sampler: sampler, eye_world: vec3<f32>
     let sun = normalize(environment.global_sun_direction.xyz);
     let cosine = dot(ray, sun);
     let rayleigh_phase = 3.0 / (16.0 * 3.14159265) * (1.0 + cosine * cosine);
-    let g = 0.76;
+    let g = weather.atmosphere_mie.y;
     let mie_phase = (1.0 - g * g) / (4.0 * 3.14159265 * pow(1.0 + g * g - 2.0 * g * cosine, 1.5));
     let ds = (end - begin) / f32(steps);
     for (var i = 0u; i < steps; i++) {
         let point = eye + ray * (begin + (f32(i) + 0.5) * ds);
-        let height = max(length(point) - AIR_RADIUS, 0.0);
-        let rayleigh = AIR_RAYLEIGH * exp(-height / 8000.0);
-        let mie = exp(-height / 1200.0);
-        let ozone = max(1.0 - abs(height - 25000.0) / 15000.0, 0.0);
-        let extinction = rayleigh + vec3<f32>(4.44e-6 * mie) + AIR_OZONE * ozone;
+        let height = max(length(point) - weather.atmosphere_radii.x, 0.0);
+        let rayleigh = weather.atmosphere_rayleigh.xyz
+            * exp(-height / weather.atmosphere_radii.z);
+        let mie = exp(-height / weather.atmosphere_radii.w);
+        let ozone = max(1.0 - abs(height - weather.atmosphere_ozone.w)
+            / weather.atmosphere_mie.z, 0.0);
+        let extinction = rayleigh + vec3<f32>(weather.atmosphere_mie.x * mie) + weather.atmosphere_ozone.xyz * ozone;
         let segment = exp(-extinction * ds);
-        let light = air_light(table, table_sampler, point, sun, AIR_RADIUS);
+        let light = air_light(table, table_sampler, point, sun, weather.atmosphere_radii.x);
         let moon_direction = global_moon_direction(point / scale);
         let moon = global_moon_irradiance() * max(dot(normalize(point), moon_direction), 0.0);
         // Approximate diffuse multiple scattering; direct scattering retains the
         // spherical terminator. No uniform blue ring on the physical night side.
         let solar_fill = smoothstep(-0.12, 0.2, dot(normalize(point), sun)) * 0.012;
-        let source = (rayleigh * rayleigh_phase + vec3<f32>(3.996e-6 * mie * mie_phase))
+        let source = (rayleigh * rayleigh_phase + vec3<f32>(weather.atmosphere_mie.x * 0.9 * mie * mie_phase))
             * light * environment.global_sun_rgb.xyz
             + rayleigh * (solar_fill + moon + vec3<f32>(0.006, 0.012, 0.025) * readable);
         let integrated = source / max(extinction, vec3<f32>(1e-12)) * (1.0 - segment);

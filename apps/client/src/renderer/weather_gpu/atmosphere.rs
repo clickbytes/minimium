@@ -1,12 +1,11 @@
 //! Camera-independent optical depth table; rebuilt only with the GPU resources.
 //! Metres and coefficients here match atmosphere_common.wgsl, regardless of game scale.
 use glam::DVec3;
+use minimium_weather::AtmosphereProfile;
 
 const WIDTH: u32 = 128;
 const HEIGHT: u32 = 64;
 pub(super) const BYTES: u64 = WIDTH as u64 * HEIGHT as u64 * 8;
-const RADIUS: f64 = 6_371_000.0;
-const TOP: f64 = 100_000.0;
 
 pub(super) fn entry() -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
@@ -21,27 +20,32 @@ pub(super) fn entry() -> wgpu::BindGroupLayoutEntry {
     }
 }
 
-pub(super) fn create(device: &wgpu::Device, queue: &wgpu::Queue) -> wgpu::TextureView {
+pub(super) fn create(
+    device: &wgpu::Device, queue: &wgpu::Queue, profile: AtmosphereProfile,
+) -> wgpu::TextureView {
+    let radius = profile.radius_m;
+    let top = profile.atmospheric_top_m;
     let mut pixels = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
     for y in 0..HEIGHT {
-        let altitude = (f64::from(y) / f64::from(HEIGHT - 1)).powi(2) * TOP;
-        let r = RADIUS + altitude;
-        let horizon = -(1.0 - (RADIUS / r).powi(2)).max(0.0).sqrt();
+        let altitude = (f64::from(y) / f64::from(HEIGHT - 1)).powi(2) * top;
+        let r = radius + altitude;
+        let horizon = -(1.0 - (radius / r).powi(2)).max(0.0).sqrt();
         for x in 0..WIDTH {
             // Allocate most samples near the geometric horizon, including twilight aloft.
             let u = f64::from(x) / f64::from(WIDTH - 1);
             let mu = horizon + (1.0 - horizon) * u * u;
-            let length = -r * mu + ((r * mu).powi(2) + (RADIUS + TOP).powi(2) - r * r).sqrt();
+            let length = -r * mu + ((r * mu).powi(2) + (radius + top).powi(2) - r * r).sqrt();
             let mut optical = DVec3::ZERO;
             for step in 0..64 {
                 let d = length * (f64::from(step) + 0.5) / 64.0;
-                let h = (r * r + d * d + 2.0 * r * mu * d).sqrt() - RADIUS;
-                let rayleigh = (-h / 8000.0).exp();
-                let mie = (-h / 1200.0).exp();
-                let ozone = (1.0 - (h - 25000.0).abs() / 15000.0).max(0.0);
-                optical += (DVec3::new(5.802e-6, 13.558e-6, 33.100e-6) * rayleigh
-                    + DVec3::splat(4.44e-6) * mie
-                    + DVec3::new(0.650e-6, 1.881e-6, 0.085e-6) * ozone)
+                let h = (r * r + d * d + 2.0 * r * mu * d).sqrt() - radius;
+                let rayleigh = (-h / profile.rayleigh_scale_height_m).exp();
+                let mie = (-h / profile.aerosol_scale_height_m).exp();
+                let ozone = (1.0 - (h - profile.ozone_peak_height_m).abs()
+                    / profile.ozone_half_width_m).max(0.0);
+                optical += (DVec3::from_array(profile.rayleigh_rgb_m_inv) * rayleigh
+                    + DVec3::splat(profile.mie_m_inv) * mie
+                    + DVec3::from_array(profile.ozone_rgb_m_inv) * ozone)
                     * (length / 64.0);
             }
             pixels.extend(optical.to_array().map(|v| half::f16::from_f64(v).to_bits()));

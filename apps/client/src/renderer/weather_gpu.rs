@@ -3,8 +3,10 @@ pub(super) mod capabilities;
 mod pipeline;
 mod targets;
 mod timing;
+mod upload;
 use crate::environment::weather::{LightningEvent, WeatherSample, ATLAS_LAYERS};
 use bytemuck::{Pod, Zeroable};
+use minimium_weather::AtmosphereProfile;
 use pipeline::{depth_entry, depth_group, pipeline};
 use wgpu::util::DeviceExt;
 
@@ -22,10 +24,14 @@ struct WeatherUniform {
     animation: [f32; 4],
     cloud_region: [f32; 4],
     presentation: [f32; 4],
+    atmosphere_radii: [f32; 4],
+    atmosphere_rayleigh: [f32; 4],
+    atmosphere_mie: [f32; 4],
+    atmosphere_ozone: [f32; 4],
 }
 
 const _: () = {
-    assert!(std::mem::size_of::<WeatherUniform>() == 11 * 16);
+    assert!(std::mem::size_of::<WeatherUniform>() == 15 * 16);
     assert!(std::mem::align_of::<WeatherUniform>() == 16);
 };
 
@@ -51,6 +57,7 @@ pub(super) struct WeatherGpu {
     pub(super) cloud_settings: super::cloud_settings::CloudRenderSettings,
     pub(super) cloud_effective: super::cloud_settings::EffectiveCloudSettings,
     atlas: wgpu::Texture,
+    atmosphere_profile: AtmosphereProfile,
     depth_layout: wgpu::BindGroupLayout,
     pub(super) depth_bind_group: wgpu::BindGroup,
     pub(super) globe_layout: wgpu::BindGroupLayout,
@@ -112,7 +119,9 @@ impl WeatherGpu {
             view_formats: &[],
         });
         let view = atlas.create_view(&wgpu::TextureViewDescriptor::default());
-        let atmosphere_view = atmosphere::create(device, queue);
+        let atmosphere_profile = AtmosphereProfile::earth();
+        atmosphere_profile.validate().expect("bundled Earth atmosphere must be valid");
+        let atmosphere_view = atmosphere::create(device, queue, atmosphere_profile);
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("weather atlas sampler"),
             address_mode_u: wgpu::AddressMode::Repeat,
@@ -346,6 +355,7 @@ impl WeatherGpu {
             cloud_effective,
             cloud_aggregates,
             atlas,
+            atmosphere_profile,
             depth_layout,
             depth_bind_group,
             globe_layout,
@@ -371,79 +381,6 @@ impl WeatherGpu {
             rain_particles: 0,
             bolt_active: false,
         }
-    }
-
-    pub(super) fn upload(&mut self, queue: &wgpu::Queue, frame: WeatherFrame) {
-        let WeatherFrame {
-            rain_ceiling_m,
-            readable_globe,
-            sample,
-            blend,
-            radius,
-            origin,
-            utc_ms,
-            lightning,
-            standard_quality,
-            shelter_mask,
-            region,
-            overview,
-            seed,
-        } = frame;
-        let (bolt, mut event) = lightning.map_or(([0.0; 4], [0.0; 4]), |flash| {
-            (
-                [
-                    flash.direction[0],
-                    flash.direction[1],
-                    flash.direction[2],
-                    flash.intensity,
-                ],
-                [(flash.id as u32) as f32 / u32::MAX as f32, 0.0, 0.0, 0.0],
-            )
-        });
-        event[1] = self.instances.morph;
-        event[2] = rain_ceiling_m;
-        let value = WeatherUniform {
-            presentation: [
-                f32::from(readable_globe && overview),
-                0.80,
-                0.018,
-                1.0 / self.capabilities.optical_scale(),
-            ],
-            cloud_region: self.instances.region,
-            cover_rain: [sample.low, sample.middle, sample.high, sample.rain_mm_h],
-            wind: [
-                sample.wind_east_m_s,
-                sample.wind_north_m_s,
-                (radius / 6_371_000.0).max(0.0001),
-                sample.temperature_c,
-            ],
-            blend: [
-                blend,
-                radius,
-                utc_ms.unwrap_or(0).rem_euclid(60_000) as f32 / 1000.0,
-                f32::from(standard_quality),
-            ],
-            origin: [origin[0], origin[1], origin[2], 0.0],
-            lightning: bolt,
-            event,
-            shelter: shelter_mask.map(f32::from),
-            region,
-            animation: [
-                utc_ms.unwrap_or(0).rem_euclid(21_600_000) as f32 / 1000.0,
-                utc_ms
-                    .unwrap_or(0)
-                    .div_euclid(21_600_000)
-                    .rem_euclid(16_777_216) as f32,
-                f32::from(overview),
-                ((seed as u64 ^ (seed >> 64) as u64) as u32) as f32 / u32::MAX as f32,
-            ],
-        };
-        queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&value));
-        self.rain_mm_h = sample.rain_mm_h;
-        self.rain_particles = ((sample.rain_mm_h / 32.0).sqrt() * 1024.0)
-            .round()
-            .clamp(0.0, 1024.0) as u32;
-        self.bolt_active = lightning.is_some();
     }
 
     pub(super) fn stage_atlas(
