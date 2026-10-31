@@ -166,7 +166,7 @@ pub(super) fn bake(
     Maps {
         request,
         pixels,
-        circulation_fingerprints: columns.map(Grid::circulation_fingerprint),
+        circulation_fingerprints: std::array::from_fn(|i| columns[i].circulation_fingerprint()),
     }
 }
 
