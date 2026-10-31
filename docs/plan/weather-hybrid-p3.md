@@ -15,3 +15,7 @@ A published cloud frame is identified by world instance, seed, clock revision, w
 - Stale physical fields are retained for rain/surface weather while a view cut rebuilds; UTC lag remains visible in diagnostics.
 - This patch adds no temporal reprojection or automatic prefetch on globe click.
 - Source changes only; build/static/runtime and teleport/visual checks NOT RUN under visual-first workflow.
+
+
+## Manual deterministic comparison
+`weather status` exposes circulation model/epoch/fingerprints for both client atlas endpoints. `minimiumctl status` exposes the server's published UTC epoch and fingerprint. Compare **exactly the same UTC endpoint** with the same seed and GEBCO package; these are quantized diagnostic hashes, not cryptographic checksums or proof of cross-architecture floating-point parity. Live forecast adjustments may intentionally differ.

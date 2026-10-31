@@ -128,6 +128,10 @@ impl Grid {
             .clamp(0.0, 1.0);
     }
 
+    pub(super) fn circulation_fingerprint(&self) -> u64 {
+        self.circulation.fingerprint()
+    }
+
     pub(super) fn sample(&self, lat: f64, lon: f64) -> Column {
         let height = self.width / 2;
         let x = ((lon / std::f64::consts::TAU + 0.5).rem_euclid(1.0)) * self.width as f64;

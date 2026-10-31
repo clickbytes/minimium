@@ -21,6 +21,7 @@ pub(super) struct Request {
 pub(super) struct Maps {
     pub(super) request: Request,
     pub(super) pixels: [Vec<u8>; ATLAS_LAYERS],
+    pub(super) circulation_fingerprints: [u64; 2],
 }
 
 #[derive(Default)]
@@ -162,7 +163,11 @@ pub(super) fn bake(
             }
         }
     }
-    Maps { request, pixels }
+    Maps {
+        request,
+        pixels,
+        circulation_fingerprints: columns.map(Grid::circulation_fingerprint),
+    }
 }
 
 pub(super) fn encode(mut values: Column) -> [[u8; 4]; CHANNELS / 4] {

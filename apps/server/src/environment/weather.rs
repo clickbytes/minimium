@@ -113,9 +113,9 @@ impl WeatherAuthority {
         match &self.published {
             Some((key, field)) => {
                 let sample = field.sample(0.9, 0.4, 0);
-                format!("weather_authority={status}:model={} world={} seed={} UTC={} T={:.1}K RH={:.2}",
+                format!("weather_authority={status}:model={} world={} seed={} UTC={} digest={:016x} T={:.1}K RH={:.2}",
                     minimium_weather::MODEL_REVISION, key.world, key.seed,
-                    key.utc_ms, sample.temperature_k, sample.humidity())
+                    key.utc_ms, field.fingerprint(), sample.temperature_k, sample.humidity())
             }
             None => format!("weather_authority={status}:no_published_field"),
         }
