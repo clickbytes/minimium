@@ -22,7 +22,6 @@ struct CloudOutput {
     return CloudOutput(vec4<f32>(clip.xy, clip.w * 0.5, clip.w), point, material.xy, height, u32(input.layer));
 }
 @fragment fn fs_cloud(input: CloudOutput) -> CloudLayers {
-    if input.material.x < 0.0001 { discard; }
     let view = cloud_ray(input.clip.xy);
     let eye = camera.eye_world.xyz / weather.blend.y;
     let b = dot(eye, view.ray);
@@ -39,8 +38,11 @@ struct CloudOutput {
     if weight < 0.0001 { discard; }
     let up = normalize(point);
     let optical = input.material.y / max(abs(dot(up, view.ray)), 0.2);
-    // Preserve empty area in an aggregate; do not turn it into dilute overcast.
-    let alpha = input.material.x * (1.0 - exp(-optical));
+    // Orbital opacity comes from the same physical columns as shadows/rain.
+    // Vertex moments still provide curved geometry and approximate lighting.
+    let alpha = cached_cloud_weather(cloud_shadow_atlas, weather_sampler,
+        point, weather.event.y, weather.cloud_region)[input.layer];
+    if alpha < 0.0001 { discard; }
     let tau = -log(max(1.0 - alpha, 0.000001)) * weight;
     var color = tone_map_linear(cloud_radiance(point, view.ray, up, optical, optical * 0.15, input.layer));
     if u32(cloud_frame.config.w) == 4u { color = vec3<f32>(0.2, 0.4, 1.0); }

@@ -61,7 +61,7 @@ impl CloudInstances {
                         wgpu::BufferBindingType::Uniform
                     },
                     has_dynamic_offset: false,
-                    min_binding_size: wgpu::BufferSize::new(if binding == 0 { 176 } else { 80 }),
+                    min_binding_size: wgpu::BufferSize::new(if binding == 0 { 176 } else { 96 }),
                 },
                 count: None,
             }),
@@ -143,6 +143,12 @@ impl CloudInstances {
                 size[1] as f32,
                 settings.scale,
                 self.draw_count as f32,
+            ],
+            appearance: [
+                f32::from(settings.method == super::super::cloud_settings::CloudMethod::Volumetric),
+                settings.normal_detail,
+                0.0,
+                0.0,
             ],
         };
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&view));

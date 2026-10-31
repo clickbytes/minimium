@@ -18,6 +18,7 @@ struct InstanceUniform {
     local_region: vec4<f32>,
     config: vec4<f32>,
     viewport: vec4<f32>,
+    appearance: vec4<f32>,
 };
 @group(3) @binding(0) var<storage, read> cloud_instances: array<CloudInstanceGpu>;
 @group(3) @binding(1) var<uniform> cloud_frame: InstanceUniform;
@@ -116,4 +117,13 @@ fn lobe_shadow_integral(lobe: Lobe, ray: vec3<f32>,
     let d = inverse_rotate(lobe.rotation, ray) / lobe.axes;
     return max(lobe.density * (kernel_primitive(hi - interval.z, interval.w, dot(d, d))
         - kernel_primitive(lo - interval.z, interval.w, dot(d, d))), 0.0);
+}
+
+// Explicit visual fallback: analytic retains legacy smooth view extinction.
+fn lobe_view_integral(lobe: Lobe, origin: vec3<f32>, ray: vec3<f32>,
+    interval: vec4<f32>, start: f32, end: f32) -> f32 {
+    if cloud_frame.appearance.x < 0.5 {
+        return lobe_shadow_integral(lobe, ray, interval, start, end);
+    }
+    return lobe_integral(lobe, origin, ray, interval, start, end);
 }

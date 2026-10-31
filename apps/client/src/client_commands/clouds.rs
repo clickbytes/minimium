@@ -1,6 +1,6 @@
 use super::{ClientCommand, ParseError};
 use crate::environment::weather::WeatherCommand;
-use crate::renderer::cloud_settings::{CloudCommand, CloudDebug, CloudLighting, CloudQuality};
+use crate::renderer::cloud_settings::{CloudCommand, CloudDebug, CloudLighting, CloudMethod, CloudQuality};
 
 pub(super) fn parse(arguments: &[&str]) -> Result<ClientCommand, ParseError> {
     let command = match arguments {
@@ -11,6 +11,11 @@ pub(super) fn parse(arguments: &[&str]) -> Result<ClientCommand, ParseError> {
             "low" => CloudQuality::Low,
             "standard" => CloudQuality::Standard,
             "high" => CloudQuality::High,
+            _ => return Err(ParseError::WeatherUsage),
+        }),
+        ["method", value] => CloudCommand::Method(match *value {
+            "analytic" => CloudMethod::Analytic,
+            "volumetric" => CloudMethod::Volumetric,
             _ => return Err(ParseError::WeatherUsage),
         }),
         ["lighting", value] => CloudCommand::Lighting(match *value {

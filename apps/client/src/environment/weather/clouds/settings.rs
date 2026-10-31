@@ -6,6 +6,11 @@ pub(crate) enum CloudQuality {
     High,
 }
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CloudMethod {
+    Analytic,
+    Volumetric,
+}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CloudLighting {
     Low,
     Standard,
@@ -28,6 +33,7 @@ pub(crate) enum CloudCommand {
     Instances(u32),
     Lod(u32),
     Lighting(CloudLighting),
+    Method(CloudMethod),
     Reset,
     Debug(CloudDebug),
 }
