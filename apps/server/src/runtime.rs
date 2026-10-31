@@ -11,7 +11,7 @@ use crate::{
     admin::{AdminServer, RequestId},
     config::ServerConfig,
     connection::Client,
-    environment::EnvironmentClock,
+    environment::{EnvironmentClock, WeatherAuthority},
     executor::Executor,
     lifecycle::{self, EndpointGuard},
     metrics::RuntimeMetrics,
@@ -82,6 +82,7 @@ pub(crate) struct ServerRuntime {
     schedule: schedule::ServerSchedule,
     game: GameState,
     environment_clock: EnvironmentClock,
+    weather_authority: Option<WeatherAuthority>,
     connections: ConnectionState,
     operations: OperationsState,
     scheduler: Scheduler,
@@ -190,6 +191,13 @@ impl ServerRuntime {
                     )
                 },
             )?;
+        let weather_authority = if game.worlds.iter().any(|(_, instance)| {
+            instance.environment_profile == minimium_core::environment::EnvironmentProfile::Earth
+        }) {
+            Some(WeatherAuthority::new()?)
+        } else {
+            None
+        };
         let mut schedule = crate::commands::build_schedule();
         schedule.run_stage(minimium_platform::modules::Stage::Startup, &game.worlds);
         let autosave_interval = Duration::from_secs(config.autosave_seconds);
@@ -197,6 +205,7 @@ impl ServerRuntime {
             game,
             schedule,
             environment_clock,
+            weather_authority,
             connections,
             operations,
             scheduler: Scheduler {

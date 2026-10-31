@@ -18,6 +18,13 @@ impl ServerRuntime {
                 minimium_platform::modules::Stage::Environment,
                 &self.game.worlds,
             );
+            if let Ok(now) = self.monotonic_ms(Instant::now()) {
+                if let Ok(clock) = self.environment_clock.sample(now) {
+                    if let Some(authority) = &mut self.weather_authority {
+                        authority.update(&self.game.worlds, clock);
+                    }
+                }
+            }
             self.metrics.ticks = self.metrics.ticks.saturating_add(1);
             self.metrics.last_tick = tick_started.elapsed();
             self.metrics.tick.record(self.metrics.last_tick);
@@ -75,6 +82,10 @@ impl ServerRuntime {
                 let _ = write!(reply.text, " game_address={game_address} max_players={max_players} map_fingerprint={:016x} tick_ms={} snapshot_ms={} autosave_seconds={autosave_seconds} protocol_version={PROTOCOL_VERSION} save_version={SAVE_VERSION}", self.map.fingerprint(), TICK.as_millis(), SNAPSHOT_INTERVAL.as_millis());
                 reply.text.push_str(" environment_profiles=");
                 reply.text.push_str(&self.game.worlds.environment_summary());
+                if let Some(authority) = &self.weather_authority {
+                    reply.text.push(' ');
+                    reply.text.push_str(&authority.status());
+                }
             }
             if command.is_metrics() {
                 use std::fmt::Write as _;

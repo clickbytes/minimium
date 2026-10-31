@@ -1,0 +1,11 @@
+[package]
+name = "minimium-weather"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+minimium-procgen = { path = "../procgen" }

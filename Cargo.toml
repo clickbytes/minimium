@@ -4,6 +4,7 @@ members = [
     "crates/core",
     "crates/astronomy",
     "crates/procgen",
+    "crates/weather",
     "crates/sectors",
     "crates/assets",
     "crates/platform",

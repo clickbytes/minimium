@@ -4,6 +4,7 @@ use super::{
     maps::Request,
     terrain::{self, TerrainInfluence},
 };
+use minimium_weather::{AtmosphereProfile, WeatherGrid, WeatherSurface};
 
 pub(crate) const CHANNELS: usize = 32;
 pub(crate) const ATLAS_LAYERS: usize = CHANNELS;
@@ -66,6 +67,7 @@ pub(super) fn terrain_grid(request: Request) -> Vec<TerrainInfluence> {
 pub(super) struct Grid {
     width: usize,
     columns: Vec<Column>,
+    circulation: WeatherGrid,
 }
 
 impl Grid {
@@ -74,7 +76,12 @@ impl Grid {
         days: f64,
         terrain: &[TerrainInfluence],
         width: usize,
+        surface: &WeatherSurface,
     ) -> Self {
+        let milliseconds = (days * 86_400_000.0).round() as i64;
+        let circulation = WeatherGrid::reconstruct(
+            request.seed, milliseconds, AtmosphereProfile::earth(), surface,
+        );
         let columns = (0..width * (width / 2 + 1))
             .map(|i| {
                 let (lat, lon) = coordinates(width, i % width, i / width);
@@ -82,7 +89,43 @@ impl Grid {
                 column::evaluate(lat, lon, days, request.seed, ground)
             })
             .collect();
-        Self { width, columns }
+        Self { width, columns, circulation }
+    }
+
+    /// Physical circulation is applied after terrain refinement so that winds
+    /// and humidity are not overwritten by the old climatology adapter.
+    pub(super) fn apply_circulation(&self, lat: f64, lon: f64, values: &mut Column) {
+        let low = self.circulation.sample(lat, lon, 0);
+        let middle = self.circulation.sample(lat, lon, 1);
+        let high = self.circulation.sample(lat, lon, 2);
+        let air = [low, middle, high];
+        values[5] = (values[5] * 0.65
+            + (low.temperature_k - 273.15).clamp(-45.0, 45.0) * 0.35).clamp(-40.0, 40.0);
+        values[4] = (values[4] * 0.55 + low.humidity() * 0.45).clamp(0.05, 0.995);
+        values[8] = (values[8] * 0.45 + low.east_m_s * 0.55).clamp(-32.0, 32.0);
+        values[9] = (values[9] * 0.45 + low.north_m_s * 0.55).clamp(-32.0, 32.0);
+        for (layer, cell) in air.into_iter().enumerate() {
+            // Existing cloud population geometry still defines detailed shapes.
+            // Condensate and humidity now modulate their regional atmosphere.
+            let condensate = (cell.condensate_kg_kg * 180.0).clamp(0.0, 1.0);
+            let humidity = cell.humidity();
+            values[layer] = (values[layer] * 0.55
+                + ((humidity - 0.48).max(0.0) * 1.15 + condensate * 0.45)
+                    .clamp(0.0, 1.0) * 0.45).clamp(0.0, 1.0);
+            let index = 14 + layer * 4;
+            values[index] = (values[index] * 0.52 + condensate * 0.48).clamp(0.0, 1.0);
+            if layer > 0 {
+                let wind = 22 + layer * 2;
+                values[wind] = (values[wind] * 0.45 + cell.east_m_s * 0.55).clamp(-48.0, 48.0);
+                values[wind + 1] =
+                    (values[wind + 1] * 0.45 + cell.north_m_s * 0.55).clamp(-48.0, 48.0);
+            }
+        }
+        values[3] = (values[3] * 0.7 + low.precipitation_mm_h() * 0.3)
+            .clamp(0.0, 32.0);
+        let lapse = (low.temperature_k - middle.temperature_k) / 3700.0;
+        values[10] = (values[10] * 0.7 + ((lapse - 0.003) * 75.0).clamp(0.0, 1.0) * 0.3)
+            .clamp(0.0, 1.0);
     }
 
     pub(super) fn sample(&self, lat: f64, lon: f64) -> Column {
