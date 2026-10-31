@@ -280,6 +280,7 @@ impl Renderer {
         self.gpu.weather_gpu.instances.update(
             &self.gpu.queue,
             cloud_instances::View {
+                world: self.game.current_instance,
                 clock_revision: self.environment_frame.revision,
                 world_rate: self.environment_frame.rate_ppm.unwrap_or(1_000_000) as f64
                     / 1_000_000.0,

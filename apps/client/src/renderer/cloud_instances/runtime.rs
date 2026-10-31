@@ -1,11 +1,27 @@
 use super::{build::Built, shadow, CloudInstances, Request, View};
 use glam::DVec3;
+use crate::environment::weather::wind::EARTH_RADIUS;
 use std::{
     sync::mpsc,
     time::{Duration, Instant},
 };
 
+// A local FPP cut is never reused after a planetary teleport. The physical
+// field and distant globe coverage remain available during asynchronous rebuild.
+fn local_cut_tolerance(radius: f64) -> f64 {
+    (radius / EARTH_RADIUS * 20_000.0).max(1.0)
+}
+
 impl CloudInstances {
+    pub(in crate::renderer) fn invalidate_view(&mut self) {
+        self.serial = self.serial.wrapping_add(1);
+        self.ready = None;
+        self.requested = None;
+        self.draw_count = 0;
+        self.lod_history.clear();
+        self.last_request = Instant::now() - Duration::from_secs(1);
+    }
+
     pub(in crate::renderer) fn update(&mut self, queue: &wgpu::Queue, view: View) {
         self.active_limit = view.settings.instances;
         self.active_aggregate_limit = view.settings.aggregates;
@@ -24,6 +40,7 @@ impl CloudInstances {
             .find(|&d| d >= desired)
             .unwrap_or(300.0);
         let mut request = Request {
+            world: view.world,
             previous_lod: self.lod_history.clone(),
             atlas,
             eye: DVec3::from_array(view.eye),
@@ -65,7 +82,12 @@ impl CloudInstances {
         self.morph = self.published.as_ref().map_or(0.0, |old| {
             ((seconds - old.start_seconds) / old.duration).clamp(0.0, 1.0) as f32
         });
-        self.draw_count = if self.count <= view.settings.instances {
+        // Never draw a stale near-field after teleport/large view relocation.
+        let local_fresh = self.published.as_ref().is_some_and(|old| {
+            old.same_world(&request)
+                && old.eye.distance(request.eye) <= local_cut_tolerance(view.radius)
+        });
+        self.draw_count = if local_fresh && self.count <= view.settings.instances {
             self.count
         } else {
             0
@@ -92,6 +114,7 @@ impl CloudInstances {
 
     fn receive(&mut self, queue: &wgpu::Queue, request: &Request, seconds: f64, built: Built) {
         if !built.request.same_world(request)
+            || built.request.eye.distance(request.eye) > local_cut_tolerance(request.radius)
             || built.request.serial != self.serial
             || !built.request.settings.same_representation(request.settings)
         {
