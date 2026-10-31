@@ -99,3 +99,34 @@ view extinction, not the canonical physical model).
 - Rain particles receive a deterministic per-cell glint amplitude and distinct Sun/Moon angular phase response, still gated by cloud shadows and local light. Snow avoids water-drop-like bright glints.
 - Atmospheres without water condensable no longer invent water vapour/cloud condensate inside the generic weather solver. Earth still uses the same water cycle.
 - Runtime rendering quality and GPU costs require the user's separate acceptance; these source changes do not claim measured quality or verified compilation.
+
+
+## Final source-integration review (2026-10-31)
+
+Additional source changes: bounded Sun/cloud forward scattering, world-cell
+droplet glints, moon vector and cloud-interior normal guards, grazing-angle
+optical depth on the curved globe, invalidation on planet-to-interior transitions,
+and dry-atmosphere water-cycle suppression.
+
+Connector-only static inspection of the feature head confirmed:
+
+- New weather workspace membership and all three Cargo dependency declarations
+  are present in the lockfile; the physical model has no renderer dependency.
+- WeatherUniform (15 aligned vec4 values), CloudInstanceGpu (11 vec4 values)
+  and InstanceUniform (6 vec4 values) share field names/order across Rust/WGSL.
+- All five inspected shader compositions (near, far, globe, precipitation,
+  orbital atmosphere) have balanced delimiters and no repeated function or
+  struct declarations in their joined sources.
+- The visual-mode command is registered and defaults to `volumetric`.
+- The new/edited focal shader and model files inspected remain within the
+  hand-maintained 500-line policy.
+
+This is not a substitute for `cargo fmt --check`, `cargo check --locked`,
+shader validation through Naga/wgpu, or actual GPU rendering. They were **NOT
+RUN** here because the execution environment has no Rust toolchain or GPU,
+and the user owns final visual/performance acceptance. No automatic tests
+were added or run.
+
+Merge policy: all five PRs remain draft. Preserve `main` until the owner
+accepts the appearance and the integration can be built on the target
+machine. Do not label unrun checks PASS.
