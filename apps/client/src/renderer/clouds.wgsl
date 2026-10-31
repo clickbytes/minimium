@@ -43,7 +43,11 @@ struct CloudOutput {
     let alpha = cached_cloud_weather(cloud_shadow_atlas, weather_sampler,
         point, weather.event.y, weather.cloud_region)[input.layer];
     if alpha < 0.0001 { discard; }
-    let tau = -log(max(1.0 - alpha, 0.000001)) * weight;
+    // Column opacity is measured vertically. A grazing view crosses more
+    // atmosphere, so lengthen its optical path while retaining the same
+    // physical opacity field shared by globe, shadows and FPP.
+    let slant = 1.0 / max(abs(dot(up, view.ray)), 0.22);
+    let tau = -log(max(1.0 - alpha, 0.000001)) * slant * weight;
     var color = tone_map_linear(cloud_radiance(point, view.ray, up, optical, optical * 0.15, input.layer));
     if u32(cloud_frame.config.w) == 4u { color = vec3<f32>(0.2, 0.4, 1.0); }
     var values: array<vec4<f32>, 4>;

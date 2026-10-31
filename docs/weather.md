@@ -136,3 +136,10 @@ Code changes are committed, not visually verified; the user will measure perform
 The headless server now runs a bounded `WeatherAuthority` worker. At most one outstanding global Earth reconstruction is enqueued; outdated frames are rejected by world instance, seed, clock revision and UTC interval. It is driven by the server's authoritative clock, not the client's FPS. The admin `status` command reports the last published weather epoch. Client and server use the same `minimium-weather` reconstruction code and GEBCO surface, so no full planet atlas is transferred in each replication tick.
 
 **Limitations:** Server weather is currently read-only to gameplay. It is not persisted as an independent state snapshot and no weather checksums travel in protocol v13. Floating-point cross-platform bit equality and live forecast client corrections are not guaranteed. This first-stage authority supports a single Earth instance and must be generalized to independent per-planet worlds before multiple Earth simulations can coexist. It does not imply weather gameplay parity is already verified.
+
+
+## P5 planet atmosphere ownership
+
+`minimium-weather::AtmosphereProfile` owns radius, gravity, rotation, obliquity, orbital period, insolation, atmospheric pressure/temperature, optics and condensable. `GasComposition` validates gas fractions; optical coefficients remain separately calibrated. The same Earth profile now supplies CPU transmittance LUTs and the four additional 16-byte WGSL uniform vectors used by near-cloud and globe atmospheric sampling. This removes a second copy of the Earth optical constants.
+
+Earth is the **only active runtime atmospheric profile**. Future planet presets require world/profile network persistence, non-water microphysics and GPU LUT resource rebuilding. The star/sky artistic horizon model is still Earth-specific. No claim of full planetary universality, visual acceptance or performance validation is made.

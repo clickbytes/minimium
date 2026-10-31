@@ -27,7 +27,10 @@ pub(crate) fn solar(latitude: f64, longitude: f64, seconds: f64, p: AtmospherePr
     let orbit = (seconds / p.orbital_period_s).rem_euclid(1.0);
     let declination = p.obliquity_rad * (TAU * (orbit - 0.218)).sin();
     // The UTC epoch is an explicit approximation of an orbital phase anchor.
-    let local_phase = (seconds * p.rotation_rad_s + longitude + PI).rem_euclid(TAU);
+    // Solar, not sidereal, rotation: Earth sunrise must not drift by ~4 min/day.
+    // The same spin rate still drives Coriolis independently.
+    let solar_rotation = p.rotation_rad_s - TAU / p.orbital_period_s;
+    let local_phase = (seconds * solar_rotation + longitude + PI).rem_euclid(TAU);
     (latitude.sin() * declination.sin()
         + latitude.cos() * declination.cos() * local_phase.cos()).max(0.0)
 }
@@ -71,8 +74,13 @@ fn initial(seed: u128, seconds: f64, p: AtmosphereProfile,
                 let temperature = (p.surface_temperature_k + 13.0 * (1.0 - pole)
                     - 42.0 * pole + solar_energy * (8.0 - water_response * 5.0)
                     - lapse - ground.elevation_m * 0.004 + wave * 2.0).max(160.0);
-                let moisture = saturation(temperature)
-                    * (0.32 + ground.water * 0.32 + 0.12 * wave).clamp(0.08, 0.96);
+                let moisture = if p.condensable == Condensable::Water {
+                    saturation(temperature)
+                        * (0.32 + ground.water * 0.32 + 0.12 * wave)
+                            .clamp(0.08, 0.96)
+                } else {
+                    0.0
+                };
                 let pressure = p.surface_pressure_pa
                     * (-height / 8000.0).exp()
                     * (1.0 + wave * 0.006);
@@ -80,7 +88,11 @@ fn initial(seed: u128, seconds: f64, p: AtmosphereProfile,
                 cells[(level * GRID_HEIGHT + y) * GRID_WIDTH + x] = AtmosphericCell {
                     temperature_k: temperature,
                     vapor_kg_kg: moisture,
-                    condensate_kg_kg: ((wave + 0.3).max(0.0) * 0.0003).min(0.001),
+                    condensate_kg_kg: if p.condensable == Condensable::Water {
+                        ((wave + 0.3).max(0.0) * 0.0003).min(0.001)
+                    } else {
+                        0.0
+                    },
                     pressure_pa: pressure,
                     east_m_s: belt * (1.0 + level as f64 * 0.7),
                     north_m_s: wave * 2.0,
@@ -142,6 +154,12 @@ fn integrate(old: &[AtmosphericCell], surface: &WeatherSurface, seconds: f64,
                     ground.water * 0.00008 * (light * 0.7 + 0.3) * dt / 3600.0
                 } else { 0.0 };
                 air.vapor_kg_kg += evaporate;
+                if p.condensable == Condensable::None {
+                    air.vapor_kg_kg = 0.0;
+                    air.condensate_kg_kg = 0.0;
+                    next[index] = air;
+                    continue;
+                }
                 let saturation = saturation(air.temperature_k);
                 let excess = (air.vapor_kg_kg - saturation * 0.86).max(0.0);
                 let condensation = excess * (dt / 3600.0).min(0.3);
@@ -151,8 +169,8 @@ fn integrate(old: &[AtmosphericCell], surface: &WeatherSurface, seconds: f64,
                     .min(air.condensate_kg_kg) * dt / 14_400.0;
                 air.condensate_kg_kg -= evaporation;
                 air.vapor_kg_kg += evaporation;
-                let fallout = air.condensate_kg_kg.max(0.0)
-                    * dt / if layer == 2 { 43_200.0 } else { 10_800.0 };
+                let fallout_period = if layer == 2 { 43_200.0 } else { 10_800.0 };
+                let fallout = air.condensate_kg_kg.max(0.0) * dt / fallout_period;
                 air.condensate_kg_kg = (air.condensate_kg_kg - fallout).clamp(0.0, 0.01);
                 air.vapor_kg_kg = air.vapor_kg_kg.clamp(0.0, 0.08);
                 next[index] = air;

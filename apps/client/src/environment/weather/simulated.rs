@@ -195,7 +195,17 @@ impl SimulatedWeather {
         } else {
             String::new()
         };
-        format!("{} | {state}{lag}", self.resolution.description())
+        let circulation = self.maps.as_ref().map_or_else(
+            || "circulation unavailable".to_owned(),
+            |maps| format!(
+                "circulation v{} epoch={} digest={:016x}/{:016x}",
+                minimium_weather::MODEL_REVISION,
+                maps.request.epoch,
+                maps.circulation_fingerprints[0],
+                maps.circulation_fingerprints[1],
+            ),
+        );
+        format!("{} | {state}{lag} | {circulation}", self.resolution.description())
     }
 
     pub(super) fn sample(&self, latitude_deg: f64, longitude_deg: f64) -> WeatherSample {

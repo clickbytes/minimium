@@ -6,5 +6,5 @@ mod grid;
 mod profile;
 
 pub use grid::{AtmosphericCell, WeatherGrid, WeatherSurface, GRID_HEIGHT, GRID_WIDTH, LEVELS};
-pub use profile::{AtmosphereProfile, Condensable};
+pub use profile::{AtmosphereProfile, Condensable, GasComposition};
 pub const MODEL_REVISION: u32 = 1;

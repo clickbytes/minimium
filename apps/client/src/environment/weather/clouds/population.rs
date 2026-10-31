@@ -64,10 +64,23 @@ pub(super) fn cluster(
     let coastal = field
         .flow
         .coastal_displacement(moving, m.base - ground, shore, 1800.0);
-    let up = wind::displace(moving, coastal);
-    let flow = field
-        .flow
-        .velocity(up, m.base + m.depth * 0.5, ground, shore);
+    // Feed the newly solved atmospheric circulation into physical cloud motion.
+    // The legacy cohort trajectory still transports large-scale root locations;
+    // this bounded correction follows the shared middle/upper/surface wind atlas.
+    let (solved_east, solved_north) = match layer {
+        0 => (f64::from(column[2].x) * 64.0 - 32.0,
+              f64::from(column[2].y) * 64.0 - 32.0),
+        1 => (f64::from(column[6].x) * 96.0 - 48.0,
+              f64::from(column[6].y) * 96.0 - 48.0),
+        _ => (f64::from(column[6].z) * 96.0 - 48.0,
+              f64::from(column[6].w) * 96.0 - 48.0),
+    };
+    let solved_flow = east * solved_east + north * solved_north;
+    let old_flow = field.flow.velocity(moving, m.base + m.depth * 0.5, ground, shore);
+    let displacement = wind::tangent((solved_flow - old_flow) * 300.0, moving)
+        .clamp_length_max(5000.0);
+    let up = wind::displace(moving, coastal + displacement);
+    let flow = old_flow * 0.4 + solved_flow * 0.6;
     let width = m.width * (0.7 + random(key, 5) * 0.3);
     Some(CloudCluster {
         id,

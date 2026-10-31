@@ -2,6 +2,7 @@ struct RainVertex {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) world_point: vec3<f32>,
     @location(1) @interpolate(flat) shelter_cell: u32,
+    @location(2) @interpolate(flat) sparkle: f32,
 };
 
 @vertex fn vs_rain(@builtin(vertex_index) vertex: u32,
@@ -43,6 +44,8 @@ struct RainVertex {
     var output: RainVertex;
     output.world_point = world_point;
     output.shelter_cell = (cell / 128u) * 8u + (cell % 32u) / 4u;
+    // Stable per world-cell highlight; no frame-number glitter.
+    output.sparkle = fract(seed * 97.37 + fract(seed * 13.71) * 0.29);
     output.clip_position = camera.view_projection * vec4<f32>(world_point - weather.origin.xyz, 1.0);
     return output;
 }
@@ -60,10 +63,24 @@ struct RainVertex {
     let sun = normalize(environment.global_sun_direction.xyz);
     let shadow = cached_cloud_shadow(cloud_shadow_atlas, weather_sampler, input.world_point,
         sun, weather.event.y, weather.blend.y, weather.cloud_region);
-    let phase = 0.12 + 0.18 * pow(max(dot(view, sun), 0.0), 8.0);
+    let toward_sun = max(dot(view, sun), 0.0);
+    let ice = weather.wind.w <= 0.0;
+    // Forward scattering from water droplets plus uncommon sharp glints.
+    // Both are explicitly gated by illuminated Sun and cloud shadows.
+    let broad_phase = 0.10 + 0.26 * pow(toward_sun, 12.0);
+    let rare_glint = smoothstep(0.94, 0.995, input.sparkle)
+        * pow(toward_sun, 64.0) * select(0.42, 0.08, ice);
+    var moon_dir = vec3<f32>(0.0, 1.0, 0.0);
+    let moon_length2 = dot(environment.moon_apparent_world.xyz,
+        environment.moon_apparent_world.xyz);
+    if moon_length2 > 1.0e-8 {
+        moon_dir = normalize(environment.moon_apparent_world.xyz);
+    }
+    let moon_phase = 0.15 + 0.25 * pow(max(dot(view, moon_dir), 0.0), 8.0);
     let radiance = environment.ambient_rgb_exposure.xyz
-        + environment.local_sun_rgb_visibility.xyz * phase * shadow
-        + environment.local_moon_rgb_visibility.xyz * 0.35;
+        + environment.local_sun_rgb_visibility.xyz
+            * (broad_phase + rare_glint) * shadow
+        + environment.local_moon_rgb_visibility.xyz * moon_phase;
     let luminance = dot(radiance, vec3<f32>(0.2126, 0.7152, 0.0722));
     let flash = weather.lightning.w * 0.65;
     let brightness = clamp(sqrt(max(luminance, 0.0)) * 0.7 + flash, 0.0, 0.95);

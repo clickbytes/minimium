@@ -65,7 +65,7 @@ impl WeatherSurface {
             let direction = [lat.cos() * lon.cos(), lat.sin(), lat.cos() * lon.sin()];
             let elevation = minimium_procgen::try_earth_elevation_m(direction).unwrap_or(0.0);
             SurfaceCell {
-                water: f64::from(elevation < 0.0),
+                water: if elevation < 0.0 { 1.0 } else { 0.0 },
                 elevation_m: elevation.max(0.0),
             }
         })
@@ -111,6 +111,26 @@ impl WeatherGrid {
             .map(|(a, b)| a.blend(b, t))
             .collect();
         Self { cells, utc_ms, seed }
+    }
+
+    /// Quantized, endianness-independent comparison aid for client/server epochs.
+    /// Not a cryptographic identity or cross-platform bitwise determinism proof.
+    pub fn fingerprint(&self) -> u64 {
+        let mut hash = 0xcbf29ce484222325u64;
+        for cell in &self.cells {
+            for (value, scale) in [
+                (cell.temperature_k, 100.0),
+                (cell.vapor_kg_kg, 10_000_000.0),
+                (cell.condensate_kg_kg, 10_000_000.0),
+                (cell.pressure_pa, 10.0),
+                (cell.east_m_s, 100.0),
+                (cell.north_m_s, 100.0),
+            ] {
+                hash = (hash ^ ((value * scale).round() as i64 as u64))
+                    .wrapping_mul(0x100000001b3);
+            }
+        }
+        hash
     }
 
     pub fn sample(&self, latitude_rad: f64, longitude_rad: f64, level: usize) -> AtmosphericCell {
