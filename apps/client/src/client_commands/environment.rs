@@ -7,7 +7,7 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "weather clouds",
         alias: None,
-        usage: "weather clouds status|quality sky/low/standard/high|scale 0.25/0.5/0.75/1|instances 512..32768|lod 8..128|lighting low/standard/high|reset|debug off/bounds/ids/density/lod",
+        usage: "weather clouds status|quality sky/low/standard/high|scale 0.25/0.5/0.75/1|instances 512..32768|lod 8..128|lighting low/standard/high|method analytic/volumetric|reset|debug off/bounds/ids/density/lod",
         parser: parse,
     },
     CommandSpec {

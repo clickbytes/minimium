@@ -51,8 +51,25 @@ fn light_depth(lobe: Lobe, instance: CloudInstanceGpu, point: vec3<f32>, sun: ve
     let world = point + cloud_frame.origin.xyz;
     let weight = local_weight(world) * fade;
     let local = inverse_rotate(lobe.rotation, point - lobe.center) / (lobe.axes * lobe.axes);
-    let normal = normalize(rotate(lobe.rotation, local));
-    let optical = lobe_integral(lobe, cloud_frame.eye.xyz, view.ray, interval, lo, hi);
+    let smooth_normal = normalize(rotate(lobe.rotation, local));
+    var normal = smooth_normal;
+    if cloud_frame.appearance.x > 0.5 {
+        // Detail gradients make cloud edges billowy rather than smooth.
+        let q = inverse_rotate(lobe.rotation, point - lobe.center) / lobe.axes;
+        let dx = vec3<f32>(0.025, 0.0, 0.0);
+        let dy = vec3<f32>(0.0, 0.025, 0.0);
+        let dz = vec3<f32>(0.0, 0.0, 0.025);
+        let gradient = vec3<f32>(
+            cloud_kernel(q + dx, lobe.seed) - cloud_kernel(q - dx, lobe.seed),
+            cloud_kernel(q + dy, lobe.seed) - cloud_kernel(q - dy, lobe.seed),
+            cloud_kernel(q + dz, lobe.seed) - cloud_kernel(q - dz, lobe.seed));
+        let shaped = -rotate(lobe.rotation, gradient / lobe.axes);
+        if dot(shaped, shaped) > 1e-12 {
+            normal = normalize(mix(smooth_normal, normalize(shaped),
+                cloud_frame.appearance.y));
+        }
+    }
+    let optical = lobe_view_integral(lobe, cloud_frame.eye.xyz, view.ray, interval, lo, hi);
     let sun = normalize(environment.global_sun_direction.xyz);
     let shadow = light_depth(lobe, instance, point, sun);
     var color = tone_map_linear(cloud_radiance(world, view.ray, normal, optical, shadow, u32(instance.material.x)));
@@ -62,7 +79,7 @@ fn light_depth(lobe: Lobe, instance: CloudInstanceGpu, point: vec3<f32>, sun: ve
     if debug == 4u { color = vec3<f32>(instance.material.z / 4.0, 0.3, 1.0 - instance.material.z / 4.0); }
     var values: array<vec4<f32>, 4>;
     for (var bin = 0u; bin < u32(cloud_frame.config.y); bin++) {
-        var tau = lobe_integral(lobe, cloud_frame.eye.xyz, view.ray, interval, max(lo, bin_edge(view.bounds, bin)), min(hi, bin_edge(view.bounds, bin + 1u))) * weight;
+        var tau = lobe_view_integral(lobe, cloud_frame.eye.xyz, view.ray, interval, max(lo, bin_edge(view.bounds, bin)), min(hi, bin_edge(view.bounds, bin + 1u))) * weight;
         if debug == 1u { tau = select(0.0, 0.2 * weight, interval.w < 0.08); color = vec3<f32>(0.2, 1.0, 0.3); }
         values[bin] = vec4<f32>(color * tau, tau) * cloud_frame.eye.w;
     }

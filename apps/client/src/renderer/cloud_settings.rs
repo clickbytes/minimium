@@ -1,5 +1,5 @@
 pub(crate) use crate::environment::weather::clouds::settings::{
-    CloudCommand, CloudDebug, CloudLighting, CloudQuality,
+    CloudCommand, CloudDebug, CloudLighting, CloudMethod, CloudQuality,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -11,6 +11,8 @@ pub(super) struct EffectiveCloudSettings {
     pub(super) neighbors: u32,
     pub(super) aggregates: usize,
     pub(super) debug: CloudDebug,
+    pub(super) method: CloudMethod,
+    pub(super) normal_detail: f32,
 }
 
 pub(super) struct CloudRenderSettings {
@@ -19,6 +21,7 @@ pub(super) struct CloudRenderSettings {
     instances: Option<u32>,
     lod: Option<u32>,
     lighting: Option<CloudLighting>,
+    method: CloudMethod,
     debug: CloudDebug,
 }
 
@@ -38,6 +41,7 @@ impl Default for CloudRenderSettings {
             instances: None,
             lod: None,
             lighting: None,
+            method: CloudMethod::Volumetric,
             debug: CloudDebug::Off,
         }
     }
@@ -56,6 +60,7 @@ impl CloudRenderSettings {
             CloudCommand::Scale(value) => self.scale = Some(value),
             CloudCommand::Instances(value) => self.instances = Some(value),
             CloudCommand::Lod(value) => self.lod = Some(value),
+            CloudCommand::Method(method) => self.method = method,
             CloudCommand::Lighting(value) => self.lighting = Some(value),
             CloudCommand::Debug(value) => self.debug = value,
             CloudCommand::Status => {}
@@ -96,6 +101,12 @@ impl CloudRenderSettings {
             },
             aggregates,
             debug: self.debug,
+            method: self.method,
+            normal_detail: match lighting {
+                CloudLighting::Low => 0.35,
+                CloudLighting::Standard => 0.65,
+                CloudLighting::High => 0.90,
+            },
         };
         if !precise {
             effective.scale = effective.scale.min(0.5);
@@ -109,8 +120,8 @@ impl CloudRenderSettings {
     }
 
     pub(super) fn description(&self, effective: EffectiveCloudSettings) -> String {
-        format!("clouds requested {:?} overrides(scale={:?}, instances={:?}, lod={:?}, lighting={:?}) | effective scale={} limit={} lod={}px bins={} neighbors={} aggregates={} debug={:?}",
-            self.quality, self.scale.map(|v| f32::from(v) / 4.0), self.instances, self.lod, self.lighting,
-            effective.scale, effective.instances, effective.lod, effective.bins, effective.neighbors, effective.aggregates, effective.debug)
+        format!("clouds requested {:?} method={:?} overrides(scale={:?}, instances={:?}, lod={:?}, lighting={:?}) | effective scale={} limit={} lod={}px bins={} neighbors={} aggregates={} detail={} debug={:?}",
+            self.quality, effective.method, self.scale.map(|v| f32::from(v) / 4.0), self.instances, self.lod, self.lighting,
+            effective.scale, effective.instances, effective.lod, effective.bins, effective.neighbors, effective.aggregates, effective.normal_detail, effective.debug)
     }
 }

@@ -4,7 +4,7 @@ use crate::environment::weather::wind::{basis, EARTH_RADIUS};
 use glam::DVec3;
 use std::sync::Arc;
 
-pub(in crate::renderer) const SIZE: u32 = 32;
+pub(in crate::renderer) const SIZE: u32 = 64;
 pub(super) const BYTES: u64 = SIZE as u64 * SIZE as u64 * 4 * 8;
 
 pub(in crate::renderer) struct Cache {

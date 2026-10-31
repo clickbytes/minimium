@@ -42,6 +42,7 @@ struct InstanceUniform {
     local_region: [f32; 4],
     config: [f32; 4],
     viewport: [f32; 4],
+    appearance: [f32; 4],
 }
 
 const _: () = {
@@ -49,7 +50,7 @@ const _: () = {
     assert!(std::mem::offset_of!(CloudInstanceGpu, center_b) == 64);
     assert!(std::mem::offset_of!(CloudInstanceGpu, neighbors_a) == 128);
     assert!(std::mem::offset_of!(CloudInstanceGpu, material) == 160);
-    assert!(std::mem::size_of::<InstanceUniform>() == 80);
+    assert!(std::mem::size_of::<InstanceUniform>() == 96);
 };
 
 #[derive(Clone)]
