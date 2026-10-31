@@ -1,6 +1,6 @@
-//! Shared polynomial kernel: rho = coefficient * max(1 - dot(q,q), 0)^2.
-//! Integrals are centered at closest approach, avoiding planetary cancellation.
-use super::CloudLobe;
+//! Canonical physical cloud density, mirrored by the WGSL near-cloud shader.
+//! Bounded lobes retain their IDs, motion, mass and clipping planes.
+use super::{detail, CloudLobe};
 use glam::DVec3;
 
 pub(crate) fn point(lobe: &CloudLobe, position: DVec3) -> f64 {
@@ -8,7 +8,7 @@ pub(crate) fn point(lobe: &CloudLobe, position: DVec3) -> f64 {
         return 0.0;
     }
     let q = (lobe.orientation.conjugate() * (position - lobe.center)) / lobe.axes;
-    lobe.density * (1.0 - q.length_squared()).max(0.0).powi(2)
+    detail::kernel(q, (lobe.id.hash() >> 40) as u32) * lobe.density
 }
 
 pub(crate) fn interval(lobe: &CloudLobe, origin: DVec3, ray: DVec3) -> Option<(f64, f64)> {
@@ -49,14 +49,27 @@ pub(crate) fn integral(lobe: &CloudLobe, origin: DVec3, ray: DVec3, lo: f64, hi:
     let inverse = lobe.orientation.conjugate();
     let q = (inverse * (origin - lobe.center)) / lobe.axes;
     let d = (inverse * ray) / lobe.axes;
-    let a = d.length_squared();
-    let t = -q.dot(d) / a;
-    let h = (1.0 - (q + d * t).length_squared()).max(0.0);
-    let primitive = |u: f64| h * h * u - 2.0 * h * a * u.powi(3) / 3.0 + a * a * u.powi(5) / 5.0;
-    (lobe.density * (primitive(hi - t) - primitive(lo - t))).max(0.0)
+    // Six-point Gauss-Legendre quadrature resolves eroded cloud boundaries.
+    // The camera and globe both integrate this same canonical density.
+    const NODES: [f64; 6] = [
+        0.033765242898, 0.169395306767, 0.380690406958,
+        0.619309593042, 0.830604693233, 0.966234757102,
+    ];
+    const WEIGHTS: [f64; 6] = [
+        0.085662246190, 0.180380786524, 0.233956967286,
+        0.233956967286, 0.180380786524, 0.085662246190,
+    ];
+    let mut sum = 0.0;
+    let length = hi - lo;
+    let seed = (lobe.id.hash() >> 40) as u32;
+    for (node, weight) in NODES.into_iter().zip(WEIGHTS) {
+        sum += detail::kernel(q + d * (lo + node * length), seed) * weight;
+    }
+    (lobe.density * length * sum).max(0.0)
 }
 
-/// Exact clipped kernel volume, including an arbitrarily tilted ellipsoid/base.
+/// Exact base polynomial volume; detailed erosion is an approximate visual
+/// redistribution of extinction, not an additional mass source.
 pub(crate) fn volume(lobe: &CloudLobe) -> f64 {
     let n = (lobe.orientation.conjugate() * lobe.base_normal) * lobe.axes;
     let z = ((lobe.base_offset - lobe.center.dot(lobe.base_normal)) / n.length()).clamp(-1.0, 1.0);
