@@ -27,7 +27,10 @@ pub(crate) fn solar(latitude: f64, longitude: f64, seconds: f64, p: AtmospherePr
     let orbit = (seconds / p.orbital_period_s).rem_euclid(1.0);
     let declination = p.obliquity_rad * (TAU * (orbit - 0.218)).sin();
     // The UTC epoch is an explicit approximation of an orbital phase anchor.
-    let local_phase = (seconds * p.rotation_rad_s + longitude + PI).rem_euclid(TAU);
+    // Solar, not sidereal, rotation: Earth sunrise must not drift by ~4 min/day.
+    // The same spin rate still drives Coriolis independently.
+    let solar_rotation = p.rotation_rad_s - TAU / p.orbital_period_s;
+    let local_phase = (seconds * solar_rotation + longitude + PI).rem_euclid(TAU);
     (latitude.sin() * declination.sin()
         + latitude.cos() * declination.cos() * local_phase.cos()).max(0.0)
 }
@@ -151,8 +154,8 @@ fn integrate(old: &[AtmosphericCell], surface: &WeatherSurface, seconds: f64,
                     .min(air.condensate_kg_kg) * dt / 14_400.0;
                 air.condensate_kg_kg -= evaporation;
                 air.vapor_kg_kg += evaporation;
-                let fallout = air.condensate_kg_kg.max(0.0)
-                    * dt / if layer == 2 { 43_200.0 } else { 10_800.0 };
+                let fallout_period = if layer == 2 { 43_200.0 } else { 10_800.0 };
+                let fallout = air.condensate_kg_kg.max(0.0) * dt / fallout_period;
                 air.condensate_kg_kg = (air.condensate_kg_kg - fallout).clamp(0.0, 0.01);
                 air.vapor_kg_kg = air.vapor_kg_kg.clamp(0.0, 0.08);
                 next[index] = air;
