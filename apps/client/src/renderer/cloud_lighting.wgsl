@@ -23,6 +23,13 @@ fn cloud_upper_visibility(point: vec3<f32>, sun: vec3<f32>, own_layer: u32) -> f
     return transmission;
 }
 
+// Bounded Henyey-Greenstein-like forward lobe. This replaces a broad
+// arbitrary power curve while avoiding unbounded silver-lining highlights.
+fn cloud_phase(cos_theta: f32, g: f32) -> f32 {
+    let den = max(1.0 + g * g - 2.0 * g * clamp(cos_theta, -1.0, 1.0), 0.015);
+    return (1.0 - g * g) / pow(den, 1.5);
+}
+
 fn cloud_radiance(point: vec3<f32>, ray: vec3<f32>, normal: vec3<f32>,
     optical: f32, light_optical: f32, layer: u32) -> vec3<f32> {
     let up = normalize(point);
@@ -33,7 +40,12 @@ fn cloud_radiance(point: vec3<f32>, ray: vec3<f32>, normal: vec3<f32>,
     let upper = cloud_upper_visibility(point, sun, layer);
     let self_transmission = exp(-light_optical);
     let wrapped = clamp((dot(normal, sun) + 0.35) / 1.35, 0.0, 1.0);
-    let forward = pow(max(dot(ray, sun), 0.0), 10.0) * exp(-optical * 0.18) * 0.18;
+    // Strong forward scattering is most visible at thin cloud edges near the Sun.
+    // High ice clouds scatter more strongly forward than the water-cloud fallback.
+    let anisotropy = select(0.72, 0.82, layer == 2u);
+    let thin_edge = exp(-max(optical, 0.0) * 0.16);
+    let forward = min(cloud_phase(dot(ray, sun), anisotropy) * 0.015, 0.48)
+        * thin_edge;
     // Lit storm tops stay white. Dense bases and sides darken through extinction,
     // not a black storm tint. Thin ice decks transmit more sky light.
     let direct = environment.global_sun_rgb.xyz * solar * upper

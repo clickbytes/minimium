@@ -92,3 +92,10 @@ as tested, ready or merged based on source review alone.
 Rollback: `git switch main` (untouched). Previous render mode within the
 feature branch: `weather clouds method analytic` (only swaps near-cloud
 view extinction, not the canonical physical model).
+
+## Additional source-level appearance cleanup
+
+- Cloud light uses a bounded forward-scattering phase with a stronger high-ice-cloud response rather than an arbitrary `pow(cos θ,10)` term. This changes image only, not source weather.
+- Rain particles receive a deterministic per-cell glint amplitude and distinct Sun/Moon angular phase response, still gated by cloud shadows and local light. Snow avoids water-drop-like bright glints.
+- Atmospheres without water condensable no longer invent water vapour/cloud condensate inside the generic weather solver. Earth still uses the same water cycle.
+- Runtime rendering quality and GPU costs require the user's separate acceptance; these source changes do not claim measured quality or verified compilation.

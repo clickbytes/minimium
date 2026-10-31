@@ -65,7 +65,7 @@ impl WeatherSurface {
             let direction = [lat.cos() * lon.cos(), lat.sin(), lat.cos() * lon.sin()];
             let elevation = minimium_procgen::try_earth_elevation_m(direction).unwrap_or(0.0);
             SurfaceCell {
-                water: f64::from(elevation < 0.0),
+                water: if elevation < 0.0 { 1.0 } else { 0.0 },
                 elevation_m: elevation.max(0.0),
             }
         })

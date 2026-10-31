@@ -74,8 +74,13 @@ fn initial(seed: u128, seconds: f64, p: AtmosphereProfile,
                 let temperature = (p.surface_temperature_k + 13.0 * (1.0 - pole)
                     - 42.0 * pole + solar_energy * (8.0 - water_response * 5.0)
                     - lapse - ground.elevation_m * 0.004 + wave * 2.0).max(160.0);
-                let moisture = saturation(temperature)
-                    * (0.32 + ground.water * 0.32 + 0.12 * wave).clamp(0.08, 0.96);
+                let moisture = if p.condensable == Condensable::Water {
+                    saturation(temperature)
+                        * (0.32 + ground.water * 0.32 + 0.12 * wave)
+                            .clamp(0.08, 0.96)
+                } else {
+                    0.0
+                };
                 let pressure = p.surface_pressure_pa
                     * (-height / 8000.0).exp()
                     * (1.0 + wave * 0.006);
@@ -83,7 +88,11 @@ fn initial(seed: u128, seconds: f64, p: AtmosphereProfile,
                 cells[(level * GRID_HEIGHT + y) * GRID_WIDTH + x] = AtmosphericCell {
                     temperature_k: temperature,
                     vapor_kg_kg: moisture,
-                    condensate_kg_kg: ((wave + 0.3).max(0.0) * 0.0003).min(0.001),
+                    condensate_kg_kg: if p.condensable == Condensable::Water {
+                        ((wave + 0.3).max(0.0) * 0.0003).min(0.001)
+                    } else {
+                        0.0
+                    },
                     pressure_pa: pressure,
                     east_m_s: belt * (1.0 + level as f64 * 0.7),
                     north_m_s: wave * 2.0,
@@ -145,6 +154,12 @@ fn integrate(old: &[AtmosphericCell], surface: &WeatherSurface, seconds: f64,
                     ground.water * 0.00008 * (light * 0.7 + 0.3) * dt / 3600.0
                 } else { 0.0 };
                 air.vapor_kg_kg += evaporate;
+                if p.condensable == Condensable::None {
+                    air.vapor_kg_kg = 0.0;
+                    air.condensate_kg_kg = 0.0;
+                    next[index] = air;
+                    continue;
+                }
                 let saturation = saturation(air.temperature_k);
                 let excess = (air.vapor_kg_kg - saturation * 0.86).max(0.0);
                 let condensation = excess * (dt / 3600.0).min(0.3);
