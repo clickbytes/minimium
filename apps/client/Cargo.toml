@@ -15,6 +15,7 @@ minimium-sectors = { path = "../../crates/sectors" }
 minimium-telemetry = { path = "../../crates/telemetry" }
 bytemuck = { version = "1.25", features = ["derive"] }
 glam = "0.30"
+half = "2"
 pollster = "0.4"
 wgpu = "30"
 winit = "0.30"

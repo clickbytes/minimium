@@ -4,4 +4,7 @@
 /.minimium-local/
 /.minimium-earth/
 /.minimium-server/
+/.minimium-loadtest/
+/concat.xz.b64
+__pycache__/
 *.log

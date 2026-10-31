@@ -1,9 +1,21 @@
 use super::{ClientCommand, CommandRegistry, CommandSpec, ParseError};
 use crate::environment::quality::SkyQuality;
-use crate::environment::weather::{WeatherCommand, WeatherPreset};
+use crate::environment::weather::{WeatherCommand, WeatherPreset, WeatherResolution};
 use minimium_platform::commands::parse_scale_ppm;
 
 const COMMANDS: &[CommandSpec] = &[
+    CommandSpec {
+        name: "weather clouds",
+        alias: None,
+        usage: "weather clouds status|quality sky/low/standard/high|scale 0.25/0.5/0.75/1|instances 512..32768|lod 8..128|lighting low/standard/high|reset|debug off/bounds/ids/density/lod",
+        parser: parse,
+    },
+    CommandSpec {
+        name: "weather globe",
+        alias: None,
+        usage: "weather globe [readable|natural] (default readable; presentation only)",
+        parser: parse,
+    },
     CommandSpec {
         name: "sky quality",
         alias: None,
@@ -41,6 +53,12 @@ const COMMANDS: &[CommandSpec] = &[
         parser: parse,
     },
     CommandSpec {
+        name: "weather resolution",
+        alias: None,
+        usage: "weather resolution [64|128|256|512] (regional simulation; default 256)",
+        parser: parse,
+    },
+    CommandSpec {
         name: "weather status",
         alias: None,
         usage: "weather status",
@@ -49,7 +67,7 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "weather live",
         alias: None,
-        usage: "weather live on|off (MET Norway; sends rounded Earth coordinates)",
+        usage: "weather live on|off (1x/current UTC; MET Norway; rounded Earth coordinates)",
         parser: parse,
     },
     CommandSpec {
@@ -88,6 +106,15 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
     };
     let arguments = raw_arguments.split_whitespace().collect::<Vec<_>>();
     match (*command, arguments.as_slice()) {
+        ("weather clouds", arguments) => super::clouds::parse(arguments),
+        ("weather globe", []) => Ok(ClientCommand::Weather(WeatherCommand::Globe(None))),
+        ("weather globe", ["readable"]) => {
+            Ok(ClientCommand::Weather(WeatherCommand::Globe(Some(true))))
+        }
+        ("weather globe", ["natural"]) => {
+            Ok(ClientCommand::Weather(WeatherCommand::Globe(Some(false))))
+        }
+        ("weather globe", _) => Err(ParseError::WeatherUsage),
         ("sky quality", [value]) => Ok(ClientCommand::SkyQuality(
             SkyQuality::parse(value).map_err(|_| ParseError::SkyQualityUsage)?,
         )),
@@ -109,6 +136,10 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
         ("show_celestial_names", ["false"]) => Ok(ClientCommand::ShowCelestialNames(false)),
         ("show_celestial_names", _) => Err(ParseError::CelestialNamesUsage),
         ("weather status", []) => Ok(ClientCommand::Weather(WeatherCommand::Status)),
+        ("weather resolution", []) => Ok(ClientCommand::Weather(WeatherCommand::Resolution(None))),
+        ("weather resolution", [value]) => Ok(ClientCommand::Weather(WeatherCommand::Resolution(
+            Some(WeatherResolution::parse(value).ok_or(ParseError::WeatherUsage)?),
+        ))),
         ("weather live", ["on"]) => Ok(ClientCommand::Weather(WeatherCommand::Live(true))),
         ("weather live", ["off"]) => Ok(ClientCommand::Weather(WeatherCommand::Live(false))),
         ("weather simulated", []) => Ok(ClientCommand::Weather(WeatherCommand::Simulated)),
@@ -124,9 +155,11 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
         ("weather preset", ["rain"]) => Ok(ClientCommand::Weather(WeatherCommand::Preset(
             WeatherPreset::Rain,
         ))),
-        ("weather status" | "weather live" | "weather simulated" | "weather preset", _) => {
-            Err(ParseError::WeatherUsage)
-        }
+        (
+            "weather status" | "weather live" | "weather simulated" | "weather preset"
+            | "weather resolution",
+            _,
+        ) => Err(ParseError::WeatherUsage),
         ("time status", []) => Ok(ClientCommand::TimeStatus),
         ("time scale", [value]) => {
             parse_scale_ppm(value).map_err(|_| ParseError::TimeScaleUsage)?;

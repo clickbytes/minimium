@@ -1,0 +1,13 @@
+[package]
+name = "minimium-wgsl-validator"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+naga = { version = "30.0.1", features = ["wgsl-in"] }
+
+[profile.dev]
+incremental = false

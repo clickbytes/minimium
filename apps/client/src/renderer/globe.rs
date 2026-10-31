@@ -62,7 +62,13 @@ pub(super) fn pixels_region(
             ];
             let elevation = minimium_procgen::earth_elevation_mm(direction, height_scale_permille);
             let metres = ((elevation - sea_level_mm) / 1000) as f32;
-            let color: [u8; 3] = if metres < 0.0 {
+            let lake = crate::environment::weather::lakes::contains(
+                latitude.to_degrees(),
+                longitude.to_degrees(),
+            );
+            let color: [u8; 3] = if lake {
+                [22, 72, 112]
+            } else if metres < 0.0 {
                 let deep = (-metres / 400.0).clamp(0.0, 1.0);
                 [
                     ((20.0 - 12.0 * deep) as u8),

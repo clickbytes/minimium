@@ -186,7 +186,15 @@ pub(super) fn from_sky_state(
                 .global_rgb
                 .map(|channel| channel * settings.sunlight.global_strength),
         )?,
-        ambient_rgb_exposure: color_exposure(clear_sky.ambient_rgb, clear_sky.exposure)?,
+        ambient_rgb_exposure: color_exposure(
+            clear_sky.ambient_rgb,
+            if render_view.kind == super::EnvironmentViewKind::Overview {
+                // Orbit exposure belongs to the view, not the player's hemisphere.
+                settings.exposure
+            } else {
+                clear_sky.exposure
+            },
+        )?,
         sky_zenith_rgb_sun_altitude: color_altitude(
             clear_sky.zenith_rgb,
             sky.sun.apparent_altitude_rad,
@@ -205,6 +213,7 @@ pub(super) fn from_sky_state(
         eqj_to_world: matrix4(sky.catalog_epoch_to_world)?,
         moon_disk_radiance: super::super::moon_lighting::moon_disk_radiance(moon_flux),
         star_animation: [0.0; 4],
+        weather_fog: [0.0; 4],
         moon_orbit_world,
         halo_count: [halo_count, 0, 0, 0],
         halo_sources,

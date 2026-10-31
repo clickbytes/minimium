@@ -1136,6 +1136,7 @@ dependencies = [
  "arboard",
  "bytemuck",
  "glam",
+ "half",
  "minimium-assets",
  "minimium-astronomy",
  "minimium-core",

@@ -214,7 +214,7 @@ impl Renderer {
                 wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb
             ),
         });
-        let prepared_environment = match render_view {
+        let mut prepared_environment = match render_view {
             Some(view) => self.update_render_environment(view),
             None => {
                 self.render_environment_frame =
@@ -245,12 +245,140 @@ impl Renderer {
             .sky
             .as_ref()
             .map(|sky| sky.utc_ms.get());
-        let weather = self.weather.update(earth_location, world_utc_ms);
-        self.gpu.weather_gpu.upload(&self.gpu.queue, weather);
-        let (atlas, revision) = self.weather.atlas();
+        let seed = manifest.map_or(0, |manifest| manifest.generation().seed().get());
+        self.weather.update(
+            earth_location,
+            world_utc_ms,
+            seed,
+            self.environment_frame.rate_ppm,
+            self.environment_frame.revision,
+            manifest
+                .and_then(|world| world.planet())
+                .filter(|planet| planet.mode == 1)
+                .map(|planet| crate::environment::weather::TerrainConfig {
+                    height_scale_permille: planet.height_scale_permille,
+                    sea_level_mm: planet.sea_level_mm,
+                    radius_m: game_planet_radius_m,
+                }),
+        );
+        let (atlas, revision, blend, region, atlas_start) = self.weather.atlas();
         self.gpu
             .weather_gpu
-            .upload_atlas(&self.gpu.queue, atlas, revision);
+            .stage_atlas(atlas, revision, region, atlas_start);
+        let settings = self.gpu.weather_gpu.cloud_settings.effective(
+            self.sky_quality.effective == crate::environment::quality::SkyQuality::Standard,
+            &self.gpu.device.limits(),
+            self.gpu.weather_gpu.capabilities.precise,
+        );
+        if settings.scale != self.gpu.weather_gpu.cloud_effective.scale {
+            self.gpu.weather_gpu.cloud_effective = settings;
+            self.gpu
+                .weather_gpu
+                .resize(&self.gpu.device, self.gpu.size, &self.gpu.depth_view);
+        }
+        self.gpu.weather_gpu.cloud_effective = settings;
+        self.gpu.weather_gpu.instances.update(
+            &self.gpu.queue,
+            cloud_instances::View {
+                clock_revision: self.environment_frame.revision,
+                world_rate: self.environment_frame.rate_ppm.unwrap_or(1_000_000) as f64
+                    / 1_000_000.0,
+                eye: camera_eye_world,
+                radius: if earth_location.is_some() {
+                    game_planet_radius_m
+                } else {
+                    0.0
+                },
+                pixels_per_radian: f64::from(self.gpu.size.height)
+                    / (2.0 * f64::from((self.fov_degrees.to_radians() * 0.5).tan())),
+                utc_ms: world_utc_ms.unwrap_or(0),
+                blend,
+                seed,
+                settings,
+            },
+        );
+        self.gpu.weather_gpu.instances.upload_view(
+            &self.gpu.queue,
+            camera_eye_world,
+            settings,
+            [self.gpu.size.width, self.gpu.size.height],
+        );
+        self.gpu.weather_gpu.publish_atlas(&self.gpu.queue);
+        let presented = earth_location.and_then(|location| {
+            self.gpu
+                .weather_gpu
+                .instances
+                .presentation(location, world_utc_ms.unwrap_or(0))
+        });
+        let (weather, blend, region) = if let Some(frame) = &presented {
+            (frame.sample, frame.blend, frame.region)
+        } else {
+            (
+                crate::environment::weather::WeatherSample::clear(),
+                0.0,
+                [0.0; 4],
+            )
+        };
+        let rain_ceiling_m = presented.as_ref().map_or(0.0, |frame| frame.rain_ceiling_m);
+        self.weather
+            .present(weather, presented.and_then(|frame| frame.lightning));
+        if earth_location.is_some() {
+            prepared_environment.apply_cloud_light([weather.low, weather.middle, weather.high]);
+            if !self.overview_open {
+                prepared_environment.apply_weather_fog(
+                    weather.fog,
+                    weather.ground_moisture,
+                    weather.temperature_c <= 0.0,
+                );
+            }
+        }
+        if let Some(flash) = self.weather.lightning() {
+            prepared_environment.apply_lightning_light(flash.intensity);
+        }
+        if let Some(notice) = self.weather.take_notice() {
+            self.ui.console.push_line(notice);
+        }
+        let shelter_mask = if earth_location.is_some() && !self.overview_open {
+            let eye = prepared_environment
+                .frame
+                .render_view
+                .camera_eye_world_m
+                .map(|value| value as f32);
+            let up = glam::Vec3::from_array(eye).normalize_or_zero().to_array();
+            self.weather
+                .schedule_thunder(eye, game_planet_radius_m as f32);
+            if weather.rain_mm_h > 0.05 {
+                self.weather
+                    .shelter_mask(&self.game.collision_index, eye, up)
+            } else {
+                [0; 4]
+            }
+        } else {
+            [0; 4]
+        };
+        self.gpu.weather_gpu.upload(
+            &self.gpu.queue,
+            weather_gpu::WeatherFrame {
+                rain_ceiling_m,
+                readable_globe: self.weather.readable_globe,
+                sample: weather,
+                region,
+                overview: self.overview_open,
+                seed,
+                blend,
+                radius: game_planet_radius_m as f32,
+                origin: if self.overview_open {
+                    [0.0; 3]
+                } else {
+                    self.gpu.render_origin
+                },
+                utc_ms: world_utc_ms,
+                lightning: self.weather.lightning(),
+                standard_quality: self.sky_quality.effective
+                    == crate::environment::quality::SkyQuality::Standard,
+                shelter_mask,
+            },
+        );
 
         let celestial_labels = if self.show_celestial_names {
             celestial_labels::prepare(&prepared_environment.frame, self.sky_catalogue.as_ref())

@@ -1,82 +1,227 @@
-use super::WeatherSample;
+use super::{
+    bootstrap,
+    grid::{WeatherResolution, ATLAS_LAYERS, SNAPSHOT_LAYERS},
+    maps::{self, Maps, Request, TerrainCache},
+    region::Region,
+    terrain::TerrainConfig,
+    WeatherSample,
+};
+use std::sync::mpsc::{self, Receiver, Sender};
 
-pub(super) const WIDTH: usize = 256;
-pub(super) const HEIGHT: usize = 128;
-const STEP_MS: i64 = 10 * 60 * 1000;
+pub(super) const WIDTH: usize = 512;
+pub(super) const HEIGHT: usize = 256;
+pub(super) const STEP_MS: i64 = 10 * 60 * 1000;
 
-/// A compact, deterministic world field. The same cells feed the local view and globe.
+/// Atlas construction never blocks redraw. The worker coalesces obsolete requests.
 pub(super) struct SimulatedWeather {
-    epoch: Option<i64>,
-    pixels: Vec<u8>,
+    resolution: WeatherResolution,
+    requested: Option<Request>,
+    maps: Option<Maps>,
+    detailed: bool,
+    worker_failed: bool,
+    empty: [Vec<u8>; ATLAS_LAYERS],
+    blend: f32,
+    lag_seconds: f64,
+    correction: Option<(f64, f64, WeatherSample)>,
+    sender: Sender<Request>,
+    receiver: Receiver<(Maps, bool)>,
 }
 
 impl SimulatedWeather {
     pub(super) fn new() -> Self {
+        let (sender, jobs) = mpsc::channel::<Request>();
+        let (results, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut cache = TerrainCache::default();
+            let mut previous: Option<Request> = None;
+            while let Ok(mut job) = jobs.recv() {
+                while let Ok(newer) = jobs.try_recv() {
+                    job = newer;
+                }
+                let bootstrap_needed = previous.is_none_or(|old| {
+                    old.seed != job.seed
+                        || old.terrain != job.terrain
+                        || old.resolution != job.resolution
+                        || old.clock_revision != job.clock_revision
+                });
+                if bootstrap_needed && results.send((bootstrap::build(job), false)).is_err() {
+                    break;
+                }
+                if results.send((cache.build(job), true)).is_err() {
+                    break;
+                }
+                previous = Some(job);
+            }
+        });
         Self {
-            epoch: None,
-            pixels: vec![0; WIDTH * HEIGHT * 4],
+            resolution: WeatherResolution::default(),
+            requested: None,
+            maps: None,
+            detailed: false,
+            worker_failed: false,
+            empty: std::array::from_fn(|layer| {
+                let color = match layer % SNAPSHOT_LAYERS {
+                    2 | 3 => [128, 166, 0, 0],
+                    4 | 5 => [128, 128, 0, 0],
+                    12..=15 => [128; 4],
+                    _ => [0; 4],
+                };
+                color.repeat(WIDTH * HEIGHT)
+            }),
+            blend: 0.0,
+            lag_seconds: 0.0,
+            correction: None,
+            sender,
+            receiver,
         }
     }
 
-    pub(super) fn update(&mut self, utc_ms: i64) -> bool {
-        let epoch = utc_ms.div_euclid(STEP_MS);
-        if self.epoch == Some(epoch) {
-            return false;
+    pub(super) fn set_correction(&mut self, correction: Option<(f64, f64, WeatherSample)>) {
+        self.correction = correction;
+    }
+
+    pub(super) fn resolution(&self) -> WeatherResolution {
+        self.resolution
+    }
+
+    pub(super) fn set_resolution(&mut self, resolution: WeatherResolution) {
+        self.resolution = resolution;
+    }
+
+    pub(super) fn update(
+        &mut self,
+        seed: u128,
+        utc_ms: i64,
+        clock_revision: Option<u64>,
+        terrain: Option<TerrainConfig>,
+        location: Option<(f64, f64)>,
+    ) -> bool {
+        let request = Request {
+            seed,
+            clock_revision,
+            epoch: utc_ms.div_euclid(STEP_MS),
+            terrain,
+            resolution: self.resolution,
+            region: location.map_or(Region::GLOBAL, |(lat, lon)| Region::around(lat, lon)),
+            correction: self.correction,
+        };
+        let mut changed = false;
+        if self.requested != Some(request) {
+            let discontinuity = self.requested.is_some_and(|old| {
+                old.seed != seed
+                    || old.resolution != request.resolution
+                    || old.terrain != request.terrain
+                    || old.clock_revision != request.clock_revision
+            });
+            if discontinuity {
+                changed = self.maps.take().is_some();
+                self.detailed = false;
+            }
+            let _ = self.sender.send(request);
+            self.requested = Some(request);
         }
-        self.epoch = Some(epoch);
-        let days = (epoch as f64 * STEP_MS as f64) / 86_400_000.0;
-        for y in 0..HEIGHT {
-            let latitude = (0.5 - (y as f64 + 0.5) / HEIGHT as f64) * std::f64::consts::PI;
-            for x in 0..WIDTH {
-                let longitude = ((x as f64 + 0.5) / WIDTH as f64 - 0.5) * std::f64::consts::TAU;
-                let [low, middle, high, rain] = field(latitude, longitude, days);
-                let index = (y * WIDTH + x) * 4;
-                self.pixels[index] = (low * 255.0).round() as u8;
-                self.pixels[index + 1] = (middle * 255.0).round() as u8;
-                self.pixels[index + 2] = (high * 255.0).round() as u8;
-                self.pixels[index + 3] = ((rain / 8.0).min(1.0) * 255.0).round() as u8;
+        loop {
+            let (maps, detailed) = match self.receiver.try_recv() {
+                Ok(result) => result,
+                Err(mpsc::TryRecvError::Empty) => break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.worker_failed = true;
+                    break;
+                }
+            };
+            // A completed field from this clock revision stays usable while newer
+            // work catches up. At 10,000x, a ten-minute epoch lasts only 60 ms:
+            // expiring by epoch distance can reject every result indefinitely.
+            let mut expected = request;
+            expected.epoch = maps.request.epoch;
+            expected.region = maps.request.region;
+            let newer = self
+                .maps
+                .as_ref()
+                .is_none_or(|old| maps.request.epoch >= old.request.epoch);
+            if maps.request == expected && newer {
+                self.maps = Some(maps);
+                self.detailed = detailed;
+                changed = true;
             }
         }
-        true
+        let epoch = self
+            .maps
+            .as_ref()
+            .map_or(request.epoch, |m| m.request.epoch);
+        self.blend = ((utc_ms as f64 / STEP_MS as f64) - epoch as f64).clamp(0.0, 1.0) as f32;
+        self.lag_seconds = self.maps.as_ref().map_or(0.0, |_| {
+            ((utc_ms as f64 - (epoch + 1) as f64 * STEP_MS as f64) / 1000.0).max(0.0)
+        });
+        changed
     }
 
-    pub(super) fn pixels(&self) -> &[u8] {
-        &self.pixels
+    pub(super) fn pixels(&self) -> [&[u8]; ATLAS_LAYERS] {
+        let pixels = self.maps.as_ref().map_or(&self.empty, |m| &m.pixels);
+        std::array::from_fn(|i| pixels[i].as_slice())
+    }
+
+    pub(super) fn region(&self) -> [f32; 4] {
+        self.maps
+            .as_ref()
+            .map_or([0.0; 4], |m| m.request.region.0.map(|v| v as f32))
+    }
+
+    pub(super) fn blend(&self) -> f32 {
+        self.blend
+    }
+
+    pub(super) fn start_seconds(&self) -> Option<f64> {
+        self.maps
+            .as_ref()
+            .map(|m| m.request.epoch as f64 * STEP_MS as f64 / 1000.0)
+    }
+
+    pub(super) fn status(&self) -> String {
+        let state = if self.worker_failed {
+            "weather worker unavailable; retaining published atlas"
+        } else if self.detailed {
+            "regional atmosphere ready"
+        } else if self.maps.is_none() {
+            "preparing global weather field"
+        } else {
+            "coarse global field; preparing terrain detail"
+        };
+        let lag = if self.lag_seconds > 1.0 {
+            format!(
+                " | catching up: {:.0} world seconds behind",
+                self.lag_seconds
+            )
+        } else {
+            String::new()
+        };
+        format!("{} | {state}{lag}", self.resolution.description())
     }
 
     pub(super) fn sample(&self, latitude_deg: f64, longitude_deg: f64) -> WeatherSample {
-        let u = ((longitude_deg + 180.0) / 360.0).rem_euclid(1.0);
-        let v = ((90.0 - latitude_deg) / 180.0).clamp(0.0, 1.0);
-        let x = (u * WIDTH as f64).floor() as usize % WIDTH;
-        let y = (v * HEIGHT as f64).floor().min((HEIGHT - 1) as f64) as usize;
-        let index = (y * WIDTH + x) * 4;
-        let days = self.epoch.unwrap_or(0) as f64 * STEP_MS as f64 / 86_400_000.0;
-        let latitude = latitude_deg.to_radians();
-        let longitude = longitude_deg.to_radians();
+        let uv = [
+            ((longitude_deg + 180.0) / 360.0).rem_euclid(1.0),
+            ((90.0 - latitude_deg) / 180.0).clamp(0.0, 1.0),
+        ];
+        let pixels = self.maps.as_ref().map_or(&self.empty, |m| &m.pixels);
+        let (local_uv, weight) = self.maps.as_ref().map_or(([0.5; 2], 0.0), |m| {
+            m.request
+                .region
+                .uv_weight(latitude_deg.to_radians(), longitude_deg.to_radians())
+        });
+        let mix = |channel| {
+            let global = maps::sample(pixels, uv, 0, channel, self.blend);
+            let local = maps::sample(pixels, local_uv, 1, channel, self.blend);
+            global + (local - global) * weight
+        };
         WeatherSample::new(
-            self.pixels[index] as f32 / 255.0,
-            self.pixels[index + 1] as f32 / 255.0,
-            self.pixels[index + 2] as f32 / 255.0,
-            self.pixels[index + 3] as f32 / 255.0 * 8.0,
-            (2.0 + latitude.cos().abs() * 5.0) as f32
-                * if latitude.abs() > 0.55 { 1.0 } else { -1.0 },
-            (longitude * 3.0 + days * 0.35).sin() as f32 * 1.8,
+            mix(0),
+            mix(1),
+            mix(2),
+            mix(3) * 32.0,
+            mix(8) * 64.0 - 32.0,
+            mix(9) * 64.0 - 32.0,
         )
+        .with_atmosphere(mix(4), mix(5) * 80.0 - 40.0, mix(6), mix(7))
     }
-}
-
-fn field(latitude: f64, longitude: f64, days: f64) -> [f64; 4] {
-    let front = (longitude * 3.0 + latitude.sin() * 2.3 + days * 0.22).sin() * 0.25
-        + (longitude * 7.0 - latitude * 3.0 - days * 0.39).sin() * 0.17
-        + (longitude * 13.0 + latitude * 5.0 + days * 0.67).sin() * 0.08;
-    let moisture_belt = (-(latitude / 0.27).powi(2)).exp() * 0.17
-        + (-((latitude.abs() - 0.9) / 0.28).powi(2)).exp() * 0.16
-        - (-((latitude.abs() - 0.48) / 0.18).powi(2)).exp() * 0.12;
-    let humidity = (0.46 + front + moisture_belt).clamp(0.0, 1.0);
-    let low = (humidity * 1.12 - 0.08).clamp(0.02, 0.98);
-    let middle = (humidity * 0.78 + (longitude * 5.0 + days * 0.15).sin() * 0.12).clamp(0.02, 0.95);
-    let high =
-        (0.16 + humidity * 0.43 + (longitude * 9.0 - days * 0.31).sin() * 0.14).clamp(0.01, 0.9);
-    let rain = ((low - 0.55).max(0.0) * (middle - 0.30).max(0.0) * 42.0).clamp(0.0, 8.0);
-    [low, middle, high, rain]
 }

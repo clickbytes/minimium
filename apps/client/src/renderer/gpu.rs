@@ -153,12 +153,17 @@ impl GpuResources {
         let surface = instance.create_surface(window)?;
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::LowPower,
+                power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: Some(&surface),
                 force_fallback_adapter: false,
                 apply_limit_buckets: false,
             })
             .await?;
+        let adapter_info = adapter.get_info();
+        eprintln!(
+            "renderer_adapter name={:?} backend={:?} type={:?} preference=high_performance",
+            adapter_info.name, adapter_info.backend, adapter_info.device_type
+        );
         let shadow_usage =
             wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING;
         let shadow_format = super::shadow_target::supported_format(&adapter, shadow_usage)
@@ -174,12 +179,16 @@ impl GpuResources {
             requested_quality
         };
         let mut required_limits = wgpu::Limits::downlevel_defaults();
+        required_limits.max_color_attachment_bytes_per_sample = adapter
+            .limits()
+            .max_color_attachment_bytes_per_sample
+            .min(32);
         required_limits.max_texture_dimension_2d =
             adapter.limits().max_texture_dimension_2d.min(4096);
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("minimium-device"),
-                required_features: wgpu::Features::empty(),
+                required_features: adapter.features() & wgpu::Features::TIMESTAMP_QUERY,
                 required_limits,
                 experimental_features: Default::default(),
                 memory_hints: wgpu::MemoryHints::MemoryUsage,
@@ -242,11 +251,15 @@ impl GpuResources {
             &frame_bindings.layout,
             scene_color_format,
         );
+        let depth_view = super::gpu_surface::create_depth_view(&device, size);
         let weather_gpu = super::weather_gpu::WeatherGpu::new(
             &device,
             &queue,
             &frame_bindings.layout,
             scene_color_format,
+            size,
+            &depth_view,
+            super::weather_gpu::capabilities::CloudCapabilities::new(&adapter),
         );
         let mut shadow_gpu = super::shadow_gpu::ShadowGpu::new(
             &device,
@@ -262,6 +275,7 @@ impl GpuResources {
                 Some(&frame_bindings.layout),
                 Some(&shadow_gpu.empty_layout),
                 Some(&shadow_gpu.group2_layout),
+                Some(&weather_gpu.layout),
             ],
             immediate_size: 0,
         });
@@ -287,7 +301,6 @@ impl GpuResources {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let depth_view = super::gpu_surface::create_depth_view(&device, size);
         let fixed_gpu_bytes = frame_bindings.camera_buffer.size()
             + frame_bindings.environment_buffer.size()
             + vertex_buffer.size()
@@ -297,6 +310,7 @@ impl GpuResources {
             + stars.buffer.size()
             + super::milky_way_gpu::MilkyWayGpu::BYTES
             + super::weather_gpu::WeatherGpu::BYTES
+            + weather_gpu.cloud_bytes
             + output_encoder
                 .as_ref()
                 .map_or(0, |output| output.size_bytes())
@@ -371,6 +385,13 @@ impl GpuResources {
         self.config.height = size.height;
         self.surface.configure(&self.device, &self.config);
         self.depth_view = super::gpu_surface::create_depth_view(&self.device, size);
+        let old_cloud_bytes = self.weather_gpu.cloud_bytes;
+        self.weather_gpu
+            .resize(&self.device, size, &self.depth_view);
+        self.fixed_gpu_bytes = self
+            .fixed_gpu_bytes
+            .saturating_sub(old_cloud_bytes)
+            .saturating_add(self.weather_gpu.cloud_bytes);
         if let Some(output) = &mut self.output_encoder {
             let old_size = output.size_bytes();
             output.resize(&self.device, size);

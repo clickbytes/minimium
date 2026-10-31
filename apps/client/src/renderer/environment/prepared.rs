@@ -29,6 +29,36 @@ impl PreparedEnvironmentFrame {
         }
     }
 
+    pub(in crate::renderer) fn apply_cloud_light(&mut self, cover: [f32; 3]) {
+        let ambient = (1.0 - cover[0] * 0.18 - cover[1] * 0.08).clamp(0.55, 1.0);
+        for uniform in [&mut self.uniform, &mut self.frame.environment_uniform] {
+            for channel in 0..3 {
+                // Direct sunlight is attenuated by the shared spatial cloud shadow in WGSL.
+                uniform.ambient_rgb_exposure[channel] *= ambient;
+            }
+        }
+    }
+
+    pub(in crate::renderer) fn apply_weather_fog(
+        &mut self,
+        amount: f32,
+        moisture: f32,
+        snow: bool,
+    ) {
+        let density = amount.clamp(0.0, 1.0).powi(2) * 0.035;
+        for uniform in [&mut self.uniform, &mut self.frame.environment_uniform] {
+            uniform.weather_fog = [density, 35.0, moisture.clamp(0.0, 1.0), f32::from(snow)];
+        }
+    }
+
+    pub(in crate::renderer) fn apply_lightning_light(&mut self, intensity: f32) {
+        for uniform in [&mut self.uniform, &mut self.frame.environment_uniform] {
+            for (channel, blue) in [0.36, 0.42, 0.54].into_iter().enumerate() {
+                uniform.ambient_rgb_exposure[channel] += blue * intensity;
+            }
+        }
+    }
+
     /// CPU queue-write cost only: stars, camera and environment uniforms.
     /// Shadow work is measured separately; this is not GPU elapsed time.
     pub(in crate::renderer) fn upload(&self, gpu: &mut GpuResources) {

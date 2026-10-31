@@ -14,6 +14,7 @@ pub(super) struct CameraUniform {
     pub(super) inverse_sky_view_projection: [[f32; 4]; 4],
     pub(super) viewport: [f32; 4],
     pub(super) eye_world: [f32; 4],
+    pub(super) inverse_view_projection: [[f32; 4]; 4],
 }
 
 #[repr(C, align(16))]
@@ -40,6 +41,7 @@ pub(super) struct EnvironmentUniform {
     pub(super) moon_orbit_world: [f32; 4],
     pub(super) halo_count: [u32; 4],
     pub(super) halo_sources: [HaloSource; MAX_HALO_BODIES],
+    pub(super) weather_fog: [f32; 4],
 }
 
 pub(super) struct EnvironmentGpuBindings {
@@ -94,6 +96,9 @@ impl EnvironmentGpuBindings {
 pub(super) fn camera_uniform(view: RenderViewFrame) -> CameraUniform {
     CameraUniform {
         view_projection: view.view_projection,
+        inverse_view_projection: glam::Mat4::from_cols_array_2d(&view.view_projection)
+            .inverse()
+            .to_cols_array_2d(),
         sky_view_projection: view.sky_view_projection,
         inverse_sky_view_projection: view.inverse_sky_view_projection,
         viewport: [
@@ -144,17 +149,18 @@ fn uniform_entry(binding: u32, size: u64) -> wgpu::BindGroupLayoutEntry {
 }
 
 const _: () = {
-    assert!(std::mem::size_of::<CameraUniform>() == 224);
+    assert!(std::mem::size_of::<CameraUniform>() == 288);
     assert!(std::mem::align_of::<CameraUniform>() == 16);
     assert!(std::mem::offset_of!(CameraUniform, view_projection) == 0);
     assert!(std::mem::offset_of!(CameraUniform, sky_view_projection) == 64);
     assert!(std::mem::offset_of!(CameraUniform, inverse_sky_view_projection) == 128);
     assert!(std::mem::offset_of!(CameraUniform, viewport) == 192);
     assert!(std::mem::offset_of!(CameraUniform, eye_world) == 208);
+    assert!(std::mem::offset_of!(CameraUniform, inverse_view_projection) == 224);
 
     assert!(std::mem::size_of::<HaloSource>() == 64);
     assert!(std::mem::align_of::<HaloSource>() == 16);
-    assert!(std::mem::size_of::<EnvironmentUniform>() == 880);
+    assert!(std::mem::size_of::<EnvironmentUniform>() == 896);
     assert!(std::mem::align_of::<EnvironmentUniform>() == 16);
     assert!(std::mem::offset_of!(EnvironmentUniform, sun_geometric_world) == 0);
     assert!(std::mem::offset_of!(EnvironmentUniform, sun_apparent_world) == 16);
@@ -177,4 +183,5 @@ const _: () = {
     assert!(std::mem::offset_of!(EnvironmentUniform, moon_orbit_world) == 336);
     assert!(std::mem::offset_of!(EnvironmentUniform, halo_count) == 352);
     assert!(std::mem::offset_of!(EnvironmentUniform, halo_sources) == 368);
+    assert!(std::mem::offset_of!(EnvironmentUniform, weather_fog) == 880);
 };

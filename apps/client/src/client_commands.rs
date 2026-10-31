@@ -13,6 +13,7 @@ use crate::{
 use minimium_protocol::ClientMessage;
 use std::sync::OnceLock;
 
+mod clouds;
 mod connection;
 mod environment;
 mod gameplay;

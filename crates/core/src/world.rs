@@ -59,6 +59,7 @@ pub use model::{
     MAX_PERSISTED_WORLD_SECTORS, MAX_SECTOR_OBJECT_STATES, MAX_SECTOR_OBJECT_STATE_BYTES,
 };
 pub use precise_step::step_character_mm;
+pub use raycast::SkyCoverQuery;
 pub use rules::{
     character_frame, step_character, CharacterGravity, CharacterInput, CharacterState, Player,
     ShotOutcome,

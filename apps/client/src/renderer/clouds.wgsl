@@ -1,51 +1,55 @@
-fn cloud_layer(
-    ray: vec3<f32>, east: vec3<f32>, north: vec3<f32>, up: vec3<f32>,
-    cover: f32, scale: f32, height: f32, phase: vec2<f32>,
-) -> f32 {
-    let altitude = dot(ray, up);
-    let projected = vec2<f32>(dot(ray, east), dot(ray, north))
-        * height / max(altitude, 0.06);
-    let uv = projected * scale + phase;
-    let broad = textureSample(weather_noise, weather_sampler, uv).r;
-    let detail = textureSample(weather_noise, weather_sampler, uv * 2.91 + vec2<f32>(0.37, 0.71)).r;
-    let density = broad * 0.76 + detail * 0.24;
-    return smoothstep(1.0 - cover - 0.11, 1.0 - cover + 0.11, density)
-        * smoothstep(0.002, 0.015, altitude) * step(0.005, cover);
+// Curved distant moments of the same physical field as the analytic instances.
+struct CloudInput {
+    @location(0) direction: vec3<f32>,
+    @location(1) material_a: vec4<f32>,
+    @location(2) material_b: vec4<f32>,
+    @location(3) heights: vec4<f32>,
+    @location(4) layer: f32,
+};
+struct CloudOutput {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) point: vec3<f32>,
+    @location(1) material: vec2<f32>,
+    @location(2) height: f32,
+    @location(3) @interpolate(flat) layer: u32,
+};
+@vertex fn vs_cloud(input: CloudInput) -> CloudOutput {
+    let t = weather.event.y;
+    let material = mix(input.material_a, input.material_b, t);
+    let height = mix(input.heights.x + input.heights.y, input.heights.z + input.heights.w, t) * 0.5;
+    let point = input.direction * (weather.blend.y + height * weather.wind.z);
+    let clip = camera.sky_view_projection * vec4<f32>(point - camera.eye_world.xyz, 0.0);
+    return CloudOutput(vec4<f32>(clip.xy, clip.w * 0.5, clip.w), point, material.xy, height, u32(input.layer));
 }
-
-@fragment fn fs_main(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
-    let ndc = vec2<f32>(
-        position.x * camera.viewport.z * 2.0 - 1.0,
-        1.0 - position.y * camera.viewport.w * 2.0,
-    );
-    let far_point = camera.inverse_sky_view_projection * vec4<f32>(ndc, 1.0, 1.0);
-    let ray = normalize(far_point.xyz / max(abs(far_point.w), 1.0e-6));
-    let up = normalize(environment.observer_up_horizon_cos.xyz);
-    let east = normalize(cross(vec3<f32>(0.0, 1.0, 0.001), up));
-    let north = normalize(cross(up, east));
-    let time = environment.star_animation.x;
-    let drift = weather.wind.xy * time * 0.000003;
-    let high = cloud_layer(ray, east, north, up, weather.cover_rain.z,
-        0.032, 1.0, drift * 0.4 + vec2<f32>(0.14, 0.31));
-    let middle = cloud_layer(ray, east, north, up, weather.cover_rain.y,
-        0.054, 1.0, drift * 0.7 + vec2<f32>(0.47, 0.11));
-    let low = cloud_layer(ray, east, north, up, weather.cover_rain.x,
-        0.087, 1.0, drift + vec2<f32>(0.71, 0.63));
-    let coverage = 1.0 - (1.0 - high * 0.54) * (1.0 - middle * 0.72) * (1.0 - low * 0.90);
-    let visibility = horizon_visibility(ray);
-    let alpha = coverage * visibility;
-    if alpha < 0.001 {
-        return vec4<f32>(0.0);
+@fragment fn fs_cloud(input: CloudOutput) -> CloudLayers {
+    if input.material.x < 0.0001 { discard; }
+    let view = cloud_ray(input.clip.xy);
+    let eye = camera.eye_world.xyz / weather.blend.y;
+    let b = dot(eye, view.ray);
+    let closest = eye - view.ray * b;
+    let radius = 1.0 + input.height / 6371000.0;
+    let root = sqrt(max(radius * radius - dot(closest, closest), 0.0));
+    let near = -b - root;
+    let far = -b + root;
+    let mesh = length(input.point - camera.eye_world.xyz) / weather.blend.y;
+    let distance = select(far, near, near > 0.0 && abs(near - mesh) <= abs(far - mesh)) * weather.blend.y;
+    if distance < view.bounds.x || distance > view.bounds.y { discard; }
+    let point = camera.eye_world.xyz + view.ray * distance;
+    let weight = 1.0 - local_weight(point);
+    if weight < 0.0001 { discard; }
+    let up = normalize(point);
+    let optical = input.material.y / max(abs(dot(up, view.ray)), 0.2);
+    // Preserve empty area in an aggregate; do not turn it into dilute overcast.
+    let alpha = input.material.x * (1.0 - exp(-optical));
+    let tau = -log(max(1.0 - alpha, 0.000001)) * weight;
+    var color = tone_map_linear(cloud_radiance(point, view.ray, up, optical, optical * 0.15, input.layer));
+    if u32(cloud_frame.config.w) == 4u { color = vec3<f32>(0.2, 0.4, 1.0); }
+    var values: array<vec4<f32>, 4>;
+    for (var bin = 0u; bin < u32(cloud_frame.config.y); bin++) {
+        if distance >= bin_edge(view.bounds, bin) && distance <= bin_edge(view.bounds, bin + 1u) {
+            values[bin] = vec4<f32>(color * tau, tau) * cloud_frame.eye.w;
+            break;
+        }
     }
-    let sun_altitude = environment.sky_zenith_rgb_sun_altitude.w;
-    let daylight = smoothstep(radians(-9.0), radians(5.0), sun_altitude);
-    let sunward = max(dot(ray, normalize(environment.sun_apparent_world.xyz)), 0.0);
-    let moonlight = clamp(environment.local_moon_rgb_visibility.w * 4.0, 0.0, 1.0);
-    let base_night = vec3<f32>(0.012, 0.017, 0.027) * (1.0 + moonlight);
-    let base_day = mix(vec3<f32>(0.42, 0.48, 0.54), vec3<f32>(0.84, 0.85, 0.86),
-        smoothstep(0.0, 0.8, sunward));
-    let sunset = exp(-abs(sun_altitude) * 11.0) * sunward;
-    let color = tone_map_linear(mix(base_night, base_day, daylight)
-        + vec3<f32>(0.34, 0.13, 0.04) * sunset * daylight);
-    return vec4<f32>(color * alpha, alpha);
+    return pack_bins(values);
 }

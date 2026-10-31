@@ -1,8 +1,21 @@
 @group(1) @binding(0) var globe: texture_2d_array<f32>;
 @group(1) @binding(1) var globe_sampler: sampler;
-@group(2) @binding(0) var weather_atlas: texture_2d<f32>;
+@group(2) @binding(0) var weather_atlas: texture_2d_array<f32>;
 @group(2) @binding(1) var weather_sampler: sampler;
-@group(2) @binding(2) var cloud_noise: texture_2d<f32>;
+struct GlobeWeatherUniform {
+    cover_rain: vec4<f32>,
+    wind: vec4<f32>,
+    blend: vec4<f32>,
+    origin: vec4<f32>,
+    lightning: vec4<f32>,
+    event: vec4<f32>,
+    shelter: vec4<f32>,
+    region: vec4<f32>,
+    animation: vec4<f32>,
+    cloud_region: vec4<f32>,
+    presentation: vec4<f32>,
+};
+@group(2) @binding(2) var<uniform> weather: GlobeWeatherUniform;
 
 fn sample_map(uv: vec2<f32>) -> vec4<f32> {
     let wrapped = vec2<f32>(fract(uv.x), clamp(uv.y, 0.0, 0.999999));
@@ -53,17 +66,41 @@ struct Output {
     }
     let sun_direction = normalize(environment.global_sun_direction.xyz);
     let diffuse = max(dot(relief_normal, sun_direction), 0.0);
-    let linear = sample.rgb * environment.global_sun_rgb.xyz * diffuse;
-    let weather_uv = vec2<f32>(fract(input.uv.x), clamp(input.uv.y, 0.00390625, 0.99609375));
-    let conditions = textureSample(weather_atlas, weather_sampler, weather_uv);
-    let noise = textureSample(cloud_noise, weather_sampler,
-        weather_uv * vec2<f32>(4.0, 2.0) + vec2<f32>(environment.star_animation.x * 0.00001, 0.0)).r;
-    let coverage = max(conditions.r, max(conditions.g * 0.75, conditions.b * 0.55));
-    let cloud = smoothstep(1.0 - coverage - 0.12, 1.0 - coverage + 0.12, noise);
-    let rain_darkening = conditions.a * 0.18;
-    let cloud_lit = vec3<f32>(0.75, 0.78, 0.82) *
-        (0.035 + diffuse * 0.9) * environment.global_sun_rgb.xyz;
-    let cloud_night = vec3<f32>(0.012, 0.016, 0.022);
-    let cloud_color = max(cloud_lit, cloud_night) * (1.0 - rain_darkening);
-    return vec4<f32>(tone_map_linear(mix(linear, cloud_color, cloud * 0.92)), 1.0);
+    let cloud_visibility = cached_cloud_shadow(cloud_shadow_atlas, weather_sampler,
+        up * weather.blend.y, sun_direction, weather.event.y,
+        weather.blend.y, weather.cloud_region);
+    let point = up * weather.blend.y;
+    let transmission = air_light(atmosphere_table, weather_sampler, point, sun_direction, weather.blend.y);
+    let moon_direction = global_moon_direction(point);
+    let moon = global_moon_irradiance()
+        * air_light(atmosphere_table, weather_sampler, point, moon_direction, weather.blend.y)
+        * max(dot(relief_normal, moon_direction), 0.0);
+    let day = smoothstep(-0.12, 0.08, dot(up, sun_direction));
+    let map_fill = weather.presentation.x * weather.presentation.z
+        * vec3<f32>(0.35, 0.45, 0.6) * (1.0 - day);
+    let visibility = mix(cloud_visibility, max(cloud_visibility, 0.35), weather.presentation.x);
+    let irradiance = environment.global_sun_rgb.xyz * transmission * diffuse * visibility
+        + vec3<f32>(0.008, 0.012, 0.02) * day + moon + map_fill;
+    let linear = sample.rgb * irradiance;
+    let conditions = cached_cloud_weather(cloud_shadow_atlas, weather_sampler,
+        input.normal, weather.event.y, weather.cloud_region);
+    let auxiliary = weather_auxiliary(weather_atlas, weather_sampler,
+        input.normal, weather.blend.x, weather.region);
+    let flash = exp(-pow(acos(clamp(dot(normalize(input.normal),
+        weather.lightning.xyz), -1.0, 1.0)) / 0.012, 2.0)) * weather.lightning.w;
+    let wet = auxiliary.a * smoothstep(0.50, 0.54, auxiliary.g)
+        * smoothstep(0.48, 0.52, sample.a);
+    let ground = linear * (1.0 - conditions.a * 0.15)
+        * (1.0 - wet * 0.18)
+        + vec3<f32>(0.36, 0.42, 0.54) * flash;
+    let snow = (1.0 - smoothstep(0.46, 0.52, auxiliary.g)) * auxiliary.a
+        * smoothstep(0.48, 0.52, sample.a);
+    let snow_color = irradiance * 0.78;
+    let color = air_surface(atmosphere_table, weather_sampler, point,
+        mix(ground, snow_color, snow * 0.42), weather.blend.y,
+        select(4u, 8u, weather.blend.w > 0.5), weather.presentation.x);
+    return vec4<f32>(tone_map_linear(color), 1.0);
 }
+
+@group(2) @binding(3) var cloud_shadow_atlas: texture_2d_array<f32>;
+@group(2) @binding(4) var atmosphere_table: texture_2d<f32>;

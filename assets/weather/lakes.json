@@ -1,0 +1,27 @@
+{
+  "source": "Natural Earth 1:10 million lakes and regional supplements",
+  "license": "Public domain",
+  "terms": "https://www.naturalearthdata.com/about/terms-of-use/",
+  "scope": "Generalized cartography; excludes many small ponds and rivers.",
+  "format": "MMLAKE01, LE u32 polygon count; ring count; point count; i32 lon,lat / 100000",
+  "sha256": "a89730b1930071d6044f6b8ba837c0658816c97d61d85a296c6eb0d0a076559c",
+  "polygons": 3368,
+  "sources": [
+    {
+      "url": "https://naciscdn.org/naturalearth/10m/physical/ne_10m_lakes.zip",
+      "sha256": "0803a06f9c3cb4671d89b68c48b142aad9366ba40f665245e12a913fbc61722a"
+    },
+    {
+      "url": "https://naciscdn.org/naturalearth/10m/physical/ne_10m_lakes_europe.zip",
+      "sha256": "c0b1f0da4dce6af3b27c49b3ed11a664d801ff3d140ca5b9814e7e85a35c1de1"
+    },
+    {
+      "url": "https://naciscdn.org/naturalearth/10m/physical/ne_10m_lakes_north_america.zip",
+      "sha256": "96c824a2f2646ea8b16fe6711f7906ba690788a547f51e391654c8e94271ffba"
+    },
+    {
+      "url": "https://naciscdn.org/naturalearth/10m/physical/ne_10m_lakes_australia.zip",
+      "sha256": "44c604c90ae459947b41f082973d58a7f0a1da61e9928ee89464ba7a8b00e00e"
+    }
+  ]
+}

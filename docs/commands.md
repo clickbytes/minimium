@@ -138,7 +138,28 @@ The desktop client requests a 1920Ã—1080 physical-pixel window by default; the w
 
 The desktop console accepts `fov` to display the current vertical field of view and `fov DEGREES` to set it from 30 to 110 degrees (default: 70). `show_celestial_names true|false` toggles on-screen labels for the Sun, Moon, visible catalog bodies, and up to 32 bright stars (default: false). The star display uses a fixed 1000-star HYG catalog. Both settings are local to the current client session.
 
-`weather status` reports the weather source. `weather simulated` selects the deterministic Earth model (default for `start-earth.ps1`); `weather preset clear|partly|overcast|rain` selects a local visual preset (default: `partly` in other client modes). `weather live on|off` controls the optional MET Norway forecast for the current in-game Earth position; `off` returns to the simulation. The desktop client fetches in the background and uses the local preset while forecast data is unavailable. See [weather](weather.md) for data, privacy, and rendering details.
+`weather status` reports the source, physical column coverage and cloud-hosted precipitation in simulated mode, plus published field revision, representation counts, CPU preparation and world-time lag. Coverage values describe the local horizontal column, not additive fractions of the perspective sky. `weather simulated` selects the deterministic Earth model (default for `start-earth.ps1`); `weather preset clear|partly|overcast|rain` selects fixed local atmospheric conditions. `weather live on|off` controls the optional MET Norway point forecast; `off` returns to simulation. Live mode requires Earth at 1× world time within five minutes of real UTC. See [weather](weather.md) for data, privacy and approximation details.
+
+`weather globe [readable|natural]` queries or changes globe presentation for this client session. Default `readable` retains some land visibility through the final cloud stack and adds restrained night illumination. `natural` preserves full cloud opacity and physical night darkness. This changes rendering only; it does not change simulated weather, FPP or network state.
+
+`weather resolution [64|128|256|512]` queries or changes the atmospheric region grid for this client session. Latitude has half as many divisions; default 256 gives 32,768 regions. This affects regional CPU work, preserves the weather source and leaves network/world files unchanged. Cloud rendering settings are separate. Presets hold atmospheric conditions fixed while procedural parts continue to evolve.
+
+| Cloud command | Meaning |
+| --- | --- |
+| `weather clouds status` | Requested overrides, effective settings, adapter/format, field revision, cluster/ellipsoid/aggregate counts, merged detail, CPU work, world-time lag, memory estimate and asynchronous GPU time when supported. |
+| `weather clouds quality sky` | Inherit `sky quality`; clear overrides. Default. |
+| `weather clouds quality low` | Scale 0.5, 2048 instances, 48 px detail, 2 bins, 0 neighbors, 128 aggregates. |
+| `weather clouds quality standard` | Scale 0.5, 8192 instances, 24 px detail, 4 bins, 4 neighbors, 256 aggregates. |
+| `weather clouds quality high` | Scale 0.75, 16384 instances, 12 px detail, 4 bins, 8 neighbors, 512 aggregates. |
+| `weather clouds scale 0.25\|0.5\|0.75\|1` | Width and height scale of cloud targets; rebuild only dependent textures. |
+| `weather clouds instances N` | Ellipsoid limit from 512 through 32768, including both LOD transition cuts. Half is reserved for transitions. |
+| `weather clouds lod N` | Refinement threshold from 8 through 128 full-image pixels. |
+| `weather clouds lighting low\|standard\|high` | Select distance-bin and neighbor-lighting work independently of the other settings. |
+| `weather clouds reset` | Restore sky inheritance and remove overrides. |
+| `weather clouds debug off\|bounds\|ids\|density\|lod` | Diagnostic rendering for final functional verification. |
+
+Choosing a profile clears its overrides; a later parameter command changes only that parameter. Settings last for this client session. Device limits can select a cheaper effective variant, reported alongside the request. Quality changes do not change canonical cloud identity, condensate mass or precipitation. GPU timing is explicitly unavailable when timestamp queries are unsupported; CPU time is never labeled GPU time. These profiles do not promise an FPS target.
+
 
 ## Load generator
 

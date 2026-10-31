@@ -51,6 +51,30 @@ pub(super) struct MapRayQuery {
     pub(super) generation: u32,
 }
 
+#[derive(Default)]
+pub struct SkyCoverQuery {
+    query: MapRayQuery,
+}
+
+impl SkyCoverQuery {
+    pub fn covered(
+        &mut self,
+        index: &CollisionIndex,
+        eye: [f32; 3],
+        up: [f32; 3],
+        reach: f32,
+    ) -> bool {
+        if !eye.iter().chain(up.iter()).all(|value| value.is_finite()) || reach <= 0.0 {
+            return false;
+        }
+        let origin = std::array::from_fn(|axis| eye[axis] + up[axis] * 0.2);
+        self.query.fill(index, origin, up, reach);
+        self.query
+            .nearest_blocker(index, origin, up, reach)
+            .is_some_and(|distance| distance > 0.05)
+    }
+}
+
 impl MapRayQuery {
     pub(super) fn fill(
         &mut self,

@@ -4,6 +4,7 @@ struct CameraUniform {
     inverse_sky_view_projection: mat4x4<f32>,
     viewport: vec4<f32>,
     eye_world: vec4<f32>,
+    inverse_view_projection: mat4x4<f32>,
 };
 @group(0) @binding(0) var<uniform> camera: CameraUniform;
 
@@ -36,5 +37,6 @@ struct EnvironmentUniform {
     moon_orbit_world: vec4<f32>,
     halo_count: vec4<u32>,
     halo_sources: array<HaloSource, 8>,
+    weather_fog: vec4<f32>,
 };
 @group(0) @binding(1) var<uniform> environment: EnvironmentUniform;
