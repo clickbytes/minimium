@@ -51,7 +51,11 @@ fn light_depth(lobe: Lobe, instance: CloudInstanceGpu, point: vec3<f32>, sun: ve
     let world = point + cloud_frame.origin.xyz;
     let weight = local_weight(world) * fade;
     let local = inverse_rotate(lobe.rotation, point - lobe.center) / (lobe.axes * lobe.axes);
-    let smooth_normal = normalize(rotate(lobe.rotation, local));
+    let raw_normal = rotate(lobe.rotation, local);
+    var smooth_normal = normalize(world);
+    if dot(raw_normal, raw_normal) > 1.0e-12 {
+        smooth_normal = normalize(raw_normal);
+    }
     var normal = smooth_normal;
     if cloud_frame.appearance.x > 0.5 {
         // Detail gradients make cloud edges billowy rather than smooth.
