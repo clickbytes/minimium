@@ -87,6 +87,7 @@ pub(super) fn clouds(aggregates: bool) -> String {
         include_str!("cloud_shadow.wgsl"),
         include_str!("atmosphere_common.wgsl"),
         include_str!("cloud_lighting.wgsl"),
+        include_str!("cloud_detail.wgsl"),
         include_str!("cloud_density.wgsl"),
         include_str!("cloud_intervals.wgsl"),
         if aggregates {

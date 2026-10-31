@@ -28,6 +28,7 @@ struct Lobe {
     rotation: vec4<f32>,
     base: vec4<f32>,
     density: f32,
+    seed: u32,
 };
 fn rotate(q: vec4<f32>, p: vec3<f32>) -> vec3<f32> {
     return p + 2.0 * cross(q.xyz, cross(q.xyz, p) + q.w * p);
@@ -59,6 +60,7 @@ fn lobe_state(instance: CloudInstanceGpu) -> Lobe {
     let volume = 3.14159265359 / 3.0 * (cap_primitive(1.0) - cap_primitive(z))
         * lobe.axes.x * lobe.axes.y * lobe.axes.z;
     lobe.density = mix(instance.axes_a.w, instance.axes_b.w, t) / max(volume, 1e-15);
+    lobe.seed = u32(instance.material.y * 16777216.0);
     return lobe;
 }
 // entry, exit, closest approach, squared half-width of the normalized chord.
@@ -85,7 +87,29 @@ fn kernel_primitive(u: f32, h: f32, a: f32) -> f32 {
     let u2 = u * u;
     return u * (h * h - 2.0 * h * a * u2 / 3.0 + a * a * u2 * u2 / 5.0);
 }
-fn lobe_integral(lobe: Lobe, ray: vec3<f32>, interval: vec4<f32>, start: f32, end: f32) -> f32 {
+fn lobe_integral(lobe: Lobe, origin: vec3<f32>, ray: vec3<f32>,
+    interval: vec4<f32>, start: f32, end: f32) -> f32 {
+    let lo = max(start, interval.x);
+    let hi = min(end, interval.y);
+    if hi <= lo { return 0.0; }
+    let q = inverse_rotate(lobe.rotation, origin - lobe.center) / lobe.axes;
+    let d = inverse_rotate(lobe.rotation, ray) / lobe.axes;
+    let nodes = array<f32, 6>(0.033765242898, 0.169395306767, 0.380690406958,
+        0.619309593042, 0.830604693233, 0.966234757102);
+    let weights = array<f32, 6>(0.085662246190, 0.180380786524, 0.233956967286,
+        0.233956967286, 0.180380786524, 0.085662246190);
+    let length = hi - lo;
+    var sum = 0.0;
+    for (var i = 0u; i < 6u; i++) {
+        sum += cloud_kernel(q + d * (lo + nodes[i] * length), lobe.seed) * weights[i];
+    }
+    return max(lobe.density * length * sum, 0.0);
+}
+
+// Coarse analytic self-shadow integration avoids extra micro-noise queries in
+// every neighbor. Only view extinction uses the detailed canonical density.
+fn lobe_shadow_integral(lobe: Lobe, ray: vec3<f32>,
+    interval: vec4<f32>, start: f32, end: f32) -> f32 {
     let lo = max(start, interval.x);
     let hi = min(end, interval.y);
     if hi <= lo { return 0.0; }
