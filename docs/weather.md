@@ -129,3 +129,10 @@ The global result influences all 32 weather-atlas channels through the existing 
 The new solver is independent of FPP/globe camera position and renders through the same published field. Its Earth surface uses the loaded GEBCO package when available. No live network weather fetch or new wire/save format is introduced.
 
 Code changes are committed, not visually verified; the user will measure performance and approve appearance. P0 profiling remains deferred.
+
+
+### Server weather owner
+
+The headless server now runs a bounded `WeatherAuthority` worker. At most one outstanding global Earth reconstruction is enqueued; outdated frames are rejected by world instance, seed, clock revision and UTC interval. It is driven by the server's authoritative clock, not the client's FPS. The admin `status` command reports the last published weather epoch. Client and server use the same `minimium-weather` reconstruction code and GEBCO surface, so no full planet atlas is transferred in each replication tick.
+
+**Limitations:** Server weather is currently read-only to gameplay. It is not persisted as an independent state snapshot and no weather checksums travel in protocol v13. Floating-point cross-platform bit equality and live forecast client corrections are not guaranteed. This first-stage authority supports a single Earth instance and must be generalized to independent per-planet worlds before multiple Earth simulations can coexist. It does not imply weather gameplay parity is already verified.
