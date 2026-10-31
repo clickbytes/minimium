@@ -26,9 +26,9 @@ fn noise(p: DVec3, seed: u32) -> f64 {
     for z in 0..2 {
         for y in 0..2 {
             for x in 0..2 {
-                let weight = if x == 0 { 1.0 - t.x } else { t.x }
-                    * if y == 0 { 1.0 - t.y } else { t.y }
-                    * if z == 0 { 1.0 - t.z } else { t.z };
+                let weight = (if x == 0 { 1.0 - t.x } else { t.x })
+                    * (if y == 0 { 1.0 - t.y } else { t.y })
+                    * (if z == 0 { 1.0 - t.z } else { t.z });
                 value += hash(
                     [cell[0] + x, cell[1] + y, cell[2] + z],
                     seed,
