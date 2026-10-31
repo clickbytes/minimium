@@ -2,7 +2,7 @@
 use super::{WeatherFrame, WeatherGpu, WeatherUniform};
 
 impl WeatherGpu {
-    pub(super) fn upload(&mut self, queue: &wgpu::Queue, frame: WeatherFrame) {
+    pub(in crate::renderer) fn upload(&mut self, queue: &wgpu::Queue, frame: WeatherFrame) {
         let WeatherFrame {
             rain_ceiling_m,
             readable_globe,
