@@ -27,6 +27,7 @@ pub(crate) struct WeatherAuthority {
     sender: SyncSender<Request>,
     receiver: Receiver<(Request, WeatherGrid)>,
     wanted: Option<Request>,
+    submitted: Option<Request>,
     published: Option<(Request, WeatherGrid)>,
     failed: bool,
 }
@@ -55,6 +56,7 @@ impl WeatherAuthority {
             sender,
             receiver,
             wanted: None,
+            submitted: None,
             published: None,
             failed: false,
         })
@@ -72,11 +74,13 @@ impl WeatherAuthority {
             })
         });
         let Some(target) = target else { return; };
-        let previous = self.wanted;
         self.wanted = Some(target);
         loop {
             match self.receiver.try_recv() {
                 Ok((request, frame)) => {
+                    if self.submitted == Some(request) {
+                        self.submitted = None;
+                    }
                     if request == target {
                         self.published = Some((request, frame));
                     }
@@ -91,9 +95,11 @@ impl WeatherAuthority {
         if self.failed || self.published.as_ref().is_some_and(|(key, _)| *key == target) {
             return;
         }
-        if previous != Some(target) {
+        if self.submitted != Some(target) {
             match self.sender.try_send(target) {
-                Ok(()) | Err(TrySendError::Full(_)) => {}
+                Ok(()) => self.submitted = Some(target),
+                // Retry on the next tick, rather than silently losing the new epoch.
+                Err(TrySendError::Full(_)) => {}
                 Err(TrySendError::Disconnected(_)) => self.failed = true,
             }
         }
