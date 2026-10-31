@@ -11,6 +11,7 @@ minimium-platform = { path = "../../crates/platform" }
 minimium-core = { path = "../../crates/core" }
 minimium-protocol = { path = "../../crates/protocol" }
 minimium-procgen = { path = "../../crates/procgen" }
+minimium-weather = { path = "../../crates/weather" }
 minimium-sectors = { path = "../../crates/sectors" }
 minimium-telemetry = { path = "../../crates/telemetry" }
 bytemuck = { version = "1.25", features = ["derive"] }

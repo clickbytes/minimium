@@ -118,3 +118,14 @@ That phase must cover each morphology; intersections and draw-order invariance; 
 Near clouds retain their physical transported lobes, but `weather clouds method volumetric` (default) integrates eroded 3D density along each view chord and lights detail normals. `weather clouds method analytic` is a smooth view-only fallback. The globe's curved 2.5D patches use optical opacity per fragment from the same global/regional 64x64 cloud-column cache that drives weather shadows and precipitation. Layer height/lighting and transitions remain approximations.
 
 This first hybrid is not yet one fullscreen sample per view ray. Lobe overdraw and CPU moment cost remain for later tuning. No new temporal history is introduced. P0 profiling is deferred; GPU, runtime and appearance results have not been verified. P3 teleport consistency, P4 a stateful climate solver and P5 planet atmosphere parameters remain separate implementation stages.
+
+
+## P4 planetary circulation field (visual-first)
+
+`minimium-weather` is a pure Rust three-level global circulation model. It uses 48×24 equal-angle horizontal cells and approximately 0.8/4.5/10.5 km levels, semi-Lagrangian advection, pressure-gradient acceleration, Coriolis rotation, solar forcing, terrestrial ocean/land heat response, saturation/condensation and precipitation fallout. It reconstructs two 6-hour-overlapping physical cohorts from the **same** seed and world UTC; finite warm-up and 10-minute steps bound cost for fast time scales. Cohort interpolation avoids abrupt time-window resets. This is **not** mass/energy-conserving numerical weather prediction. Polar and coastal flows are deliberately coarse.
+
+The global result influences all 32 weather-atlas channels through the existing regional/terrain refinement pathway: temperature, humidity, horizontal winds, cloud coverage, condensate and rain potential. Existing canonical cloud IDs, optical sampling, precipitation hosting and lightning conditions remain the source of visible effects. The solver does **not** yet replace lobe transport with a full solved wind field, so wind motion is only approximate.
+
+The new solver is independent of FPP/globe camera position and renders through the same published field. Its Earth surface uses the loaded GEBCO package when available. No live network weather fetch or new wire/save format is introduced.
+
+Code changes are committed, not visually verified; the user will measure performance and approve appearance. P0 profiling remains deferred.

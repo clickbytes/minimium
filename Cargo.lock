@@ -1145,6 +1145,7 @@ dependencies = [
  "minimium-protocol",
  "minimium-sectors",
  "minimium-telemetry",
+ "minimium-weather",
  "pollster",
  "serde_json",
  "ureq",
@@ -1209,6 +1210,7 @@ dependencies = [
  "minimium-protocol",
  "minimium-sectors",
  "minimium-telemetry",
+ "minimium-weather",
  "ron",
  "serde",
 ]
@@ -1216,6 +1218,13 @@ dependencies = [
 [[package]]
 name = "minimium-telemetry"
 version = "0.1.0"
+
+[[package]]
+name = "minimium-weather"
+version = "0.1.0"
+dependencies = [
+ "minimium-procgen",
+]
 
 [[package]]
 name = "minimiumctl"

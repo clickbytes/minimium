@@ -31,6 +31,7 @@ pub(super) struct TerrainCache {
     global_surface: Vec<TerrainInfluence>,
     local_surface: Option<(Region, Vec<TerrainInfluence>)>,
     columns: Option<(Request, [Grid; 2])>,
+    weather_surface: Option<minimium_weather::WeatherSurface>,
     available: bool,
 }
 
@@ -43,6 +44,7 @@ impl TerrainCache {
         {
             self.global_surface = terrain::map(request.terrain, Region::GLOBAL);
             self.local_surface = None;
+            self.weather_surface = Some(minimium_weather::WeatherSurface::earth());
         }
         if self.terrain.is_empty()
             || self.config != request.terrain
@@ -74,7 +76,8 @@ impl TerrainCache {
                 std::array::from_fn(|snapshot| {
                     let days =
                         (request.epoch + snapshot as i64) as f64 * STEP_MS as f64 / 86_400_000.0;
-                    Grid::build(request, days, &self.terrain, request.resolution.width())
+                    Grid::build(request, days, &self.terrain, request.resolution.width(),
+                        self.weather_surface.as_ref().expect("weather surface initialized"))
                 }),
             ));
         }
@@ -120,6 +123,7 @@ pub(super) fn bake(
                         );
                         column::refine(&mut values, *ground, state, up);
                     }
+                    grid.apply_circulation(lat, lon, &mut values);
                     if let Some((latitude, longitude, sample)) = request.correction {
                         let angular = (lat.sin() * latitude.to_radians().sin()
                             + lat.cos()
