@@ -70,7 +70,12 @@ struct RainVertex {
     let broad_phase = 0.10 + 0.26 * pow(toward_sun, 12.0);
     let rare_glint = smoothstep(0.94, 0.995, input.sparkle)
         * pow(toward_sun, 64.0) * select(0.42, 0.08, ice);
-    let moon_dir = normalize(environment.moon_apparent_world.xyz);
+    var moon_dir = vec3<f32>(0.0, 1.0, 0.0);
+    let moon_length2 = dot(environment.moon_apparent_world.xyz,
+        environment.moon_apparent_world.xyz);
+    if moon_length2 > 1.0e-8 {
+        moon_dir = normalize(environment.moon_apparent_world.xyz);
+    }
     let moon_phase = 0.15 + 0.25 * pow(max(dot(view, moon_dir), 0.0), 8.0);
     let radiance = environment.ambient_rgb_exposure.xyz
         + environment.local_sun_rgb_visibility.xyz
