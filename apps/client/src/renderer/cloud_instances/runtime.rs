@@ -29,7 +29,13 @@ impl CloudInstances {
             return;
         };
         if view.radius <= 0.0 {
+            // Interior/unavailable worlds must never accept an in-flight Earth cut
+            // if the player later re-enters a visually similar planet.
+            if self.requested.is_some() || self.published.is_some() || self.ready.is_some() {
+                self.serial = self.serial.wrapping_add(1);
+            }
             self.clear(queue);
+            self.last_seconds = None;
             return;
         }
         let seconds = view.utc_ms as f64 / 1000.0;
