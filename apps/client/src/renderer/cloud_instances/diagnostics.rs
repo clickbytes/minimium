@@ -24,8 +24,10 @@ impl CloudInstances {
         let field = &self.frame.as_ref().unwrap().fields[0];
         let lag = (utc_ms.unwrap_or(0) as f64 / 1000.0 - request.start_seconds - request.duration)
             .max(0.0);
-        format!("cloud model {MODEL_REVISION} field={} clock={:?} | clusters={} ellipsoids={}/{} (retained {}) aggregates={} (retained {}) merged={} | CPU {:.1} ms lag {:.1} world s | GPU buffers/cache textures {} bytes CPU field cache estimate {} bytes{} | families cu/sc/st/ns/ci/cb={:?} endpoint eye density={:.6}/m vertical tau={:.2}",
-            field.revision, field.clock_revision, d.clusters, self.draw_count, self.active_limit, d.instances,
+        format!("cloud model {MODEL_REVISION} world={:?} seed={:032x} field={} clock={:?} UTC interval={:.0}+{:.0}s view_serial={} local_cut={} | clusters={} ellipsoids={}/{} (retained {}) aggregates={} (retained {}) merged={} | CPU {:.1} ms lag {:.1} world s | GPU buffers/cache textures {} bytes CPU field cache estimate {} bytes{} | families cu/sc/st/ns/ci/cb={:?} endpoint eye density={:.6}/m vertical tau={:.2}",
+            request.world, request.seed, field.revision, field.clock_revision,
+            request.start_seconds, request.duration, self.serial,
+            if self.draw_count > 0 { "ready" } else { "preparing" }, d.clusters, self.draw_count, self.active_limit, d.instances,
             self.far.visible_tiles(self.active_aggregate_limit), d.aggregates, d.merged, d.milliseconds, lag, Self::BYTES, d.cache_bytes,
             if self.failed { " | worker unavailable; retained frame" } else { "" }, d.families, d.eye_density, d.vertical_optical)
     }

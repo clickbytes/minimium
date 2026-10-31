@@ -12,6 +12,7 @@ use super::cloud_settings::EffectiveCloudSettings;
 use crate::environment::weather::clouds::{atmosphere::Atlas, runtime::PresentedCloudFrame};
 use bytemuck::{Pod, Zeroable};
 use glam::DVec3;
+use minimium_core::world::WorldInstanceId;
 use std::{
     collections::HashMap,
     sync::{mpsc, Arc},
@@ -55,6 +56,7 @@ const _: () = {
 
 #[derive(Clone)]
 struct Request {
+    world: WorldInstanceId,
     previous_lod: LodHistory,
     atlas: Arc<Atlas>,
     eye: DVec3,
@@ -76,7 +78,7 @@ impl Request {
         })
     }
     fn same_world(&self, other: &Self) -> bool {
-        self.seed == other.seed
+        self.world == other.world && self.seed == other.seed
             && self.clock_revision == other.clock_revision
             && self.radius == other.radius
     }
@@ -92,6 +94,7 @@ impl Request {
 }
 
 pub(super) struct View {
+    pub(super) world: WorldInstanceId,
     pub(super) eye: [f64; 3],
     pub(super) radius: f64,
     pub(super) pixels_per_radian: f64,

@@ -64,6 +64,8 @@ impl Renderer {
                         .position
                         .map(|coordinate| (coordinate / 256.0).round() * 256.0);
                     self.gpu.set_render_origin(origin);
+                    // Preserve world weather, invalidate only the previous near-cloud cut.
+                    self.gpu.weather_gpu.instances.invalidate_view();
                     self.game.character.velocity = [0.0; 3];
                     self.game.character.grounded = false;
                     self.game.physics_accumulator = 0.0;
