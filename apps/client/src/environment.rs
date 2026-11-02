@@ -1,5 +1,6 @@
 mod demo;
 pub(crate) mod diagnostics;
+pub(crate) mod lakes;
 pub(crate) mod quality;
 pub(crate) mod weather;
 

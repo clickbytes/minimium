@@ -81,36 +81,17 @@ def main() -> int:
         shader_camera = struct_fields(wgsl, "CameraUniform")
         if rust_camera != shader_camera:
             errors.append("CameraUniform layout differs between Rust and WGSL")
-        weather = (ROOT / "apps/client/src/renderer/weather_gpu.rs").read_text(encoding="utf-8")
-        weather_fields = [(name, normalize_gpu_type(typ)) for name, typ in struct_fields(weather, "WeatherUniform")]
-        grid = (ROOT / "apps/client/src/environment/weather/grid.rs").read_text(encoding="utf-8")
-        field = (ROOT / "apps/client/src/renderer/weather_field.wgsl").read_text(encoding="utf-8")
-        channels = re.search(r"const CHANNELS: usize = (\d+);", grid)
-        layers = re.search(r"const WEATHER_SNAPSHOT_LAYERS: i32 = (\d+);", field)
-        if not channels or not layers or int(channels[1]) != int(layers[1]) * 2:
-            errors.append("Weather atlas global/regional layer stride differs between CPU and WGSL")
-        for filename, symbol in (("weather_frame.wgsl", "WeatherUniform"),
-                                 ("world_weather.wgsl", "WorldWeatherUniform"),
-                                 ("globe.wgsl", "GlobeWeatherUniform")):
-            shader = (ROOT / "apps/client/src/renderer" / filename).read_text(encoding="utf-8")
-            if weather_fields != struct_fields(shader, symbol):
-                errors.append(f"Weather uniform layout differs in {filename}")
-        cloud_mesh = (ROOT / "apps/client/src/renderer/cloud_mesh.rs").read_text(encoding="utf-8")
+        atmosphere = (ROOT / "apps/client/src/renderer/atmosphere_gpu.rs").read_text(encoding="utf-8")
+        shader = (ROOT / "apps/client/src/renderer/atmosphere_frame.wgsl").read_text(encoding="utf-8")
+        cpu = [(name, normalize_gpu_type(typ)) for name, typ in struct_fields(atmosphere, "AtmosphereUniform")]
+        if cpu != struct_fields(shader, "AtmosphereUniform"):
+            errors.append("AtmosphereUniform layout differs between Rust and WGSL")
+        clouds = (ROOT / "apps/client/src/renderer/clouds/gpu.rs").read_text(encoding="utf-8")
         cloud_shader = (ROOT / "apps/client/src/renderer/clouds.wgsl").read_text(encoding="utf-8")
-        vertex_fields = [(name, normalize_gpu_type(typ)) for name, typ in struct_fields(cloud_mesh, "Vertex")]
-        cloud_shader = re.sub(r"@location\(\d+\)\s*", "", cloud_shader)
-        if vertex_fields != struct_fields(cloud_shader, "CloudInput"):
-            errors.append("Cloud mesh vertex attributes differ between Rust and WGSL")
-        instances = (ROOT / "apps/client/src/renderer/cloud_instances.rs").read_text(encoding="utf-8")
-        density = (ROOT / "apps/client/src/renderer/cloud_density.wgsl").read_text(encoding="utf-8")
-        for symbol in ("CloudInstanceGpu", "InstanceUniform"):
-            cpu = [(name, normalize_gpu_type(typ)) for name, typ in struct_fields(instances, symbol)]
-            if cpu != struct_fields(density, symbol):
-                errors.append(f"{symbol} layout differs between Rust and WGSL")
-        weather_root = ROOT / "apps/client/src/environment/weather"
-        for source in weather_root.rglob("*.rs"):
-            if re.search(r"\b(?:wgpu|renderer|camera)::", source.read_text(encoding="utf-8")):
-                errors.append(f"physical weather depends on rendering: {source.relative_to(ROOT)}")
+        for name in ("CloudUniform", "CloudRecord"):
+            cpu = [(field, normalize_gpu_type(typ)) for field, typ in struct_fields(clouds, name)]
+            if cpu != struct_fields(cloud_shader, name):
+                errors.append(f"{name} layout differs between Rust and WGSL")
         if re.search(r"\bbody\s*==\s*[01]\b", halo_shader):
             errors.append("celestial_halo.wgsl contains a body==0/1 special case")
     except (OSError, ValueError) as error:
@@ -138,7 +119,7 @@ def main() -> int:
 
     central_parser = ROOT / "apps/client/src/client_commands.rs"
     command_modules = (
-        "connection.rs", "environment.rs", "gameplay.rs", "interface.rs",
+        "connection.rs", "environment.rs", "gameplay.rs", "interface.rs", "weather.rs",
     )
     try:
         central = central_parser.read_text(encoding="utf-8")

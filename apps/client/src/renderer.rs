@@ -31,13 +31,12 @@ use winit::{
     window::{CursorGrabMode, Window, WindowAttributes, WindowId},
 };
 
+mod atmosphere_gpu;
 mod camera;
 mod celestial_halo_gpu;
 mod celestial_labels;
 mod client_game;
-mod cloud_instances;
-mod cloud_mesh;
-pub(crate) mod cloud_settings;
+mod clouds;
 mod console_events;
 mod controller;
 mod diagnostics;
@@ -71,8 +70,6 @@ mod shadows;
 mod sky;
 mod sky_gpu;
 mod stars_gpu;
-mod weather_gpu;
-mod weather_render;
 mod window;
 mod window_metrics;
 mod world_pipeline;
@@ -110,7 +107,8 @@ struct GpuResources {
     stars: stars_gpu::StarGpu,
     moon: moon_gpu::MoonGpu,
     moon_sphere: moon_sphere_gpu::MoonSphereGpu,
-    weather_gpu: weather_gpu::WeatherGpu,
+    atmosphere_gpu: atmosphere_gpu::AtmosphereGpu,
+    cloud_gpu: clouds::CloudGpu,
     ui_pipeline: wgpu::RenderPipeline,
     ui_output_pipeline: Option<wgpu::RenderPipeline>,
     ui_bind_group: wgpu::BindGroup,
@@ -222,7 +220,6 @@ struct Renderer {
     demo_universe_enabled: bool,
     fov_degrees: f32,
     show_celestial_names: bool,
-    weather: crate::environment::weather::WeatherRuntime,
     sky_quality: crate::environment::quality::SkyQualityState,
     connection: ConnectionController,
     environment_frame: EnvironmentFrameInput,
@@ -231,6 +228,7 @@ struct Renderer {
     sky_calculator: minimium_astronomy::SkyCalculator,
     sky_catalogue: Option<environment::stars::StarCatalogueAdapter>,
     environment_error: Option<String>,
+    weather: clouds::WeatherState,
     demo_environment: Option<LocalDemoEnvironment>,
     world_catalog: std::collections::HashMap<minimium_core::world::WorldInstanceId, WorldMap>,
     sector_cache: sector_scene::ClientSectorCache,

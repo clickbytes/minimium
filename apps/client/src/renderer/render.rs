@@ -126,12 +126,10 @@ impl GpuResources {
                 pass.set_pipeline(&self.pipeline);
                 pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
                 pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
-                pass.set_bind_group(3, &self.weather_gpu.bind_group, &[]);
             } else if self.overview_active {
                 pass.set_pipeline(&self.pipeline);
                 pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
                 pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
-                pass.set_bind_group(3, &self.weather_gpu.bind_group, &[]);
                 if super::sky::should_draw_overview_sky(environment) {
                     pass.set_pipeline(&self.environment_pipelines.sky);
                     pass.set_bind_group(1, &self.milky_way.bind_group, &[]);
@@ -176,7 +174,7 @@ impl GpuResources {
                 if let Some(globe) = self.globe.as_ref().filter(|_| self.overview_globe) {
                     pass.set_pipeline(&globe.pipeline);
                     pass.set_bind_group(1, &globe.bind_group, &[]);
-                    pass.set_bind_group(2, &self.weather_gpu.globe_bind_group, &[]);
+                    pass.set_bind_group(2, &self.atmosphere_gpu.bind_group, &[]);
                     pass.set_vertex_buffer(0, globe.vertices.slice(..));
                     pass.draw(0..globe.vertex_count, 0..1);
                     draw_calls += 1;
@@ -191,7 +189,6 @@ impl GpuResources {
                 pass.set_pipeline(&self.pipeline);
                 pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
                 pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
-                pass.set_bind_group(3, &self.weather_gpu.bind_group, &[]);
                 if let Some((buffer, count)) = &self.overview_buffer {
                     pass.set_vertex_buffer(0, buffer.slice(..));
                     pass.draw(0..*count, 0..1);
@@ -244,7 +241,6 @@ impl GpuResources {
                 pass.set_pipeline(&self.pipeline);
                 pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
                 pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
-                pass.set_bind_group(3, &self.weather_gpu.bind_group, &[]);
                 pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
                 pass.draw(0..self.vertex_count, 0..1);
                 draw_calls += 1;
@@ -288,7 +284,6 @@ impl GpuResources {
                 pass.set_pipeline(&self.pipeline);
                 pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
                 pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
-                pass.set_bind_group(3, &self.weather_gpu.bind_group, &[]);
                 for (key, lod) in &snapshot.sector_hints {
                     if let Some((buffer, vertex_count)) =
                         self.world_vertex_catalog
@@ -304,16 +299,13 @@ impl GpuResources {
                 pass.set_pipeline(&self.pipeline);
                 pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
                 pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
-                pass.set_bind_group(3, &self.weather_gpu.bind_group, &[]);
                 pass.set_vertex_buffer(0, self.player_buffer.slice(..));
                 pass.draw(0..self.remote_vertex_count, 0..1);
                 draw_calls += 1;
             }
         }
-        let clouds = self.scene_visible
-            && ((self.overview_active && self.overview_globe && self.globe.is_some())
-                || (!self.overview_active && super::sky::should_draw_surface_sky(environment)));
-        draw_calls += self.render_weather(&mut encoder, scene_view, clouds);
+        draw_calls += self.render_atmosphere(&mut encoder, scene_view);
+        draw_calls += self.render_clouds(&mut encoder, scene_view);
         if self.ui_vertex_count > 0 && self.ui_output_pipeline.is_none() {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("minimium-console-ui-pass"),

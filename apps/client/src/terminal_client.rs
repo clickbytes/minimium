@@ -284,10 +284,13 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
                         FrontendAction::SkyDemo(_) => {
                             println!("sky demo unavailable: desktop renderer required");
                         }
-                        FrontendAction::Fov(_)
-                        | FrontendAction::ShowCelestialNames(_)
-                        | FrontendAction::Weather(_) => {
+                        FrontendAction::Fov(_) | FrontendAction::ShowCelestialNames(_) => {
                             println!("sky display settings are available in the desktop renderer");
+                        }
+                        FrontendAction::WeatherStatus
+                        | FrontendAction::WeatherDebug(_)
+                        | FrontendAction::WeatherDetail(_) => {
+                            println!("Regional weather diagnostics require the graphical client.");
                         }
                         FrontendAction::TimeStatus => {
                             let unavailable =

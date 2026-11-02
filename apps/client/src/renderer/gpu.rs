@@ -188,7 +188,7 @@ impl GpuResources {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("minimium-device"),
-                required_features: adapter.features() & wgpu::Features::TIMESTAMP_QUERY,
+                required_features: wgpu::Features::empty(),
                 required_limits,
                 experimental_features: Default::default(),
                 memory_hints: wgpu::MemoryHints::MemoryUsage,
@@ -252,14 +252,20 @@ impl GpuResources {
             scene_color_format,
         );
         let depth_view = super::gpu_surface::create_depth_view(&device, size);
-        let weather_gpu = super::weather_gpu::WeatherGpu::new(
+        let cloud_gpu = super::clouds::CloudGpu::new(
+            &device,
+            &adapter,
+            &frame_bindings.layout,
+            scene_color_format,
+            &depth_view,
+            size,
+        );
+        let atmosphere_gpu = super::atmosphere_gpu::AtmosphereGpu::new(
             &device,
             &queue,
             &frame_bindings.layout,
             scene_color_format,
-            size,
             &depth_view,
-            super::weather_gpu::capabilities::CloudCapabilities::new(&adapter),
         );
         let mut shadow_gpu = super::shadow_gpu::ShadowGpu::new(
             &device,
@@ -275,7 +281,6 @@ impl GpuResources {
                 Some(&frame_bindings.layout),
                 Some(&shadow_gpu.empty_layout),
                 Some(&shadow_gpu.group2_layout),
-                Some(&weather_gpu.layout),
             ],
             immediate_size: 0,
         });
@@ -309,8 +314,8 @@ impl GpuResources {
             + ui_vertex_buffer.size()
             + stars.buffer.size()
             + super::milky_way_gpu::MilkyWayGpu::BYTES
-            + super::weather_gpu::WeatherGpu::BYTES
-            + weather_gpu.cloud_bytes
+            + super::atmosphere_gpu::AtmosphereGpu::BYTES
+            + cloud_gpu.bytes()
             + output_encoder
                 .as_ref()
                 .map_or(0, |output| output.size_bytes())
@@ -331,7 +336,8 @@ impl GpuResources {
             stars,
             moon,
             moon_sphere,
-            weather_gpu,
+            atmosphere_gpu,
+            cloud_gpu,
             ui_pipeline,
             ui_output_pipeline,
             ui_bind_group,
@@ -385,13 +391,13 @@ impl GpuResources {
         self.config.height = size.height;
         self.surface.configure(&self.device, &self.config);
         self.depth_view = super::gpu_surface::create_depth_view(&self.device, size);
-        let old_cloud_bytes = self.weather_gpu.cloud_bytes;
-        self.weather_gpu
-            .resize(&self.device, size, &self.depth_view);
+        self.atmosphere_gpu.resize(&self.device, &self.depth_view);
+        let cloud_bytes = self.cloud_gpu.bytes();
+        self.cloud_gpu.resize(&self.device, &self.depth_view, size);
         self.fixed_gpu_bytes = self
             .fixed_gpu_bytes
-            .saturating_sub(old_cloud_bytes)
-            .saturating_add(self.weather_gpu.cloud_bytes);
+            .saturating_sub(cloud_bytes)
+            .saturating_add(self.cloud_gpu.bytes());
         if let Some(output) = &mut self.output_encoder {
             let old_size = output.size_bytes();
             output.resize(&self.device, size);

@@ -6,6 +6,12 @@ Minimium is a resource-conscious Rust engine for networked first-person games in
 
 ## Current state
 
+Weather has been removed pending a redesign. The client retains the world clock,
+day/night sky, celestial bodies and [clear-air globe atmosphere](docs/atmosphere.md).
+[Regional weather and voxel clouds](docs/weather.md) cover the player's surroundings in FPP and on the globe.
+Twelve cloud forms follow altitude and weather, with recursive voxel detail and UTC-driven shape evolution.
+Precipitation, weather fog, storms, cloud shadows and forecast networking are outside this stage.
+
 The workspace contains a desktop 3D client, a separate authoritative server, server-side movement and collision, hitscan combat, global text chat, nearby-player snapshots, a headless admin CLI, configurable execution lanes, and a load generator. The client can start a local server process or attach to a separately run server. DNS lookup, remote connection attempts, and local server startup run on a connector worker so the desktop event loop can continue; after connection, a shared nonblocking TCP session is polled by the desktop or text-client loop. The client HUD shows health and confirmed hits; press F1 for the in-window console, lock the mouse and left-click to fire, and use `say TEXT` (or `chat TEXT`) to chat. `--console` selects the separate text-client prototype.
 
 The default client and server generate the same seeded planet and separate dungeon instance. A portal transfers players between them; membership epochs prevent stale input from affecting the destination. Custom static maps use the validated map format, and `--world-definition PATH` loads a validated hand-authored dungeon. Server movement collision and client collision/rendering use bounded ticketed sector payloads. Portal readiness waits for target sectors, collision and GPU buffers. The server retains a full map index for hitscan, and the client retains source maps in CPU memory for deterministic slicing. Save v9 persists revisioned logical object-state sets per sector and the shared world clock; the demo currently has no interaction that changes sector objects. See [world contracts](docs/worlds.md) and [map format](docs/maps.md).

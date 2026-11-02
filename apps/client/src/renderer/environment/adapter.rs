@@ -213,7 +213,6 @@ pub(super) fn from_sky_state(
         eqj_to_world: matrix4(sky.catalog_epoch_to_world)?,
         moon_disk_radiance: super::super::moon_lighting::moon_disk_radiance(moon_flux),
         star_animation: [0.0; 4],
-        weather_fog: [0.0; 4],
         moon_orbit_world,
         halo_count: [halo_count, 0, 0, 0],
         halo_sources,

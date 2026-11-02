@@ -62,10 +62,8 @@ pub(super) fn pixels_region(
             ];
             let elevation = minimium_procgen::earth_elevation_mm(direction, height_scale_permille);
             let metres = ((elevation - sea_level_mm) / 1000) as f32;
-            let lake = crate::environment::weather::lakes::contains(
-                latitude.to_degrees(),
-                longitude.to_degrees(),
-            );
+            let lake =
+                crate::environment::lakes::contains(latitude.to_degrees(), longitude.to_degrees());
             let color: [u8; 3] = if lake {
                 [22, 72, 112]
             } else if metres < 0.0 {
@@ -255,7 +253,7 @@ impl GpuResources {
                 bind_group_layouts: &[
                     Some(&camera_layout),
                     Some(&layout),
-                    Some(&self.weather_gpu.globe_layout),
+                    Some(&self.atmosphere_gpu.layout),
                 ],
                 immediate_size: 0,
             });

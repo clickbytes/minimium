@@ -57,6 +57,9 @@ def source_boundary_violations(repository: Path) -> list[str]:
             for match in forbidden.finditer(text):
                 line = text.count("\n", 0, match.start()) + 1
                 violations.append(f"{source.relative_to(repository).as_posix()}:{line}: forbidden FFI/GPU/astronomy source reference")
+    for source in (repository / "apps/client/src/environment/weather").rglob("*.rs"):
+        if re.search(r"\b(?:wgpu|winit|renderer|camera)::", source.read_text(encoding="utf-8")):
+            violations.append(f"{source.relative_to(repository)}: weather model depends on rendering")
     return violations
 
 

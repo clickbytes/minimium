@@ -1,4 +1,6 @@
 //! Read-only GEBCO 2026 ice-surface package shared by server and client.
+mod bounds;
+pub use bounds::earth_elevation_upper_bound_m;
 use memmap2::Mmap;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};

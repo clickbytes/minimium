@@ -4,6 +4,8 @@ mod source;
 
 fn main() {
     let variants = [
+        ("clouds", source::clouds()),
+        ("cloud_composite", source::cloud_composite()),
         ("world", source::world()),
         ("globe", source::globe()),
         ("sky", source::sky()),
@@ -12,13 +14,7 @@ fn main() {
         ("moon", source::moon()),
         ("moon_sphere", source::moon_sphere()),
         ("celestial_halo", source::celestial_halo()),
-        ("ellipsoids", source::clouds(false)),
-        ("aggregates", source::clouds(true)),
-        ("composite", source::cloud_composite()),
         ("atmosphere", source::atmosphere()),
-        ("fog", source::weather_fog()),
-        ("rain", source::rain()),
-        ("bolt", source::bolt()),
         ("marker", source::marker()),
         ("ui", source::ui()),
         ("encode_output", source::encode_output()),
@@ -34,7 +30,10 @@ fn main() {
         )
         .validate(&module)
         .unwrap_or_else(|error| panic!("{name}: {}", error.emit_to_string(&code)));
-        if matches!(name, "ellipsoids" | "aggregates") {
+        if matches!(name, "globe" | "atmosphere") {
+            atmosphere_contract(&module, &info, name == "globe");
+        }
+        if name == "clouds" {
             cloud_contract(&module, &info);
         }
         println!("{name}: valid");
@@ -43,9 +42,46 @@ fn main() {
 
 fn cloud_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
     for (_, ty) in module.types.iter() {
+        let (expected_span, offsets): (u32, &[u32]) = match ty.name.as_deref() {
+            Some("CloudUniform") => (256, &[0, 64, 128, 192, 208, 224, 240]),
+            Some("CloudRecord") => (80, &[0, 16, 32, 48, 64]),
+            _ => continue,
+        };
+        let naga::TypeInner::Struct { members, span } = &ty.inner else {
+            panic!("expected cloud struct");
+        };
+        assert_eq!(*span, expected_span);
+        assert_eq!(
+            members.iter().map(|m| m.offset).collect::<Vec<_>>(),
+            offsets
+        );
+    }
+    for (index, entry) in module.entry_points.iter().enumerate() {
+        for (handle, global) in module.global_variables.iter() {
+            if info.get_entry_point(index)[handle].is_empty() {
+                continue;
+            }
+            let Some(binding) = global.binding else {
+                continue;
+            };
+            let visible = match (binding.group, binding.binding) {
+                (0, 0..=1) | (1, 0..=1) => true,
+                (1, 2) => entry.stage == naga::ShaderStage::Fragment,
+                _ => false,
+            };
+            assert!(
+                visible,
+                "cloud binding {binding:?} unavailable in {:?}",
+                entry.stage
+            );
+        }
+    }
+}
+
+fn atmosphere_contract(module: &naga::Module, info: &naga::valid::ModuleInfo, globe: bool) {
+    for (_, ty) in module.types.iter() {
         let expected = match ty.name.as_deref() {
-            Some("CloudInstanceGpu") => 176,
-            Some("InstanceUniform") => 80,
+            Some("AtmosphereUniform") => 80,
             _ => continue,
         };
         let naga::TypeInner::Struct { members, span } = &ty.inner else {
@@ -65,8 +101,10 @@ fn cloud_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
                 continue;
             };
             let visible = match (binding.group, binding.binding) {
-                (0, 0..=1) | (1, 0) | (3, 0..=1) => true,
-                (1, 1..=4) | (2, 0) => entry.stage == naga::ShaderStage::Fragment,
+                (0, 0..=1) => true,
+                (1, 0..=1) | (2, 0) => entry.stage == naga::ShaderStage::Fragment,
+                (1, 2) if !globe => entry.stage == naga::ShaderStage::Fragment,
+                (2, 1..=2) if globe => entry.stage == naga::ShaderStage::Fragment,
                 _ => false,
             };
             assert!(
@@ -74,18 +112,6 @@ fn cloud_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
                 "binding {:?} is unavailable in {:?}",
                 binding, entry.stage
             );
-        }
-        if entry.name == "fs_cloud" {
-            let result = entry.function.result.as_ref().unwrap();
-            let naga::TypeInner::Struct { members, .. } = &module.types[result.ty].inner else {
-                panic!("expected attachments");
-            };
-            assert_eq!(members.len(), 4);
-            for (index, member) in members.iter().enumerate() {
-                assert!(
-                    matches!(member.binding, Some(naga::Binding::Location { location, .. }) if location == index as u32)
-                );
-            }
         }
     }
 }

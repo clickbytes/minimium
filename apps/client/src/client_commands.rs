@@ -5,19 +5,15 @@
 //! queues protocol messages directly and reports UI/process work as a typed
 //! [`FrontendAction`], leaving each front end in control of its own event loop.
 
-use crate::{
-    environment::{quality::SkyQuality, weather::WeatherCommand},
-    options::ThreadLane,
-    session::QueueError,
-};
+use crate::{environment::quality::SkyQuality, options::ThreadLane, session::QueueError};
 use minimium_protocol::ClientMessage;
 use std::sync::OnceLock;
 
-mod clouds;
 mod connection;
 mod environment;
 mod gameplay;
 mod interface;
+mod weather;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum ClientCommand {
@@ -44,9 +40,11 @@ pub(crate) enum ClientCommand {
     SkyDemo(bool),
     Fov(Option<f32>),
     ShowCelestialNames(bool),
-    Weather(WeatherCommand),
     TimeStatus,
     TimeScale(String),
+    WeatherStatus,
+    WeatherDebug(crate::environment::weather::CloudDebug),
+    WeatherDetail(u8),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -123,6 +121,7 @@ fn registry() -> &'static CommandRegistry {
         connection::register(&mut registry);
         gameplay::register(&mut registry);
         environment::register(&mut registry);
+        weather::register(&mut registry);
         registry
     })
 }
@@ -148,7 +147,6 @@ pub(crate) enum ParseError {
     SkyQualityUsage,
     FovUsage,
     CelestialNamesUsage,
-    WeatherUsage,
     TimeScaleUsage,
     UnknownCommand,
 }
@@ -189,9 +187,11 @@ pub(crate) enum FrontendAction {
     SkyDemo(bool),
     Fov(Option<f32>),
     ShowCelestialNames(bool),
-    Weather(WeatherCommand),
     TimeStatus,
     TimeScale(String),
+    WeatherStatus,
+    WeatherDebug(crate::environment::weather::CloudDebug),
+    WeatherDetail(u8),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -203,6 +203,15 @@ pub(crate) enum CommandResult {
 
 pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) -> CommandResult {
     let message = match command {
+        ClientCommand::WeatherStatus => {
+            return CommandResult::Action(FrontendAction::WeatherStatus)
+        }
+        ClientCommand::WeatherDebug(mode) => {
+            return CommandResult::Action(FrontendAction::WeatherDebug(mode))
+        }
+        ClientCommand::WeatherDetail(level) => {
+            return CommandResult::Action(FrontendAction::WeatherDetail(level))
+        }
         ClientCommand::Ping => ClientMessage::Ping,
         ClientCommand::Move(direction) => ClientMessage::Move {
             direction,
@@ -243,9 +252,6 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
         ClientCommand::Fov(degrees) => return CommandResult::Action(FrontendAction::Fov(degrees)),
         ClientCommand::ShowCelestialNames(enabled) => {
             return CommandResult::Action(FrontendAction::ShowCelestialNames(enabled))
-        }
-        ClientCommand::Weather(command) => {
-            return CommandResult::Action(FrontendAction::Weather(command))
         }
         ClientCommand::TimeStatus => return CommandResult::Action(FrontendAction::TimeStatus),
         ClientCommand::TimeScale(value) => {

@@ -46,6 +46,24 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
         CommandResult::Action(action) => action,
     };
     match action {
+        FrontendAction::WeatherStatus => {
+            for line in renderer.weather_status() {
+                renderer.ui.console.push_line(line);
+            }
+        }
+        FrontendAction::WeatherDebug(mode) => {
+            renderer.weather.debug = mode;
+            renderer
+                .ui
+                .console
+                .push_line(format!("weather clouds debug {mode:?}"));
+        }
+        FrontendAction::WeatherDetail(level) => {
+            renderer.weather.set_detail(level);
+            renderer.ui.console.push_line(format!(
+                "weather clouds detail N={level} (thin-layer minimum retained)"
+            ));
+        }
         FrontendAction::Help => {
             renderer
                 .ui
@@ -190,54 +208,6 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
             } else {
                 "celestial names disabled"
             });
-        }
-        FrontendAction::Weather(command) => {
-            if let crate::environment::weather::WeatherCommand::Clouds(command) = command {
-                let gpu = &mut renderer.gpu;
-                gpu.weather_gpu.cloud_settings.apply(command);
-                let effective = gpu.weather_gpu.cloud_settings.effective(
-                    renderer.sky_quality.effective
-                        == crate::environment::quality::SkyQuality::Standard,
-                    &gpu.device.limits(),
-                    gpu.weather_gpu.capabilities.precise,
-                );
-                renderer
-                    .ui
-                    .console
-                    .push_line(gpu.weather_gpu.cloud_settings.description(effective));
-                renderer.ui.console.push_line(
-                    gpu.weather_gpu.instances.status(
-                        renderer
-                            .render_environment_frame
-                            .sky
-                            .as_ref()
-                            .map(|sky| sky.utc_ms.get()),
-                    ),
-                );
-                renderer.ui.console.push_line(format!(
-                    "cloud targets {} bytes | adapter {} format {:?} | {}",
-                    gpu.weather_gpu.cloud_bytes,
-                    gpu.weather_gpu.capabilities.adapter,
-                    gpu.weather_gpu.capabilities.format,
-                    gpu.weather_gpu.timing.status()
-                ));
-                return false;
-            }
-            renderer
-                .ui
-                .console
-                .push_line(renderer.weather.command(command));
-            if command == crate::environment::weather::WeatherCommand::Status {
-                let utc_ms = renderer
-                    .render_environment_frame
-                    .sky
-                    .as_ref()
-                    .map(|sky| sky.utc_ms.get());
-                renderer
-                    .ui
-                    .console
-                    .push_line(renderer.gpu.weather_gpu.instances.status(utc_ms));
-            }
         }
         FrontendAction::TimeStatus => renderer
             .ui

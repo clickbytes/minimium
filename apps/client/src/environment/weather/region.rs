@@ -1,68 +1,73 @@
-//! Tangent-plane weather patch: no longitude seam or polar singularity.
-use super::simulated::{HEIGHT, WIDTH};
+//! Weather addresses deliberately use 128 cells per face, not terrain sectors.
+use glam::DVec3;
+use minimium_core::world::{
+    CubeSampleKey, PlanetFace, PlanetSectorKey, PLANET_SAMPLE_COORDINATE_SCALE,
+};
+use std::collections::{BTreeSet, VecDeque};
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(super) struct Region(pub(super) [f64; 4]);
+pub(crate) const COUNT: u16 = 128;
+// Maximum centre-to-corner angle of any weather region.
+const BOUND: f64 = 0.012;
+pub(crate) type Region = PlanetSectorKey;
 
-impl Region {
-    pub(super) const GLOBAL: Self = Self([0.0; 4]);
+pub(crate) fn at(direction: DVec3) -> Region {
+    Region::from_direction_with_count(direction.as_vec3().to_array(), COUNT)
+}
 
-    pub(super) fn around(latitude: f64, longitude: f64) -> Self {
-        // Stable centres; the inner half of overlapping patches has full detail.
-        let lat = latitude.round().to_radians();
-        let lon_step = (1.0 / lat.cos().abs().max(0.05)).min(360.0);
-        let lon = (longitude / lon_step).round() * lon_step;
-        let lon = lon.to_radians();
-        Self([
-            lat.cos() * lon.cos(),
-            lat.sin(),
-            lat.cos() * lon.sin(),
-            0.035,
-        ])
+pub(crate) fn point(region: Region, u: f64, v: f64) -> DVec3 {
+    let (x, y) = region.coordinates();
+    let u = (f64::from(x) + u) * 2.0 / f64::from(COUNT) - 1.0;
+    let v = (f64::from(y) + v) * 2.0 / f64::from(COUNT) - 1.0;
+    match region.face() {
+        PlanetFace::PositiveX => DVec3::new(1.0, u, v),
+        PlanetFace::NegativeX => DVec3::new(-1.0, u, v),
+        PlanetFace::PositiveY => DVec3::new(u, 1.0, v),
+        PlanetFace::NegativeY => DVec3::new(u, -1.0, v),
+        PlanetFace::PositiveZ => DVec3::new(u, v, 1.0),
+        PlanetFace::NegativeZ => DVec3::new(u, v, -1.0),
     }
+    .normalize()
+}
 
-    fn basis(self) -> ([f64; 3], [f64; 3]) {
-        let [x, y, z, _] = self.0;
-        let n = x.hypot(z);
-        let east = if n > 1e-8 {
-            [-z / n, 0.0, x / n]
-        } else {
-            [0.0, 0.0, 1.0]
-        };
-        let north = [y * east[2], z * east[0] - x * east[2], -y * east[0]];
-        // east cross up points south; negate to obtain north.
-        (east, north.map(|v| -v))
-    }
+pub(crate) fn surface_key(direction: DVec3) -> CubeSampleKey {
+    let region = at(direction);
+    let p = direction / direction.abs().max_element();
+    let (u, v) = match region.face() {
+        PlanetFace::PositiveX | PlanetFace::NegativeX => (p.y, p.z),
+        PlanetFace::PositiveY | PlanetFace::NegativeY => (p.x, p.z),
+        PlanetFace::PositiveZ | PlanetFace::NegativeZ => (p.x, p.y),
+    };
+    let coordinate =
+        |x: f64| (x.clamp(-1.0, 1.0) * f64::from(PLANET_SAMPLE_COORDINATE_SCALE)).round() as i32;
+    region
+        .face()
+        .cube_sample(coordinate(u), coordinate(v))
+        .expect("normalized cube sample")
+}
 
-    pub(super) fn coordinates(self, x: usize, y: usize) -> (f64, f64) {
-        if self.0[3] == 0.0 {
-            return (
-                (0.5 - (y as f64 + 0.5) / HEIGHT as f64) * std::f64::consts::PI,
-                ((x as f64 + 0.5) / WIDTH as f64 - 0.5) * std::f64::consts::TAU,
-            );
+/// Conservative cap intersection includes neighbouring faces and pole regions.
+pub(crate) fn intersecting(center: DVec3, angle: f64) -> Vec<Region> {
+    let first = at(center);
+    let mut seen = BTreeSet::from([first]);
+    let mut pending = VecDeque::from([first]);
+    let mut result = Vec::new();
+    while let Some(region) = pending.pop_front() {
+        if point(region, 0.5, 0.5).dot(center) < (angle + BOUND).cos() {
+            continue;
         }
-        let (east, north) = self.basis();
-        let u = ((x as f64 + 0.5) / WIDTH as f64 * 2.0 - 1.0) * self.0[3];
-        let v = (1.0 - (y as f64 + 0.5) / HEIGHT as f64 * 2.0) * self.0[3];
-        let p: [f64; 3] = std::array::from_fn(|i| self.0[i] + east[i] * u + north[i] * v);
-        let length = p.iter().map(|v| v * v).sum::<f64>().sqrt();
-        ((p[1] / length).asin(), p[2].atan2(p[0]))
-    }
-
-    pub(super) fn uv_weight(self, lat: f64, lon: f64) -> ([f64; 2], f32) {
-        let p = [lat.cos() * lon.cos(), lat.sin(), lat.cos() * lon.sin()];
-        let dot = |a: [f64; 3]| a.iter().zip(p).map(|(a, b)| a * b).sum::<f64>();
-        let facing = dot([self.0[0], self.0[1], self.0[2]]);
-        if facing <= 0.0 || self.0[3] == 0.0 {
-            return ([0.5; 2], 0.0);
+        result.push(region);
+        for next in region.neighbors_with_count(COUNT) {
+            if seen.insert(next) {
+                pending.push_back(next);
+            }
         }
-        let (east, north) = self.basis();
-        let uv = [
-            0.5 + dot(east) / facing / self.0[3] * 0.5,
-            0.5 - dot(north) / facing / self.0[3] * 0.5,
-        ];
-        let edge = ((uv[0] - 0.5).abs().max((uv[1] - 0.5).abs()) - 0.25) * 4.0;
-        let t = edge.clamp(0.0, 1.0);
-        (uv, (1.0 - t * t * (3.0 - 2.0 * t)) as f32)
     }
+    result.sort();
+    result
+}
+
+pub(crate) fn address(region: Region) -> u64 {
+    let (u, v) = region.coordinates();
+    (u64::from(region.face().index()) * u64::from(COUNT) + u64::from(u)) * u64::from(COUNT)
+        + u64::from(v)
 }

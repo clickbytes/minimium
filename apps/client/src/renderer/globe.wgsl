@@ -1,26 +1,5 @@
 @group(1) @binding(0) var globe: texture_2d_array<f32>;
 @group(1) @binding(1) var globe_sampler: sampler;
-@group(2) @binding(0) var weather_atlas: texture_2d_array<f32>;
-@group(2) @binding(1) var weather_sampler: sampler;
-struct GlobeWeatherUniform {
-    cover_rain: vec4<f32>,
-    wind: vec4<f32>,
-    blend: vec4<f32>,
-    origin: vec4<f32>,
-    lightning: vec4<f32>,
-    event: vec4<f32>,
-    shelter: vec4<f32>,
-    region: vec4<f32>,
-    animation: vec4<f32>,
-    cloud_region: vec4<f32>,
-    presentation: vec4<f32>,
-    atmosphere_radii: vec4<f32>,
-    atmosphere_rayleigh: vec4<f32>,
-    atmosphere_mie: vec4<f32>,
-    atmosphere_ozone: vec4<f32>,
-};
-@group(2) @binding(2) var<uniform> weather: GlobeWeatherUniform;
-
 fn sample_map(uv: vec2<f32>) -> vec4<f32> {
     let wrapped = vec2<f32>(fract(uv.x), clamp(uv.y, 0.0, 0.999999));
     let scaled = wrapped * 4.0;
@@ -70,41 +49,19 @@ struct Output {
     }
     let sun_direction = normalize(environment.global_sun_direction.xyz);
     let diffuse = max(dot(relief_normal, sun_direction), 0.0);
-    let cloud_visibility = cached_cloud_shadow(cloud_shadow_atlas, weather_sampler,
-        up * weather.blend.y, sun_direction, weather.event.y,
-        weather.blend.y, weather.cloud_region);
-    let point = up * weather.blend.y;
-    let transmission = air_light(atmosphere_table, weather_sampler, point, sun_direction, weather.blend.y);
+    let point = up * atmosphere.config.x;
+    let transmission = air_light(atmosphere_table, atmosphere_sampler, point, sun_direction, atmosphere.config.x);
     let moon_direction = global_moon_direction(point);
     let moon = global_moon_irradiance()
-        * air_light(atmosphere_table, weather_sampler, point, moon_direction, weather.blend.y)
+        * air_light(atmosphere_table, atmosphere_sampler, point, moon_direction, atmosphere.config.x)
         * max(dot(relief_normal, moon_direction), 0.0);
     let day = smoothstep(-0.12, 0.08, dot(up, sun_direction));
-    let map_fill = weather.presentation.x * weather.presentation.z
+    let map_fill = atmosphere.config.z * atmosphere.config.w
         * vec3<f32>(0.35, 0.45, 0.6) * (1.0 - day);
-    let visibility = mix(cloud_visibility, max(cloud_visibility, 0.35), weather.presentation.x);
-    let irradiance = environment.global_sun_rgb.xyz * transmission * diffuse * visibility
+    let irradiance = environment.global_sun_rgb.xyz * transmission * diffuse
         + vec3<f32>(0.008, 0.012, 0.02) * day + moon + map_fill;
     let linear = sample.rgb * irradiance;
-    let conditions = cached_cloud_weather(cloud_shadow_atlas, weather_sampler,
-        input.normal, weather.event.y, weather.cloud_region);
-    let auxiliary = weather_auxiliary(weather_atlas, weather_sampler,
-        input.normal, weather.blend.x, weather.region);
-    let flash = exp(-pow(acos(clamp(dot(normalize(input.normal),
-        weather.lightning.xyz), -1.0, 1.0)) / 0.012, 2.0)) * weather.lightning.w;
-    let wet = auxiliary.a * smoothstep(0.50, 0.54, auxiliary.g)
-        * smoothstep(0.48, 0.52, sample.a);
-    let ground = linear * (1.0 - conditions.a * 0.15)
-        * (1.0 - wet * 0.18)
-        + vec3<f32>(0.36, 0.42, 0.54) * flash;
-    let snow = (1.0 - smoothstep(0.46, 0.52, auxiliary.g)) * auxiliary.a
-        * smoothstep(0.48, 0.52, sample.a);
-    let snow_color = irradiance * 0.78;
-    let color = air_surface(atmosphere_table, weather_sampler, point,
-        mix(ground, snow_color, snow * 0.42), weather.blend.y,
-        select(4u, 8u, weather.blend.w > 0.5), weather.presentation.x);
+    let color = air_surface(atmosphere_table, atmosphere_sampler, point, linear,
+        atmosphere.config.x, select(4u, 8u, atmosphere.config.y > 0.5), atmosphere.config.z);
     return vec4<f32>(tone_map_linear(color), 1.0);
 }
-
-@group(2) @binding(3) var cloud_shadow_atlas: texture_2d_array<f32>;
-@group(2) @binding(4) var atmosphere_table: texture_2d<f32>;

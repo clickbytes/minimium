@@ -11,7 +11,6 @@ minimium-platform = { path = "../../crates/platform" }
 minimium-core = { path = "../../crates/core" }
 minimium-protocol = { path = "../../crates/protocol" }
 minimium-procgen = { path = "../../crates/procgen" }
-minimium-weather = { path = "../../crates/weather" }
 minimium-sectors = { path = "../../crates/sectors" }
 minimium-telemetry = { path = "../../crates/telemetry" }
 bytemuck = { version = "1.25", features = ["derive"] }
@@ -21,5 +20,3 @@ pollster = "0.4"
 wgpu = "30"
 winit = "0.30"
 arboard = "3"
-ureq = { version = "3", features = ["json"] }
-serde_json = "1"

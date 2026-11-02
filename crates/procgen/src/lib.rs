@@ -27,8 +27,9 @@ pub use dungeon::{
     generate_dungeon, DungeonBlueprint, DungeonRoom, DungeonSector, DungeonSpec, DungeonTile,
 };
 pub use earth::{
-    earth_elevation_mm, earth_is_land, ensure_earth_from_manifest, install_earth_package,
-    try_earth_elevation_m, try_earth_elevation_m_for_package, EarthSampleError,
+    earth_elevation_mm, earth_elevation_upper_bound_m, earth_is_land, ensure_earth_from_manifest,
+    install_earth_package, try_earth_elevation_m, try_earth_elevation_m_for_package,
+    EarthSampleError,
 };
 pub use earth_observer::earth_height_reference;
 use materialize::materialize_legacy_planet_map;
