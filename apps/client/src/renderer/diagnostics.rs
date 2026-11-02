@@ -50,8 +50,43 @@ impl Renderer {
         );
         push_shadow_fields(&mut snapshot, self);
         push_gpu_fields(&mut snapshot, self);
+        push_milky_way_fields(&mut snapshot, self);
         snapshot.lines().collect()
     }
+}
+
+fn push_milky_way_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
+    let frame = &renderer.render_environment_frame;
+    let overview = frame.render_view.kind == super::environment::EnvironmentViewKind::Overview;
+    let u = &frame.environment_uniform;
+    let moon_flux = u.moon_disk_radiance[3].max(0.0) * u.local_moon_rgb_visibility[3];
+    let visibility = if overview {
+        1.0
+    } else {
+        u.sky_horizon_rgb_star_visibility[3] / (1.0 + 8.0 * moon_flux)
+    };
+    let drawn = renderer.gpu.environment_draw_calls.sky > 0;
+    snapshot.push(
+        "milky_way_state",
+        if !drawn {
+            "sky_not_drawn"
+        } else if visibility <= 0.0 {
+            "daylight_suppressed"
+        } else if overview {
+            "orbital_background"
+        } else {
+            "night_background"
+        },
+    );
+    snapshot.push(
+        "milky_way_visibility_before_extinction_and_clouds",
+        visibility,
+    );
+    snapshot.push(
+        "milky_way_texture_bytes",
+        super::milky_way_gpu::MilkyWayGpu::BYTES,
+    );
+    snapshot.push("scene_linear_HDR", renderer.gpu.hdr_enabled);
 }
 
 fn push_clock_fields(

@@ -5,6 +5,13 @@ struct SkyVertexOutput {
 @group(1) @binding(0) var milky_way_map: texture_2d<f32>;
 @group(1) @binding(1) var milky_way_sampler: sampler;
 
+// The embedded plate's luminance median is ~0.014 and its 90th percentile
+// ~0.062. Gains of 0.02/0.03 put most of it below two 8-bit display levels
+// after the shared filmic tone map. Keep diffuse galactic contrast in linear
+// scene space; daylight, moonlight, extinction and cloud occlusion still apply.
+const MILKY_WAY_SURFACE_GAIN: f32 = 0.16;
+const MILKY_WAY_ORBIT_GAIN: f32 = 0.24;
+
 fn milky_way_radiance(ray_world: vec3<f32>) -> vec3<f32> {
     let eqj = normalize((transpose(environment.eqj_to_world) * vec4<f32>(ray_world, 0.0)).xyz);
     // NASA SVS celestial plate carree: RA 0 at the centre, RA increases left.
@@ -35,7 +42,7 @@ fn milky_way_radiance(ray_world: vec3<f32>) -> vec3<f32> {
     let far_point = camera.inverse_sky_view_projection * vec4<f32>(ndc, 1.0, 1.0);
     let ray_world = normalize(far_point.xyz / max(abs(far_point.w), 1.0e-6));
     if environment.flags.y == 1u {
-        return vec4<f32>(tone_map_linear(milky_way_radiance(ray_world) * 0.03), 1.0);
+        return vec4<f32>(tone_map_linear(milky_way_radiance(ray_world) * MILKY_WAY_ORBIT_GAIN), 1.0);
     }
     let sample = sample_clear_sky(ray_world);
     let moon_flux = max(environment.moon_disk_radiance.w, 0.0)
@@ -48,7 +55,7 @@ fn milky_way_radiance(ray_world: vec3<f32>) -> vec3<f32> {
         galactic_light = milky_way_radiance(ray_world);
     }
     let sky = tone_map_linear(sample.scattering_rgb
-        + galactic_light * 0.02 * galactic_visibility);
+        + galactic_light * MILKY_WAY_SURFACE_GAIN * galactic_visibility);
     let ground = HORIZON_OCCLUSION_RGB;
     let visibility = horizon_visibility(ray_world);
     return vec4<f32>(mix(ground, sky, visibility), 1.0);

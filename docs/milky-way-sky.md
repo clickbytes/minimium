@@ -32,8 +32,20 @@ deklinację kierunku piksela, a następnie próbuje mapę z RA=0 pośrodku i RA
 rosnącą w lewo. Horyzont, atmosfera, zmierzch i Księżyc tłumią warstwę na
 powierzchni. W Overview mapa jest tłem kosmicznym za globem i gwiazdami.
 
-Jasność `0.02` na powierzchni i `0.03` w Overview to kalibracja prezentacji,
+Jasność `0.16` na powierzchni i `0.24` w Overview to kalibracja prezentacji,
 nie wynik pomiaru fotometrycznego. Barwy są częściowo odbarwione, by
 przypominały widzenie nocne. Do późniejszej oceny wizualnej potrzebne są
 obrazy przy nowiu i pełni, w głębokiej nocy i zmierzchu, z pasmem wysoko i
 blisko horyzontu oraz po zmianie FOV.
+
+Poprzednie mnożniki `0.02` i `0.03` nadmiernie tłumiły ciemny materiał źródłowy
+przed filmowym mapowaniem tonalnym. Mediana luminancji tekstury to około `0.014`,
+a percentyl 90 to `0.062`. W Overview przy ekspozycji 1 poprzednia kalibracja
+dawała dla tych wartości około `0.3` i `1.5` poziomu na 8-bitowym ekranie sRGB.
+Nowa daje około `2.9` i `19.5`; są to obliczenia toru koloru, nie ocena obrazu
+w uruchomionej grze. Dzienna niewidoczność, wpływ Księżyca, horyzont i zasłanianie
+przez chmury pozostają częścią renderowania.
+
+`sky info` podaje teraz `milky_way_state`, widoczność przed ekstynkcją i chmurami,
+rozmiar tekstury oraz aktywność liniowego HDR. Ułatwia to odróżnienie braku
+rysowania nieba od dziennego wygaszenia lub zasłonięcia gotowego tła.
