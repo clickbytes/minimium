@@ -2,12 +2,11 @@ use crate::{
     client_commands::{
         execute, help_lines, parse_command, CommandContext, CommandResult, FrontendAction,
     },
-    connection_controller::{ConnectionController, ConnectionEvent},
-    connector::StartError,
     messages::ClientText as Text,
     options::ClientOptions,
     session::{SessionEvent, SessionState},
 };
+use minimium_client_runtime::{connector::StartError, ConnectionController, ConnectionEvent};
 use minimium_protocol::ServerMessage;
 use std::{
     error::Error,
@@ -20,13 +19,13 @@ const INPUT_QUEUE_CAPACITY: usize = 64;
 const ENVIRONMENT_STATUS_REFRESH: Duration = Duration::from_secs(5);
 
 pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
-    if options.sky_quality != crate::environment::quality::SkyQuality::Standard {
+    if options.sky_quality != minimium_renderer::quality::SkyQuality::Standard {
         println!("--sky-quality is available only in the desktop renderer");
     }
     let map_path = options.map_path.clone();
     let world_definition_path = options.world_definition_path.clone();
     let (map, world_fingerprints) = if let Some(path) = map_path.as_deref() {
-        let map = minimium_assets::load_map(path).map_err(|error| {
+        let map = minimium_asset_io::load_map(path).map_err(|error| {
             Text::MapLoadFailed {
                 path: path.display().to_string(),
                 detail: error.to_string(),
@@ -34,27 +33,29 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
             .to_string()
         })?;
         let instance =
-            minimium_core::world::WorldInstanceId::new(1).expect("legacy instance ID is nonzero");
+            minimium_world::world::WorldInstanceId::new(1).expect("legacy instance ID is nonzero");
         (
             map.clone(),
             std::collections::HashMap::from([(instance, map.fingerprint())]),
         )
     } else if let Some(path) = world_definition_path.as_deref() {
-        let definition = minimium_assets::load_world_definition(path).map_err(|error| {
+        let definition = minimium_asset_io::load_world_definition(path).map_err(|error| {
             Text::MapLoadFailed {
                 path: path.display().to_string(),
                 detail: error.to_string(),
             }
             .to_string()
         })?;
+        minimium_procgen::validate_world_manifest(definition.manifest())
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         let map = minimium_procgen::materialize_dungeon_map(definition.dungeon())
             .map_err(|error| Text::BundledMapInvalid(error).to_string())?;
-        let instance = minimium_core::world::WorldInstanceId::new(4)
+        let instance = minimium_world::world::WorldInstanceId::new(4)
             .expect("manual world instance ID is nonzero");
         let legacy_map = minimium_assets::parse_map(crate::SAMPLE_MAP)
             .map_err(|error| Text::BundledMapInvalid(error).to_string())?;
         let legacy_instance =
-            minimium_core::world::WorldInstanceId::new(3).expect("legacy instance ID is nonzero");
+            minimium_world::world::WorldInstanceId::new(3).expect("legacy instance ID is nonzero");
         (
             map.clone(),
             std::collections::HashMap::from([
@@ -63,7 +64,7 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
             ]),
         )
     } else {
-        let worlds = minimium_procgen::generate_demo_worlds()
+        let worlds = minimium_game_sample::generate_demo_worlds()
             .map_err(|error| Text::BundledMapInvalid(error).to_string())?;
         let mut fingerprints = std::collections::HashMap::new();
         for world in &worlds {
@@ -72,7 +73,7 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
         let legacy_map = minimium_assets::parse_map(crate::SAMPLE_MAP)
             .map_err(|error| Text::BundledMapInvalid(error).to_string())?;
         let legacy_instance =
-            minimium_core::world::WorldInstanceId::new(3).expect("legacy instance ID is nonzero");
+            minimium_world::world::WorldInstanceId::new(3).expect("legacy instance ID is nonzero");
         fingerprints.insert(legacy_instance, legacy_map.fingerprint());
         (worlds[0].map.clone(), fingerprints)
     };
@@ -193,6 +194,7 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
                         println!("{}", Text::CouldNotQueueCommand(error.into()))
                     }
                     CommandResult::Action(action) => match action {
+                        FrontendAction::Print(text) => println!("{text}"),
                         FrontendAction::Help => {
                             for line in help_lines() {
                                 println!("{line}");

@@ -52,8 +52,6 @@ pub enum ClientText {
         fps: f64,
         health: u16,
     },
-    LocalServerGuardCleanupFailed(String),
-    LocalServerCheckFailed(String),
     CouldNotQueueMovement(QueueProblem),
     FpsUnavailable,
     ConsoleHistoryHelp,
@@ -229,7 +227,9 @@ impl fmt::Display for ClientText {
             Self::CouldNotQueueMovement(problem) => {
                 write!(f, "could not queue movement: {problem}")
             }
+            Self::CommandParseError(ParseError::Usage(usage)) => write!(f, "Invalid arguments. Usage: {usage}"),
             Self::CommandParseError(error) => f.write_str(match error {
+                ParseError::Usage(usage) => usage,
                 ParseError::MissingChat => "say requires a message",
                 ParseError::InvalidLane => "thread count must be 1, 2, or auto",
                 ParseError::HostUsage => "usage: host local [--threads 1|2|auto]",
@@ -278,12 +278,6 @@ impl fmt::Display for ClientText {
                 f,
                 "Minimium | {fps:.1} FPS | {health} HP | WASD move, Space jump, left click fire, Esc release"
             ),
-            Self::LocalServerGuardCleanupFailed(error) => {
-                write!(f, "could not clean up previous local server: {error}")
-            }
-            Self::LocalServerCheckFailed(error) => {
-                write!(f, "could not check previous local server process: {error}")
-            }
             Self::FpsUnavailable => {
                 f.write_str("FPS display is unavailable in the terminal client")
             }

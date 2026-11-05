@@ -1,33 +1,20 @@
 //! Bounded cube meshes, worker publication and GPU transparency.
 mod cache;
-mod gpu;
-mod mesh;
-mod pipeline;
-mod render;
 mod runtime;
-mod targets;
-mod voxels;
 mod worker;
 
-pub(super) use gpu::CloudGpu;
+pub(super) use minimium_renderer::CloudGpu;
 pub(super) use runtime::WeatherState;
 
-use crate::environment::weather::CloudSnapshot;
-use bytemuck::{Pod, Zeroable};
 use glam::DVec3;
-use minimium_core::world::WorldManifest;
+use minimium_environment::weather::CloudSnapshot;
 use minimium_protocol::WorldContext;
-use std::time::Instant;
+use minimium_world::world::WorldManifest;
+use std::{sync::Arc, time::Instant};
 
-pub(super) const MAX_FACES: usize = 131_072;
+pub(super) const MAX_FACES: usize = minimium_renderer::cloud_face::MAX_CLOUD_FACES;
 
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct Face {
-    center: [f32; 4],
-    u: [f32; 4],
-    v: [f32; 4],
-}
+pub(super) use minimium_renderer::CloudFace as Face;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct Stamp {
@@ -46,6 +33,7 @@ struct Request {
     revision: u64,
     detail: u8,
     started: Instant,
+    geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
 }
 
 struct Publication {

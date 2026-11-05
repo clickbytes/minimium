@@ -1,0 +1,17 @@
+[package]
+name = "minimium-renderer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+glam = "0.30"
+bytemuck = { version = "1.25", features = ["derive"] }
+minimium-procgen = { path = "../procgen" }
+minimium-world = { path = "../world" }
+minimium-astronomy = { path = "../astronomy" }
+minimium-environment = { path = "../environment" }
+minimium-assets = { path = "../assets" }
+wgpu = "30"
+pollster = "0.4"
+half = "2"

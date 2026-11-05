@@ -1,5 +1,5 @@
 use super::*;
-use minimium_core::world::{
+use minimium_world::world::{
     CharacterGravity, GenerationRevision, GenerationSpec, PlanetEdge, PlanetFace, PlanetSectorKey,
     SectorKey, WorldSeed,
 };
@@ -142,12 +142,12 @@ fn dungeon_materialization_preserves_tiles_across_sector_boundaries() {
 
     for z in 0..40_u16 {
         for x in 0..48_u16 {
-            let key = minimium_core::world::DungeonSectorKey::new(
+            let key = minimium_world::world::DungeonSectorKey::new(
                 i32::from(x / 16),
                 0,
                 i32::from(z / 16),
             );
-            let sector = blueprint.materialize_sector(key).unwrap();
+            let sector = materialize_dungeon_sector(&blueprint, key).unwrap();
             assert_eq!(
                 sector.tile(x % 16, z % 16),
                 blueprint.tile(x, z),
@@ -156,15 +156,4 @@ fn dungeon_materialization_preserves_tiles_across_sector_boundaries() {
             assert_eq!(blueprint.tile(x, z), repeated.tile(x, z));
         }
     }
-}
-
-#[test]
-fn demo_worlds_are_distinct_and_portals_form_a_round_trip() {
-    let [planet, dungeon] = generate_demo_worlds().unwrap();
-    let outward = planet.portal.unwrap();
-    let inward = dungeon.portal.unwrap();
-    assert_ne!(planet.instance, dungeon.instance);
-    assert_eq!(outward.target_instance, dungeon.instance);
-    assert_eq!(inward.target_instance, planet.instance);
-    assert_eq!(inward.destination, outward.position);
 }

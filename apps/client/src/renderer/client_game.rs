@@ -1,6 +1,6 @@
 use super::GameplayView;
-use minimium_core::world::{WorldInstanceId, WorldManifest};
 use minimium_protocol::WorldContext;
+use minimium_world::world::{WorldInstanceId, WorldManifest};
 use std::{
     collections::HashMap,
     ops::{Deref, DerefMut},
@@ -14,10 +14,20 @@ pub(super) struct ClientGameState {
     pub(super) session_context: Option<WorldContext>,
 }
 
-pub(super) struct PredictedStep {
-    pub(super) input: minimium_core::world::CharacterInput,
-    pub(super) previous_state: minimium_core::world::CharacterState,
-    pub(super) previous_mm: Option<minimium_core::world::Position3Mm>,
+pub(super) use minimium_client_runtime::PredictedStep;
+
+impl Deref for GameplayView {
+    type Target = minimium_client_runtime::ClientPrediction;
+
+    fn deref(&self) -> &Self::Target {
+        &self.prediction
+    }
+}
+
+impl DerefMut for GameplayView {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.prediction
+    }
 }
 
 impl Deref for ClientGameState {
@@ -35,91 +45,81 @@ impl DerefMut for ClientGameState {
 }
 
 impl ClientGameState {
-    pub(super) fn accumulate_prediction_time(&mut self, delta_seconds: f32) {
-        self.gameplay.physics_accumulator += delta_seconds;
+    pub(super) fn view(&self) -> minimium_client_runtime::ClientView<'_> {
+        minimium_client_runtime::ClientView::new(
+            self.current_instance,
+            self.world_manifests.get(&self.current_instance).copied(),
+            self.character,
+            self.position_mm,
+            self.health,
+            &self.remote_positions_mm,
+            self.sectors_ready,
+        )
     }
 
-    /// Applies one fixed client prediction step, retaining rollback state for scene readiness.
+    pub(super) fn accumulate_prediction_time(&mut self, delta_seconds: f32) {
+        self.gameplay.prediction.accumulate_time(delta_seconds);
+    }
+
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn predict_next(
         &mut self,
         direction: [f32; 2],
+        vertical: f32,
+        movement: minimium_simulation::MovementSettings,
         jump_pending: bool,
         movement_enabled: bool,
         manifest: Option<WorldManifest>,
+        geography: Option<std::sync::Arc<dyn minimium_procgen::PreparedGeography>>,
     ) -> Option<PredictedStep> {
-        if self.gameplay.physics_accumulator < minimium_core::world::SIMULATION_STEP_SECONDS {
-            return None;
-        }
-        let mut input = minimium_core::world::CharacterInput {
-            direction: if movement_enabled {
-                direction
-            } else {
-                [0.0; 2]
-            },
-            jump: jump_pending && movement_enabled,
-        };
-        let previous_state = self.gameplay.character;
-        let previous_mm = self.gameplay.position_mm;
-        self.predict(input);
-        if manifest.is_some_and(|manifest| {
-            let position_mm = self.gameplay.position_mm.unwrap_or_else(|| {
-                minimium_core::world::Position3Mm(
-                    self.gameplay
-                        .character
-                        .position
-                        .map(|value| (f64::from(value) * 1000.0).round() as i64),
-                )
-            });
-            !minimium_procgen::can_traverse_surface(manifest, position_mm)
-        }) {
-            self.gameplay.character = previous_state;
-            self.gameplay.position_mm = previous_mm;
-            self.gameplay.character.velocity = [0.0; 3];
-            input = minimium_core::world::CharacterInput::default();
-        }
-        self.gameplay.physics_accumulator -= minimium_core::world::SIMULATION_STEP_SECONDS;
-        Some(PredictedStep {
-            input,
-            previous_state,
-            previous_mm,
-        })
+        let gameplay = &mut self.gameplay;
+        gameplay.prediction.predict_next(
+            &gameplay.collision_index,
+            &mut gameplay.collision_query,
+            direction,
+            vertical,
+            movement,
+            jump_pending,
+            movement_enabled,
+            manifest,
+            geography,
+        )
     }
+}
 
-    /// Advances one fixed simulation step using the active world's collision snapshot.
-    pub(super) fn predict(&mut self, input: minimium_core::world::CharacterInput) {
-        let Self {
-            gameplay:
-                super::GameplayView {
-                    collision_index,
-                    collision_query,
-                    character,
-                    position_mm,
-                    ..
-                },
-            ..
-        } = self;
-        collision_query.fill(
-            collision_index,
-            *character,
-            minimium_core::world::SIMULATION_STEP_SECONDS,
-        );
-        if let Some(position_mm) = position_mm {
-            minimium_core::world::step_character_mm(
-                character,
-                position_mm,
-                input,
-                collision_query.candidates(),
-                collision_query.surface_candidates(),
-                minimium_core::world::SIMULATION_STEP_SECONDS,
-            );
-        } else {
-            minimium_core::world::step_character(
-                character,
-                input,
-                collision_query.candidates(),
-                collision_query.surface_candidates(),
-                minimium_core::world::SIMULATION_STEP_SECONDS,
-            );
+impl GameplayView {
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn apply_snapshot(
+        &mut self,
+        server_time_ms: u64,
+        full_snapshot: bool,
+        self_position: [f32; 3],
+        self_position_mm: minimium_world::world::Position3Mm,
+        self_velocity: [f32; 3],
+        self_grounded: bool,
+        players: &minimium_protocol::RemotePlayers,
+        removed_players: &minimium_protocol::RemotePlayerIds,
+    ) -> bool {
+        if !self.reconciliation.apply_remote_snapshot(
+            server_time_ms,
+            full_snapshot,
+            players,
+            removed_players,
+        ) {
+            return false;
         }
+        let precise_position = self
+            .prediction
+            .position_mm
+            .is_some()
+            .then_some(self_position_mm);
+        self.prediction.reconcile_server(
+            self_position,
+            precise_position,
+            self_velocity,
+            self_grounded,
+        );
+        self.remote_geometry_dirty = true;
+        true
     }
 }

@@ -1,0 +1,17 @@
+[package]
+name = "minimium-asset-io"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+minimium-assets = { path = "../assets" }
+minimium-world = { path = "../world" }
+minimium-procgen = { path = "../procgen" }
+memmap2 = "0.9.12"
+ron = "0.12.3"
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"

@@ -1,14 +1,15 @@
 use super::Renderer;
-use crate::environment::quality::{SkyQuality, SkyQualityState};
+use minimium_renderer::quality::{SkyQuality, SkyQualityState};
+use minimium_renderer::ShadowSettings;
 
 impl Renderer {
     pub(super) fn set_sky_quality(&mut self, requested: SkyQuality) -> String {
-        let requested_settings = super::shadows::ShadowSettings::for_quality(requested);
+        let requested_settings = ShadowSettings::for_quality(requested);
         let mut fallback_reason = None;
         if let Err(error) = self.gpu.set_shadow_settings(requested_settings) {
             fallback_reason = Some(error);
             if requested == SkyQuality::Standard {
-                let low = super::shadows::ShadowSettings::for_quality(SkyQuality::Low);
+                let low = ShadowSettings::for_quality(SkyQuality::Low);
                 if let Err(low_error) = self.gpu.set_shadow_settings(low) {
                     fallback_reason = Some(low_error);
                 }

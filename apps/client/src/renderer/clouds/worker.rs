@@ -1,6 +1,70 @@
 use super::{cache::MeshCache, Publication, Request};
-use crate::environment::weather::{SeasonalProfile, WeatherModel};
+use glam::DVec3;
+use minimium_environment::weather::{SeasonalProfile, TerrainSampler, WeatherModel};
+use minimium_procgen::PlanetTerrain;
 use std::sync::{Arc, Condvar, Mutex};
+
+struct ClientTerrain {
+    terrain: PlanetTerrain,
+    radius_m: f64,
+    relief_m: f64,
+}
+
+impl TerrainSampler for ClientTerrain {
+    fn sample(&self, direction: DVec3) -> (f64, bool) {
+        let point = self
+            .terrain
+            .sample(minimium_environment::weather::surface_key(direction));
+        (point.height_mm as f64 / 1000.0 - self.radius_m, point.ocean)
+    }
+
+    fn contains_lake(&self, latitude_degrees: f64, longitude_degrees: f64) -> bool {
+        crate::environment::lakes::contains(latitude_degrees, longitude_degrees)
+    }
+
+    fn earth_elevation_upper_bound_m(&self, direction: DVec3, angle: f64) -> Option<f64> {
+        self.terrain
+            .earth_elevation_upper_bound_m(direction.to_array(), angle)
+            .ok()
+    }
+
+    fn relief_bound_m(&self) -> f64 {
+        self.relief_m
+    }
+}
+
+fn create_weather_model(
+    manifest: minimium_world::world::WorldManifest,
+    profile: SeasonalProfile,
+    geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
+) -> Option<WeatherModel<ClientTerrain>> {
+    let surface = minimium_procgen::planet_surface_for(manifest);
+    let mut terrain = PlanetTerrain::new(manifest.generation(), surface)?;
+    if let Some(definition) = manifest.planet() {
+        terrain = terrain.with_definition(definition);
+    }
+    if let Some(geography) = geography {
+        terrain = terrain.with_geography(geography);
+    } else if manifest.planet().is_some_and(|planet| planet.mode == 1) {
+        return None;
+    }
+    let radius_m = manifest
+        .planet()
+        .map_or(surface.radius_mm(), |planet| planet.radius_mm) as f64
+        / 1000.0;
+    let is_earth = manifest.planet().is_some_and(|planet| planet.mode == 1);
+    WeatherModel::new(
+        manifest,
+        profile,
+        radius_m,
+        is_earth,
+        ClientTerrain {
+            terrain,
+            radius_m,
+            relief_m: surface.relief_mm() as f64 / 1000.0,
+        },
+    )
+}
 
 #[derive(Default)]
 struct Mailbox {
@@ -21,7 +85,7 @@ impl CloudWorker {
         let thread = std::thread::Builder::new()
             .name("regional-cloud-mesh".into())
             .spawn(move || {
-                let mut model: Option<WeatherModel> = None;
+                let mut model: Option<WeatherModel<ClientTerrain>> = None;
                 let mut meshes = MeshCache::default();
                 let mut stamp = None;
                 loop {
@@ -45,8 +109,11 @@ impl CloudWorker {
                         .as_ref()
                         .is_none_or(|m| m.manifest != request.stamp.manifest)
                     {
-                        model =
-                            WeatherModel::new(request.stamp.manifest, SeasonalProfile::AnnualMean);
+                        model = create_weather_model(
+                            request.stamp.manifest,
+                            SeasonalProfile::AnnualMean,
+                            request.geography.clone(),
+                        );
                     }
                     let Some(model) = &mut model else {
                         continue;

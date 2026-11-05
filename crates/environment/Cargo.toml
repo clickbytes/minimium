@@ -1,0 +1,11 @@
+[package]
+name = "minimium-environment"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+minimium-core = { path = "../core" }
+minimium-commands = { path = "../commands" }
+minimium-world = { path = "../world" }
+glam = "0.30"

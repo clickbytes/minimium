@@ -1,6 +1,6 @@
 use std::f64::consts::TAU;
 
-use minimium_core::time::WorldTimeMs;
+use minimium_environment::time::WorldTimeMs;
 
 use crate::{
     ffi,
@@ -13,7 +13,7 @@ const CACHE_STEP_MS: i64 = 300_000;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct CacheKey {
-    clock_revision: minimium_core::time::ClockRevision,
+    clock_revision: minimium_environment::time::ClockRevision,
     world_context: AstronomyContextKey,
     observer_model_revision: u32,
 }

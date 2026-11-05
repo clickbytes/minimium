@@ -85,7 +85,7 @@ pub(super) fn draw(
                 x: 22.0,
                 y: context.height - 66.0 - (row as f32 * 20.0),
                 text: hint,
-                color: [0.62, 0.78, 0.88],
+                color: [0.45, 0.53, 0.60],
                 max_chars: ((context.width - 44.0) / GLYPH_ADVANCE) as usize,
                 scale: 1.0,
             },

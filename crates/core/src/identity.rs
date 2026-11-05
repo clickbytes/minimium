@@ -1,6 +1,7 @@
 use std::io;
 
 pub const PLAYER_PROFILE_ID_BYTES: usize = 16;
+pub const MAX_PLAYER_NAME_BYTES: usize = 24;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct PlayerProfileId([u8; PLAYER_PROFILE_ID_BYTES]);

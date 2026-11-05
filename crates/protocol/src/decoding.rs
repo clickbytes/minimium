@@ -56,6 +56,9 @@ pub fn decode_client(input: &[u8]) -> Result<Option<(ClientMessage, usize)>, Pro
                     }
                     super::models::ClientWorldInput::MapTeleport { direction }
                 }
+                7 => super::models::ClientWorldInput::Motion(super::movement_codec::read(
+                    &mut reader,
+                )?),
                 _ => return Err(ProtocolError::InvalidPayload),
             };
             ClientMessage::WorldInput { context, input }
@@ -284,7 +287,7 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
                 echoed_client_send_monotonic_ms,
                 server_receive_monotonic_ms,
                 server_send_monotonic_ms,
-                session_nonce: minimium_core::time::SessionNonce::new(reader.fixed()?),
+                session_nonce: minimium_environment::time::SessionNonce::new(reader.fixed()?),
             }
         }
         ServerKind::TransitionCancelled => ServerMessage::TransitionCancelled {

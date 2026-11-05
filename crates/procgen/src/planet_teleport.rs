@@ -1,5 +1,6 @@
-use crate::{generate_planet_sector, planet_sector_count};
-use minimium_core::world::{PlanetSectorKey, WorldManifest};
+use crate::{generate_planet_sector_with_geography, planet_sector_count, PreparedGeography};
+use minimium_world::world::{PlanetSectorKey, WorldManifest};
+use std::sync::Arc;
 
 /// Intersect a globe click with the same triangles used for collision.
 /// The sampled elevation alone can sit below a triangle on steep slopes.
@@ -7,8 +8,16 @@ pub fn planet_collision_position_at_direction(
     manifest: WorldManifest,
     direction: [f32; 3],
 ) -> Option<[i64; 3]> {
+    planet_collision_position_at_direction_with_geography(manifest, direction, None)
+}
+
+pub fn planet_collision_position_at_direction_with_geography(
+    manifest: WorldManifest,
+    direction: [f32; 3],
+    geography: Option<Arc<dyn PreparedGeography>>,
+) -> Option<[i64; 3]> {
     let key = PlanetSectorKey::from_direction_with_count(direction, planet_sector_count(manifest));
-    let geometry = generate_planet_sector(manifest, key);
+    let geometry = generate_planet_sector_with_geography(manifest, key, geography);
     let d = direction.map(f64::from);
     for triangle in &geometry.triangles {
         let vertices = triangle.precise_vertices?;

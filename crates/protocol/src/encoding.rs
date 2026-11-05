@@ -14,6 +14,7 @@ pub fn encode_client(message: &ClientMessage) -> Result<Vec<u8>, ProtocolError> 
             payload.extend_from_slice(profile_id.as_bytes());
             ClientKind::Identify
         }
+        ClientMessage::Motion(_) => return Err(ProtocolError::InvalidPayload),
         ClientMessage::Ping => ClientKind::Ping,
         ClientMessage::SetName(name) => {
             write_name(name, &mut payload)?;
@@ -36,6 +37,10 @@ pub fn encode_client(message: &ClientMessage) -> Result<Vec<u8>, ProtocolError> 
         ClientMessage::WorldInput { context, input } => {
             write_world_context(*context, &mut payload);
             match input {
+                ClientWorldInput::Motion(input) => {
+                    payload.push(7);
+                    super::movement_codec::write(*input, &mut payload)?;
+                }
                 ClientWorldInput::SetName(name) => {
                     payload.push(1);
                     write_name(name, &mut payload)?;
@@ -334,11 +339,11 @@ fn write_world_context(context: super::world_context::WorldContext, output: &mut
     output.extend_from_slice(&context.membership_epoch().get().to_le_bytes());
 }
 
-fn write_world_manifest(manifest: minimium_core::world::WorldManifest, output: &mut Vec<u8>) {
+fn write_world_manifest(manifest: minimium_world::world::WorldManifest, output: &mut Vec<u8>) {
     output.extend_from_slice(&manifest.definition_id().get().to_le_bytes());
     output.push(match manifest.topology() {
-        minimium_core::world::WorldTopology::Planet => 0,
-        minimium_core::world::WorldTopology::Dungeon => 1,
+        minimium_world::world::WorldTopology::Planet => 0,
+        minimium_world::world::WorldTopology::Dungeon => 1,
     });
     let generation = manifest.generation();
     output.extend_from_slice(&generation.seed().get().to_le_bytes());
@@ -381,7 +386,10 @@ pub(crate) fn write_vector(vector: [f32; 3], output: &mut Vec<u8>) -> Result<(),
     Ok(())
 }
 
-pub(crate) fn write_position_mm(position: minimium_core::world::Position3Mm, output: &mut Vec<u8>) {
+pub(crate) fn write_position_mm(
+    position: minimium_world::world::Position3Mm,
+    output: &mut Vec<u8>,
+) {
     for coordinate in position.0 {
         output.extend_from_slice(&coordinate.to_le_bytes());
     }

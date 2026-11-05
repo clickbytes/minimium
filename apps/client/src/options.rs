@@ -1,34 +1,8 @@
-use crate::environment::quality::SkyQuality;
+pub(crate) use minimium_client_runtime::ThreadLane;
+use minimium_renderer::quality::SkyQuality;
 use std::path::PathBuf;
 
 const DEFAULT_LOCAL_DATA_DIR: &str = ".minimium-local";
-
-/// Server worker lane selection accepted by the client.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ThreadLane {
-    One,
-    Two,
-    Auto,
-}
-
-impl ThreadLane {
-    pub fn parse(value: &str) -> Result<Self, String> {
-        match value {
-            "1" => Ok(Self::One),
-            "2" => Ok(Self::Two),
-            "auto" => Ok(Self::Auto),
-            _ => Err("--threads must be 1, 2, or auto".to_owned()),
-        }
-    }
-
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::One => "1",
-            Self::Two => "2",
-            Self::Auto => "auto",
-        }
-    }
-}
 
 /// Command-line options shared by the desktop and text clients.
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -1,6 +1,6 @@
 //! Bounded, I/O-free sector request, ticket, readiness and cache lifecycle.
 
-use minimium_core::world::{
+use minimium_world::world::{
     GenerationRevision, SectorKey, SectorRevision, WorldContentRevision, WorldInstanceId,
 };
 use std::{

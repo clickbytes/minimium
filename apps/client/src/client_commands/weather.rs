@@ -1,5 +1,5 @@
 use super::{ClientCommand, CommandRegistry, CommandSpec, ParseError};
-use crate::environment::weather::CloudDebug;
+use minimium_environment::weather::CloudDebug;
 
 const COMMANDS: &[CommandSpec] = &[
     CommandSpec {

@@ -1,6 +1,6 @@
 use crate::terrain_color::{mostly_ocean, terrain_color};
 use crate::{DungeonBlueprint, DungeonTile, PlanetLandmarks, PlanetTerrain};
-use minimium_core::world::{
+use minimium_world::world::{
     MapBox, MapTriangle, PlanetFace, WorldMap, PLANET_SAMPLE_COORDINATE_SCALE,
 };
 
@@ -91,11 +91,11 @@ pub fn materialize_planet_map(
         solid: false,
     };
     WorldMap::from_parts(spawn, vec![marker], Vec::new())
-        .map(|map| map.with_spawn_position_mm(minimium_core::world::Position3Mm(spawn_mm)))
+        .map(|map| map.with_spawn_position_mm(minimium_world::world::Position3Mm(spawn_mm)))
 }
 
 /// The v1 landing mesh is retained solely for reading its saved fingerprint.
-pub(crate) fn materialize_legacy_planet_map(
+pub fn materialize_legacy_planet_map(
     terrain: PlanetTerrain,
     landmarks: PlanetLandmarks,
 ) -> Result<WorldMap, String> {

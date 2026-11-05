@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use minimium_core::time::WorldTimeMs;
+use minimium_environment::time::WorldTimeMs;
 
 use crate::{
     frames::normalize,

@@ -1,0 +1,28 @@
+[package]
+name = "minimium-server-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+minimium-assets = { path = "../assets" }
+minimium-asset-io = { path = "../asset-io" }
+minimium-platform = { path = "../platform" }
+minimium-core = { path = "../core" }
+minimium-environment = { path = "../environment" }
+minimium-commands = { path = "../commands" }
+minimium-world = { path = "../world" }
+minimium-simulation = { path = "../simulation" }
+minimium-storage = { path = "../storage" }
+minimium-transport = { path = "../transport" }
+minimium-protocol = { path = "../protocol" }
+minimium-procgen = { path = "../procgen" }
+minimium-sectors = { path = "../sectors" }
+minimium-telemetry = { path = "../telemetry" }
+minimium-game-sample = { path = "../../games/sample" }
+ron = "0.12.3"
+serde = { version = "1", features = ["derive"] }
+
+[features]
+default = []
+allocation-metrics = ["minimium-telemetry/allocation-metrics"]

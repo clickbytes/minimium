@@ -1,4 +1,4 @@
-use minimium_core::time::{WorldTimeMs, MAX_WORLD_TIME_MS_EXCLUSIVE, MIN_WORLD_TIME_MS};
+use minimium_environment::time::{WorldTimeMs, MAX_WORLD_TIME_MS_EXCLUSIVE, MIN_WORLD_TIME_MS};
 
 use crate::model::SkyError;
 

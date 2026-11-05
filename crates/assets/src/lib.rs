@@ -4,9 +4,12 @@ mod sky_catalog;
 #[cfg(test)]
 mod tests;
 mod world_definition;
-pub use map::{load_map, parse_map};
+pub use map::{
+    parse_map, parse_map_with_mesh_loader, MAX_MAP_BYTES, MAX_MAP_TOTAL_MESH_BYTES, MAX_MESH_BYTES,
+};
+pub use obj::{parse_obj_triangles, ObjMeshOptions};
 pub use sky_catalog::{
     embedded_sky_catalog, embedded_sky_catalog_identity, embedded_star_labels, CatalogError,
     InvalidRecordReason, SkyCatalogIdentity, StarCatalogue, StarRecord,
 };
-pub use world_definition::{load_world_definition, parse_world_definition, WorldDefinition};
+pub use world_definition::{parse_world_definition, WorldDefinition, MAX_DEFINITION_BYTES};

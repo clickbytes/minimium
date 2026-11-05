@@ -1,4 +1,4 @@
-use minimium_core::world::{MembershipEpoch, WorldContentRevision, WorldInstanceId};
+use minimium_world::world::{MembershipEpoch, WorldContentRevision, WorldInstanceId};
 
 /// Identifies the authoritative membership scope for every world input and snapshot.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]

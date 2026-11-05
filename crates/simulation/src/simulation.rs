@@ -1,0 +1,42 @@
+const VISIBILITY_RADIUS: f32 = 72.0;
+const MAX_STEP_UP: f32 = 0.55;
+const PLAYER_MOVE_SPEED: f32 = 5.0;
+const PLAYER_JUMP_SPEED: f32 = 5.5;
+pub const PLAYER_MAX_HEALTH: u16 = 100;
+const MAX_PLAYER_NAME_CHARS: usize = 24;
+const MAX_RAY_CELL_CROSSINGS: usize = 32;
+const GRAVITY: f32 = 9.81;
+const MAX_FALL_SPEED: f32 = 40.0;
+const MAX_COLLIDER_CELLS: u64 = 64;
+const MAX_QUERY_CELLS: u64 = 512;
+const PARALLEL_SIMULATION_MIN_PLAYERS: usize = 32;
+const PLAYERS_PER_SIMULATION_BATCH: usize = 16;
+pub const SIMULATION_STEP_MILLISECONDS: u64 = 50;
+pub const SIMULATION_STEP_SECONDS: f32 = SIMULATION_STEP_MILLISECONDS as f32 / 1000.0;
+
+pub use minimium_world::world::character_frame;
+pub use minimium_world::world::CharacterGravity;
+pub use minimium_world::world::{Aabb, COLLISION_EPSILON, PLAYER_HEIGHT, PLAYER_RADIUS};
+
+mod collision_index;
+mod collision_queries;
+mod combat;
+mod movement;
+mod precise_step;
+mod raycast;
+mod rules;
+mod snapshot;
+mod spatial;
+mod step_batch;
+mod world_state;
+
+pub use collision_index::CollisionIndex;
+pub use collision_queries::{CollisionQuery, CollisionQueryStats};
+pub use combat::CombatSettings;
+pub use movement::{step_character, MovementSettings, MOVEMENT_LIMIT};
+pub use precise_step::step_character_mm;
+pub use raycast::SkyCoverQuery;
+pub use rules::{CharacterInput, CharacterState, Player, ShotOutcome};
+pub use snapshot::WorldSnapshot;
+pub use step_batch::step_batch;
+pub use world_state::{SimulationBatch, World};

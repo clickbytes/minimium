@@ -1,5 +1,5 @@
 use messages::ClientText as Text;
-pub(crate) const SAMPLE_MAP: &str = include_str!("../../../games/sample/maps/demo.map");
+pub(crate) const SAMPLE_MAP: &str = minimium_game_sample::SAMPLE_MAP;
 use std::{
     io::{self, BufRead},
     sync::mpsc,
@@ -121,13 +121,10 @@ fn main() {
 mod console;
 mod renderer;
 
-mod bootstrap;
 mod client_commands;
-mod connection_controller;
-mod connector;
 mod environment;
 mod messages;
 mod options;
-mod session;
+pub(crate) use minimium_client_runtime as session;
 mod stats;
 mod terminal_client;

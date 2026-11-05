@@ -1,5 +1,5 @@
 use crate::philox::philox4x32_10;
-use minimium_core::world::{GenerationSpec, ObjectOriginId, SectorKey};
+use minimium_world::world::{GenerationSpec, ObjectOriginId, SectorKey};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(u8)]

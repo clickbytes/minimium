@@ -1,19 +1,17 @@
 use super::*;
-use minimium_core::{
-    environment::{
-        AstronomyModelRevision, CatalogueId, CatalogueSha256, EnvironmentDescriptor,
-        EnvironmentProfile,
-    },
-    ids::PlayerId,
+use minimium_core::ids::PlayerId;
+use minimium_environment::{
     time::{
         ClockId, ClockMode, ClockRevision, ClockSample, MonotonicMs, OfflinePolicy, SessionNonce,
         TimeScalePpm, WorldTimeMs,
     },
-    world::{
-        GenerationRevision, GenerationSpec, GeneratorDigest, MembershipEpoch, TransitionId,
-        WorldContentRevision, WorldDefinitionId, WorldInstanceId, WorldManifest, WorldSeed,
-        WorldTopology,
-    },
+    AstronomyModelRevision, CatalogueId, CatalogueSha256, EnvironmentDescriptor,
+    EnvironmentProfile,
+};
+use minimium_world::world::{
+    GenerationRevision, GenerationSpec, GeneratorDigest, MembershipEpoch, TransitionId,
+    WorldContentRevision, WorldDefinitionId, WorldInstanceId, WorldManifest, WorldSeed,
+    WorldTopology,
 };
 
 fn environment_fixture(
@@ -74,7 +72,7 @@ fn welcome_and_transition_frames_round_trip_full_world_context() {
         map_fingerprint: 0x1234,
         health: 77,
         position: [1.25, 8.5, -3.0],
-        position_mm: minimium_core::world::Position3Mm([1250, 8500, -3000]),
+        position_mm: minimium_world::world::Position3Mm([1250, 8500, -3000]),
         context: context(1, 9),
         manifest: manifest(WorldTopology::Planet),
         transition_id: None,
@@ -93,7 +91,7 @@ fn welcome_and_transition_frames_round_trip_full_world_context() {
         target_context: context(2, 10),
         map_fingerprint: 0x9876,
         destination: [3.0, 0.0, 5.0],
-        destination_mm: minimium_core::world::Position3Mm([3000, 0, 5000]),
+        destination_mm: minimium_world::world::Position3Mm([3000, 0, 5000]),
         manifest: manifest(WorldTopology::Dungeon),
         clock_sample,
         environment,

@@ -1,8 +1,4 @@
-use minimium_platform::{
-    admin_client,
-    commands::{control_usage_commands, ServerCommand},
-    endpoint::ServerEndpoint,
-};
+use minimium_platform::{admin_client, endpoint::ServerEndpoint};
 use std::{env, path::PathBuf};
 
 fn main() {
@@ -16,8 +12,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut args: Vec<String> = env::args().skip(1).collect();
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         println!(
-            "minimiumctl [--data-dir PATH] <{}>",
-            control_usage_commands()
+            "minimiumctl [--data-dir PATH] <help|status|players list|metrics show|world save|time ...|stop>"
         );
         return Ok(());
     }
@@ -30,9 +25,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         args.remove(index);
     }
     let command = args.join(" ");
-    let parsed = ServerCommand::parse(&command)?;
     let endpoint = ServerEndpoint::read(&data_dir)?;
-    if parsed.is_stop() {
+    if command.trim() == "stop" {
         admin_client::stop_and_wait(&data_dir, &endpoint)?;
         println!("server stopped cleanly");
     } else {

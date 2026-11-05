@@ -1,6 +1,7 @@
 use crate::{sector_neighborhood::DUNGEON_SECTOR_EDGE, AddressedRandom, GenerationChannel};
-use minimium_core::world::{DungeonSectorKey, GenerationSpec, ObjectOriginId, SectorKey};
-use std::collections::HashSet;
+use minimium_world::world::{
+    DungeonBlueprint, DungeonRoom, DungeonSectorKey, DungeonTile, GenerationSpec, SectorKey,
+};
 
 const MAX_DUNGEON_DIMENSION: u16 = 128;
 const MAX_MINIMUM_ROOM_EDGE: u16 = 40;
@@ -45,26 +46,7 @@ impl DungeonSpec {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct DungeonRoom {
-    pub origin_id: ObjectOriginId,
-    pub x: u16,
-    pub y: u16,
-    pub width: u16,
-    pub height: u16,
-    pub center: [u16; 2],
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u8)]
-pub enum DungeonTile {
-    Void = 0,
-    Room = 1,
-    Corridor = 2,
-}
-
-#[derive(Clone, Debug)]
-pub struct DungeonBlueprint {
+struct DungeonBuilder {
     width: u16,
     height: u16,
     tiles: Vec<DungeonTile>,
@@ -94,7 +76,7 @@ struct Point {
 
 /// Builds a bounded BSP floor plan and carves one corridor across every split.
 pub fn generate_dungeon(generation: GenerationSpec, spec: DungeonSpec) -> DungeonBlueprint {
-    let mut blueprint = DungeonBlueprint {
+    let mut builder = DungeonBuilder {
         width: spec.width,
         height: spec.height,
         tiles: vec![DungeonTile::Void; usize::from(spec.width) * usize::from(spec.height)],
@@ -113,157 +95,38 @@ pub fn generate_dungeon(generation: GenerationSpec, spec: DungeonSpec) -> Dungeo
         0,
         0,
         spec.maximum_rooms,
-        &mut blueprint,
+        &mut builder,
     );
-    blueprint
+    DungeonBlueprint::from_parts(builder.width, builder.height, builder.tiles, builder.rooms)
+        .expect("procedural dungeon builder produces a valid connected layout")
 }
 
-impl DungeonBlueprint {
-    /// Validates a hand-authored floor plan into the same materialization type.
-    pub fn from_parts(
-        width: u16,
-        height: u16,
-        tiles: Vec<DungeonTile>,
-        rooms: Vec<DungeonRoom>,
-    ) -> Option<Self> {
-        if width < 3
-            || height < 3
-            || width > MAX_DUNGEON_DIMENSION
-            || height > MAX_DUNGEON_DIMENSION
-            || tiles.len() != usize::from(width) * usize::from(height)
-            || !(3..=usize::from(MAX_DUNGEON_ROOMS)).contains(&rooms.len())
-        {
-            return None;
-        }
-        let blueprint = Self {
-            width,
-            height,
-            tiles,
-            rooms,
-        };
-        if blueprint.rooms.iter().any(|room| {
-            room.width < 3
-                || room.height < 3
-                || u32::from(room.x) + u32::from(room.width) > u32::from(width)
-                || u32::from(room.y) + u32::from(room.height) > u32::from(height)
-                || room.center != [room.x + room.width / 2, room.y + room.height / 2]
-                || blueprint.tile(room.center[0], room.center[1]) != Some(DungeonTile::Room)
-                || (room.y..room.y + room.height).any(|y| {
-                    (room.x..room.x + room.width)
-                        .any(|x| blueprint.tile(x, y) != Some(DungeonTile::Room))
-                })
-        }) {
-            return None;
-        }
-        let mut origin_ids = HashSet::with_capacity(blueprint.rooms.len());
-        if blueprint
-            .rooms
-            .iter()
-            .any(|room| !origin_ids.insert(room.origin_id))
-            || blueprint.rooms.iter().enumerate().any(|(index, room)| {
-                blueprint.rooms[index + 1..].iter().any(|other| {
-                    u32::from(room.x) < u32::from(other.x) + u32::from(other.width)
-                        && u32::from(other.x) < u32::from(room.x) + u32::from(room.width)
-                        && u32::from(room.y) < u32::from(other.y) + u32::from(other.height)
-                        && u32::from(other.y) < u32::from(room.y) + u32::from(room.height)
-                })
-            })
-        {
-            return None;
-        }
-        if !blueprint.walkable_connected() {
-            return None;
-        }
-        Some(blueprint)
-    }
-
-    pub const fn dimensions(&self) -> (u16, u16) {
-        (self.width, self.height)
-    }
-
-    pub fn rooms(&self) -> &[DungeonRoom] {
-        &self.rooms
-    }
-
-    pub fn tile(&self, x: u16, y: u16) -> Option<DungeonTile> {
-        if x >= self.width || y >= self.height {
-            return None;
-        }
-        Some(self.tiles[usize::from(y) * usize::from(self.width) + usize::from(x)])
-    }
-
-    pub fn spawn(&self) -> [u16; 2] {
-        self.rooms[0].center
-    }
-
-    pub fn entrance(&self) -> [u16; 2] {
-        self.rooms[self.rooms.len() - 1].center
-    }
-
-    fn walkable_connected(&self) -> bool {
-        let Some(start) = self
-            .tiles
-            .iter()
-            .position(|tile| *tile != DungeonTile::Void)
-        else {
-            return false;
-        };
-        let mut visited = vec![false; self.tiles.len()];
-        let mut pending = vec![start];
-        visited[start] = true;
-        while let Some(index) = pending.pop() {
-            let x = index % usize::from(self.width);
-            let y = index / usize::from(self.width);
-            let mut neighbors = [None; 4];
-            if x > 0 {
-                neighbors[0] = Some(index - 1);
-            }
-            if x + 1 < usize::from(self.width) {
-                neighbors[1] = Some(index + 1);
-            }
-            if y > 0 {
-                neighbors[2] = Some(index - usize::from(self.width));
-            }
-            if y + 1 < usize::from(self.height) {
-                neighbors[3] = Some(index + usize::from(self.width));
-            }
-            for neighbor in neighbors.into_iter().flatten() {
-                if !visited[neighbor] && self.tiles[neighbor] != DungeonTile::Void {
-                    visited[neighbor] = true;
-                    pending.push(neighbor);
-                }
-            }
-        }
-        self.tiles
-            .iter()
-            .zip(visited)
-            .all(|(tile, seen)| *tile == DungeonTile::Void || seen)
-    }
-
-    /// Copies the plan into one fixed-size local 3D sector. This floor-plan
-    /// revision places walkable cells at world y=0; other vertical sectors are empty.
-    pub fn materialize_sector(&self, key: DungeonSectorKey) -> Option<DungeonSector> {
-        let edge = DUNGEON_SECTOR_EDGE;
-        let mut tiles = vec![DungeonTile::Void; usize::from(edge) * usize::from(edge)];
-        let (sector_x, sector_y, sector_z) = key.coordinates();
-        if sector_y == 0 {
-            for local_z in 0..edge {
-                for local_x in 0..edge {
-                    let global_x = i64::from(sector_x) * i64::from(edge) + i64::from(local_x);
-                    let global_z = i64::from(sector_z) * i64::from(edge) + i64::from(local_z);
-                    if global_x >= 0
-                        && global_z >= 0
-                        && global_x < i64::from(self.width)
-                        && global_z < i64::from(self.height)
-                    {
+pub fn materialize_dungeon_sector(
+    blueprint: &DungeonBlueprint,
+    key: DungeonSectorKey,
+) -> Option<DungeonSector> {
+    let edge = DUNGEON_SECTOR_EDGE;
+    let mut tiles = vec![DungeonTile::Void; usize::from(edge) * usize::from(edge)];
+    let (sector_x, sector_y, sector_z) = key.coordinates();
+    if sector_y == 0 {
+        for local_z in 0..edge {
+            for local_x in 0..edge {
+                let global_x = i64::from(sector_x) * i64::from(edge) + i64::from(local_x);
+                let global_z = i64::from(sector_z) * i64::from(edge) + i64::from(local_z);
+                if global_x >= 0
+                    && global_z >= 0
+                    && global_x < i64::from(blueprint.dimensions().0)
+                    && global_z < i64::from(blueprint.dimensions().1)
+                {
+                    if let Some(tile) = blueprint.tile(global_x as u16, global_z as u16) {
                         let index = usize::from(local_z) * usize::from(edge) + usize::from(local_x);
-                        tiles[index] = self.tile(global_x as u16, global_z as u16)?;
+                        tiles[index] = tile;
                     }
                 }
             }
         }
-        Some(DungeonSector { key, edge, tiles })
     }
+    Some(DungeonSector { key, edge, tiles })
 }
 
 impl DungeonSector {
@@ -282,7 +145,7 @@ fn carve_partition(
     depth: u8,
     path: u64,
     budget: u8,
-    blueprint: &mut DungeonBlueprint,
+    blueprint: &mut DungeonBuilder,
 ) -> Point {
     let key = node_key(depth, path);
     let random = AddressedRandom::new(generation, GenerationChannel::DungeonLayout, key);
@@ -382,7 +245,7 @@ fn carve_room(
     random: AddressedRandom,
     bounds: Rect,
     minimum_edge: u16,
-    blueprint: &mut DungeonBlueprint,
+    blueprint: &mut DungeonBuilder,
 ) -> Point {
     let available_width = bounds.width - 2;
     let available_height = bounds.height - 2;
@@ -416,7 +279,7 @@ fn carve_room(
     center
 }
 
-fn carve_corridor(blueprint: &mut DungeonBlueprint, from: Point, to: Point, width: u8) {
+fn carve_corridor(blueprint: &mut DungeonBuilder, from: Point, to: Point, width: u8) {
     let radius = i32::from(width) / 2;
     let horizontal_start = from.x.min(to.x);
     let horizontal_end = from.x.max(to.x);
@@ -440,7 +303,7 @@ fn carve_corridor(blueprint: &mut DungeonBlueprint, from: Point, to: Point, widt
     }
 }
 
-fn set_tile(blueprint: &mut DungeonBlueprint, x: u16, y: u16, tile: DungeonTile) {
+fn set_tile(blueprint: &mut DungeonBuilder, x: u16, y: u16, tile: DungeonTile) {
     if x >= blueprint.width || y >= blueprint.height {
         return;
     }

@@ -6,5 +6,5 @@ license.workspace = true
 
 [dependencies]
 minimium-core = { path = "../core" }
-minimium-procgen = { path = "../procgen" }
+minimium-world = { path = "../world" }
 sha2 = "0.10"

@@ -7,6 +7,8 @@ build = "build.rs"
 
 [dependencies]
 minimium-core = { path = "../core" }
+minimium-environment = { path = "../environment" }
+minimium-world = { path = "../world" }
 
 [build-dependencies]
 cc = "1.10"

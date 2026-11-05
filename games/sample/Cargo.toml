@@ -1,0 +1,17 @@
+[package]
+name = "minimium-game-sample"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+minimium-platform = { path = "../../crates/platform" }
+minimium-world = { path = "../../crates/world" }
+minimium-procgen = { path = "../../crates/procgen" }
+minimium-environment = { path = "../../crates/environment" }
+minimium-simulation = { path = "../../crates/simulation" }
+ron = "0.12.3"
+serde = { version = "1", features = ["derive"] }

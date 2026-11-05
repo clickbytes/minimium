@@ -4,13 +4,13 @@ use super::{
     RenderViewFrame, SkyFrameInput, StarFrameStamp,
 };
 use minimium_astronomy::{SkyInvalidation, SkySampleContext};
-use minimium_core::{
-    environment::{AstronomyModelRevision, CatalogueId},
-    sky::{resolve_sky_model, SkyModel, DEFAULT_OBSERVER_EYE_HEIGHT_MM},
+use minimium_environment::sky::{resolve_sky_model, SkyModel, DEFAULT_OBSERVER_EYE_HEIGHT_MM};
+use minimium_environment::{
     time::{ClockRevision, WorldTimeMs},
-    world::Position3Mm,
+    {AstronomyModelRevision, CatalogueId},
 };
 use minimium_protocol::WorldContext;
+use minimium_world::world::Position3Mm;
 
 impl Renderer {
     pub(in crate::renderer) fn update_render_environment(
@@ -110,6 +110,9 @@ impl Renderer {
                 utc_ms,
                 manifest,
                 render_view,
+                self.connection
+                    .session()
+                    .and_then(|session| session.prepared_geography()),
             ),
             Err(error) => {
                 self.publish_unavailable(render_view, error.to_string());
@@ -121,11 +124,12 @@ impl Renderer {
     fn build_planet_frame(
         &mut self,
         context: WorldContext,
-        descriptor: minimium_core::environment::EnvironmentDescriptor,
+        descriptor: minimium_environment::EnvironmentDescriptor,
         revision: ClockRevision,
         utc_ms: WorldTimeMs,
-        manifest: minimium_core::world::WorldManifest,
+        manifest: minimium_world::world::WorldManifest,
         render_view: RenderViewFrame,
+        geography: Option<std::sync::Arc<dyn minimium_procgen::PreparedGeography>>,
     ) -> Option<PreparedStarUpload> {
         let feet_position_mm = self.game.position_mm.or_else(|| {
             (self.environment_frame.quality
@@ -139,6 +143,7 @@ impl Renderer {
             descriptor,
             feet_position_mm,
             DEFAULT_OBSERVER_EYE_HEIGHT_MM,
+            geography.as_deref(),
         ) {
             Ok(Some(observer)) => observer,
             Ok(None) => {
@@ -197,7 +202,7 @@ impl Renderer {
             utc_day: utc_ms.get().div_euclid(86_400_000),
             epoch_revision: corrected.star_epoch_revision,
         };
-        let star_upload = if self.gpu.stars.uploaded_stamp() != Some(star_stamp) {
+        let star_upload = if self.gpu.uploaded_star_stamp != Some(star_stamp) {
             let instances = match catalogue.prepare_gpu_instances(&corrected) {
                 Ok(instances) => instances,
                 Err(error) => {
@@ -214,9 +219,9 @@ impl Renderer {
         };
         let demo_catalogue = self
             .demo_universe_enabled
-            .then(super::catalogue::demo_catalogue);
+            .then(minimium_game_sample::demo_universe_catalog);
         let catalog_observer =
-            super::catalogue::observer_epoch_position(&sky, observer.game_eye_world_m);
+            minimium_renderer::catalogue::observer_epoch_position(&sky, observer.game_eye_world_m);
         let time_seconds = utc_ms.get() as f64 / 1000.0;
         let catalog_input =
             demo_catalogue.map(|demo| (&demo.catalog, demo.system, catalog_observer, time_seconds));
@@ -247,7 +252,7 @@ impl Renderer {
 
     fn descriptor_matches_catalogue(
         &self,
-        descriptor: minimium_core::environment::EnvironmentDescriptor,
+        descriptor: minimium_environment::EnvironmentDescriptor,
     ) -> bool {
         let Some(catalogue) = self.sky_catalogue.as_ref() else {
             return false;

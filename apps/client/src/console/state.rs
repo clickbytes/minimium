@@ -206,6 +206,14 @@ impl Console {
         &self.vertices
     }
 
+    pub fn take_vertices(&mut self) -> Vec<UiVertex> {
+        std::mem::take(&mut self.vertices)
+    }
+
+    pub fn restore_vertices(&mut self, vertices: Vec<UiVertex>) {
+        self.vertices = vertices;
+    }
+
     fn append_chat(&mut self, context: DrawContext) {
         let now = Instant::now();
         while self

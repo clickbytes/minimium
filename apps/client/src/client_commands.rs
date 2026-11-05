@@ -5,19 +5,26 @@
 //! queues protocol messages directly and reports UI/process work as a typed
 //! [`FrontendAction`], leaving each front end in control of its own event loop.
 
-use crate::{environment::quality::SkyQuality, options::ThreadLane, session::QueueError};
+use crate::{options::ThreadLane, session::QueueError};
+use minimium_commands::{
+    CommandRegistry as SharedCommandRegistry, CommandSpec as SharedCommandSpec,
+};
 use minimium_protocol::ClientMessage;
+use minimium_renderer::quality::SkyQuality;
 use std::sync::OnceLock;
 
 mod connection;
 mod environment;
 mod gameplay;
 mod interface;
+mod movement;
 mod weather;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum ClientCommand {
+    Movement(movement::Setting),
     Help,
+    Print(String),
     HostLocal(Option<ThreadLane>),
     Connect(String),
     Disconnect,
@@ -43,68 +50,12 @@ pub(crate) enum ClientCommand {
     TimeStatus,
     TimeScale(String),
     WeatherStatus,
-    WeatherDebug(crate::environment::weather::CloudDebug),
+    WeatherDebug(minimium_environment::weather::CloudDebug),
     WeatherDetail(u8),
 }
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct CommandSpec {
-    pub name: &'static str,
-    pub alias: Option<&'static str>,
-    pub usage: &'static str,
-    parser: fn(&[&str]) -> Result<ClientCommand, ParseError>,
-}
-
-pub(super) struct CommandRegistry {
-    commands: Vec<CommandSpec>,
-}
-
-impl CommandRegistry {
-    pub(super) fn register(&mut self, specs: &'static [CommandSpec]) {
-        for spec in specs {
-            for name in std::iter::once(spec.name).chain(spec.alias) {
-                assert!(
-                    !self.commands.iter().any(|existing| {
-                        std::iter::once(existing.name)
-                            .chain(existing.alias)
-                            .any(|registered| registered == name)
-                    }),
-                    "duplicate console command: {name}"
-                );
-            }
-            self.commands.push(*spec);
-        }
-    }
-
-    fn parse(&self, input: &str, words: &[&str]) -> Option<Result<ClientCommand, ParseError>> {
-        self.commands
-            .iter()
-            .filter_map(|spec| {
-                let matched = [Some(spec.name), spec.alias]
-                    .into_iter()
-                    .flatten()
-                    .map(|name| name.split_whitespace().collect::<Vec<_>>())
-                    .filter(|name| words.starts_with(name))
-                    .max_by_key(Vec::len)?;
-                Some((spec, matched.len()))
-            })
-            .max_by_key(|(_, length)| *length)
-            .map(|(spec, command_length)| {
-                let arguments = [spec.name, tail_after_tokens(input, command_length)];
-                (spec.parser)(&arguments)
-            })
-    }
-}
-
-fn tail_after_tokens(input: &str, count: usize) -> &str {
-    let mut tail = input;
-    for _ in 0..count {
-        tail = tail.trim_start();
-        let end = tail.find(char::is_whitespace).unwrap_or(tail.len());
-        tail = &tail[end..];
-    }
-    tail.trim()
-}
+pub(crate) type CommandSpec = SharedCommandSpec<ClientCommand, ParseError>;
+pub(super) type CommandRegistry = SharedCommandRegistry<ClientCommand, ParseError>;
 
 static REGISTRY: OnceLock<CommandRegistry> = OnceLock::new();
 
@@ -114,12 +65,11 @@ pub(crate) fn initialize_registry() {
 
 fn registry() -> &'static CommandRegistry {
     REGISTRY.get_or_init(|| {
-        let mut registry = CommandRegistry {
-            commands: Vec::new(),
-        };
+        let mut registry = CommandRegistry::default();
         interface::register(&mut registry);
         connection::register(&mut registry);
         gameplay::register(&mut registry);
+        movement::register(&mut registry);
         environment::register(&mut registry);
         weather::register(&mut registry);
         registry
@@ -127,11 +77,11 @@ fn registry() -> &'static CommandRegistry {
 }
 
 pub(crate) fn help_lines() -> impl Iterator<Item = &'static str> {
-    registry().commands.iter().map(|command| command.usage)
+    registry().commands().iter().map(|command| command.usage)
 }
 
 pub(crate) fn command_specs() -> &'static [CommandSpec] {
-    &registry().commands
+    registry().commands()
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -149,6 +99,7 @@ pub(crate) enum ParseError {
     CelestialNamesUsage,
     TimeScaleUsage,
     UnknownCommand,
+    Usage(&'static str),
 }
 
 pub(crate) fn parse_command(input: &str) -> Result<Option<ClientCommand>, ParseError> {
@@ -157,14 +108,38 @@ pub(crate) fn parse_command(input: &str) -> Result<Option<ClientCommand>, ParseE
         return Ok(None);
     }
     let words = trimmed.split_whitespace().collect::<Vec<_>>();
+    let group: Vec<_> = command_specs()
+        .iter()
+        .filter(|spec| spec.name.starts_with(&format!("{trimmed} ")))
+        .map(|spec| spec.usage)
+        .collect();
+    if !group.is_empty() {
+        return Ok(Some(ClientCommand::Print(group.join("\n"))));
+    }
     registry()
         .parse(trimmed, &words)
-        .unwrap_or(Err(ParseError::UnknownCommand))
+        .map(|result| result.map_err(|(usage, _)| ParseError::Usage(usage)))
+        .unwrap_or_else(|| {
+            let domain = words[0];
+            let choices: Vec<_> = command_specs()
+                .iter()
+                .filter(|spec| spec.name.split_whitespace().next() == Some(domain))
+                .map(|spec| spec.usage)
+                .collect();
+            Ok(ClientCommand::Print(format!(
+                "Unknown command. Available usage:\n{}",
+                if choices.is_empty() {
+                    help_lines().collect::<Vec<_>>().join("\n")
+                } else {
+                    choices.join("\n")
+                }
+            )))
+        })
         .map(Some)
 }
 
 pub(crate) struct CommandContext<'a> {
-    pub connection: &'a mut crate::connection_controller::ConnectionController,
+    pub connection: &'a mut minimium_client_runtime::ConnectionController,
     /// Direction used for `fire`; terminal callers pass [1, 0, 0].
     pub fire_direction: [f32; 3],
 }
@@ -172,6 +147,7 @@ pub(crate) struct CommandContext<'a> {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum FrontendAction {
     Help,
+    Print(String),
     Connect(String),
     HostLocal(Option<ThreadLane>),
     Disconnect,
@@ -190,7 +166,7 @@ pub(crate) enum FrontendAction {
     TimeStatus,
     TimeScale(String),
     WeatherStatus,
-    WeatherDebug(crate::environment::weather::CloudDebug),
+    WeatherDebug(minimium_environment::weather::CloudDebug),
     WeatherDetail(u8),
 }
 
@@ -203,6 +179,8 @@ pub(crate) enum CommandResult {
 
 pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) -> CommandResult {
     let message = match command {
+        ClientCommand::Movement(setting) => return movement::execute(setting, context),
+        ClientCommand::Print(text) => return CommandResult::Action(FrontendAction::Print(text)),
         ClientCommand::WeatherStatus => {
             return CommandResult::Action(FrontendAction::WeatherStatus)
         }
@@ -213,14 +191,19 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
             return CommandResult::Action(FrontendAction::WeatherDetail(level))
         }
         ClientCommand::Ping => ClientMessage::Ping,
-        ClientCommand::Move(direction) => ClientMessage::Move {
-            direction,
-            jump: false,
-        },
-        ClientCommand::Jump => ClientMessage::Move {
-            direction: [0.0; 2],
+        ClientCommand::Move(direction) => {
+            ClientMessage::Motion(minimium_simulation::CharacterInput {
+                direction,
+                movement: context.connection.movement,
+                ..Default::default()
+            })
+        }
+        ClientCommand::Jump => ClientMessage::Motion(minimium_simulation::CharacterInput {
             jump: true,
-        },
+            vertical: 1.0,
+            movement: context.connection.movement,
+            ..Default::default()
+        }),
         ClientCommand::UsePortal => ClientMessage::UsePortal,
         ClientCommand::MapTeleport => return CommandResult::Action(FrontendAction::MapTeleport),
         ClientCommand::Fire => ClientMessage::Fire {

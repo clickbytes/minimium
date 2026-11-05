@@ -909,11 +909,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "minimium-asset-io"
+version = "0.1.0"
+dependencies = [
+ "memmap2",
+ "minimium-assets",
+ "minimium-procgen",
+ "minimium-world",
+ "ron",
+ "serde",
+ "sha2",
+]
+
+[[package]]
 name = "minimium-assets"
 version = "0.1.0"
 dependencies = [
  "minimium-core",
- "minimium-procgen",
+ "minimium-world",
  "sha2",
 ]
 
@@ -923,6 +936,8 @@ version = "0.1.0"
 dependencies = [
  "cc",
  "minimium-core",
+ "minimium-environment",
+ "minimium-world",
 ]
 
 [[package]]
@@ -933,22 +948,76 @@ dependencies = [
  "bytemuck",
  "glam",
  "half",
+ "minimium-asset-io",
  "minimium-assets",
  "minimium-astronomy",
+ "minimium-client-runtime",
+ "minimium-commands",
  "minimium-core",
+ "minimium-environment",
+ "minimium-game-sample",
  "minimium-platform",
  "minimium-procgen",
  "minimium-protocol",
+ "minimium-renderer",
  "minimium-sectors",
+ "minimium-simulation",
  "minimium-telemetry",
+ "minimium-world",
  "pollster",
  "wgpu",
  "winit",
 ]
 
 [[package]]
+name = "minimium-client-runtime"
+version = "0.1.0"
+dependencies = [
+ "minimium-asset-io",
+ "minimium-assets",
+ "minimium-core",
+ "minimium-environment",
+ "minimium-game-sample",
+ "minimium-platform",
+ "minimium-procgen",
+ "minimium-protocol",
+ "minimium-simulation",
+ "minimium-world",
+]
+
+[[package]]
+name = "minimium-commands"
+version = "0.1.0"
+dependencies = [
+ "minimium-core",
+]
+
+[[package]]
 name = "minimium-core"
 version = "0.1.0"
+
+[[package]]
+name = "minimium-environment"
+version = "0.1.0"
+dependencies = [
+ "glam",
+ "minimium-commands",
+ "minimium-core",
+ "minimium-world",
+]
+
+[[package]]
+name = "minimium-game-sample"
+version = "0.1.0"
+dependencies = [
+ "minimium-environment",
+ "minimium-platform",
+ "minimium-procgen",
+ "minimium-simulation",
+ "minimium-world",
+ "ron",
+ "serde",
+]
 
 [[package]]
 name = "minimium-loadtest"
@@ -964,6 +1033,7 @@ dependencies = [
 name = "minimium-platform"
 version = "0.1.0"
 dependencies = [
+ "minimium-commands",
  "minimium-core",
 ]
 
@@ -973,6 +1043,8 @@ version = "0.1.0"
 dependencies = [
  "memmap2",
  "minimium-core",
+ "minimium-environment",
+ "minimium-world",
  "ron",
  "serde",
  "sha2",
@@ -983,6 +1055,25 @@ name = "minimium-protocol"
 version = "0.1.0"
 dependencies = [
  "minimium-core",
+ "minimium-environment",
+ "minimium-simulation",
+ "minimium-world",
+]
+
+[[package]]
+name = "minimium-renderer"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "glam",
+ "half",
+ "minimium-assets",
+ "minimium-astronomy",
+ "minimium-environment",
+ "minimium-procgen",
+ "minimium-world",
+ "pollster",
+ "wgpu",
 ]
 
 [[package]]
@@ -990,21 +1081,58 @@ name = "minimium-sectors"
 version = "0.1.0"
 dependencies = [
  "minimium-core",
+ "minimium-world",
 ]
 
 [[package]]
 name = "minimium-server"
 version = "0.1.0"
 dependencies = [
+ "minimium-server-runtime",
+ "minimium-telemetry",
+]
+
+[[package]]
+name = "minimium-server-runtime"
+version = "0.1.0"
+dependencies = [
+ "minimium-asset-io",
  "minimium-assets",
+ "minimium-commands",
  "minimium-core",
+ "minimium-environment",
+ "minimium-game-sample",
  "minimium-platform",
  "minimium-procgen",
  "minimium-protocol",
  "minimium-sectors",
+ "minimium-simulation",
+ "minimium-storage",
  "minimium-telemetry",
+ "minimium-transport",
+ "minimium-world",
  "ron",
  "serde",
+]
+
+[[package]]
+name = "minimium-simulation"
+version = "0.1.0"
+dependencies = [
+ "minimium-core",
+ "minimium-world",
+]
+
+[[package]]
+name = "minimium-storage"
+version = "0.1.0"
+dependencies = [
+ "minimium-core",
+ "minimium-environment",
+ "minimium-platform",
+ "minimium-simulation",
+ "minimium-telemetry",
+ "minimium-world",
 ]
 
 [[package]]
@@ -1012,9 +1140,21 @@ name = "minimium-telemetry"
 version = "0.1.0"
 
 [[package]]
+name = "minimium-transport"
+version = "0.1.0"
+
+[[package]]
+name = "minimium-world"
+version = "0.1.0"
+dependencies = [
+ "minimium-core",
+]
+
+[[package]]
 name = "minimiumctl"
 version = "0.1.0"
 dependencies = [
+ "minimium-commands",
  "minimium-core",
  "minimium-platform",
 ]

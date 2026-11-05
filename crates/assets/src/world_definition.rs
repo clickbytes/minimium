@@ -1,15 +1,9 @@
-use minimium_core::world::{
+use minimium_world::world::{DungeonBlueprint, DungeonRoom, DungeonTile};
+use minimium_world::world::{
     GenerationRevision, GenerationSpec, GeneratorDigest, ObjectOriginId, WorldContentRevision,
     WorldDefinitionId, WorldManifest, WorldSeed, WorldTopology,
 };
-use minimium_procgen::{generator_digest, DungeonBlueprint, DungeonRoom, DungeonTile};
-use std::{
-    fs::File,
-    io::{self, Read},
-    path::Path,
-};
-
-const MAX_DEFINITION_BYTES: usize = 1024 * 1024;
+pub const MAX_DEFINITION_BYTES: usize = 1024 * 1024;
 const MAX_DUNGEON_DIMENSION: u16 = 128;
 const MAX_DUNGEON_TILES: usize = MAX_DUNGEON_DIMENSION as usize * MAX_DUNGEON_DIMENSION as usize;
 
@@ -27,15 +21,6 @@ impl WorldDefinition {
     pub fn dungeon(&self) -> &DungeonBlueprint {
         &self.dungeon
     }
-}
-
-pub fn load_world_definition(path: &Path) -> io::Result<WorldDefinition> {
-    let mut source = String::new();
-    File::open(path)?
-        .take((MAX_DEFINITION_BYTES + 1) as u64)
-        .read_to_string(&mut source)?;
-    parse_world_definition(&source)
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
 }
 
 /// Parses a manifest and a manually authored dungeon into the same validated
@@ -213,11 +198,6 @@ fn parse_manifest(line_number: usize, line: &str) -> Result<WorldManifest, Strin
         content_revision,
         digest,
     );
-    if digest != generator_digest(WorldTopology::Dungeon, generation) {
-        return Err(format!(
-            "line {line_number}: digest does not match the dungeon generator contract"
-        ));
-    }
     Ok(manifest)
 }
 

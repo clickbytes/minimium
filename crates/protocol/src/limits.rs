@@ -1,5 +1,5 @@
-pub const PROTOCOL_VERSION: u8 = 13;
-pub const MAX_PLAYER_NAME_BYTES: usize = 24;
+pub const PROTOCOL_VERSION: u8 = 14;
+pub use minimium_core::identity::MAX_PLAYER_NAME_BYTES;
 pub const HEADER_BYTES: usize = 4;
 pub const MAX_PAYLOAD_BYTES: usize = 4096;
 pub const MAX_FRAME_BYTES: usize = HEADER_BYTES + MAX_PAYLOAD_BYTES;

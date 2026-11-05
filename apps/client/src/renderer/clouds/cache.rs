@@ -1,6 +1,7 @@
 //! Bounded temporal mesh cache; unchanged cloud windows need no density work.
-use super::{mesh, voxels::Voxels, Face, MAX_FACES};
-use crate::environment::weather::{CloudSnapshot, DensityField};
+use super::{Face, MAX_FACES};
+use minimium_environment::weather::{CloudSnapshot, DensityField};
+use minimium_renderer::cloud_voxels::Voxels;
 use std::collections::{HashMap, HashSet};
 
 const MAX_SAMPLES: usize = 8_000_000;
@@ -113,7 +114,7 @@ impl MeshCache {
                     let mut cells = Voxels::build(cloud, level, start, step);
                     result.stats.samples += cost(level);
                     bricks = cells.bricks;
-                    let mut faces = mesh::build(cloud, &cells, budget);
+                    let mut faces = minimium_renderer::cloud_mesh::build(cloud, &cells, budget);
                     let simplified = faces.is_none();
                     for stride in [2, 4, 8, 16, 32, 64] {
                         if faces.is_some() {
@@ -121,7 +122,7 @@ impl MeshCache {
                         }
                         cells.simplify(stride);
                         render_level = level.saturating_sub(stride.ilog2() as u8);
-                        faces = mesh::build(cloud, &cells, budget);
+                        faces = minimium_renderer::cloud_mesh::build(cloud, &cells, budget);
                     }
                     if faces.as_ref().is_some_and(Vec::is_empty)
                         && cells.mean.iter().any(|v| *v > 0.0)
@@ -130,7 +131,9 @@ impl MeshCache {
                         render_level = 0;
                     }
                     (
-                        faces.unwrap_or_else(|| mesh::envelope(cloud, cells.mean)),
+                        faces.unwrap_or_else(|| {
+                            minimium_renderer::cloud_mesh::envelope(cloud, cells.mean)
+                        }),
                         simplified,
                     )
                 } else {
@@ -156,7 +159,7 @@ impl MeshCache {
                         }
                     }
                     result.stats.samples += 128;
-                    (mesh::envelope(cloud, mean), true)
+                    (minimium_renderer::cloud_mesh::envelope(cloud, mean), true)
                 };
                 let faces = faces.into_boxed_slice().into_vec();
                 self.entries.insert(

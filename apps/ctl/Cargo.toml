@@ -7,3 +7,4 @@ license.workspace = true
 [dependencies]
 minimium-platform = { path = "../../crates/platform" }
 minimium-core = { path = "../../crates/core" }
+minimium-commands = { path = "../../crates/commands" }

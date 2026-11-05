@@ -2,45 +2,45 @@ use super::{ClientCommand, CommandRegistry, CommandSpec, ParseError};
 
 const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
-        name: "move",
-        alias: None,
-        usage: "move X Z",
+        name: "movement move",
+        alias: Some("move"),
+        usage: "movement move X Z (-1..1 each; tangent direction)",
         parser: parse,
     },
     CommandSpec {
-        name: "jump",
-        alias: None,
-        usage: "jump",
+        name: "movement jump",
+        alias: Some("jump"),
+        usage: "movement jump",
         parser: parse,
     },
     CommandSpec {
-        name: "portal",
-        alias: None,
-        usage: "portal",
+        name: "world portal",
+        alias: Some("portal"),
+        usage: "world portal",
         parser: parse,
     },
     CommandSpec {
-        name: "map_telepo",
-        alias: None,
-        usage: "map_telepo: click land on the Earth overview",
+        name: "world teleport",
+        alias: Some("map_telepo"),
+        usage: "world teleport: click land on the Earth overview",
         parser: parse,
     },
     CommandSpec {
-        name: "fire",
-        alias: None,
-        usage: "fire",
+        name: "combat fire",
+        alias: Some("fire"),
+        usage: "combat fire",
         parser: parse,
     },
     CommandSpec {
-        name: "say",
+        name: "social say",
         alias: Some("chat"),
-        usage: "say TEXT (alias: chat)",
+        usage: "social say TEXT (alias: chat)",
         parser: parse,
     },
     CommandSpec {
-        name: "name",
-        alias: None,
-        usage: "name NAME",
+        name: "social name",
+        alias: Some("name"),
+        usage: "social name NAME",
         parser: parse,
     },
 ];
@@ -53,7 +53,7 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
     let [command, raw_arguments] = words else {
         return Err(ParseError::UnknownCommand);
     };
-    if *command == "say" {
+    if *command == "social say" {
         return if raw_arguments.is_empty() {
             Err(ParseError::MissingChat)
         } else {
@@ -62,17 +62,17 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
     }
     let arguments = raw_arguments.split_whitespace().collect::<Vec<_>>();
     match (*command, arguments.as_slice()) {
-        ("move", [x, z]) => Ok(ClientCommand::Move([
+        ("movement move", [x, z]) => Ok(ClientCommand::Move([
             parse_coordinate(x)?,
             parse_coordinate(z)?,
         ])),
-        ("move", _) => Err(ParseError::MoveUsage),
-        ("jump", []) => Ok(ClientCommand::Jump),
-        ("portal", []) => Ok(ClientCommand::UsePortal),
-        ("map_telepo", []) => Ok(ClientCommand::MapTeleport),
-        ("fire", []) => Ok(ClientCommand::Fire),
-        ("name", [name]) => Ok(ClientCommand::SetName((*name).to_owned())),
-        ("name", _) => Err(ParseError::NameUsage),
+        ("movement move", _) => Err(ParseError::MoveUsage),
+        ("movement jump", []) => Ok(ClientCommand::Jump),
+        ("world portal", []) => Ok(ClientCommand::UsePortal),
+        ("world teleport", []) => Ok(ClientCommand::MapTeleport),
+        ("combat fire", []) => Ok(ClientCommand::Fire),
+        ("social name", [name]) => Ok(ClientCommand::SetName((*name).to_owned())),
+        ("social name", _) => Err(ParseError::NameUsage),
         _ => Err(ParseError::UnknownCommand),
     }
 }
@@ -81,7 +81,7 @@ fn parse_coordinate(value: &str) -> Result<f32, ParseError> {
     let coordinate = value
         .parse::<f32>()
         .map_err(|_| ParseError::InvalidCoordinate)?;
-    if !coordinate.is_finite() {
+    if !coordinate.is_finite() || !(-1.0..=1.0).contains(&coordinate) {
         return Err(ParseError::NonFiniteCoordinate);
     }
     Ok(coordinate)

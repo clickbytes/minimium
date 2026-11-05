@@ -1,9 +1,7 @@
 use std::{error::Error, fmt, sync::Arc};
 
-use minimium_core::{
-    time::{ClockRevision, WorldTimeMs},
-    world::{MembershipEpoch, WorldContentRevision, WorldInstanceId},
-};
+use minimium_environment::time::{ClockRevision, WorldTimeMs};
+use minimium_world::world::{MembershipEpoch, WorldContentRevision, WorldInstanceId};
 
 pub const ASTRONOMY_MODEL_REVISION: u32 = 1;
 pub const MAX_STAR_RECORDS: usize = 1000;

@@ -96,6 +96,40 @@ The data directory defaults to `.minimium`. `minimiumctl stop` waits up to 120 s
 
 ## Client
 
+### Command domains and movement
+
+The graphical and terminal consoles share command parsing and usage metadata.
+Enter a domain (for example, `movement`, `network`, `sky`, or `weather clouds`)
+to list its commands. The graphical console displays dim usage hints while typing,
+including when a complete command name has no arguments yet. Invalid arguments
+show the registered syntax, allowed values and units before any network request.
+
+Canonical domains are `movement`, `network`, `world`, `combat`, `social`,
+`camera`, `sky`, `time`, `weather`, `diagnostics`, and `console`.
+`help` lists all registered usage. Existing registered aliases remain available;
+Tab completes canonical names and aliases.
+
+| Command | Behavior |
+| --- | --- |
+| `movement fly [on|off]` (alias `fly`) | Enables/disables flight with noclip; no argument reports settings. |
+| `movement speed [0..10000]` | Shared walk/fly maximum speed in m/s; default 5. |
+| `movement accel [0..10000]` | Shared walk/fly acceleration and braking in m/s²; default 30. |
+| `movement move X Z` | Tangent movement direction, each component from -1 to 1. |
+| `movement jump` | Jump when walking; upward input when flying. |
+
+Speed and acceleration accept finite decimal values, inclusive of both limits.
+Omitting their value reports current settings. Speed zero stops controlled movement;
+acceleration zero disables acceleration and braking (the speed cap still applies).
+The settings belong to the client connection controller and apply to both modes.
+They are not saved in the world. Changes require a connected session.
+The server validates and integrates movement using the same model as prediction.
+
+In the graphical client, fly uses WASD horizontally, Space to rise and either Ctrl
+to descend. Fly disables gravity and collision, including terrain/water traversal
+restrictions. Turning fly off restores walking collision and gravity at the current
+position. Close the console to control movement with the keyboard.
+
+
 ~~~text
 minimium-client [--connect HOST:PORT] [--map PATH | --world-definition PATH] [--profile-dir PATH] [--server-data-dir PATH] [--threads 1|2|auto] [--sky-quality low|standard] [--demo] [--console]
 ~~~

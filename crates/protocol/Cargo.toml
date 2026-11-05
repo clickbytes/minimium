@@ -6,3 +6,6 @@ license.workspace = true
 
 [dependencies]
 minimium-core = { path = "../core" }
+minimium-environment = { path = "../environment" }
+minimium-world = { path = "../world" }
+minimium-simulation = { path = "../simulation" }

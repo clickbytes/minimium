@@ -1,34 +1,27 @@
 use crate::parse_world_definition;
-use minimium_core::world::{GenerationRevision, GenerationSpec, WorldSeed, WorldTopology};
-use minimium_procgen::{generate_dungeon, generator_digest, DungeonSpec, DungeonTile};
+use minimium_world::world::{DungeonTile, WorldTopology};
 
 fn definition_text() -> String {
-    let generation =
-        GenerationSpec::new(WorldSeed::new(99), GenerationRevision::new(1).unwrap(), 10).unwrap();
-    let blueprint = generate_dungeon(generation, DungeonSpec::new(48, 40, 4, 5, 1).unwrap());
-    let digest = generator_digest(WorldTopology::Dungeon, generation)
-        .as_bytes()
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
+    let digest = "00".repeat(32);
     let mut source = format!(
         "MINIMIUM_WORLD_DEFINITION 1\nmanifest 8 dungeon 99 1 10 1 {digest}\ndungeon 48 40\n"
     );
-    for room in blueprint.rooms() {
-        source.push_str(&format!(
-            "room {} {} {} {} {} {} {}\n",
-            room.origin_id.get(),
-            room.x,
-            room.y,
-            room.width,
-            room.height,
-            room.center[0],
-            room.center[1]
-        ));
+    for x in [2, 10, 18, 26, 34] {
+        source.push_str(&format!("room {} {x} 2 3 3 {} 3\n", x + 1, x + 1));
     }
     for y in 0..40 {
         for x in 0..48 {
-            let tile = match blueprint.tile(x, y).unwrap() {
+            let room = [2, 10, 18, 26, 34]
+                .into_iter()
+                .any(|origin| (origin..origin + 3).contains(&x) && (2..5).contains(&y));
+            let corridor = y == 3 && (5..=36).contains(&x);
+            let tile = match if room {
+                DungeonTile::Room
+            } else if corridor {
+                DungeonTile::Corridor
+            } else {
+                DungeonTile::Void
+            } {
                 DungeonTile::Void => "void",
                 DungeonTile::Room => "room",
                 DungeonTile::Corridor => "corridor",

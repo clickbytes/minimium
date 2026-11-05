@@ -1,13 +1,10 @@
 // Protocol E004-04/05 will provide the server descriptor and context to this adapter.
-use minimium_core::{
-    environment::EnvironmentDescriptor,
-    sky::{
-        resolve_sky_model, try_observer_frame, ObserverError, ObserverFrame, ObserverInput,
-        SkyModel,
-    },
-    world::{Position3Mm, WorldManifest, WorldTopology},
+use minimium_environment::sky::{
+    resolve_sky_model, try_observer_frame, ObserverError, ObserverFrame, ObserverInput, SkyModel,
 };
+use minimium_environment::EnvironmentDescriptor;
 use minimium_protocol::WorldContext;
+use minimium_world::world::{Position3Mm, WorldManifest, WorldTopology};
 
 #[allow(dead_code)]
 #[derive(Default)]
@@ -33,6 +30,7 @@ impl ObserverAdapter {
         descriptor: EnvironmentDescriptor,
         feet_position_mm: Option<Position3Mm>,
         eye_height_mm: u32,
+        geography: Option<&dyn minimium_procgen::PreparedGeography>,
     ) -> Result<Option<ObserverFrame>, ObserverError> {
         let scope = ObserverScope { context, manifest };
         if self.scope != Some(scope) {
@@ -43,7 +41,13 @@ impl ObserverAdapter {
             self.frame = None;
             return Err(ObserverError::EnvironmentProfileMismatch);
         }
-        let result = self.build_frame(manifest, descriptor, feet_position_mm, eye_height_mm);
+        let result = self.build_frame(
+            manifest,
+            descriptor,
+            feet_position_mm,
+            eye_height_mm,
+            geography,
+        );
         match result {
             Ok(frame) => {
                 self.frame = frame;
@@ -71,9 +75,10 @@ impl ObserverAdapter {
         descriptor: EnvironmentDescriptor,
         feet_position_mm: Option<Position3Mm>,
         eye_height_mm: u32,
+        geography: Option<&dyn minimium_procgen::PreparedGeography>,
     ) -> Result<Option<ObserverFrame>, ObserverError> {
         if manifest.topology() != WorldTopology::Planet
-            && descriptor.profile() != minimium_core::environment::EnvironmentProfile::Interior
+            && descriptor.profile() != minimium_environment::EnvironmentProfile::Interior
         {
             return Err(ObserverError::EnvironmentProfileMismatch);
         }
@@ -99,6 +104,7 @@ impl ObserverAdapter {
             Some(minimium_procgen::earth_height_reference(
                 feet_position_mm,
                 definition,
+                geography,
             )?)
         } else {
             None

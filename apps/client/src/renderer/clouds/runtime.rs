@@ -1,16 +1,11 @@
-use super::{
-    gpu::{CloudRecord, CloudUniform},
-    worker::CloudWorker,
-    Publication, Request, Stamp,
-};
-use crate::{
-    environment::weather::{self, CloudDebug},
-    renderer::{
-        environment::{EnvironmentFrame, EnvironmentViewKind},
-        Renderer,
-    },
+use super::{worker::CloudWorker, Publication, Request, Stamp};
+use crate::renderer::{
+    environment::{EnvironmentFrame, EnvironmentViewKind},
+    Renderer,
 };
 use glam::{DVec3, Mat4};
+use minimium_environment::weather::{self, CloudDebug};
+use minimium_renderer::{CloudRecord, CloudUniform};
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -58,7 +53,7 @@ impl Renderer {
             .zip(self.environment_frame.render_world_utc_ms);
         let Some((((manifest, context), clock_revision), utc)) =
             inputs.filter(|(((m, _), _), _)| {
-                m.topology() == minimium_core::world::WorldTopology::Planet
+                m.topology() == minimium_world::world::WorldTopology::Planet
                     && self.gpu.scene_visible
                     && frame.status
                         == crate::renderer::environment::EnvironmentFrameStatus::Available
@@ -111,6 +106,10 @@ impl Renderer {
                 revision: self.weather.sequence,
                 detail: self.weather.detail,
                 started: now,
+                geography: self
+                    .connection
+                    .session()
+                    .and_then(|session| session.prepared_geography()),
             });
             self.weather.last_request = Some(now);
         }
@@ -119,17 +118,11 @@ impl Renderer {
             return;
         };
         let gpu = &mut self.gpu.cloud_gpu;
-        if gpu.revision != publication.snapshot.revision {
-            if !publication.faces.is_empty() {
-                self.gpu.queue.write_buffer(
-                    &gpu.faces,
-                    0,
-                    bytemuck::cast_slice(&publication.faces),
-                );
-            }
-            gpu.count = publication.faces.len() as u32;
-            gpu.revision = publication.snapshot.revision;
-        }
+        gpu.update_faces(
+            &self.gpu.queue,
+            &publication.faces,
+            publication.snapshot.revision,
+        );
         let view = frame.render_view;
         let origin = DVec3::from_array(view.render_origin_m);
         let radius = view.game_planet_radius_m;
@@ -164,11 +157,6 @@ impl Renderer {
                 }
             })
             .collect();
-        if !records.is_empty() {
-            self.gpu
-                .queue
-                .write_buffer(&gpu.records, 0, bytemuck::cast_slice(&records));
-        }
         let mut projection = Mat4::from_cols_array_2d(&view.projection);
         if view.kind == EnvironmentViewKind::Surface {
             let near = 0.05;
@@ -193,9 +181,7 @@ impl Renderer {
                 .to_array(),
             config: [self.weather.debug as u32, target_size[0], target_size[1], 0],
         };
-        self.gpu
-            .queue
-            .write_buffer(&gpu.uniform, 0, bytemuck::bytes_of(&uniform));
+        gpu.upload_frame(&self.gpu.queue, &records, &uniform);
         gpu.debug = self.weather.debug != CloudDebug::Off;
     }
 

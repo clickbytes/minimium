@@ -1,8 +1,9 @@
-use super::environment::{stars::StarCatalogueAdapter, EnvironmentFrame, EnvironmentFrameStatus};
+use super::environment::{EnvironmentFrame, EnvironmentFrameStatus};
 use crate::console::CelestialLabel;
 use glam::{Mat4, Vec3, Vec4};
 use minimium_astronomy::{SKY_MOON_ID, SKY_SUN_ID};
-use minimium_core::universe::BodyKind;
+use minimium_environment::universe::BodyKind;
+use minimium_renderer::stars::StarCatalogueAdapter;
 
 const MAX_STAR_LABELS: usize = 32;
 const MAX_STAR_CANDIDATES: usize = 160;

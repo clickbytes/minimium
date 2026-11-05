@@ -97,6 +97,6 @@ fn matches_arguments(input: &str, spec: &CommandSpec) -> bool {
         .any(|name| {
             input
                 .strip_prefix(name)
-                .is_some_and(|rest| rest.starts_with(char::is_whitespace))
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
         })
 }

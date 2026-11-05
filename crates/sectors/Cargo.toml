@@ -9,3 +9,4 @@ path = "src/lib.rs"
 
 [dependencies]
 minimium-core = { path = "../core" }
+minimium-world = { path = "../world" }

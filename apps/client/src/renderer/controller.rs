@@ -64,6 +64,11 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
                 "weather clouds detail N={level} (thin-layer minimum retained)"
             ));
         }
+        FrontendAction::Print(text) => {
+            for line in text.lines() {
+                renderer.ui.console.push_line(line);
+            }
+        }
         FrontendAction::Help => {
             renderer
                 .ui
@@ -127,7 +132,7 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
                         .previous_bytes_received
                         .saturating_add(metrics.bytes_received),
                     ping_milliseconds: metrics.ping_round_trip.map(|duration| duration.as_millis()),
-                    nearby_players: Some(renderer.game.remote_player_count),
+                    nearby_players: Some(renderer.game.reconciliation.player_count()),
                 }
             ));
         }
@@ -135,7 +140,7 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
             Text::PlayerState {
                 position: renderer.game.character.position,
                 health: renderer.game.health,
-                nearby_players: renderer.game.remote_player_count,
+                nearby_players: renderer.game.reconciliation.player_count(),
             }
             .to_string(),
         ),
@@ -158,7 +163,7 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
                 for body in frame
                     .observed_bodies
                     .iter()
-                    .take(minimium_core::universe::MAX_CELESTIAL_BODIES + 2)
+                    .take(minimium_environment::universe::MAX_CELESTIAL_BODIES + 2)
                 {
                     let flux: f64 = if body.id == minimium_astronomy::SKY_SUN_ID {
                         frame.local_sun.map_or(0.0, |local| {

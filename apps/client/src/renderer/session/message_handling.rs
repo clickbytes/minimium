@@ -66,7 +66,7 @@ impl Renderer {
                     self.gpu.set_render_origin(origin);
                     self.game.character.velocity = [0.0; 3];
                     self.game.character.grounded = false;
-                    self.game.physics_accumulator = 0.0;
+                    self.game.prediction.reset_time();
                     self.game.sectors_ready = false;
                     self.teleport_loading = true;
                     self.gpu.scene_visible = false;
@@ -154,17 +154,16 @@ impl Renderer {
                 removed_players,
                 ..
             } => {
-                let snapshot = SnapshotUpdate {
+                if !self.game.apply_snapshot(
                     server_time_ms,
                     full_snapshot,
                     self_position,
                     self_position_mm,
                     self_velocity,
                     self_grounded,
-                    players: *players,
-                    removed_players,
-                };
-                if !self.game.apply_snapshot(snapshot) {
+                    &players,
+                    &removed_players,
+                ) {
                     eprintln!("{}", Text::VisiblePlayerLimitExceeded);
                     self.fail_connection(Text::VisiblePlayerLimitExceeded.to_string());
                 }
@@ -256,7 +255,7 @@ impl Renderer {
 
     fn load_generated_catalog(
         &mut self,
-        instance: minimium_core::world::WorldInstanceId,
+        instance: minimium_world::world::WorldInstanceId,
         manifest: WorldManifest,
     ) -> bool {
         if !matches!(manifest.generation().revision().get(), 2..=4)
@@ -271,13 +270,16 @@ impl Renderer {
                 0
             };
         let generated = if let Some(planet) = manifest.planet() {
-            minimium_procgen::generate_worlds_with_planet_revision(
+            minimium_game_sample::generate_worlds_with_planet_revision_and_geography(
                 seed,
                 planet,
                 manifest.generation().revision().get(),
+                self.connection
+                    .session()
+                    .and_then(|session| session.prepared_geography()),
             )
         } else {
-            minimium_procgen::generate_worlds(seed)
+            minimium_game_sample::generate_worlds(seed)
         };
         let Ok(worlds) = generated else {
             return false;
@@ -289,7 +291,7 @@ impl Renderer {
             self.sector_cache.reset();
             for generated_instance in [1, 2] {
                 self.gpu.release_world_sectors(
-                    minimium_core::world::WorldInstanceId::new(generated_instance)
+                    minimium_world::world::WorldInstanceId::new(generated_instance)
                         .expect("generated instance ID is nonzero"),
                 );
             }
@@ -305,7 +307,7 @@ impl Renderer {
 
     fn install_world(
         &mut self,
-        instance: minimium_core::world::WorldInstanceId,
+        instance: minimium_world::world::WorldInstanceId,
         fingerprint: u64,
         destination: Option<[f32; 3]>,
         manifest: WorldManifest,
@@ -326,6 +328,9 @@ impl Renderer {
             target_position,
             &self.world_catalog,
             &self.game.world_manifests,
+            self.connection
+                .session()
+                .and_then(|session| session.prepared_geography()),
         ) else {
             return false;
         };
@@ -343,12 +348,12 @@ impl Renderer {
         self.game.position_mm = manifest.planet().map(|_| {
             if target_position == map.spawn() {
                 map.spawn_position_mm().unwrap_or_else(|| {
-                    minimium_core::world::Position3Mm(
+                    minimium_world::world::Position3Mm(
                         target_position.map(|value| (f64::from(value) * 1000.0).round() as i64),
                     )
                 })
             } else {
-                minimium_core::world::Position3Mm(
+                minimium_world::world::Position3Mm(
                     target_position.map(|value| (f64::from(value) * 1000.0).round() as i64),
                 )
             }
@@ -356,7 +361,7 @@ impl Renderer {
         self.game.sectors_ready = true;
         self.active_sector_keys.clone_from(&scene.keys);
         self.last_render_position = target_position;
-        self.game.physics_accumulator = 0.0;
+        self.game.prediction.reset_time();
         self.reset_remote_gameplay();
         self.input.yaw = -std::f32::consts::FRAC_PI_2;
         self.input.pitch = 0.0;
@@ -415,6 +420,9 @@ impl Renderer {
             self.game.character.position,
             &self.world_catalog,
             &self.game.world_manifests,
+            self.connection
+                .session()
+                .and_then(|session| session.prepared_geography()),
         ) else {
             self.game.sectors_ready = false;
             return false;
@@ -451,6 +459,9 @@ impl Renderer {
                 pending.destination,
                 &self.world_catalog,
                 &self.game.world_manifests,
+                self.connection
+                    .session()
+                    .and_then(|session| session.prepared_geography()),
             ) else {
                 continue;
             };
@@ -479,7 +490,7 @@ impl Renderer {
         }
     }
 
-    fn release_prepared_target(&mut self, instance: minimium_core::world::WorldInstanceId) {
+    fn release_prepared_target(&mut self, instance: minimium_world::world::WorldInstanceId) {
         if instance != self.game.current_instance {
             self.sector_cache.release_interest(instance);
             self.gpu.release_world_sectors(instance);

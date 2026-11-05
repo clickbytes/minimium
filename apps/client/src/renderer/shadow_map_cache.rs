@@ -1,10 +1,11 @@
-use super::{geometry::Vertex, shadows::ShadowInvalidReason, GpuResources};
+use super::{shadows::ShadowInvalidReason, GpuResources};
+use minimium_renderer::geometry::Vertex;
 const MAX_MAP_VERTEX_BYTES: u64 = 2 * 1024 * 1024;
 
 impl GpuResources {
     pub(super) fn update_shadow_map_vertices(
         &mut self,
-        map: &minimium_core::world::WorldMap,
+        map: &minimium_world::world::WorldMap,
         center: [f64; 3],
     ) {
         let fingerprint = map.fingerprint();
@@ -14,39 +15,36 @@ impl GpuResources {
         {
             return;
         }
-        let geometry = super::shadow_casters::local_map_geometry(
+        let geometry = minimium_renderer::shadow_geometry::local_map_geometry(
             map,
             center,
             f64::from(self.shadow_gpu.settings.caster_radius_m),
         );
-        let vertices = super::geometry::sector_geometry_relative(&geometry, self.render_origin);
+        let vertices =
+            minimium_renderer::geometry::sector_geometry_relative(&geometry, self.render_origin);
         let bytes = vertices.len() as u64 * std::mem::size_of::<Vertex>() as u64;
-        self.shadow_map_vertex_count = 0;
         if bytes > MAX_MAP_VERTEX_BYTES {
             self.shadow_state
                 .invalidate(ShadowInvalidReason::BudgetExceeded);
             self.shadow_map_center = None;
+            self.shadow_gpu.clear_map_casters();
             return;
         }
-        if !vertices.is_empty() {
-            if self.shadow_map_buffer.is_none() {
-                let buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-                    label: Some("local-shadow-map-casters"),
-                    size: MAX_MAP_VERTEX_BYTES,
-                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                    mapped_at_creation: false,
-                });
-                self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_add(buffer.size());
-                self.shadow_map_buffer = Some(buffer);
+        match self.shadow_gpu.upload_map_casters(
+            &self.device,
+            &self.queue,
+            &vertices,
+            MAX_MAP_VERTEX_BYTES,
+        ) {
+            Ok(allocated_bytes) => {
+                self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_add(allocated_bytes);
             }
-            let Some(buffer) = &self.shadow_map_buffer else {
+            Err(()) => {
                 self.shadow_state
-                    .invalidate(ShadowInvalidReason::IncompleteCasters);
+                    .invalidate(ShadowInvalidReason::BudgetExceeded);
+                self.shadow_map_center = None;
                 return;
-            };
-            self.queue
-                .write_buffer(buffer, 0, bytemuck::cast_slice(&vertices));
-            self.shadow_map_vertex_count = vertices.len() as u32;
+            }
         }
         self.shadow_map_instance = Some(self.active_world_instance);
         self.shadow_map_fingerprint = Some(fingerprint);
@@ -54,12 +52,11 @@ impl GpuResources {
     }
 
     pub(super) fn release_shadow_map_casters(&mut self) {
-        if let Some(buffer) = self.shadow_map_buffer.take() {
-            self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_sub(buffer.size());
-        }
+        self.fixed_gpu_bytes = self
+            .fixed_gpu_bytes
+            .saturating_sub(self.shadow_gpu.release_map_casters());
         self.shadow_map_instance = None;
         self.shadow_map_fingerprint = None;
         self.shadow_map_center = None;
-        self.shadow_map_vertex_count = 0;
     }
 }

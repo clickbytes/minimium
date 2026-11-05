@@ -1,0 +1,17 @@
+[package]
+name = "minimium-client-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+minimium-core = { path = "../core" }
+minimium-platform = { path = "../platform" }
+minimium-simulation = { path = "../simulation" }
+minimium-environment = { path = "../environment" }
+minimium-protocol = { path = "../protocol" }
+minimium-world = { path = "../world" }
+minimium-procgen = { path = "../procgen" }
+minimium-asset-io = { path = "../asset-io" }
+minimium-assets = { path = "../assets" }
+minimium-game-sample = { path = "../../games/sample" }

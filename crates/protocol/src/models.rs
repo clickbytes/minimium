@@ -1,8 +1,8 @@
 use super::world_context::WorldContext;
 use super::{limits::MAX_VISIBLE_PLAYERS, ServerErrorCode};
-use minimium_core::world::{Position3Mm, TransitionId, WorldManifest};
-use minimium_core::{environment::EnvironmentDescriptor, time::ClockSample};
 use minimium_core::{identity::PlayerProfileId, ids::PlayerId};
+use minimium_environment::{time::ClockSample, EnvironmentDescriptor};
+use minimium_world::world::{Position3Mm, TransitionId, WorldManifest};
 use std::{error::Error, fmt, sync::Arc};
 
 #[derive(Debug, Clone, PartialEq)]
@@ -10,6 +10,7 @@ pub enum ClientMessage {
     Identify(PlayerProfileId),
     Ping,
     SetName(String),
+    Motion(minimium_simulation::CharacterInput),
     Move {
         direction: [f32; 2],
         jump: bool,
@@ -41,6 +42,7 @@ pub enum ClientMessage {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClientWorldInput {
     SetName(String),
+    Motion(minimium_simulation::CharacterInput),
     Move { direction: [f32; 2], jump: bool },
     Fire { direction: [f32; 3] },
     MapTeleport { direction: [f32; 3] },
@@ -219,7 +221,7 @@ pub enum ServerMessage {
         echoed_client_send_monotonic_ms: u64,
         server_receive_monotonic_ms: u64,
         server_send_monotonic_ms: u64,
-        session_nonce: minimium_core::time::SessionNonce,
+        session_nonce: minimium_environment::time::SessionNonce,
     },
 }
 

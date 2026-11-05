@@ -94,12 +94,9 @@ impl Renderer {
     }
 
     fn reset_remote_gameplay(&mut self) {
-        self.gpu.remote_vertex_count = 0;
-        self.game.remote_player_count = 0;
+        self.gpu.remote_vertices.clear();
         self.game.remote_vertices.clear();
-        self.game.remote_players = [None; MAX_VISIBLE_PLAYERS];
-        self.game.last_remote_snapshot_time_ms = None;
-        self.game.last_remote_snapshot_received_at = None;
+        self.game.reconciliation.clear();
         self.game.remote_geometry_dirty = false;
         self.game.health = PLAYER_MAX_HEALTH;
         self.game.hit_confirmation_until = None;
@@ -137,12 +134,9 @@ impl Renderer {
             session.close();
         }
         self.game.last_shot_sent_at = None;
-        self.gpu.remote_vertex_count = 0;
-        self.game.remote_player_count = 0;
+        self.gpu.remote_vertices.clear();
         self.game.remote_vertices.clear();
-        self.game.remote_players = [None; MAX_VISIBLE_PLAYERS];
-        self.game.last_remote_snapshot_time_ms = None;
-        self.game.last_remote_snapshot_received_at = None;
+        self.game.reconciliation.clear();
         self.game.remote_geometry_dirty = false;
         self.game.health = PLAYER_MAX_HEALTH;
         self.game.hit_confirmation_until = None;
@@ -258,7 +252,7 @@ impl Renderer {
     pub(super) fn update_remote_player_rendering(&mut self, now: Instant) {
         if self.connection.session().is_none() {
             self.game.clear_remote_players();
-            self.gpu.remote_vertex_count = 0;
+            self.gpu.remote_vertices.clear();
             self.game.remote_shadow_vertices.clear();
             self.gpu.update_remote_shadow_vertices(&[]);
             return;
@@ -273,8 +267,8 @@ impl Renderer {
             || self.game.character.position.map(f64::from),
             |position| position.0.map(|value| value as f64 / 1000.0),
         );
-        let mut shadow_vertices = Vec::with_capacity(self.game.remote_players.len() * 36);
-        for track in self.game.remote_players.iter().flatten() {
+        let mut shadow_vertices = Vec::with_capacity(self.game.reconciliation.player_count() * 36);
+        for track in self.game.reconciliation.tracks().iter().flatten() {
             let feet = track
                 .displayed_position_mm
                 .map(|value| value as f64 / 1000.0);
@@ -310,164 +304,27 @@ impl Renderer {
     }
 }
 
-struct SnapshotUpdate {
-    server_time_ms: u64,
-    full_snapshot: bool,
-    self_position: [f32; 3],
-    self_position_mm: minimium_core::world::Position3Mm,
-    self_velocity: [f32; 3],
-    self_grounded: bool,
-    players: minimium_protocol::RemotePlayers,
-    removed_players: minimium_protocol::RemotePlayerIds,
-}
-
 impl GameplayView {
-    fn apply_snapshot(&mut self, snapshot: SnapshotUpdate) -> bool {
-        let SnapshotUpdate {
-            server_time_ms,
-            full_snapshot,
-            self_position,
-            self_position_mm,
-            self_velocity,
-            self_grounded,
-            players,
-            removed_players,
-        } = snapshot;
-        let server_time_ms = self
-            .last_remote_snapshot_time_ms
-            .map_or(server_time_ms, |previous| previous.max(server_time_ms));
-        self.last_remote_snapshot_time_ms = Some(server_time_ms);
-        self.last_remote_snapshot_received_at = Some(Instant::now());
-        if full_snapshot {
-            self.remote_players = [None; MAX_VISIBLE_PLAYERS];
-        }
-        for id in removed_players.iter() {
-            if let Some(slot) = self
-                .remote_players
-                .iter_mut()
-                .find(|slot| slot.is_some_and(|track| track.id == *id))
-            {
-                *slot = None;
-            }
-        }
-        for player in players.iter() {
-            let existing_slot = self
-                .remote_players
-                .iter()
-                .position(|slot| slot.is_some_and(|track| track.id == player.id));
-            let slot =
-                existing_slot.or_else(|| self.remote_players.iter().position(Option::is_none));
-            let Some(slot) = slot else {
-                return false;
-            };
-            let existing = self.remote_players[slot];
-            let previous_position_mm = existing
-                .map(|track| track.current_position_mm)
-                .unwrap_or(player.position_mm.0);
-            let displacement_squared = previous_position_mm
-                .iter()
-                .zip(player.position_mm.0)
-                .map(|(previous, current)| (*previous as f64 - current as f64).powi(2))
-                .sum::<f64>();
-            let teleported = displacement_squared > 100_000_f64.powi(2);
-            let previous_position_mm = if teleported {
-                player.position_mm.0
-            } else {
-                previous_position_mm
-            };
-            let previous_time_ms = existing
-                .map(|track| track.current_time_ms.min(server_time_ms))
-                .unwrap_or(server_time_ms);
-            let previous_time_ms = if teleported {
-                server_time_ms
-            } else {
-                previous_time_ms
-            };
-            self.remote_players[slot] = Some(RemotePlayerTrack {
-                id: player.id,
-                previous_position_mm,
-                current_position_mm: player.position_mm.0,
-                displayed_position_mm: previous_position_mm,
-                previous_time_ms,
-                current_time_ms: server_time_ms,
-                displayed_time_ms: previous_time_ms,
-            });
-        }
-        self.remote_player_count = self.remote_players.iter().flatten().count();
-        self.remote_geometry_dirty = true;
-        if let Some(predicted_mm) = &mut self.position_mm {
-            predicted_mm.0 = std::array::from_fn(|axis| {
-                (predicted_mm.0[axis] as f64 * 0.75 + self_position_mm.0[axis] as f64 * 0.25)
-                    .round() as i64
-            });
-            self.character.position = predicted_mm.0.map(|value| value as f32 / 1000.0);
-        } else {
-            let predicted = glam::Vec3::from_array(self.character.position);
-            let authoritative = glam::Vec3::from_array(self_position);
-            self.character.position = predicted.lerp(authoritative, 0.25).to_array();
-        }
-        self.character.velocity = self_velocity;
-        self.character.grounded = self_grounded;
-        true
-    }
-
     fn clear_remote_players(&mut self) {
-        self.remote_players = [None; MAX_VISIBLE_PLAYERS];
-        self.last_remote_snapshot_time_ms = None;
-        self.last_remote_snapshot_received_at = None;
+        self.reconciliation.clear();
         self.last_shot_sent_at = None;
-        self.remote_player_count = 0;
         self.remote_vertices.clear();
         self.remote_geometry_dirty = false;
     }
 
     fn update_remote_vertices(&mut self, now: Instant, origin: [f32; 3]) -> bool {
-        let estimated_server_time_ms = match (
-            self.last_remote_snapshot_time_ms,
-            self.last_remote_snapshot_received_at,
-        ) {
-            (Some(server_time_ms), Some(received_at)) => {
-                let elapsed_ms =
-                    u64::try_from(now.saturating_duration_since(received_at).as_millis())
-                        .unwrap_or(u64::MAX);
-                server_time_ms.saturating_add(elapsed_ms)
-            }
-            _ => 0,
-        };
-        let render_time_ms =
-            estimated_server_time_ms.saturating_sub(REMOTE_INTERPOLATION_DELAY.as_millis() as u64);
-
-        let mut moved = false;
-        for track in self.remote_players.iter_mut().flatten() {
-            let interval_ms = track.current_time_ms.saturating_sub(track.previous_time_ms);
-            let interpolation = if interval_ms == 0 {
-                1.0
-            } else {
-                (render_time_ms.saturating_sub(track.previous_time_ms) as f64 / interval_ms as f64)
-                    .clamp(0.0, 1.0)
-            };
-            let position_mm = std::array::from_fn(|axis| {
-                (track.previous_position_mm[axis] as f64 * (1.0 - interpolation)
-                    + track.current_position_mm[axis] as f64 * interpolation)
-                    .round() as i64
-            });
-            if position_mm != track.displayed_position_mm {
-                track.displayed_position_mm = position_mm;
-                moved = true;
-            }
-            track.displayed_time_ms = render_time_ms.clamp(
-                track.previous_time_ms,
-                track.current_time_ms.max(track.previous_time_ms),
-            );
-        }
+        let moved = self.reconciliation.interpolate_positions(
+            now,
+            REMOTE_INTERPOLATION_DELAY,
+            &mut self.remote_positions_mm,
+        );
         if !moved && !self.remote_geometry_dirty {
             return false;
         }
-
         self.remote_vertices.clear();
-        for track in self.remote_players.iter().flatten() {
+        for position_mm in &self.remote_positions_mm {
             let position: [f32; 3] = std::array::from_fn(|axis| {
-                (track.displayed_position_mm[axis] as f64 / 1000.0 - f64::from(origin[axis])) as f32
+                (position_mm[axis] as f64 / 1000.0 - f64::from(origin[axis])) as f32
             });
             cube(
                 &mut self.remote_vertices,

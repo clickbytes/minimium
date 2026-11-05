@@ -290,7 +290,7 @@ fn to_f32(value: f64) -> Option<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use minimium_core::universe::{BodyKind, CelestialBodyId};
+    use minimium_environment::universe::{BodyKind, CelestialBodyId};
 
     #[test]
     fn halo_upload_keeps_the_eight_brightest_bodies() {

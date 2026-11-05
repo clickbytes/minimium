@@ -1,20 +1,24 @@
-use minimium_core::{
-    sky::{normalized_observer_direction, EarthHeightReference, ObserverError},
-    world::{PlanetDefinition, Position3Mm},
+use minimium_environment::sky::{
+    normalized_observer_direction, EarthHeightReference, ObserverError,
 };
+use minimium_world::world::{PlanetDefinition, Position3Mm};
 
-use crate::{earth::EarthSampleError, try_earth_elevation_m_for_package};
+use crate::{EarthSampleError, PreparedGeography};
 
 pub fn earth_height_reference(
     position_mm: Position3Mm,
     definition: PlanetDefinition,
+    geography: Option<&dyn PreparedGeography>,
 ) -> Result<EarthHeightReference, ObserverError> {
     if !definition.is_valid() || definition.mode != 1 {
         return Err(ObserverError::InvalidPlanet);
     }
     let direction = normalized_observer_direction(position_mm)?;
-    let elevation_m = try_earth_elevation_m_for_package(direction, definition.package_digest)
-        .map_err(map_sample_error)?;
+    let geography = geography.ok_or(ObserverError::MissingEarthPackage)?;
+    if geography.package_digest() != definition.package_digest {
+        return Err(ObserverError::PackageMismatch);
+    }
+    let elevation_m = geography.elevation_m(direction).map_err(map_sample_error)?;
     EarthHeightReference::from_gebco(elevation_m, definition)
 }
 

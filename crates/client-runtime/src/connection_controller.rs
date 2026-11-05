@@ -1,0 +1,303 @@
+use crate::session::{ClientSession, QueueError, SessionEvent, SessionState};
+use crate::{
+    bootstrap::LocalServer,
+    connector::{AttemptId, Connector, PollEvent, StartError},
+    ThreadLane,
+};
+use minimium_core::identity::PlayerProfileId;
+use minimium_platform::admin_client;
+use minimium_protocol::ClientMessage;
+use minimium_world::world::WorldInstanceId;
+use std::{
+    collections::HashMap,
+    io,
+    path::PathBuf,
+    thread::{self, JoinHandle},
+    time::Duration,
+};
+
+const ATTEMPT_TIMEOUT: Duration = Duration::from_secs(10);
+
+pub enum ConnectionEvent {
+    Idle,
+    InProgress { waiting_for_cleanup: bool },
+    TimedOut,
+    Cancelled,
+    SessionStarted,
+    SetupFailed(io::Error),
+    Failed(io::Error),
+}
+
+/// Owns the connector, session and any local process independently of a UI.
+pub struct ConnectionController {
+    pub movement: minimium_simulation::MovementSettings,
+    connector: Connector,
+    active: Option<AttemptId>,
+    session: Option<ClientSession>,
+    local_server: Option<LocalServer>,
+    session_owns_server: bool,
+    time_scale_request: Option<JoinHandle<io::Result<String>>>,
+    cleanup: Option<JoinHandle<Result<(), String>>>,
+    profile: PlayerProfileId,
+    fingerprint: u64,
+    world_fingerprints: HashMap<WorldInstanceId, u64>,
+}
+
+impl ConnectionController {
+    pub fn new(profile: PlayerProfileId, fingerprint: u64) -> Self {
+        Self {
+            movement: Default::default(),
+            connector: Connector::default(),
+            active: None,
+            session: None,
+            local_server: None,
+            session_owns_server: false,
+            time_scale_request: None,
+            cleanup: None,
+            profile,
+            fingerprint,
+            world_fingerprints: HashMap::from([(
+                WorldInstanceId::new(1).expect("primary ID is nonzero"),
+                fingerprint,
+            )]),
+        }
+    }
+
+    pub fn set_world_fingerprints(&mut self, fingerprints: HashMap<WorldInstanceId, u64>) {
+        self.world_fingerprints = fingerprints;
+    }
+
+    pub fn busy(&self) -> bool {
+        self.session.is_some() || self.active.is_some() || self.cleanup.is_some()
+    }
+
+    pub fn session(&self) -> Option<&ClientSession> {
+        self.session.as_ref()
+    }
+
+    pub fn session_mut(&mut self) -> Option<&mut ClientSession> {
+        self.session.as_mut()
+    }
+
+    pub fn take_session(&mut self) -> Option<ClientSession> {
+        self.session_owns_server = false;
+        self.session.take()
+    }
+
+    /// Sends a server-authoritative time change without blocking the UI loop.
+    pub fn request_time_scale(&mut self, value: String) -> Result<(), String> {
+        if !self
+            .session
+            .as_ref()
+            .is_some_and(|session| session.state() == SessionState::Connected)
+            || !self.session_owns_server
+        {
+            return Err(String::from(
+                "time scale requires a connection to a server started by this client",
+            ));
+        }
+        if self.time_scale_request.is_some() {
+            return Err(String::from("a time scale request is already in progress"));
+        }
+        let endpoint = self
+            .local_server
+            .as_mut()
+            .ok_or("owned server is unavailable")?
+            .owned_admin_endpoint()
+            .map_err(|error| error.to_string())?
+            .ok_or("owned server is not running")?;
+        self.time_scale_request = Some(thread::spawn(move || {
+            admin_client::request(&endpoint, &format!("time scale {value}"))
+        }));
+        Ok(())
+    }
+
+    pub fn poll_time_scale_result(&mut self) -> Option<Result<String, String>> {
+        if !self
+            .time_scale_request
+            .as_ref()
+            .is_some_and(JoinHandle::is_finished)
+        {
+            return None;
+        }
+        let worker = self.time_scale_request.take()?;
+        Some(match worker.join() {
+            Ok(Ok(response)) => Ok(response),
+            Ok(Err(error)) => Err(error.to_string()),
+            Err(_) => Err(String::from("time scale request worker panicked")),
+        })
+    }
+
+    pub fn queue(&mut self, message: &ClientMessage) -> Result<(), QueueError> {
+        self.session
+            .as_mut()
+            .ok_or(QueueError::Disconnected)?
+            .queue(message)
+    }
+
+    pub fn cancel_transition(&mut self) -> bool {
+        self.session
+            .as_mut()
+            .is_some_and(ClientSession::cancel_pending_transition)
+    }
+
+    pub fn start_remote(&mut self, address: String) -> Result<(), StartError> {
+        self.active = Some(self.connector.start(address, ATTEMPT_TIMEOUT)?);
+        Ok(())
+    }
+
+    pub fn start_local(
+        &mut self,
+        data_dir: PathBuf,
+        map_path: Option<PathBuf>,
+        world_definition_path: Option<PathBuf>,
+        lanes: ThreadLane,
+    ) -> Result<(), StartError> {
+        self.active = Some(self.connector.start_local(
+            data_dir,
+            map_path,
+            world_definition_path,
+            lanes,
+            ATTEMPT_TIMEOUT,
+        )?);
+        Ok(())
+    }
+
+    pub fn poll_connector(&mut self) -> ConnectionEvent {
+        if self.cleanup.as_ref().is_some_and(JoinHandle::is_finished) {
+            if let Some(handle) = self.cleanup.take() {
+                match handle.join() {
+                    Ok(Ok(())) => {}
+                    Ok(Err(error)) => eprintln!("local server guard cleanup failed: {error}"),
+                    Err(_) => eprintln!("local server cleanup worker panicked"),
+                }
+            }
+        }
+        match self.connector.poll() {
+            PollEvent::Idle => {
+                self.active = None;
+                ConnectionEvent::Idle
+            }
+            PollEvent::InProgress {
+                attempt_id,
+                discarding_result,
+            } => {
+                let waiting_for_cleanup = discarding_result && self.active != Some(attempt_id);
+                self.active = Some(attempt_id);
+                ConnectionEvent::InProgress {
+                    waiting_for_cleanup,
+                }
+            }
+            PollEvent::TimedOut { attempt_id } if self.active == Some(attempt_id) => {
+                ConnectionEvent::TimedOut
+            }
+            PollEvent::Cancelled { attempt_id } if self.active == Some(attempt_id) => {
+                self.active = None;
+                ConnectionEvent::Cancelled
+            }
+            PollEvent::Connected {
+                attempt_id,
+                stream,
+                local_server,
+            } if self.active == Some(attempt_id) => {
+                self.active = None;
+                self.session_owns_server = local_server
+                    .as_ref()
+                    .is_some_and(|server| matches!(server, LocalServer::Owned(_)));
+                if let Some(server) = local_server {
+                    self.retain_local_server(server);
+                }
+                match ClientSession::new(stream, self.profile, self.fingerprint) {
+                    Ok(mut session) => {
+                        session.set_world_fingerprints(self.world_fingerprints.clone());
+                        self.session = Some(session);
+                        ConnectionEvent::SessionStarted
+                    }
+                    Err(error) => {
+                        self.session_owns_server = false;
+                        ConnectionEvent::SetupFailed(error)
+                    }
+                }
+            }
+            PollEvent::Failed { attempt_id, error } if self.active == Some(attempt_id) => {
+                self.active = None;
+                ConnectionEvent::Failed(error)
+            }
+            _ => ConnectionEvent::Idle,
+        }
+    }
+
+    pub fn poll_session(&mut self, events: &mut Vec<SessionEvent>) {
+        if let Some(session) = self.session.as_mut() {
+            session.poll(events);
+        }
+    }
+
+    pub fn cancel(&mut self) {
+        if let Some(id) = self.active.take() {
+            self.connector.cancel(id);
+        }
+    }
+
+    pub fn finish(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.cancel();
+        self.connector.finish_on_exit();
+        if let Some(mut session) = self.session.take() {
+            session.close();
+        }
+        let cleanup_result = self
+            .cleanup
+            .take()
+            .map_or(Ok(()), |worker| match worker.join() {
+                Ok(Ok(())) => Ok(()),
+                Ok(Err(error)) => Err(io::Error::other(error)),
+                Err(_) => Err(io::Error::other("local server cleanup worker panicked")),
+            });
+        let server_result = self
+            .local_server
+            .take()
+            .map_or(Ok(()), |mut server| server.shutdown());
+        if let Err(error) = &server_result {
+            if cleanup_result.is_err() {
+                eprintln!("local server shutdown also failed: {error}");
+            }
+        }
+        cleanup_result?;
+        server_result
+    }
+
+    fn retain_local_server(&mut self, new_server: LocalServer) {
+        let replace = match (&mut self.local_server, &new_server) {
+            (Some(server @ LocalServer::Owned(_)), LocalServer::Attached) => {
+                match server.is_owned_process_running() {
+                    Ok(running) => !running,
+                    Err(error) => {
+                        eprintln!("local server process check failed: {error}");
+                        false
+                    }
+                }
+            }
+            _ => true,
+        };
+        if replace {
+            if let Some(mut old) = self.local_server.replace(new_server) {
+                if matches!(old, LocalServer::Attached) {
+                    return;
+                }
+                // At most one cleanup can be outstanding: busy() prevents a rehost.
+                debug_assert!(self.cleanup.is_none());
+                self.cleanup = Some(thread::spawn(move || {
+                    old.shutdown().map_err(|error| error.to_string())
+                }));
+            }
+        }
+    }
+}
+
+impl Drop for ConnectionController {
+    fn drop(&mut self) {
+        if let Err(error) = self.finish() {
+            eprintln!("local server guard cleanup failed: {error}");
+        }
+    }
+}

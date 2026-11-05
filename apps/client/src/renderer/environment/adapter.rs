@@ -1,16 +1,17 @@
-use super::super::environment_gpu::{camera_uniform, EnvironmentUniform};
 use super::{
     EnvironmentFrame, EnvironmentFrameDiagnostics, EnvironmentFrameStatus, EnvironmentSettings,
     GlobalSunFrame, RenderViewFrame, SkyFrameInput,
 };
 use bytemuck::Zeroable;
 use minimium_astronomy::{SkyState, ASTRONOMY_MODEL_REVISION};
-use minimium_core::{
-    environment::{EnvironmentDescriptor, EnvironmentProfile},
-    sky::SkyModel,
+use minimium_environment::sky::SkyModel;
+use minimium_environment::{
     time::{ClockId, ClockRevision},
+    {EnvironmentDescriptor, EnvironmentProfile},
 };
 use minimium_protocol::WorldContext;
+use minimium_renderer::gpu_frame::camera_uniform;
+use minimium_renderer::gpu_frame::EnvironmentUniform;
 use std::{error::Error, f64::consts::PI, fmt};
 
 // Presentation scale for sky disks; physical angular radii still drive lighting and visibility.
@@ -103,16 +104,17 @@ pub(super) fn from_sky_state(
         horizon_altitude,
     );
     let clear_sky =
-        super::super::lighting::evaluate_clear_sky_parameters(sky, &observer, &settings);
+        minimium_renderer::lighting::evaluate_clear_sky_parameters(sky, &observer, &settings);
     let disk_sun = super::body_frame(
         sky.sun,
         settings.sunlight.local_rgb,
         clear_sky.direct_sun_factor,
         sun_visible,
     );
-    let moon_flux = super::super::moon_lighting::apparent_moon_flux(sky.moon.apparent_v_magnitude)
-        .ok_or(EnvironmentFrameError::SkyStateInvalid)?;
-    let moon_scale = super::super::moon_lighting::lunar_irradiance_at_observer(
+    let moon_flux =
+        minimium_renderer::moon_lighting::apparent_moon_flux(sky.moon.apparent_v_magnitude)
+            .ok_or(EnvironmentFrameError::SkyStateInvalid)?;
+    let moon_scale = minimium_renderer::moon_lighting::lunar_irradiance_at_observer(
         moon_flux,
         sky.moon.body.apparent_altitude_rad,
         sky.moon.body.angular_radius_rad,
@@ -211,7 +213,7 @@ pub(super) fn from_sky_state(
             transfer_route(render_view),
         ],
         eqj_to_world: matrix4(sky.catalog_epoch_to_world)?,
-        moon_disk_radiance: super::super::moon_lighting::moon_disk_radiance(moon_flux),
+        moon_disk_radiance: minimium_renderer::moon_lighting::moon_disk_radiance(moon_flux),
         star_animation: [0.0; 4],
         moon_orbit_world,
         halo_count: [halo_count, 0, 0, 0],
@@ -232,7 +234,7 @@ pub(super) fn from_sky_state(
         local_moon: Some(disk_moon),
         diagnostics: EnvironmentFrameDiagnostics {
             eye_below_planet_radius: below_radius,
-            clear_sky_model_revision: super::super::lighting::CLEAR_SKY_MODEL_REVISION,
+            clear_sky_model_revision: minimium_renderer::lighting::CLEAR_SKY_MODEL_REVISION,
             star_frame: None,
         },
         status: EnvironmentFrameStatus::Available,

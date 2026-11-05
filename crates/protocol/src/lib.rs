@@ -6,6 +6,7 @@ mod framing;
 mod kinds;
 mod limits;
 mod models;
+mod movement_codec;
 mod reading;
 mod validation;
 mod world_context;

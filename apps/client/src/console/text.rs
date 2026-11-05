@@ -1,15 +1,9 @@
+pub use minimium_renderer::UiVertex;
+
 use super::theme::{
     ASCII_GLYPHS, ATLAS_HEIGHT, ATLAS_WIDTH, CELL, COLUMNS, GLYPH_ADVANCE, MAX_VERTICES,
     POLISH_GLYPHS,
 };
-
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct UiVertex {
-    pub position: [f32; 2],
-    pub uv: [f32; 2],
-    pub color: [f32; 3],
-}
 
 #[derive(Clone, Copy)]
 pub(super) struct DrawContext {

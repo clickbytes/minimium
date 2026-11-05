@@ -1,38 +1,26 @@
-use crate::obj::{load_obj_triangles, parse_map_vec3, parse_mesh_asset_path, ObjMeshOptions};
-use minimium_core::world::{
+use crate::obj::{parse_map_vec3, parse_mesh_asset_path, parse_obj_triangles, ObjMeshOptions};
+use minimium_world::world::{
     triangle_area_squared, MapBox, MapTriangle, WorldMap, MAX_MAP_BOXES, MAX_MAP_TRIANGLES,
 };
-use std::{
-    fs::File,
-    io::{self, Read},
-    path::Path,
-};
+use std::path::Path;
 
-pub(super) const MAX_MAP_MESHES: usize = 64;
-pub(super) const MAX_MAP_BYTES: usize = 1024 * 1024;
-pub(super) const MAX_MESH_BYTES: usize = 8 * 1024 * 1024;
-pub(super) const MAX_MAP_TOTAL_MESH_BYTES: usize = 16 * 1024 * 1024;
+pub const MAX_MAP_MESHES: usize = 64;
+pub const MAX_MAP_BYTES: usize = 1024 * 1024;
+pub const MAX_MESH_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_MAP_TOTAL_MESH_BYTES: usize = 16 * 1024 * 1024;
 pub(super) const MAX_MESH_VERTICES: usize = 262_144;
 pub(super) const MAX_OBJ_FACE_VERTICES: usize = 128;
 
-pub fn load_map(path: &Path) -> io::Result<WorldMap> {
-    let mut input = String::new();
-    File::open(path)?
-        .take((MAX_MAP_BYTES + 1) as u64)
-        .read_to_string(&mut input)?;
-    let base_dir = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    parse_with_base(&input, Some(base_dir))
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
-}
-
 pub fn parse_map(source: &str) -> Result<WorldMap, String> {
-    parse_with_base(source, None)
+    parse_map_with_mesh_loader(source, |_path, _| {
+        Err("mesh records require file-based map loading".into())
+    })
 }
 
-fn parse_with_base(source: &str, base_dir: Option<&Path>) -> Result<WorldMap, String> {
+pub fn parse_map_with_mesh_loader(
+    source: &str,
+    mut load_mesh: impl FnMut(&Path, usize) -> Result<String, String>,
+) -> Result<WorldMap, String> {
     if source.len() > MAX_MAP_BYTES {
         return Err(format!("map exceeds {MAX_MAP_BYTES} bytes"));
     }
@@ -153,11 +141,6 @@ fn parse_with_base(source: &str, base_dir: Option<&Path>) -> Result<WorldMap, St
                         "line {line_number}: map exceeds {MAX_MAP_MESHES} mesh assets"
                     ));
                 }
-                let Some(base_dir) = base_dir else {
-                    return Err(format!(
-                        "line {line_number}: mesh records require file-based map loading"
-                    ));
-                };
                 let asset_path = parse_mesh_asset_path(fields[1], line_number)?;
                 let translation = parse_map_vec3(&fields[2..5], line_number, "mesh translation")?;
                 let scale = parse_map_vec3(&fields[5..8], line_number, "mesh scale")?;
@@ -177,8 +160,10 @@ fn parse_with_base(source: &str, base_dir: Option<&Path>) -> Result<WorldMap, St
                 };
                 let remaining_mesh_bytes =
                     MAX_MAP_TOTAL_MESH_BYTES.saturating_sub(total_mesh_bytes);
-                let mesh_bytes = load_obj_triangles(
-                    base_dir,
+                let mesh_source = load_mesh(&asset_path, MAX_MESH_BYTES.min(remaining_mesh_bytes))
+                    .map_err(|error| format!("line {line_number}: {error}"))?;
+                let mesh_bytes = parse_obj_triangles(
+                    &mesh_source,
                     &asset_path,
                     ObjMeshOptions {
                         translation,

@@ -1,4 +1,4 @@
-use minimium_core::world::{
+use minimium_world::world::{
     PlanetSectorKey, SectorKey, WorldManifest, WorldTopology, PLANET_SECTORS_PER_FACE,
 };
 

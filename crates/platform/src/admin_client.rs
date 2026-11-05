@@ -38,8 +38,12 @@ pub fn request_until(
             "invalid admin request",
         ));
     }
-    crate::commands::ServerCommand::parse(command)
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
+    if command.chars().any(char::is_control) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid admin request",
+        ));
+    }
     let connect_remaining = deadline.saturating_duration_since(Instant::now());
     if connect_remaining.is_zero() {
         return Err(io::Error::new(

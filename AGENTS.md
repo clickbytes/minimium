@@ -11,3 +11,11 @@
 
 - Hand-maintained code and shaders are limited to 500 physical lines per file. Do not evade the limit by combining lines.
 - Every exception must document the specific reason and its scope. Generated files and data assets follow separately documented rules and must not be used to hide hand-maintained code.
+
+## Domain ownership
+
+- Read `architecture.toml` and the owning package's `README.md` before changing domain code.
+- `docs/architecture.md` distinguishes current Cargo ownership from planned package boundaries; do not create empty placeholder crates.
+- Keep domain code free of process, filesystem, transport, GPU and UI effects unless its declared package responsibility is an adapter or application.
+- When moving behavior, keep the old consumer connected in the same change and update the ownership declaration and package README.
+- Preserve existing world, protocol, save and generation behavior during structural changes.

@@ -3,8 +3,5 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-    throw 'uv is required to fetch the compact GEBCO package (https://docs.astral.sh/uv/getting-started/installation/).'
-}
-& uv run --python 3.12 --with rasterio python (Join-Path $PSScriptRoot 'scripts/import_gebco_lite.py') --package-dir $PackageDir
+& (Join-Path $PSScriptRoot 'tools/geography/import-gebco-lite.ps1') -PackageDir $PackageDir
 exit $LASTEXITCODE

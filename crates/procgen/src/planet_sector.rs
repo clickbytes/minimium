@@ -1,9 +1,10 @@
 use crate::terrain_color::{mostly_ocean, terrain_color};
 use crate::{PlanetSurfaceSpec, PlanetTerrain, SectorGeometry};
-use minimium_core::world::{
+use minimium_world::world::{
     MapTriangle, PlanetFace, PlanetSectorKey, WorldManifest, PLANET_DENSE_SECTORS_PER_FACE,
     PLANET_SECTORS_PER_FACE,
 };
+use std::sync::Arc;
 
 /// The collision lattice is fixed independently of the renderer's patch detail.
 /// Neighboring sectors, including those on different cube faces, sample the
@@ -43,7 +44,15 @@ pub fn planet_point_at_direction(
     manifest: WorldManifest,
     direction: [f32; 3],
 ) -> Option<crate::PlanetPoint> {
-    if manifest.topology() != minimium_core::world::WorldTopology::Planet
+    planet_point_at_direction_with_geography(manifest, direction, None)
+}
+
+pub fn planet_point_at_direction_with_geography(
+    manifest: WorldManifest,
+    direction: [f32; 3],
+    geography: Option<Arc<dyn crate::PreparedGeography>>,
+) -> Option<crate::PlanetPoint> {
+    if manifest.topology() != minimium_world::world::WorldTopology::Planet
         || !direction.iter().all(|component| component.is_finite())
     {
         return None;
@@ -84,18 +93,32 @@ pub fn planet_point_at_direction(
             y / dominant,
         )
     };
-    let scale = f64::from(minimium_core::world::PLANET_SAMPLE_COORDINATE_SCALE);
+    let scale = f64::from(minimium_world::world::PLANET_SAMPLE_COORDINATE_SCALE);
     let sample = face.cube_sample((u * scale).round() as i32, (v * scale).round() as i32)?;
     let mut terrain = PlanetTerrain::new(manifest.generation(), planet_surface_for(manifest))?;
     if let Some(definition) = manifest.planet() {
         terrain = terrain.with_definition(definition);
     }
+    if let Some(geography) = geography {
+        terrain = terrain.with_geography(geography);
+    }
     Some(terrain.sample(sample))
 }
 
 pub fn generate_planet_sector(manifest: WorldManifest, key: PlanetSectorKey) -> SectorGeometry {
+    generate_planet_sector_with_geography(manifest, key, None)
+}
+
+pub fn generate_planet_sector_with_geography(
+    manifest: WorldManifest,
+    key: PlanetSectorKey,
+    geography: Option<Arc<dyn crate::PreparedGeography>>,
+) -> SectorGeometry {
     let mut terrain = PlanetTerrain::new(manifest.generation(), planet_surface_for(manifest))
         .expect("the planet generation quantum fits the surface");
+    if let Some(geography) = geography {
+        terrain = terrain.with_geography(geography);
+    }
     if let Some(definition) = manifest.planet() {
         terrain = terrain.with_definition(definition);
     }
@@ -156,11 +179,23 @@ pub fn generate_planet_render_patch(
     key: PlanetSectorKey,
     subdivisions: u32,
 ) -> SectorGeometry {
+    generate_planet_render_patch_with_geography(manifest, key, subdivisions, None)
+}
+
+pub fn generate_planet_render_patch_with_geography(
+    manifest: WorldManifest,
+    key: PlanetSectorKey,
+    subdivisions: u32,
+    geography: Option<Arc<dyn crate::PreparedGeography>>,
+) -> SectorGeometry {
     assert!(subdivisions.is_power_of_two() && (1..=16).contains(&subdivisions));
     let mut terrain = PlanetTerrain::new(manifest.generation(), planet_surface_for(manifest))
         .expect("the planet generation quantum fits the surface");
     if let Some(definition) = manifest.planet() {
         terrain = terrain.with_definition(definition);
+    }
+    if let Some(geography) = geography {
+        terrain = terrain.with_geography(geography);
     }
     let count = planet_sector_count(manifest);
     let mut triangles = Vec::new();
@@ -240,13 +275,27 @@ pub fn generate_planet_render_block(
     v: u16,
     span: u16,
 ) -> SectorGeometry {
+    generate_planet_render_block_with_geography(manifest, face, u, v, span, None)
+}
+
+pub fn generate_planet_render_block_with_geography(
+    manifest: WorldManifest,
+    face: PlanetFace,
+    u: u16,
+    v: u16,
+    span: u16,
+    geography: Option<Arc<dyn crate::PreparedGeography>>,
+) -> SectorGeometry {
     const STEPS: usize = 16;
     let count = u32::from(planet_sector_count(manifest));
-    let scale = minimium_core::world::PLANET_SAMPLE_COORDINATE_SCALE;
+    let scale = minimium_world::world::PLANET_SAMPLE_COORDINATE_SCALE;
     let mut terrain = PlanetTerrain::new(manifest.generation(), planet_surface_for(manifest))
         .expect("the planet generation quantum fits the surface");
     if let Some(definition) = manifest.planet() {
         terrain = terrain.with_definition(definition);
+    }
+    if let Some(geography) = geography {
+        terrain = terrain.with_geography(geography);
     }
     let mut points = Vec::with_capacity((STEPS + 1) * (STEPS + 1));
     let mut ocean = Vec::with_capacity((STEPS + 1) * (STEPS + 1));

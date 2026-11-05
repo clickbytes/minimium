@@ -1,0 +1,9 @@
+[package]
+name = "minimium-simulation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+minimium-core = { path = "../core" }
+minimium-world = { path = "../world" }

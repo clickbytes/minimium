@@ -1,6 +1,6 @@
 use std::f64::consts::{FRAC_PI_2, TAU};
 
-use minimium_core::sky::{ObserverFrame, SkyModel};
+use minimium_environment::sky::{ObserverFrame, SkyModel};
 
 use crate::{
     ffi,

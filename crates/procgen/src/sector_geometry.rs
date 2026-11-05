@@ -1,9 +1,9 @@
-use crate::generate_planet_sector;
 use crate::sector_neighborhood::DUNGEON_SECTOR_EDGE;
-use minimium_core::world::{
+use minimium_world::world::{
     MapBox, MapTriangle, PlanetFace, PlanetSectorKey, SectorKey, WorldMap, WorldTopology,
     PLANET_SECTORS_PER_FACE,
 };
+use std::sync::Arc;
 
 #[derive(Clone, Default)]
 pub struct SectorGeometry {
@@ -62,8 +62,17 @@ fn slice_sector_geometry_with_count(
 /// Shared server/client source for the current manifest's sector geometry.
 pub fn materialize_world_sector(
     map: &WorldMap,
-    manifest: minimium_core::world::WorldManifest,
+    manifest: minimium_world::world::WorldManifest,
     key: SectorKey,
+) -> SectorGeometry {
+    materialize_world_sector_with_geography(map, manifest, key, None)
+}
+
+pub fn materialize_world_sector_with_geography(
+    map: &WorldMap,
+    manifest: minimium_world::world::WorldManifest,
+    key: SectorKey,
+    geography: Option<Arc<dyn crate::PreparedGeography>>,
 ) -> SectorGeometry {
     let mut geometry = slice_sector_geometry_with_count(
         map,
@@ -72,9 +81,9 @@ pub fn materialize_world_sector(
         crate::planet_sector_count(manifest),
     );
     if let (WorldTopology::Planet, SectorKey::Planet(planet)) = (manifest.topology(), key) {
-        geometry
-            .triangles
-            .extend(generate_planet_sector(manifest, planet).triangles);
+        geometry.triangles.extend(
+            crate::generate_planet_sector_with_geography(manifest, planet, geography).triangles,
+        );
     }
     geometry
 }

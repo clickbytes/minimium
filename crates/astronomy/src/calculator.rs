@@ -1,6 +1,7 @@
 use std::{marker::PhantomData, rc::Rc};
 
-use minimium_core::{sky::ObserverFrame, time::WorldTimeMs};
+use minimium_environment::sky::ObserverFrame;
+use minimium_environment::time::WorldTimeMs;
 
 use crate::{
     ephemeris_cache::{map_status, EphemerisCache},
@@ -27,7 +28,7 @@ pub enum SkyInvalidation {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ContextKey {
-    clock_revision: minimium_core::time::ClockRevision,
+    clock_revision: minimium_environment::time::ClockRevision,
     world_context_key: crate::model::AstronomyContextKey,
     observer_model_revision: u32,
 }

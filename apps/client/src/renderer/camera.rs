@@ -11,17 +11,18 @@ impl Renderer {
         let dt = now
             .duration_since(self.metrics.last_frame)
             .as_secs_f32()
-            .min(minimium_core::world::SIMULATION_STEP_SECONDS);
+            .min(minimium_simulation::SIMULATION_STEP_SECONDS);
         self.metrics.last_frame = now;
-        let direction = if self.game.sectors_ready && !self.overview_open {
-            self.input.movement(
-                self.ui.console.open,
-                self.game.character,
-                self.is_earth_world(),
-            )
-        } else {
-            [0.0; 2]
-        };
+        let direction =
+            if (self.game.sectors_ready || self.connection.movement.fly) && !self.overview_open {
+                self.input.movement(
+                    self.ui.console.open,
+                    self.game.character,
+                    self.is_earth_world(),
+                )
+            } else {
+                [0.0; 2]
+            };
         self.game.accumulate_prediction_time(dt);
         let manifest = self
             .game
@@ -30,35 +31,47 @@ impl Renderer {
             .copied();
         while let Some(predicted) = self.game.predict_next(
             direction,
+            if self.ui.console.open || self.overview_open {
+                0.0
+            } else {
+                u8::from(self.input.keys.contains(&KeyCode::Space)) as f32
+                    - u8::from(
+                        self.input.keys.contains(&KeyCode::ControlLeft)
+                            || self.input.keys.contains(&KeyCode::ControlRight),
+                    ) as f32
+            },
+            self.connection.movement,
             self.input.jump_pending,
-            self.game.sectors_ready && !self.overview_open,
+            (self.game.sectors_ready || self.connection.movement.fly) && !self.overview_open,
             manifest,
+            self.connection
+                .session()
+                .and_then(|session| session.prepared_geography()),
         ) {
             let mut input = predicted.input;
             self.input.jump_pending = false;
-            if !self.refresh_active_sector_scene() {
+            if !self.refresh_active_sector_scene() && !self.connection.movement.fly {
                 self.game.character = predicted.previous_state;
                 self.game.position_mm = predicted.previous_mm;
                 input = CharacterInput::default();
             }
-            self.input.input_keepalive += minimium_core::world::SIMULATION_STEP_SECONDS;
+            self.input.input_keepalive += minimium_simulation::SIMULATION_STEP_SECONDS;
             let moving = input.direction != [0.0, 0.0];
             let input_changed = input.direction != self.input.last_sent_direction;
             if self
                 .connection
                 .session()
                 .is_some_and(|session| session.state() == SessionState::Connected)
-                && (input.jump
+                && (self.input.input_keepalive
+                    >= 2.0 * minimium_simulation::SIMULATION_STEP_SECONDS
+                    || input.jump
                     || input_changed
                     || (moving
                         && self.input.input_keepalive
-                            >= 2.0 * minimium_core::world::SIMULATION_STEP_SECONDS))
+                            >= 2.0 * minimium_simulation::SIMULATION_STEP_SECONDS))
             {
                 if let Some(session) = self.connection.session_mut() {
-                    let result = session.queue(&ClientMessage::Move {
-                        direction: input.direction,
-                        jump: input.jump,
-                    });
+                    let result = session.queue(&ClientMessage::Motion(input));
                     if let Err(error) = result {
                         self.fail_connection(Text::CouldNotQueueMovement(error.into()).to_string());
                     } else {
@@ -231,7 +244,7 @@ impl Renderer {
             .frame
             .descriptor
             .is_some_and(|descriptor| {
-                descriptor.profile() == minimium_core::environment::EnvironmentProfile::Earth
+                descriptor.profile() == minimium_environment::EnvironmentProfile::Earth
             });
         self.gpu.atmosphere_gpu.upload(
             &self.gpu.queue,
@@ -240,7 +253,7 @@ impl Renderer {
             } else {
                 0.0
             },
-            self.sky_quality.effective == crate::environment::quality::SkyQuality::Standard,
+            self.sky_quality.effective == minimium_renderer::quality::SkyQuality::Standard,
         );
 
         let celestial_labels = if self.show_celestial_names {
@@ -248,36 +261,25 @@ impl Renderer {
         } else {
             Vec::new()
         };
-        let vertex_count = {
-            let vertices = self.ui.console.build_vertices(
-                self.gpu.size.width,
-                self.gpu.size.height,
-                self.game.health,
-                self.input.cursor_locked && !self.ui.console.open,
-                self.game
-                    .hit_confirmation_until
-                    .is_some_and(|until| Instant::now() < until),
-                crate::console::Overlay {
-                    status: self
-                        .settings
-                        .require_earth
-                        .then_some(self.connection_status.as_str()),
-                    overview_zoom: self.overview_uses_zoom().then_some(self.overview_zoom),
-                    celestial_labels: &celestial_labels,
-                },
-            );
-            let count = vertices.len() as u32;
-            if count > 0 {
-                self.gpu.queue.write_buffer(
-                    &self.gpu.ui_vertex_buffer,
-                    0,
-                    bytemuck::cast_slice(vertices),
-                );
-            }
-            count
-        };
-        self.gpu.ui_vertex_count = vertex_count;
-        prepared_environment
+        self.ui.console.build_vertices(
+            self.gpu.size.width,
+            self.gpu.size.height,
+            self.game.health,
+            self.input.cursor_locked && !self.ui.console.open,
+            self.game
+                .hit_confirmation_until
+                .is_some_and(|until| Instant::now() < until),
+            crate::console::Overlay {
+                status: self
+                    .settings
+                    .require_earth
+                    .then_some(self.connection_status.as_str()),
+                overview_zoom: self.overview_uses_zoom().then_some(self.overview_zoom),
+                celestial_labels: &celestial_labels,
+            },
+        );
+        let ui_vertices = self.ui.console.take_vertices();
+        prepared_environment.with_ui_vertices(ui_vertices)
     }
 }
 
@@ -329,5 +331,5 @@ pub(super) fn camera_direction(character: CharacterState, yaw: f32, pitch: f32) 
 }
 
 pub(super) fn gravity_for_manifest(manifest: WorldManifest) -> CharacterGravity {
-    minimium_core::world::GravityPolicy::for_manifest(manifest).character_gravity()
+    minimium_world::world::GravityPolicy::for_manifest(manifest).character_gravity()
 }

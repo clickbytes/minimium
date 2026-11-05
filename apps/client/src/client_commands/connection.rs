@@ -3,27 +3,27 @@ use crate::options::ThreadLane;
 
 const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
-        name: "host local",
-        alias: None,
-        usage: "host local [--threads 1|2|auto]",
+        name: "network host local",
+        alias: Some("host local"),
+        usage: "network host local [--threads 1|2|auto]",
         parser: parse,
     },
     CommandSpec {
-        name: "connect",
-        alias: None,
-        usage: "connect HOST:PORT",
+        name: "network connect",
+        alias: Some("connect"),
+        usage: "network connect HOST:PORT",
         parser: parse,
     },
     CommandSpec {
-        name: "disconnect",
-        alias: None,
-        usage: "disconnect",
+        name: "network disconnect",
+        alias: Some("disconnect"),
+        usage: "network disconnect",
         parser: parse,
     },
     CommandSpec {
-        name: "ping",
-        alias: None,
-        usage: "ping",
+        name: "network ping",
+        alias: Some("ping"),
+        usage: "network ping",
         parser: parse,
     },
 ];
@@ -38,15 +38,15 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
     };
     let arguments = raw_arguments.split_whitespace().collect::<Vec<_>>();
     match (*command, arguments.as_slice()) {
-        ("host local", []) => Ok(ClientCommand::HostLocal(None)),
-        ("host local", ["--threads", lane]) => Ok(ClientCommand::HostLocal(Some(
+        ("network host local", []) => Ok(ClientCommand::HostLocal(None)),
+        ("network host local", ["--threads", lane]) => Ok(ClientCommand::HostLocal(Some(
             ThreadLane::parse(lane).map_err(|_| ParseError::InvalidLane)?,
         ))),
-        ("host local", _) => Err(ParseError::HostUsage),
-        ("connect", [address]) => Ok(ClientCommand::Connect((*address).to_owned())),
-        ("connect", _) => Err(ParseError::ConnectUsage),
-        ("disconnect", []) => Ok(ClientCommand::Disconnect),
-        ("ping", []) => Ok(ClientCommand::Ping),
+        ("network host local", _) => Err(ParseError::HostUsage),
+        ("network connect", [address]) => Ok(ClientCommand::Connect((*address).to_owned())),
+        ("network connect", _) => Err(ParseError::ConnectUsage),
+        ("network disconnect", []) => Ok(ClientCommand::Disconnect),
+        ("network ping", []) => Ok(ClientCommand::Ping),
         _ => Err(ParseError::UnknownCommand),
     }
 }

@@ -2,17 +2,17 @@ use super::{
     diagnostics::{ClockDiagnostics, ClockSource},
     EnvironmentFrameInput, SynchronizationQuality,
 };
-use minimium_core::{
-    environment::{
-        AstronomyModelRevision, CatalogueId, CatalogueSha256, EnvironmentDescriptor,
-        EnvironmentProfile,
-    },
+use minimium_environment::{
     time::{
         evaluate_clock, ClockAnchor, ClockMode, MonotonicMs, OfflinePolicy, TimeScalePpm,
         WorldTimeMs,
     },
-    world::{WorldManifest, WorldTopology},
+    {
+        AstronomyModelRevision, CatalogueId, CatalogueSha256, EnvironmentDescriptor,
+        EnvironmentProfile,
+    },
 };
+use minimium_world::world::{WorldManifest, WorldTopology};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 /// Explicit offline-demo adapter. Network sessions never fall back to this clock.

@@ -5,7 +5,7 @@ use super::{
     validation::{valid_chat, valid_direction_component, valid_name},
 };
 use minimium_core::identity::PlayerProfileId;
-use minimium_core::world::{
+use minimium_world::world::{
     GenerationRevision, GenerationSpec, GeneratorDigest, MembershipEpoch, Position3Mm,
     TransitionId, WorldContentRevision, WorldDefinitionId, WorldInstanceId, WorldManifest,
     WorldSeed, WorldTopology,
@@ -111,7 +111,7 @@ impl<'a> Reader<'a> {
         match self.byte()? {
             0 => {}
             1 => {
-                let planet = minimium_core::world::PlanetDefinition {
+                let planet = minimium_world::world::PlanetDefinition {
                     mode: self.byte()?,
                     radius_mm: self.u64()?,
                     height_scale_permille: self.u32()?,

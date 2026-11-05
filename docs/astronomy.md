@@ -1,6 +1,6 @@
 # Georeferencja obserwatora
 
-`minimium_core::sky` definiuje niezależny od renderera kontrakt obserwatora. Backend
+`minimium_environment::sky` definiuje niezależny od renderera kontrakt obserwatora. Backend
 astronomiczny dostaje `GeographicObserver` i `ObserverFrame`; nie odczytuje czasu
 systemowego ani pozycji z kamery. Resolver wymaga `EnvironmentDescriptor` z warstwy
 świata i odrzuca niezgodność profilu z topologią manifestu.

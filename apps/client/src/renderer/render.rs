@@ -9,375 +9,129 @@ impl GpuResources {
         self.environment_draw_calls = super::sky::EnvironmentDrawCalls::default();
         self.last_shadow_prepare_cpu = None;
         self.last_environment_upload_cpu = None;
-        let frame = match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(frame) => frame,
-            wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
-                self.surface.configure(&self.device, &self.config);
-                frame
-            }
-            error @ (wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost) => {
-                return Err(error);
-            }
-            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
-                return Ok(0);
-            }
-            error @ wgpu::CurrentSurfaceTexture::Validation => return Err(error),
+        let frame = match minimium_renderer::surface_frame::acquire(
+            &self.surface,
+            &self.device,
+            &self.config,
+        ) {
+            minimium_renderer::surface_frame::SurfaceAcquire::Ready(frame) => frame,
+            minimium_renderer::surface_frame::SurfaceAcquire::Skipped => return Ok(0),
+            minimium_renderer::surface_frame::SurfaceAcquire::Retry(error) => return Err(error),
         };
-        let surface_view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        let surface_view = &frame.view;
         let prepared = snapshot.environment;
         let environment = &prepared.frame;
+        let render_frame = &prepared.render_frame;
+        let client = render_frame
+            .client
+            .expect("application attaches ClientView before rendering");
         let upload_started = std::time::Instant::now();
-        prepared.upload(self);
+        prepared.upload_stars(self);
+        let ui_vertex_count = render_frame.upload(
+            &self.queue,
+            &self.camera_buffer,
+            &self.environment_buffer,
+            &self.ui.vertex_buffer,
+            self.hdr_enabled,
+            self.output_encoder.as_ref(),
+        );
+        self.ui.set_vertex_count(ui_vertex_count);
         self.last_environment_upload_cpu = Some(upload_started.elapsed());
         // Includes local map caster selection/build/allocation/upload and shadow
         // uniform upload. Remote-player preparation occurs earlier in update().
         // This scope is disjoint from environment preparation and upload.
         let shadow_started = std::time::Instant::now();
-        self.prepare_shadow_frame(environment, snapshot.map, snapshot.player_position_m);
+        self.prepare_shadow_frame(environment, snapshot.map, client.player_position_m);
         self.last_shadow_prepare_cpu = Some(shadow_started.elapsed());
         let scene_view = self
             .output_encoder
             .as_ref()
-            .map_or(&surface_view, |output| output.target_view());
+            .map_or(surface_view, |output| output.target_view());
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("frame-encoder"),
             });
-        let mut draw_calls = 0;
-        if self.shadow_state.valid {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("local-shadow-depth-pass"),
-                color_attachments: &[],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.shadow_gpu.depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_pipeline(&self.shadow_gpu.depth_pipeline);
-            pass.set_bind_group(0, &self.shadow_gpu.uniform_bind_group, &[]);
-            for (key, lod) in &self.shadow_state.caster_keys {
-                if let Some((buffer, vertex_count)) =
-                    self.world_vertex_catalog
-                        .get(&(snapshot.instance, *key, *lod))
-                {
-                    pass.set_vertex_buffer(0, buffer.slice(..));
-                    pass.draw(0..*vertex_count, 0..1);
-                    draw_calls += 1;
-                    self.environment_draw_calls.shadows += 1;
-                }
-            }
-            if let Some(buffer) = &self.shadow_map_buffer {
-                if self.shadow_map_vertex_count > 0 {
-                    pass.set_vertex_buffer(0, buffer.slice(..));
-                    pass.draw(0..self.shadow_map_vertex_count, 0..1);
-                    draw_calls += 1;
-                    self.environment_draw_calls.shadows += 1;
-                }
-            }
-            if self.shadow_player_vertex_count > 0 {
-                if let Some(buffer) = &self.shadow_player_buffer {
-                    pass.set_vertex_buffer(0, buffer.slice(..));
-                    pass.draw(0..self.shadow_player_vertex_count, 0..1);
-                    draw_calls += 1;
-                    self.environment_draw_calls.shadows += 1;
-                }
-            }
-        }
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("main-pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: scene_view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(super::sky::clear_color(
-                            self.scene_visible,
-                            self.overview_active,
-                        )),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            if !self.scene_visible {
-                // Waiting for a required Earth manifest or showing a persistent error.
-                pass.set_pipeline(&self.pipeline);
-                pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
-                pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
-            } else if self.overview_active {
-                pass.set_pipeline(&self.pipeline);
-                pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
-                pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
-                if super::sky::should_draw_overview_sky(environment) {
-                    pass.set_pipeline(&self.environment_pipelines.sky);
-                    pass.set_bind_group(1, &self.milky_way.bind_group, &[]);
-                    pass.draw(0..3, 0..1);
-                    draw_calls += 1;
-                    self.environment_draw_calls.sky += 1;
-                }
-                // Draw distant stars and disks before the globe so its surface
-                // covers whichever body is on the far side as the camera rotates.
-                if super::sky::should_draw_overview_stars(environment)
-                    && self.stars.matches_frame(environment)
-                {
-                    pass.set_pipeline(&self.stars.pipeline);
-                    pass.set_vertex_buffer(0, self.stars.buffer.slice(..));
-                    pass.draw(
-                        0..6,
-                        0..super::environment::stars::STAR_GPU_RECORD_COUNT as u32,
-                    );
-                    draw_calls += 1;
-                    self.environment_draw_calls.stars += 1;
-                }
-                if super::sky::should_draw_overview_sun(environment)
-                    || super::sky::should_draw_overview_moon(environment)
-                {
-                    pass.set_pipeline(&self.celestial_halo.pipeline);
-                    pass.draw(0..6, 0..environment.halo_count.min(8));
-                    draw_calls += 1;
-                    self.environment_draw_calls.halos += 1;
-                }
-                if super::sky::should_draw_overview_sun(environment) {
-                    pass.set_pipeline(&self.environment_pipelines.sun);
-                    pass.draw(0..6, 0..1);
-                    draw_calls += 1;
-                    self.environment_draw_calls.sun += 1;
-                }
-                if super::sky::should_draw_overview_moon(environment) {
-                    pass.set_pipeline(&self.moon_sphere.pipeline);
-                    pass.draw(0..6, 0..1);
-                    draw_calls += 1;
-                    self.environment_draw_calls.moon += 1;
-                }
-                if let Some(globe) = self.globe.as_ref().filter(|_| self.overview_globe) {
-                    pass.set_pipeline(&globe.pipeline);
-                    pass.set_bind_group(1, &globe.bind_group, &[]);
-                    pass.set_bind_group(2, &self.atmosphere_gpu.bind_group, &[]);
-                    pass.set_vertex_buffer(0, globe.vertices.slice(..));
-                    pass.draw(0..globe.vertex_count, 0..1);
-                    draw_calls += 1;
-                    if let Some(detail) = &globe.detail {
-                        pass.set_bind_group(1, &detail.bind_group, &[]);
-                        pass.set_vertex_buffer(0, detail.vertices.slice(..));
-                        pass.draw(0..detail.vertex_count, 0..1);
-                        draw_calls += 1;
-                    }
-                }
-
-                pass.set_pipeline(&self.pipeline);
-                pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
-                pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
-                if let Some((buffer, count)) = &self.overview_buffer {
-                    pass.set_vertex_buffer(0, buffer.slice(..));
-                    pass.draw(0..*count, 0..1);
-                    draw_calls += 1;
-                }
-                if let Some((buffer, count)) = &self.overview_marker_buffer {
-                    pass.set_pipeline(&self.environment_pipelines.marker);
-                    pass.set_vertex_buffer(0, buffer.slice(..));
-                    pass.draw(0..*count, 0..1);
-                    draw_calls += 1;
-                    self.environment_draw_calls.overview_marker += 1;
-                }
-            } else if snapshot.sector_hints.is_empty() {
-                if super::sky::should_draw_surface_sky(environment) {
-                    pass.set_pipeline(&self.environment_pipelines.sky);
-                    pass.set_bind_group(0, &self.camera_bind_group, &[]);
-                    pass.set_bind_group(1, &self.milky_way.bind_group, &[]);
-                    pass.draw(0..3, 0..1);
-                    draw_calls += 1;
-                    self.environment_draw_calls.sky += 1;
-                    if super::sky::should_draw_stars(environment)
-                        && self.stars.matches_frame(environment)
-                    {
-                        pass.set_pipeline(&self.stars.pipeline);
-                        pass.set_vertex_buffer(0, self.stars.buffer.slice(..));
-                        pass.draw(
-                            0..6,
-                            0..super::environment::stars::STAR_GPU_RECORD_COUNT as u32,
-                        );
-                        draw_calls += 1;
-                        self.environment_draw_calls.stars += 1;
-                    }
-                    pass.set_pipeline(&self.celestial_halo.pipeline);
-                    pass.draw(0..6, 0..environment.halo_count.min(8));
-                    draw_calls += 1;
-                    self.environment_draw_calls.halos += 1;
-                    if super::sky::should_draw_sun(environment) {
-                        pass.set_pipeline(&self.environment_pipelines.sun);
-                        pass.draw(0..6, 0..1);
-                        draw_calls += 1;
-                        self.environment_draw_calls.sun += 1;
-                    }
-                    if super::sky::should_draw_moon(environment) {
-                        pass.set_pipeline(&self.moon.pipeline);
-                        pass.draw(0..6, 0..1);
-                        draw_calls += 1;
-                        self.environment_draw_calls.moon += 1;
-                    }
-                }
-                pass.set_pipeline(&self.pipeline);
-                pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
-                pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
-                pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-                pass.draw(0..self.vertex_count, 0..1);
-                draw_calls += 1;
-            } else {
-                if super::sky::should_draw_surface_sky(environment) {
-                    pass.set_pipeline(&self.environment_pipelines.sky);
-                    pass.set_bind_group(0, &self.camera_bind_group, &[]);
-                    pass.set_bind_group(1, &self.milky_way.bind_group, &[]);
-                    pass.draw(0..3, 0..1);
-                    draw_calls += 1;
-                    self.environment_draw_calls.sky += 1;
-                    if super::sky::should_draw_stars(environment)
-                        && self.stars.matches_frame(environment)
-                    {
-                        pass.set_pipeline(&self.stars.pipeline);
-                        pass.set_vertex_buffer(0, self.stars.buffer.slice(..));
-                        pass.draw(
-                            0..6,
-                            0..super::environment::stars::STAR_GPU_RECORD_COUNT as u32,
-                        );
-                        draw_calls += 1;
-                        self.environment_draw_calls.stars += 1;
-                    }
-                    pass.set_pipeline(&self.celestial_halo.pipeline);
-                    pass.draw(0..6, 0..environment.halo_count.min(8));
-                    draw_calls += 1;
-                    self.environment_draw_calls.halos += 1;
-                    if super::sky::should_draw_sun(environment) {
-                        pass.set_pipeline(&self.environment_pipelines.sun);
-                        pass.draw(0..6, 0..1);
-                        draw_calls += 1;
-                        self.environment_draw_calls.sun += 1;
-                    }
-                    if super::sky::should_draw_moon(environment) {
-                        pass.set_pipeline(&self.moon.pipeline);
-                        pass.draw(0..6, 0..1);
-                        draw_calls += 1;
-                        self.environment_draw_calls.moon += 1;
-                    }
-                }
-                pass.set_pipeline(&self.pipeline);
-                pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
-                pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
-                for (key, lod) in &snapshot.sector_hints {
-                    if let Some((buffer, vertex_count)) =
-                        self.world_vertex_catalog
-                            .get(&(snapshot.instance, *key, *lod))
-                    {
-                        pass.set_vertex_buffer(0, buffer.slice(..));
-                        pass.draw(0..*vertex_count, 0..1);
-                        draw_calls += 1;
-                    }
-                }
-            }
-            if !self.overview_active && self.remote_vertex_count > 0 {
-                pass.set_pipeline(&self.pipeline);
-                pass.set_bind_group(1, &self.shadow_gpu.empty_bind_group, &[]);
-                pass.set_bind_group(2, &self.shadow_gpu.sampling_bind_group, &[]);
-                pass.set_vertex_buffer(0, self.player_buffer.slice(..));
-                pass.draw(0..self.remote_vertex_count, 0..1);
-                draw_calls += 1;
-            }
-        }
-        draw_calls += self.render_atmosphere(&mut encoder, scene_view);
-        draw_calls += self.render_clouds(&mut encoder, scene_view);
-        if self.ui_vertex_count > 0 && self.ui_output_pipeline.is_none() {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("minimium-console-ui-pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: scene_view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_pipeline(&self.ui_pipeline);
-            pass.set_bind_group(0, &self.ui_bind_group, &[]);
-            pass.set_vertex_buffer(0, self.ui_vertex_buffer.slice(..));
-            pass.draw(0..self.ui_vertex_count, 0..1);
-            draw_calls += 1;
-        }
-        if let Some(output) = &self.output_encoder {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("linear-output-srgb-encode-pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &surface_view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_pipeline(output.pipeline());
-            pass.set_bind_group(0, output.bind_group(), &[]);
-            pass.draw(0..3, 0..1);
-            draw_calls += 1;
-        }
-        if self.ui_vertex_count > 0 {
-            if let Some(pipeline) = &self.ui_output_pipeline {
-                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                    label: Some("minimium-console-ui-output-pass"),
-                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                        view: &surface_view,
-                        depth_slice: None,
-                        resolve_target: None,
-                        ops: wgpu::Operations {
-                            load: wgpu::LoadOp::Load,
-                            store: wgpu::StoreOp::Store,
-                        },
-                    })],
-                    depth_stencil_attachment: None,
-                    timestamp_writes: None,
-                    occlusion_query_set: None,
-                    multiview_mask: None,
-                });
-                pass.set_pipeline(pipeline);
-                pass.set_bind_group(0, &self.ui_bind_group, &[]);
-                pass.set_vertex_buffer(0, self.ui_vertex_buffer.slice(..));
-                pass.draw(0..self.ui_vertex_count, 0..1);
-                draw_calls += 1;
-            }
-        }
-        self.queue.submit(Some(encoder.finish()));
-        self.queue.present(frame);
+        let environment_flags = minimium_renderer::scene_encoder::EnvironmentDrawFlags {
+            overview_sky: super::sky::should_draw_overview_sky(environment),
+            overview_stars: super::sky::should_draw_overview_stars(environment),
+            overview_sun: super::sky::should_draw_overview_sun(environment),
+            overview_moon: super::sky::should_draw_overview_moon(environment),
+            surface_sky: super::sky::should_draw_surface_sky(environment),
+            surface_stars: super::sky::should_draw_stars(environment),
+            surface_sun: super::sky::should_draw_sun(environment),
+            surface_moon: super::sky::should_draw_moon(environment),
+        };
+        let scene = minimium_renderer::scene_encoder::MainScenePass {
+            color_view: scene_view,
+            depth_view: &self.depth_view,
+            clear_color: super::sky::clear_color(self.scene_visible, self.overview_active),
+            camera: &self.camera_bind_group,
+            world_pipeline: &self.pipeline,
+            shadow_empty: &self.shadow_gpu.empty_bind_group,
+            shadow_sampling: &self.shadow_gpu.sampling_bind_group,
+            environment_pipelines: &self.environment_pipelines,
+            milky_way: &self.milky_way,
+            stars: &self.stars,
+            celestial_halo: &self.celestial_halo,
+            moon: &self.moon,
+            moon_sphere: &self.moon_sphere,
+            atmosphere: &self.atmosphere_gpu,
+            globe: self.globe.as_ref(),
+            overview_buffers: &self.overview_buffers,
+            world_vertices: self.initial_world.buffer(),
+            world_vertex_count: self.initial_world.vertex_count(),
+            remote_vertices: self.remote_vertices.buffer(),
+            remote_vertex_count: self.remote_vertices.vertex_count(),
+            world_vertex_catalog: self.world_geometry.catalog(),
+            instance: client.world_instance,
+            sector_hints: &snapshot.sector_hints,
+            scene_visible: self.scene_visible,
+            overview_active: self.overview_active,
+            overview_globe: self.overview_globe,
+            uploaded_stars_match: self.uploaded_star_stamp == environment.diagnostics.star_frame,
+            halo_count: render_frame.halo_count,
+            environment: environment_flags,
+        };
+        let encoded = minimium_renderer::frame_encoder::encode_frame(
+            &mut encoder,
+            minimium_renderer::frame_encoder::FramePasses {
+                shadow: minimium_renderer::frame_encoder::ShadowPass {
+                    gpu: &self.shadow_gpu,
+                    enabled: self.shadow_state.valid,
+                    instance: client.world_instance,
+                    keys: &self.shadow_state.caster_keys,
+                    world_vertices: self.world_geometry.catalog(),
+                    map: self.shadow_gpu.map_casters(),
+                    player: self.shadow_gpu.player_casters(),
+                },
+                scene,
+                clouds: &self.cloud_gpu,
+                final_passes: minimium_renderer::frame_encoder::FinalPasses {
+                    scene_view,
+                    surface_view,
+                    ui_pipeline: &self.ui.pipeline,
+                    ui_output_pipeline: self.ui.output_pipeline.as_ref(),
+                    ui_bind_group: &self.ui.bind_group,
+                    ui_vertex_buffer: &self.ui.vertex_buffer,
+                    ui_vertex_count: self.ui.vertex_count(),
+                    output: self.output_encoder.as_ref(),
+                },
+            },
+        );
+        self.environment_draw_calls.shadows += encoded.shadow;
+        self.environment_draw_calls.sky += encoded.scene.sky;
+        self.environment_draw_calls.stars += encoded.scene.stars;
+        self.environment_draw_calls.halos += encoded.scene.halos;
+        self.environment_draw_calls.sun += encoded.scene.sun;
+        self.environment_draw_calls.moon += encoded.scene.moon;
+        self.environment_draw_calls.overview_marker += encoded.scene.overview_marker;
+        let draw_calls = encoded.shadow
+            + encoded.scene.draws
+            + encoded.atmosphere
+            + encoded.clouds
+            + encoded.final_passes;
+        frame.submit(&self.queue, encoder);
         Ok(draw_calls)
     }
 }

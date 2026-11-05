@@ -1,7 +1,7 @@
 use super::super::Renderer;
 use crate::{environment::EnvironmentFrameInput, session::SessionState};
-use minimium_core::world::MembershipEpoch;
 use minimium_protocol::WorldContext;
+use minimium_world::world::MembershipEpoch;
 
 impl Renderer {
     /// Publish one immutable clock/context tuple for every consumer this frame.

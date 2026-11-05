@@ -1,0 +1,13 @@
+[package]
+name = "minimium-storage"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+minimium-core = { path = "../core" }
+minimium-environment = { path = "../environment" }
+minimium-platform = { path = "../platform" }
+minimium-simulation = { path = "../simulation" }
+minimium-telemetry = { path = "../telemetry" }
+minimium-world = { path = "../world" }

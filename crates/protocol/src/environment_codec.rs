@@ -1,10 +1,10 @@
 use crate::{models::ProtocolError, reading::Reader};
-use minimium_core::{
-    environment::EnvironmentDescriptor,
+use minimium_environment::{
     time::{
         ClockId, ClockMode, ClockRevision, ClockSample, MonotonicMs, OfflinePolicy, SessionNonce,
         TimeScalePpm, WorldTimeMs,
     },
+    EnvironmentDescriptor,
 };
 
 pub(crate) const CLOCK_SAMPLE_BYTES: usize = 58;

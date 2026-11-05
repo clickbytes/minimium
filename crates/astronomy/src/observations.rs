@@ -1,5 +1,5 @@
 use crate::SkyState;
-use minimium_core::universe::{BodyKind, CelestialBodyId, SolarSystemId, UniverseCatalog};
+use minimium_environment::universe::{BodyKind, CelestialBodyId, SolarSystemId, UniverseCatalog};
 
 pub const SKY_SUN_ID: CelestialBodyId =
     CelestialBodyId::new(1).expect("reserved sky Sun ID is nonzero");

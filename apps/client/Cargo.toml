@@ -6,13 +6,21 @@ license.workspace = true
 
 [dependencies]
 minimium-assets = { path = "../../crates/assets" }
+minimium-client-runtime = { path = "../../crates/client-runtime" }
+minimium-renderer = { path = "../../crates/renderer" }
+minimium-asset-io = { path = "../../crates/asset-io" }
 minimium-astronomy = { path = "../../crates/astronomy" }
 minimium-platform = { path = "../../crates/platform" }
 minimium-core = { path = "../../crates/core" }
+minimium-environment = { path = "../../crates/environment" }
+minimium-commands = { path = "../../crates/commands" }
+minimium-world = { path = "../../crates/world" }
+minimium-simulation = { path = "../../crates/simulation" }
 minimium-protocol = { path = "../../crates/protocol" }
 minimium-procgen = { path = "../../crates/procgen" }
 minimium-sectors = { path = "../../crates/sectors" }
 minimium-telemetry = { path = "../../crates/telemetry" }
+minimium-game-sample = { path = "../../games/sample" }
 bytemuck = { version = "1.25", features = ["derive"] }
 glam = "0.30"
 half = "2"

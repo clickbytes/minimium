@@ -1,10 +1,8 @@
 use super::map::{
     MAX_MAP_TOTAL_MESH_BYTES, MAX_MESH_BYTES, MAX_MESH_VERTICES, MAX_OBJ_FACE_VERTICES,
 };
-use minimium_core::world::triangle_area_squared;
-use minimium_core::world::{MapTriangle, MAX_MAP_COORDINATE, MAX_MAP_TRIANGLES};
-use std::fs::File;
-use std::io::Read;
+use minimium_world::world::triangle_area_squared;
+use minimium_world::world::{MapTriangle, MAX_MAP_COORDINATE, MAX_MAP_TRIANGLES};
 use std::path::{Component, Path};
 
 pub(super) fn parse_mesh_asset_path(
@@ -26,15 +24,15 @@ pub(super) fn parse_mesh_asset_path(
 }
 
 #[derive(Clone, Copy)]
-pub(super) struct ObjMeshOptions {
-    pub(super) translation: [f32; 3],
-    pub(super) scale: [f32; 3],
-    pub(super) color: [f32; 3],
-    pub(super) solid: bool,
+pub struct ObjMeshOptions {
+    pub translation: [f32; 3],
+    pub scale: [f32; 3],
+    pub color: [f32; 3],
+    pub solid: bool,
 }
 
-pub(super) fn load_obj_triangles(
-    base_dir: &Path,
+pub fn parse_obj_triangles(
+    source: &str,
     asset_path: &Path,
     options: ObjMeshOptions,
     remaining_map_bytes: usize,
@@ -46,35 +44,12 @@ pub(super) fn load_obj_triangles(
         color,
         solid,
     } = options;
-    let canonical_base = std::fs::canonicalize(base_dir)
-        .map_err(|error| format!("cannot resolve map directory: {error}"))?;
-    let joined_path = canonical_base.join(asset_path);
-    let canonical_asset = std::fs::canonicalize(&joined_path).map_err(|error| {
-        format!(
-            "cannot resolve mesh asset `{}`: {error}",
-            asset_path.display()
-        )
-    })?;
-    if !canonical_asset.starts_with(&canonical_base) {
-        return Err(format!(
-            "mesh asset `{}` resolves outside the map directory",
-            asset_path.display()
-        ));
-    }
-
-    let mut source = String::new();
     let byte_limit = MAX_MESH_BYTES.min(remaining_map_bytes);
     if byte_limit == 0 {
         return Err(format!(
             "map mesh assets exceed {MAX_MAP_TOTAL_MESH_BYTES} bytes"
         ));
     }
-    File::open(&canonical_asset)
-        .and_then(|file| {
-            file.take((byte_limit + 1) as u64)
-                .read_to_string(&mut source)
-        })
-        .map_err(|error| format!("cannot read mesh asset `{}`: {error}", asset_path.display()))?;
     if source.len() > byte_limit {
         if remaining_map_bytes < MAX_MESH_BYTES {
             return Err(format!(

@@ -1,9 +1,11 @@
-use minimium_core::world::{
-    Aabb, CollisionIndex, GenerationRevision, MapBox, MapTriangle, SectorKey, SectorRevision,
-    WorldContentRevision, WorldInstanceId, WorldManifest, WorldMap,
-};
 use minimium_procgen::SectorGeometry;
+use minimium_renderer::planet_visibility::render_patches;
 use minimium_sectors::{InstallResult, RequestError, SectorManager, SectorTicket};
+use minimium_simulation::CollisionIndex;
+use minimium_world::world::{
+    Aabb, GenerationRevision, MapBox, MapTriangle, SectorKey, SectorRevision, WorldContentRevision,
+    WorldInstanceId, WorldManifest, WorldMap,
+};
 use std::{collections::HashMap, sync::Arc};
 
 const CLIENT_SECTOR_CACHE_CAPACITY: usize = 512;
@@ -63,6 +65,7 @@ impl ClientSectorCache {
         position: [f32; 3],
         maps: &HashMap<WorldInstanceId, WorldMap>,
         manifests: &HashMap<WorldInstanceId, WorldManifest>,
+        geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
     ) -> Option<ClientSectorScene> {
         if maps.get(&instance).is_none() || manifests.get(&instance) != Some(&manifest) {
             return None;
@@ -105,10 +108,11 @@ impl ClientSectorCache {
             let Some(source_manifest) = manifests.get(&ticket.instance()) else {
                 continue;
             };
-            let geometry = Arc::new(minimium_procgen::materialize_world_sector(
+            let geometry = Arc::new(minimium_procgen::materialize_world_sector_with_geography(
                 source_map,
                 *source_manifest,
                 ticket.key(),
+                geography.clone(),
             ));
             let revision = SectorRevision::new(1).expect("initial sector revision is nonzero");
             if self.manager.install_data(ticket, revision, geometry) == InstallResult::Installed {
@@ -133,8 +137,9 @@ impl ClientSectorCache {
             .collect::<Option<_>>()?;
         let collision =
             collision_from_sectors(sectors.iter().map(|(_, geometry)| geometry.as_ref()));
-        let render_sectors = if manifest.topology() == minimium_core::world::WorldTopology::Planet {
-            super::planet_visibility::render_patches(manifest, position, &sectors)
+        let render_sectors = if manifest.topology() == minimium_world::world::WorldTopology::Planet
+        {
+            render_patches(manifest, position, &sectors, geography.clone())
         } else {
             sectors
                 .iter()

@@ -1,8 +1,8 @@
 # ADR 0004: Domain and runtime boundaries
 
-Status: accepted for the current prototype.
+Status: superseded by [ADR 0008](0008-domain-crate-boundaries.md).
 
-Core owns domain IDs, world state, collision and simulation; it has no filesystem, network, process, GPU or telemetry dependency. Protocol owns v8 wire kinds and errors and depends on core IDs. Assets loads map and OBJ data into the domain; platform owns filesystem, identity storage and local administration. Telemetry is independent. Applications compose these pieces; only the client owns the GPU and window stack. The server owns its executor, transport, persistence and runtime lifecycle.
+This records the earlier prototype boundary: core owned IDs, world state, collision and simulation. The accepted package boundaries have since been refined; see ADR 0008 for current ownership. The original constraints against filesystem, network, process, GPU and telemetry dependencies in foundational contracts remain in force.
 
 `PlayerId` is a domain identifier and `PlayerProfileId` is the durable profile identifier. Explicit conversions at serialization boundaries preserve existing representations. Protocol enums own wire discriminants and retain unknown server error codes. These choices keep domain identity independent of transport and persistence without changing v8, snapshot v3 or v2 migration.
 

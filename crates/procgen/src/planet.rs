@@ -1,14 +1,15 @@
 use crate::{AddressedRandom, GenerationChannel};
-use minimium_core::world::{
+use minimium_world::world::{
     CubeSampleKey, GenerationSpec, PlanetDefinition, PlanetFace, Position3Mm, SectorKey,
 };
+use std::sync::Arc;
 
 const MAX_RADIUS_MM: u64 = 6_371_000_000;
 const MIN_RADIUS_MM: u64 = 5_000;
 const NOISE_Q16: i64 = 65_536;
 const NOISE_LATTICE_STEP: i32 = PLANET_SAMPLE_COORDINATE_SCALE / 8;
 
-use minimium_core::world::PLANET_SAMPLE_COORDINATE_SCALE;
+use minimium_world::world::PLANET_SAMPLE_COORDINATE_SCALE;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PlanetSurfaceSpec {
@@ -56,11 +57,12 @@ pub struct PlanetLandmarks {
 
 /// Fixed-point value-noise surface. The cube sample key makes face borders share
 /// the same lattice coordinates; output positions are integral millimeters.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct PlanetTerrain {
     generation: GenerationSpec,
     surface: PlanetSurfaceSpec,
     definition: Option<PlanetDefinition>,
+    geography: Option<Arc<dyn crate::PreparedGeography>>,
 }
 
 impl PlanetTerrain {
@@ -72,7 +74,13 @@ impl PlanetTerrain {
             generation,
             surface,
             definition: None,
+            geography: None,
         })
+    }
+
+    pub fn with_geography(mut self, geography: Arc<dyn crate::PreparedGeography>) -> Self {
+        self.geography = Some(geography);
+        self
     }
 
     pub fn with_definition(mut self, definition: PlanetDefinition) -> Self {
@@ -80,28 +88,33 @@ impl PlanetTerrain {
         self
     }
 
-    pub const fn radius_mm(self) -> u64 {
+    pub const fn radius_mm(&self) -> u64 {
         self.surface.radius_mm()
     }
 
-    pub fn sea_level_mm(self) -> i64 {
+    pub fn sea_level_mm(&self) -> i64 {
         self.definition
             .map_or(0, |definition| definition.sea_level_mm)
     }
 
-    pub fn is_earth(self) -> bool {
+    pub fn is_earth(&self) -> bool {
         self.definition
             .is_some_and(|definition| definition.mode == 1)
     }
 
-    pub fn sample(self, cube_sample: CubeSampleKey) -> PlanetPoint {
+    pub fn sample(&self, cube_sample: CubeSampleKey) -> PlanetPoint {
         let (offset, ocean) = if let Some(definition) =
             self.definition.filter(|definition| definition.mode == 1)
         {
-            let elevation = crate::earth_elevation_mm(
-                cube_sample.coordinates().map(f64::from),
-                definition.height_scale_permille,
-            );
+            let direction = cube_sample.coordinates().map(f64::from);
+            let elevation_m = self
+                .geography
+                .as_ref()
+                .map(|geography| geography.elevation_m(direction))
+                .unwrap_or(Err(crate::EarthSampleError::PackageUnavailable))
+                .expect("Earth generation requires its prepared geography");
+            let elevation =
+                (elevation_m * f64::from(definition.height_scale_permille)).round() as i64;
             let ocean = elevation < definition.sea_level_mm;
             let detail = if ocean {
                 0
@@ -183,9 +196,20 @@ impl PlanetTerrain {
         }
     }
 
+    pub fn earth_elevation_upper_bound_m(
+        &self,
+        direction: [f64; 3],
+        angle: f64,
+    ) -> Result<f64, crate::EarthSampleError> {
+        self.geography.as_ref().map_or(
+            Err(crate::EarthSampleError::PackageUnavailable),
+            |geography| geography.elevation_upper_bound_m(direction, angle),
+        )
+    }
+
     /// Safe deterministic spawn and entrance on one face, joined by sampled
     /// approach points. The relief bound keeps the route traversable.
-    pub fn landmarks(self) -> PlanetLandmarks {
+    pub fn landmarks(&self) -> PlanetLandmarks {
         let scale = PLANET_SAMPLE_COORDINATE_SCALE;
         let (u, start, step) = if self.is_earth() && self.generation.revision().get() >= 4 {
             // Near Bergen: 60.4 N, 5.3 E. This cube coordinate samples the
@@ -226,7 +250,7 @@ impl PlanetTerrain {
         }
     }
 
-    fn position_at(self, sample: CubeSampleKey, radius_mm: u64) -> Position3Mm {
+    fn position_at(&self, sample: CubeSampleKey, radius_mm: u64) -> Position3Mm {
         let [x, y, z] = sample.coordinates().map(i64::from);
         let length_squared = (x * x + y * y + z * z) as u64;
         let length = integer_sqrt(length_squared) as i64;

@@ -4,15 +4,15 @@ pub(super) struct RendererSetup {
     pub(super) window: Arc<Window>,
     pub(super) map: WorldMap,
     pub(super) world_catalog:
-        std::collections::HashMap<minimium_core::world::WorldInstanceId, WorldMap>,
+        std::collections::HashMap<minimium_world::world::WorldInstanceId, WorldMap>,
     pub(super) world_manifests:
-        std::collections::HashMap<minimium_core::world::WorldInstanceId, WorldManifest>,
+        std::collections::HashMap<minimium_world::world::WorldInstanceId, WorldManifest>,
     pub(super) profile_id: PlayerProfileId,
     pub(super) data_dir: PathBuf,
     pub(super) map_path: Option<PathBuf>,
     pub(super) world_definition_path: Option<PathBuf>,
     pub(super) threads: crate::options::ThreadLane,
-    pub(super) sky_quality: crate::environment::quality::SkyQuality,
+    pub(super) sky_quality: minimium_renderer::quality::SkyQuality,
     pub(super) require_earth: bool,
     pub(super) demo: bool,
 }
@@ -40,7 +40,7 @@ impl Renderer {
                 (candidate.fingerprint() == map_fingerprint).then_some(*instance)
             })
             .unwrap_or_else(|| {
-                minimium_core::world::WorldInstanceId::new(1)
+                minimium_world::world::WorldInstanceId::new(1)
                     .expect("primary world identifier is nonzero")
             });
         let current_manifest = world_manifests
@@ -55,6 +55,7 @@ impl Renderer {
                 map.spawn(),
                 &world_catalog,
                 &world_manifests,
+                None,
             )
             .ok_or("initial world sectors could not be installed")?;
         let vertices: Vec<_> = initial_scene
@@ -64,11 +65,11 @@ impl Renderer {
             .collect();
         let mut gpu = GpuResources::new(window, &vertices, sky_quality).await?;
         let effective_quality = if gpu.shadow_gpu.settings.enabled {
-            crate::environment::quality::SkyQuality::Standard
+            minimium_renderer::quality::SkyQuality::Standard
         } else {
-            crate::environment::quality::SkyQuality::Low
+            minimium_renderer::quality::SkyQuality::Low
         };
-        let sky_quality_state = crate::environment::quality::SkyQualityState::new(
+        let sky_quality_state = minimium_renderer::quality::SkyQualityState::new(
             sky_quality,
             effective_quality,
             gpu.shadow_gpu.fallback_reason,
@@ -88,7 +89,7 @@ impl Renderer {
         let mut console = Console::new();
         console.push_line("F1 opens the command console. Type help for commands.");
         console.push_line("M toggles the world overview.");
-        let sky_catalogue = match environment::stars::StarCatalogueAdapter::load_embedded() {
+        let sky_catalogue = match minimium_renderer::stars::StarCatalogueAdapter::load_embedded() {
             Ok(catalogue) => Some(catalogue),
             Err(error) => {
                 console.push_error(format!("Embedded star catalog unavailable: {error}"));
@@ -112,19 +113,18 @@ impl Renderer {
                 gameplay: GameplayView {
                     remote_vertices: Vec::with_capacity(16 * 36),
                     remote_shadow_vertices: Vec::with_capacity(16 * 36),
-                    remote_players: [None; MAX_VISIBLE_PLAYERS],
-                    last_remote_snapshot_time_ms: None,
-                    last_remote_snapshot_received_at: None,
+                    reconciliation: minimium_client_runtime::SnapshotReconciler::default(),
+                    remote_positions_mm: Vec::with_capacity(MAX_VISIBLE_PLAYERS),
                     remote_geometry_dirty: false,
-                    character: CharacterState::at_spawn_with_gravity(map.spawn(), gravity),
-                    position_mm: None,
+                    prediction: minimium_client_runtime::ClientPrediction::new(
+                        CharacterState::at_spawn_with_gravity(map.spawn(), gravity),
+                        None,
+                    ),
                     health: PLAYER_MAX_HEALTH,
                     collision_index,
                     collision_query: CollisionQuery::default(),
-                    remote_player_count: 0,
                     last_shot_sent_at: None,
                     hit_confirmation_until: None,
-                    physics_accumulator: 0.0,
                     sectors_ready: true,
                 },
                 world_manifests,

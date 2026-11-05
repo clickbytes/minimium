@@ -1,5 +1,5 @@
 use super::*;
-use minimium_core::world::{GenerationRevision, PlanetFace, SectorRevision, WorldContentRevision};
+use minimium_world::world::{GenerationRevision, PlanetFace, SectorRevision, WorldContentRevision};
 
 fn revisions(generation: u32, content: u64) -> (GenerationRevision, WorldContentRevision) {
     (

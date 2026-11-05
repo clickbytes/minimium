@@ -1,6 +1,5 @@
 use super::*;
 use minimium_procgen::{materialize_planet_overview, PlanetTerrain, SectorGeometry};
-use wgpu::util::DeviceExt;
 
 impl Renderer {
     pub(super) fn is_earth_world(&self) -> bool {
@@ -39,10 +38,18 @@ impl Renderer {
         let vertices = if earth {
             if self.gpu.globe.is_none() && self.globe_loading.is_none() {
                 let planet = manifest.planet().expect("Earth definition exists");
+                let Some(geography) = self
+                    .connection
+                    .session()
+                    .and_then(|session| session.prepared_geography())
+                else {
+                    return;
+                };
                 let (width, height) = self.gpu.texture_dimensions();
                 let (sender, receiver) = std::sync::mpsc::sync_channel(1);
                 std::thread::spawn(move || {
                     let pixels = super::globe::pixels(
+                        geography,
                         planet.height_scale_permille,
                         planet.sea_level_mm,
                         width,
@@ -351,39 +358,18 @@ impl Renderer {
 
 impl GpuResources {
     fn install_overview(&mut self, vertices: &[Vertex]) {
-        if let Some((old, _)) = self.overview_buffer.take() {
-            self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_sub(old.size());
-        }
-        if vertices.is_empty() {
-            self.overview_buffer = None;
-            return;
-        }
-        let buffer = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("world-overview-geometry"),
-                contents: bytemuck::cast_slice(vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
-        self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_add(buffer.size());
-        self.overview_buffer = Some((buffer, vertices.len() as u32));
+        let (old_size, new_size) = self.overview_buffers.install_world(&self.device, vertices);
+        self.fixed_gpu_bytes = self
+            .fixed_gpu_bytes
+            .saturating_sub(old_size)
+            .saturating_add(new_size);
     }
 
     fn install_overview_marker(&mut self, vertices: &[Vertex]) {
-        if let Some((old, _)) = self.overview_marker_buffer.take() {
-            self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_sub(old.size());
-        }
-        if vertices.is_empty() {
-            return;
-        }
-        let buffer = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("world-overview-marker"),
-                contents: bytemuck::cast_slice(vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
-        self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_add(buffer.size());
-        self.overview_marker_buffer = Some((buffer, vertices.len() as u32));
+        let (old_size, new_size) = self.overview_buffers.install_marker(&self.device, vertices);
+        self.fixed_gpu_bytes = self
+            .fixed_gpu_bytes
+            .saturating_sub(old_size)
+            .saturating_add(new_size);
     }
 }

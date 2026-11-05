@@ -1,4 +1,4 @@
-use minimium_core::time::{ClockId, ClockMode, OfflinePolicy};
+use minimium_environment::time::{ClockId, ClockMode, OfflinePolicy};
 
 use super::SynchronizationQuality;
 

@@ -84,7 +84,7 @@ fn push_milky_way_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Rende
     );
     snapshot.push(
         "milky_way_texture_bytes",
-        super::milky_way_gpu::MilkyWayGpu::BYTES,
+        minimium_renderer::MilkyWayGpu::BYTES,
     );
     snapshot.push("scene_linear_HDR", renderer.gpu.hdr_enabled);
 }
@@ -181,9 +181,9 @@ fn push_observer_fields(
     snapshot.push(
         "observer_height_policy",
         observer.map_or("n/a", |value| match value.model {
-            minimium_core::sky::SkyModel::EarthGeoreferencedV1 => "EarthHeightReferenceV1",
-            minimium_core::sky::SkyModel::MappedEarthSkyV1 => "MappedGameHeightV1",
-            minimium_core::sky::SkyModel::None => "n/a",
+            minimium_environment::sky::SkyModel::EarthGeoreferencedV1 => "EarthHeightReferenceV1",
+            minimium_environment::sky::SkyModel::MappedEarthSkyV1 => "MappedGameHeightV1",
+            minimium_environment::sky::SkyModel::None => "n/a",
         }),
     );
 }
@@ -340,8 +340,8 @@ fn push_shadow_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer
             "n/a".to_owned()
         },
     );
-    let caster_count = usize::from(gpu.shadow_map_vertex_count > 0)
-        + usize::from(gpu.shadow_player_vertex_count > 0)
+    let caster_count = usize::from(gpu.shadow_gpu.map_casters().is_some())
+        + usize::from(gpu.shadow_gpu.player_casters().is_some())
         + gpu.shadow_state.caster_keys.len();
     snapshot.push_optional("shadow_caster_count", enabled.then_some(caster_count));
     snapshot.push_optional(
@@ -367,11 +367,8 @@ fn push_gpu_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
         + gpu.camera_buffer.size()
         + gpu.shadow_gpu.uniform_buffer.size();
     let shadow_texture_bytes = gpu.shadow_gpu.texture_bytes();
-    let map_caster_bytes = gpu.shadow_map_buffer.as_ref().map_or(0, wgpu::Buffer::size);
-    let player_caster_bytes = gpu
-        .shadow_player_buffer
-        .as_ref()
-        .map_or(0, wgpu::Buffer::size);
+    let map_caster_bytes = gpu.shadow_gpu.map_caster_buffer_bytes();
+    let player_caster_bytes = gpu.shadow_gpu.player_caster_buffer_bytes();
     snapshot.push(
         "environment_GPU_estimate_bytes",
         star_bytes + uniform_bytes + shadow_texture_bytes + map_caster_bytes + player_caster_bytes,
@@ -394,25 +391,25 @@ fn push_gpu_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
     );
 }
 
-fn profile_label(profile: minimium_core::environment::EnvironmentProfile) -> &'static str {
+fn profile_label(profile: minimium_environment::EnvironmentProfile) -> &'static str {
     match profile {
-        minimium_core::environment::EnvironmentProfile::Interior => "Interior",
-        minimium_core::environment::EnvironmentProfile::Earth => "Earth",
-        minimium_core::environment::EnvironmentProfile::EarthLike => "EarthLike",
+        minimium_environment::EnvironmentProfile::Interior => "Interior",
+        minimium_environment::EnvironmentProfile::Earth => "Earth",
+        minimium_environment::EnvironmentProfile::EarthLike => "EarthLike",
     }
 }
 
-fn clock_mode_label(mode: minimium_core::time::ClockMode) -> &'static str {
+fn clock_mode_label(mode: minimium_environment::time::ClockMode) -> &'static str {
     match mode {
-        minimium_core::time::ClockMode::RealTime => "real_time",
-        minimium_core::time::ClockMode::TimeScale => "time_scale",
+        minimium_environment::time::ClockMode::RealTime => "real_time",
+        minimium_environment::time::ClockMode::TimeScale => "time_scale",
     }
 }
 
-fn offline_policy_label(policy: minimium_core::time::OfflinePolicy) -> &'static str {
+fn offline_policy_label(policy: minimium_environment::time::OfflinePolicy) -> &'static str {
     match policy {
-        minimium_core::time::OfflinePolicy::Pause => "pause",
-        minimium_core::time::OfflinePolicy::Advance => "advance",
+        minimium_environment::time::OfflinePolicy::Pause => "pause",
+        minimium_environment::time::OfflinePolicy::Advance => "advance",
     }
 }
 
