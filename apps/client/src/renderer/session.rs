@@ -1,4 +1,5 @@
 mod message_handling;
+mod sector_readiness;
 
 use super::*;
 use crate::messages::ClientText as Text;
@@ -95,12 +96,12 @@ impl Renderer {
 
     fn reset_remote_gameplay(&mut self) {
         self.gpu.remote_vertices.clear();
-        self.game.remote_vertices.clear();
-        self.game.reconciliation.clear();
-        self.game.remote_geometry_dirty = false;
-        self.game.health = PLAYER_MAX_HEALTH;
-        self.game.hit_confirmation_until = None;
-        self.game.last_shot_sent_at = None;
+        self.game.gameplay.remote_vertices.clear();
+        self.game.gameplay.reconciliation.clear();
+        self.game.gameplay.remote_geometry_dirty = false;
+        self.game.gameplay.health = PLAYER_MAX_HEALTH;
+        self.game.gameplay.hit_confirmation_until = None;
+        self.game.gameplay.last_shot_sent_at = None;
     }
 
     pub(crate) fn finish_on_exit(&mut self) -> Result<(), Box<dyn Error>> {
@@ -133,13 +134,13 @@ impl Renderer {
                 .saturating_add(metrics.bytes_received);
             session.close();
         }
-        self.game.last_shot_sent_at = None;
+        self.game.gameplay.last_shot_sent_at = None;
         self.gpu.remote_vertices.clear();
-        self.game.remote_vertices.clear();
-        self.game.reconciliation.clear();
-        self.game.remote_geometry_dirty = false;
-        self.game.health = PLAYER_MAX_HEALTH;
-        self.game.hit_confirmation_until = None;
+        self.game.gameplay.remote_vertices.clear();
+        self.game.gameplay.reconciliation.clear();
+        self.game.gameplay.remote_geometry_dirty = false;
+        self.game.gameplay.health = PLAYER_MAX_HEALTH;
+        self.game.gameplay.hit_confirmation_until = None;
     }
 
     pub(super) fn fail_connection(&mut self, message: impl Into<String>) {
@@ -215,19 +216,23 @@ impl Renderer {
         let now = Instant::now();
         if self
             .game
+            .gameplay
             .last_shot_sent_at
             .is_some_and(|last_shot| now.saturating_duration_since(last_shot) < SHOT_LOCAL_COOLDOWN)
         {
             return;
         }
-        let direction =
-            super::camera::camera_direction(self.game.character, self.input.yaw, self.input.pitch)
-                .normalize()
-                .to_array();
+        let direction = super::camera::camera_direction(
+            self.game.gameplay.prediction.character,
+            self.input.yaw,
+            self.input.pitch,
+        )
+        .normalize()
+        .to_array();
         if let Some(session) = self.connection.session_mut() {
             match session.queue(&ClientMessage::Fire { direction }) {
                 Ok(()) => {
-                    self.game.last_shot_sent_at = Some(now);
+                    self.game.gameplay.last_shot_sent_at = Some(now);
                     if self.ui.console.open {
                         self.ui.console.push_line(Text::ShotFired.to_string());
                     }
@@ -252,90 +257,38 @@ impl Renderer {
 
     pub(super) fn update_remote_player_rendering(&mut self, now: Instant) {
         if self.connection.session().is_none() {
-            self.game.clear_remote_players();
+            self.game.gameplay.clear_remote_players();
             self.gpu.remote_vertices.clear();
-            self.game.remote_shadow_vertices.clear();
             self.gpu.update_remote_shadow_vertices(&[]);
             return;
         }
         if self
             .game
+            .gameplay
             .update_remote_vertices(now, self.gpu.render_origin)
         {
-            self.gpu.update_remote_vertices(&self.game.remote_vertices);
+            self.gpu
+                .update_remote_vertices(&self.game.gameplay.remote_vertices);
         }
-        let center = self.game.position_mm.map_or_else(
-            || self.game.character.position.map(f64::from),
+        let center = self.game.gameplay.prediction.position_mm.map_or_else(
+            || {
+                self.game
+                    .gameplay
+                    .prediction
+                    .character
+                    .position
+                    .map(f64::from)
+            },
             |position| position.0.map(|value| value as f64 / 1000.0),
         );
-        let mut shadow_vertices = Vec::with_capacity(self.game.reconciliation.player_count() * 36);
-        for track in self.game.reconciliation.tracks().iter().flatten() {
-            let feet = track
-                .displayed_position_mm
-                .map(|value| value as f64 / 1000.0);
-            let shape_center = [feet[0], feet[1] + 0.85, feet[2]];
-            let half = [0.3, 0.85, 0.3];
-            let distance_squared = (0..3)
-                .map(|axis| {
-                    let delta = (center[axis] - shape_center[axis]).abs() - half[axis];
-                    delta.max(0.0).powi(2)
-                })
-                .sum::<f64>();
-            if distance_squared > 256.0_f64.powi(2) {
-                continue;
-            }
-            let relative: [f32; 3] = std::array::from_fn(|axis| {
-                (feet[axis] - f64::from(self.gpu.render_origin[axis])) as f32
-            });
-            cube(
-                &mut shadow_vertices,
-                [relative[0], relative[1] + 0.85, relative[2]],
-                [0.6, 1.7, 0.6],
-                [0.82, 0.16, 0.12],
-            );
-        }
-        if self.gpu.shadow_remote_dirty
-            || bytemuck::cast_slice::<Vertex, u8>(&shadow_vertices)
-                != bytemuck::cast_slice::<Vertex, u8>(&self.game.remote_shadow_vertices)
-        {
-            self.game.remote_shadow_vertices = shadow_vertices;
+        let shadow_vertices_changed = self
+            .game
+            .gameplay
+            .update_remote_shadow_vertices(center, self.gpu.render_origin);
+        if self.gpu.shadow_remote_dirty || shadow_vertices_changed {
             self.gpu
-                .update_remote_shadow_vertices(&self.game.remote_shadow_vertices);
+                .update_remote_shadow_vertices(&self.game.gameplay.remote_shadow_vertices);
         }
-    }
-}
-
-impl GameplayView {
-    fn clear_remote_players(&mut self) {
-        self.reconciliation.clear();
-        self.last_shot_sent_at = None;
-        self.remote_vertices.clear();
-        self.remote_geometry_dirty = false;
-    }
-
-    fn update_remote_vertices(&mut self, now: Instant, origin: [f32; 3]) -> bool {
-        let moved = self.reconciliation.interpolate_positions(
-            now,
-            REMOTE_INTERPOLATION_DELAY,
-            &mut self.remote_positions_mm,
-        );
-        if !moved && !self.remote_geometry_dirty {
-            return false;
-        }
-        self.remote_vertices.clear();
-        for position_mm in &self.remote_positions_mm {
-            let position: [f32; 3] = std::array::from_fn(|axis| {
-                (position_mm[axis] as f64 / 1000.0 - f64::from(origin[axis])) as f32
-            });
-            cube(
-                &mut self.remote_vertices,
-                [position[0], position[1] + 0.85, position[2]],
-                [0.6, 1.7, 0.6],
-                [0.82, 0.16, 0.12],
-            );
-        }
-        self.remote_geometry_dirty = false;
-        true
     }
 }
 

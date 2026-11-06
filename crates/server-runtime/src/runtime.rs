@@ -11,6 +11,7 @@ mod tick;
 use crate::server_command::ServerCommand;
 use crate::{
     admin::{AdminServer, RequestId},
+    composition::ServerCombatConfig,
     config::ServerConfig,
     connection::Client,
     environment::EnvironmentClock,
@@ -29,7 +30,7 @@ use minimium_core::{identity::PlayerProfileId, ids::PlayerId};
 use minimium_environment::time::{ClockRevision, MonotonicMs};
 use minimium_platform::{endpoint::ServerEndpoint, server_lock::ServerDataLock};
 use minimium_protocol::ClientMessage;
-use minimium_simulation::{CharacterInput, CollisionQueryStats};
+use minimium_simulation::{CharacterInput, CollisionQueryStats, CombatSettings};
 use minimium_world::world::WorldMap;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -94,6 +95,8 @@ pub(crate) struct ServerRuntime {
     max_players: usize,
     max_client_connections: usize,
     lanes: usize,
+    combat: CombatSettings,
+    shot_cooldown: Duration,
     #[allow(dead_code)]
     environment_dirty_revision: Option<ClockRevision>,
     autosave_seconds: u64,
@@ -104,12 +107,16 @@ pub(crate) struct ServerRuntime {
 }
 
 impl ServerRuntime {
-    pub(crate) fn new(config: ServerConfig, startup: Startup) -> io::Result<Self> {
+    pub(crate) fn new(
+        config: ServerConfig,
+        startup: Startup,
+        combat: ServerCombatConfig,
+    ) -> io::Result<Self> {
         let content = crate::content::ContentServer::new(&config)?;
         let lanes = config.lanes.count();
         let Startup {
             map,
-            generated_worlds,
+            worlds,
             player_store,
             persistence,
             next_player,
@@ -135,8 +142,8 @@ impl ServerRuntime {
             None
         };
         let executor = Executor::new(lanes);
-        let mut worlds = generated_worlds
-            .map(WorldRegistry::try_from_generated_worlds)
+        let mut worlds = worlds
+            .map(WorldRegistry::try_from_world_definitions)
             .transpose()
             .map_err(|error| {
                 io::Error::new(
@@ -214,8 +221,7 @@ impl ServerRuntime {
             metrics,
             executor,
             map,
-            prepared_geography: prepared_geography
-                .map(|geography| geography as Arc<dyn minimium_procgen::PreparedGeography>),
+            prepared_geography,
             game_listener,
             game_address,
             endpoint,
@@ -223,6 +229,8 @@ impl ServerRuntime {
             max_players: config.max_players,
             max_client_connections,
             lanes,
+            combat: combat.hitscan,
+            shot_cooldown: Duration::from_millis(combat.fire_cooldown_ms),
             environment_dirty_revision: None,
             autosave_seconds: config.autosave_seconds,
             stop: false,

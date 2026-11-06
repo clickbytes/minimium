@@ -56,6 +56,7 @@ mod shadows;
 mod sky;
 mod terrain_status;
 mod window;
+mod window_events;
 mod window_metrics;
 mod window_mode;
 

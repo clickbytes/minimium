@@ -23,7 +23,7 @@ Consumes core identity, environment clock values, protocol, world contracts, pro
 
 ## Data flow
 
-The connector performs DNS, socket and local process startup away from the UI lane. The host polls `ConnectionController`; it validates frames and environment transitions, then emits typed session events and synchronization estimates to presentation adapters. The host supplies each fixed-step collision snapshot to `ClientPrediction`, which shares the server's simulation integrator. `SnapshotReconciler` owns authoritative time ordering and remote-player interpolation; the host turns output positions into presentation geometry.
+The connector performs DNS, socket and local process startup away from the UI lane. The host polls `ConnectionController`; the session decodes bounded frames, dispatches connection and transition messages, and emits typed events and synchronization estimates to presentation adapters. Client message contextualization is isolated at the queue boundary. The host supplies each fixed-step collision snapshot to `ClientPrediction`, which shares the server's simulation integrator. `SnapshotReconciler` owns authoritative time ordering and remote-player interpolation; the host turns output positions into presentation geometry.
 
 ## Ownership and execution
 

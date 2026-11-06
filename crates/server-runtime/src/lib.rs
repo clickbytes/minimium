@@ -2,6 +2,7 @@
 mod accept;
 mod admin;
 mod commands;
+pub mod composition;
 mod config;
 mod connection;
 mod content;
@@ -24,6 +25,7 @@ mod storage_tests;
 mod terminal;
 mod world_inputs;
 mod world_registry;
+use composition::ServerComposition;
 use config::{DEFAULT_AUTOSAVE_SECONDS, MAX_PLAYERS};
 use std::time::Duration;
 
@@ -33,14 +35,15 @@ const MAX_PENDING_HANDSHAKES: usize = 64;
 const MAX_PENDING_WORLD_INPUTS: usize = 4096;
 const CLIENT_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const CLIENT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
-const SHOT_COOLDOWN: Duration =
-    Duration::from_millis(minimium_game_sample::DEFAULT_COMBAT_CONFIG.fire_cooldown_ms);
 const CHAT_COOLDOWN: Duration = Duration::from_secs(1);
 const GLOBAL_CHAT_COOLDOWN: Duration = Duration::from_millis(50);
 mod runtime;
 
-/// Parses application arguments, composes dependencies and runs the server.
-pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+/// Parses server arguments and runs the runtime with application-owned content.
+pub fn run(
+    args: &[String],
+    composition: ServerComposition,
+) -> Result<(), Box<dyn std::error::Error>> {
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         println!(
             "minimium-server run [--seed DECIMAL|0xHEX] [--planet-config PATH] \\
@@ -62,7 +65,7 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     }
     let config = config::ServerConfig::parse(args)?;
     commands::initialize_modules();
-    let startup = startup::initialize(&config)?;
-    runtime::ServerRuntime::new(config, startup)?.run()?;
+    let startup = startup::initialize(&config, composition.world_composer)?;
+    runtime::ServerRuntime::new(config, startup, composition.combat)?.run()?;
     Ok(())
 }

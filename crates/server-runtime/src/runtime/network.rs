@@ -1,5 +1,10 @@
 use super::*;
-use crate::{accept, connection::CloseReason, receive, send, world_inputs::WorldInput};
+use crate::{
+    accept,
+    connection::{mark_disconnected, CloseReason},
+    receive, send,
+    world_inputs::WorldInput,
+};
 use minimium_telemetry::allocations::{self, Phase};
 
 impl ServerRuntime {
@@ -20,13 +25,41 @@ impl ServerRuntime {
             &mut self.connections.disconnected,
         );
         self.admit_messages();
-        let eof_close_at = Instant::now();
+        self.close_eof_clients(Instant::now());
+        self.mark_timed_out_clients(Instant::now());
+        self.replicate_environment();
+        send::send_clients(
+            &mut self.connections.clients,
+            &mut self.metrics,
+            &mut self.connections.disconnected,
+            &mut self.connections.first_write_client,
+        );
+        self.metrics.oldest_output_age = self
+            .connections
+            .clients
+            .iter()
+            .filter_map(Client::oldest_output_age)
+            .max()
+            .unwrap_or_default();
+        self.remove_disconnected_clients();
+        self.metrics.network_io.record(network_started.elapsed());
+        self.metrics.max_pending_inputs = self
+            .metrics
+            .max_pending_inputs
+            .max(self.game.pending_world_inputs.len());
+
+        drop(network_phase);
+        Ok(())
+    }
+    fn close_eof_clients(&mut self, eof_close_at: Instant) {
         for client in &mut self.connections.clients {
             if client.peer_eof && client.close_deadline().is_none() {
                 client.begin_close(eof_close_at, CloseReason::PeerEof);
             }
         }
-        let activity_check_at = Instant::now();
+    }
+
+    fn mark_timed_out_clients(&mut self, activity_check_at: Instant) {
         for (index, client) in self.connections.clients.iter_mut().enumerate() {
             if client.close_deadline().is_some() {
                 continue;
@@ -43,31 +76,29 @@ impl ServerRuntime {
             if (handshake_timed_out || idle_timed_out)
                 && !self.connections.disconnected.contains(&index)
             {
-                self.connections.disconnected.push(index);
                 if handshake_timed_out {
-                    client.disconnect_reason = Some(CloseReason::HandshakeTimeout);
+                    mark_disconnected(
+                        index,
+                        client,
+                        &mut self.connections.disconnected,
+                        Some(CloseReason::HandshakeTimeout),
+                    );
                     self.metrics.handshake_timeouts =
                         self.metrics.handshake_timeouts.saturating_add(1);
                 } else {
-                    client.disconnect_reason = Some(CloseReason::IdleTimeout);
+                    mark_disconnected(
+                        index,
+                        client,
+                        &mut self.connections.disconnected,
+                        Some(CloseReason::IdleTimeout),
+                    );
                     self.metrics.idle_timeouts = self.metrics.idle_timeouts.saturating_add(1);
                 }
             }
         }
-        self.replicate_environment();
-        send::send_clients(
-            &mut self.connections.clients,
-            &mut self.metrics,
-            &mut self.connections.disconnected,
-            &mut self.connections.first_write_client,
-        );
-        self.metrics.oldest_output_age = self
-            .connections
-            .clients
-            .iter()
-            .filter_map(Client::oldest_output_age)
-            .max()
-            .unwrap_or_default();
+    }
+
+    fn remove_disconnected_clients(&mut self) {
         self.connections.disconnected.sort_unstable();
         self.connections.disconnected.dedup();
         for index in self.connections.disconnected.drain(..).rev() {
@@ -114,13 +145,5 @@ impl ServerRuntime {
                 }
             }
         }
-        self.metrics.network_io.record(network_started.elapsed());
-        self.metrics.max_pending_inputs = self
-            .metrics
-            .max_pending_inputs
-            .max(self.game.pending_world_inputs.len());
-
-        drop(network_phase);
-        Ok(())
     }
 }

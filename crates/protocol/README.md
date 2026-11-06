@@ -6,7 +6,7 @@ Owns versioned network message models, byte codecs, validation and frame limits.
 
 ## Public API
 
-Version 15 adds `Presentation`, `ContentOffer` and `ContentReady`. The offer carries
+The current protocol version is 17. Version 15 added `Presentation`, `ContentOffer` and `ContentReady`. The offer carries
 a required material manifest SHA-256 (zero selects base), separate HTTP port and
 bounded climate scenario; the ready message echoes the hash. Desktop admission
 waits for content readiness. Headless capabilities bypass material preparation.

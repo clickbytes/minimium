@@ -108,11 +108,7 @@ impl ServerRuntime {
                 self.metrics.shots_fired = self.metrics.shots_fired.saturating_add(1);
                 let instance = self.game.worlds.instance_for_player(id)?;
                 let world = &mut self.game.worlds.get_mut(instance)?.world;
-                let outcome = world.fire_hitscan(
-                    id,
-                    direction,
-                    minimium_game_sample::DEFAULT_COMBAT_CONFIG.hitscan,
-                )?;
+                let outcome = world.fire_hitscan(id, direction, self.combat)?;
                 let target_health = outcome
                     .target_id
                     .and_then(|target| world.player_health(target));

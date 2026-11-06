@@ -82,27 +82,27 @@ impl WorldRegistry {
         Ok(())
     }
 
-    pub(crate) fn try_from_generated_worlds(
-        worlds: Vec<GeneratedWorld>,
+    pub(crate) fn try_from_world_definitions(
+        worlds: Vec<WorldDefinition>,
     ) -> Result<Self, RegistryError> {
         let mut worlds = worlds.into_iter();
         let primary = worlds.next().ok_or(RegistryError::EmptyWorlds)?;
         let primary_id = primary.instance;
-        let mut registry = Self::from_generated(primary);
+        let mut registry = Self::from_definition(primary);
         for world in worlds {
-            registry.register_generated(world)?;
+            registry.register_definition(world)?;
         }
         registry.primary = primary_id;
         Ok(registry)
     }
 
     #[cfg(test)]
-    pub(crate) fn from_generated_worlds(worlds: Vec<GeneratedWorld>) -> Self {
-        Self::try_from_generated_worlds(worlds)
+    pub(crate) fn from_world_definitions(worlds: Vec<WorldDefinition>) -> Self {
+        Self::try_from_world_definitions(worlds)
             .expect("checked generated worlds are nonempty and have unique IDs")
     }
 
-    fn from_generated(world: GeneratedWorld) -> Self {
+    fn from_definition(world: WorldDefinition) -> Self {
         let map = Arc::new(world.map);
         let mut simulation = World::default();
         simulation.load_map_streamed(&map);
@@ -137,7 +137,7 @@ impl WorldRegistry {
         }
     }
 
-    fn register_generated(&mut self, world: GeneratedWorld) -> Result<(), RegistryError> {
+    fn register_definition(&mut self, world: WorldDefinition) -> Result<(), RegistryError> {
         let instance = world.instance;
         let portal = world.portal;
         self.register(instance, world.manifest, world.map)?;

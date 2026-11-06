@@ -25,6 +25,40 @@ impl ServerRuntime {
             }
         }
         self.environment_dirty_revision = self.environment_clock.dirty_revision();
+        self.poll_autosave()?;
+        self.metrics.sample_process_memory(Instant::now());
+        self.connections.messages.clear();
+        self.connections.disconnected.clear();
+        let loop_started = Instant::now();
+        let admin_requests = self.operations.admin.poll(Instant::now())?;
+        for request in admin_requests {
+            if self.operations.command_queue.len() < 64 {
+                self.operations
+                    .command_queue
+                    .push_back((Some(request.id), request.command));
+            } else {
+                self.operations
+                    .admin
+                    .respond(request.id, false, "command queue full");
+            }
+        }
+        if let Some(console_rx) = &self.operations.console_rx {
+            for _ in 0..64 {
+                let Ok(command) = console_rx.try_recv() else {
+                    break;
+                };
+                if self.operations.command_queue.len() < 64 {
+                    self.operations.command_queue.push_back((None, command));
+                } else {
+                    eprintln!("ERR command queue full");
+                }
+            }
+        }
+
+        Ok(loop_started)
+    }
+
+    fn poll_autosave(&mut self) -> std::io::Result<()> {
         let autosave_check_at = Instant::now();
         if self
             .scheduler
@@ -61,35 +95,6 @@ impl ServerRuntime {
                 eprintln!("automatic world save skipped because another save is pending");
             }
         }
-        self.metrics.sample_process_memory(Instant::now());
-        self.connections.messages.clear();
-        self.connections.disconnected.clear();
-        let loop_started = Instant::now();
-        let admin_requests = self.operations.admin.poll(Instant::now())?;
-        for request in admin_requests {
-            if self.operations.command_queue.len() < 64 {
-                self.operations
-                    .command_queue
-                    .push_back((Some(request.id), request.command));
-            } else {
-                self.operations
-                    .admin
-                    .respond(request.id, false, "command queue full");
-            }
-        }
-        if let Some(console_rx) = &self.operations.console_rx {
-            for _ in 0..64 {
-                let Ok(command) = console_rx.try_recv() else {
-                    break;
-                };
-                if self.operations.command_queue.len() < 64 {
-                    self.operations.command_queue.push_back((None, command));
-                } else {
-                    eprintln!("ERR command queue full");
-                }
-            }
-        }
-
-        Ok(loop_started)
+        Ok(())
     }
 }

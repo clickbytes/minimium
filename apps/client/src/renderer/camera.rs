@@ -14,16 +14,17 @@ impl Renderer {
             .as_secs_f32()
             .min(minimium_simulation::SIMULATION_STEP_SECONDS);
         self.metrics.last_frame = now;
-        let direction =
-            if (self.game.sectors_ready || self.connection.movement.fly) && !self.overview_open {
-                self.input.movement(
-                    self.ui.console.open,
-                    self.game.character,
-                    self.is_earth_world(),
-                )
-            } else {
-                [0.0; 2]
-            };
+        let direction = if (self.game.gameplay.sectors_ready || self.connection.movement.fly)
+            && !self.overview_open
+        {
+            self.input.movement(
+                self.ui.console.open,
+                self.game.gameplay.prediction.character,
+                self.is_earth_world(),
+            )
+        } else {
+            [0.0; 2]
+        };
         self.game.accumulate_prediction_time(dt);
         let manifest = self
             .game
@@ -43,7 +44,8 @@ impl Renderer {
             },
             self.connection.movement,
             self.input.jump_pending,
-            (self.game.sectors_ready || self.connection.movement.fly) && !self.overview_open,
+            (self.game.gameplay.sectors_ready || self.connection.movement.fly)
+                && !self.overview_open,
             manifest,
             self.connection
                 .session()
@@ -52,8 +54,8 @@ impl Renderer {
             let mut input = predicted.input;
             self.input.jump_pending = false;
             if !self.refresh_active_sector_scene() && !self.connection.movement.fly {
-                self.game.character = predicted.previous_state;
-                self.game.position_mm = predicted.previous_mm;
+                self.game.gameplay.prediction.character = predicted.previous_state;
+                self.game.gameplay.prediction.position_mm = predicted.previous_mm;
                 input = CharacterInput::default();
             }
             self.input.input_keepalive += minimium_simulation::SIMULATION_STEP_SECONDS;
@@ -90,7 +92,7 @@ impl Renderer {
             .get(&self.game.current_instance)
             .is_some_and(|manifest| manifest.planet().is_some())
         {
-            let position = self.game.character.position;
+            let position = self.game.gameplay.prediction.character.position;
             if position
                 .iter()
                 .zip(self.gpu.render_origin)
@@ -105,7 +107,7 @@ impl Renderer {
         };
         if self.gpu.set_render_origin(origin) {
             self.last_render_position = [f32::INFINITY; 3];
-            self.game.remote_geometry_dirty = true;
+            self.game.gameplay.remote_geometry_dirty = true;
         }
         self.poll_connector();
         self.poll_session();
@@ -128,12 +130,21 @@ impl Renderer {
                 far,
             )
         } else {
-            let direction =
-                camera_direction(self.game.character, self.input.yaw, self.input.pitch).normalize();
+            let direction = camera_direction(
+                self.game.gameplay.prediction.character,
+                self.input.yaw,
+                self.input.pitch,
+            )
+            .normalize();
             let up = glam::Vec3::from_array(
-                character_frame(self.game.character.gravity, self.game.character.position).0,
+                character_frame(
+                    self.game.gameplay.prediction.character.gravity,
+                    self.game.gameplay.prediction.character.position,
+                )
+                .0,
             );
-            let camera_position = glam::Vec3::from_array(self.game.character.position) + up * 1.7;
+            let camera_position =
+                glam::Vec3::from_array(self.game.gameplay.prediction.character.position) + up * 1.7;
             let far = if self
                 .game
                 .world_manifests
@@ -156,7 +167,8 @@ impl Renderer {
             } else {
                 200.0
             };
-            let local_camera = if let Some(position_mm) = self.game.position_mm {
+            let local_camera = if let Some(position_mm) = self.game.gameplay.prediction.position_mm
+            {
                 glam::Vec3::from_array(std::array::from_fn(|axis| {
                     (position_mm.0[axis] as f64 / 1000.0 - f64::from(self.gpu.render_origin[axis]))
                         as f32
@@ -194,6 +206,7 @@ impl Renderer {
                 camera_eye_world,
             );
             self.game
+                .gameplay
                 .reconciliation
                 .tracks()
                 .iter()
@@ -308,9 +321,10 @@ impl Renderer {
         self.ui.console.build_vertices(
             self.gpu.size.width,
             self.gpu.size.height,
-            self.game.health,
+            self.game.gameplay.health,
             self.input.cursor_locked && !self.ui.console.open,
             self.game
+                .gameplay
                 .hit_confirmation_until
                 .is_some_and(|until| Instant::now() < until),
             crate::console::Overlay {

@@ -91,208 +91,16 @@ impl ApplicationHandler for App {
             WindowEvent::Resized(size) => renderer.resize(size),
             WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
             WindowEvent::KeyboardInput { event, .. } => {
-                if let PhysicalKey::Code(code) = event.physical_key {
-                    if code == KeyCode::F11 && event.state == ElementState::Pressed && !event.repeat
-                    {
-                        super::window_mode::toggle(window, event_loop);
-                        return;
-                    }
-                    if code == KeyCode::F1 && event.state == ElementState::Pressed && !event.repeat
-                    {
-                        renderer.ui.console.open = !renderer.ui.console.open;
-                        let _ = window.set_cursor_grab(CursorGrabMode::None);
-                        window.set_cursor_visible(true);
-                        renderer.input.cursor_locked = false;
-                        if !renderer.overview_open {
-                            renderer.input.last_cursor = None;
-                        }
-                        renderer.input.keys.clear();
-                        renderer.input.jump_pending = false;
-                        return;
-                    }
-                    if renderer.ui.console.open {
-                        if event.state == ElementState::Pressed {
-                            match code {
-                                KeyCode::Escape => renderer.ui.console.open = false,
-                                KeyCode::Enter => {
-                                    if super::controller::execute_console_input(renderer) {
-                                        event_loop.exit();
-                                    }
-                                }
-                                _ => super::console_events::key(
-                                    &mut renderer.ui.console,
-                                    code,
-                                    event.text.as_ref().map(|text| text.as_str()),
-                                    self.modifiers,
-                                ),
-                            }
-                        }
-                        return;
-                    }
-                    if code == KeyCode::KeyM
-                        && event.state == ElementState::Pressed
-                        && !event.repeat
-                    {
-                        renderer.toggle_overview();
-                        let _ = window.set_cursor_grab(CursorGrabMode::None);
-                        window.set_cursor_visible(true);
-                        renderer.input.cursor_locked = false;
-                        renderer.input.last_cursor = None;
-                        renderer.input.keys.clear();
-                        renderer.input.jump_pending = false;
-                        return;
-                    }
-                    if renderer.overview_open {
-                        if code == KeyCode::Escape && event.state == ElementState::Pressed {
-                            renderer.toggle_overview();
-                        }
-                        return;
-                    }
-                    if code == KeyCode::Escape && event.state == ElementState::Pressed {
-                        renderer.connection.cancel_transition();
-                        let _ = window.set_cursor_grab(CursorGrabMode::None);
-                        window.set_cursor_visible(true);
-                        renderer.input.cursor_locked = false;
-                        renderer.input.last_cursor = None;
-                    } else if event.state == ElementState::Pressed {
-                        renderer.input.keys.insert(code);
-                        if code == KeyCode::Space && !event.repeat {
-                            renderer.input.jump_pending = true;
-                        }
-                        if code == KeyCode::KeyE && !event.repeat {
-                            renderer.queue_portal();
-                        }
-                    } else {
-                        renderer.input.keys.remove(&code);
-                    }
-                }
+                super::window_events::keyboard(renderer, window, event_loop, event, self.modifiers)
             }
-            WindowEvent::MouseInput {
-                state: ElementState::Pressed,
-                button: MouseButton::Left,
-                ..
-            } => {
-                if renderer.ui.console.open {
-                    if let Some((x, y)) = renderer.input.last_cursor {
-                        let size = window.inner_size();
-                        renderer.ui.console.editor.dragging =
-                            renderer
-                                .ui
-                                .console
-                                .input_hit(size.width, size.height, x, y, false);
-                    }
-                    return;
-                }
-                if renderer.overview_open && !renderer.ui.console.open {
-                    if renderer.overview_uses_zoom() {
-                        if let Some((x, y)) = renderer.input.last_cursor {
-                            let size = window.inner_size();
-                            if crate::console::slider_hit(size.width, size.height, x, y) {
-                                renderer.overview_slider_dragging = true;
-                                renderer.overview_dragged = true;
-                                renderer.set_overview_zoom(crate::console::slider_value_at_y(
-                                    size.height,
-                                    y,
-                                ));
-                                return;
-                            }
-                        }
-                    }
-                    renderer.overview_dragging = true;
-                    renderer.overview_dragged = false;
-                    renderer.overview_drag_distance = 0.0;
-                    return;
-                }
-                if !renderer.ui.console.open && !renderer.overview_open {
-                    if renderer.input.cursor_locked {
-                        renderer.queue_fire();
-                    } else if window.set_cursor_grab(CursorGrabMode::Locked).is_ok()
-                        || window.set_cursor_grab(CursorGrabMode::Confined).is_ok()
-                    {
-                        window.set_cursor_visible(false);
-                        renderer.input.cursor_locked = true;
-                        renderer.input.last_cursor = None;
-                    }
-                }
+            WindowEvent::MouseInput { state, button, .. } => {
+                super::window_events::mouse_input(renderer, window, state, button)
             }
-            WindowEvent::MouseInput {
-                state: ElementState::Released,
-                button: MouseButton::Left,
-                ..
-            } => {
-                renderer.ui.console.editor.dragging = false;
-                let slider_dragged = std::mem::take(&mut renderer.overview_slider_dragging);
-                if renderer.overview_open
-                    && !renderer.ui.console.open
-                    && !renderer.overview_dragged
-                    && !slider_dragged
-                {
-                    renderer.click_map_teleport();
-                }
-                renderer.overview_dragging = false;
-            }
-            WindowEvent::MouseWheel { delta, .. } if renderer.ui.console.open => {
-                let amount = match delta {
-                    winit::event::MouseScrollDelta::LineDelta(_, lines) => lines,
-                    winit::event::MouseScrollDelta::PixelDelta(position) => {
-                        position.y as f32 / 40.0
-                    }
-                };
-                renderer.ui.console.scroll_lines(amount.round() as isize);
-            }
-            WindowEvent::MouseWheel { delta, .. } if renderer.overview_open => {
-                let amount = match delta {
-                    winit::event::MouseScrollDelta::LineDelta(_, lines) => lines,
-                    winit::event::MouseScrollDelta::PixelDelta(position) => {
-                        position.y as f32 / 80.0
-                    }
-                };
-                if renderer.overview_uses_zoom() {
-                    renderer.set_overview_zoom(renderer.overview_zoom * (1.0 - amount * 0.1));
-                }
+            WindowEvent::MouseWheel { delta, .. } => {
+                super::window_events::mouse_wheel(renderer, delta)
             }
             WindowEvent::CursorMoved { position, .. } => {
-                if renderer.overview_slider_dragging {
-                    renderer.set_overview_zoom(crate::console::slider_value_at_y(
-                        window.inner_size().height,
-                        position.y,
-                    ));
-                }
-                if renderer.ui.console.open && renderer.ui.console.editor.dragging {
-                    let size = window.inner_size();
-                    renderer.ui.console.input_hit(
-                        size.width,
-                        size.height,
-                        position.x,
-                        position.y,
-                        true,
-                    );
-                }
-                if renderer.overview_open && renderer.overview_dragging && !renderer.ui.console.open
-                {
-                    if let Some((x, y)) = renderer.input.last_cursor {
-                        renderer.overview_drag_distance +=
-                            ((position.x - x).powi(2) + (position.y - y).powi(2)).sqrt();
-                        renderer.overview_dragged |= renderer.overview_drag_distance > 5.0;
-                        let horizontal = if renderer.is_earth_world() { 1.0 } else { -1.0 };
-                        renderer.overview_yaw += (position.x - x) as f32 * 0.005 * horizontal;
-                        renderer.overview_pitch = (renderer.overview_pitch
-                            + (position.y - y) as f32 * 0.005)
-                            .clamp(-1.4, 1.4);
-                    }
-                }
-                if renderer.input.cursor_locked
-                    && !renderer.ui.console.open
-                    && !renderer.overview_open
-                {
-                    if let Some((x, y)) = renderer.input.last_cursor {
-                        let horizontal = if renderer.is_earth_world() { -1.0 } else { 1.0 };
-                        renderer.input.yaw += ((position.x - x) as f32) * 0.0025 * horizontal;
-                        renderer.input.pitch -= ((position.y - y) as f32) * 0.0025;
-                        renderer.input.pitch = renderer.input.pitch.clamp(-1.5, 1.5);
-                    }
-                }
-                renderer.input.last_cursor = Some((position.x, position.y));
+                super::window_events::cursor_moved(renderer, window, position)
             }
             WindowEvent::RedrawRequested => {
                 let started = Instant::now();
@@ -339,7 +147,13 @@ impl ApplicationHandler for App {
                     renderer.metrics.fps_time = Instant::now();
                     let coordinates =
                         if renderer.settings.require_earth && renderer.gpu.scene_visible {
-                            let [x, y, z] = renderer.game.character.position.map(f64::from);
+                            let [x, y, z] = renderer
+                                .game
+                                .gameplay
+                                .prediction
+                                .character
+                                .position
+                                .map(f64::from);
                             let radius = (x * x + y * y + z * z).sqrt();
                             format!(
                                 " | {:.4}°N {:.4}°E",
@@ -353,7 +167,7 @@ impl ApplicationHandler for App {
                         "{} | {}{} | {}",
                         Text::WindowTitleStatus {
                             fps,
-                            health: renderer.game.health
+                            health: renderer.game.gameplay.health
                         },
                         renderer.connection_status,
                         coordinates,
@@ -371,18 +185,8 @@ impl ApplicationHandler for App {
         _device_id: winit::event::DeviceId,
         event: DeviceEvent,
     ) {
-        if let DeviceEvent::MouseMotion { delta } = event {
-            if let Some(renderer) = &mut self.renderer {
-                if renderer.input.cursor_locked
-                    && !renderer.ui.console.open
-                    && !renderer.overview_open
-                {
-                    let horizontal = if renderer.is_earth_world() { -1.0 } else { 1.0 };
-                    renderer.input.yaw += (delta.0 as f32) * 0.0025 * horizontal;
-                    renderer.input.pitch -= (delta.1 as f32) * 0.0025;
-                    renderer.input.pitch = renderer.input.pitch.clamp(-1.5, 1.5);
-                }
-            }
+        if let Some(renderer) = &mut self.renderer {
+            super::window_events::device_event(renderer, event);
         }
     }
 

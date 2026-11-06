@@ -301,7 +301,7 @@ impl Renderer {
             format!("weather Seasonal region={:?} T={:.1}C humidity={:.0}% water={:.0}% uplift={:.2}", s.region, c.temperature_c, c.humidity * 100.0, c.water_supply * 100.0, c.uplift),
             format!("layers [{}] wind W->E reference=5/10/20 m/s world={:.3}/{:.3}/{:.3} m/s", active.join(" | "), 5.0 * wind_scale, 10.0 * wind_scale, 20.0 * wind_scale),
             format!("clouds={} faces={} regions={} rev={} limited={} mode={} GPU={:.1}MiB mesh={:.1}MiB", s.clouds.len(), p.faces.len(), s.regions.len(), s.revision, s.limited || p.limited, if gpu.oit { "weighted_blended_oit" } else { "sorted_face_alpha" }, gpu.bytes() as f64 / 1048576.0, (p.faces.capacity() * std::mem::size_of::<super::Face>()) as f64 / 1048576.0),
-            format!("publication age={:.2}s world_lag={:.2}s build={:.1}ms player_offset={:.4}rad debug={:?}", p.request.started.elapsed().as_secs_f64(), utc - s.utc, p.build_ms, s.observer.dot(DVec3::from_array(self.game.character.position.map(f64::from)).normalize()).clamp(-1.0, 1.0).acos(), self.weather.debug),
+            format!("publication age={:.2}s world_lag={:.2}s build={:.1}ms player_offset={:.4}rad debug={:?}", p.request.started.elapsed().as_secs_f64(), utc - s.utc, p.build_ms, s.observer.dot(DVec3::from_array(self.game.gameplay.prediction.character.position.map(f64::from)).normalize()).clamp(-1.0, 1.0).acos(), self.weather.debug),
             format!("families (world altitude bounds) [{kinds}]"),
             format!("voxels N0..6={:?} bricks={} density_samples={} cache_hits={} cache={:.2}MiB simplified={} morph_stalled={}", p.stats.levels, p.stats.bricks, p.stats.samples, p.stats.cached, p.stats.cache_bytes as f64 / 1048576.0, p.stats.simplified, stalled),
         ]

@@ -5,7 +5,15 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+minimium-platform = { path = "../../crates/platform" }
+minimium-asset-io = { path = "../../crates/asset-io" }
+minimium-assets = { path = "../../crates/assets" }
+minimium-game-sample = { path = "../../games/sample" }
 minimium-server-runtime = { path = "../../crates/server-runtime" }
+minimium-procgen = { path = "../../crates/procgen" }
+minimium-simulation = { path = "../../crates/simulation" }
+minimium-world = { path = "../../crates/world" }
+ron = "0.12.3"
 minimium-telemetry = { path = "../../crates/telemetry", optional = true, features = ["allocation-metrics"] }
 
 [features]

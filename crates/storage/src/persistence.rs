@@ -1,5 +1,4 @@
 use super::{
-    compact_error,
     player_store::{PlayerStore, SaveSnapshot},
     WorldSaveInput,
 };
@@ -7,36 +6,21 @@ use minimium_environment::time::SavedClockState;
 use minimium_telemetry::allocations::{self, Phase};
 use std::{io, path::PathBuf, sync::mpsc, thread};
 
+mod status;
+
+use status::SaveBookkeeping;
+
 enum PersistenceRequest {
     Save(SaveSnapshot),
     Shutdown(Option<SaveSnapshot>, mpsc::SyncSender<io::Result<()>>),
     Stop,
 }
 
-enum SaveStatus {
-    Never,
-    Pending,
-    Complete,
-    Failed(String),
-}
-
-impl std::fmt::Display for SaveStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Never => f.write_str("never"),
-            Self::Pending => f.write_str("pending"),
-            Self::Complete => f.write_str("ok"),
-            Self::Failed(message) => write!(f, "error_{message}"),
-        }
-    }
-}
-
 pub struct PersistenceWorker {
     sender: mpsc::SyncSender<PersistenceRequest>,
     completions: mpsc::Receiver<io::Result<()>>,
     thread: Option<thread::JoinHandle<()>>,
-    pending_saves: usize,
-    last_save: SaveStatus,
+    status: SaveBookkeeping,
 }
 
 impl PersistenceWorker {
@@ -66,16 +50,14 @@ impl PersistenceWorker {
             sender,
             completions,
             thread: Some(worker),
-            pending_saves: 0,
-            last_save: SaveStatus::Never,
+            status: SaveBookkeeping::default(),
         })
     }
 
     pub fn queue_save(&mut self, snapshot: SaveSnapshot) -> io::Result<()> {
         match self.sender.try_send(PersistenceRequest::Save(snapshot)) {
             Ok(()) => {
-                self.pending_saves = self.pending_saves.saturating_add(1);
-                self.last_save = SaveStatus::Pending;
+                self.status.record_queued();
                 Ok(())
             }
             Err(mpsc::TrySendError::Full(_)) => Err(io::Error::new(
@@ -83,9 +65,8 @@ impl PersistenceWorker {
                 "a world save is already queued",
             )),
             Err(mpsc::TrySendError::Disconnected(_)) => {
-                let error =
-                    io::Error::new(io::ErrorKind::BrokenPipe, "world storage worker stopped");
-                self.last_save = SaveStatus::Failed(compact_error(&error));
+                let error = worker_stopped();
+                self.status.record_enqueue_failure(&error);
                 Err(error)
             }
         }
@@ -97,7 +78,7 @@ impl PersistenceWorker {
         input: WorldSaveInput,
         saved_clock: SavedClockState,
     ) -> io::Result<()> {
-        if self.pending_saves > 0 {
+        if self.status.has_pending_save() {
             return Err(io::Error::new(
                 io::ErrorKind::WouldBlock,
                 "a world save is already pending",
@@ -111,27 +92,11 @@ impl PersistenceWorker {
         loop {
             match self.completions.try_recv() {
                 Ok(result) => {
-                    self.pending_saves = self.pending_saves.saturating_sub(1);
-                    match result {
-                        Ok(()) => {
-                            self.last_save = SaveStatus::Complete;
-                            println!("world save completed");
-                        }
-                        Err(error) => {
-                            let message = compact_error(&error);
-                            self.last_save = SaveStatus::Failed(message);
-                            eprintln!("world save failed: {error}");
-                        }
-                    }
+                    self.status.record_completion(result);
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => {
-                    if self.pending_saves > 0 {
-                        self.pending_saves = 0;
-                        self.last_save =
-                            SaveStatus::Failed(String::from("world_storage_worker_stopped"));
-                        eprintln!("world storage worker stopped before completing a save");
-                    }
+                    self.status.record_worker_stopped();
                     break;
                 }
             }
@@ -139,24 +104,41 @@ impl PersistenceWorker {
     }
 
     pub fn has_pending_save(&self) -> bool {
-        self.pending_saves != 0
+        self.status.has_pending_save()
     }
 
     pub fn summary(&self) -> String {
-        format!(
-            "save_pending={} save_last={}",
-            self.pending_saves, self.last_save
-        )
+        self.status.summary()
     }
 
     pub fn shutdown(&mut self, snapshot: Option<SaveSnapshot>) -> io::Result<()> {
         let (reply_sender, reply_receiver) = mpsc::sync_channel(1);
-        let send_result = self
-            .sender
-            .send(PersistenceRequest::Shutdown(snapshot, reply_sender))
-            .map_err(|_| io::Error::new(io::ErrorKind::BrokenPipe, "world storage worker stopped"));
-        let save_result = if send_result.is_ok() {
-            match reply_receiver.recv() {
+        let send_result = self.send_shutdown(snapshot, reply_sender);
+        let save_result = Self::receive_shutdown_result(&send_result, reply_receiver);
+        let join_result = self.join_worker();
+        self.poll_completions();
+        Self::report_shutdown_errors(&send_result, &save_result, &join_result);
+        send_result?;
+        save_result?;
+        join_result
+    }
+
+    fn send_shutdown(
+        &self,
+        snapshot: Option<SaveSnapshot>,
+        reply: mpsc::SyncSender<io::Result<()>>,
+    ) -> io::Result<()> {
+        self.sender
+            .send(PersistenceRequest::Shutdown(snapshot, reply))
+            .map_err(|_| worker_stopped())
+    }
+
+    fn receive_shutdown_result(
+        send_result: &io::Result<()>,
+        reply: mpsc::Receiver<io::Result<()>>,
+    ) -> io::Result<()> {
+        if send_result.is_ok() {
+            match reply.recv() {
                 Ok(result) => result,
                 Err(_) => Err(io::Error::new(
                     io::ErrorKind::BrokenPipe,
@@ -168,22 +150,24 @@ impl PersistenceWorker {
                 io::ErrorKind::BrokenPipe,
                 "world storage worker stopped before shutdown was queued",
             ))
-        };
-        let join_result = self.join_worker();
-        self.poll_completions();
-        if let Err(error) = &join_result {
+        }
+    }
+
+    fn report_shutdown_errors(
+        send_result: &io::Result<()>,
+        save_result: &io::Result<()>,
+        join_result: &io::Result<()>,
+    ) {
+        if let Err(error) = join_result {
             if send_result.is_err() || save_result.is_err() {
                 eprintln!("storage worker join also failed: {error}");
             }
         }
-        if let Err(error) = &save_result {
+        if let Err(error) = save_result {
             if send_result.is_err() {
                 eprintln!("final save also failed: {error}");
             }
         }
-        send_result?;
-        save_result?;
-        join_result
     }
 
     fn join_worker(&mut self) -> io::Result<()> {
@@ -204,4 +188,8 @@ impl Drop for PersistenceWorker {
             self.poll_completions();
         }
     }
+}
+
+fn worker_stopped() -> io::Error {
+    io::Error::new(io::ErrorKind::BrokenPipe, "world storage worker stopped")
 }

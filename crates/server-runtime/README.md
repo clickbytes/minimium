@@ -6,19 +6,25 @@ Owns the authoritative server lifecycle, world registry, tick, networking coordi
 
 ## Public API
 
-`run(args)` parses server process arguments, initializes modules and startup state, then runs the authoritative runtime.
+`run(args, composition)` parses server process arguments, initializes modules and startup state, then runs the authoritative runtime. The application supplies a world-composer callback and combat values through `composition`; the runtime does not choose sample content.
 
 ## Dependencies
 
-Coordinates world, simulation, environment, protocol, transport, storage, platform, telemetry, assets, procgen and sample-game contracts. Astronomy and GPU crates are forbidden.
+Coordinates world, simulation, environment, protocol, transport, storage, platform, telemetry, assets and procgen. `composition.rs` defines the neutral world/portal and combat data accepted from the host application. Sample-game code is not a production dependency. Astronomy and GPU crates are forbidden.
 
 ## Data flow
 
-The process validates startup inputs, builds world instances, then applies bounded network inputs on the owner lane. Workers publish typed results back to the runtime; immutable save snapshots cross into storage.
+The process validates startup inputs and reads world.seed before invoking the application world composer. The application owns saved planet and snapshot seed discovery and requests randomness only when no seed is available. The runtime installs the returned worlds, migrates legacy snapshots, loads save state and then applies bounded network inputs on the owner lane. Workers publish typed results back to the runtime; immutable save snapshots cross into storage.
 
 ## Ownership and execution
 
 `ServerRuntime` owns mutable authoritative state on one lane. Worker threads do not mutate active worlds. Runtime shutdown joins workers and persists final state.
+
+`runtime/operations.rs` keeps the loop order explicit and delegates autosave scheduling/capture to `poll_autosave`. `lifecycle.rs` coordinates admin drain, client socket closure, final snapshot capture, persistence shutdown, endpoint cleanup and shutdown status in that order. Storage owns snapshot serialization and worker status; the runtime supplies the live world data and final snapshot.
+
+`WorldRegistry` is the stable runtime façade for world instances. Its `membership.rs` module owns membership and epoch changes, `transfers.rs` owns staged and committed transfers, and `accessors.rs` owns read-only queries and save snapshots. Constructors and entity, sector, environment, and diagnostic operations stay in their dedicated modules.
+
+`sector_streaming.rs` coordinates the per-tick pipeline. `sector_streaming/requests.rs` collects read-only player and transfer requests; `tickets.rs` owns retain/pin/release reconciliation; `install.rs` performs bounded synchronous materialization; `readiness.rs` evaluates collision-ready players and transfers; and `collision.rs` rebuilds changed instances from installed payloads.
 
 ## Invariants and errors
 

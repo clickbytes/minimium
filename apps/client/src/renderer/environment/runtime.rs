@@ -131,10 +131,10 @@ impl Renderer {
         render_view: RenderViewFrame,
         geography: Option<std::sync::Arc<dyn minimium_procgen::PreparedGeography>>,
     ) -> Option<PreparedStarUpload> {
-        let mut feet_position_mm = self.game.position_mm.or_else(|| {
+        let mut feet_position_mm = self.game.gameplay.prediction.position_mm.or_else(|| {
             (self.environment_frame.quality
                 == crate::environment::SynchronizationQuality::LocalDemo)
-                .then(|| demo_position_mm(self.game.character.position))
+                .then(|| demo_position_mm(self.game.gameplay.prediction.character.position))
                 .flatten()
         });
         let mut eye_height = DEFAULT_OBSERVER_EYE_HEIGHT_MM;

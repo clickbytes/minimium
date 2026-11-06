@@ -1,3 +1,4 @@
+use crate::composition::{WorldDefinition, WorldPortal};
 use crate::world_registry::WorldRegistry;
 use minimium_core::identity::PlayerProfileId;
 use minimium_environment::time::{
@@ -10,6 +11,24 @@ use std::{
     fs,
     time::{SystemTime, UNIX_EPOCH},
 };
+
+fn registry_from_sample(worlds: Vec<minimium_game_sample::GeneratedWorld>) -> WorldRegistry {
+    WorldRegistry::from_world_definitions(
+        worlds
+            .into_iter()
+            .map(|world| WorldDefinition {
+                instance: world.instance,
+                manifest: world.manifest,
+                map: world.map,
+                portal: world.portal.map(|portal| WorldPortal {
+                    position: portal.position,
+                    target_instance: portal.target_instance,
+                    destination: portal.destination,
+                }),
+            })
+            .collect(),
+    )
+}
 
 fn temporary_directory(label: &str) -> std::path::PathBuf {
     let nonce = SystemTime::now()
@@ -43,7 +62,7 @@ fn v8_save_restores_instance_position_and_portal_return_location() {
     let generated = minimium_game_sample::generate_demo_worlds().unwrap();
     let primary = generated[0].instance;
     let dungeon = generated[1].instance;
-    let mut registry = WorldRegistry::from_generated_worlds(generated.to_vec());
+    let mut registry = registry_from_sample(generated.to_vec());
     let mut store = PlayerStore::default();
     let profile = PlayerProfileId::from_bytes([0x35; 16]);
     let mut next_id = 1;
@@ -105,7 +124,7 @@ fn v8_roundtrip_keeps_a_live_planet_position_clear_after_quantization() {
     let primary = generated[0].instance;
     let gravity = CharacterGravity::Radial { center: [0.0; 3] };
     let position = [0.0, 99.43038, 10.75904];
-    let mut registry = WorldRegistry::from_generated_worlds(generated.to_vec());
+    let mut registry = registry_from_sample(generated.to_vec());
     let mut store = PlayerStore::default();
     let profile = PlayerProfileId::from_bytes([0xa6; 16]);
     let mut next_id = 1;

@@ -71,3 +71,19 @@ impl WorldRegistry {
         self.instances.iter_mut().map(|(id, world)| (*id, world))
     }
 }
+
+impl WorldRegistry {
+    pub(crate) fn manifest_for_player(&self, id: PlayerId) -> Option<WorldManifest> {
+        Some(self.for_player(id)?.manifest)
+    }
+
+    pub(crate) fn map_for_instance(&self, instance: WorldInstanceId) -> Option<&WorldMap> {
+        self.instances
+            .get(&instance)
+            .map(|owner| owner.map.as_ref())
+    }
+
+    pub(crate) fn map_fingerprint_for_instance(&self, instance: WorldInstanceId) -> Option<u64> {
+        self.map_for_instance(instance).map(WorldMap::fingerprint)
+    }
+}

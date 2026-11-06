@@ -92,14 +92,14 @@ responsibility = "Metrics, process sampling and optional allocation instrumentat
 [[package]]
 name = "minimium-server"
 role = "application"
-responsibility = "Server process entry point, allocator selection and argument forwarding."
+responsibility = "Server process entry point, allocator selection, sample world/combat composition and argument forwarding."
 forbidden_dependencies = ["minimium-astronomy", "wgpu", "wgpu-core", "wgpu-hal", "winit"]
 
 [[package]]
 name = "minimium-server-runtime"
 role = "runtime"
-responsibility = "Authoritative server composition, simulation, transport and persistence lifecycle."
-forbidden_dependencies = ["minimium-astronomy", "wgpu", "wgpu-core", "wgpu-hal", "winit"]
+responsibility = "Authoritative server lifecycle, simulation, transport and persistence, consuming neutral world and combat inputs from the application."
+forbidden_dependencies = ["minimium-game-sample", "minimium-astronomy", "wgpu", "wgpu-core", "wgpu-hal", "winit"]
 
 [[package]]
 name = "minimium-client"
