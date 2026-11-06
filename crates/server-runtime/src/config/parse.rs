@@ -7,7 +7,10 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     path::Path,
 };
-use values::{config_from, effective_value, error, resolve, JsonSetting, JsonView, LEGACY_OPTIONS};
+use values::{
+    config_from, effective_reason, effective_value, error, resolve, JsonSetting, JsonView,
+    LEGACY_OPTIONS,
+};
 
 const KEYS: &[&str] = &[
     "server.threads",
@@ -24,8 +27,8 @@ const KEYS: &[&str] = &[
     "world.definition",
     "world.planet_config",
     "world.environment_config",
-    "world.climate_scenario",
-    "world.climate_relief_influence",
+    "world.climate.initial_scenario",
+    "world.climate.relief_influence",
 ];
 
 const OPTIONS: &[CliOptionSpec] = &[
@@ -427,7 +430,7 @@ pub(super) fn offline_command(args: &[String]) -> Result<Option<String>, Command
                         effective: effective_value(key, &value.requested),
                         default: value.default.clone(),
                         source: value.source.as_str(),
-                        reason: None,
+                        reason: effective_reason(key, &value.requested),
                     },
                 )
             })

@@ -61,6 +61,28 @@ pub(crate) enum ClientPropertyValue {
     WorldTimeOfflinePolicy(OfflinePolicy),
 }
 
+impl ClientPropertyValue {
+    pub(crate) fn key(&self) -> ClientPropertyKey {
+        match self {
+            Self::CameraFov(_) => ClientPropertyKey::CameraFov,
+            Self::MouseSensitivity(_) => ClientPropertyKey::MouseSensitivity,
+            Self::SkyQuality(_) => ClientPropertyKey::SkyQuality,
+            Self::SkyNames(_) => ClientPropertyKey::SkyNames,
+            Self::CloudDetail(_) => ClientPropertyKey::CloudDetail,
+            Self::AtmosphereDebug(_) => ClientPropertyKey::AtmosphereDebug,
+            Self::TerrainDebug(_) => ClientPropertyKey::TerrainDebug,
+            Self::CloudDebug(_) => ClientPropertyKey::CloudDebug,
+            Self::SkyDemo(_) => ClientPropertyKey::SkyDemo,
+            Self::MovementFly(_) => ClientPropertyKey::MovementFly,
+            Self::MovementSpeed(_) => ClientPropertyKey::MovementSpeed,
+            Self::MovementAccel(_) => ClientPropertyKey::MovementAccel,
+            Self::WorldTimeMode(_) => ClientPropertyKey::WorldTimeMode,
+            Self::WorldTimeScale(_) => ClientPropertyKey::WorldTimeScale,
+            Self::WorldTimeOfflinePolicy(_) => ClientPropertyKey::WorldTimeOfflinePolicy,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum ClientPropertyCommand {
     Get(ClientPropertyKey),

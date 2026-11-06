@@ -21,7 +21,7 @@ const INPUT_QUEUE_CAPACITY: usize = 64;
 const ENVIRONMENT_STATUS_REFRESH: Duration = Duration::from_secs(5);
 
 pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
-    let mut text_properties = properties::TextProperties::new(&options);
+    let mut text_properties = properties::TextProperties::new();
     if options.sky_quality != minimium_renderer::quality::SkyQuality::Standard {
         println!("--sky-quality is available only in the desktop renderer");
     }
@@ -283,9 +283,8 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                         FrontendAction::SkyBodies => {
                             println!("sky bodies unavailable: desktop renderer required");
                         }
-                        FrontendAction::Property(command) => println!(
-                            "{}",
-                            text_properties.execute(command, &mut options, &connection)
+                        FrontendAction::Property(command) => properties::print_result(
+                            text_properties.execute(command, &mut options, &connection),
                         ),
                         FrontendAction::ConfigSave(path) => {
                             match crate::config::save_preferences(

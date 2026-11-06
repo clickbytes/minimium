@@ -4,12 +4,12 @@ This page documents the current parsers and dispatchers. For operational sequenc
 
 | Program | Options and commands | Defaults and parsing |
 | --- | --- | --- |
-| Server | `run`, `--seed`, `--planet-config`, `--environment-config`, `--threads`, `--max-players`, `--bind`, `--game-port`, `--data-dir`, `--map`, `--world-definition`, `--autosave-seconds`, `--headless`, `--help`/`-h`, `--version` | One lane, 512 players, loopback, port 0, `.minimium`, seeded generated worlds, 300 s autosave. `--environment-config` initializes a new world's clock only; it is rejected when world data already exists. |
+| Server | `run`, `--config`, `--set`, `--seed`, `--planet-config`, `--environment-config`, `--threads`, `--max-players`, `--bind`, `--game-port`, `--data-dir`, `--map`, `--world-definition`, `--autosave-seconds`, `--headless`, `--help`/`-h`, `--version` | One lane, 512 players, loopback, port 0, `.minimium`, seeded generated worlds, 300 s autosave. Threads accept `1..=64` or `auto`. `--environment-config` initializes a new world's clock only; it is rejected when world data already exists. |
 | Control | `--data-dir`, `--help`/`-h`, server commands below | `.minimium`; help is handled before command parsing. Only the first `--data-dir` is consumed. |
 | Client | `--connect`, `--map`, `--world-definition`, `--profile-dir`, `--server-data-dir`, `--threads`, `--sky-quality`, `--demo`, `--console`, `--require-earth`, `--help`/`-h` | One local-server lane, standard sky quality, seeded demo worlds and `.minimium-local` paths; repeated options are errors. Demo conflicts with connect and console. `--require-earth` requires the desktop client and conflicts with demo. `--map` and `--world-definition` are mutually exclusive. |
 | Load generator | `--address`, `--scenario`, `--clients`, `--seconds`, `--threads`, `--format`, `--scenario-id`, `--cpu-label`, `--cpu-mhz`, `--server-data-dir`, `--help`/`-h` | Address required; 100 clients, 10 s, heartbeat, auto workers and text output. Repeated option names are errors. |
 
-Lane types remain application-owned: the server accepts `1..=64` or `auto`, the client accepts `1`, `2` or `auto` for a locally started server, and the generator accepts `1`, `2` or `auto` with at most two workers. Their different meanings and limits do not justify a shared policy type. The server's existing invalid-value message mentions `1, 2, or auto` even though values through 64 are accepted; the range check and its separate error remain unchanged.
+Lane types remain application-owned: the server accepts `1..=64` or `auto`, the client accepts `1`, `2` or `auto` for a locally started server, and the generator accepts `1`, `2` or `auto` with at most two workers. Their different meanings and limits do not justify a shared policy type. Server CLI and help report the accepted `1..=64|auto` range.
 
 ## Server
 
@@ -236,6 +236,9 @@ replacement. Server startup accepts `--config PATH` and repeatable
 `--set KEY=VALUE`; `config validate` and `config show --sources --format json`
 run before runtime effects. Server threads accept 1..64 or auto; loadtest keeps
 its own 1|2|auto range and has no config file or live settings.
+Server administration also exposes `world.climate.initial_scenario` as
+creation-only and `world.climate.relief_influence` as restart-required; neither
+can be changed live.
 
 The local client accepts `--server-config PATH` and repeatable
 `--server-set KEY=VALUE`. It resolves these with the sibling server's offline

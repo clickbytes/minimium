@@ -114,7 +114,7 @@ pub(super) const SERVER_PROPERTIES: &[PropertySpec] = &[
         false,
     ),
     property(
-        "world.climate_scenario",
+        "world.climate.initial_scenario",
         PropertyType::Text,
         "",
         "path",
@@ -122,7 +122,7 @@ pub(super) const SERVER_PROPERTIES: &[PropertySpec] = &[
         false,
     ),
     property(
-        "world.climate_relief_influence",
+        "world.climate.relief_influence",
         PropertyType::Decimal,
         "unset",
         "0..=1",

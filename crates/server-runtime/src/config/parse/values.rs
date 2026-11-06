@@ -62,8 +62,8 @@ pub(super) fn config_from(
             "server.material_http_port",
             get("server.material_http_port"),
         )?,
-        climate_scenario_path: path("world.climate_scenario"),
-        climate_relief_influence: optional_float(get("world.climate_relief_influence")),
+        climate_scenario_path: path("world.climate.initial_scenario"),
+        climate_relief_influence: optional_float(get("world.climate.relief_influence")),
         seed,
         lanes,
         data_dir: PathBuf::from(get("server.data_dir")),
@@ -117,10 +117,10 @@ pub(super) const LEGACY_OPTIONS: &[(&str, &str)] = &[
     ("--world-definition", "world.definition"),
     ("--planet-config", "world.planet_config"),
     ("--environment-config", "world.environment_config"),
-    ("--climate-scenario", "world.climate_scenario"),
+    ("--climate-scenario", "world.climate.initial_scenario"),
     (
         "--climate-relief-influence",
-        "world.climate_relief_influence",
+        "world.climate.relief_influence",
     ),
     ("--material-package", "server.material_package"),
     ("--material-http-port", "server.material_http_port"),
@@ -148,8 +148,8 @@ fn defaults() -> BTreeMap<String, String> {
         ("world.definition", ""),
         ("world.planet_config", ""),
         ("world.environment_config", ""),
-        ("world.climate_scenario", ""),
-        ("world.climate_relief_influence", "unset"),
+        ("world.climate.initial_scenario", ""),
+        ("world.climate.relief_influence", "unset"),
     ]
     .into_iter()
     .map(|(key, value)| (key.to_owned(), value.to_owned()))
@@ -177,7 +177,7 @@ fn environment_values() -> BTreeMap<String, String> {
         ("MINIMIUM_SERVER_PLANET_CONFIG", "world.planet_config"),
         (
             "MINIMIUM_SERVER_CLIMATE_RELIEF_INFLUENCE",
-            "world.climate_relief_influence",
+            "world.climate.relief_influence",
         ),
     ]
     .into_iter()
@@ -231,11 +231,11 @@ fn validate_value(key: &str, value: &str) -> Result<(), CommandError> {
         | "world.definition"
         | "world.planet_config"
         | "world.environment_config"
-        | "world.climate_scenario" => Ok(()),
+        | "world.climate.initial_scenario" => Ok(()),
         "world.seed" if value == "auto" => Ok(()),
         "world.seed" => parse_seed(value).map(|_| ()),
-        "world.climate_relief_influence" if value == "unset" => Ok(()),
-        "world.climate_relief_influence" => {
+        "world.climate.relief_influence" if value == "unset" => Ok(()),
+        "world.climate.relief_influence" => {
             let number = value.parse::<f64>().map_err(|_| {
                 invalid("climate relief influence must be finite 0..1 or unset".into())
             })?;
@@ -382,4 +382,9 @@ pub(super) fn effective_value(key: &str, requested: &str) -> String {
     } else {
         requested.to_owned()
     }
+}
+
+pub(super) fn effective_reason(key: &str, requested: &str) -> Option<&'static str> {
+    (key == "server.threads" && requested == "auto")
+        .then_some("auto resolved to the available worker lane count")
 }
