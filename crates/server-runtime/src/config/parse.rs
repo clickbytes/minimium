@@ -26,7 +26,7 @@ const KEYS: &[&str] = &[
     "world.map",
     "world.definition",
     "world.planet_config",
-    "world.environment_config",
+    "world.time.initial_config",
     "world.climate.initial_scenario",
     "world.climate.relief_influence",
 ];

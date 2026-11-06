@@ -43,6 +43,8 @@ material set is session-wide and retained through existing world prepare/ready.
 The corresponding properties are `world.climate.initial_scenario` (creation-only)
 and `world.climate.relief_influence` (restart-required); climate is not mutable
 through a live admin command.
+`--environment-config PATH` maps to `world.time.initial_config`, a creation-only
+property that initializes a new world's clock; saved snapshots remain authoritative.
 
 Server-owned handlers compose shared command metadata. Built-ins reserve names before module registration, so module aliases cannot shadow host commands. Recognized built-ins with invalid arguments remain parse errors and are never reinterpreted as module commands. Game rules stay with their owning domain.
 

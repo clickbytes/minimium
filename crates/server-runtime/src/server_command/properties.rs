@@ -106,7 +106,7 @@ pub(super) const SERVER_PROPERTIES: &[PropertySpec] = &[
         false,
     ),
     property(
-        "world.environment_config",
+        "world.time.initial_config",
         PropertyType::Text,
         "",
         "path",

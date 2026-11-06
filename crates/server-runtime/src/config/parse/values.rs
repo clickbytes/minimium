@@ -70,7 +70,7 @@ pub(super) fn config_from(
         map_path: path("world.map"),
         world_definition_path: path("world.definition"),
         planet_config_path: path("world.planet_config"),
-        environment_config_path: path("world.environment_config"),
+        environment_config_path: path("world.time.initial_config"),
         bind_address: get("server.bind").to_owned(),
         game_port: parse_value("server.game_port", get("server.game_port"))?,
         max_players: parse_value("server.max_players", get("server.max_players"))?,
@@ -116,7 +116,7 @@ pub(super) const LEGACY_OPTIONS: &[(&str, &str)] = &[
     ("--map", "world.map"),
     ("--world-definition", "world.definition"),
     ("--planet-config", "world.planet_config"),
-    ("--environment-config", "world.environment_config"),
+    ("--environment-config", "world.time.initial_config"),
     ("--climate-scenario", "world.climate.initial_scenario"),
     (
         "--climate-relief-influence",
@@ -147,7 +147,7 @@ fn defaults() -> BTreeMap<String, String> {
         ("world.map", ""),
         ("world.definition", ""),
         ("world.planet_config", ""),
-        ("world.environment_config", ""),
+        ("world.time.initial_config", ""),
         ("world.climate.initial_scenario", ""),
         ("world.climate.relief_influence", "unset"),
     ]
@@ -230,7 +230,7 @@ fn validate_value(key: &str, value: &str) -> Result<(), CommandError> {
         | "world.map"
         | "world.definition"
         | "world.planet_config"
-        | "world.environment_config"
+        | "world.time.initial_config"
         | "world.climate.initial_scenario" => Ok(()),
         "world.seed" if value == "auto" => Ok(()),
         "world.seed" => parse_seed(value).map(|_| ()),
