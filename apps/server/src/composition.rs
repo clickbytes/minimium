@@ -29,12 +29,9 @@ fn compose_world(request: WorldCompositionRequest) -> Result<WorldComposition, B
         data_dir,
         requested_seed,
         existing_seed,
-        snapshot_seed,
         map_path,
         world_definition_path,
         planet_config_path,
-        legacy_snapshot,
-        random_seed,
     } = request;
     let resolved_path = data_dir.join("world.planet.ron");
     let saved_planet = match std::fs::read_to_string(&resolved_path) {
@@ -54,6 +51,43 @@ fn compose_world(request: WorldCompositionRequest) -> Result<WorldComposition, B
             return Err("world.seed differs from the saved planet definition".into());
         }
     }
+    // Recover if the migrated snapshot was committed before world.seed.
+    let snapshot_seed =
+        if existing_seed.is_none() && map_path.is_none() && world_definition_path.is_none() {
+            match minimium_platform::files::read_bounded_file(
+                &data_dir.join("world.snapshot"),
+                16 * 1024 * 1024,
+            ) {
+                Ok(snapshot) => {
+                    let source = std::str::from_utf8(&snapshot).map_err(|_| {
+                        io::Error::new(io::ErrorKind::InvalidData, "snapshot is not UTF-8")
+                    })?;
+                    let fields: Vec<_> = source.lines().next().unwrap_or("").split('\t').collect();
+                    let recognized_planet = fields.first() == Some(&"MINIMIUM_WORLD")
+                        && matches!(fields.get(1).copied(), Some("6" | "7" | "8"))
+                        && fields.get(3) == Some(&"1")
+                        && fields.get(4) == Some(&"0")
+                        && fields
+                            .get(6)
+                            .and_then(|value| value.parse::<u32>().ok())
+                            .is_some_and(|revision| revision >= 2);
+                    if recognized_planet {
+                        fields.get(5).and_then(|value| value.parse::<u128>().ok())
+                    } else {
+                        None
+                    }
+                }
+                Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+                Err(error) => return Err(error.into()),
+            }
+        } else {
+            None
+        };
+    let legacy_snapshot = existing_seed.is_none()
+        && snapshot_seed.is_none()
+        && data_dir.join("world.snapshot").exists()
+        && map_path.is_none()
+        && world_definition_path.is_none();
     if let (Some(expected), Some(requested)) = (
         existing_seed
             .or(snapshot_seed)
@@ -67,12 +101,19 @@ fn compose_world(request: WorldCompositionRequest) -> Result<WorldComposition, B
     if legacy_snapshot && requested_seed.is_some_and(|requested| requested != DEFAULT_SEED) {
         return Err("existing demo snapshot requires its original seed during migration".into());
     }
-    let seed = existing_seed
+    let seed = match existing_seed
         .or(snapshot_seed)
         .or(saved_planet.as_ref().map(|planet| planet.seed))
         .or(requested_seed)
         .or(legacy_snapshot.then_some(DEFAULT_SEED))
-        .unwrap_or(random_seed);
+    {
+        Some(seed) => seed,
+        None => {
+            let token = minimium_platform::endpoint::new_admin_token()?;
+            u128::from_str_radix(&token[..32], 16)
+                .expect("an admin token contains hexadecimal digits")
+        }
+    };
     let legacy_generated = (existing_seed.is_some() || data_dir.join("world.snapshot").exists())
         && saved_planet.is_none();
     if legacy_generated && planet_config_path.is_some() {

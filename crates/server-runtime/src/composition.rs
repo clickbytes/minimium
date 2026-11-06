@@ -25,12 +25,9 @@ pub struct WorldCompositionRequest {
     pub data_dir: PathBuf,
     pub requested_seed: Option<u128>,
     pub existing_seed: Option<u128>,
-    pub snapshot_seed: Option<u128>,
     pub map_path: Option<PathBuf>,
     pub world_definition_path: Option<PathBuf>,
     pub planet_config_path: Option<PathBuf>,
-    pub legacy_snapshot: bool,
-    pub random_seed: u128,
 }
 
 /// Sample or application-owned world data returned to the generic server runtime.

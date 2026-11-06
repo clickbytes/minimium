@@ -1095,6 +1095,7 @@ dependencies = [
  "minimium-asset-io",
  "minimium-assets",
  "minimium-game-sample",
+ "minimium-platform",
  "minimium-procgen",
  "minimium-server-runtime",
  "minimium-simulation",

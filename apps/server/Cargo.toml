@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+minimium-platform = { path = "../../crates/platform" }
 minimium-asset-io = { path = "../../crates/asset-io" }
 minimium-assets = { path = "../../crates/assets" }
 minimium-game-sample = { path = "../../games/sample" }

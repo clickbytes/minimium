@@ -14,7 +14,7 @@ Coordinates world, simulation, environment, protocol, transport, storage, platfo
 
 ## Data flow
 
-The process validates startup inputs and reads stored seed state before invoking the application world composer. It installs the returned worlds, migrates legacy snapshots, loads save state and then applies bounded network inputs on the owner lane. Workers publish typed results back to the runtime; immutable save snapshots cross into storage.
+The process validates startup inputs and reads world.seed before invoking the application world composer. The application owns saved planet and snapshot seed discovery and requests randomness only when no seed is available. The runtime installs the returned worlds, migrates legacy snapshots, loads save state and then applies bounded network inputs on the owner lane. Workers publish typed results back to the runtime; immutable save snapshots cross into storage.
 
 ## Ownership and execution
 

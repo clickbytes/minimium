@@ -83,65 +83,13 @@ pub(crate) fn initialize(
         Err(error) if error.kind() == io::ErrorKind::NotFound => None,
         Err(error) => return Err(error.into()),
     };
-    // Recover if the migrated snapshot was committed before world.seed.
-    let snapshot_seed =
-        if existing_seed.is_none() && map_path.is_none() && world_definition_path.is_none() {
-            match minimium_platform::files::read_bounded_file(
-                &data_dir.join("world.snapshot"),
-                16 * 1024 * 1024,
-            ) {
-                Ok(snapshot) => {
-                    let source = std::str::from_utf8(&snapshot).map_err(|_| {
-                        io::Error::new(io::ErrorKind::InvalidData, "snapshot is not UTF-8")
-                    })?;
-                    let fields: Vec<_> = source.lines().next().unwrap_or("").split('\t').collect();
-                    let recognized_planet = fields.first() == Some(&"MINIMIUM_WORLD")
-                        && matches!(fields.get(1).copied(), Some("6" | "7" | "8"))
-                        && fields.get(3) == Some(&"1")
-                        && fields.get(4) == Some(&"0")
-                        && fields
-                            .get(6)
-                            .and_then(|value| value.parse::<u32>().ok())
-                            .is_some_and(|revision| revision >= 2);
-                    if recognized_planet {
-                        fields.get(5).and_then(|value| value.parse::<u128>().ok())
-                    } else {
-                        None
-                    }
-                }
-                Err(error) if error.kind() == io::ErrorKind::NotFound => None,
-                Err(error) => return Err(error.into()),
-            }
-        } else {
-            None
-        };
-    let migrate_demo = existing_seed.is_none()
-        && snapshot_seed.is_none()
-        && data_dir.join("world.snapshot").exists()
-        && map_path.is_none()
-        && world_definition_path.is_none();
-    let random_seed = if existing_seed.is_none()
-        && snapshot_seed.is_none()
-        && requested_seed.is_none()
-        && !migrate_demo
-        && !data_dir.join("world.planet.ron").exists()
-    {
-        let random_token = new_admin_token()?;
-        u128::from_str_radix(&random_token[..32], 16)
-            .expect("an admin token contains hexadecimal digits")
-    } else {
-        0
-    };
     let composition = world_composer(WorldCompositionRequest {
         data_dir: data_dir.to_path_buf(),
         requested_seed,
         existing_seed,
-        snapshot_seed,
         map_path: map_path.map(Path::to_path_buf),
         world_definition_path: world_definition_path.map(Path::to_path_buf),
         planet_config_path: planet_config_path.map(Path::to_path_buf),
-        legacy_snapshot: migrate_demo,
-        random_seed,
     })?;
     let seed = composition.seed;
     let map = composition.primary_map;
@@ -162,11 +110,11 @@ pub(crate) fn initialize(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_else(|| vec![(primary, map.clone(), legacy_manifest(1, map.fingerprint()))]);
-    if migrate_demo {
+    if let Some(migration_worlds) = &migration_worlds {
         migrate_legacy_demo(
             data_dir,
             generated_worlds.as_ref().expect("generated worlds exist"),
-            migration_worlds.as_ref().expect("migration worlds exist"),
+            migration_worlds,
         )?;
     }
     let loaded_state = PlayerStore::load(data_dir, &world_maps)?;

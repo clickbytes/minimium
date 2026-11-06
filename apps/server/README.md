@@ -10,11 +10,11 @@ The executable entry point is `src/main.rs`. `src/composition.rs` supplies the s
 
 ## Dependencies
 
-Depends on `minimium-server-runtime`, `minimium-game-sample` and the asset/world-generation contracts used by the sample builder. `minimium-telemetry` is optional for process allocation instrumentation. GPU, windowing and astronomy are forbidden.
+Depends on `minimium-server-runtime`, `minimium-platform`, `minimium-game-sample` and the asset/world-generation contracts used by the sample builder. `minimium-telemetry` is optional for process allocation instrumentation. GPU, windowing and astronomy are forbidden.
 
 ## Data flow
 
-The executable passes process arguments and a world/combat composition to the runtime. The builder runs during runtime initialization after stored seed discovery, so generation precedes legacy migration and save loading.
+The executable passes process arguments and a world/combat composition to the runtime. The builder runs during runtime initialization after world.seed discovery. The builder reads the saved planet definition, recovers a snapshot seed when needed and only then chooses or generates a seed, preserving the original error order. Generation precedes legacy migration and save loading.
 
 ## Ownership and execution
 
