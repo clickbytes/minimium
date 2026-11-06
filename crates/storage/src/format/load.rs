@@ -34,9 +34,7 @@ pub(super) fn load(
     }
     let mut player_records_started = false;
     let mut sector_records_started = false;
-    let mut saved_sector_addresses = std::collections::HashSet::new();
-    let mut saved_object_count = 0_usize;
-    let mut saved_object_bytes = 0_usize;
+    let mut sector_limits = SectorRecordLimits::default();
     let mut saved_clock = None;
     let mut lines = lines.peekable();
     while let Some(line) = lines.next() {
@@ -63,11 +61,7 @@ pub(super) fn load(
                     "world manifest appears after clock or state records",
                 ));
             }
-            let saved_world = parse_saved_world(line)?;
-            validate_saved_world(&saved_world, worlds)?;
-            if !saved_world_instances.insert(saved_world.instance) {
-                return Err(invalid_world_snapshot("duplicate saved world instance"));
-            }
+            parse_world_record(line, worlds, &mut saved_world_instances)?;
             continue;
         }
         if source_version >= 6 && line.starts_with("SECTOR\t") {
@@ -80,54 +74,14 @@ pub(super) fn load(
                 return Err(invalid_world_snapshot("missing CLOCK record in snapshot"));
             }
             sector_records_started = true;
-            let (instance, state) = parse_saved_sector(line, &mut lines)?;
-            if !saved_world_instances.contains(&instance) {
-                return Err(invalid_world_snapshot(
-                    "sector state references an unrecorded world instance",
-                ));
-            }
-            let Some((_, _, manifest)) = worlds
-                .iter()
-                .find(|(candidate, _, _)| *candidate == instance)
-            else {
-                return Err(invalid_world_snapshot(
-                    "sector state references an unloaded world instance",
-                ));
-            };
-            let key_matches = matches!(
-                (manifest.topology(), state.key()),
-                (WorldTopology::Planet, SectorKey::Planet(_))
-                    | (WorldTopology::Dungeon, SectorKey::Dungeon(_))
-            );
-            if !key_matches {
-                return Err(invalid_world_snapshot(
-                    "sector address does not match its world topology",
-                ));
-            }
-            if store.sector_states.len() >= MAX_PERSISTED_WORLD_SECTORS {
-                return Err(invalid_world_snapshot(
-                    "snapshot has too many sector states",
-                ));
-            }
-            if !saved_sector_addresses.insert((instance, state.key())) {
-                return Err(invalid_world_snapshot("duplicate saved sector state"));
-            }
-            saved_object_count = saved_object_count.saturating_add(state.objects().len());
-            saved_object_bytes = saved_object_bytes.saturating_add(
-                state
-                    .objects()
-                    .iter()
-                    .map(|object| object.data().len())
-                    .sum::<usize>(),
-            );
-            if saved_object_count > MAX_PERSISTED_WORLD_OBJECT_STATES
-                || saved_object_bytes > MAX_PERSISTED_WORLD_OBJECT_STATE_BYTES
-            {
-                return Err(invalid_world_snapshot(
-                    "snapshot has too much persisted sector object state",
-                ));
-            }
-            store.sector_states.push((instance, state));
+            parse_sector_record(
+                line,
+                &mut lines,
+                worlds,
+                &saved_world_instances,
+                &mut store,
+                &mut sector_limits,
+            )?;
             continue;
         }
         if source_version >= 8 && saved_clock.is_none() {
@@ -151,6 +105,85 @@ pub(super) fn load(
         saved_clock,
         source_version,
     ))
+}
+
+fn parse_world_record(
+    line: &str,
+    worlds: &[(WorldInstanceId, WorldMap, WorldManifest)],
+    saved_world_instances: &mut HashSet<WorldInstanceId>,
+) -> io::Result<()> {
+    let saved_world = parse_saved_world(line)?;
+    validate_saved_world(&saved_world, worlds)?;
+    if !saved_world_instances.insert(saved_world.instance) {
+        return Err(invalid_world_snapshot("duplicate saved world instance"));
+    }
+    Ok(())
+}
+
+#[derive(Default)]
+struct SectorRecordLimits {
+    addresses: HashSet<(WorldInstanceId, SectorKey)>,
+    object_count: usize,
+    object_bytes: usize,
+}
+
+fn parse_sector_record(
+    line: &str,
+    lines: &mut std::iter::Peekable<std::str::Lines<'_>>,
+    worlds: &[(WorldInstanceId, WorldMap, WorldManifest)],
+    saved_world_instances: &HashSet<WorldInstanceId>,
+    store: &mut PlayerStore,
+    limits: &mut SectorRecordLimits,
+) -> io::Result<()> {
+    let (instance, state) = parse_saved_sector(line, lines)?;
+    if !saved_world_instances.contains(&instance) {
+        return Err(invalid_world_snapshot(
+            "sector state references an unrecorded world instance",
+        ));
+    }
+    let Some((_, _, manifest)) = worlds
+        .iter()
+        .find(|(candidate, _, _)| *candidate == instance)
+    else {
+        return Err(invalid_world_snapshot(
+            "sector state references an unloaded world instance",
+        ));
+    };
+    let key_matches = matches!(
+        (manifest.topology(), state.key()),
+        (WorldTopology::Planet, SectorKey::Planet(_))
+            | (WorldTopology::Dungeon, SectorKey::Dungeon(_))
+    );
+    if !key_matches {
+        return Err(invalid_world_snapshot(
+            "sector address does not match its world topology",
+        ));
+    }
+    if store.sector_states.len() >= MAX_PERSISTED_WORLD_SECTORS {
+        return Err(invalid_world_snapshot(
+            "snapshot has too many sector states",
+        ));
+    }
+    if !limits.addresses.insert((instance, state.key())) {
+        return Err(invalid_world_snapshot("duplicate saved sector state"));
+    }
+    limits.object_count = limits.object_count.saturating_add(state.objects().len());
+    limits.object_bytes = limits.object_bytes.saturating_add(
+        state
+            .objects()
+            .iter()
+            .map(|object| object.data().len())
+            .sum::<usize>(),
+    );
+    if limits.object_count > MAX_PERSISTED_WORLD_OBJECT_STATES
+        || limits.object_bytes > MAX_PERSISTED_WORLD_OBJECT_STATE_BYTES
+    {
+        return Err(invalid_world_snapshot(
+            "snapshot has too much persisted sector object state",
+        ));
+    }
+    store.sector_states.push((instance, state));
+    Ok(())
 }
 
 fn parse_player_record(
