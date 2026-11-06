@@ -1,16 +1,20 @@
 use super::*;
 
 impl Renderer {
-    pub(super) fn handle_welcome(
-        &mut self,
-        id: minimium_core::ids::PlayerId,
-        map_fingerprint: u64,
-        context: minimium_protocol::WorldContext,
-        health: u16,
-        position: [f32; 3],
-        position_mm: minimium_world::world::Position3Mm,
-        manifest: WorldManifest,
-    ) {
+    pub(super) fn handle_welcome(&mut self, message: ServerMessage) {
+        let ServerMessage::Welcome {
+            id,
+            map_fingerprint,
+            context,
+            health,
+            position,
+            position_mm,
+            manifest,
+            ..
+        } = message
+        else {
+            return;
+        };
         if self.settings.require_earth && manifest.planet().is_none_or(|planet| planet.mode != 1) {
             self.fail_connection("serwer nie udostępnia manifestu Earth");
             return;

@@ -7,24 +7,7 @@ mod transitions;
 impl Renderer {
     pub(super) fn handle_server_message(&mut self, message: ServerMessage) {
         match message {
-            ServerMessage::Welcome {
-                id,
-                map_fingerprint,
-                context,
-                health,
-                position,
-                position_mm,
-                manifest,
-                ..
-            } => self.handle_welcome(
-                id,
-                map_fingerprint,
-                context,
-                health,
-                position,
-                position_mm,
-                manifest,
-            ),
+            message @ ServerMessage::Welcome { .. } => self.handle_welcome(message),
             ServerMessage::Pong if self.ui.console.open => {
                 self.ui.console.push_line(Text::Pong.to_string());
             }
@@ -71,26 +54,7 @@ impl Renderer {
                 }
                 self.clear_connection();
             }
-            ServerMessage::Snapshot {
-                server_time_ms,
-                full_snapshot,
-                self_position,
-                self_position_mm,
-                self_velocity,
-                self_grounded,
-                players,
-                removed_players,
-                ..
-            } => self.handle_snapshot(
-                server_time_ms,
-                full_snapshot,
-                self_position,
-                self_position_mm,
-                self_velocity,
-                self_grounded,
-                players,
-                removed_players,
-            ),
+            message @ ServerMessage::Snapshot { .. } => self.handle_snapshot(message),
             ServerMessage::TransitionPrepare {
                 transition_id,
                 source_context,

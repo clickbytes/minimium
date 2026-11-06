@@ -116,22 +116,9 @@ pub(super) fn dispatch_message(
             clock_sample,
             environment,
         } => handle_environment_sync(session, *context, *clock_sample, *environment, events),
-        ServerMessage::TimeProbeReply {
-            seq,
-            echoed_client_send_monotonic_ms,
-            server_receive_monotonic_ms,
-            server_send_monotonic_ms,
-            session_nonce,
-        } => handle_time_probe_reply(
-            session,
-            *seq,
-            *echoed_client_send_monotonic_ms,
-            *server_receive_monotonic_ms,
-            *server_send_monotonic_ms,
-            *session_nonce,
-            decoded_at_ms,
-            events,
-        ),
+        ServerMessage::TimeProbeReply { .. } => {
+            handle_time_probe_reply(session, message, decoded_at_ms, events)
+        }
         ServerMessage::Error(code) if session.state == SessionState::AwaitingWelcome => {
             session.disconnect(DisconnectReason::Rejected(*code), events);
             DispatchResult::Stop
@@ -384,23 +371,29 @@ fn handle_environment_sync(
 
 fn handle_time_probe_reply(
     session: &mut ClientSession,
-    seq: u32,
-    echoed_client_send_monotonic_ms: u64,
-    server_receive_monotonic_ms: u64,
-    server_send_monotonic_ms: u64,
-    session_nonce: minimium_environment::time::SessionNonce,
+    message: &ServerMessage,
     decoded_at_ms: u64,
     events: &mut Vec<SessionEvent>,
 ) -> DispatchResult {
-    if let Err(reason) = session.validate_probe_nonce(session_nonce) {
-        session.disconnect(reason, events);
-        return DispatchResult::Stop;
-    }
-    session.clock.accept_probe_reply(
+    let ServerMessage::TimeProbeReply {
         seq,
         echoed_client_send_monotonic_ms,
         server_receive_monotonic_ms,
         server_send_monotonic_ms,
+        session_nonce,
+    } = message
+    else {
+        return DispatchResult::Stop;
+    };
+    if let Err(reason) = session.validate_probe_nonce(*session_nonce) {
+        session.disconnect(reason, events);
+        return DispatchResult::Stop;
+    }
+    session.clock.accept_probe_reply(
+        *seq,
+        *echoed_client_send_monotonic_ms,
+        *server_receive_monotonic_ms,
+        *server_send_monotonic_ms,
         decoded_at_ms,
     );
     DispatchResult::Emit

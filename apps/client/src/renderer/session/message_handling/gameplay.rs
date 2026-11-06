@@ -95,17 +95,21 @@ impl Renderer {
         }
     }
 
-    pub(super) fn handle_snapshot(
-        &mut self,
-        server_time_ms: u64,
-        full_snapshot: bool,
-        self_position: [f32; 3],
-        self_position_mm: minimium_world::world::Position3Mm,
-        self_velocity: [f32; 3],
-        self_grounded: bool,
-        players: Box<minimium_protocol::RemotePlayers>,
-        removed_players: minimium_protocol::RemotePlayerIds,
-    ) {
+    pub(super) fn handle_snapshot(&mut self, message: ServerMessage) {
+        let ServerMessage::Snapshot {
+            server_time_ms,
+            full_snapshot,
+            self_position,
+            self_position_mm,
+            self_velocity,
+            self_grounded,
+            players,
+            removed_players,
+            ..
+        } = message
+        else {
+            return;
+        };
         if !self.game.gameplay.apply_snapshot(
             server_time_ms,
             full_snapshot,
