@@ -22,6 +22,9 @@ mod movement;
 mod properties;
 mod weather;
 
+pub(crate) use minimium_commands::{
+    CommandArgumentSpec as ArgumentSpec, CommandArgumentType as ArgumentType,
+};
 pub(crate) use properties::{
     format_property_help, format_time_value, parse_setting_value, property_spec, property_specs,
     ClientPropertyCommand, ClientPropertyKey, ClientPropertyValue,
@@ -102,7 +105,7 @@ pub(crate) fn help_lines() -> Vec<String> {
     let mut lines = registry()
         .commands()
         .iter()
-        .map(|command| command.usage.to_owned())
+        .map(SharedCommandSpec::format_help)
         .collect::<Vec<_>>();
     lines.push("get KEY | set KEY VALUE | reset KEY | list [PREFIX] | help [COMMAND|KEY]".into());
     lines.extend(properties::property_specs().map(properties::format_property_help));
@@ -155,7 +158,7 @@ pub(crate) fn parse_command(input: &str) -> Result<Option<ClientCommand>, ParseE
     let group: Vec<_> = command_specs()
         .iter()
         .filter(|spec| spec.name.starts_with(&format!("{trimmed} ")))
-        .map(|spec| spec.usage)
+        .map(SharedCommandSpec::format_help)
         .collect();
     if !group.is_empty() {
         return Ok(Some(ClientCommand::Print(group.join("\n"))));
@@ -175,7 +178,7 @@ pub(crate) fn parse_command(input: &str) -> Result<Option<ClientCommand>, ParseE
             let choices: Vec<_> = command_specs()
                 .iter()
                 .filter(|spec| spec.name.split_whitespace().next() == Some(domain))
-                .map(|spec| spec.usage)
+                .map(SharedCommandSpec::format_help)
                 .collect();
             let choices = if choices.is_empty() {
                 help_lines().join("\n")

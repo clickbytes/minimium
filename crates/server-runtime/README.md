@@ -46,7 +46,7 @@ through a live admin command.
 `--environment-config PATH` maps to `world.time.initial_config`, a creation-only
 property that initializes a new world's clock; saved snapshots remain authoritative.
 
-Server-owned handlers compose shared command metadata. Built-ins reserve names before module registration, so module aliases cannot shadow host commands. Recognized built-ins with invalid arguments remain parse errors and are never reinterpreted as module commands. Game rules stay with their owning domain.
+Server-owned handlers compose shared command metadata. Built-ins and modules declare argument type, optional/rest behavior, constraints, choices, units, and descriptions; help renders these descriptors. Built-ins reserve names before module registration, so module aliases cannot shadow host commands. Recognized built-ins with invalid arguments remain parse errors and are never reinterpreted as module commands. Game rules stay with their owning domain.
 
 ## Change guide
 

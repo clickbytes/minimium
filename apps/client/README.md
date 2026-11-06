@@ -32,6 +32,11 @@ Preserve desktop/text command behavior and keep protocol/session handling out of
 
 ## Commands
 
+The shared command registry owns argument metadata (type, optional/rest behavior,
+choices, constraints, unit and description). Console help and enum completion
+derive their output from those descriptors; command execution still delegates
+validation and state changes to the owning domain handler.
+
 Terrain status reports shared overview/FPP preparation and geometry residency.
 Terrain debug habitat/source inspects landform influence and coverage provenance.
 Weather status reports worker history readiness and material memory.

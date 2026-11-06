@@ -6,7 +6,7 @@ Owns generic command parsing, typed parse outcomes and errors, property metadata
 
 ## Public API
 
-`CommandRegistry<T, E>` and `CommandSpec<T, E>` provide longest-name/alias matching, atomic name registration, parser dispatch and usage metadata. `CommandOutcome` distinguishes an unknown name from a recognized command with invalid arguments. `PropertyRegistry` validates and lists static property descriptors without owning values. `PropertyRequest` parses `get`, `set`, `reset`, `list` and `help`; the requesting host checks access and calls the domain handler. `CommandError` carries a stable code, subject, reason and usage.
+`CommandRegistry<T, E>` and `CommandSpec<T, E>` provide longest-name/alias matching, atomic name registration, parser dispatch and declarative argument metadata. `CommandArgumentSpec` records each argument's name, type, optional/rest behavior, enum choices or constraints, unit and description. Hosts render command help from these descriptors. `CommandOutcome` distinguishes an unknown name from a recognized command with invalid arguments. `PropertyRegistry` validates and lists static property descriptors without owning values. `PropertyRequest` parses `get`, `set`, `reset`, `list` and `help`; the requesting host checks access and calls the domain handler. `CommandError` carries a stable code, subject, reason and usage.
 
 ## Dependencies
 
@@ -14,7 +14,7 @@ Has no project dependencies. It does not depend on platform adapters, runtime, p
 
 ## Data flow
 
-Feature owners register parsers and property descriptors. Hosts parse requests and route typed results to the domain-owned validator and handler. Configuration parsing returns raw entries and source metadata; it does not mutate live domain state.
+Feature owners register parsers, argument descriptors and property descriptors. Hosts derive command help and argument completion from the same metadata, then route parsed requests to the domain-owned validator and handler. Configuration parsing returns raw entries and source metadata; it does not mutate live domain state.
 
 ## Ownership and execution
 

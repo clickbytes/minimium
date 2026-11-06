@@ -1,9 +1,10 @@
 use std::sync::OnceLock;
 
 use minimium_commands::{
-    lex_command_line, parse_property_request, CommandError, CommandErrorCode, CommandOutcome,
-    CommandRegistry, CommandSpec, PropertyLifecycle, PropertyPermission, PropertyRegistry,
-    PropertyRequest, PropertySpec, PropertyType,
+    lex_command_line, parse_property_request, CommandArgumentSpec, CommandArgumentType,
+    CommandError, CommandErrorCode, CommandOutcome, CommandRegistry, CommandSpec,
+    PropertyLifecycle, PropertyPermission, PropertyRegistry, PropertyRequest, PropertySpec,
+    PropertyType,
 };
 use minimium_environment::{TimeCommand, TIME_USAGE};
 
@@ -12,84 +13,116 @@ const SERVER_SPECS: &[CommandSpec<ServerCommand, String>] = &[
         name: "help",
         alias: None,
         usage: "help",
+        arguments: &[],
         parser: parse_server_spec,
     },
     CommandSpec {
         name: "status",
         alias: None,
         usage: "status",
+        arguments: &[],
         parser: parse_server_spec,
     },
     CommandSpec {
         name: "players list",
         alias: None,
         usage: "players list",
+        arguments: &[],
         parser: parse_server_spec,
     },
     CommandSpec {
         name: "metrics show",
         alias: None,
         usage: "metrics show",
+        arguments: &[],
         parser: parse_server_spec,
     },
     CommandSpec {
         name: "world save",
         alias: None,
         usage: "world save",
+        arguments: &[],
         parser: parse_server_spec,
     },
     CommandSpec {
         name: "stop",
         alias: None,
         usage: "stop",
+        arguments: &[],
         parser: parse_server_spec,
     },
     CommandSpec {
         name: "time",
         alias: None,
         usage: TIME_USAGE,
+        arguments: &[],
         parser: parse_server_spec,
     },
     CommandSpec {
         name: "time status",
         alias: None,
         usage: "time status",
+        arguments: &[],
         parser: parse_server_spec,
     },
     CommandSpec {
         name: "time mode real_time",
         alias: None,
         usage: "time mode real_time",
+        arguments: &[],
         parser: parse_server_spec,
     },
     CommandSpec {
         name: "time mode time_scale",
         alias: None,
         usage: "time mode time_scale",
+        arguments: &[],
         parser: parse_server_spec,
     },
     CommandSpec {
         name: "time set",
         alias: None,
         usage: "time set RFC3339_UTC",
+        arguments: &[CommandArgumentSpec::new(
+            "utc",
+            CommandArgumentType::Rfc3339Utc,
+            false,
+            false,
+            None,
+            Some("RFC3339 with Z offset"),
+            Some("UTC"),
+            "set the world clock instant",
+        )],
         parser: parse_server_spec,
     },
     CommandSpec {
         name: "time scale",
         alias: None,
         usage: "time scale DECIMAL",
+        arguments: &[CommandArgumentSpec::new(
+            "scale",
+            CommandArgumentType::Decimal,
+            false,
+            false,
+            None,
+            Some("0 or 0.1..=1000000"),
+            Some("x"),
+            "world clock speed multiplier",
+        )],
         parser: parse_server_spec,
     },
     CommandSpec {
         name: "time offline pause",
         alias: None,
         usage: "time offline pause",
+        arguments: &[],
         parser: parse_server_spec,
     },
     CommandSpec {
         name: "time offline advance",
         alias: None,
         usage: "time offline advance",
+        arguments: &[],
         parser: parse_server_spec,
     },
 ];
@@ -210,12 +243,12 @@ pub(crate) fn server_properties() -> impl Iterator<Item = &'static PropertySpec>
     property_registry().specs()
 }
 
-pub(crate) fn server_command_usage(target: &str) -> Option<&'static str> {
+pub(crate) fn server_command_usage(target: &str) -> Option<String> {
     server_registry()
         .commands()
         .iter()
         .find(|spec| spec.name == target || spec.alias == Some(target))
-        .map(|spec| spec.usage)
+        .map(CommandSpec::format_help)
 }
 
 impl ServerCommand {

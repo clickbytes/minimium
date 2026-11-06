@@ -1,4 +1,7 @@
-use super::{ClientCommand, CommandRegistry, CommandSpec, ParseError};
+use super::{
+    ArgumentSpec as Arg, ArgumentType as ArgType, ClientCommand, CommandRegistry, CommandSpec,
+    ParseError,
+};
 use std::path::PathBuf;
 
 const COMMANDS: &[CommandSpec] = &[
@@ -6,42 +9,58 @@ const COMMANDS: &[CommandSpec] = &[
         name: "help",
         alias: None,
         usage: "help",
+        arguments: &[],
         parser: parse,
     },
     CommandSpec {
         name: "config save",
         alias: None,
         usage: "config save PATH",
+        arguments: &[Arg::new(
+            "path",
+            ArgType::Path,
+            false,
+            true,
+            None,
+            None,
+            None,
+            "destination RON configuration file",
+        )],
         parser: parse,
     },
     CommandSpec {
         name: "diagnostics fps",
         alias: Some("fps show"),
         usage: "diagnostics fps",
+        arguments: &[],
         parser: parse,
     },
     CommandSpec {
         name: "network stats",
         alias: Some("net stats"),
         usage: "network stats",
+        arguments: &[],
         parser: parse,
     },
     CommandSpec {
         name: "diagnostics state",
         alias: Some("state"),
         usage: "diagnostics state",
+        arguments: &[],
         parser: parse,
     },
     CommandSpec {
         name: "console clear",
         alias: Some("clear"),
         usage: "console clear",
+        arguments: &[],
         parser: parse,
     },
     CommandSpec {
         name: "console quit",
         alias: Some("exit"),
         usage: "console quit (alias: exit)",
+        arguments: &[],
         parser: parse,
     },
 ];

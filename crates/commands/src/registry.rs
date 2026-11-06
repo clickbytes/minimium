@@ -5,7 +5,110 @@ pub struct CommandSpec<T, E> {
     pub name: &'static str,
     pub alias: Option<&'static str>,
     pub usage: &'static str,
+    pub arguments: &'static [CommandArgumentSpec],
     pub parser: fn(&[&str]) -> Result<T, E>,
+}
+
+/// Declarative help and completion metadata for one positional argument.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CommandArgumentSpec {
+    pub name: &'static str,
+    pub value_type: CommandArgumentType,
+    pub optional: bool,
+    pub rest: bool,
+    pub choices: Option<&'static [&'static str]>,
+    pub constraints: Option<&'static str>,
+    pub unit: Option<&'static str>,
+    pub description: &'static str,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CommandArgumentType {
+    Text,
+    Boolean,
+    Integer,
+    Decimal,
+    Enumeration,
+    Path,
+    Rfc3339Utc,
+}
+
+impl CommandArgumentType {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Text => "text",
+            Self::Boolean => "boolean",
+            Self::Integer => "integer",
+            Self::Decimal => "decimal",
+            Self::Enumeration => "enum",
+            Self::Path => "path",
+            Self::Rfc3339Utc => "RFC3339 UTC timestamp",
+        }
+    }
+}
+
+impl CommandArgumentSpec {
+    pub const fn new(
+        name: &'static str,
+        value_type: CommandArgumentType,
+        optional: bool,
+        rest: bool,
+        choices: Option<&'static [&'static str]>,
+        constraints: Option<&'static str>,
+        unit: Option<&'static str>,
+        description: &'static str,
+    ) -> Self {
+        Self {
+            name,
+            value_type,
+            optional,
+            rest,
+            choices,
+            constraints,
+            unit,
+            description,
+        }
+    }
+}
+
+impl<T, E> CommandSpec<T, E> {
+    /// Formats help from the registered command and its argument descriptors.
+    pub fn format_help(&self) -> String {
+        format_command_help(self.usage, self.arguments)
+    }
+}
+
+pub fn format_command_help(usage: &str, arguments: &[CommandArgumentSpec]) -> String {
+    let mut output = usage.to_owned();
+    for argument in arguments {
+        let optional = if argument.optional { "optional " } else { "" };
+        let rest = if argument.rest {
+            " (rest of input)"
+        } else {
+            ""
+        };
+        let choices = argument.choices.map(|values| values.join("|"));
+        let constraints = argument.constraints.unwrap_or("");
+        let unit = argument
+            .unit
+            .map(|value| format!(" {value}"))
+            .unwrap_or_default();
+        let choices = choices
+            .map(|value| format!(" choices={value}"))
+            .unwrap_or_default();
+        let constraints = if constraints.is_empty() {
+            String::new()
+        } else {
+            format!(" {constraints}")
+        };
+        output.push_str(&format!(
+            "\n  {}: {optional}{}{unit}{constraints}{choices}{rest} — {}",
+            argument.name,
+            argument.value_type.label(),
+            argument.description
+        ));
+    }
+    output
 }
 
 impl<T, E> Copy for CommandSpec<T, E> {}

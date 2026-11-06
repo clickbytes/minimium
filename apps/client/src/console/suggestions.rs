@@ -39,10 +39,13 @@ impl Suggestions {
             return;
         }
         let specs = command_specs();
+        if command_argument_suggestions(self, query, specs) {
+            return;
+        }
         self.usage = specs
             .iter()
             .find(|spec| matches_arguments(query, spec))
-            .map(|spec| spec.usage.to_owned());
+            .map(|spec| spec.format_help());
         if self.usage.is_some() {
             return;
         }
@@ -174,4 +177,52 @@ fn matches_arguments(input: &str, spec: &CommandSpec) -> bool {
                 .strip_prefix(name)
                 .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
         })
+}
+
+fn command_argument_suggestions(
+    suggestions: &mut Suggestions,
+    query: &str,
+    specs: &[CommandSpec],
+) -> bool {
+    let Ok(words) = minimium_commands::lex_command_line(query) else {
+        return false;
+    };
+    let Some(spec) = specs
+        .iter()
+        .filter(|spec| matches_arguments(query, spec))
+        .max_by_key(|spec| spec.name.len())
+    else {
+        return false;
+    };
+    let command = [Some(spec.name), spec.alias]
+        .into_iter()
+        .flatten()
+        .find(|name| query.starts_with(name))
+        .unwrap_or(spec.name);
+    let entered_arguments = words
+        .len()
+        .saturating_sub(command.split_whitespace().count());
+    let trailing_space = query.chars().last().is_some_and(char::is_whitespace);
+    let argument_index = if trailing_space {
+        entered_arguments
+    } else {
+        entered_arguments.saturating_sub(1)
+    };
+    let current = if trailing_space {
+        ""
+    } else {
+        words.last().map(String::as_str).unwrap_or("")
+    };
+    if let Some(argument) = spec.arguments.get(argument_index) {
+        if let Some(choices) = argument.choices {
+            suggestions.choices.extend(
+                choices
+                    .iter()
+                    .filter(|choice| choice.starts_with(current))
+                    .map(|choice| (*choice).to_owned()),
+            );
+        }
+    }
+    suggestions.usage = Some(spec.format_help());
+    true
 }

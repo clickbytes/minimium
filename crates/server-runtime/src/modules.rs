@@ -1,7 +1,7 @@
 //! Static, composable registration of engine capabilities.
 //! Registration is explicit at startup; neither the wire protocol nor a Rust ABI
 //! is extended implicitly by installing a module.
-use minimium_commands::lex_command_line;
+use minimium_commands::{lex_command_line, CommandArgumentSpec};
 use minimium_world::entity::ComponentDescriptor;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -44,6 +44,7 @@ pub struct CommandDefinition<H> {
     pub name: &'static str,
     pub aliases: &'static [&'static str],
     pub usage: &'static str,
+    pub arguments: &'static [CommandArgumentSpec],
     pub scope: CommandScope,
     pub handler: H,
 }
@@ -314,6 +315,7 @@ mod tests {
                 name: self.command,
                 aliases: &[],
                 usage: self.command,
+                arguments: &[],
                 scope: CommandScope::ServerAdmin,
                 handler: (),
             })

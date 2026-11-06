@@ -71,8 +71,7 @@ impl ServerRuntime {
                         reply(
                             true,
                             crate::server_command::server_command_usage(key)
-                                .expect("help target was validated")
-                                .to_owned(),
+                                .expect("help target was validated"),
                         )
                     }
                 } else {

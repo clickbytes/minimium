@@ -17,7 +17,10 @@ pub use property::{
     parse_property_request, PropertyLifecycle, PropertyPermission, PropertyRegistry,
     PropertyRequest, PropertySource, PropertySpec, PropertyType, PropertyValue,
 };
-pub use registry::{CommandOutcome, CommandRegistry, CommandRegistryError, CommandSpec};
+pub use registry::{
+    format_command_help, CommandArgumentSpec, CommandArgumentType, CommandOutcome, CommandRegistry,
+    CommandRegistryError, CommandSpec,
+};
 pub use syntax::{
     format_command_arguments, lex_command_line, lex_command_line_with_spans, CommandToken,
     SourceSpan,

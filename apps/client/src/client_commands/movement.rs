@@ -1,6 +1,7 @@
 use super::{
-    ClientCommand, ClientPropertyCommand, ClientPropertyKey as Key, ClientPropertyValue as Value,
-    CommandContext, CommandRegistry, CommandResult, FrontendAction, ParseError,
+    ArgumentSpec as Arg, ArgumentType as ArgType, ClientCommand, ClientPropertyCommand,
+    ClientPropertyKey as Key, ClientPropertyValue as Value, CommandContext, CommandRegistry,
+    CommandResult, FrontendAction, ParseError,
 };
 
 const COMMANDS: &[super::CommandSpec] = &[
@@ -8,24 +9,28 @@ const COMMANDS: &[super::CommandSpec] = &[
         name: "set_altitude",
         alias: None,
         usage: "set_altitude <0..10000 km> - height above local ground; requires fly on",
+        arguments: &[Arg::new("altitude", ArgType::Decimal, false, false, None, Some("0..=10000"), Some("km"), "height above local ground")],
         parser: parse,
     },
     super::CommandSpec {
         name: "movement fly",
         alias: Some("fly"),
         usage: "movement fly [on|off] - noclip; Space up, Ctrl down; inherits walk speed and accel",
+        arguments: &[Arg::new("enabled", ArgType::Boolean, true, false, Some(&["on", "off"]), None, None, "toggle local flight")],
         parser: parse,
     },
     super::CommandSpec {
         name: "movement speed",
         alias: None,
         usage: "movement speed [0..10000] - maximum walk/fly speed in m/s; no argument shows current value",
+        arguments: &[Arg::new("speed", ArgType::Decimal, true, false, None, Some("0..=10000"), Some("m/s"), "maximum walk and flight speed")],
         parser: parse,
     },
     super::CommandSpec {
         name: "movement accel",
         alias: None,
         usage: "movement accel [0..10000] - walk/fly acceleration and braking in m/s²; no argument shows current value",
+        arguments: &[Arg::new("acceleration", ArgType::Decimal, true, false, None, Some("0..=10000"), Some("m/s²"), "walk and flight acceleration and braking")],
         parser: parse,
     },
 ];

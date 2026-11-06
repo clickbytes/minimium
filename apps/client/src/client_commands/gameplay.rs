@@ -1,46 +1,95 @@
-use super::{ClientCommand, CommandRegistry, CommandSpec, ParseError};
+use super::{
+    ArgumentSpec as Arg, ArgumentType as ArgType, ClientCommand, CommandRegistry, CommandSpec,
+    ParseError,
+};
 
 const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "movement move",
         alias: Some("move"),
         usage: "movement move X Z (-1..1 each; tangent direction)",
+        arguments: &[
+            Arg::new(
+                "x",
+                ArgType::Decimal,
+                false,
+                false,
+                None,
+                Some("-1..=1"),
+                None,
+                "tangent direction x",
+            ),
+            Arg::new(
+                "z",
+                ArgType::Decimal,
+                false,
+                false,
+                None,
+                Some("-1..=1"),
+                None,
+                "tangent direction z",
+            ),
+        ],
         parser: parse,
     },
     CommandSpec {
         name: "movement jump",
         alias: Some("jump"),
         usage: "movement jump",
+        arguments: &[],
         parser: parse,
     },
     CommandSpec {
         name: "world portal",
         alias: Some("portal"),
         usage: "world portal",
+        arguments: &[],
         parser: parse,
     },
     CommandSpec {
         name: "world teleport",
         alias: Some("map_telepo"),
         usage: "world teleport: click land on the Earth overview",
+        arguments: &[],
         parser: parse,
     },
     CommandSpec {
         name: "combat fire",
         alias: Some("fire"),
         usage: "combat fire",
+        arguments: &[],
         parser: parse,
     },
     CommandSpec {
         name: "social say",
         alias: Some("chat"),
         usage: "social say TEXT (alias: chat)",
+        arguments: &[Arg::new(
+            "text",
+            ArgType::Text,
+            false,
+            true,
+            None,
+            None,
+            None,
+            "message text",
+        )],
         parser: parse,
     },
     CommandSpec {
         name: "social name",
         alias: Some("name"),
         usage: "social name NAME",
+        arguments: &[Arg::new(
+            "name",
+            ArgType::Text,
+            false,
+            true,
+            None,
+            Some("maximum 24 bytes"),
+            None,
+            "player display name",
+        )],
         parser: parse,
     },
 ];

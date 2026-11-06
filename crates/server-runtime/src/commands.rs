@@ -93,7 +93,7 @@ pub fn execute(command: &ServerCommand, mut context: CommandContext<'_>) -> Comm
         ServerCommand::Help => CommandReply {
             success: true,
             text: format!("{} | {}", server_help(), extensions().commands().iter()
-                .map(|command| command.definition.usage).collect::<Vec<_>>().join(" | ")),
+                .map(|command| minimium_commands::format_command_help(command.definition.usage, command.definition.arguments)).collect::<Vec<_>>().join(" | ")),
             stop: false,
         },
         ServerCommand::Status => CommandReply {
