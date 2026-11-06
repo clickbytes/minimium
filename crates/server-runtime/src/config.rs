@@ -1,4 +1,7 @@
-use std::{error::Error, path::PathBuf, thread};
+mod parse;
+
+use minimium_commands::{CommandError, PropertySource, ResolvedConfigValue};
+use std::{collections::BTreeMap, path::PathBuf, thread};
 
 pub const MAX_PLAYERS: usize = 512;
 pub const DEFAULT_AUTOSAVE_SECONDS: u64 = 300;
@@ -38,180 +41,32 @@ pub struct ServerConfig {
     pub max_players: usize,
     pub autosave_seconds: u64,
     pub console_enabled: bool,
+    pub resolved_settings: BTreeMap<String, ResolvedConfigValue>,
 }
 
 impl ServerConfig {
-    pub fn parse(args: &[String]) -> Result<Self, Box<dyn Error>> {
-        if !args.is_empty() && args[0] != "run" {
-            return Err("expected subcommand `run` (try --help)".into());
-        }
-        let mut config = Self {
-            seed: None,
-            lanes: LaneSelection::Fixed(1),
-            data_dir: PathBuf::from(minimium_platform::files::DEFAULT_SERVER_DATA_DIR),
-            map_path: None,
-            world_definition_path: None,
-            planet_config_path: None,
-            environment_config_path: None,
-            material_package_path: None,
-            material_http_port: 0,
-            climate_scenario_path: None,
-            climate_relief_influence: None,
-            bind_address: String::from("127.0.0.1"),
-            game_port: 0,
-            max_players: MAX_PLAYERS,
-            autosave_seconds: DEFAULT_AUTOSAVE_SECONDS,
-            console_enabled: true,
-        };
-        let mut index = usize::from(!args.is_empty());
-        while index < args.len() {
-            match args[index].as_str() {
-                "--material-package" => {
-                    index += 1;
-                    config.material_package_path = Some(PathBuf::from(
-                        args.get(index).ok_or("--material-package requires PATH")?,
-                    ));
-                }
-                "--material-http-port" => {
-                    index += 1;
-                    config.material_http_port = args
-                        .get(index)
-                        .ok_or("--material-http-port requires PORT")?
-                        .parse()?;
-                }
-                "--climate-scenario" => {
-                    index += 1;
-                    config.climate_scenario_path = Some(PathBuf::from(
-                        args.get(index).ok_or("--climate-scenario requires PATH")?,
-                    ));
-                }
-                "--climate-relief-influence" => {
-                    index += 1;
-                    let value: f64 = args
-                        .get(index)
-                        .ok_or("--climate-relief-influence requires 0..1")?
-                        .parse()
-                        .map_err(|_| {
-                            "--climate-relief-influence requires a finite number in 0..1"
-                        })?;
-                    if !value.is_finite() || !(0.0..=1.0).contains(&value) {
-                        return Err(
-                            "--climate-relief-influence requires a finite value in 0..1".into()
-                        );
-                    }
-                    config.climate_relief_influence = Some(value);
-                }
-                "--seed" => {
-                    index += 1;
-                    let value = args
-                        .get(index)
-                        .ok_or("--seed requires a decimal or 0x hex value")?;
-                    config.seed = Some(if let Some(hex) = value.strip_prefix("0x") {
-                        u128::from_str_radix(hex, 16)?
-                    } else {
-                        value.parse()?
-                    });
-                }
-                "--threads" => {
-                    index += 1;
-                    let value = args.get(index).ok_or("--threads requires 1, 2, or auto")?;
-                    config.lanes = if value == "auto" {
-                        LaneSelection::Auto
-                    } else {
-                        let count = value
-                            .parse::<usize>()
-                            .map_err(|_| "--threads requires 1, 2, or auto")?;
-                        if !(1..=64).contains(&count) {
-                            return Err("thread lane count must be between 1 and 64".into());
-                        }
-                        LaneSelection::Fixed(count)
-                    };
-                }
-                "--max-players" => {
-                    index += 1;
-                    config.max_players = args
-                        .get(index)
-                        .ok_or("--max-players requires a number")?
-                        .parse()?;
-                    if !(1..=MAX_PLAYERS).contains(&config.max_players) {
-                        return Err(
-                            format!("--max-players must be between 1 and {MAX_PLAYERS}").into()
-                        );
-                    }
-                }
-                "--data-dir" => {
-                    index += 1;
-                    config.data_dir =
-                        PathBuf::from(args.get(index).ok_or("--data-dir requires a path")?);
-                }
-                "--map" => {
-                    index += 1;
-                    config.map_path = Some(PathBuf::from(
-                        args.get(index).ok_or("--map requires a path")?,
-                    ));
-                }
-                "--world-definition" => {
-                    index += 1;
-                    config.world_definition_path = Some(PathBuf::from(
-                        args.get(index)
-                            .ok_or("--world-definition requires a path")?,
-                    ));
-                }
-                "--planet-config" => {
-                    index += 1;
-                    config.planet_config_path = Some(PathBuf::from(
-                        args.get(index).ok_or("--planet-config requires a path")?,
-                    ));
-                }
-                "--environment-config" => {
-                    index += 1;
-                    config.environment_config_path = Some(PathBuf::from(
-                        args.get(index)
-                            .ok_or("--environment-config requires a path")?,
-                    ));
-                }
-                "--bind" => {
-                    index += 1;
-                    config.bind_address = args
-                        .get(index)
-                        .ok_or("--bind requires an IP address")?
-                        .clone();
-                }
-                "--game-port" => {
-                    index += 1;
-                    config.game_port = args
-                        .get(index)
-                        .ok_or("--game-port requires a port number")?
-                        .parse()?;
-                }
-                "--autosave-seconds" => {
-                    index += 1;
-                    config.autosave_seconds = args
-                        .get(index)
-                        .ok_or("--autosave-seconds requires a number")?
-                        .parse()?;
-                    if config.autosave_seconds > 604_800 {
-                        return Err("--autosave-seconds must be between 0 and 604800".into());
-                    }
-                }
-                "--headless" => config.console_enabled = false,
-                other => return Err(format!("unknown option `{other}` (try --help)").into()),
-            }
-            index += 1;
-        }
-        if config.map_path.is_some() && config.world_definition_path.is_some() {
-            return Err("--map and --world-definition cannot be used together".into());
-        }
-        if config.seed.is_some()
-            && (config.map_path.is_some() || config.world_definition_path.is_some())
-        {
-            return Err("--seed is only available for generated worlds".into());
-        }
-        if config.planet_config_path.is_some()
-            && (config.map_path.is_some() || config.world_definition_path.is_some())
-        {
-            return Err("--planet-config is only available for generated worlds".into());
-        }
-        Ok(config)
+    pub fn parse(args: &[String]) -> Result<Self, CommandError> {
+        parse::parse(args)
     }
+}
+
+pub fn offline_command(args: &[String]) -> Result<Option<String>, CommandError> {
+    parse::offline_command(args)
+}
+
+pub fn help_text() -> String {
+    parse::help_text()
+}
+
+pub(crate) fn property_value<'a>(
+    settings: &'a BTreeMap<String, ResolvedConfigValue>,
+    key: &str,
+) -> Option<(&'a str, Option<&'a str>, PropertySource)> {
+    settings.get(key).map(|value| {
+        (
+            value.requested.as_str(),
+            value.default.as_deref(),
+            value.source,
+        )
+    })
 }

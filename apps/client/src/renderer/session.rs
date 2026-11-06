@@ -21,19 +21,27 @@ impl Renderer {
         }
     }
 
-    pub(crate) fn start_local_attempt(&mut self, threads: crate::options::ThreadLane) {
+    pub(crate) fn start_local_attempt(&mut self, threads: Option<crate::options::ThreadLane>) {
         self.demo_environment = None;
         self.environment_frame = crate::environment::EnvironmentFrameInput::unavailable();
         if self.settings.require_earth {
             self.connection_status = "Łączenie z Earth".into();
             self.gpu.scene_visible = false;
         }
-        match self.connection.start_local(
-            self.settings.data_dir.clone(),
-            self.settings.map_path.clone(),
-            self.settings.world_definition_path.clone(),
-            threads,
-        ) {
+        let mut config = self.settings.local_server_config.clone();
+        if let Some(threads) = threads {
+            if config
+                .settings
+                .insert("server.threads".to_owned(), threads.as_str().to_owned())
+                .is_some()
+            {
+                self.ui.console.push_error(
+                    "server.threads was specified both in client options and the host command",
+                );
+                return;
+            }
+        }
+        match self.connection.start_local(config) {
             Ok(()) => self
                 .ui
                 .console

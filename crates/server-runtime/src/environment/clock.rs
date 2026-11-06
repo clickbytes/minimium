@@ -9,6 +9,14 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 const SYSTEM_CLOCK_CHECK_MS: i128 = 250;
 
+pub(crate) struct ClockPropertySnapshot {
+    pub(crate) mode: &'static str,
+    pub(crate) scale: String,
+    pub(crate) offline_policy: &'static str,
+    pub(crate) utc_ms: i64,
+    pub(crate) revision: u64,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ClockFault {
     TimeRangeExhausted,
@@ -185,6 +193,20 @@ impl EnvironmentClock {
             return Err(ClockFault::RevisionExhausted.code().to_owned());
         }
         sample_clock(self.anchor, self.session_nonce, now).map_err(|error| error.to_string())
+    }
+
+    pub(crate) fn property_snapshot(
+        &self,
+        now: MonotonicMs,
+    ) -> Result<ClockPropertySnapshot, String> {
+        let sample = self.sample(now)?;
+        Ok(ClockPropertySnapshot {
+            mode: mode_name(sample.mode()),
+            scale: format_scale(sample.rate_ppm()),
+            offline_policy: policy_name(sample.offline_policy()),
+            utc_ms: sample.world_utc_ms().get(),
+            revision: sample.revision().get(),
+        })
     }
 
     pub(crate) fn capture_saved_state(

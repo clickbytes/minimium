@@ -26,7 +26,7 @@ Atomic replacement and ownership-bound cleanup must remain intact. Avoid exposin
 
 ## Commands
 
-Does not own command parsing or execution; it sends validated command text over the local administrative transport.
+Does not own command parsing or execution; it sends validated command text over the local administrative transport. The bounded admin response reader accepts both legacy `ERR` lines and schema v1 `ERRJSON` envelopes, preserving code, key, reason, and usage in `AdminError`.
 
 ## Change guide
 

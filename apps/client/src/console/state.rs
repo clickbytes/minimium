@@ -270,7 +270,7 @@ impl Console {
         let scale = 1.0;
         let line_height = 22.0;
         let max_chars = ((context.width - 44.0) / GLYPH_ADVANCE) as usize;
-        let hint_space = self.suggestions.lines().count() as f32 * 20.0;
+        let hint_space = self.suggestions.lines().len() as f32 * 20.0;
         let visible_lines = ((panel_height - 70.0 - hint_space) / line_height).max(0.0) as usize;
         let first_line = self
             .lines

@@ -15,3 +15,5 @@ minimium-procgen = { path = "../procgen" }
 minimium-asset-io = { path = "../asset-io" }
 minimium-assets = { path = "../assets" }
 minimium-game-sample = { path = "../../games/sample" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

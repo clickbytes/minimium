@@ -84,13 +84,7 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
         ("sky demo", ["on"]) => Ok(ClientCommand::SkyDemo(true)),
         ("sky demo", ["off"]) => Ok(ClientCommand::SkyDemo(false)),
         ("camera fov", []) => Ok(ClientCommand::Fov(None)),
-        ("camera fov", [value]) => {
-            let degrees = value.parse::<f32>().map_err(|_| ParseError::FovUsage)?;
-            if !degrees.is_finite() || !(30.0..=110.0).contains(&degrees) {
-                return Err(ParseError::FovUsage);
-            }
-            Ok(ClientCommand::Fov(Some(degrees)))
-        }
+        ("camera fov", [value]) => Ok(ClientCommand::Fov(Some(parse_fov_value(value)?))),
         ("camera fov", _) => Err(ParseError::FovUsage),
         ("sky names", ["true"]) => Ok(ClientCommand::ShowCelestialNames(true)),
         ("sky names", ["false"]) => Ok(ClientCommand::ShowCelestialNames(false)),
@@ -112,4 +106,8 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
         ("time scale", _) => Err(ParseError::TimeScaleUsage),
         _ => Err(ParseError::UnknownCommand),
     }
+}
+
+pub(super) fn parse_fov_value(value: &str) -> Result<f32, ParseError> {
+    super::parse_fov_degrees(value).map_err(|_| ParseError::FovUsage)
 }

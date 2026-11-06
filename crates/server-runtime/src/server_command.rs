@@ -1,6 +1,10 @@
 use std::sync::OnceLock;
 
-use minimium_commands::{CommandRegistry, CommandSpec};
+use minimium_commands::{
+    lex_command_line, parse_property_request, CommandError, CommandErrorCode, CommandOutcome,
+    CommandRegistry, CommandSpec, PropertyLifecycle, PropertyPermission, PropertyRegistry,
+    PropertyRequest, PropertySpec, PropertyType,
+};
 use minimium_environment::{TimeCommand, TIME_USAGE};
 
 const SERVER_SPECS: &[CommandSpec<ServerCommand, String>] = &[
@@ -91,6 +95,29 @@ const SERVER_SPECS: &[CommandSpec<ServerCommand, String>] = &[
 ];
 
 static SERVER_REGISTRY: OnceLock<CommandRegistry<ServerCommand, String>> = OnceLock::new();
+static PROPERTY_REGISTRY: OnceLock<PropertyRegistry> = OnceLock::new();
+mod properties;
+use properties::SERVER_PROPERTIES;
+
+pub(crate) const SERVER_COMMAND_NAMES: &[&str] = &[
+    "help",
+    "status",
+    "players list",
+    "metrics show",
+    "world save",
+    "stop",
+    "time status",
+    "time mode real_time",
+    "time mode time_scale",
+    "time set",
+    "time scale",
+    "time offline pause",
+    "time offline advance",
+    "get",
+    "set",
+    "reset",
+    "list",
+];
 
 fn server_registry() -> &'static CommandRegistry<ServerCommand, String> {
     SERVER_REGISTRY.get_or_init(|| {
@@ -132,26 +159,113 @@ pub enum ServerCommand {
     Save,
     Stop,
     Time(TimeCommand),
+    Property(ServerPropertyCommand),
     /// A validated administrative line owned by its registering server module.
     Registered(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ServerPropertyCommand {
+    Get(String),
+    SetAutosave(u64),
+    ResetAutosave,
+    List(Option<String>),
+    Help(Option<String>),
+}
+
+const fn property(
+    key: &'static str,
+    value_type: PropertyType,
+    default: &'static str,
+    constraints: &'static str,
+    lifecycle: PropertyLifecycle,
+    resettable: bool,
+) -> PropertySpec {
+    PropertySpec::new(
+        key,
+        value_type,
+        None,
+        "Server startup or live operational setting.",
+        Some(default),
+        Some(constraints),
+        "crates/server-runtime",
+        PropertyPermission::ServerAdmin,
+        lifecycle,
+        false,
+        resettable,
+    )
+}
+
+fn property_registry() -> &'static PropertyRegistry {
+    PROPERTY_REGISTRY.get_or_init(|| {
+        let mut registry = PropertyRegistry::default();
+        registry
+            .register(SERVER_PROPERTIES)
+            .expect("server property keys are unique");
+        registry
+    })
+}
+
+pub(crate) fn server_properties() -> impl Iterator<Item = &'static PropertySpec> {
+    property_registry().specs()
+}
+
+pub(crate) fn server_command_usage(target: &str) -> Option<&'static str> {
+    server_registry()
+        .commands()
+        .iter()
+        .find(|spec| spec.name == target || spec.alias == Some(target))
+        .map(|spec| spec.usage)
+}
+
 impl ServerCommand {
-    pub fn parse(line: &str) -> Result<Self, String> {
-        let words: Vec<_> = line.split_whitespace().collect();
+    pub fn parse(line: &str) -> Result<Self, CommandError> {
+        let owned_words = lex_command_line(line)?;
+        let words: Vec<_> = owned_words.iter().map(String::as_str).collect();
         if words.is_empty() {
-            return Err("empty command".into());
+            return Err(parse_error(
+                CommandErrorCode::InvalidArguments,
+                "command",
+                "empty command",
+                "help",
+            ));
         }
-        if let Some(parsed) = server_registry().parse(line, &words) {
-            match parsed {
-                Ok(command) => return Ok(command),
-                Err((_, error)) if words[0] == "time" => return Err(error),
-                Err(_) => {}
+        let normalized = words.join(" ");
+        if matches!(words[0], "get" | "set" | "reset" | "list")
+            || (words[0] == "help" && words.len() > 1)
+        {
+            return parse_property(line.trim())
+                .map_err(|error| typed_property_error(&normalized, error));
+        }
+        match server_registry().parse_outcome(&normalized, &words) {
+            CommandOutcome::Matched {
+                result: Ok(command),
+                ..
+            } => return Ok(command),
+            CommandOutcome::Matched {
+                name,
+                usage,
+                result: Err(error),
+            } => {
+                return Err(parse_error(
+                    CommandErrorCode::InvalidArguments,
+                    name,
+                    error,
+                    usage,
+                ))
             }
+            CommandOutcome::Unknown => {}
         }
-        (line.len() <= 512 && line.chars().all(|c| !c.is_control()))
-            .then(|| Self::Registered(line.trim().to_owned()))
-            .ok_or_else(|| "invalid command; use `help`".into())
+        if line.len() <= 512 && line.chars().all(|c| !c.is_control()) {
+            Ok(Self::Registered(line.trim().to_owned()))
+        } else {
+            Err(parse_error(
+                CommandErrorCode::InvalidArguments,
+                "command",
+                "command exceeds 512 bytes or contains a control character",
+                "help",
+            ))
+        }
     }
 
     pub const fn is_status(&self) -> bool {
@@ -165,6 +279,116 @@ impl ServerCommand {
     pub const fn is_save_or_stop(&self) -> bool {
         matches!(self, Self::Save | Self::Stop)
     }
+}
+
+fn parse_property(line: &str) -> Result<ServerCommand, String> {
+    let usage = "get KEY | set KEY VALUE | reset KEY | list [PREFIX] | help [COMMAND|KEY]";
+    let request = parse_property_request(line)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| "invalid property command".to_owned())?;
+    match request {
+        PropertyRequest::Get { key } => {
+            require_property(&key, usage)?;
+            Ok(ServerCommand::Property(ServerPropertyCommand::Get(key)))
+        }
+        PropertyRequest::Set { key, value } => {
+            let spec = require_property(&key, usage)?;
+            if key.starts_with("world.time.") {
+                let command = match key.as_str() {
+                    "world.time.mode" => TimeCommand::parse(&["mode", value.as_str()]),
+                    "world.time.scale" => TimeCommand::parse(&["scale", value.as_str()]),
+                    "world.time.offline_policy" => TimeCommand::parse(&["offline", value.as_str()]),
+                    _ => return Err(format!("{key} is read-only")),
+                }
+                .map_err(|error| format!("{key}: {error}"))?;
+                return Ok(ServerCommand::Time(command));
+            }
+            if key != "server.autosave_interval" || spec.lifecycle != PropertyLifecycle::Live {
+                return Err(format!("{key} is read-only during this server session"));
+            }
+            let seconds = value.parse::<u64>().map_err(|_| {
+                "autosave interval must be an integer from 0 through 604800".to_owned()
+            })?;
+            if seconds > 604_800 {
+                return Err("autosave interval must be an integer from 0 through 604800".into());
+            }
+            Ok(ServerCommand::Property(ServerPropertyCommand::SetAutosave(
+                seconds,
+            )))
+        }
+        PropertyRequest::Reset { key } => {
+            let spec = require_property(&key, usage)?;
+            if key != "server.autosave_interval" || !spec.resettable {
+                return Err(format!("{key} cannot be reset during this server session"));
+            }
+            Ok(ServerCommand::Property(
+                ServerPropertyCommand::ResetAutosave,
+            ))
+        }
+        PropertyRequest::List { prefix } => {
+            Ok(ServerCommand::Property(ServerPropertyCommand::List(prefix)))
+        }
+        PropertyRequest::Help { target } => {
+            if let Some(target) = target.as_deref() {
+                if property_registry().get(target).is_none()
+                    && server_command_usage(target).is_none()
+                {
+                    return Err(format!("unknown command or server property `{target}`"));
+                }
+            }
+            Ok(ServerCommand::Property(ServerPropertyCommand::Help(target)))
+        }
+    }
+}
+
+fn require_property(key: &str, usage: &str) -> Result<&'static PropertySpec, String> {
+    property_registry()
+        .get(key)
+        .ok_or_else(|| format!("unknown server property `{key}`; use `list server.` ({usage})"))
+}
+
+fn typed_property_error(line: &str, message: String) -> CommandError {
+    let code = if message.contains("unknown command or server property") {
+        CommandErrorCode::HelpQuery
+    } else if message.contains("unknown server property") {
+        CommandErrorCode::UnknownProperty
+    } else if message.contains("requires a property key") || message.contains("requires a value") {
+        CommandErrorCode::MissingValue
+    } else if message.contains("read-only") || message.contains("cannot be reset") {
+        CommandErrorCode::UnsupportedContext
+    } else if message.contains("invalid arguments") {
+        CommandErrorCode::InvalidArguments
+    } else {
+        CommandErrorCode::InvalidValue
+    };
+    let reason = message
+        .split("\nusage:")
+        .next()
+        .unwrap_or(&message)
+        .split("; use `list server.`")
+        .next()
+        .unwrap_or(&message)
+        .to_owned();
+    CommandError::new(
+        code,
+        property_key(line),
+        reason,
+        Some("get KEY | set KEY VALUE | reset KEY | list [PREFIX] | help [COMMAND|KEY]"),
+    )
+}
+
+fn property_key(line: &str) -> Option<String> {
+    let words = lex_command_line(line).ok()?;
+    words.get(1).cloned()
+}
+
+fn parse_error(
+    code: CommandErrorCode,
+    subject: &str,
+    reason: impl Into<String>,
+    usage: &str,
+) -> CommandError {
+    CommandError::new(code, Some(subject), reason, Some(usage))
 }
 
 pub fn server_help() -> String {

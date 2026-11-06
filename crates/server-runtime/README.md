@@ -41,7 +41,7 @@ in `world.climate.ron` under the world data lock, outside snapshots; subsequent
 starts restore it and reject a replacement initialization argument. The required
 material set is session-wide and retained through existing world prepare/ready.
 
-Server-owned handlers compose shared command metadata. Game rules stay with their owning domain.
+Server-owned handlers compose shared command metadata. Built-ins reserve names before module registration, so module aliases cannot shadow host commands. Recognized built-ins with invalid arguments remain parse errors and are never reinterpreted as module commands. Game rules stay with their owning domain.
 
 ## Change guide
 
@@ -69,3 +69,16 @@ the persisted setting; legacy climate files default to 0.
 Malformed explicit climate-relief numbers report the option name and accepted
 range. Omitted options are handled by bootstrap; the server never substitutes a
 default for an explicitly supplied invalid number.
+
+Server startup configuration resolves defaults, schema v1 RON, mapped
+`MINIMIUM_SERVER_*` environment variables, and CLI values in that order. Repeated
+`--set KEY=VALUE` values share typed validation with legacy startup flags. Offline
+`config validate` and `config show` run before runtime startup; JSON show output
+is versioned, bounded to 64 KiB, and includes resolved values and source labels.
+These commands do not lock storage, create worlds, write files, or bind listeners.
+
+`server.autosave_interval` is the first live server property. Its change runs on
+the owner lane, updates the autosave deadline, and leaves a save already in
+progress untouched. Clock properties use the existing `TimeCommand` and
+`EnvironmentClock` validation; world seed and generation identity reads come
+from the active manifest.

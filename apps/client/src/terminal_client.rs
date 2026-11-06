@@ -1,6 +1,6 @@
 use crate::{
     client_commands::{
-        execute, help_lines, parse_command, CommandContext, CommandResult, FrontendAction,
+        execute, help_lines, parse_command_typed, CommandContext, CommandResult, FrontendAction,
     },
     messages::ClientText as Text,
     options::ClientOptions,
@@ -15,10 +15,13 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod properties;
+
 const INPUT_QUEUE_CAPACITY: usize = 64;
 const ENVIRONMENT_STATUS_REFRESH: Duration = Duration::from_secs(5);
 
-pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
+pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
+    let mut text_properties = properties::TextProperties::new(&options);
     if options.sky_quality != minimium_renderer::quality::SkyQuality::Standard {
         println!("--sky-quality is available only in the desktop renderer");
     }
@@ -173,11 +176,11 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
         match receiver.recv_timeout(Duration::from_millis(25)) {
             Ok(line) => {
                 prompt_needed = true;
-                let command = match parse_command(&line) {
+                let command = match parse_command_typed(&line) {
                     Ok(Some(command)) => command,
                     Ok(None) => continue,
                     Err(error) => {
-                        println!("{}", Text::CommandParseError(error));
+                        println!("{error}");
                         continue;
                     }
                 };
@@ -206,13 +209,16 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
                                 println!("{}", Text::DisconnectOrWait);
                                 continue;
                             }
-                            let lanes = requested_lanes.unwrap_or(options.threads);
-                            match connection.start_local(
-                                data_dir.clone(),
-                                map_path.clone(),
-                                world_definition_path.clone(),
-                                lanes,
-                            ) {
+                            let config = match options
+                                .local_server_launch_config(data_dir.clone(), requested_lanes)
+                            {
+                                Ok(config) => config,
+                                Err(error) => {
+                                    println!("{error}");
+                                    continue;
+                                }
+                            };
+                            match connection.start_local(config) {
                                 Ok(()) => {
                                     println!("{}", Text::StartingLocalServer);
                                 }
@@ -271,31 +277,29 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
                         FrontendAction::MapTeleport => {
                             println!("map_telepo is available in the desktop Earth overview");
                         }
-                        FrontendAction::SkyQuality(quality) => {
-                            println!(
-                                "sky quality {} is unavailable in the text client (desktop renderer required)",
-                                quality.label()
-                            );
-                        }
                         FrontendAction::SkyInfo => {
                             println!("sky info unavailable: desktop renderer required");
                         }
                         FrontendAction::SkyBodies => {
                             println!("sky bodies unavailable: desktop renderer required");
                         }
-                        FrontendAction::SkyDemo(_) => {
-                            println!("sky demo unavailable: desktop renderer required");
-                        }
-                        FrontendAction::Fov(_) | FrontendAction::ShowCelestialNames(_) => {
-                            println!("sky display settings are available in the desktop renderer");
+                        FrontendAction::Property(command) => println!(
+                            "{}",
+                            text_properties.execute(command, &mut options, &connection)
+                        ),
+                        FrontendAction::ConfigSave(path) => {
+                            match crate::config::save_preferences(
+                                &path,
+                                &options.config_file_settings,
+                                text_properties.session_settings(),
+                            ) {
+                                Ok(()) => println!("configuration saved to {}", path.display()),
+                                Err(error) => eprintln!("{error}"),
+                            }
                         }
                         FrontendAction::WeatherStatus
-                        | FrontendAction::AtmosphereDebug(_)
                         | FrontendAction::AtmosphereStatus
-                        | FrontendAction::WeatherDebug(_)
-                        | FrontendAction::TerrainStatus
-                        | FrontendAction::TerrainDebug(_)
-                        | FrontendAction::WeatherDetail(_) => {
+                        | FrontendAction::TerrainStatus => {
                             println!("Regional weather diagnostics require the graphical client.");
                         }
                         FrontendAction::SetTime { minute, local } => {
@@ -332,6 +336,18 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
                             match connection.request_time_scale(value) {
                                 Ok(()) => println!("time scale request sent"),
                                 Err(error) => println!("time scale: {error}"),
+                            }
+                        }
+                        FrontendAction::TimeMode(mode) => {
+                            match connection.request_time_mode(&mode) {
+                                Ok(()) => println!("time mode request sent"),
+                                Err(error) => println!("time mode: {error}"),
+                            }
+                        }
+                        FrontendAction::TimeOfflinePolicy(policy) => {
+                            match connection.request_time_offline_policy(&policy) {
+                                Ok(()) => println!("time offline policy request sent"),
+                                Err(error) => println!("time offline policy: {error}"),
                             }
                         }
                     },

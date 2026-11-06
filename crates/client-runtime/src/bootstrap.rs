@@ -1,6 +1,8 @@
-use crate::options::ThreadLane;
 mod diagnostics;
+mod launch_config;
 use diagnostics::ServerStderr;
+pub use launch_config::LocalServerLaunchConfig;
+use launch_config::ResolvedLaunch;
 use minimium_platform::{
     admin_client,
     endpoint::{new_admin_token, ServerEndpoint},
@@ -187,17 +189,17 @@ impl Drop for OwnedServer {
 /// The returned game stream has not sent an identity and remains blocking.
 /// Starts or attaches without exceeding the caller's connection deadline.
 pub fn connect_or_start_until(
-    data_dir: &Path,
-    map_path: Option<&Path>,
-    world_definition_path: Option<&Path>,
-    threads: ThreadLane,
+    config: &LocalServerLaunchConfig,
     deadline: Instant,
 ) -> Result<(TcpStream, LocalServer), Box<dyn Error>> {
     let deadline = deadline.min(Instant::now() + STARTUP_TIMEOUT);
+    let executable = server_executable_path()?;
+    let resolved = config.resolve(&executable)?;
+    let data_dir = &resolved.data_dir;
 
     if let Ok(endpoint) = ServerEndpoint::read(data_dir) {
         if validate_live_endpoint(data_dir, &endpoint, deadline).unwrap_or(false) {
-            validate_attachment_options()?;
+            reject_unapplied_settings(config, &resolved)?;
             let stream = connect_game(&endpoint, remaining(deadline)?)?;
             return Ok((stream, LocalServer::Attached));
         }
@@ -205,13 +207,7 @@ pub fn connect_or_start_until(
 
     remaining(deadline)?;
     let expected_token = new_admin_token()?;
-    let child = start_local_server(
-        data_dir,
-        map_path,
-        world_definition_path,
-        threads,
-        &expected_token,
-    )?;
+    let child = start_local_server(config, &resolved, &executable, &expected_token)?;
     // This guard is established immediately after spawn, before any fallible startup work.
     let mut owned = OwnedServer {
         child: Some(child),
@@ -283,7 +279,7 @@ pub fn connect_or_start_until(
             {
                 // Another process won the lock. Reap only the unsuccessful child we spawned.
                 owned.terminate()?;
-                validate_attachment_options()?;
+                reject_unapplied_settings(config, &resolved)?;
                 let stream = connect_game(&endpoint, remaining(deadline)?)?;
                 return Ok((stream, LocalServer::Attached));
             }
@@ -329,17 +325,19 @@ fn validate_live_endpoint(
     }
 }
 
-fn validate_attachment_options() -> io::Result<()> {
-    if local_env_option("MINIMIUM_LOCAL_CLIMATE_RELIEF_INFLUENCE").is_some() {
-        return Err(io::Error::other("restart the local server to apply ClimateReliefInfluence; attaching would ignore this startup setting"));
+fn reject_unapplied_settings(
+    config: &LocalServerLaunchConfig,
+    resolved: &ResolvedLaunch,
+) -> io::Result<()> {
+    let unapplied = config.unapplied_on_attach(resolved);
+    if unapplied.is_empty() {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!(
+            "cannot attach to the existing local server; startup settings were not applied: {}",
+            unapplied.join(", ")
+        )))
     }
-    Ok(())
-}
-
-/// Launchers may leave an empty environment entry when an option is omitted.
-/// Keep that equivalent to absence; an explicit numeric zero remains an override.
-fn local_env_option(name: &str) -> Option<std::ffi::OsString> {
-    std::env::var_os(name).filter(|value| !value.is_empty())
 }
 
 fn same_endpoint(left: &ServerEndpoint, right: &ServerEndpoint) -> bool {
@@ -365,13 +363,7 @@ fn remaining(deadline: Instant) -> io::Result<Duration> {
     }
 }
 
-fn start_local_server(
-    data_dir: &Path,
-    map_path: Option<&Path>,
-    world_definition_path: Option<&Path>,
-    threads: ThreadLane,
-    token: &str,
-) -> io::Result<Child> {
+fn server_executable_path() -> io::Result<PathBuf> {
     let current = std::env::current_exe()?;
     let executable = if cfg!(windows) {
         "minimium-server.exe"
@@ -385,32 +377,19 @@ fn start_local_server(
             format!("server executable not found at {}", path.display()),
         ));
     }
-    let mut command = Command::new(path);
-    command
-        .arg("run")
-        .arg("--headless")
-        .arg("--threads")
-        .arg(threads.as_str())
-        .arg("--bind")
-        .arg("127.0.0.1")
-        .arg("--data-dir")
-        .arg(data_dir)
-        .env("MINIMIUM_ADMIN_TOKEN", token);
-    if let Some(map_path) = map_path {
-        command.arg("--map").arg(map_path);
-    }
-    if let Some(world_definition_path) = world_definition_path {
-        command.arg("--world-definition").arg(world_definition_path);
-    }
-    if let Some(planet_config) = local_env_option("MINIMIUM_LOCAL_PLANET_CONFIG") {
-        command.arg("--planet-config").arg(planet_config);
-    }
-    if let Some(influence) = local_env_option("MINIMIUM_LOCAL_CLIMATE_RELIEF_INFLUENCE") {
-        command.arg("--climate-relief-influence").arg(influence);
-    }
-    if let Some(seed) = local_env_option("MINIMIUM_LOCAL_SEED") {
-        command.arg("--seed").arg(seed);
-    }
+    Ok(path)
+}
+
+fn start_local_server(
+    config: &LocalServerLaunchConfig,
+    resolved: &ResolvedLaunch,
+    executable: &Path,
+    token: &str,
+) -> io::Result<Child> {
+    let mut command = Command::new(executable);
+    config.prepare_command(&mut command);
+    config.append_run_arguments(&mut command, resolved);
+    command.env("MINIMIUM_ADMIN_TOKEN", token);
     command
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())

@@ -77,14 +77,14 @@ pub(super) fn draw(
             ),
         );
     }
-    for (row, hint) in suggestions.lines().enumerate() {
+    for (row, hint) in suggestions.lines().into_iter().enumerate() {
         text::append_text(
             vertices,
             context,
             TextDraw {
                 x: 22.0,
                 y: context.height - 66.0 - (row as f32 * 20.0),
-                text: hint,
+                text: &hint,
                 color: [0.45, 0.53, 0.60],
                 max_chars: ((context.width - 44.0) / GLYPH_ADVANCE) as usize,
                 scale: 1.0,

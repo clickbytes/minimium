@@ -100,6 +100,8 @@ pub(crate) struct ServerRuntime {
     #[allow(dead_code)]
     environment_dirty_revision: Option<ClockRevision>,
     autosave_seconds: u64,
+    resolved_settings: std::collections::BTreeMap<String, minimium_commands::ResolvedConfigValue>,
+    autosave_session_override: bool,
     stop: bool,
     // Endpoint must be removed while the data lock is still held.
     _endpoint_guard: EndpointGuard,
@@ -114,6 +116,7 @@ impl ServerRuntime {
     ) -> io::Result<Self> {
         let content = crate::content::ContentServer::new(&config)?;
         let lanes = config.lanes.count();
+        let resolved_settings = config.resolved_settings.clone();
         let Startup {
             map,
             worlds,
@@ -233,6 +236,8 @@ impl ServerRuntime {
             shot_cooldown: Duration::from_millis(combat.fire_cooldown_ms),
             environment_dirty_revision: None,
             autosave_seconds: config.autosave_seconds,
+            resolved_settings,
+            autosave_session_override: false,
             stop: false,
             _endpoint_guard: endpoint_guard,
             _data_lock: data_lock,

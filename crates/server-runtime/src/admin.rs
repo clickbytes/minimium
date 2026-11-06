@@ -1,4 +1,6 @@
 use crate::server_command::ServerCommand;
+use minimium_commands::CommandError;
+use serde::Serialize;
 use std::{
     io::{self, Read, Write},
     net::{TcpListener, TcpStream},
@@ -174,7 +176,7 @@ impl AdminServer {
                                     break;
                                 }
                                 Err(error) => {
-                                    queue_text_reply(client, format!("ERR {error}"), now);
+                                    queue_text_reply(client, encode_command_error(&error), now);
                                     break;
                                 }
                             },
@@ -251,15 +253,18 @@ impl AdminServer {
         }) else {
             return;
         };
-        let prefix = if success { "OK " } else { "ERR " };
-        let reply_len = prefix.len().saturating_add(text.len()).saturating_add(1);
+        let response = if success {
+            format!("OK {text}")
+        } else {
+            encode_error_envelope("domain_error", None, text, None)
+        };
+        let reply_len = response.len().saturating_add(1);
         if reply_len > MAX_REPLY_BYTES {
             queue_reply(client, b"ERR reply exceeds size limit\n", Instant::now());
             return;
         }
         let mut bytes = Vec::with_capacity(reply_len);
-        bytes.extend_from_slice(prefix.as_bytes());
-        bytes.extend_from_slice(text.as_bytes());
+        bytes.extend_from_slice(response.as_bytes());
         bytes.push(b'\n');
         queue_reply(client, &bytes, Instant::now());
     }
@@ -292,6 +297,43 @@ impl AdminServer {
                 && client.output_offset < client.output.len()
         })
     }
+}
+
+fn encode_command_error(error: &CommandError) -> String {
+    encode_error_envelope(
+        error.code.as_str(),
+        error.subject.as_deref(),
+        &error.reason,
+        error.usage.as_deref(),
+    )
+}
+
+fn encode_error_envelope(
+    code: &str,
+    key: Option<&str>,
+    reason: &str,
+    usage: Option<&str>,
+) -> String {
+    let envelope = AdminErrorEnvelope {
+        schema_version: 1,
+        code,
+        key,
+        reason,
+        usage,
+    };
+    serde_json::to_string(&envelope).map_or_else(
+        |_| String::from("ERR admin error serialization failed"),
+        |json| format!("ERRJSON {json}"),
+    )
+}
+
+#[derive(Serialize)]
+struct AdminErrorEnvelope<'a> {
+    schema_version: u32,
+    code: &'a str,
+    key: Option<&'a str>,
+    reason: &'a str,
+    usage: Option<&'a str>,
 }
 
 fn queue_text_reply(client: &mut Client, text: String, now: Instant) {

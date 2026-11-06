@@ -52,14 +52,11 @@ impl ContentServer {
             climate.relief_influence = value;
         }
         climate.validate().map_err(io::Error::other)?;
-        if !saved || changed {
-            let source = ron::to_string(&climate).map_err(io::Error::other)?;
-            minimium_platform::files::atomic_write_file(
-                &config.data_dir.join("world.climate.tmp"),
-                &climate_path,
-                source.as_bytes(),
-            )?;
-        }
+        let staged_climate = if !saved || changed {
+            Some(ron::to_string(&climate).map_err(io::Error::other)?)
+        } else {
+            None
+        };
         let mut server = Self {
             hash: [0; 32],
             port: 0,
@@ -68,6 +65,13 @@ impl ContentServer {
             thread: None,
         };
         let Some(root) = &config.material_package_path else {
+            if let Some(source) = staged_climate {
+                minimium_platform::files::atomic_write_file(
+                    &config.data_dir.join("world.climate.tmp"),
+                    &climate_path,
+                    source.as_bytes(),
+                )?;
+            }
             return Ok(server);
         };
         let source = minimium_asset_io::materials::read_bounded(
@@ -114,6 +118,13 @@ impl ContentServer {
                     }
                 })?,
         );
+        if let Some(source) = staged_climate {
+            minimium_platform::files::atomic_write_file(
+                &config.data_dir.join("world.climate.tmp"),
+                &climate_path,
+                source.as_bytes(),
+            )?;
+        }
         Ok(server)
     }
 }

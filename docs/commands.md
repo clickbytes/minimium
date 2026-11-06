@@ -195,3 +195,57 @@ minimium-loadtest --address HOST:PORT [--scenario heartbeat|movement|combat|chat
 - `clustered` and `dispersed` use deterministic movement directions by simulated-client index; they are intended for the final spatial-distribution scenarios.
 
 The JSON output is schema version 2. Field definitions and the prepared scenario manifest belong in [report-v2.md](scenarios/report-v2.md). Reports contain application protocol bytes, not TCP/IP framing or retransmissions. The load generator is implementation scaffolding; prepared workloads are not runtime results, and no gameplay correctness, capacity, or performance claim follows from a static code review.
+The typed property grammar is get KEY, set KEY VALUE, reset KEY, list [PREFIX], and help [COMMAND|KEY]. The first client property is client.camera.fov (decimal degrees, 30..=110, default 70, live, local). set client.camera.fov 85 and legacy camera fov 85 share the same domain validator; reset client.camera.fov clears the session override and returns to the default. get reports requested/effective/default/source. Client preferences use an explicitly selected schema v1 RON file and config validate/show run offline. config save PATH atomically writes explicit file entries plus eligible session changes; defaults and CLI values are not copied.
+
+
+## Configuration and property contract
+
+Property syntax is `get KEY`, `set KEY VALUE`, `reset KEY`, `list [PREFIX]`,
+and `help [COMMAND|KEY]`. Descriptors provide the value type, unit, default,
+constraints, owner, permission, lifecycle, persistence, and reset support. Domain
+owners still validate values and apply state changes.
+
+Startup precedence is default, RON file, explicitly mapped environment, then CLI.
+Session overrides apply only to live properties. A property read reports requested,
+effective, default, source, and any fallback reason. Reset removes the session
+override and returns to the resolved startup value; it does not edit the RON file.
+
+Client properties available to the text and desktop consoles are:
+- `client.camera.fov`: finite degrees in 30..=110, default 70.
+- `client.input.mouse_sensitivity`: finite rad/pixel in 0..=0.1, default 0.0025.
+- `client.graphics.sky_quality`: low|standard, default standard.
+- `client.sky.names` and `client.sky.demo`: true|false.
+- `client.weather.cloud_detail`: integer 2..=6, default 6.
+- `client.debug.atmosphere`, `client.debug.terrain`, and `client.debug.clouds`:
+  enum values are listed by `help KEY`.
+- `player.movement.fly`, `player.movement.speed`, and
+  `player.movement.accel`: local queued input; numeric range 0..=10000.
+- `world.time.mode`, `world.time.scale`, and
+  `world.time.offline_policy`: live owned-local-server properties. UTC and
+  revision are read-only replica values in clients.
+
+The client does not expose `server.*`, world climate, or world identity properties.
+Those are server startup or administrative settings. Movement reads describe local
+input and queue acceptance, not server confirmation. Remote clients cannot change
+server clock state.
+
+The client accepts `--config PATH` and repeatable `--set KEY=VALUE` for client
+preferences. `config validate`, `config show`, and `config save PATH` are
+offline commands. Save writes only persistent selected settings using atomic file
+replacement. Server startup accepts `--config PATH` and repeatable
+`--set KEY=VALUE`; `config validate` and `config show --sources --format json`
+run before runtime effects. Server threads accept 1..64 or auto; loadtest keeps
+its own 1|2|auto range and has no config file or live settings.
+
+The local client accepts `--server-config PATH` and repeatable
+`--server-set KEY=VALUE`. It resolves these with the sibling server's offline
+JSON view before launch. Existing servers reject explicit startup settings that
+would be ignored. `--server-data-dir PATH` selects the server discovery target.
+The admin CLI parses `--data-dir`, help, and version before reading endpoint
+state; `stop` succeeds only after the captured server instance confirms shutdown.
+
+Legacy command aliases map to the same property handlers: `camera fov` and
+`fov` map to `client.camera.fov`; `fly` maps to `player.movement.fly`;
+`movement speed` and `movement accel` map to their respective
+`player.movement.*` properties. Time mutations remain `time set`, `time mode`,
+`time scale`, and `time offline` actions through the owned local admin channel.

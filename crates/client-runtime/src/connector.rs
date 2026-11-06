@@ -5,11 +5,10 @@
 //! being delivered, but does not pretend to cancel blocking OS or startup work:
 //! the connector remains busy until that worker exits.
 
-use crate::{bootstrap, options::ThreadLane};
+use crate::bootstrap::{self, LocalServerLaunchConfig};
 use std::{
     io,
     net::{SocketAddr, TcpStream, ToSocketAddrs},
-    path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver, TryRecvError},
@@ -86,12 +85,7 @@ struct ConnectedSocket {
 
 enum WorkerOperation {
     Remote(String),
-    Local {
-        data_dir: PathBuf,
-        map_path: Option<PathBuf>,
-        world_definition_path: Option<PathBuf>,
-        threads: ThreadLane,
-    },
+    Local(LocalServerLaunchConfig),
 }
 
 struct ActiveAttempt {
@@ -140,21 +134,10 @@ impl Connector {
     /// dropped on the worker when their result is discarded.
     pub fn start_local(
         &mut self,
-        data_dir: PathBuf,
-        map_path: Option<PathBuf>,
-        world_definition_path: Option<PathBuf>,
-        threads: ThreadLane,
+        config: LocalServerLaunchConfig,
         timeout: Duration,
     ) -> Result<AttemptId, StartError> {
-        self.start_worker(
-            WorkerOperation::Local {
-                data_dir,
-                map_path,
-                world_definition_path,
-                threads,
-            },
-            timeout,
-        )
+        self.start_worker(WorkerOperation::Local(config), timeout)
     }
 
     fn start_worker(
@@ -180,7 +163,7 @@ impl Connector {
                 "connection timeout is too large",
             ))
         })?;
-        let local = matches!(&operation, WorkerOperation::Local { .. });
+        let local = matches!(&operation, WorkerOperation::Local(_));
         let abandoned = Arc::new(AtomicBool::new(false));
         let worker_abandoned = Arc::clone(&abandoned);
         let (sender, receiver) = mpsc::channel();
@@ -420,20 +403,11 @@ fn run_operation(operation: WorkerOperation, deadline: Instant) -> io::Result<Co
             stream: connect_all(&address, deadline)?,
             local_server: None,
         }),
-        WorkerOperation::Local {
-            data_dir,
-            map_path,
-            world_definition_path,
-            threads,
-        } => {
-            let (stream, local_server) = bootstrap::connect_or_start_until(
-                &data_dir,
-                map_path.as_deref(),
-                world_definition_path.as_deref(),
-                threads,
-                deadline,
-            )
-            .map_err(|error| io::Error::other(format!("local server startup failed: {error}")))?;
+        WorkerOperation::Local(config) => {
+            let (stream, local_server) = bootstrap::connect_or_start_until(&config, deadline)
+                .map_err(|error| {
+                    io::Error::other(format!("local server startup failed: {error}"))
+                })?;
             Ok(ConnectedSocket {
                 stream,
                 local_server: Some(local_server),

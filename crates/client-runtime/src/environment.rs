@@ -96,7 +96,7 @@ impl EnvironmentFrameInput {
     }
 }
 
-pub(crate) fn format_utc(timestamp_ms: i64) -> String {
+pub fn format_utc(timestamp_ms: i64) -> String {
     let seconds = timestamp_ms.div_euclid(1_000);
     let days = seconds.div_euclid(86_400);
     let day_seconds = seconds.rem_euclid(86_400);

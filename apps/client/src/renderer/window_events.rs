@@ -180,8 +180,9 @@ pub(super) fn cursor_moved(
     if renderer.input.cursor_locked && !renderer.ui.console.open && !renderer.overview_open {
         if let Some((x, y)) = renderer.input.last_cursor {
             let horizontal = if renderer.is_earth_world() { -1.0 } else { 1.0 };
-            renderer.input.yaw += ((position.x - x) as f32) * 0.0025 * horizontal;
-            renderer.input.pitch -= ((position.y - y) as f32) * 0.0025;
+            renderer.input.yaw +=
+                ((position.x - x) as f32) * renderer.mouse_sensitivity * horizontal;
+            renderer.input.pitch -= ((position.y - y) as f32) * renderer.mouse_sensitivity;
             renderer.input.pitch = renderer.input.pitch.clamp(-1.5, 1.5);
         }
     }
@@ -192,8 +193,8 @@ pub(super) fn device_event(renderer: &mut Renderer, event: DeviceEvent) {
     if let DeviceEvent::MouseMotion { delta } = event {
         if renderer.input.cursor_locked && !renderer.ui.console.open && !renderer.overview_open {
             let horizontal = if renderer.is_earth_world() { -1.0 } else { 1.0 };
-            renderer.input.yaw += (delta.0 as f32) * 0.0025 * horizontal;
-            renderer.input.pitch -= (delta.1 as f32) * 0.0025;
+            renderer.input.yaw += (delta.0 as f32) * renderer.mouse_sensitivity * horizontal;
+            renderer.input.pitch -= (delta.1 as f32) * renderer.mouse_sensitivity;
             renderer.input.pitch = renderer.input.pitch.clamp(-1.5, 1.5);
         }
     }

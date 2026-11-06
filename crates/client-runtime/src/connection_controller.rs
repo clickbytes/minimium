@@ -1,8 +1,7 @@
 use crate::session::{ClientSession, QueueError, SessionEvent, SessionState};
 use crate::{
-    bootstrap::LocalServer,
+    bootstrap::{LocalServer, LocalServerLaunchConfig},
     connector::{AttemptId, Connector, PollEvent, StartError},
-    ThreadLane,
 };
 use minimium_core::identity::PlayerProfileId;
 use minimium_platform::admin_client;
@@ -11,7 +10,6 @@ use minimium_world::world::WorldInstanceId;
 use std::{
     collections::HashMap,
     io,
-    path::PathBuf,
     thread::{self, JoinHandle},
     time::Duration,
 };
@@ -96,6 +94,20 @@ impl ConnectionController {
         self.request_time_command(format!("time scale {value}"))
     }
 
+    pub fn request_time_mode(&mut self, mode: &str) -> Result<(), String> {
+        if !matches!(mode, "real_time" | "time_scale") {
+            return Err("time mode must be real_time or time_scale".into());
+        }
+        self.request_time_command(format!("time mode {mode}"))
+    }
+
+    pub fn request_time_offline_policy(&mut self, policy: &str) -> Result<(), String> {
+        if !matches!(policy, "pause" | "advance") {
+            return Err("offline policy must be pause or advance".into());
+        }
+        self.request_time_command(format!("time offline {policy}"))
+    }
+
     pub fn request_set_time(&mut self, minute: u16, longitude_rad: f64) -> Result<(), String> {
         let current = self
             .session
@@ -171,20 +183,8 @@ impl ConnectionController {
         Ok(())
     }
 
-    pub fn start_local(
-        &mut self,
-        data_dir: PathBuf,
-        map_path: Option<PathBuf>,
-        world_definition_path: Option<PathBuf>,
-        lanes: ThreadLane,
-    ) -> Result<(), StartError> {
-        self.active = Some(self.connector.start_local(
-            data_dir,
-            map_path,
-            world_definition_path,
-            lanes,
-            ATTEMPT_TIMEOUT,
-        )?);
+    pub fn start_local(&mut self, config: LocalServerLaunchConfig) -> Result<(), StartError> {
+        self.active = Some(self.connector.start_local(config, ATTEMPT_TIMEOUT)?);
         Ok(())
     }
 

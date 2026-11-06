@@ -26,7 +26,6 @@ mod terminal;
 mod world_inputs;
 mod world_registry;
 use composition::ServerComposition;
-use config::{DEFAULT_AUTOSAVE_SECONDS, MAX_PLAYERS};
 use std::time::Duration;
 
 const TICK: Duration = Duration::from_millis(minimium_simulation::SIMULATION_STEP_MILLISECONDS);
@@ -44,18 +43,14 @@ pub fn run(
     args: &[String],
     composition: ServerComposition,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(output) = config::offline_command(args)? {
+        println!("{output}");
+        return Ok(());
+    }
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         println!(
-            "minimium-server run [--seed DECIMAL|0xHEX] [--planet-config PATH] \\
-             [--environment-config PATH] [--climate-scenario PATH] [--climate-relief-influence 0..1] [--threads 1..64|auto] [--max-players N] \\
-             [--material-package PATH] [--material-http-port PORT] \\
-             [--bind IP] [--game-port PORT] [--data-dir PATH] \\
-             [--map PATH | --world-definition PATH] [--autosave-seconds N] [--headless]\n\\
-             minimium-server --version\n\\
-             --max-players defaults to {MAX_PLAYERS}; --game-port 0 selects an available port (default); \\
-             --autosave-seconds 0 disables periodic saves (default: {DEFAULT_AUTOSAVE_SECONDS}); \\
-             --environment-config initializes clock mode/date/scale for a new world only; \\
-             --headless disables stdin commands; administer with minimiumctl."
+            "{}\nminimium-server config validate|show --config PATH",
+            config::help_text()
         );
         return Ok(());
     }
