@@ -1,5 +1,6 @@
 use super::*;
 use crate::{commands, replication, simulation};
+mod properties;
 use minimium_protocol::PROTOCOL_VERSION;
 use minimium_telemetry::allocations::{self, Phase};
 
@@ -33,7 +34,6 @@ impl ServerRuntime {
         let game_address = self.game_address;
         let max_players = self.max_players;
         let lanes = self.lanes;
-        let autosave_seconds = self.autosave_seconds;
         let command_phase = allocations::enter(Phase::Commands);
         for _ in 0..8 {
             let Some((request_id, command)) = self.operations.command_queue.pop_front() else {
@@ -44,31 +44,36 @@ impl ServerRuntime {
             }
             let monotonic_ms = self.monotonic_ms(Instant::now());
             let schedule_diagnostics = self.schedule.diagnostics();
-            let mut reply = match monotonic_ms {
-                Ok(monotonic_ms) => commands::execute(
-                    &command,
-                    commands::CommandContext {
-                        worlds: &self.game.worlds,
-                        player_store: &mut self.operations.player_store,
-                        persistence: &mut self.operations.persistence,
-                        map_fingerprint: self.map.fingerprint(),
-                        lanes,
-                        metrics: &self.metrics,
-                        environment_clock: &mut self.environment_clock,
-                        monotonic_ms,
-                        schedule_diagnostics,
+            let mut reply = match &command {
+                crate::server_command::ServerCommand::Property(property) => {
+                    self.apply_property_command(property)
+                }
+                _ => match monotonic_ms {
+                    Ok(monotonic_ms) => commands::execute(
+                        &command,
+                        commands::CommandContext {
+                            worlds: &self.game.worlds,
+                            player_store: &mut self.operations.player_store,
+                            persistence: &mut self.operations.persistence,
+                            map_fingerprint: self.map.fingerprint(),
+                            lanes,
+                            metrics: &self.metrics,
+                            environment_clock: &mut self.environment_clock,
+                            monotonic_ms,
+                            schedule_diagnostics,
+                        },
+                    ),
+                    Err(error) => commands::CommandReply {
+                        success: false,
+                        text: format!("monotonic clock: {error}"),
+                        stop: false,
                     },
-                ),
-                Err(error) => commands::CommandReply {
-                    success: false,
-                    text: format!("monotonic clock: {error}"),
-                    stop: false,
                 },
             };
             self.environment_dirty_revision = self.environment_clock.dirty_revision();
             if command.is_status() {
                 use std::fmt::Write as _;
-                let _ = write!(reply.text, " game_address={game_address} max_players={max_players} map_fingerprint={:016x} tick_ms={} snapshot_ms={} autosave_seconds={autosave_seconds} protocol_version={PROTOCOL_VERSION} save_version={SAVE_VERSION}", self.map.fingerprint(), TICK.as_millis(), SNAPSHOT_INTERVAL.as_millis());
+                let _ = write!(reply.text, " game_address={game_address} max_players={max_players} map_fingerprint={:016x} tick_ms={} snapshot_ms={} autosave_seconds={} protocol_version={PROTOCOL_VERSION} save_version={SAVE_VERSION}", self.map.fingerprint(), TICK.as_millis(), SNAPSHOT_INTERVAL.as_millis(), self.autosave_seconds);
                 reply.text.push_str(" environment_profiles=");
                 reply.text.push_str(&self.game.worlds.environment_summary());
             }
@@ -111,6 +116,7 @@ impl ServerRuntime {
         }
         drop(command_phase);
     }
+
     fn apply_world_inputs(&mut self) {
         let input_phase = allocations::enter(Phase::Input);
         let input_apply_started = Instant::now();

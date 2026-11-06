@@ -1,8 +1,5 @@
 //! Shared English display messages for the terminal and rendered clients.
-use crate::{
-    client_commands::ParseError,
-    session::{DisconnectReason, QueueError},
-};
+use crate::session::{DisconnectReason, QueueError};
 use minimium_protocol::{ProtocolError, ServerErrorCode};
 use std::fmt;
 
@@ -29,9 +26,7 @@ pub enum ClientText {
     CommandQueued,
     CouldNotQueueCommand(QueueProblem),
     CouldNotFire(QueueProblem),
-    CommandParseError(ParseError),
     TerminalIntro,
-    CommandLineHelp,
     InputPrompt,
     ClientError(String),
     MapLoadFailed {
@@ -230,32 +225,9 @@ impl fmt::Display for ClientText {
             Self::CouldNotQueueMovement(problem) => {
                 write!(f, "could not queue movement: {problem}")
             }
-            Self::CommandParseError(ParseError::Usage(usage)) => write!(f, "Invalid arguments. Usage: {usage}"),
-            Self::CommandParseError(error) => f.write_str(match error {
-                ParseError::Usage(usage) => usage,
-                ParseError::MissingChat => "say requires a message",
-                ParseError::InvalidLane => "thread count must be 1, 2, or auto",
-                ParseError::HostUsage => "usage: host local [--threads 1|2|auto]",
-                ParseError::ConnectUsage => "usage: connect HOST:PORT",
-                ParseError::MoveUsage => "usage: move X Z",
-                ParseError::NameUsage => "usage: name NAME",
-                ParseError::SkyQualityUsage => "usage: sky quality low|standard",
-                ParseError::FovUsage => "usage: fov [30..110] (degrees)",
-                ParseError::CelestialNamesUsage => "usage: show_celestial_names true|false",
-                ParseError::SetTimeUsage => "usage: set_time HHMM | set_time_local HHMM (0000..2359)",
-                ParseError::TimeScaleUsage => {
-                    "usage: time scale DECIMAL (or timescale DECIMAL; 0.1-1000000 or 0 to pause, at most 6 fractional digits)"
-                }
-                ParseError::InvalidCoordinate => "coordinates must be numbers",
-                ParseError::NonFiniteCoordinate => "coordinates must be finite",
-                ParseError::UnknownCommand => "unknown command; type help for commands",
-            }),
             Self::TerminalIntro => {
                 f.write_str("Minimium client console. Type `help` for commands.")
             }
-            Self::CommandLineHelp => f.write_str(
-                "minimium-client [--connect HOST:PORT] [--map PATH | --world-definition PATH] [--profile-dir PATH] [--server-data-dir PATH] [--threads 1|2|auto] [--sky-quality low|standard] [--demo] [--console] [--require-earth] [--windowed]\nDesktop starts fullscreen; F11 toggles window mode. Default sky quality: standard. It affects local rendering only. F1 opens the console. --console selects the text client; host local starts/attaches its server.",
-            ),
             Self::InputPrompt => f.write_str("> "),
             Self::ClientError(error) => write!(f, "client error: {error}"),
             Self::MapLoadFailed { path, detail } => {

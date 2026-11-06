@@ -100,9 +100,18 @@ fn spawn_console_input_reader(sender: mpsc::SyncSender<String>) {
 
 fn main() {
     let result = (|| {
-        let options = options::ClientOptions::parse(std::env::args().skip(1))?;
+        let args = std::env::args().skip(1).collect::<Vec<_>>();
+        if let Some(output) = config::handle_offline_command(&args)? {
+            println!("{output}");
+            return Ok(());
+        }
+        let options = options::ClientOptions::parse(args)?;
         if options.help {
-            println!("{}", Text::CommandLineHelp);
+            println!("{}", options::help_text());
+            return Ok(());
+        }
+        if options.version {
+            println!("{}", env!("CARGO_PKG_VERSION"));
             return Ok(());
         }
         client_commands::initialize_registry();
@@ -121,7 +130,15 @@ fn main() {
     })();
     if let Err(error) = result {
         eprintln!("{}", Text::ClientError(error.to_string()));
-        std::process::exit(1);
+        let exit_code = if error
+            .downcast_ref::<minimium_commands::CommandError>()
+            .is_some()
+        {
+            2
+        } else {
+            1
+        };
+        std::process::exit(exit_code);
     }
 }
 
@@ -131,6 +148,7 @@ mod console;
 mod renderer;
 
 mod client_commands;
+mod config;
 mod environment;
 mod messages;
 mod options;

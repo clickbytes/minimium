@@ -4,6 +4,8 @@
 
 Runs headless network clients against configured load scenarios. It does not render, host authoritative worlds or claim performance acceptance by existing alone.
 
+The CLI options are declared in `src/config.rs` and parsed by the shared `minimium-commands` rules. Loadtest keeps its own scenario and thread ranges and remains a one-shot tool with no config file or live properties.
+
 ## Public API
 
 The executable is configured through its CLI and scenario inputs; implementation is internal to the application.

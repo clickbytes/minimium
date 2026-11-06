@@ -14,7 +14,7 @@ Uses platform endpoint/admin adapters and current command parser plus core comma
 
 ## Data flow
 
-CLI text is parsed and validated before reading endpoint state or performing local IPC; typed replies are printed to the terminal.
+CLI options, help, version, duplicates, missing values, and command argv boundaries are parsed before reading endpoint state or performing local IPC. Typed admin error envelopes and legacy `ERR` replies are reported to stderr with a failing process status. `stop` retains its separate shutdown confirmation path.
 
 ## Ownership and execution
 

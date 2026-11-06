@@ -50,6 +50,7 @@ mod scene_bridge;
 mod sector_scene;
 mod sector_worker;
 mod session;
+mod settings;
 mod shadow_gpu;
 mod shadow_map_cache;
 mod shadows;
@@ -186,12 +187,11 @@ struct FrameMetrics {
 }
 
 struct ClientSettings {
-    data_dir: PathBuf,
-    map_path: Option<PathBuf>,
-    world_definition_path: Option<PathBuf>,
-    threads: crate::options::ThreadLane,
+    local_server_config: minimium_client_runtime::LocalServerLaunchConfig,
     require_earth: bool,
     demo: bool,
+    config_file_settings: std::collections::BTreeMap<String, String>,
+    preference_sources: std::collections::BTreeMap<String, minimium_commands::PropertySource>,
 }
 
 struct Renderer {
@@ -202,8 +202,29 @@ struct Renderer {
     metrics: FrameMetrics,
     settings: ClientSettings,
     demo_universe_enabled: bool,
+    fov_base: f32,
     fov_degrees: f32,
+    fov_override: Option<f32>,
+    mouse_sensitivity_base: f32,
+    mouse_sensitivity: f32,
+    mouse_sensitivity_override: Option<f32>,
+    sky_names_base: bool,
+    sky_names_override: Option<bool>,
+    cloud_detail_base: u8,
+    cloud_detail_override: Option<u8>,
     show_celestial_names: bool,
+    sky_quality_base: minimium_renderer::quality::SkyQuality,
+    sky_quality_override: Option<minimium_renderer::quality::SkyQuality>,
+    atmosphere_debug: minimium_renderer::atmosphere_debug::AtmosphereDebug,
+    atmosphere_debug_base: minimium_renderer::atmosphere_debug::AtmosphereDebug,
+    atmosphere_debug_override: Option<minimium_renderer::atmosphere_debug::AtmosphereDebug>,
+    terrain_debug: minimium_renderer::terrain_debug::TerrainDebug,
+    terrain_debug_base: minimium_renderer::terrain_debug::TerrainDebug,
+    terrain_debug_override: Option<minimium_renderer::terrain_debug::TerrainDebug>,
+    cloud_debug_base: minimium_environment::weather::CloudDebug,
+    cloud_debug_override: Option<minimium_environment::weather::CloudDebug>,
+    sky_demo_base: bool,
+    sky_demo_override: Option<bool>,
     sky_quality: minimium_renderer::quality::SkyQualityState,
     connection: ConnectionController,
     environment_frame: EnvironmentFrameInput,

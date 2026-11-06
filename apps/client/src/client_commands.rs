@@ -7,6 +7,7 @@
 
 use crate::{options::ThreadLane, session::QueueError};
 use minimium_commands::{
+    lex_command_line_with_spans, CommandError, CommandErrorCode, CommandOutcome,
     CommandRegistry as SharedCommandRegistry, CommandSpec as SharedCommandSpec,
 };
 use minimium_protocol::ClientMessage;
@@ -18,7 +19,16 @@ mod environment;
 mod gameplay;
 mod interface;
 mod movement;
+mod properties;
 mod weather;
+
+pub(crate) use minimium_commands::{
+    CommandArgumentSpec as ArgumentSpec, CommandArgumentType as ArgumentType,
+};
+pub(crate) use properties::{
+    format_property_help, format_time_value, parse_setting_value, property_spec, property_specs,
+    ClientPropertyCommand, ClientPropertyKey, ClientPropertyValue,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum ClientCommand {
@@ -26,8 +36,9 @@ pub(crate) enum ClientCommand {
     AtmosphereStatus,
     TerrainDebug(minimium_renderer::terrain_debug::TerrainDebug),
     TerrainStatus,
-    Movement(movement::Setting),
+    Property(properties::ClientPropertyCommand),
     SetAltitude(f32),
+    ConfigSave(std::path::PathBuf),
     Help,
     Print(String),
     HostLocal(Option<ThreadLane>),
@@ -65,6 +76,14 @@ pub(super) type CommandRegistry = SharedCommandRegistry<ClientCommand, ParseErro
 
 static REGISTRY: OnceLock<CommandRegistry> = OnceLock::new();
 
+pub(crate) fn parse_fov_degrees(value: &str) -> Result<f32, &'static str> {
+    let degrees = value.parse::<f32>().map_err(|_| "expected a number")?;
+    if !degrees.is_finite() || !(30.0..=110.0).contains(&degrees) {
+        return Err("field of view must be finite and between 30 and 110 degrees");
+    }
+    Ok(degrees)
+}
+
 pub(crate) fn initialize_registry() {
     let _ = registry();
 }
@@ -82,15 +101,22 @@ fn registry() -> &'static CommandRegistry {
     })
 }
 
-pub(crate) fn help_lines() -> impl Iterator<Item = &'static str> {
-    registry().commands().iter().map(|command| command.usage)
+pub(crate) fn help_lines() -> Vec<String> {
+    let mut lines = registry()
+        .commands()
+        .iter()
+        .map(SharedCommandSpec::format_help)
+        .collect::<Vec<_>>();
+    lines.push("get KEY | set KEY VALUE | reset KEY | list [PREFIX] | help [COMMAND|KEY]".into());
+    lines.extend(properties::property_specs().map(properties::format_property_help));
+    lines
 }
 
 pub(crate) fn command_specs() -> &'static [CommandSpec] {
     registry().commands()
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ParseError {
     MissingChat,
     InvalidLane,
@@ -107,6 +133,7 @@ pub(crate) enum ParseError {
     SetTimeUsage,
     UnknownCommand,
     Usage(&'static str),
+    Structured(CommandError),
 }
 
 pub(crate) fn parse_command(input: &str) -> Result<Option<ClientCommand>, ParseError> {
@@ -114,35 +141,88 @@ pub(crate) fn parse_command(input: &str) -> Result<Option<ClientCommand>, ParseE
     if trimmed.is_empty() {
         return Ok(None);
     }
-    let words = trimmed.split_whitespace().collect::<Vec<_>>();
+    let tokens = lex_command_line_with_spans(trimmed).map_err(ParseError::Structured)?;
+    let words = tokens
+        .iter()
+        .map(|token| token.value.as_str())
+        .collect::<Vec<_>>();
+    if matches!(
+        words.first().copied(),
+        Some("get" | "set" | "reset" | "list")
+    ) || matches!(words.first().copied(), Some("help"))
+    {
+        if let Some(command) = properties::parse(trimmed)? {
+            return Ok(Some(command));
+        }
+    }
     let group: Vec<_> = command_specs()
         .iter()
         .filter(|spec| spec.name.starts_with(&format!("{trimmed} ")))
-        .map(|spec| spec.usage)
+        .map(SharedCommandSpec::format_help)
         .collect();
     if !group.is_empty() {
         return Ok(Some(ClientCommand::Print(group.join("\n"))));
     }
-    registry()
-        .parse(trimmed, &words)
-        .map(|result| result.map_err(|(usage, _)| ParseError::Usage(usage)))
-        .unwrap_or_else(|| {
+    match registry()
+        .parse_line(trimmed)
+        .map_err(ParseError::Structured)?
+    {
+        CommandOutcome::Matched { usage, result, .. } => result
+            .map_err(|error| match error {
+                ParseError::UnknownCommand => ParseError::Usage(usage),
+                error => error,
+            })
+            .map(Some),
+        CommandOutcome::Unknown => {
             let domain = words[0];
             let choices: Vec<_> = command_specs()
                 .iter()
                 .filter(|spec| spec.name.split_whitespace().next() == Some(domain))
-                .map(|spec| spec.usage)
+                .map(SharedCommandSpec::format_help)
                 .collect();
-            Ok(ClientCommand::Print(format!(
-                "Unknown command. Available usage:\n{}",
-                if choices.is_empty() {
-                    help_lines().collect::<Vec<_>>().join("\n")
-                } else {
-                    choices.join("\n")
-                }
+            let choices = if choices.is_empty() {
+                help_lines().join("\n")
+            } else {
+                choices.join("\n")
+            };
+            Err(ParseError::Structured(CommandError::new(
+                CommandErrorCode::UnknownCommand,
+                Some(domain),
+                format!("unknown command; available commands:\n{choices}"),
+                Some("help"),
             )))
-        })
-        .map(Some)
+        }
+    }
+}
+
+pub(crate) fn parse_command_typed(input: &str) -> Result<Option<ClientCommand>, CommandError> {
+    parse_command(input).map_err(|error| match error {
+        ParseError::Structured(error) => error,
+        ParseError::UnknownCommand => CommandError::new(
+            CommandErrorCode::UnknownCommand,
+            input.split_whitespace().next(),
+            "unknown command",
+            Some("help"),
+        ),
+        ParseError::FovUsage => CommandError::new(
+            CommandErrorCode::InvalidValue,
+            Some("client.camera.fov"),
+            "field of view must be finite and between 30 and 110 degrees",
+            Some("camera fov [30..=110]"),
+        ),
+        ParseError::Usage(usage) => CommandError::new(
+            CommandErrorCode::InvalidArguments,
+            input.split_whitespace().next(),
+            "invalid command arguments",
+            Some(usage),
+        ),
+        other => CommandError::new(
+            CommandErrorCode::InvalidArguments,
+            input.split_whitespace().next(),
+            format!("{other:?}"),
+            None::<String>,
+        ),
+    })
 }
 
 pub(crate) struct CommandContext<'a> {
@@ -153,9 +233,7 @@ pub(crate) struct CommandContext<'a> {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum FrontendAction {
-    AtmosphereDebug(minimium_renderer::atmosphere_debug::AtmosphereDebug),
     AtmosphereStatus,
-    TerrainDebug(minimium_renderer::terrain_debug::TerrainDebug),
     TerrainStatus,
     Help,
     Print(String),
@@ -168,18 +246,16 @@ pub(crate) enum FrontendAction {
     MapTeleport,
     Clear,
     Quit,
-    SkyQuality(SkyQuality),
     SkyInfo,
     SkyBodies,
-    SkyDemo(bool),
-    Fov(Option<f32>),
-    ShowCelestialNames(bool),
+    Property(properties::ClientPropertyCommand),
+    ConfigSave(std::path::PathBuf),
     TimeStatus,
     TimeScale(String),
+    TimeMode(String),
+    TimeOfflinePolicy(String),
     SetTime { minute: u16, local: bool },
     WeatherStatus,
-    WeatherDebug(minimium_environment::weather::CloudDebug),
-    WeatherDetail(u8),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -192,7 +268,9 @@ pub(crate) enum CommandResult {
 pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) -> CommandResult {
     let message = match command {
         ClientCommand::AtmosphereDebug(mode) => {
-            return CommandResult::Action(FrontendAction::AtmosphereDebug(mode))
+            return CommandResult::Action(FrontendAction::Property(ClientPropertyCommand::Set(
+                ClientPropertyValue::AtmosphereDebug(mode),
+            )))
         }
         ClientCommand::AtmosphereStatus => {
             return CommandResult::Action(FrontendAction::AtmosphereStatus)
@@ -205,7 +283,9 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
             }
             ClientMessage::SetAltitude { km }
         }
-        ClientCommand::Movement(setting) => return movement::execute(setting, context),
+        ClientCommand::ConfigSave(path) => {
+            return CommandResult::Action(FrontendAction::ConfigSave(path))
+        }
         ClientCommand::Print(text) => return CommandResult::Action(FrontendAction::Print(text)),
         ClientCommand::WeatherStatus => {
             return CommandResult::Action(FrontendAction::WeatherStatus)
@@ -214,13 +294,19 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
             return CommandResult::Action(FrontendAction::TerrainStatus)
         }
         ClientCommand::TerrainDebug(mode) => {
-            return CommandResult::Action(FrontendAction::TerrainDebug(mode))
+            return CommandResult::Action(FrontendAction::Property(ClientPropertyCommand::Set(
+                ClientPropertyValue::TerrainDebug(mode),
+            )))
         }
         ClientCommand::WeatherDebug(mode) => {
-            return CommandResult::Action(FrontendAction::WeatherDebug(mode))
+            return CommandResult::Action(FrontendAction::Property(ClientPropertyCommand::Set(
+                ClientPropertyValue::CloudDebug(mode),
+            )))
         }
         ClientCommand::WeatherDetail(level) => {
-            return CommandResult::Action(FrontendAction::WeatherDetail(level))
+            return CommandResult::Action(FrontendAction::Property(ClientPropertyCommand::Set(
+                ClientPropertyValue::CloudDetail(level),
+            )))
         }
         ClientCommand::Ping => ClientMessage::Ping,
         ClientCommand::Move(direction) => {
@@ -257,16 +343,63 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
         ClientCommand::Clear => return CommandResult::Action(FrontendAction::Clear),
         ClientCommand::Quit => return CommandResult::Action(FrontendAction::Quit),
         ClientCommand::SkyQuality(quality) => {
-            return CommandResult::Action(FrontendAction::SkyQuality(quality))
+            return CommandResult::Action(FrontendAction::Property(ClientPropertyCommand::Set(
+                ClientPropertyValue::SkyQuality(quality),
+            )))
         }
         ClientCommand::SkyInfo => return CommandResult::Action(FrontendAction::SkyInfo),
         ClientCommand::SkyBodies => return CommandResult::Action(FrontendAction::SkyBodies),
         ClientCommand::SkyDemo(enabled) => {
-            return CommandResult::Action(FrontendAction::SkyDemo(enabled))
+            return CommandResult::Action(FrontendAction::Property(ClientPropertyCommand::Set(
+                ClientPropertyValue::SkyDemo(enabled),
+            )))
         }
-        ClientCommand::Fov(degrees) => return CommandResult::Action(FrontendAction::Fov(degrees)),
+        ClientCommand::Fov(Some(degrees)) => {
+            return CommandResult::Action(FrontendAction::Property(ClientPropertyCommand::Set(
+                ClientPropertyValue::CameraFov(degrees),
+            )))
+        }
+        ClientCommand::Fov(None) => {
+            return CommandResult::Action(FrontendAction::Property(ClientPropertyCommand::Get(
+                ClientPropertyKey::CameraFov,
+            )))
+        }
+        ClientCommand::Property(command) => {
+            if let ClientPropertyCommand::Set(value) = &command {
+                match value {
+                    ClientPropertyValue::WorldTimeMode(mode) => {
+                        return CommandResult::Action(FrontendAction::TimeMode(
+                            match mode {
+                                minimium_environment::time::ClockMode::RealTime => "real_time",
+                                minimium_environment::time::ClockMode::TimeScale => "time_scale",
+                            }
+                            .to_owned(),
+                        ))
+                    }
+                    ClientPropertyValue::WorldTimeScale(value) => {
+                        return CommandResult::Action(FrontendAction::TimeScale(value.clone()))
+                    }
+                    ClientPropertyValue::WorldTimeOfflinePolicy(policy) => {
+                        return CommandResult::Action(FrontendAction::TimeOfflinePolicy(
+                            match policy {
+                                minimium_environment::time::OfflinePolicy::Pause => "pause",
+                                minimium_environment::time::OfflinePolicy::Advance => "advance",
+                            }
+                            .to_owned(),
+                        ))
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(result) = movement::handle_property(command.clone(), context) {
+                return result;
+            }
+            return CommandResult::Action(FrontendAction::Property(command));
+        }
         ClientCommand::ShowCelestialNames(enabled) => {
-            return CommandResult::Action(FrontendAction::ShowCelestialNames(enabled))
+            return CommandResult::Action(FrontendAction::Property(ClientPropertyCommand::Set(
+                ClientPropertyValue::SkyNames(enabled),
+            )))
         }
         ClientCommand::SetTime { minute, local } => {
             return CommandResult::Action(FrontendAction::SetTime { minute, local })

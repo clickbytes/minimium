@@ -1,4 +1,6 @@
 use crate::{endpoint::ServerEndpoint, server_lock::ServerDataLock};
+use serde::Deserialize;
+use std::fmt;
 use std::{
     io::{self, Read, Write},
     net::{TcpStream, ToSocketAddrs},
@@ -13,6 +15,31 @@ pub const SHUTDOWN_OWNER_FILE: &str = "server.shutdown.owner";
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(3);
 const STOP_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
+
+/// Structured command error received from a server admin endpoint.
+#[derive(Debug)]
+pub struct AdminError {
+    pub code: String,
+    pub key: Option<String>,
+    pub reason: String,
+    pub usage: Option<String>,
+}
+
+impl fmt::Display for AdminError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}", self.code)?;
+        if let Some(key) = &self.key {
+            write!(formatter, " {key}")?;
+        }
+        write!(formatter, ": {}", self.reason)?;
+        if let Some(usage) = &self.usage {
+            write!(formatter, "\nusage: {usage}")?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for AdminError {}
 
 /// Sends one authenticated administrative command and returns the complete response.
 pub fn request(endpoint: &ServerEndpoint, command: &str) -> io::Result<String> {
@@ -104,10 +131,39 @@ pub fn request_until(
     if let Some(message) = response.strip_prefix("ERR ") {
         return Err(io::Error::other(message.to_owned()));
     }
+    if let Some(payload) = response.strip_prefix("ERRJSON ") {
+        let envelope: AdminErrorEnvelope = serde_json::from_str(payload).map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("server returned an invalid structured admin error: {error}"),
+            )
+        })?;
+        if envelope.schema_version != 1 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "server returned an unsupported admin error schema",
+            ));
+        }
+        return Err(io::Error::other(AdminError {
+            code: envelope.code,
+            key: envelope.key,
+            reason: envelope.reason,
+            usage: envelope.usage,
+        }));
+    }
     Err(io::Error::new(
         io::ErrorKind::InvalidData,
         "server returned an invalid response",
     ))
+}
+
+#[derive(Deserialize)]
+struct AdminErrorEnvelope {
+    schema_version: u32,
+    code: String,
+    key: Option<String>,
+    reason: String,
+    usage: Option<String>,
 }
 
 /// Confirms a successful shutdown record for this endpoint while holding the released data lock.

@@ -48,7 +48,7 @@ Current packages and responsibilities:
 | `minimium-sectors` | Bounded ticket, readiness and cache lifecycle. |
 | `minimium-assets` | Map, OBJ, sky catalog and world-definition parsing from supplied data. |
 | `minimium-asset-io` | Bounded authored map, mesh and world-definition file access adapter. |
-| `minimium-platform` | Durable file operations, identity, locks and local administration transport. |
+| `minimium-platform` | Durable file operations, identity, locks and bounded local administration transport with versioned structured error decoding. |
 | `minimium-storage` | Save snapshot formats, validation, player store and bounded persistence worker. |
 | `minimium-transport` | Bounded socket byte flushing without protocol or game policy. |
 | `minimium-commands` | Generic command registry; domains own command values and validation, while hosts own execution. |
@@ -57,7 +57,7 @@ Current packages and responsibilities:
 | `minimium-telemetry` | Metrics and process/allocation instrumentation. |
 | `minimium-server` | Server process entry point, allocator selection and argument forwarding. |
 | `minimium-server-runtime` | Server runtime, transport coordination, persistence lifecycle and authoritative simulation composition. |
-| `minimium-client-runtime` | UI-independent session, connection controller, connector, local-server guard, fixed-step movement prediction, snapshot reconciliation/interpolation, transition validation and environment synchronization state. |
+| `minimium-client-runtime` | UI-independent session, connection controller, connector, typed local-server launch settings and bounded offline server-config preview, local-server guard, fixed-step movement prediction, snapshot reconciliation/interpolation, transition validation and environment synchronization state. |
 | `minimium-renderer` | Presentation frame contract including CPU-only `RenderFrame`, camera matrix preparation, render/UI vertex layouts/overlay pipelines/geometry conversion, surface-frame acquire/present operations, ordered shadow/scene/atmosphere/cloud/UI/output pass encoding, globe overview texture/pipeline/LOD mesh, overview and world geometry GPU owners, UI/shadow GPU owners, planet visibility/LOD, visual quality and lighting, WGSL source composition, shared GPU frame bindings, stars, Milky Way and lunar pipelines; frame scheduling, visibility/caster selection and remaining GPU resources stay in the client. |
 | `minimium-client` | Client application shell, renderer integration, console and command presentation. |
 | `minimiumctl` | Administrative CLI. |

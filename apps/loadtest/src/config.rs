@@ -1,6 +1,101 @@
-use std::{env, path::PathBuf, thread};
+use minimium_commands::{
+    format_cli_help, parse_cli, CliOptionSpec, CliParseOutcome, CliValues, CommandError,
+    CommandErrorCode,
+};
+use std::{path::PathBuf, thread};
 
 use super::scenarios::Scenario;
+
+const OPTIONS: &[CliOptionSpec] = &[
+    CliOptionSpec {
+        name: "--address",
+        alias: None,
+        value_name: Some("HOST:PORT"),
+        description: "Server address; required for a run.",
+        repeatable: false,
+        help: false,
+    },
+    CliOptionSpec {
+        name: "--scenario",
+        alias: None,
+        value_name: Some("NAME"),
+        description: "heartbeat, movement, combat, chat, clustered, or dispersed.",
+        repeatable: false,
+        help: false,
+    },
+    CliOptionSpec {
+        name: "--clients",
+        alias: None,
+        value_name: Some("N"),
+        description: "Client count from 1 through 10000 (default 100).",
+        repeatable: false,
+        help: false,
+    },
+    CliOptionSpec {
+        name: "--seconds",
+        alias: None,
+        value_name: Some("N"),
+        description: "Run duration from 1 through 86400 seconds (default 10).",
+        repeatable: false,
+        help: false,
+    },
+    CliOptionSpec {
+        name: "--threads",
+        alias: None,
+        value_name: Some("1|2|auto"),
+        description: "Worker selection; auto uses at most two workers.",
+        repeatable: false,
+        help: false,
+    },
+    CliOptionSpec {
+        name: "--format",
+        alias: None,
+        value_name: Some("text|json"),
+        description: "Report format (default text).",
+        repeatable: false,
+        help: false,
+    },
+    CliOptionSpec {
+        name: "--scenario-id",
+        alias: None,
+        value_name: Some("TEXT"),
+        description: "Optional report scenario identifier (maximum 512 bytes).",
+        repeatable: false,
+        help: false,
+    },
+    CliOptionSpec {
+        name: "--cpu-label",
+        alias: None,
+        value_name: Some("TEXT"),
+        description: "Optional user supplied CPU label (maximum 512 bytes).",
+        repeatable: false,
+        help: false,
+    },
+    CliOptionSpec {
+        name: "--cpu-mhz",
+        alias: None,
+        value_name: Some("N"),
+        description: "Optional positive user supplied CPU clock in MHz.",
+        repeatable: false,
+        help: false,
+    },
+    CliOptionSpec {
+        name: "--server-data-dir",
+        alias: None,
+        value_name: Some("PATH"),
+        description: "Sample authenticated local server status around the run.",
+        repeatable: false,
+        help: false,
+    },
+    CliOptionSpec {
+        name: "--help",
+        alias: Some("-h"),
+        value_name: None,
+        description: "Show this help and exit without network or workers.",
+        repeatable: false,
+        help: true,
+    },
+];
 
 #[derive(Clone, Copy)]
 pub(super) enum WorkerSelection {
@@ -64,127 +159,105 @@ impl StartupConfig {
     }
 }
 
-pub(super) fn parse_env() -> Result<ParseOutcome, Box<dyn std::error::Error>> {
-    parse_args(env::args().skip(1))
+pub(super) fn help() -> String {
+    format_cli_help("minimium-loadtest --address HOST:PORT [options]", OPTIONS)
 }
 
-fn parse_args(
-    args: impl IntoIterator<Item = String>,
-) -> Result<ParseOutcome, Box<dyn std::error::Error>> {
-    let args: Vec<String> = args.into_iter().collect();
-    let mut address = None;
-    let mut clients = 100usize;
-    let mut seconds = 10u64;
-    let mut worker_selection = WorkerSelection::Auto;
-    let mut output_format = OutputFormat::Text;
-    let mut scenario = Scenario::Heartbeat;
-    let mut cpu_label = None;
-    let mut cpu_mhz = None;
-    let mut scenario_id = None;
-    let mut server_data_dir = None;
-    let mut seen = std::collections::HashSet::new();
-    let mut index = 0;
-    while index < args.len() {
-        if !seen.insert(args[index].clone()) {
-            return Err(format!("duplicate option: {}", args[index]).into());
+pub(super) fn parse_env() -> Result<ParseOutcome, CommandError> {
+    parse_args(std::env::args().skip(1))
+}
+
+fn parse_args(args: impl IntoIterator<Item = String>) -> Result<ParseOutcome, CommandError> {
+    let values = match parse_cli(args, "minimium-loadtest", OPTIONS)? {
+        CliParseOutcome::Help => return Ok(ParseOutcome::Help),
+        CliParseOutcome::Parsed(values) => values,
+    };
+    reject_positionals(&values)?;
+    let address = values.get("--address").ok_or_else(|| {
+        cli_error(
+            CommandErrorCode::MissingValue,
+            "--address",
+            "--address is required",
+        )
+    })?;
+    let clients = parse_number::<usize>(&values, "--clients", 100)?;
+    if !(1..=10_000).contains(&clients) {
+        return Err(cli_error(
+            CommandErrorCode::InvalidValue,
+            "--clients",
+            "clients must be between 1 and 10000",
+        ));
+    }
+    let seconds = parse_number::<u64>(&values, "--seconds", 10)?;
+    if !(1..=86_400).contains(&seconds) {
+        return Err(cli_error(
+            CommandErrorCode::InvalidValue,
+            "--seconds",
+            "seconds must be between 1 and 86400",
+        ));
+    }
+    let worker_selection = match values.get("--threads").unwrap_or("auto") {
+        "1" => WorkerSelection::One,
+        "2" => WorkerSelection::Two,
+        "auto" => WorkerSelection::Auto,
+        _ => {
+            return Err(cli_error(
+                CommandErrorCode::InvalidValue,
+                "--threads",
+                "threads must be 1, 2, or auto",
+            ));
         }
-        match args[index].as_str() {
-            "--cpu-label" | "--scenario-id" | "--server-data-dir" | "--cpu-mhz" => {
-                let option = &args[index];
-                index += 1;
-                let value = args
-                    .get(index)
-                    .filter(|value| !value.starts_with("--"))
-                    .ok_or_else(|| format!("{option} requires a value"))?;
-                if value.len() > 512 {
-                    return Err(format!("{option} exceeds 512 bytes").into());
-                }
-                match option.as_str() {
-                    "--cpu-label" => cpu_label = Some(value.clone()),
-                    "--scenario-id" => scenario_id = Some(value.clone()),
-                    "--server-data-dir" => server_data_dir = Some(PathBuf::from(value)),
-                    _ => {
-                        let mhz: u32 = value.parse()?;
-                        if mhz == 0 {
-                            return Err("--cpu-mhz must be positive".into());
-                        }
-                        cpu_mhz = Some(mhz);
-                    }
-                }
-            }
-            "--address" => {
-                index += 1;
-                address = Some(
-                    args.get(index)
-                        .ok_or("--address requires HOST:PORT")?
-                        .clone(),
-                );
-            }
-            "--clients" => {
-                index += 1;
-                clients = args
-                    .get(index)
-                    .ok_or("--clients requires a number")?
-                    .parse()?;
-            }
-            "--seconds" => {
-                index += 1;
-                seconds = args
-                    .get(index)
-                    .ok_or("--seconds requires a number")?
-                    .parse()?;
-            }
-            "--threads" => {
-                index += 1;
-                worker_selection = match args
-                    .get(index)
-                    .ok_or("--threads requires 1, 2, or auto")?
-                    .as_str()
-                {
-                    "1" => WorkerSelection::One,
-                    "2" => WorkerSelection::Two,
-                    "auto" => WorkerSelection::Auto,
-                    _ => return Err("threads must be 1, 2, or auto".into()),
-                };
-            }
-            "--format" => {
-                index += 1;
-                output_format = match args
-                    .get(index)
-                    .ok_or("--format requires text or json")?
-                    .as_str()
-                {
-                    "text" => OutputFormat::Text,
-                    "json" => OutputFormat::Json,
-                    _ => return Err("format must be text or json".into()),
-                };
-            }
-            "--scenario" => {
-                index += 1;
-                scenario = match args.get(index).ok_or("--scenario requires heartbeat, movement, combat, chat, clustered, or dispersed")?.as_str() {
-                    "heartbeat" => Scenario::Heartbeat,
-                    "movement" => Scenario::Movement,
-                    "combat" => Scenario::Combat,
-                    "chat" => Scenario::Chat,
-                    "clustered" => Scenario::Clustered,
-                    "dispersed" => Scenario::Dispersed,
-                    _ => return Err("scenario must be heartbeat, movement, combat, chat, clustered, or dispersed".into()),
-                };
-            }
-            "--help" | "-h" => return Ok(ParseOutcome::Help),
-            other => return Err(format!("unknown option: {other}").into()),
+    };
+    let output_format = match values.get("--format").unwrap_or("text") {
+        "text" => OutputFormat::Text,
+        "json" => OutputFormat::Json,
+        _ => {
+            return Err(cli_error(
+                CommandErrorCode::InvalidValue,
+                "--format",
+                "format must be text or json",
+            ));
         }
-        index += 1;
+    };
+    let scenario = match values.get("--scenario").unwrap_or("heartbeat") {
+        "heartbeat" => Scenario::Heartbeat,
+        "movement" => Scenario::Movement,
+        "combat" => Scenario::Combat,
+        "chat" => Scenario::Chat,
+        "clustered" => Scenario::Clustered,
+        "dispersed" => Scenario::Dispersed,
+        _ => {
+            return Err(cli_error(
+                CommandErrorCode::InvalidValue,
+                "--scenario",
+                "scenario must be heartbeat, movement, combat, chat, clustered, or dispersed",
+            ));
+        }
+    };
+    let scenario_id = text_value(&values, "--scenario-id")?;
+    let cpu_label = text_value(&values, "--cpu-label")?;
+    let cpu_mhz = values
+        .get("--cpu-mhz")
+        .map(|value| {
+            value.parse::<u32>().map_err(|_| {
+                cli_error(
+                    CommandErrorCode::InvalidValue,
+                    "--cpu-mhz",
+                    "cpu-mhz must be a positive integer",
+                )
+            })
+        })
+        .transpose()?;
+    if cpu_mhz == Some(0) {
+        return Err(cli_error(
+            CommandErrorCode::InvalidValue,
+            "--cpu-mhz",
+            "cpu-mhz must be positive",
+        ));
     }
-    let address = address.ok_or("--address is required")?;
-    if clients == 0 || clients > 10_000 {
-        return Err("clients must be between 1 and 10000".into());
-    }
-    if !(1..=86400).contains(&seconds) {
-        return Err("seconds must be between 1 and 86400".into());
-    }
+    let server_data_dir = values.get("--server-data-dir").map(PathBuf::from);
     Ok(ParseOutcome::Config(StartupConfig {
-        address,
+        address: address.to_owned(),
         clients,
         seconds,
         worker_selection,
@@ -197,4 +270,52 @@ fn parse_args(
     }))
 }
 
-pub(super) const HELP: &str = "minimium-loadtest --address HOST:PORT [--scenario heartbeat|movement|combat|chat|clustered|dispersed] [--clients N] [--seconds N] [--threads 1|2|auto] [--format text|json] [--scenario-id TEXT] [--cpu-label TEXT] [--cpu-mhz N] [--server-data-dir PATH]";
+fn parse_number<T>(values: &CliValues, name: &str, default: T) -> Result<T, CommandError>
+where
+    T: std::str::FromStr,
+{
+    values
+        .get(name)
+        .map(|value| {
+            value.parse().map_err(|_| {
+                cli_error(
+                    CommandErrorCode::InvalidValue,
+                    name,
+                    format!("{name} must be a number"),
+                )
+            })
+        })
+        .unwrap_or(Ok(default))
+}
+
+fn text_value(values: &CliValues, name: &str) -> Result<Option<String>, CommandError> {
+    let value = values.get(name).map(str::to_owned);
+    if value.as_ref().is_some_and(|value| value.len() > 512) {
+        return Err(cli_error(
+            CommandErrorCode::InvalidValue,
+            name,
+            format!("{name} exceeds 512 bytes"),
+        ));
+    }
+    Ok(value)
+}
+
+fn reject_positionals(values: &CliValues) -> Result<(), CommandError> {
+    if values.positionals().is_empty() {
+        Ok(())
+    } else {
+        Err(cli_error(
+            CommandErrorCode::InvalidArguments,
+            "--",
+            "unexpected positional arguments",
+        ))
+    }
+}
+
+fn cli_error(
+    code: CommandErrorCode,
+    subject: impl Into<String>,
+    reason: impl Into<String>,
+) -> CommandError {
+    CommandError::new(code, Some(subject.into()), reason, Some(help()))
+}

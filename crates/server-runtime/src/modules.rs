@@ -1,8 +1,9 @@
 //! Static, composable registration of engine capabilities.
 //! Registration is explicit at startup; neither the wire protocol nor a Rust ABI
 //! is extended implicitly by installing a module.
+use minimium_commands::{lex_command_line, CommandArgumentSpec};
 use minimium_world::entity::ComponentDescriptor;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ModuleDescriptor {
@@ -43,6 +44,7 @@ pub struct CommandDefinition<H> {
     pub name: &'static str,
     pub aliases: &'static [&'static str],
     pub usage: &'static str,
+    pub arguments: &'static [CommandArgumentSpec],
     pub scope: CommandScope,
     pub handler: H,
 }
@@ -70,6 +72,7 @@ pub struct RegisteredComponent {
 
 pub struct ModuleRegistry<H, S> {
     modules: BTreeMap<&'static str, ModuleDescriptor>,
+    reserved_commands: BTreeSet<&'static str>,
     commands: Vec<RegisteredCommand<H>>,
     systems: Vec<RegisteredSystem<S>>,
     components: Vec<RegisteredComponent>,
@@ -79,6 +82,7 @@ impl<H, S> Default for ModuleRegistry<H, S> {
     fn default() -> Self {
         Self {
             modules: BTreeMap::new(),
+            reserved_commands: BTreeSet::new(),
             commands: Vec::new(),
             systems: Vec::new(),
             components: Vec::new(),
@@ -94,6 +98,7 @@ pub trait EngineModule<H, S> {
 pub struct ModuleRegistrar<'a, H, S> {
     module: &'static str,
     existing_commands: &'a [RegisteredCommand<H>],
+    reserved_commands: &'a BTreeSet<&'static str>,
     existing_systems: &'a [RegisteredSystem<S>],
     existing_components: &'a [RegisteredComponent],
     commands: Vec<RegisteredCommand<H>>,
@@ -128,7 +133,8 @@ impl<H, S> ModuleRegistrar<'_, H, S> {
                     std::iter::once(entry.definition.name)
                         .chain(entry.definition.aliases.iter().copied())
                         .any(|registered| registered == name)
-                });
+                })
+                || self.reserved_commands.contains(name);
             if clash || !seen.insert(name) {
                 return Err(ModuleError::DuplicateCommand);
             }
@@ -177,6 +183,29 @@ impl<H, S> ModuleRegistrar<'_, H, S> {
 }
 
 impl<H, S> ModuleRegistry<H, S> {
+    /// Reserves names owned by host built-ins before module installation begins.
+    pub fn reserve_command_names(
+        &mut self,
+        names: &'static [&'static str],
+    ) -> Result<(), ModuleError> {
+        let mut staged = BTreeSet::new();
+        for name in names {
+            if !valid_path(name)
+                || self.reserved_commands.contains(name)
+                || self.commands.iter().any(|entry| {
+                    std::iter::once(entry.definition.name)
+                        .chain(entry.definition.aliases.iter().copied())
+                        .any(|registered| registered == *name)
+                })
+                || !staged.insert(*name)
+            {
+                return Err(ModuleError::DuplicateCommand);
+            }
+        }
+        self.reserved_commands.extend(staged);
+        Ok(())
+    }
+
     /// Installation is transactional: errors leave the live registry unchanged.
     /// Dependencies must already have been installed, establishing a DAG order.
     pub fn install<M: EngineModule<H, S>>(&mut self, module: &M) -> Result<(), ModuleError> {
@@ -203,6 +232,7 @@ impl<H, S> ModuleRegistry<H, S> {
         let mut staging = ModuleRegistrar {
             module: descriptor.id,
             existing_commands: &self.commands,
+            reserved_commands: &self.reserved_commands,
             existing_systems: &self.systems,
             existing_components: &self.components,
             components: Vec::new(),
@@ -242,8 +272,9 @@ impl<H, S> ModuleRegistry<H, S> {
 
     /// Longest path wins: `world inspect` takes priority over `world`.
     /// Arguments are never evaluated as code and remain caller-owned slices.
-    pub fn resolve<'a>(&self, line: &'a str) -> Option<(&RegisteredCommand<H>, Vec<&'a str>)> {
-        let parts: Vec<&str> = line.split_whitespace().collect();
+    pub fn resolve(&self, line: &str) -> Option<(&RegisteredCommand<H>, Vec<String>)> {
+        let parts = lex_command_line(line).ok()?;
+        let words = parts.iter().map(String::as_str).collect::<Vec<_>>();
         self.commands
             .iter()
             .filter_map(|entry| {
@@ -251,7 +282,7 @@ impl<H, S> ModuleRegistry<H, S> {
                     .chain(entry.definition.aliases.iter().copied())
                     .filter_map(|name| {
                         let command_parts: Vec<&str> = name.split_whitespace().collect();
-                        (parts.starts_with(&command_parts)).then_some((entry, command_parts.len()))
+                        (words.starts_with(&command_parts)).then_some((entry, command_parts.len()))
                     })
                     .max_by_key(|(_, len)| *len)
             })
@@ -284,6 +315,7 @@ mod tests {
                 name: self.command,
                 aliases: &[],
                 usage: self.command,
+                arguments: &[],
                 scope: CommandScope::ServerAdmin,
                 handler: (),
             })

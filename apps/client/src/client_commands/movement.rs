@@ -1,22 +1,39 @@
-use super::{ClientCommand, CommandRegistry, CommandSpec, ParseError};
+use super::{
+    ArgumentSpec as Arg, ArgumentType as ArgType, ClientCommand, ClientPropertyCommand,
+    ClientPropertyKey as Key, ClientPropertyValue as Value, CommandContext, CommandRegistry,
+    CommandResult, FrontendAction, ParseError,
+};
 
-const COMMANDS: &[CommandSpec] = &[
-    CommandSpec { name: "set_altitude", alias: None,
-        usage: "set_altitude <0..10000 km> - height above local ground; requires fly on", parser: parse },
-    CommandSpec { name: "movement fly", alias: Some("fly"),
-        usage: "movement fly [on|off] - noclip; Space up, Ctrl down; inherits walk speed and accel", parser: parse },
-    CommandSpec { name: "movement speed", alias: None,
-        usage: "movement speed [0..10000] - maximum walk/fly speed in m/s; no argument shows current value", parser: parse },
-    CommandSpec { name: "movement accel", alias: None,
-        usage: "movement accel [0..10000] - walk/fly acceleration and braking in m/s²; no argument shows current value", parser: parse },
+const COMMANDS: &[super::CommandSpec] = &[
+    super::CommandSpec {
+        name: "set_altitude",
+        alias: None,
+        usage: "set_altitude <0..10000 km> - height above local ground; requires fly on",
+        arguments: &[Arg::new("altitude", ArgType::Decimal, false, false, None, Some("0..=10000"), Some("km"), "height above local ground")],
+        parser: parse,
+    },
+    super::CommandSpec {
+        name: "movement fly",
+        alias: Some("fly"),
+        usage: "movement fly [on|off] - noclip; Space up, Ctrl down; inherits walk speed and accel",
+        arguments: &[Arg::new("enabled", ArgType::Boolean, true, false, Some(&["on", "off"]), None, None, "toggle local flight")],
+        parser: parse,
+    },
+    super::CommandSpec {
+        name: "movement speed",
+        alias: None,
+        usage: "movement speed [0..10000] - maximum walk/fly speed in m/s; no argument shows current value",
+        arguments: &[Arg::new("speed", ArgType::Decimal, true, false, None, Some("0..=10000"), Some("m/s"), "maximum walk and flight speed")],
+        parser: parse,
+    },
+    super::CommandSpec {
+        name: "movement accel",
+        alias: None,
+        usage: "movement accel [0..10000] - walk/fly acceleration and braking in m/s²; no argument shows current value",
+        arguments: &[Arg::new("acceleration", ArgType::Decimal, true, false, None, Some("0..=10000"), Some("m/s²"), "walk and flight acceleration and braking")],
+        parser: parse,
+    },
 ];
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum Setting {
-    Fly(Option<bool>),
-    Speed(Option<f32>),
-    Accel(Option<f32>),
-}
 
 pub(super) fn register(registry: &mut CommandRegistry) {
     registry.register(COMMANDS);
@@ -35,63 +52,89 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
             _ => Err(ParseError::UnknownCommand),
         };
     }
-    let setting = match words[0] {
-        "movement fly" => Setting::Fly(match args.as_slice() {
-            [] => None,
-            ["on"] => Some(true),
-            ["off"] => Some(false),
-            _ => return Err(ParseError::UnknownCommand),
-        }),
-        command => {
-            let value = match args.as_slice() {
-                [] => None,
-                [value] => Some(
-                    value
-                        .parse::<f32>()
-                        .ok()
-                        .filter(|v| {
-                            v.is_finite() && (0.0..=minimium_simulation::MOVEMENT_LIMIT).contains(v)
-                        })
-                        .ok_or(ParseError::UnknownCommand)?,
-                ),
-                _ => return Err(ParseError::UnknownCommand),
-            };
-            if command == "movement speed" {
-                Setting::Speed(value)
-            } else {
-                Setting::Accel(value)
-            }
-        }
+    if words[0] == "movement fly" {
+        return match args.as_slice() {
+            [] => Ok(ClientCommand::Property(ClientPropertyCommand::Get(
+                Key::MovementFly,
+            ))),
+            ["on"] => Ok(ClientCommand::Property(ClientPropertyCommand::Set(
+                Value::MovementFly(true),
+            ))),
+            ["off"] => Ok(ClientCommand::Property(ClientPropertyCommand::Set(
+                Value::MovementFly(false),
+            ))),
+            _ => Err(ParseError::UnknownCommand),
+        };
+    }
+    let key = if words[0] == "movement speed" {
+        Key::MovementSpeed
+    } else {
+        Key::MovementAccel
     };
-    Ok(ClientCommand::Movement(setting))
+    match args.as_slice() {
+        [] => Ok(ClientCommand::Property(ClientPropertyCommand::Get(key))),
+        [value] => super::parse_setting_value(key.key(), value)
+            .map(|value| ClientCommand::Property(ClientPropertyCommand::Set(value)))
+            .map_err(ParseError::Structured),
+        _ => Err(ParseError::UnknownCommand),
+    }
 }
 
-pub(super) fn execute(
-    setting: Setting,
-    context: &mut super::CommandContext<'_>,
-) -> super::CommandResult {
+pub(super) fn handle_property(
+    command: ClientPropertyCommand,
+    context: &mut CommandContext<'_>,
+) -> Option<CommandResult> {
+    let setting = match command {
+        ClientPropertyCommand::Get(Key::MovementFly) => {
+            return Some(report(Key::MovementFly, context))
+        }
+        ClientPropertyCommand::Get(Key::MovementSpeed) => {
+            return Some(report(Key::MovementSpeed, context))
+        }
+        ClientPropertyCommand::Get(Key::MovementAccel) => {
+            return Some(report(Key::MovementAccel, context))
+        }
+        ClientPropertyCommand::Set(Value::MovementFly(value)) => Setting::Fly(Some(value)),
+        ClientPropertyCommand::Set(Value::MovementSpeed(value)) => Setting::Speed(Some(value)),
+        ClientPropertyCommand::Set(Value::MovementAccel(value)) => Setting::Accel(Some(value)),
+        ClientPropertyCommand::Reset(Key::MovementFly) => Setting::Fly(Some(false)),
+        ClientPropertyCommand::Reset(Key::MovementSpeed) => Setting::Speed(Some(5.0)),
+        ClientPropertyCommand::Reset(Key::MovementAccel) => Setting::Accel(Some(30.0)),
+        _ => return None,
+    };
+    Some(apply(setting, context))
+}
+
+#[derive(Clone, Copy)]
+enum Setting {
+    Fly(Option<bool>),
+    Speed(Option<f32>),
+    Accel(Option<f32>),
+}
+
+fn apply(setting: Setting, context: &mut CommandContext<'_>) -> CommandResult {
     let mut settings = context.connection.movement;
     let change = match setting {
         Setting::Fly(value) => {
-            if let Some(v) = value {
-                settings.fly = v;
+            if let Some(value) = value {
+                settings.fly = value;
             }
             value.is_some()
         }
         Setting::Speed(value) => {
-            if let Some(v) = value {
-                settings.speed = v;
+            if let Some(value) = value {
+                settings.speed = value;
             }
             value.is_some()
         }
         Setting::Accel(value) => {
-            if let Some(v) = value {
-                settings.accel = v;
+            if let Some(value) = value {
+                settings.accel = value;
             }
             value.is_some()
         }
     };
-    if change {
+    let queued = if change {
         let input = minimium_simulation::CharacterInput {
             movement: settings,
             ..Default::default()
@@ -100,11 +143,36 @@ pub(super) fn execute(
             .connection
             .queue(&minimium_protocol::ClientMessage::Motion(input))
         {
-            return super::CommandResult::QueueError(error);
+            return CommandResult::QueueError(error);
         }
         context.connection.movement = settings;
-    }
-    super::CommandResult::Action(super::FrontendAction::Print(format!(
-        "movement: fly={} (noclip), speed={} m/s, accel={} m/s² (shared by walk and fly; range 0..10000)",
-        settings.fly, settings.speed, settings.accel)))
+        true
+    } else {
+        false
+    };
+    CommandResult::Action(FrontendAction::Print(format_movement(settings, queued)))
+}
+
+fn report(key: Key, context: &CommandContext<'_>) -> CommandResult {
+    let settings = context.connection.movement;
+    let value = match key {
+        Key::MovementFly => settings.fly.to_string(),
+        Key::MovementSpeed => settings.speed.to_string(),
+        Key::MovementAccel => settings.accel.to_string(),
+        _ => unreachable!("movement property key was matched"),
+    };
+    CommandResult::Action(FrontendAction::Print(format!(
+        "{} requested={} effective={} source=local_input queue=not_submitted server_confirmation=unavailable",
+        key.key(), value, value
+    )))
+}
+
+fn format_movement(settings: minimium_simulation::MovementSettings, queued: bool) -> String {
+    format!(
+        "movement: fly={} (noclip), speed={} m/s, accel={} m/s² source=local_input queue={} server_confirmation=unavailable (shared by walk and fly; range 0..10000)",
+        settings.fly,
+        settings.speed,
+        settings.accel,
+        if queued { "accepted" } else { "unchanged" }
+    )
 }

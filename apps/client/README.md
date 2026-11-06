@@ -32,6 +32,11 @@ Preserve desktop/text command behavior and keep protocol/session handling out of
 
 ## Commands
 
+The shared command registry owns argument metadata (type, optional/rest behavior,
+choices, constraints, unit and description). Console help and enum completion
+derive their output from those descriptors; command execution still delegates
+validation and state changes to the owning domain handler.
+
 Terrain status reports shared overview/FPP preparation and geometry residency.
 Terrain debug habitat/source inspects landform influence and coverage provenance.
 Weather status reports worker history readiness and material memory.
@@ -67,6 +72,12 @@ executable with `materials/sample-v1` using `tools/package_client.py`.
 without lighting, and `coverage` shows a fixed six-role palette without textures.
 
 Client command groups declare specs in `src/client_commands/`; matching and alias resolution use `minimium-commands::CommandRegistry`. Client action execution remains here.
+
+The client property catalog is registered beside those command groups. It owns live client presentation preferences, local movement input, and the replicated world-time view. Legacy camera, movement, and time commands share property validation and owner handlers. The desktop renderer reports requested/effective values and GPU fallback; the text frontend reports the same requested value and source with effective state marked unavailable when it has no renderer. Help, list, and completion read these registered descriptors, including ranges and enum values.
+
+Client preferences use schema v1 RON and resolve default, file, mapped environment, then CLI input. `config validate` and `config show` run before renderer startup. `config save PATH` writes only persistent presentation settings and uses an atomic replacement. Session values reset to the resolved startup layer and are never written to the source file automatically.
+
+Local server startup passes a typed launch configuration to client runtime. The runtime asks the sibling server executable for offline `config show --sources --format json`, validates local bind/headless constraints, and uses the same captured environment and argv settings for launch. Explicit startup settings prevent attach to an existing server; `--server-data-dir` remains a target selector.
 
 ## Change guide
 

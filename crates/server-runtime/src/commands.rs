@@ -12,6 +12,9 @@ fn extensions() -> &'static ModuleRegistry<ModuleHandler, SystemFn> {
     REGISTRY.get_or_init(|| {
         let mut registry = ModuleRegistry::default();
         registry
+            .reserve_command_names(crate::server_command::SERVER_COMMAND_NAMES)
+            .expect("built-in and module commands share one namespace");
+        registry
             .install(&world::WorldCommands)
             .expect("built-in world commands register without collisions");
         registry
@@ -29,7 +32,8 @@ pub(crate) fn build_schedule() -> ServerSchedule {
 fn execute_registered(line: &str, context: &mut CommandContext<'_>) -> CommandReply {
     match extensions().resolve(line) {
         Some((command, args)) if command.definition.scope == CommandScope::ServerAdmin => {
-            (command.definition.handler)(context, &args)
+            let arguments = args.iter().map(String::as_str).collect::<Vec<_>>();
+            (command.definition.handler)(context, &arguments)
         }
         Some(_) => CommandReply {
             success: false,
@@ -89,7 +93,7 @@ pub fn execute(command: &ServerCommand, mut context: CommandContext<'_>) -> Comm
         ServerCommand::Help => CommandReply {
             success: true,
             text: format!("{} | {}", server_help(), extensions().commands().iter()
-                .map(|command| command.definition.usage).collect::<Vec<_>>().join(" | ")),
+                .map(|command| minimium_commands::format_command_help(command.definition.usage, command.definition.arguments)).collect::<Vec<_>>().join(" | ")),
             stop: false,
         },
         ServerCommand::Status => CommandReply {
@@ -169,6 +173,11 @@ pub fn execute(command: &ServerCommand, mut context: CommandContext<'_>) -> Comm
             stop: true,
         },
         ServerCommand::Time(command) => time::execute(*command, environment_clock, monotonic_ms),
+        ServerCommand::Property(_) => CommandReply {
+            success: false,
+            text: "setting command must execute on the server owner lane".into(),
+            stop: false,
+        },
         ServerCommand::Registered(_) => unreachable!("registered commands dispatched above"),
     }
 }

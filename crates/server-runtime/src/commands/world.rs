@@ -4,6 +4,18 @@ use crate::modules::{
     CommandDefinition, CommandScope, EngineModule, ModuleDescriptor, ModuleError, ModuleRegistrar,
     Stage, SystemDefinition,
 };
+
+const WORLD_INSPECT_ARGUMENTS: &[minimium_commands::CommandArgumentSpec] =
+    &[minimium_commands::CommandArgumentSpec::new(
+        "id",
+        minimium_commands::CommandArgumentType::Integer,
+        false,
+        false,
+        None,
+        Some("positive decimal integer"),
+        None,
+        "world instance identifier",
+    )];
 use crate::runtime::schedule::{ServerSystemContext, SystemFn};
 
 pub(super) struct WorldCommands;
@@ -25,6 +37,7 @@ impl EngineModule<ModuleHandler, SystemFn> for WorldCommands {
             name: "world list",
             aliases: &[],
             usage: "world list",
+            arguments: &[],
             scope: CommandScope::ServerAdmin,
             handler: world_list,
         })?;
@@ -32,6 +45,7 @@ impl EngineModule<ModuleHandler, SystemFn> for WorldCommands {
             name: "world inspect",
             aliases: &[],
             usage: "world inspect ID",
+            arguments: WORLD_INSPECT_ARGUMENTS,
             scope: CommandScope::ServerAdmin,
             handler: world_inspect,
         })?;
@@ -39,6 +53,7 @@ impl EngineModule<ModuleHandler, SystemFn> for WorldCommands {
             name: "entity list",
             aliases: &[],
             usage: "entity list",
+            arguments: &[],
             scope: CommandScope::ServerAdmin,
             handler: entity_list,
         })?;

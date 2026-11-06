@@ -1,12 +1,15 @@
 use super::editor::Editor;
-use crate::client_commands::{command_specs, CommandSpec};
+use crate::client_commands::{
+    command_specs, format_property_help, property_spec, property_specs, CommandSpec,
+};
+use minimium_commands::PropertyType;
 
 pub(super) struct Suggestions {
-    choices: Vec<&'static str>,
+    choices: Vec<String>,
     index: Option<usize>,
     suffix: String,
     start: usize,
-    usage: Option<&'static str>,
+    usage: Option<String>,
 }
 
 impl Suggestions {
@@ -32,30 +35,34 @@ impl Suggestions {
         if query.is_empty() {
             return;
         }
+        if property_suggestions(self, query) {
+            return;
+        }
         let specs = command_specs();
+        if command_argument_suggestions(self, query, specs) {
+            return;
+        }
         self.usage = specs
             .iter()
             .find(|spec| matches_arguments(query, spec))
-            .map(|spec| spec.usage);
+            .map(|spec| spec.format_help());
         if self.usage.is_some() {
             return;
         }
         for spec in specs {
             if spec.name.starts_with(query) {
-                self.choices.push(spec.name);
+                self.choices.push(spec.name.to_owned());
             }
-            if let Some(alias) = spec.alias {
-                if alias.starts_with(query) {
-                    self.choices.push(alias);
-                }
+            if let Some(alias) = spec.alias.filter(|alias| alias.starts_with(query)) {
+                self.choices.push(alias.to_owned());
             }
         }
     }
 
-    pub fn lines(&self) -> impl Iterator<Item = &'static str> + '_ {
-        self.usage
-            .into_iter()
-            .chain(self.choices.iter().copied().take(5))
+    pub fn lines(&self) -> Vec<String> {
+        let mut lines = self.usage.iter().cloned().collect::<Vec<_>>();
+        lines.extend(self.choices.iter().take(5).cloned());
+        lines
     }
 
     pub fn cycle(&mut self, editor: &mut Editor, reverse: bool) {
@@ -74,13 +81,13 @@ impl Suggestions {
             None if reverse => count - 1,
             None => 0,
         };
-        let replacement = self.choices[next];
+        let replacement = self.choices[next].clone();
         let old_end = editor.text.len() - self.suffix.len();
         if editor.text.len() - (old_end - self.start) + replacement.len() > super::theme::MAX_INPUT
         {
             return;
         }
-        editor.replace_range(self.start..old_end, replacement);
+        editor.replace_range(self.start..old_end, &replacement);
         self.index = Some(next);
     }
 
@@ -88,6 +95,77 @@ impl Suggestions {
         self.index = None;
         self.refresh(editor);
     }
+}
+
+fn property_suggestions(suggestions: &mut Suggestions, query: &str) -> bool {
+    let words = query.split_whitespace().collect::<Vec<_>>();
+    let Some(verb) = words.first().copied() else {
+        return false;
+    };
+    if !matches!(verb, "get" | "set" | "reset" | "list" | "help") {
+        return false;
+    }
+    let trailing_space = query.chars().last().is_some_and(char::is_whitespace);
+    let key_position = matches!(verb, "get" | "set" | "reset" | "help");
+    if key_position && words.len() <= 2 && !(words.len() == 2 && trailing_space) {
+        let prefix = words.get(1).copied().unwrap_or_default();
+        suggestions.choices.extend(
+            property_specs()
+                .filter(|spec| spec.key.starts_with(prefix) && (verb != "reset" || spec.resettable))
+                .map(|spec| spec.key.to_owned()),
+        );
+        if verb == "help" {
+            suggestions.choices.extend(
+                command_specs()
+                    .iter()
+                    .filter(|spec| spec.name.starts_with(prefix))
+                    .map(|spec| spec.name.to_owned()),
+            );
+        }
+        if let Some(spec) = property_spec(prefix) {
+            suggestions.usage = Some(format_property_help(spec));
+        }
+        return true;
+    }
+    if verb == "list" && words.len() <= 2 {
+        let prefix = words.get(1).copied().unwrap_or_default();
+        suggestions.choices.extend(
+            property_specs()
+                .filter(|spec| spec.key.starts_with(prefix))
+                .map(|spec| spec.key.to_owned()),
+        );
+        return true;
+    }
+    if verb == "set" && words.len() >= 2 {
+        let Some(spec) = property_spec(words[1]) else {
+            return true;
+        };
+        if words.len() >= 3 || trailing_space {
+            let prefix = if trailing_space {
+                ""
+            } else {
+                words.last().copied().unwrap_or_default()
+            };
+            if matches!(
+                spec.value_type,
+                PropertyType::Boolean | PropertyType::Enumeration
+            ) {
+                if let Some(constraints) = spec.constraints {
+                    suggestions.choices.extend(
+                        constraints
+                            .split('|')
+                            .filter(|value| value.starts_with(prefix))
+                            .map(str::to_owned),
+                    );
+                }
+            }
+            if suggestions.choices.is_empty() {
+                suggestions.usage = Some(format_property_help(spec));
+            }
+        }
+        return true;
+    }
+    true
 }
 
 fn matches_arguments(input: &str, spec: &CommandSpec) -> bool {
@@ -99,4 +177,52 @@ fn matches_arguments(input: &str, spec: &CommandSpec) -> bool {
                 .strip_prefix(name)
                 .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
         })
+}
+
+fn command_argument_suggestions(
+    suggestions: &mut Suggestions,
+    query: &str,
+    specs: &[CommandSpec],
+) -> bool {
+    let Ok(words) = minimium_commands::lex_command_line(query) else {
+        return false;
+    };
+    let Some(spec) = specs
+        .iter()
+        .filter(|spec| matches_arguments(query, spec))
+        .max_by_key(|spec| spec.name.len())
+    else {
+        return false;
+    };
+    let command = [Some(spec.name), spec.alias]
+        .into_iter()
+        .flatten()
+        .find(|name| query.starts_with(name))
+        .unwrap_or(spec.name);
+    let entered_arguments = words
+        .len()
+        .saturating_sub(command.split_whitespace().count());
+    let trailing_space = query.chars().last().is_some_and(char::is_whitespace);
+    let argument_index = if trailing_space {
+        entered_arguments
+    } else {
+        entered_arguments.saturating_sub(1)
+    };
+    let current = if trailing_space {
+        ""
+    } else {
+        words.last().map(String::as_str).unwrap_or("")
+    };
+    if let Some(argument) = spec.arguments.get(argument_index) {
+        if let Some(choices) = argument.choices {
+            suggestions.choices.extend(
+                choices
+                    .iter()
+                    .filter(|choice| choice.starts_with(current))
+                    .map(|choice| (*choice).to_owned()),
+            );
+        }
+    }
+    suggestions.usage = Some(spec.format_help());
+    true
 }

@@ -53,10 +53,13 @@ Protocol v16 adds contextual `SetAltitude` wrapping and `AltitudeResult`.
 The application owns parsing and presentation; the server computes and validates
 the destination. No GPU dependency is introduced into the runtime.
 
-Protocol v17 carries peak geometry settings and climate-relief influence.
-Local bootstrap forwards MINIMIUM_LOCAL_CLIMATE_RELIEF_INFLUENCE to the server's
-validated startup option. An explicit climate override refuses attachment to an
-already running server, including startup races, rather than silently ignoring it.
+Protocol v17 carries peak geometry settings and climate-relief influence. Local
+server launch settings are supplied through `LocalServerLaunchConfig`; this
+runtime does not parse client environment variables or shell command strings.
+The launcher obtains a bounded, versioned offline JSON resolution from the
+sibling server, validates local bind/headless constraints, and passes paths and
+settings as argv values. Explicit non-default startup settings refuse attachment
+to an existing server; `--server-data-dir` remains the discovery target selector.
 No graphics dependency or automatic server shutdown is added.
 
 Local bootstrap continuously drains child stderr on one reader thread while
@@ -66,8 +69,9 @@ The reader is installed after the process guard, so capture failures still reap
 only the owned child. Failed-start diagnostics wait for EOF only after child exit.
 This changes error reporting, not world loading or saved data.
 
-Optional local startup environment values are normalized at the bootstrap
-boundary: empty seed, planet-config and climate-relief values mean omitted.
-Attachment checks and child argument construction use the same rule. Explicit
-zero remains a climate override; invalid nonempty values are rejected by the
-server. This prevents omitted launcher options becoming empty CLI arguments.
+The application captures the mapped `MINIMIUM_LOCAL_*` aliases and supported
+`MINIMIUM_SERVER_*` values once during option parsing. Empty aliases mean
+omitted, explicit zero remains a climate override, and preview and child launch
+receive the same captured environment. The runtime clears inherited setting
+variables before applying that snapshot so a later environment read cannot
+change precedence between validation and launch.

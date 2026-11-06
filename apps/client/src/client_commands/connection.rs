@@ -1,4 +1,7 @@
-use super::{ClientCommand, CommandRegistry, CommandSpec, ParseError};
+use super::{
+    ArgumentSpec as Arg, ArgumentType as ArgType, ClientCommand, CommandRegistry, CommandSpec,
+    ParseError,
+};
 use crate::options::ThreadLane;
 
 const COMMANDS: &[CommandSpec] = &[
@@ -6,24 +9,46 @@ const COMMANDS: &[CommandSpec] = &[
         name: "network host local",
         alias: Some("host local"),
         usage: "network host local [--threads 1|2|auto]",
+        arguments: &[Arg::new(
+            "options",
+            ArgType::Text,
+            true,
+            true,
+            None,
+            None,
+            None,
+            "optional local server startup options",
+        )],
         parser: parse,
     },
     CommandSpec {
         name: "network connect",
         alias: Some("connect"),
         usage: "network connect HOST:PORT",
+        arguments: &[Arg::new(
+            "endpoint",
+            ArgType::Text,
+            false,
+            false,
+            None,
+            Some("HOST:PORT"),
+            None,
+            "server address",
+        )],
         parser: parse,
     },
     CommandSpec {
         name: "network disconnect",
         alias: Some("disconnect"),
         usage: "network disconnect",
+        arguments: &[],
         parser: parse,
     },
     CommandSpec {
         name: "network ping",
         alias: Some("ping"),
         usage: "network ping",
+        arguments: &[],
         parser: parse,
     },
 ];

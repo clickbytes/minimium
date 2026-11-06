@@ -9,6 +9,7 @@ mod session;
 mod snapshots;
 pub mod view;
 
+pub use bootstrap::LocalServerLaunchConfig;
 pub use connection_controller::{ConnectionController, ConnectionEvent};
 pub use options::ThreadLane;
 pub use prediction::{ClientPrediction, PredictedStep};

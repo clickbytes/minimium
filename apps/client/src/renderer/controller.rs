@@ -3,14 +3,11 @@ use crate::messages::ClientText as Text;
 
 pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
     let input = renderer.ui.console.take_input();
-    let command = match client_commands::parse_command(&input) {
+    let command = match client_commands::parse_command_typed(&input) {
         Ok(Some(command)) => command,
         Ok(None) => return false,
         Err(error) => {
-            renderer
-                .ui
-                .console
-                .push_error(Text::CommandParseError(error).to_string());
+            renderer.ui.console.push_error(error.to_string());
             return false;
         }
     };
@@ -46,14 +43,6 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
         CommandResult::Action(action) => action,
     };
     match action {
-        FrontendAction::AtmosphereDebug(mode) => {
-            renderer.gpu.terrain_gpu.uniform.debug[0] = 0;
-            renderer.gpu.atmosphere_gpu.debug = mode as u32;
-            renderer
-                .ui
-                .console
-                .push_line(format!("atmosphere debug {mode:?}"));
-        }
         FrontendAction::AtmosphereStatus => {
             for line in renderer.gpu.atmosphere_gpu.status() {
                 renderer.ui.console.push_line(line);
@@ -68,28 +57,6 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
             for line in renderer.terrain_status() {
                 renderer.ui.console.push_line(line);
             }
-        }
-        FrontendAction::TerrainDebug(mode) => {
-            renderer.gpu.atmosphere_gpu.debug = 0;
-            renderer.gpu.terrain_gpu.uniform.debug[0] = mode as u32;
-            renderer.gpu.terrain_gpu.update(&renderer.gpu.queue);
-            renderer
-                .ui
-                .console
-                .push_line(format!("terrain debug {mode:?}"));
-        }
-        FrontendAction::WeatherDebug(mode) => {
-            renderer.weather.debug = mode;
-            renderer
-                .ui
-                .console
-                .push_line(format!("weather clouds debug {mode:?}"));
-        }
-        FrontendAction::WeatherDetail(level) => {
-            renderer.weather.set_detail(level);
-            renderer.ui.console.push_line(format!(
-                "weather clouds detail N={level} (thin-layer minimum retained)"
-            ));
         }
         FrontendAction::Print(text) => {
             for line in text.lines() {
@@ -126,7 +93,7 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
                     .console
                     .push_error(Text::DisconnectOrWait.to_string());
             } else {
-                renderer.start_local_attempt(lane.unwrap_or(renderer.settings.threads));
+                renderer.start_local_attempt(lane);
             }
         }
         FrontendAction::Disconnect => {
@@ -173,10 +140,6 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
         ),
         FrontendAction::MapTeleport => renderer.arm_map_teleport(),
         FrontendAction::Clear => renderer.ui.console.clear_lines(),
-        FrontendAction::SkyQuality(quality) => {
-            let status = renderer.set_sky_quality(quality);
-            renderer.ui.console.push_line(status);
-        }
         FrontendAction::SkyInfo => {
             for line in renderer.sky_info_lines() {
                 renderer.ui.console.push_line(line);
@@ -216,30 +179,23 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
                 }
             }
         }
-        FrontendAction::SkyDemo(enabled) => {
-            renderer.demo_universe_enabled = enabled;
-            renderer.ui.console.push_line(if enabled {
-                "local sky demo enabled"
-            } else {
-                "local sky demo disabled"
-            });
-        }
-        FrontendAction::Fov(degrees) => {
-            if let Some(degrees) = degrees {
-                renderer.fov_degrees = degrees;
+        FrontendAction::Property(command) => {
+            for line in renderer.apply_property(command).lines() {
+                renderer.ui.console.push_line(line);
             }
-            renderer
-                .ui
-                .console
-                .push_line(format!("vertical FOV: {:.1}°", renderer.fov_degrees));
         }
-        FrontendAction::ShowCelestialNames(enabled) => {
-            renderer.show_celestial_names = enabled;
-            renderer.ui.console.push_line(if enabled {
-                "celestial names enabled"
-            } else {
-                "celestial names disabled"
-            });
+        FrontendAction::ConfigSave(path) => {
+            match crate::config::save_preferences(
+                &path,
+                &renderer.settings.config_file_settings,
+                &renderer.session_settings(),
+            ) {
+                Ok(()) => renderer
+                    .ui
+                    .console
+                    .push_line(format!("configuration saved to {}", path.display())),
+                Err(error) => renderer.ui.console.push_error(error.to_string()),
+            }
         }
         FrontendAction::SetTime { minute, local } => {
             let [x, _, z] = renderer.game.view().player_position_m;
@@ -263,6 +219,19 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
             Ok(()) => renderer.ui.console.push_line("time scale request sent"),
             Err(error) => renderer.ui.console.push_error(error),
         },
+        FrontendAction::TimeMode(mode) => match renderer.connection.request_time_mode(&mode) {
+            Ok(()) => renderer.ui.console.push_line("time mode request sent"),
+            Err(error) => renderer.ui.console.push_error(error),
+        },
+        FrontendAction::TimeOfflinePolicy(policy) => {
+            match renderer.connection.request_time_offline_policy(&policy) {
+                Ok(()) => renderer
+                    .ui
+                    .console
+                    .push_line("time offline policy request sent"),
+                Err(error) => renderer.ui.console.push_error(error),
+            }
+        }
         FrontendAction::Quit => return true,
     }
     false

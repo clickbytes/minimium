@@ -1,36 +1,99 @@
+use minimium_commands::{
+    format_cli_help, format_command_arguments, parse_cli, CliOptionSpec, CliParseOutcome,
+    CommandError,
+};
 use minimium_platform::{admin_client, endpoint::ServerEndpoint};
-use std::{env, path::PathBuf};
+use std::{error::Error, path::PathBuf};
 
-fn main() {
-    if let Err(error) = run() {
-        eprintln!("minimiumctl: {error}");
-        std::process::exit(1);
+const OPTIONS: &[CliOptionSpec] = &[
+    CliOptionSpec {
+        name: "--data-dir",
+        alias: None,
+        value_name: Some("PATH"),
+        description: "Server data and endpoint directory.",
+        repeatable: false,
+        help: false,
+    },
+    CliOptionSpec {
+        name: "--help",
+        alias: Some("-h"),
+        value_name: None,
+        description: "Show help without reading endpoint state.",
+        repeatable: false,
+        help: true,
+    },
+    CliOptionSpec {
+        name: "--version",
+        alias: None,
+        value_name: None,
+        description: "Show version without contacting a server.",
+        repeatable: false,
+        help: false,
+    },
+];
+
+struct CtlError {
+    exit_code: i32,
+    message: String,
+}
+
+impl CtlError {
+    fn arguments(error: CommandError) -> Self {
+        Self {
+            exit_code: 2,
+            message: error.to_string(),
+        }
+    }
+
+    fn runtime(error: impl Error) -> Self {
+        Self {
+            exit_code: 1,
+            message: error.to_string(),
+        }
     }
 }
 
-fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let mut args: Vec<String> = env::args().skip(1).collect();
-    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
-        println!(
-            "minimiumctl [--data-dir PATH] <help|status|players list|metrics show|world save|time ...|stop>"
-        );
+fn main() {
+    if let Err(error) = run() {
+        eprintln!("minimiumctl: {}", error.message);
+        std::process::exit(error.exit_code);
+    }
+}
+
+fn run() -> Result<(), CtlError> {
+    let parsed = match parse_cli(
+        std::env::args().skip(1),
+        "minimiumctl [OPTIONS] [--] <server command>",
+        OPTIONS,
+    )
+    .map_err(CtlError::arguments)?
+    {
+        CliParseOutcome::Help => {
+            println!(
+                "{}",
+                format_cli_help("minimiumctl [OPTIONS] [--] <server command>", OPTIONS)
+            );
+            return Ok(());
+        }
+        CliParseOutcome::Parsed(values) => values,
+    };
+    if parsed.contains("--version") {
+        println!("minimiumctl {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
-    let mut data_dir = PathBuf::from(minimium_platform::files::DEFAULT_SERVER_DATA_DIR);
-    if let Some(index) = args.iter().position(|arg| arg == "--data-dir") {
-        if index + 1 >= args.len() {
-            return Err("--data-dir requires a path".into());
-        }
-        data_dir = PathBuf::from(args.remove(index + 1));
-        args.remove(index);
-    }
-    let command = args.join(" ");
-    let endpoint = ServerEndpoint::read(&data_dir)?;
+    let command = format_command_arguments(parsed.positionals()).map_err(CtlError::arguments)?;
+    let data_dir = parsed
+        .get("--data-dir")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(minimium_platform::files::DEFAULT_SERVER_DATA_DIR));
+
+    // Endpoint state is read only after every local option and command boundary is parsed.
+    let endpoint = ServerEndpoint::read(&data_dir).map_err(CtlError::runtime)?;
     if command.trim() == "stop" {
-        admin_client::stop_and_wait(&data_dir, &endpoint)?;
+        admin_client::stop_and_wait(&data_dir, &endpoint).map_err(CtlError::runtime)?;
         println!("server stopped cleanly");
     } else {
-        let response = admin_client::request(&endpoint, &command)?;
+        let response = admin_client::request(&endpoint, &command).map_err(CtlError::runtime)?;
         println!("{}", if response.is_empty() { "ok" } else { &response });
     }
     Ok(())

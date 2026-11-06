@@ -55,11 +55,23 @@ impl ApplicationHandler for App {
                 .take()
                 .expect("world manifests are available before renderer startup"),
             profile_id: self.profile_id,
-            data_dir: self.data_dir.clone(),
             map_path: self.options.map_path.clone(),
             world_definition_path: self.options.world_definition_path.clone(),
-            threads: self.options.threads,
+            local_server_config: self
+                .options
+                .local_server_launch_config(self.data_dir.clone(), None)
+                .expect("validated local server launch options"),
             sky_quality: self.options.sky_quality,
+            startup_fov: self.options.startup_fov,
+            startup_mouse_sensitivity: self.options.startup_mouse_sensitivity,
+            startup_sky_names: self.options.startup_sky_names,
+            startup_cloud_detail: self.options.startup_cloud_detail,
+            startup_atmosphere_debug: self.options.startup_atmosphere_debug,
+            startup_terrain_debug: self.options.startup_terrain_debug,
+            startup_cloud_debug: self.options.startup_cloud_debug,
+            startup_sky_demo: self.options.startup_sky_demo,
+            preference_sources: self.options.preference_sources.clone(),
+            config_file_settings: self.options.config_file_settings.clone(),
             require_earth: self.options.require_earth,
             demo: self.options.demo,
         })) {
@@ -68,7 +80,7 @@ impl ApplicationHandler for App {
                     if let Some(address) = &self.options.connect {
                         renderer.start_remote_attempt(address);
                     } else {
-                        renderer.start_local_attempt(renderer.settings.threads);
+                        renderer.start_local_attempt(None);
                     }
                 }
                 self.window = Some(window);

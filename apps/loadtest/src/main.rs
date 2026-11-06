@@ -2,6 +2,7 @@ mod config;
 mod report;
 mod scenarios;
 use config::{ParseOutcome, StartupConfig};
+use minimium_commands::CommandError;
 use minimium_protocol::{encode_client, ClientMessage};
 
 use std::{
@@ -22,14 +23,19 @@ use worker::{run_worker, WorkerConfig, MOVEMENT_DIRECTIONS, POLL_INTERVAL};
 fn main() {
     if let Err(error) = run() {
         eprintln!("loadtest: {error}");
-        std::process::exit(1);
+        let exit_code = if error.downcast_ref::<CommandError>().is_some() {
+            2
+        } else {
+            1
+        };
+        std::process::exit(exit_code);
     }
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let config = match config::parse_env()? {
         ParseOutcome::Help => {
-            println!("{}", config::HELP);
+            println!("{}", config::help());
             return Ok(());
         }
         ParseOutcome::Config(config) => config,

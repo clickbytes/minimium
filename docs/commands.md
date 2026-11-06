@@ -4,12 +4,12 @@ This page documents the current parsers and dispatchers. For operational sequenc
 
 | Program | Options and commands | Defaults and parsing |
 | --- | --- | --- |
-| Server | `run`, `--seed`, `--planet-config`, `--environment-config`, `--threads`, `--max-players`, `--bind`, `--game-port`, `--data-dir`, `--map`, `--world-definition`, `--autosave-seconds`, `--headless`, `--help`/`-h`, `--version` | One lane, 512 players, loopback, port 0, `.minimium`, seeded generated worlds, 300 s autosave. `--environment-config` initializes a new world's clock only; it is rejected when world data already exists. |
+| Server | `run`, `--config`, `--set`, `--seed`, `--planet-config`, `--environment-config`, `--threads`, `--max-players`, `--bind`, `--game-port`, `--data-dir`, `--map`, `--world-definition`, `--autosave-seconds`, `--headless`, `--help`/`-h`, `--version` | One lane, 512 players, loopback, port 0, `.minimium`, seeded generated worlds, 300 s autosave. Threads accept `1..=64` or `auto`. `--environment-config` initializes a new world's clock only; it is rejected when world data already exists. |
 | Control | `--data-dir`, `--help`/`-h`, server commands below | `.minimium`; help is handled before command parsing. Only the first `--data-dir` is consumed. |
 | Client | `--connect`, `--map`, `--world-definition`, `--profile-dir`, `--server-data-dir`, `--threads`, `--sky-quality`, `--demo`, `--console`, `--require-earth`, `--help`/`-h` | One local-server lane, standard sky quality, seeded demo worlds and `.minimium-local` paths; repeated options are errors. Demo conflicts with connect and console. `--require-earth` requires the desktop client and conflicts with demo. `--map` and `--world-definition` are mutually exclusive. |
 | Load generator | `--address`, `--scenario`, `--clients`, `--seconds`, `--threads`, `--format`, `--scenario-id`, `--cpu-label`, `--cpu-mhz`, `--server-data-dir`, `--help`/`-h` | Address required; 100 clients, 10 s, heartbeat, auto workers and text output. Repeated option names are errors. |
 
-Lane types remain application-owned: the server accepts `1..=64` or `auto`, the client accepts `1`, `2` or `auto` for a locally started server, and the generator accepts `1`, `2` or `auto` with at most two workers. Their different meanings and limits do not justify a shared policy type. The server's existing invalid-value message mentions `1, 2, or auto` even though values through 64 are accepted; the range check and its separate error remain unchanged.
+Lane types remain application-owned: the server accepts `1..=64` or `auto`, the client accepts `1`, `2` or `auto` for a locally started server, and the generator accepts `1`, `2` or `auto` with at most two workers. Their different meanings and limits do not justify a shared policy type. Server CLI and help report the accepted `1..=64|auto` range.
 
 ## Server
 
@@ -20,7 +20,7 @@ minimium-server --version
 
 The defaults are one execution lane, 512 active players, loopback bind (`127.0.0.1`), an OS-selected game port (`0`), data directory `.minimium`, seeded planet/dungeon demo worlds, and autosave every 300 seconds. `--threads` accepts 1 through 64 lanes or `auto`; `--max-players` accepts 1 through 512. `--autosave-seconds` accepts 0 through 604800; zero disables periodic saves. `--headless` leaves the server in the foreground but disables terminal commands. Without it, terminal commands use the same command registry as the admin CLI. Game traffic binds to the selected IP; the administrative listener is loopback-only.
 
-`--environment-config PATH` reads at most 16 KiB of UTF-8 RON schema 1 with unknown fields rejected. It initializes `mode`, optional `initial_utc`, `scale_ppm`, and `offline_policy` for a new world. `real_time` requires no initial date and exactly 1x; `time_scale` uses the configured date or the current UTC. Examples are [real-time.ron](../presets/environment/real-time.ron) and [time-scale.ron](../presets/environment/time-scale.ron). The option is rejected if `world.seed`, `world.planet.ron`, or `world.snapshot` already exists. Existing v8/v9 snapshots restore their saved clock; v2–v7 snapshots initialize RealTime from current UTC and retain that value in the next completed save.
+`--environment-config PATH` maps to creation-only `world.time.initial_config`. It reads at most 16 KiB of UTF-8 RON schema 1 with unknown fields rejected. It initializes `mode`, optional `initial_utc`, `scale_ppm`, and `offline_policy` for a new world. `real_time` requires no initial date and exactly 1x; `time_scale` uses the configured date or the current UTC. Examples are [real-time.ron](../presets/environment/real-time.ron) and [time-scale.ron](../presets/environment/time-scale.ron). The option is rejected if `world.seed`, `world.planet.ron`, or `world.snapshot` already exists. Existing v8/v9 snapshots restore their saved clock; v2–v7 snapshots initialize RealTime from current UTC and retain that value in the next completed save.
 
 `--seed` accepts a decimal or `0x` hexadecimal 128-bit value for a new generated
 world. If omitted, the server draws one random seed. It records the seed in
@@ -166,7 +166,7 @@ The text client and in-window console use one startup command registry and parse
 
 ### In-window console commands
 
-The desktop client requests a 1920×1080 physical-pixel window by default; the window manager may constrain it to the available display area. Press F1 to open or close the console. It uses the shared registry above and renders text in Roboto Mono. Arrow keys browse history; PageUp/PageDown or the mouse wheel scroll the console, Home jumps to the oldest lines, End returns to the newest lines, and Tab suggests canonical commands and aliases. Lock the mouse and left-click to fire. `fps show` reports frame interval and render-loop work summaries; `net stats` reports application bytes, latest round-trip time, and nearby-player count.
+The desktop client requests a 1920×1080 physical-pixel window by default; the window manager may constrain it to the available display area. Press F1 to open or close the console. It uses the shared registry above and renders text in Roboto Mono. Arrow keys browse history; PageUp/PageDown or the mouse wheel scroll the console, Home jumps to the oldest lines, End returns to the newest lines, and Tab suggests canonical commands and aliases. Lock the mouse and left-click to fire. `fps show` reports frame interval and render-loop work summaries; `net stats` reports application bytes, latest round-trip time, and nearby-player count. Registered command descriptors define argument types, optional/rest behavior, choices, constraints, units, and descriptions; help and enum completion use this metadata.
 
 `sky quality low|standard` changes only local rendering quality: `low` disables shadows and `standard` enables one 1024×1024 local shadow map. If the adapter refuses that resource, the client uses `low` and `sky info` shows requested/effective quality and the fallback reason. `sky info` prints a versioned, on-demand snapshot of clock synchronization, observer and celestial values, CPU timings, actual environment draw calls, shadow coverage, and estimated environment GPU bytes. `time status` prints the current session's read-only clock sample and synchronization state. `time scale` uses the owned server's private administrative endpoint and is unavailable for attached or remote sessions.
 
@@ -195,3 +195,60 @@ minimium-loadtest --address HOST:PORT [--scenario heartbeat|movement|combat|chat
 - `clustered` and `dispersed` use deterministic movement directions by simulated-client index; they are intended for the final spatial-distribution scenarios.
 
 The JSON output is schema version 2. Field definitions and the prepared scenario manifest belong in [report-v2.md](scenarios/report-v2.md). Reports contain application protocol bytes, not TCP/IP framing or retransmissions. The load generator is implementation scaffolding; prepared workloads are not runtime results, and no gameplay correctness, capacity, or performance claim follows from a static code review.
+The typed property grammar is get KEY, set KEY VALUE, reset KEY, list [PREFIX], and help [COMMAND|KEY]. The first client property is client.camera.fov (decimal degrees, 30..=110, default 70, live, local). set client.camera.fov 85 and legacy camera fov 85 share the same domain validator; reset client.camera.fov clears the session override and returns to the default. get reports requested/effective/default/source. Client preferences use an explicitly selected schema v1 RON file and config validate/show run offline. config save PATH atomically writes explicit file entries plus eligible session changes; defaults and CLI values are not copied.
+
+
+## Configuration and property contract
+
+Property syntax is `get KEY`, `set KEY VALUE`, `reset KEY`, `list [PREFIX]`,
+and `help [COMMAND|KEY]`. Descriptors provide the value type, unit, default,
+constraints, owner, permission, lifecycle, persistence, and reset support. Domain
+owners still validate values and apply state changes.
+
+Startup precedence is default, RON file, explicitly mapped environment, then CLI.
+Session overrides apply only to live properties. A property read reports requested,
+effective, default, source, and any fallback reason. Reset removes the session
+override and returns to the resolved startup value; it does not edit the RON file.
+
+Client properties available to the text and desktop consoles are:
+- `client.camera.fov`: finite degrees in 30..=110, default 70.
+- `client.input.mouse_sensitivity`: finite rad/pixel in 0..=0.1, default 0.0025.
+- `client.graphics.sky_quality`: low|standard, default standard.
+- `client.sky.names` and `client.sky.demo`: true|false.
+- `client.weather.cloud_detail`: integer 2..=6, default 6.
+- `client.debug.atmosphere`, `client.debug.terrain`, and `client.debug.clouds`:
+  enum values are listed by `help KEY`.
+- `player.movement.fly`, `player.movement.speed`, and
+  `player.movement.accel`: local queued input; numeric range 0..=10000.
+- `world.time.mode`, `world.time.scale`, and
+  `world.time.offline_policy`: live owned-local-server properties. UTC and
+  revision are read-only replica values in clients.
+
+The client does not expose `server.*`, world climate, or world identity properties.
+Those are server startup or administrative settings. Movement reads describe local
+input and queue acceptance, not server confirmation. Remote clients cannot change
+server clock state.
+
+The client accepts `--config PATH` and repeatable `--set KEY=VALUE` for client
+preferences. `config validate`, `config show`, and `config save PATH` are
+offline commands. Save writes only persistent selected settings using atomic file
+replacement. Server startup accepts `--config PATH` and repeatable
+`--set KEY=VALUE`; `config validate` and `config show --sources --format json`
+run before runtime effects. Server threads accept 1..64 or auto; loadtest keeps
+its own 1|2|auto range and has no config file or live settings.
+Server administration also exposes `world.climate.initial_scenario` as
+creation-only and `world.climate.relief_influence` as restart-required; neither
+can be changed live.
+
+The local client accepts `--server-config PATH` and repeatable
+`--server-set KEY=VALUE`. It resolves these with the sibling server's offline
+JSON view before launch. Existing servers reject explicit startup settings that
+would be ignored. `--server-data-dir PATH` selects the server discovery target.
+The admin CLI parses `--data-dir`, help, and version before reading endpoint
+state; `stop` succeeds only after the captured server instance confirms shutdown.
+
+Legacy command aliases map to the same property handlers: `camera fov` and
+`fov` map to `client.camera.fov`; `fly` maps to `player.movement.fly`;
+`movement speed` and `movement accel` map to their respective
+`player.movement.*` properties. Time mutations remain `time set`, `time mode`,
+`time scale`, and `time offline` actions through the owned local admin channel.

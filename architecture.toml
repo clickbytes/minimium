@@ -57,13 +57,13 @@ forbidden_dependencies = ["minimium-server", "minimium-client", "minimium-render
 [[package]]
 name = "minimium-commands"
 role = "engine-domain"
-responsibility = "Generic command metadata registry with no domain-specific vocabulary."
+responsibility = "Generic command parsing, typed errors, property descriptors, and immutable layered configuration resolution with no domain-specific vocabulary."
 forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-platform", "minimium-assets", "minimium-procgen", "minimium-sectors", "minimium-telemetry", "minimium-server", "minimium-client", "minimiumctl", "minimium-loadtest", "minimium-renderer", "minimium-game-sample"]
 
 [[package]]
 name = "minimium-platform"
 role = "adapter"
-responsibility = "Durable files, process identity, locking and local administration transport."
+responsibility = "Durable files, process identity, locking and bounded local administration transport with versioned structured error decoding."
 forbidden_dependencies = ["minimium-world", "minimium-environment", "minimium-procgen", "minimium-sectors", "minimium-assets", "minimium-protocol", "minimium-telemetry"]
 
 [[package]]
@@ -109,7 +109,7 @@ responsibility = "Client shell, bounded planet materialization and presentation 
 [[package]]
 name = "minimium-client-runtime"
 role = "runtime"
-responsibility = "Nonblocking protocol session, content download worker/deadline and GPU readiness coordination, connection controller, connector, local-server ownership with normalized optional startup settings and bounded stderr diagnostics, fixed-step prediction, reconciliation/interpolation and environment synchronization."
+responsibility = "Nonblocking protocol session, content download worker/deadline and GPU readiness coordination, connection controller, connector, typed local-server launch settings with bounded offline server-config preview and captured environment, local-server ownership and stderr diagnostics, fixed-step prediction, reconciliation/interpolation and environment synchronization."
 forbidden_dependencies = ["minimium-astronomy", "wgpu", "wgpu-core", "wgpu-hal", "winit", "minimium-client", "minimium-server"]
 
 [[package]]
