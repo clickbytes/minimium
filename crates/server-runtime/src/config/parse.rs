@@ -305,7 +305,7 @@ pub(super) fn parse(args: &[String]) -> Result<ServerConfig, CommandError> {
         if let Some(value) = parsed.get(option_name) {
             if !explicit.insert((*key).to_owned()) {
                 return Err(error(
-                    CommandErrorCode::DuplicateOption,
+                    CommandErrorCode::ConflictingOptions,
                     key,
                     format!("{option_name} conflicts with --set {key}=..."),
                     program,
@@ -317,7 +317,7 @@ pub(super) fn parse(args: &[String]) -> Result<ServerConfig, CommandError> {
     if parsed.contains("--headless") {
         if !explicit.insert("server.headless".to_owned()) {
             return Err(error(
-                CommandErrorCode::DuplicateOption,
+                CommandErrorCode::ConflictingOptions,
                 "server.headless",
                 "--headless conflicts with --set server.headless=...",
                 program,

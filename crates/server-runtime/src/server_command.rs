@@ -304,7 +304,14 @@ fn parse_property(line: &str) -> Result<ServerCommand, String> {
                 return Ok(ServerCommand::Time(command));
             }
             if key != "server.autosave_interval" || spec.lifecycle != PropertyLifecycle::Live {
-                return Err(format!("{key} is read-only during this server session"));
+                return Err(match spec.lifecycle {
+                    PropertyLifecycle::CreationOnly => format!("{key} is creation-only"),
+                    PropertyLifecycle::RestartRequired => format!("{key} requires restart"),
+                    PropertyLifecycle::ReadOnly => format!("{key} is read-only"),
+                    PropertyLifecycle::Live => {
+                        format!("{key} is read-only during this server session")
+                    }
+                });
             }
             let seconds = value.parse::<u64>().map_err(|_| {
                 "autosave interval must be an integer from 0 through 604800".to_owned()
@@ -319,7 +326,11 @@ fn parse_property(line: &str) -> Result<ServerCommand, String> {
         PropertyRequest::Reset { key } => {
             let spec = require_property(&key, usage)?;
             if key != "server.autosave_interval" || !spec.resettable {
-                return Err(format!("{key} cannot be reset during this server session"));
+                return Err(match spec.lifecycle {
+                    PropertyLifecycle::CreationOnly => format!("{key} is creation-only"),
+                    PropertyLifecycle::RestartRequired => format!("{key} requires restart"),
+                    _ => format!("{key} cannot be reset during this server session"),
+                });
             }
             Ok(ServerCommand::Property(
                 ServerPropertyCommand::ResetAutosave,
@@ -354,8 +365,12 @@ fn typed_property_error(line: &str, message: String) -> CommandError {
         CommandErrorCode::UnknownProperty
     } else if message.contains("requires a property key") || message.contains("requires a value") {
         CommandErrorCode::MissingValue
+    } else if message.contains("creation-only") {
+        CommandErrorCode::CreationOnly
+    } else if message.contains("requires restart") {
+        CommandErrorCode::RestartRequired
     } else if message.contains("read-only") || message.contains("cannot be reset") {
-        CommandErrorCode::UnsupportedContext
+        CommandErrorCode::ReadOnly
     } else if message.contains("invalid arguments") {
         CommandErrorCode::InvalidArguments
     } else {

@@ -5,15 +5,19 @@ use std::fmt;
 pub enum CommandErrorCode {
     UnknownCommand,
     InvalidArguments,
+    UnknownKey,
     UnknownProperty,
     InvalidValue,
     MissingValue,
     DuplicateOption,
+    ConflictingOptions,
     UnknownOption,
     HelpQuery,
     PermissionDenied,
     UnsupportedContext,
     RestartRequired,
+    CreationOnly,
+    ReadOnly,
     Io,
 }
 
@@ -22,15 +26,18 @@ impl CommandErrorCode {
         match self {
             Self::UnknownCommand => "unknown_command",
             Self::InvalidArguments => "invalid_arguments",
-            Self::UnknownProperty => "unknown_property",
+            Self::UnknownKey | Self::UnknownProperty => "unknown_key",
             Self::InvalidValue => "invalid_value",
             Self::MissingValue => "missing_value",
             Self::DuplicateOption => "duplicate_option",
+            Self::ConflictingOptions => "conflicting_options",
             Self::UnknownOption => "unknown_option",
             Self::HelpQuery => "help_query",
             Self::PermissionDenied => "permission_denied",
             Self::UnsupportedContext => "unsupported_context",
             Self::RestartRequired => "restart_required",
+            Self::CreationOnly => "creation_only",
+            Self::ReadOnly => "read_only",
             Self::Io => "io",
         }
     }

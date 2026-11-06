@@ -115,7 +115,7 @@ impl ClientOptions {
             && options.server_settings.contains_key("server.data_dir")
         {
             return Err(cli_error(
-                CommandErrorCode::DuplicateOption,
+                CommandErrorCode::ConflictingOptions,
                 "server.data_dir",
                 "--server-data-dir conflicts with --server-set server.data_dir=...",
             ));
@@ -149,7 +149,7 @@ impl ClientOptions {
                     .is_some()
                 {
                     return Err(cli_error(
-                        CommandErrorCode::DuplicateOption,
+                        CommandErrorCode::ConflictingOptions,
                         key,
                         "client launch option conflicts with --server-set",
                     ));
@@ -192,7 +192,7 @@ impl ClientOptions {
         if values.contains("--sky-quality") && settings.contains_key("client.graphics.sky_quality")
         {
             return Err(cli_error(
-                CommandErrorCode::DuplicateOption,
+                CommandErrorCode::ConflictingOptions,
                 "client.graphics.sky_quality",
                 "--sky-quality conflicts with --set for the same setting",
             ));
@@ -333,7 +333,7 @@ impl ClientOptions {
                 .is_some()
             {
                 return Err(cli_error(
-                    CommandErrorCode::DuplicateOption,
+                    CommandErrorCode::ConflictingOptions,
                     "server.threads",
                     "host local thread option conflicts with --server-set",
                 ));

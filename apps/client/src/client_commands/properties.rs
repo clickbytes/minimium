@@ -374,7 +374,12 @@ fn parse_value(key: ClientPropertyKey, value: &str) -> Result<ClientPropertyValu
             _ => Err(invalid("offline policy must be pause or advance".into())),
         },
         ClientPropertyKey::WorldTimeUtc | ClientPropertyKey::WorldTimeRevision => {
-            Err(invalid("property is read-only".into()))
+            Err(CommandError::new(
+                CommandErrorCode::ReadOnly,
+                Some(key.key()),
+                "property is read-only",
+                Some("get KEY"),
+            ))
         }
     }
 }
