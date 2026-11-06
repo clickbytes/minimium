@@ -10,6 +10,21 @@ struct ShadowUniform {
 @group(2) @binding(1) var shadow_sampler: sampler_comparison;
 @group(2) @binding(2) var<uniform> shadow: ShadowUniform;
 
+// Orthographic shadow projection has orthogonal scaled rows. Inverting each
+// row gives world displacement per UV/depth unit; intersect with the triangle
+// plane analytically. No subtraction of nearly equal screen-space depth values.
+fn receiver_depth_gradient(normal: vec3<f32>) -> vec2<f32> {
+    let m = shadow.light_view_projection;
+    let u = vec3<f32>(m[0][0],m[1][0],m[2][0])*0.5;
+    let v = vec3<f32>(m[0][1],m[1][1],m[2][1])*(-0.5);
+    let z = vec3<f32>(m[0][2],m[1][2],m[2][2]);
+    // A light-tangent plane is not a single-valued function of shadow UV.
+    if abs(dot(normal,normalize(z))) < 0.0001 { return vec2<f32>(0.0); }
+    let nz = dot(normal,z)/max(dot(z,z),1e-20);
+    return -vec2<f32>(dot(normal,u)/max(dot(u,u),1e-20),
+        dot(normal,v)/max(dot(v,v),1e-20))/nz;
+}
+
 fn shadow_visibility(world_position: vec3<f32>, normal: vec3<f32>, light_direction: vec3<f32>) -> f32 {
     if shadow.flags.x == 0u || shadow.flags.y == 0u {
         return 1.0;
@@ -36,18 +51,29 @@ fn shadow_visibility(world_position: vec3<f32>, normal: vec3<f32>, light_directi
     let bias_m = min(shadow.bias_fade.z, shadow.bias_fade.x + shadow.bias_fade.y * slope);
     let depth_range_m = max(shadow.texel_depth_range.w - shadow.texel_depth_range.z, 0.000001);
     let reference_depth = ndc.z - bias_m / depth_range_m;
-    let texel = shadow.texel_depth_range.xy;
+    let depth_gradient = receiver_depth_gradient(normal);
+    let dimensions = vec2<i32>(textureDimensions(shadow_depth));
+    let receiver_texel = vec2<i32>(floor(uv * vec2<f32>(dimensions)));
     var pcf_sum = 0.0;
     var sample_count = 0.0;
     for (var y = -1; y <= 1; y = y + 1) {
         for (var x = -1; x <= 1; x = x + 1) {
-            let sample_uv = uv + vec2<f32>(f32(x), f32(y)) * texel;
-            if sample_uv.x < 0.0 || sample_uv.x > 1.0 || sample_uv.y < 0.0 || sample_uv.y > 1.0 {
-                pcf_sum += 1.0;
+            let sample_texel = receiver_texel + vec2<i32>(x, y);
+            // Continuous tent weights: entering/leaving taps have zero weight.
+            let delta = abs(vec2<f32>(sample_texel)+0.5-uv*vec2<f32>(dimensions));
+            let tent = max(vec2<f32>(1.5)-delta,vec2<f32>(0.0));
+            let weight = tent.x*tent.y;
+            if any(sample_texel < vec2<i32>(0)) || any(sample_texel >= dimensions) {
+                pcf_sum += weight;
             } else {
-                pcf_sum += textureSampleCompare(shadow_depth, shadow_sampler, sample_uv, reference_depth);
+                // Compare against the same texel center where rasterization stored depth.
+                // Correcting at an unsnapped UV leaves a sawtooth error inside every texel.
+                let center_uv = (vec2<f32>(sample_texel) + 0.5) / vec2<f32>(dimensions);
+                let plane_depth = reference_depth + dot(depth_gradient, center_uv - uv);
+                let stored_depth = textureLoad(shadow_depth, sample_texel, 0);
+                pcf_sum += select(0.0, weight, plane_depth <= stored_depth);
             }
-            sample_count += 1.0;
+            sample_count += weight;
         }
     }
 

@@ -48,19 +48,20 @@ impl Renderer {
             .copied()
             .ok_or("initial world has no generation manifest")?;
         let mut sector_cache = sector_scene::ClientSectorCache::new();
-        let initial_scene = sector_cache
-            .ensure_scene(
-                current_instance,
-                current_manifest,
-                map.spawn(),
-                &world_catalog,
-                &world_manifests,
-                None,
-            )
-            .ok_or("initial world sectors could not be installed")?;
+        let initial_scene = sector_cache.ensure_scene(
+            current_instance,
+            current_manifest,
+            map.spawn(),
+            minimium_renderer::terrain_view::TerrainView::legacy(map.spawn()),
+            [0.0; 3],
+            &world_catalog,
+            &world_manifests,
+            None,
+        );
         let vertices: Vec<_> = initial_scene
-            .sectors
-            .iter()
+            .as_ref()
+            .into_iter()
+            .flat_map(|scene| scene.sectors.iter())
             .flat_map(|(_, geometry)| sector_geometry(geometry))
             .collect();
         let mut gpu = GpuResources::new(window, &vertices, sky_quality).await?;
@@ -74,13 +75,20 @@ impl Renderer {
             effective_quality,
             gpu.shadow_gpu.fallback_reason,
         );
-        gpu.scene_visible = !require_earth;
-        if !gpu.cache_sector_scene(current_instance, &initial_scene)
-            || !gpu.activate_sector_scene(current_instance, &initial_scene)
-        {
-            return Err("initial world GPU sectors could not be installed".into());
-        }
-        let collision_index = initial_scene.collision.clone();
+        // Pending collision jobs and bounded GPU uploads complete in the frame loop.
+        let gpu_ready = initial_scene.as_ref().is_some_and(|scene| {
+            gpu.cache_sector_scene(current_instance, scene)
+                && gpu.activate_sector_scene(current_instance, scene)
+        });
+        gpu.scene_visible = !require_earth && gpu_ready;
+        let collision_index = initial_scene.as_ref().map_or_else(
+            || minimium_simulation::CollisionIndex::from_geometry(Vec::new(), Vec::new()),
+            |scene| scene.collision.clone(),
+        );
+        let sectors_ready = initial_scene.is_some();
+        let active_sector_keys = initial_scene
+            .as_ref()
+            .map_or_else(Vec::new, |s| s.keys.clone());
         let mut frame_stats = crate::stats::FrameStats::default();
         frame_stats.set_gpu_bytes(
             gpu.fixed_gpu_bytes
@@ -106,6 +114,12 @@ impl Renderer {
             CharacterGravity::FixedY
         };
         let mut connection = ConnectionController::new(profile_id, map_fingerprint);
+        connection.set_presentation(
+            gpu.device
+                .features()
+                .contains(wgpu::Features::TEXTURE_COMPRESSION_BC)
+                && gpu.device.limits().max_texture_dimension_2d >= 4096,
+        );
         connection.set_world_fingerprints(fingerprints);
         Ok(Self {
             gpu,
@@ -125,7 +139,7 @@ impl Renderer {
                     collision_query: CollisionQuery::default(),
                     last_shot_sent_at: None,
                     hit_confirmation_until: None,
-                    sectors_ready: true,
+                    sectors_ready,
                 },
                 world_manifests,
                 current_instance,
@@ -177,8 +191,12 @@ impl Renderer {
             demo_environment: demo.then(LocalDemoEnvironment::new).flatten(),
             world_catalog,
             sector_cache,
-            active_sector_keys: initial_scene.keys,
-            last_render_position: map.spawn(),
+            active_sector_keys,
+            last_render_position: if gpu_ready {
+                map.spawn()
+            } else {
+                [f32::INFINITY; 3]
+            },
             pending_sector_transitions: std::collections::HashMap::new(),
             overview_open: false,
             overview_instance: None,
@@ -187,8 +205,6 @@ impl Renderer {
             } else {
                 "Demo".into()
             },
-            globe_loading: None,
-            globe_detail_loading: None,
             overview_yaw: 0.0,
             overview_pitch: 0.0,
             overview_zoom: 2.8,
@@ -198,7 +214,7 @@ impl Renderer {
             overview_drag_distance: 0.0,
             map_teleport_armed: false,
             map_teleport_pending: false,
-            teleport_loading: false,
+            teleport_loading: !require_earth && !gpu_ready,
         })
     }
 

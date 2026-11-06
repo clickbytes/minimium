@@ -8,3 +8,5 @@ license.workspace = true
 minimium-core = { path = "../core" }
 minimium-world = { path = "../world" }
 sha2 = "0.10"
+serde = { version = "1", features = ["derive"] }
+ron = "0.12.3"

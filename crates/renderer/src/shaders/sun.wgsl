@@ -41,11 +41,11 @@ struct SunVertexOutput {
         discard;
     }
     var radiance = SOLAR_DISK_RADIANCE;
-    if environment.flags.y == 0u {
+    if environment.flags.y == 0u && !physical_atmosphere() {
         let atmosphere = sample_clear_sky(ray_world);
         radiance = radiance * atmosphere.transmittance
             + atmosphere.scattering_rgb * SOLAR_HALO_FACTOR;
     }
-    let color = tone_map_linear(radiance);
+    let color = tone_map_display(radiance);
     return vec4<f32>(color, coverage * visibility);
 }

@@ -27,6 +27,7 @@ struct Preset {
     generator_revision: Option<u32>,
     radius_mm: Option<u64>,
     height_scale_permille: Option<u32>,
+    peak_relief: Option<crate::PeakReliefConfig>,
     sea_level_mm: Option<i64>,
     mountain_limit_mm: Option<u32>,
     detail_strength_mm: Option<u32>,
@@ -49,6 +50,7 @@ impl Preset {
         replace!(generator_revision);
         replace!(radius_mm);
         replace!(height_scale_permille);
+        replace!(peak_relief);
         replace!(sea_level_mm);
         replace!(mountain_limit_mm);
         replace!(detail_strength_mm);
@@ -70,6 +72,8 @@ pub struct ResolvedPlanetConfig {
     pub mode: PlanetMode,
     pub radius_mm: u64,
     pub height_scale_permille: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peak_relief: Option<crate::PeakReliefConfig>,
     pub sea_level_mm: i64,
     pub mountain_limit_mm: u32,
     pub detail_strength_mm: u32,
@@ -113,6 +117,7 @@ impl ResolvedPlanetConfig {
             mode: PlanetMode::Procedural,
             radius_mm: 617_500_000 + value % 65_000_001,
             height_scale_permille: 1000,
+            peak_relief: None,
             sea_level_mm: 0,
             mountain_limit_mm: 5_000_000,
             detail_strength_mm: 15_000,
@@ -127,11 +132,16 @@ impl ResolvedPlanetConfig {
         let mut resolved = Self::procedural(seed);
         resolved.version = preset.version.unwrap_or(1);
         resolved.mode = preset.mode.unwrap_or(PlanetMode::Procedural);
+        resolved.peak_relief = preset.peak_relief;
         resolved.generator_revision =
             preset
                 .generator_revision
                 .unwrap_or(if resolved.mode == PlanetMode::Earth {
-                    4
+                    if resolved.peak_relief.is_some() {
+                        5
+                    } else {
+                        4
+                    }
                 } else {
                     3
                 });
@@ -162,10 +172,21 @@ impl ResolvedPlanetConfig {
         if self.version != 1 {
             return Err(invalid("unsupported planet preset version"));
         }
-        if !matches!(self.generator_revision, 3 | 4)
-            || self.generator_revision == 4 && self.mode != PlanetMode::Earth
+        if !matches!(self.generator_revision, 3 | 4 | 5)
+            || self.generator_revision >= 4 && self.mode != PlanetMode::Earth
         {
-            return Err(invalid("unsupported planet generator revision"));
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, format!(
+                "unsupported planet generator revision {} for {:?}; supported: 3, or 4/5 for Earth. The saved world is unchanged. For a new Earth world, run start-earth.ps1 -ResetWorld (backs up the previous directory).",
+                self.generator_revision, self.mode
+            )));
+        }
+        if let Some(curve) = self.peak_relief {
+            if self.mode != PlanetMode::Earth
+                || self.generator_revision != 5
+                || !curve.definition().is_valid()
+            {
+                return Err(invalid("peak_relief requires Earth v5, 1..3x, exponent 1..8 and 0 <= start_m < full_m <= 12000"));
+            }
         }
         if !(318_550_000..=EARTH_RADIUS_MM).contains(&self.radius_mm) {
             return Err(invalid("planet radius must be 0.05..=1 Earth radii"));
@@ -213,6 +234,9 @@ impl ResolvedPlanetConfig {
             detail_wavelength_mm: self.detail_wavelength_mm,
             mountain_band_frequency: self.mountain_band_frequency,
             package_digest: self.package_digest,
+            peak_relief: self
+                .peak_relief
+                .map_or_else(Default::default, |p| p.definition()),
         }
     }
 }

@@ -22,6 +22,19 @@ impl GpuResources {
         let prepared = snapshot.environment;
         let environment = &prepared.frame;
         let render_frame = &prepared.render_frame;
+        self.atmosphere_gpu.mark_environment(
+            &render_frame
+                .presentation_environment(self.hdr_enabled, self.atmosphere_gpu.is_active()),
+        );
+        self.terrain_gpu.uniform.eye_relative = std::array::from_fn(|i| {
+            if i < 3 {
+                (render_frame.view.camera_eye_world_m[i] - render_frame.view.render_origin_m[i])
+                    as f32
+            } else {
+                0.0
+            }
+        });
+        self.terrain_gpu.update(&self.queue);
         let client = render_frame
             .client
             .expect("application attaches ClientView before rendering");
@@ -33,6 +46,7 @@ impl GpuResources {
             &self.environment_buffer,
             &self.ui.vertex_buffer,
             self.hdr_enabled,
+            self.atmosphere_gpu.is_active(),
             self.output_encoder.as_ref(),
         );
         self.ui.set_vertex_count(ui_vertex_count);
@@ -58,9 +72,12 @@ impl GpuResources {
             overview_sun: super::sky::should_draw_overview_sun(environment),
             overview_moon: super::sky::should_draw_overview_moon(environment),
             surface_sky: super::sky::should_draw_surface_sky(environment),
-            surface_stars: super::sky::should_draw_stars(environment),
-            surface_sun: super::sky::should_draw_sun(environment),
-            surface_moon: super::sky::should_draw_moon(environment),
+            surface_stars: super::sky::should_draw_stars(environment)
+                || self.atmosphere_gpu.high_stars(),
+            surface_sun: super::sky::should_draw_sun(environment)
+                || self.atmosphere_gpu.is_active(),
+            surface_moon: super::sky::should_draw_moon(environment)
+                || self.atmosphere_gpu.is_active(),
         };
         let scene = minimium_renderer::scene_encoder::MainScenePass {
             color_view: scene_view,
@@ -68,6 +85,8 @@ impl GpuResources {
             clear_color: super::sky::clear_color(self.scene_visible, self.overview_active),
             camera: &self.camera_bind_group,
             world_pipeline: &self.pipeline,
+            terrain_gpu: &self.terrain_gpu,
+            terrain_catalog: self.world_geometry.terrain(),
             shadow_empty: &self.shadow_gpu.empty_bind_group,
             shadow_sampling: &self.shadow_gpu.sampling_bind_group,
             environment_pipelines: &self.environment_pipelines,
@@ -77,7 +96,6 @@ impl GpuResources {
             moon: &self.moon,
             moon_sphere: &self.moon_sphere,
             atmosphere: &self.atmosphere_gpu,
-            globe: self.globe.as_ref(),
             overview_buffers: &self.overview_buffers,
             world_vertices: self.initial_world.buffer(),
             world_vertex_count: self.initial_world.vertex_count(),
@@ -86,9 +104,9 @@ impl GpuResources {
             world_vertex_catalog: self.world_geometry.catalog(),
             instance: client.world_instance,
             sector_hints: &snapshot.sector_hints,
-            scene_visible: self.scene_visible,
+            scene_visible: self.scene_visible && self.terrain_gpu.valid,
             overview_active: self.overview_active,
-            overview_globe: self.overview_globe,
+            overview_planet: self.overview_planet,
             uploaded_stars_match: self.uploaded_star_stamp == environment.diagnostics.star_frame,
             halo_count: render_frame.halo_count,
             environment: environment_flags,
@@ -132,6 +150,7 @@ impl GpuResources {
             + encoded.clouds
             + encoded.final_passes;
         frame.submit(&self.queue, encoder);
+        self.atmosphere_gpu.after_submit();
         Ok(draw_calls)
     }
 }

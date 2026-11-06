@@ -35,3 +35,9 @@ Change manifests, map/addressing and geometry here. Change movement, collision q
 ## Verification
 
 Run `rtk cargo check -p minimium-world` and `rtk python scripts/check_architecture.py`. Runtime acceptance is deferred.
+
+PeakRelief defines a validated monotone source-height mapping (1..3x multiplier,
+exponent 1..8, source start/full thresholds up to 12000 m). It uses a smoothstep
+weight raised to an integer power, retaining identity below the threshold and
+bounded gain above the reference height. PlanetDefinition owns the curve and
+the pure Earth height/datum conversion. Identity preserves legacy arithmetic.

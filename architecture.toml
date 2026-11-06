@@ -10,7 +10,7 @@ forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-p
 [[package]]
 name = "minimium-world"
 role = "engine-domain"
-responsibility = "World definitions, topologies, addressing, static geometry, maps and component definitions."
+responsibility = "World definitions, topologies, addressing, static geometry, maps, bounded monotone peak-relief definitions and component definitions."
 forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-platform", "minimium-assets", "minimium-procgen", "minimium-sectors", "minimium-telemetry", "minimium-commands", "minimium-environment", "minimium-simulation", "minimium-renderer", "minimium-game-sample"]
 
 [[package]]
@@ -22,7 +22,7 @@ forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-p
 [[package]]
 name = "minimium-environment"
 role = "engine-domain"
-responsibility = "World clock and environment values, renderer-independent sky observations, solar-system catalogue and deterministic weather model."
+responsibility = "World clock and environment values, renderer-independent sky observations, solar-system catalogue, seasonal/regional climate scenarios, physical elevation scaling, lightweight climate evaluation, independent relief influence on climate and shared site-based replayable surface state."
 forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-platform", "minimium-assets", "minimium-procgen", "minimium-sectors", "minimium-telemetry", "minimium-renderer", "minimium-game-sample"]
 
 [[package]]
@@ -33,7 +33,7 @@ responsibility = "Client-side astronomy backend and FFI adapter."
 [[package]]
 name = "minimium-procgen"
 role = "engine-domain"
-responsibility = "Seeded procedural generation, sector geometry and terrain sampling."
+responsibility = "Seeded procedural generation, sector geometry, terrain sampling through the shared Earth relief curve, separate presentation ground/sea-level sampling and typed surface/normal/coverage and landform sampling through prepared geography ports, with validated presentation recipes independent of generator identity."
 forbidden_dependencies = ["minimium-asset-io", "minimium-renderer", "minimium-game-sample"]
 
 [[package]]
@@ -45,13 +45,13 @@ forbidden_dependencies = ["minimium-renderer", "minimium-game-sample"]
 [[package]]
 name = "minimium-assets"
 role = "engine-domain"
-responsibility = "Map, OBJ, sky catalogue and authored world-definition parsing and validation."
+responsibility = "Map, OBJ, sky catalogue, authored world definitions, bounded terrain material manifests/KTX2 and fractional land-cover parsing and validation."
 forbidden_dependencies = ["minimium-astronomy", "minimium-procgen", "minimium-asset-io", "minimium-renderer", "minimium-game-sample"]
 
 [[package]]
 name = "minimium-asset-io"
 role = "adapter"
-responsibility = "Bounded authored asset access and prepared GEBCO geography implementing the procgen sampling port."
+responsibility = "Bounded authored asset access, prepared GEBCO/WorldCover geography, HTTP material fetching and transactional hash-addressed package installation."
 forbidden_dependencies = ["minimium-server", "minimium-client", "minimium-renderer", "wgpu", "winit"]
 
 [[package]]
@@ -104,24 +104,32 @@ forbidden_dependencies = ["minimium-astronomy", "wgpu", "wgpu-core", "wgpu-hal",
 [[package]]
 name = "minimium-client"
 role = "application"
-responsibility = "Client shell, presentation, console and local server composition; consumes client runtime contracts."
+responsibility = "Client shell, bounded planet materialization and presentation workers, console and local server composition; consumes client runtime contracts."
 
 [[package]]
 name = "minimium-client-runtime"
 role = "runtime"
-responsibility = "Nonblocking protocol session, connection controller, connector, local-server ownership, fixed-step movement prediction, snapshot reconciliation/interpolation and client environment synchronization state."
+responsibility = "Nonblocking protocol session, content download worker/deadline and GPU readiness coordination, connection controller, connector, local-server ownership with normalized optional startup settings and bounded stderr diagnostics, fixed-step prediction, reconciliation/interpolation and environment synchronization."
 forbidden_dependencies = ["minimium-astronomy", "wgpu", "wgpu-core", "wgpu-hal", "winit", "minimium-client", "minimium-server"]
 
 [[package]]
 name = "minimium-game-sample"
 role = "game-content"
-responsibility = "Shared demo map, stable seed, planet presets, sample planet/dungeon scenario, demo celestial catalogue and sample combat balance consumed by applications."
+responsibility = "Shared demo map, stable seed, planet presets and relief-curve configuration adapters, deterministic periodic material recipes and physical relief scales, climate scenario presets, sample planet/dungeon scenario, demo celestial catalogue and sample combat balance consumed by applications."
 forbidden_dependencies = ["minimium-server", "minimium-client", "wgpu", "winit"]
 
 [[package]]
 name = "minimium-renderer"
 role = "presentation"
-responsibility = "Presentation frame contracts including CPU-only RenderFrame, camera matrix preparation, render/UI vertex layouts, overlay pipelines and geometry conversion, window-independent surface-frame acquire/present operations, ordered frame encoding for shadow, main scene, atmosphere, clouds, UI and output, sky/Sun/marker, world and cloud pipelines, overview globe texture/pipeline/LOD mesh and overview geometry GPU ownership, world geometry GPU catalog, planet visibility/LOD, visual quality and shadow settings, depth target allocation, shadow GPU owner, caster geometry and uniform preparation, UI GPU resources, star catalogue instance preparation and GPU pipeline, linear scene output target/encode pipeline, visual lighting, lunar illumination, WGSL sources, shared GPU frame buffers/bind group, Milky Way texture, celestial halo pipeline and Moon disk/sphere pipelines consumed by the client renderer."
+# Terrain presentation includes stateless seeded planet-space coverage mosaics;
+# these do not own persistent biome state or authoritative world generation.
+# Renderer owns bounded patch caches, CPU vertex preparation, frame upload budgets
+# and in-place GPU floating-origin rebasing; the client owns preparation workers.
+# Renderer decodes validated material means, conforms dense LOD edges and removes
+# radial curtains from presentation copies; global/local history uses UTC endpoints.
+# Renderer owns shared camera-relative optical profiles, bounded atmosphere LUT
+# compute/composition, regional fog presentation and optional GPU timestamp readback.
+responsibility = "Presentation frame contracts including CPU-only RenderFrame, camera matrix preparation, render/UI vertex layouts, overlay pipelines and geometry conversion, window-independent surface-frame acquire/present operations, ordered frame encoding for shadow, main scene, atmosphere, clouds, UI and output, sky/Sun/marker, world and cloud pipelines, shared overview/FPP terrain and sea-level sphere selection, guarded overview frustum and cached coast-priority LOD, paired edge conformance and ocean shading, bounded UTC surface-atlas GPU ownership, atomic staged geometry upload and overview marker ownership, world geometry GPU catalog, planet visibility/LOD, visual quality and camera-fitted single-source shadows with world-space stabilization, pre-exposed HDR night lighting, depth target allocation, shadow GPU owner, caster geometry and uniform preparation, UI GPU resources, star catalogue instance preparation and GPU pipeline, linear scene output target/encode pipeline, visual lighting, lunar illumination, WGSL sources, shared GPU frame buffers/bind group, Milky Way texture, celestial halo pipeline and Moon disk/sphere pipelines consumed by the client renderer."
 forbidden_dependencies = ["minimium-client", "minimium-client-runtime", "minimium-server-runtime", "minimium-protocol", "minimium-storage", "minimium-transport", "minimium-game-sample", "winit"]
 
 [[package]]

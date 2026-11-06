@@ -1,5 +1,5 @@
 use super::*;
-use minimium_procgen::{materialize_planet_overview, PlanetTerrain, SectorGeometry};
+use minimium_procgen::SectorGeometry;
 
 impl Renderer {
     pub(super) fn is_earth_world(&self) -> bool {
@@ -13,7 +13,8 @@ impl Renderer {
         if self.overview_open {
             self.overview_open = false;
             self.gpu.overview_active = false;
-            self.gpu.overview_globe = false;
+            self.gpu.overview_planet = false;
+            self.last_render_position = [f32::INFINITY; 3];
             self.overview_dragging = false;
             self.overview_slider_dragging = false;
             self.map_teleport_armed = false;
@@ -31,55 +32,16 @@ impl Renderer {
             return;
         };
         let earth = manifest.planet().is_some_and(|planet| planet.mode == 1);
-        self.gpu.overview_globe = earth;
-        if earth && self.gpu.globe.is_none() {
-            self.connection_status = "Earth: przygotowanie globu".into();
-        }
-        let vertices = if earth {
-            if self.gpu.globe.is_none() && self.globe_loading.is_none() {
-                let planet = manifest.planet().expect("Earth definition exists");
-                let Some(geography) = self
-                    .connection
-                    .session()
-                    .and_then(|session| session.prepared_geography())
-                else {
-                    return;
-                };
-                let (width, height) = self.gpu.texture_dimensions();
-                let (sender, receiver) = std::sync::mpsc::sync_channel(1);
-                std::thread::spawn(move || {
-                    let pixels = super::globe::pixels(
-                        geography,
-                        planet.height_scale_permille,
-                        planet.sea_level_mm,
-                        width,
-                        height,
-                    );
-                    let _ = sender.send(pixels);
-                });
-                self.globe_loading = Some(receiver);
-            }
+        self.gpu.overview_planet = manifest.topology() == WorldTopology::Planet;
+        let vertices = if self.gpu.overview_planet {
             Vec::new()
-        } else if manifest.topology() == WorldTopology::Planet {
-            let surface = minimium_procgen::planet_surface_for(manifest);
-            let Some(mut terrain) = PlanetTerrain::new(manifest.generation(), surface) else {
-                return;
-            };
-            if let Some(definition) = manifest.planet() {
-                terrain = terrain.with_definition(definition);
-            }
-            let geometry = SectorGeometry {
-                boxes: Vec::new(),
-                triangles: materialize_planet_overview(terrain),
-            };
-            sector_geometry(&geometry)
         } else {
-            let geometry = SectorGeometry {
+            sector_geometry(&SectorGeometry {
                 boxes: map.boxes().to_vec(),
                 triangles: map.triangles().to_vec(),
-            };
-            sector_geometry(&geometry)
+            })
         };
+        self.last_render_position = [f32::INFINITY; 3];
         let marker_size = if manifest.topology() == WorldTopology::Planet {
             let radius = minimium_procgen::planet_surface_for(manifest).radius_mm() as f32 / 1000.0;
             [radius * self.marker_scale(earth); 3]
@@ -89,7 +51,7 @@ impl Renderer {
         let mut marker_vertices = Vec::new();
         cube(
             &mut marker_vertices,
-            if earth {
+            (glam::Vec3::from_array(if earth {
                 let radial =
                     glam::Vec3::from_array(self.game.character.position).normalize_or_zero();
                 let radius =
@@ -97,7 +59,8 @@ impl Renderer {
                 (radial * radius * (1.0 + self.marker_height())).to_array()
             } else {
                 self.game.character.position
-            },
+            }) - glam::Vec3::from_array(self.gpu.render_origin))
+            .to_array(),
             marker_size,
             [0.95, 0.2, 0.1],
         );
@@ -134,7 +97,7 @@ impl Renderer {
     pub(super) fn set_overview_zoom(&mut self, zoom: f32) {
         self.overview_zoom = zoom.clamp(crate::console::MIN_ZOOM, crate::console::MAX_ZOOM);
         self.refresh_earth_marker();
-        self.refresh_earth_globe_lod();
+        self.last_render_position = [f32::INFINITY; 3];
     }
 
     fn marker_height(&self) -> f32 {
@@ -153,28 +116,13 @@ impl Renderer {
         let mut vertices = Vec::new();
         cube(
             &mut vertices,
-            (radial * radius * (1.0 + self.marker_height())).to_array(),
+            (radial * radius * (1.0 + self.marker_height())
+                - glam::Vec3::from_array(self.gpu.render_origin))
+            .to_array(),
             [radius * self.marker_scale(true); 3],
             [0.95, 0.2, 0.1],
         );
         self.gpu.install_overview_marker(&vertices);
-        self.metrics.frame_stats.set_gpu_bytes(
-            self.gpu.fixed_gpu_bytes
-                + u64::from(self.gpu.size.width.max(1))
-                    * u64::from(self.gpu.size.height.max(1))
-                    * 4,
-        );
-    }
-
-    pub(super) fn refresh_earth_globe_lod(&mut self) {
-        if !self.overview_open || !self.is_earth_world() {
-            return;
-        }
-        let Some(manifest) = self.game.world_manifests.get(&self.game.current_instance) else {
-            return;
-        };
-        let radius = minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0;
-        self.gpu.refresh_globe_lod(radius, self.overview_zoom);
         self.metrics.frame_stats.set_gpu_bytes(
             self.gpu.fixed_gpu_bytes
                 + u64::from(self.gpu.size.width.max(1))
@@ -211,10 +159,6 @@ impl Renderer {
 
     pub(super) fn click_map_teleport(&mut self) {
         if !self.map_teleport_armed {
-            return;
-        }
-        if self.gpu.globe.is_none() {
-            self.connection_status = "Earth: poczekaj na teksturę globu".into();
             return;
         }
         let Some((x, y)) = self.input.last_cursor else {
@@ -263,28 +207,25 @@ impl Renderer {
         }
     }
 
-    pub(super) fn poll_globe(&mut self) {
-        let Some(receiver) = &self.globe_loading else {
-            return;
-        };
-        if let Ok(pixels) = receiver.try_recv() {
-            if let Some(manifest) = self
-                .game
-                .world_manifests
-                .get(&self.game.current_instance)
-                .filter(|manifest| manifest.planet().is_some_and(|planet| planet.mode == 1))
-            {
-                let radius =
-                    minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0;
-                let (width, height) = self.gpu.texture_dimensions();
-                self.gpu
-                    .install_globe(&pixels, width, height, radius, self.overview_zoom);
-                if self.settings.require_earth && self.gpu.scene_visible {
-                    self.connection_status = "Earth: połączono".into();
-                }
-            }
-            self.globe_loading = None;
+    pub(super) fn terrain_view(&self) -> minimium_renderer::terrain_view::TerrainView {
+        if self.overview_open && self.gpu.overview_planet {
+            let position = self
+                .overview_camera()
+                .0
+                .inverse()
+                .transform_point3(glam::Vec3::ZERO)
+                .to_array();
+            return minimium_renderer::terrain_view::TerrainView::overview(
+                position,
+                self.fov_degrees.to_radians(),
+                [self.gpu.size.width, self.gpu.size.height],
+            );
         }
+        minimium_renderer::terrain_view::TerrainView::new(
+            self.game.character.position,
+            self.fov_degrees.to_radians(),
+            self.gpu.size.height,
+        )
     }
 
     pub(super) fn overview_camera(&self) -> (glam::Mat4, f32) {

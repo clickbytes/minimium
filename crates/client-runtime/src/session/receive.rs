@@ -46,9 +46,17 @@ impl ClientSession {
     /// state. Fatal conditions append one Disconnected event and clear all
     /// buffers and connection state.
     pub fn poll(&mut self, events: &mut Vec<SessionEvent>) -> SessionState {
+        if let Err(error) = self.poll_content() {
+            self.disconnect(
+                DisconnectReason::Materials(format!("{error}; reconnect to retry")),
+                events,
+            );
+            return self.state;
+        }
         let now = Instant::now();
         self.clock.observe_poll(self.clock.local_monotonic_ms());
         if self.state == SessionState::AwaitingWelcome
+            && self.content.started.is_none()
             && now.saturating_duration_since(self.state_since) >= WELCOME_TIMEOUT
         {
             self.disconnect(DisconnectReason::WelcomeTimeout, events);

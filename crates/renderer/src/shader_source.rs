@@ -1,6 +1,8 @@
 pub fn clouds() -> String {
     combine(&[
         include_str!("shaders/frame.wgsl"),
+        include_str!("shaders/atmosphere_frame.wgsl"),
+        include_str!("shaders/atmosphere_common.wgsl"),
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
         include_str!("shaders/clouds.wgsl"),
@@ -14,6 +16,8 @@ pub fn cloud_composite() -> String {
 pub fn world() -> String {
     combine(&[
         include_str!("shaders/frame.wgsl"),
+        include_str!("shaders/atmosphere_frame.wgsl"),
+        include_str!("shaders/atmosphere_common.wgsl"),
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
         include_str!("shaders/shadow_sampling.wgsl"),
@@ -21,29 +25,49 @@ pub fn world() -> String {
     ])
 }
 
-pub fn globe() -> String {
+pub fn terrain() -> String {
     combine(&[
         include_str!("shaders/frame.wgsl"),
+        include_str!("shaders/atmosphere_frame.wgsl"),
+        include_str!("shaders/atmosphere_common.wgsl"),
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
-        &include_str!("shaders/atmosphere_frame.wgsl").replace("@group(1)", "@group(2)"),
-        include_str!("shaders/atmosphere_common.wgsl"),
-        include_str!("shaders/globe.wgsl"),
+        include_str!("shaders/shadow_sampling.wgsl"),
+        include_str!("shaders/terrain_material.wgsl"),
+        include_str!("shaders/terrain_patch.wgsl"),
+        include_str!("shaders/terrain_blend.wgsl"),
+        include_str!("shaders/terrain_climate.wgsl"),
+        include_str!("shaders/terrain.wgsl"),
     ])
 }
 
 pub fn sky() -> String {
     combine(&[
         include_str!("shaders/frame.wgsl"),
+        include_str!("shaders/atmosphere_frame.wgsl"),
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
         include_str!("shaders/sky.wgsl"),
     ])
 }
 
+pub fn ocean() -> String {
+    combine(&[
+        include_str!("shaders/frame.wgsl"),
+        include_str!("shaders/atmosphere_frame.wgsl"),
+        include_str!("shaders/atmosphere_common.wgsl"),
+        include_str!("shaders/output_color.wgsl"),
+        include_str!("shaders/sky_common.wgsl"),
+        include_str!("shaders/shadow_sampling.wgsl"),
+        include_str!("shaders/terrain_material.wgsl"),
+        include_str!("shaders/ocean.wgsl"),
+    ])
+}
+
 pub fn sun() -> String {
     combine(&[
         include_str!("shaders/frame.wgsl"),
+        include_str!("shaders/atmosphere_frame.wgsl"),
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
         include_str!("shaders/sun.wgsl"),
@@ -53,6 +77,7 @@ pub fn sun() -> String {
 pub fn stars() -> String {
     combine(&[
         include_str!("shaders/frame.wgsl"),
+        include_str!("shaders/atmosphere_frame.wgsl"),
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
         include_str!("shaders/stars.wgsl"),
@@ -62,6 +87,7 @@ pub fn stars() -> String {
 pub fn moon() -> String {
     combine(&[
         include_str!("shaders/frame.wgsl"),
+        include_str!("shaders/atmosphere_frame.wgsl"),
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
         include_str!("shaders/moon.wgsl"),
@@ -71,6 +97,7 @@ pub fn moon() -> String {
 pub fn moon_sphere() -> String {
     combine(&[
         include_str!("shaders/frame.wgsl"),
+        include_str!("shaders/atmosphere_frame.wgsl"),
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
         include_str!("shaders/moon_sphere.wgsl"),
@@ -80,6 +107,7 @@ pub fn moon_sphere() -> String {
 pub fn celestial_halo() -> String {
     combine(&[
         include_str!("shaders/frame.wgsl"),
+        include_str!("shaders/atmosphere_frame.wgsl"),
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
         include_str!("shaders/celestial_halo.wgsl"),
@@ -100,6 +128,7 @@ pub fn atmosphere() -> String {
 pub fn marker() -> String {
     combine(&[
         include_str!("shaders/frame.wgsl"),
+        include_str!("shaders/atmosphere_frame.wgsl"),
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
         include_str!("shaders/marker.wgsl"),
@@ -138,4 +167,21 @@ fn combine(parts: &[&str]) -> String {
         source.push('\n');
     }
     source
+}
+
+pub fn atmosphere_compute(kind: &str) -> String {
+    let (dimension, entry) = match kind {
+        "sky" => ("2d", include_str!("shaders/atmosphere_sky_compute.wgsl")),
+        "aerial" => ("3d", include_str!("shaders/atmosphere_aerial_compute.wgsl")),
+        _ => ("2d", include_str!("shaders/atmosphere_multi_compute.wgsl")),
+    };
+    let body = include_str!("shaders/atmosphere_compute.wgsl")
+        .replace("__DIM__", dimension)
+        .replace("__ENTRY__", entry);
+    combine(&[
+        include_str!("shaders/frame.wgsl"),
+        include_str!("shaders/atmosphere_frame.wgsl"),
+        include_str!("shaders/atmosphere_common.wgsl"),
+        &body,
+    ])
 }

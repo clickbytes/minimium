@@ -1,0 +1,2 @@
+// Transition from 2026-01-01 to 2027-01-01 UTC, independent of connection time.
+(start_utc: 1767225600.0, end_utc: 1798761600.0, global: (temperature_c: 5.0, moisture: -0.25), regions: [])

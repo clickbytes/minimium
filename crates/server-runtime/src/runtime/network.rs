@@ -33,7 +33,11 @@ impl ServerRuntime {
             }
             let handshake_timed_out = client.player_id().is_none()
                 && activity_check_at.duration_since(client.connected_at)
-                    >= CLIENT_HANDSHAKE_TIMEOUT;
+                    >= if client.pending_profile.is_some() {
+                        Duration::from_secs(300)
+                    } else {
+                        CLIENT_HANDSHAKE_TIMEOUT
+                    };
             let idle_timed_out = client.player_id().is_some()
                 && activity_check_at.duration_since(client.last_message_at) >= CLIENT_IDLE_TIMEOUT;
             if (handshake_timed_out || idle_timed_out)

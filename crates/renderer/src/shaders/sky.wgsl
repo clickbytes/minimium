@@ -41,6 +41,10 @@ fn milky_way_radiance(ray_world: vec3<f32>) -> vec3<f32> {
     );
     let far_point = camera.inverse_sky_view_projection * vec4<f32>(ndc, 1.0, 1.0);
     let ray_world = normalize(far_point.xyz / max(abs(far_point.w), 1.0e-6));
+    if physical_atmosphere() {
+        if celestial_contrast()<=0.0 {return vec4<f32>(0.0,0.0,0.0,1.0);}
+        return vec4<f32>(milky_way_radiance(ray_world)*MILKY_WAY_ORBIT_GAIN*horizon_visibility(ray_world)*celestial_contrast(),1.0);
+    }
     if environment.flags.y == 1u {
         return vec4<f32>(tone_map_linear(milky_way_radiance(ray_world) * MILKY_WAY_ORBIT_GAIN), 1.0);
     }
@@ -49,9 +53,9 @@ fn milky_way_radiance(ray_world: vec3<f32>) -> vec3<f32> {
         * environment.local_moon_rgb_visibility.w;
     let moon_contrast = 1.0 / (1.0 + 8.0 * moon_flux);
     let galactic_visibility = sample.transmittance
-        * environment.sky_horizon_rgb_star_visibility.w * moon_contrast;
+        * celestial_contrast() * moon_contrast;
     var galactic_light = vec3<f32>(0.0);
-    if environment.sky_horizon_rgb_star_visibility.w > 0.0 {
+    if celestial_contrast() > 0.0 {
         galactic_light = milky_way_radiance(ray_world);
     }
     let sky = tone_map_linear(sample.scattering_rgb

@@ -4,53 +4,128 @@
 //! this crate owns renderer-specific geometry layouts, resources and pipelines. Window
 //! lifecycle, sessions, simulation and frame scheduling remain application concerns.
 
+#[cfg(feature = "gpu")]
 pub mod atmosphere;
+pub mod atmosphere_debug;
+#[cfg(feature = "gpu")]
 pub mod atmosphere_gpu;
+#[cfg(feature = "gpu")]
 pub mod atmosphere_pipeline;
+#[cfg(feature = "gpu")]
+pub mod atmosphere_resources;
+#[cfg(feature = "gpu")]
 pub mod atmosphere_table;
+#[cfg(feature = "gpu")]
+mod atmosphere_timing;
+#[cfg(feature = "gpu")]
 pub mod atmosphere_uniform;
+#[cfg(feature = "gpu")]
+pub mod atmosphere_view;
+#[cfg(feature = "gpu")]
 pub mod catalogue;
+#[cfg(feature = "gpu")]
 pub mod celestial_halo;
+#[cfg(feature = "gpu")]
 pub mod cloud_face;
+#[cfg(feature = "gpu")]
 pub mod cloud_gpu;
+#[cfg(feature = "gpu")]
 pub mod cloud_mesh;
+#[cfg(feature = "gpu")]
 pub mod cloud_pipeline;
+#[cfg(feature = "gpu")]
 pub mod cloud_targets;
+#[cfg(feature = "gpu")]
 pub mod cloud_uniform;
+#[cfg(feature = "gpu")]
 pub mod cloud_voxels;
+#[cfg(feature = "gpu")]
+mod coast_probe;
+#[cfg(feature = "gpu")]
 pub mod environment_pipelines;
+#[cfg(feature = "gpu")]
 pub mod frame_encoder;
+#[cfg(feature = "gpu")]
 pub mod geometry;
+#[cfg(feature = "gpu")]
 pub mod geometry_gpu;
-pub mod globe_detail;
-pub mod globe_gpu;
-pub mod globe_vertex;
+#[cfg(feature = "gpu")]
 pub mod gpu_bindings;
+#[cfg(feature = "gpu")]
 pub mod gpu_frame;
+#[cfg(feature = "gpu")]
 pub mod lighting;
+#[cfg(feature = "gpu")]
 pub mod milky_way_gpu;
+#[cfg(feature = "gpu")]
 pub mod moon_disk;
+#[cfg(feature = "gpu")]
 pub mod moon_lighting;
+#[cfg(feature = "gpu")]
 pub mod moon_sphere;
+#[cfg(feature = "gpu")]
+pub mod ocean_geometry;
+#[cfg(feature = "gpu")]
+mod ocean_pipeline;
+#[cfg(feature = "gpu")]
 pub mod output;
+#[cfg(feature = "gpu")]
 pub mod overview_gpu;
+#[cfg(feature = "gpu")]
 pub mod planet_visibility;
+#[cfg(feature = "gpu")]
+pub mod prepared_sector;
+#[cfg(feature = "gpu")]
 pub mod profiles;
 pub mod quality;
+#[cfg(feature = "gpu")]
 pub mod render_frame;
+#[cfg(feature = "gpu")]
+pub mod render_patch_cache;
+#[cfg(feature = "gpu")]
 pub mod scene_encoder;
+#[cfg(feature = "gpu")]
 pub mod shader_source;
+#[cfg(feature = "gpu")]
 pub mod shadow_geometry;
+#[cfg(feature = "gpu")]
 pub mod shadow_gpu;
+#[cfg(feature = "gpu")]
 pub mod shadow_settings;
+#[cfg(feature = "gpu")]
 pub mod shadow_target;
+#[cfg(feature = "gpu")]
 pub mod shadow_uniform;
+#[cfg(feature = "gpu")]
 pub mod star_gpu;
+#[cfg(feature = "gpu")]
 pub mod stars;
+#[cfg(feature = "gpu")]
+pub mod surface_atlas;
+#[cfg(feature = "gpu")]
+pub mod surface_cover;
+#[cfg(feature = "gpu")]
 pub mod surface_frame;
+#[cfg(feature = "gpu")]
+mod terrain_cover_gpu;
+pub mod terrain_debug;
+#[cfg(feature = "gpu")]
+pub mod terrain_edges;
+#[cfg(feature = "gpu")]
+pub mod terrain_geometry;
+#[cfg(feature = "gpu")]
+pub mod terrain_gpu;
+#[cfg(feature = "gpu")]
+mod terrain_palette;
+#[cfg(feature = "gpu")]
+pub mod terrain_view;
+#[cfg(feature = "gpu")]
 pub mod ui_pipeline;
+#[cfg(feature = "gpu")]
 pub mod ui_vertex;
+#[cfg(feature = "gpu")]
 pub mod world_geometry_gpu;
+#[cfg(feature = "gpu")]
 pub mod world_pipeline;
 
 /// Compile-time renderer shader sources.
@@ -59,25 +134,39 @@ pub mod shaders {
     pub const SHADOW_WGSL: &str = include_str!("shaders/shadow.wgsl");
 }
 
+#[cfg(feature = "gpu")]
 pub use atmosphere_gpu::AtmosphereGpu;
+#[cfg(feature = "gpu")]
 pub use atmosphere_uniform::AtmosphereUniform;
+#[cfg(feature = "gpu")]
 pub use celestial_halo::CelestialHaloGpu;
+#[cfg(feature = "gpu")]
 pub use cloud_face::CloudFace;
+#[cfg(feature = "gpu")]
 pub use cloud_gpu::CloudGpu;
+#[cfg(feature = "gpu")]
 pub use cloud_targets::CloudTargets;
+#[cfg(feature = "gpu")]
 pub use cloud_uniform::{CloudRecord, CloudUniform};
+#[cfg(feature = "gpu")]
 pub use environment_pipelines::EnvironmentPipelines;
-pub use globe_detail::DetailGpu;
-pub use globe_gpu::GlobeGpu;
-pub use globe_vertex::GlobeVertex;
+#[cfg(feature = "gpu")]
 pub use milky_way_gpu::MilkyWayGpu;
+#[cfg(feature = "gpu")]
 pub use moon_disk::MoonGpu;
+#[cfg(feature = "gpu")]
 pub use moon_sphere::MoonSphereGpu;
+#[cfg(feature = "gpu")]
 pub use output::OutputEncoder;
+#[cfg(feature = "gpu")]
 pub use render_frame::RenderFrame;
+#[cfg(feature = "gpu")]
 pub use shadow_gpu::ShadowGpu;
+#[cfg(feature = "gpu")]
 pub use shadow_settings::ShadowSettings;
+#[cfg(feature = "gpu")]
 pub use star_gpu::StarGpu;
+#[cfg(feature = "gpu")]
 pub use ui_vertex::UiVertex;
 
 /// Selects the camera projection context used by world rendering.
@@ -195,3 +284,9 @@ impl RenderViewFrame {
             && self.game_planet_radius_m >= 0.0
     }
 }
+
+#[cfg(feature = "gpu")]
+mod geometry_rebase;
+
+#[cfg(feature = "gpu")]
+pub mod shadow_view;

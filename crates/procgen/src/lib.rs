@@ -12,7 +12,9 @@ mod planet_teleport;
 mod random_address;
 mod sector_geometry;
 mod sector_neighborhood;
+pub mod surface_habitat;
 mod terrain_color;
+pub mod terrain_surface;
 mod traversal;
 
 #[cfg(test)]
@@ -34,7 +36,7 @@ pub use planet_sector::{
     generate_planet_render_patch, generate_planet_render_patch_with_geography,
     generate_planet_sector, generate_planet_sector_with_geography, planet_point_at_direction,
     planet_point_at_direction_with_geography, planet_sector_count, planet_surface,
-    planet_surface_for, PLANET_RADIUS_MM,
+    planet_surface_for, PLANET_RADIUS_MM, PLANET_RENDER_BLOCK_SUBDIVISIONS,
 };
 pub use planet_teleport::{
     planet_collision_position_at_direction, planet_collision_position_at_direction_with_geography,

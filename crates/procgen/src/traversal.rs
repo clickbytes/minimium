@@ -20,7 +20,6 @@ pub fn can_traverse_surface(
     geography
         .and_then(|geography| geography.elevation_m(position_m.map(f64::from)).ok())
         .is_some_and(|elevation_m| {
-            (elevation_m * f64::from(planet.height_scale_permille)).round() as i64
-                >= planet.sea_level_mm
+            planet.earth_elevation_mm(elevation_m).round() as i64 >= planet.sea_level_mm
         })
 }

@@ -2,6 +2,11 @@ use minimium_world::world::{GenerationSpec, GeneratorDigest, WorldManifest, Worl
 
 /// Checks the generator contract before a supplied manifest enters a runtime.
 pub fn validate_world_manifest(manifest: WorldManifest) -> Result<(), String> {
+    if manifest.planet().is_some_and(|p| {
+        !p.is_valid() || (p.peak_relief.enabled() && manifest.generation().revision().get() != 5)
+    }) {
+        return Err("peak relief requires a valid Earth generator v5 definition".into());
+    }
     if manifest.generator_digest() == generator_digest(manifest.topology(), manifest.generation()) {
         Ok(())
     } else {
@@ -14,6 +19,8 @@ pub fn generator_digest(topology: WorldTopology, generation: GenerationSpec) -> 
     let revision = generation.revision().get();
     let label = if revision == 1 {
         b"minimium-procgen/philox4x32-10/v1".as_slice()
+    } else if revision >= 5 {
+        b"minimium-procgen/philox4x32-10/planet-sectors/v5".as_slice()
     } else if revision >= 4 {
         b"minimium-procgen/philox4x32-10/planet-sectors/v4".as_slice()
     } else if revision >= 3 {

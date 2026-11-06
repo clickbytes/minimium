@@ -85,6 +85,7 @@ impl ServerRuntime {
                 current.jump = jump;
                 self.game.input_last_received.insert(id, Instant::now());
             }
+            WorldInput::SetAltitude(id, context, km) => self.apply_altitude(id, context, km),
             WorldInput::MapTeleport(id, context, direction) => {
                 let position_mm = self.map_teleport(id, context, direction);
                 if let Some(index) = self.connections.client_indices_by_player.get(&id).copied() {

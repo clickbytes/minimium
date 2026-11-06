@@ -64,6 +64,13 @@ pub(super) fn write_saved_world(
 }
 
 pub(super) fn write_manifest(file: &mut impl Write, manifest: WorldManifest) -> io::Result<()> {
+    if manifest.planet().is_some_and(|p| {
+        !p.is_valid() || (p.peak_relief.enabled() && manifest.generation().revision().get() != 5)
+    }) {
+        return Err(invalid_world_snapshot(
+            "invalid peak relief generation contract",
+        ));
+    }
     write!(
         file,
         "\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
@@ -93,6 +100,14 @@ pub(super) fn write_manifest(file: &mut impl Write, manifest: WorldManifest) -> 
                 planet.mountain_band_frequency,
                 hex_digest(&planet.package_digest)
             )?;
+            if manifest.generation().revision().get() >= 5 {
+                let curve = planet.peak_relief;
+                write!(
+                    file,
+                    "\t{}\t{}\t{}\t{}",
+                    curve.start_m, curve.full_m, curve.multiplier_permille, curve.exponent
+                )?;
+            }
         } else {
             write!(file, "\t0")?;
         }
@@ -203,6 +218,20 @@ pub(super) fn parse_manifest(fields: &mut std::str::Split<'_, char>) -> io::Resu
                     )
                     .map_err(|_| invalid_world_snapshot("invalid package digest"))?;
                 }
+                let peak_relief = if revision.get() >= 5 {
+                    let value = |f: &mut std::str::Split<'_, char>| {
+                        u32::try_from(number(f)?)
+                            .map_err(|_| invalid_world_snapshot("invalid peak relief"))
+                    };
+                    minimium_world::world::PeakRelief {
+                        start_m: value(fields)?,
+                        full_m: value(fields)?,
+                        multiplier_permille: value(fields)?,
+                        exponent: value(fields)?,
+                    }
+                } else {
+                    Default::default()
+                };
                 let planet = PlanetDefinition {
                     mode,
                     radius_mm,
@@ -213,6 +242,7 @@ pub(super) fn parse_manifest(fields: &mut std::str::Split<'_, char>) -> io::Resu
                     detail_wavelength_mm,
                     mountain_band_frequency,
                     package_digest,
+                    peak_relief,
                 };
                 if !planet.is_valid() {
                     return Err(invalid_world_snapshot("invalid planet definition"));

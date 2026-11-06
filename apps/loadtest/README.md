@@ -22,6 +22,9 @@ The loadtest process owns scenario and client lifetimes.
 
 ## Invariants and errors
 
+Protocol v15 setup explicitly sends `Presentation(None)` before Identify. Load
+clients do not receive material offers, download textures or depend on a GPU.
+
 Scenarios must remain reproducible and report connection or protocol failures explicitly.
 
 ## Commands

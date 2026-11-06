@@ -4,12 +4,16 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = ["desktop"]
+desktop = ["minimium-renderer/gpu", "dep:minimium-astronomy", "dep:wgpu", "dep:winit", "dep:pollster", "dep:arboard"]
+
 [dependencies]
 minimium-assets = { path = "../../crates/assets" }
 minimium-client-runtime = { path = "../../crates/client-runtime" }
-minimium-renderer = { path = "../../crates/renderer" }
+minimium-renderer = { path = "../../crates/renderer", default-features = false }
 minimium-asset-io = { path = "../../crates/asset-io" }
-minimium-astronomy = { path = "../../crates/astronomy" }
+minimium-astronomy = { path = "../../crates/astronomy", optional = true }
 minimium-platform = { path = "../../crates/platform" }
 minimium-core = { path = "../../crates/core" }
 minimium-environment = { path = "../../crates/environment" }
@@ -24,7 +28,7 @@ minimium-game-sample = { path = "../../games/sample" }
 bytemuck = { version = "1.25", features = ["derive"] }
 glam = "0.30"
 half = "2"
-pollster = "0.4"
-wgpu = "30"
-winit = "0.30"
-arboard = "3"
+pollster = { version = "0.4", optional = true }
+wgpu = { version = "30", optional = true }
+winit = { version = "0.30", optional = true }
+arboard = { version = "3", optional = true }

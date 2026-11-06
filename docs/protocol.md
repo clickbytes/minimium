@@ -1,4 +1,4 @@
-# Game protocol v13
+# Game protocol v17
 
 `minimium-protocol` defines typed messages and binary encoding without depending
 on TCP, UDP, sockets or a runtime. The current server adapter carries frames over
@@ -10,14 +10,14 @@ Every frame begins with a four-byte header:
 
 | Offset | Size | Meaning |
 | --- | ---: | --- |
-| 0 | 1 byte | Protocol version (`13`) |
+| 0 | 1 byte | Protocol version (`17`) |
 | 1 | 1 byte | Message type |
 | 2 | 2 bytes | Payload length, unsigned little-endian |
 
 The payload follows immediately. Maximum payload is 4096 bytes. Receivers may
 provide partial or concatenated frames; decoders report incomplete input
 without consuming it. Unknown versions, message types, malformed fields and
-oversized payloads are rejected. v12 and v13 are intentionally incompatible;
+oversized payloads are rejected. v16 and v17 are intentionally incompatible;
 there is no fallback parser. The server returns the existing Protocol error for
 an unsupported client version; clients surface the unsupported version header
 when they receive a frame from an older server. Integers and `f32` values are little-endian.
@@ -36,13 +36,34 @@ seed, 4-byte generation revision, 4-byte position quantum, 8-byte content
 revision and 32-byte generator digest, followed by a one-byte planet-definition
 presence flag. A present definition adds mode, radius, height scale, sea level,
 mountain limit, detail strength/wavelength, band frequency and a 32-byte GEBCO
-package digest. The client verifies the map fingerprint
+package digest, then four u32 peak-relief fields: start_m, full_m, multiplier_permille
+and exponent. The client verifies the map fingerprint
 and generator digest in Welcome and transfer preparation before joining a world.
 
 ## Message types
 
-The client sends Identify first with its 16-byte persistent profile ID. The
-server sends Welcome only after accepting that profile.
+The client sends Presentation then Identify with its 16-byte persistent profile
+ID. Desktop clients receive ContentOffer and complete content preparation before
+ContentReady allows admission and Welcome. Text/load clients declare no
+presentation and proceed directly to admission. Legacy Identify without a
+Presentation record is treated as headless. The manifest hash and climate are
+session-wide; world transitions retain the prepared materials and use the
+existing prepare/ready gate for geometry. Content has a 300-second preparation
+deadline separate from the five-second Welcome deadline.
+
+The v15 additions (the earlier message records below remain in use):
+
+| Direction | Type | Payload |
+| --- | --- | --- |
+| Client to server | `0x0d` Presentation | one byte: 0 headless, 1 BC textures, 2 RGBA fallback |
+| Client to server | `0x0e` ContentReady | 32-byte manifest SHA-256; zero denotes base |
+| Server to client | `0x90` ContentOffer | 32-byte manifest SHA-256, HTTP port (`u16`), climate scenario |
+
+The binary climate record contains start/end UTC and global temperature/moisture
+as four little-endian `f64` values, a region count (`u8`, at most 32), then six
+`f64` values per region: center x/y/z, angular radius, temperature and moisture.
+Every value is validated before admission. The material HTTP endpoint is the
+game peer's IP with the offered port; files never traverse the game stream.
 
 | Direction | Type | Payload |
 | --- | ---: | --- |
@@ -70,6 +91,7 @@ server sends Welcome only after accepting that profile.
 | Server → client | `0x8a` TransitionPrepare | transition ID, source/target contexts, fingerprint, destination, target manifest, then 107-byte environment suffix |
 | Server → client | `0x8b` TransitionCommitted | transition ID, target context, fingerprint, destination, health, target manifest, then 107-byte environment suffix |
 | Server → client | `0x8c` TransitionCancelled | transition ID and source context |
+| Server → client | `0x91` AltitudeResult | context; success flag; optional destination (three i64 millimeters) |
 | Server → client | `0x8d` MapTeleportResult | success flag; on success, destination (`i64` millimeters x/y/z) |
 | Server → client | `0x8e` EnvironmentSync | current `WorldContext` (32 bytes), `ClockSample` (58 bytes), and environment descriptor (49 bytes), total 139 bytes |
 | Server → client | `0x8f` TimeProbeReply | sequence, echoed client time, server receive/send monotonic ms and 16-byte session nonce, total 44 bytes |
@@ -117,7 +139,11 @@ seconds without a fresh sample/probe and Unavailable after sixty seconds; there
 is no client-wall-clock fallback for network sessions.
 
 For `WorldInput`, subtypes are `1` SetName, `2` Move, `3` Fire, `4` Chat and
-`5` UsePortal and `6` MapTeleport (unit direction, three `f32` values). The client session wraps ordinary gameplay messages in this record
+`5` UsePortal, `6` MapTeleport (unit direction, three `f32` values), `7` Motion
+and `8` SetAltitude (finite `f32` kilometres, 0..10000). SetAltitude requires fly
+mode and a planet; the server also checks transfer state and coordinate bounds.
+Earth relief scaling applies to the requested height above local collision terrain.
+AltitudeResult carries the request context so clients can discard stale results. The client session wraps ordinary gameplay messages in this record
 using its current context. `TransitionReady` is sent only after the client
 validates the target manifest. The server commits ready transfers at a tick
 boundary and forces a full snapshot in the new context. A cancellation succeeds
@@ -168,3 +194,8 @@ transfer, migration and reconnect have workspace coverage. A wire-level v9
 demonstration also completed planet → dungeon → planet and restored the profile
 after a graceful server restart. These results do not verify the rendered GPU
 scene; that transfer still needs visual review.
+
+Version 17 also adds ClimateScenario.relief_influence (f64, finite 0..1) after
+global moisture and before the region count in ContentOffer. Missing values are
+not accepted on the wire; old saved RON scenarios default to 0 before encoding.
+Headless peers consume the same definitions without renderer dependencies.

@@ -1,5 +1,5 @@
+use super::sector_worker::{PreparedScene, SectorWorker};
 use minimium_procgen::SectorGeometry;
-use minimium_renderer::planet_visibility::render_patches;
 use minimium_sectors::{InstallResult, RequestError, SectorManager, SectorTicket};
 use minimium_simulation::CollisionIndex;
 use minimium_world::world::{
@@ -13,7 +13,10 @@ const MAX_CLIENT_INSTALLS_PER_FRAME: usize = 32;
 
 pub(super) struct ClientSectorCache {
     manager: SectorManager<SectorGeometry>,
+    collision_worker: super::collision_worker::CollisionWorker,
     interests: HashMap<WorldInstanceId, SectorInterest>,
+    workers: HashMap<WorldInstanceId, SectorWorker>,
+    presentations: HashMap<WorldInstanceId, Arc<PreparedScene>>,
 }
 
 struct SectorInterest {
@@ -21,9 +24,12 @@ struct SectorInterest {
     tickets: Vec<SectorTicket>,
     generation: GenerationRevision,
     content_revision: WorldContentRevision,
+    collision: Option<CollisionIndex>,
 }
 
 pub(super) struct ClientSectorScene {
+    pub(super) prepared: Option<Arc<PreparedScene>>,
+    pub(super) origin: [f32; 3],
     pub(super) keys: Vec<SectorKey>,
     pub(super) sectors: Vec<(SectorKey, Arc<SectorGeometry>)>,
     pub(super) render_sectors: Vec<(SectorKey, u8, Arc<SectorGeometry>)>,
@@ -33,6 +39,9 @@ pub(super) struct ClientSectorScene {
 }
 
 impl ClientSectorCache {
+    pub(super) fn presentation(&self, instance: WorldInstanceId) -> Option<&PreparedScene> {
+        self.presentations.get(&instance).map(AsRef::as_ref)
+    }
     pub(super) fn reset(&mut self) {
         *self = Self::new();
     }
@@ -40,7 +49,10 @@ impl ClientSectorCache {
         Self {
             manager: SectorManager::new(CLIENT_SECTOR_CACHE_CAPACITY, CLIENT_SECTOR_CACHE_CAPACITY)
                 .expect("client sector cache capacity is nonzero"),
+            collision_worker: super::collision_worker::CollisionWorker::new(),
             interests: HashMap::new(),
+            workers: HashMap::new(),
+            presentations: HashMap::new(),
         }
     }
 
@@ -63,11 +75,18 @@ impl ClientSectorCache {
         instance: WorldInstanceId,
         manifest: WorldManifest,
         position: [f32; 3],
+        view: minimium_renderer::terrain_view::TerrainView,
+        origin: [f32; 3],
         maps: &HashMap<WorldInstanceId, WorldMap>,
         manifests: &HashMap<WorldInstanceId, WorldManifest>,
         geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
     ) -> Option<ClientSectorScene> {
         if maps.get(&instance).is_none() || manifests.get(&instance) != Some(&manifest) {
+            return None;
+        }
+        // Earth jobs must wait for the session's validated geography, including
+        // bootstrap frames before Welcome. Never dispatch a job that would panic.
+        if manifest.planet().is_some_and(|p| p.mode == 1) && geography.is_none() {
             return None;
         }
         let keys = minimium_procgen::sector_neighborhood_for(manifest, position);
@@ -94,11 +113,21 @@ impl ClientSectorCache {
                     tickets,
                     generation: manifest.generation().revision(),
                     content_revision: manifest.content_revision(),
+                    collision: None,
                 },
             );
         }
 
+        for (ticket, geometry) in self.collision_worker.poll() {
+            let revision = SectorRevision::new(1).expect("initial revision");
+            if self.manager.install_data(ticket, revision, geometry) == InstallResult::Installed {
+                let _ = self.manager.install_collision(ticket);
+            }
+        }
         for _ in 0..MAX_CLIENT_INSTALLS_PER_FRAME {
+            if !self.collision_worker.has_capacity() {
+                break;
+            }
             let Some(ticket) = self.manager.begin_next() else {
                 break;
             };
@@ -108,6 +137,15 @@ impl ClientSectorCache {
             let Some(source_manifest) = manifests.get(&ticket.instance()) else {
                 continue;
             };
+            if source_manifest.topology() == minimium_world::world::WorldTopology::Planet {
+                self.collision_worker.submit(
+                    ticket,
+                    source_map.clone(),
+                    *source_manifest,
+                    geography.clone(),
+                );
+                continue;
+            }
             let geometry = Arc::new(minimium_procgen::materialize_world_sector_with_geography(
                 source_map,
                 *source_manifest,
@@ -135,18 +173,42 @@ impl ClientSectorCache {
             .iter()
             .map(|ticket| Some((ticket.key(), self.manager.payload_arc(*ticket)?)))
             .collect::<Option<_>>()?;
-        let collision =
-            collision_from_sectors(sectors.iter().map(|(_, geometry)| geometry.as_ref()));
+        let interest = self.interests.get_mut(&instance)?;
+        let collision = interest
+            .collision
+            .get_or_insert_with(|| collision_from_sectors(sectors.iter().map(|(_, g)| g.as_ref())))
+            .clone();
+        let mut prepared = None;
         let render_sectors = if manifest.topology() == minimium_world::world::WorldTopology::Planet
         {
-            render_patches(manifest, position, &sectors, geography.clone())
+            if let Some(result) = self
+                .workers
+                .entry(instance)
+                .or_insert_with(SectorWorker::new)
+                .poll(instance, manifest, view, origin, &sectors, geography)
+            {
+                self.presentations.insert(instance, result);
+            }
+            if let Some(result) = self
+                .presentations
+                .get(&instance)
+                .filter(|r| r.matches(instance, manifest, origin))
+            {
+                prepared = Some(result.clone());
+                result
+                    .patches
+                    .iter()
+                    .map(|p| (p.key, p.lod, p.geometry.clone()))
+                    .collect()
+            } else {
+                Vec::new()
+            }
         } else {
-            sectors
-                .iter()
-                .map(|(key, geometry)| (*key, 0, Arc::clone(geometry)))
-                .collect()
+            sectors.iter().map(|(k, g)| (*k, 0, g.clone())).collect()
         };
         Some(ClientSectorScene {
+            prepared,
+            origin,
             keys,
             sectors,
             render_sectors,
@@ -157,6 +219,8 @@ impl ClientSectorCache {
     }
 
     pub(super) fn release_interest(&mut self, instance: WorldInstanceId) {
+        self.presentations.remove(&instance);
+        self.workers.remove(&instance);
         if let Some(interest) = self.interests.remove(&instance) {
             for ticket in interest.tickets {
                 self.manager.unpin(ticket);

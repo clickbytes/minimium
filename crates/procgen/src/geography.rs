@@ -21,6 +21,9 @@ impl std::error::Error for EarthSampleError {}
 
 /// Immutable host-prepared geographic data used by deterministic world algorithms.
 pub trait PreparedGeography: Send + Sync + std::fmt::Debug {
+    fn land_cover(&self, _direction: [f64; 3]) -> Option<[f32; 6]> {
+        None
+    }
     fn package_digest(&self) -> [u8; 32];
     fn elevation_m(&self, direction: [f64; 3]) -> Result<f64, EarthSampleError>;
     fn elevation_upper_bound_m(

@@ -1,5 +1,5 @@
 use super::{
-    environment::{EnvironmentFrame, EnvironmentFrameStatus, EnvironmentViewKind},
+    environment::{EnvironmentFrame, EnvironmentFrameStatus},
     shadows::{self, ShadowInvalidReason, ShadowUniform},
     GpuResources,
 };
@@ -73,9 +73,8 @@ impl GpuResources {
             return;
         }
         if environment.status != EnvironmentFrameStatus::Available
-            || environment.render_view.kind != EnvironmentViewKind::Surface
             || !self.scene_visible
-            || self.overview_active
+            || (self.overview_active && !self.overview_planet)
         {
             self.shadow_state
                 .invalidate(ShadowInvalidReason::InvalidFrame);
@@ -113,7 +112,35 @@ impl GpuResources {
                 return;
             }
         };
-        let source = shadows::select_source(environment, self.shadow_state.previous_source);
+        let ground_distance = self
+            .active_sector_keys
+            .iter()
+            .filter_map(|(key, lod)| {
+                self.world_geometry
+                    .bounds()
+                    .get(&(self.active_world_instance, *key, *lod))
+            })
+            .map(|bounds| bounds.distance_to(environment.render_view.camera_eye_world_m))
+            .fold(f64::INFINITY, f64::min);
+        let Some(region) = minimium_renderer::shadow_view::ShadowRegion::for_view(
+            environment.render_view,
+            player_position_m,
+            ground_distance,
+            self.shadow_gpu.settings,
+            self.shadow_state.receiver_radius_m,
+        ) else {
+            self.shadow_state
+                .invalidate(ShadowInvalidReason::IncompleteCasters);
+            self.shadow_gpu
+                .write_uniform(&self.queue, &ShadowUniform::zeroed());
+            return;
+        };
+        let source = shadows::select_source(
+            environment,
+            self.shadow_state.previous_source,
+            region.center_world,
+            self.atmosphere_gpu.is_active(),
+        );
         let Some(source) = source else {
             self.shadow_state.previous_source = None;
             self.shadow_state.invalidate(ShadowInvalidReason::NoSource);
@@ -121,13 +148,13 @@ impl GpuResources {
                 .write_uniform(&self.queue, &ShadowUniform::zeroed());
             return;
         };
-        self.update_shadow_map_vertices(map, player_position_m);
+        self.update_shadow_map_vertices(map, region.center_world, region.settings.caster_radius_m);
         if self.shadow_state.invalid_reason == Some(ShadowInvalidReason::BudgetExceeded) {
             self.shadow_gpu
                 .write_uniform(&self.queue, &ShadowUniform::zeroed());
             return;
         }
-        if !self.shadow_remote_complete {
+        if !self.overview_active && !self.shadow_remote_complete {
             self.shadow_state
                 .invalidate(ShadowInvalidReason::IncompleteCasters);
             self.shadow_gpu
@@ -141,7 +168,7 @@ impl GpuResources {
                 .write_uniform(&self.queue, &ShadowUniform::zeroed());
             return;
         }
-        let radius = f64::from(self.shadow_gpu.settings.caster_radius_m);
+        let radius = f64::from(region.settings.caster_radius_m);
         for (key, lod) in &self.active_sector_keys {
             let catalog_key = (self.active_world_instance, *key, *lod);
             if !self.world_geometry.catalog().contains_key(&catalog_key) {
@@ -158,7 +185,7 @@ impl GpuResources {
                     .write_uniform(&self.queue, &ShadowUniform::zeroed());
                 return;
             };
-            if bounds.intersects_sphere(player_position_m, radius) {
+            if bounds.intersects_sphere(region.center_world, radius) {
                 self.shadow_state.caster_keys.push((*key, *lod));
             }
         }
@@ -169,20 +196,18 @@ impl GpuResources {
                 .write_uniform(&self.queue, &ShadowUniform::zeroed());
             return;
         }
-        let Some(direction) = source.direction(environment) else {
+        let Some(direction) = source.direction(environment, self.atmosphere_gpu.is_active()) else {
             self.shadow_state
                 .invalidate(ShadowInvalidReason::InvalidFrame);
             self.shadow_gpu
                 .write_uniform(&self.queue, &ShadowUniform::zeroed());
             return;
         };
-        let center_relative = std::array::from_fn(|axis| {
-            player_position_m[axis] - f64::from(self.render_origin[axis])
-        });
-        let Some(uniform) = minimium_renderer::shadow_uniform::prepare(
+        let Some(uniform) = minimium_renderer::shadow_uniform::prepare_at_origin(
             direction,
-            center_relative,
-            self.shadow_gpu.settings,
+            region.center_world,
+            self.render_origin.map(f64::from),
+            region.settings,
             source.id(),
         ) else {
             self.shadow_state
@@ -194,6 +219,9 @@ impl GpuResources {
         self.shadow_state.previous_source = Some(source);
         self.shadow_state.source = Some(source);
         self.shadow_state.valid = true;
+        self.shadow_state.receiver_radius_m = region.settings.receiver_radius_m;
+        self.shadow_state.texel_m =
+            region.settings.receiver_radius_m * 2.02 / region.settings.resolution.max(1) as f32;
         self.shadow_state.invalid_reason = None;
         self.shadow_gpu.write_uniform(&self.queue, &uniform);
     }

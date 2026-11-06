@@ -1,9 +1,8 @@
 //! Encodes the main scene pass from client-prepared values and renderer resources.
 use crate::{
     atmosphere_gpu::AtmosphereGpu, celestial_halo::CelestialHaloGpu,
-    environment_pipelines::EnvironmentPipelines, globe_gpu::GlobeGpu, milky_way_gpu::MilkyWayGpu,
-    moon_disk::MoonGpu, moon_sphere::MoonSphereGpu, overview_gpu::OverviewGpuBuffers,
-    star_gpu::StarGpu,
+    environment_pipelines::EnvironmentPipelines, milky_way_gpu::MilkyWayGpu, moon_disk::MoonGpu,
+    moon_sphere::MoonSphereGpu, overview_gpu::OverviewGpuBuffers, star_gpu::StarGpu,
 };
 use minimium_world::world::{SectorKey, WorldInstanceId};
 use std::collections::HashMap;
@@ -29,6 +28,9 @@ pub struct MainScenePass<'a> {
     pub clear_color: wgpu::Color,
     pub camera: &'a wgpu::BindGroup,
     pub world_pipeline: &'a wgpu::RenderPipeline,
+    pub terrain_gpu: &'a crate::terrain_gpu::TerrainGpu,
+    pub terrain_catalog:
+        &'a HashMap<(WorldInstanceId, SectorKey, u8), crate::world_geometry_gpu::TerrainBuffers>,
     pub shadow_empty: &'a wgpu::BindGroup,
     pub shadow_sampling: &'a wgpu::BindGroup,
     pub environment_pipelines: &'a EnvironmentPipelines,
@@ -38,7 +40,6 @@ pub struct MainScenePass<'a> {
     pub moon: &'a MoonGpu,
     pub moon_sphere: &'a MoonSphereGpu,
     pub atmosphere: &'a AtmosphereGpu,
-    pub globe: Option<&'a GlobeGpu>,
     pub overview_buffers: &'a OverviewGpuBuffers,
     pub world_vertices: &'a wgpu::Buffer,
     pub world_vertex_count: u32,
@@ -49,7 +50,7 @@ pub struct MainScenePass<'a> {
     pub sector_hints: &'a [(SectorKey, u8)],
     pub scene_visible: bool,
     pub overview_active: bool,
-    pub overview_globe: bool,
+    pub overview_planet: bool,
     pub uploaded_stars_match: bool,
     pub halo_count: u32,
     pub environment: EnvironmentDrawFlags,
@@ -112,21 +113,8 @@ pub fn encode_main_scene_pass(
             frame.shadow_sampling,
         );
         encode_overview_environment(&mut pass, frame, &mut stats);
-        if frame.overview_globe {
-            if let Some(globe) = frame.globe {
-                pass.set_pipeline(&globe.pipeline);
-                pass.set_bind_group(1, &globe.bind_group, &[]);
-                pass.set_bind_group(2, &frame.atmosphere.bind_group, &[]);
-                pass.set_vertex_buffer(0, globe.vertices.slice(..));
-                pass.draw(0..globe.vertex_count, 0..1);
-                stats.draws += 1;
-                if let Some(detail) = &globe.detail {
-                    pass.set_bind_group(1, &detail.bind_group, &[]);
-                    pass.set_vertex_buffer(0, detail.vertices.slice(..));
-                    pass.draw(0..detail.vertex_count, 0..1);
-                    stats.draws += 1;
-                }
-            }
+        if frame.overview_planet {
+            encode_terrain(&mut pass, frame, &mut stats);
         }
         bind_world(
             &mut pass,
@@ -154,23 +142,7 @@ pub fn encode_main_scene_pass(
             frame.shadow_empty,
             frame.shadow_sampling,
         );
-        if frame.sector_hints.is_empty() {
-            pass.set_vertex_buffer(0, frame.world_vertices.slice(..));
-            pass.draw(0..frame.world_vertex_count, 0..1);
-            stats.draws += 1;
-        } else {
-            for (key, lod) in frame.sector_hints {
-                if let Some((buffer, vertex_count)) =
-                    frame
-                        .world_vertex_catalog
-                        .get(&(frame.instance, *key, *lod))
-                {
-                    pass.set_vertex_buffer(0, buffer.slice(..));
-                    pass.draw(0..*vertex_count, 0..1);
-                    stats.draws += 1;
-                }
-            }
-        }
+        encode_terrain(&mut pass, frame, &mut stats);
     }
     if !frame.overview_active && frame.remote_vertex_count > 0 {
         bind_world(
@@ -184,6 +156,70 @@ pub fn encode_main_scene_pass(
         stats.draws += 1;
     }
     stats
+}
+
+fn encode_terrain<'a>(
+    pass: &mut wgpu::RenderPass<'a>,
+    frame: MainScenePass<'a>,
+    stats: &mut SceneDrawStats,
+) {
+    bind_world(
+        pass,
+        frame.world_pipeline,
+        frame.shadow_empty,
+        frame.shadow_sampling,
+    );
+    if frame.sector_hints.is_empty() {
+        pass.set_vertex_buffer(0, frame.world_vertices.slice(..));
+        pass.draw(0..frame.world_vertex_count, 0..1);
+        stats.draws += 1;
+    } else {
+        for (key, lod) in frame.sector_hints {
+            if let Some(buffers) = frame.terrain_catalog.get(&(frame.instance, *key, *lod)) {
+                pass.set_pipeline(&frame.terrain_gpu.pipeline);
+                pass.set_bind_group(1, &frame.terrain_gpu.bind_group, &[]);
+                pass.set_bind_group(2, frame.shadow_sampling, &[]);
+                pass.set_vertex_buffer(0, buffers.surface.slice(..));
+                pass.draw(0..buffers.surface_count, 0..1);
+                stats.draws += 1;
+                bind_world(
+                    pass,
+                    frame.world_pipeline,
+                    frame.shadow_empty,
+                    frame.shadow_sampling,
+                );
+                if buffers.object_count > 0 {
+                    pass.set_vertex_buffer(0, buffers.objects.slice(..));
+                    pass.draw(0..buffers.object_count, 0..1);
+                    stats.draws += 1;
+                }
+                continue;
+            }
+            if let Some((buffer, vertex_count)) =
+                frame
+                    .world_vertex_catalog
+                    .get(&(frame.instance, *key, *lod))
+            {
+                pass.set_vertex_buffer(0, buffer.slice(..));
+                pass.draw(0..*vertex_count, 0..1);
+                stats.draws += 1;
+            }
+        }
+        // Ground/objects populate depth first, so inland sea facets do not shade.
+        // Fully submerged ground was already rejected during CPU preparation.
+        pass.set_pipeline(&frame.terrain_gpu.ocean_pipeline);
+        pass.set_bind_group(1, &frame.terrain_gpu.bind_group, &[]);
+        pass.set_bind_group(2, frame.shadow_sampling, &[]);
+        for (key, lod) in frame.sector_hints {
+            if let Some(buffers) = frame.terrain_catalog.get(&(frame.instance, *key, *lod)) {
+                if buffers.ocean_count > 0 {
+                    pass.set_vertex_buffer(0, buffers.ocean.slice(..));
+                    pass.draw(0..buffers.ocean_count, 0..1);
+                    stats.draws += 1;
+                }
+            }
+        }
+    }
 }
 
 fn encode_overview_environment(

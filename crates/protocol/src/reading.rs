@@ -121,8 +121,14 @@ impl<'a> Reader<'a> {
                     detail_wavelength_mm: self.u32()?,
                     mountain_band_frequency: self.u32()?,
                     package_digest: self.fixed::<32>()?,
+                    peak_relief: minimium_world::world::PeakRelief {
+                        start_m: self.u32()?,
+                        full_m: self.u32()?,
+                        multiplier_permille: self.u32()?,
+                        exponent: self.u32()?,
+                    },
                 };
-                if !planet.is_valid() {
+                if !planet.is_valid() || (planet.peak_relief.enabled() && revision.get() != 5) {
                     return Err(ProtocolError::InvalidPayload);
                 }
                 manifest = manifest.with_planet(planet);

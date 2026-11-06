@@ -7,18 +7,24 @@ impl GpuResources {
         &mut self,
         map: &minimium_world::world::WorldMap,
         center: [f64; 3],
+        radius: f32,
     ) {
+        // Cache on coarse world cells with enough padding to keep coverage
+        // complete between refreshes; avoid rebuilding authored geometry each frame.
+        let step = (f64::from(radius) * 0.0625).max(16.0);
+        let center = center.map(|v| (v / step).round() * step);
         let fingerprint = map.fingerprint();
         if self.shadow_map_instance == Some(self.active_world_instance)
             && self.shadow_map_fingerprint == Some(fingerprint)
             && self.shadow_map_center == Some(center)
+            && self.shadow_map_radius == Some(radius)
         {
             return;
         }
         let geometry = minimium_renderer::shadow_geometry::local_map_geometry(
             map,
             center,
-            f64::from(self.shadow_gpu.settings.caster_radius_m),
+            f64::from(radius) + step,
         );
         let vertices =
             minimium_renderer::geometry::sector_geometry_relative(&geometry, self.render_origin);
@@ -49,6 +55,7 @@ impl GpuResources {
         self.shadow_map_instance = Some(self.active_world_instance);
         self.shadow_map_fingerprint = Some(fingerprint);
         self.shadow_map_center = Some(center);
+        self.shadow_map_radius = Some(radius);
     }
 
     pub(super) fn release_shadow_map_casters(&mut self) {
@@ -57,6 +64,7 @@ impl GpuResources {
             .saturating_sub(self.shadow_gpu.release_map_casters());
         self.shadow_map_instance = None;
         self.shadow_map_fingerprint = None;
+        self.shadow_map_radius = None;
         self.shadow_map_center = None;
     }
 }

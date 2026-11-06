@@ -9,6 +9,7 @@ pub mod geometry;
 mod gravity_policy;
 mod map;
 mod model;
+mod peak_relief;
 mod spatial;
 
 pub use addressing::{
@@ -31,4 +32,5 @@ pub use model::{
     MAX_PERSISTED_WORLD_OBJECT_STATES, MAX_PERSISTED_WORLD_OBJECT_STATE_BYTES,
     MAX_PERSISTED_WORLD_SECTORS, MAX_SECTOR_OBJECT_STATES, MAX_SECTOR_OBJECT_STATE_BYTES,
 };
+pub use peak_relief::PeakRelief;
 pub use spatial::{cell_for, Cell};

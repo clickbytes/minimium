@@ -34,7 +34,7 @@ fn moon_disk_basis(direction: vec3<f32>, pole: vec3<f32>) -> MoonDiskBasis {
         vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, 1.0),
     );
     let corner = corners[vertex_index];
-    let direction = normalize(environment.moon_apparent_world.xyz);
+    let direction = visual_moon_direction();
     let basis = moon_disk_basis(direction, normalize(environment.moon_pole_world.xyz));
     let radius = max(environment.moon_apparent_world.w, 0.0);
     let disk_direction = normalize(
@@ -99,11 +99,11 @@ fn lambert_phase_fraction(cos_phase: f32) -> f32 {
     let display_gain = select(FULL_MOON_DISK_GAIN, 2.0, environment.flags.y == 1u);
     let lunar_radiance = disk_color * relative_flux * display_gain * normalized_lambert;
     var linear_color = lunar_radiance;
-    if environment.flags.y == 0u {
+    if environment.flags.y == 0u && !physical_atmosphere() {
         let atmosphere = sample_clear_sky(ray_world);
         linear_color = atmosphere.scattering_rgb + atmosphere.transmittance * lunar_radiance;
     }
     let alpha = coverage * horizon;
-    let output_color = tone_map_linear(linear_color);
+    let output_color = tone_map_display(linear_color);
     return vec4<f32>(output_color * alpha, alpha);
 }

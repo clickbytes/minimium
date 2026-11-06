@@ -7,6 +7,7 @@ impl Renderer {
             self.overview_open = false;
             self.gpu.overview_active = false;
         }
+        self.gpu.world_geometry.begin_frame();
         let now = Instant::now();
         let dt = now
             .duration_since(self.metrics.last_frame)
@@ -81,16 +82,24 @@ impl Renderer {
                 }
             }
         }
-        let origin = if self
+        let origin = if self.overview_open {
+            self.gpu.render_origin
+        } else if self
             .game
             .world_manifests
             .get(&self.game.current_instance)
             .is_some_and(|manifest| manifest.planet().is_some())
         {
-            self.game
-                .character
-                .position
-                .map(|coordinate| (coordinate / 256.0).round() * 256.0)
+            let position = self.game.character.position;
+            if position
+                .iter()
+                .zip(self.gpu.render_origin)
+                .any(|(p, o)| (p - o).abs() > 4096.0)
+            {
+                position.map(|coordinate| (coordinate / 4096.0).round() * 4096.0)
+            } else {
+                self.gpu.render_origin
+            }
         } else {
             [0.0; 3]
         };
@@ -100,9 +109,10 @@ impl Renderer {
         }
         self.poll_connector();
         self.poll_session();
-        self.poll_globe();
-        self.update_globe_detail();
-        if self.refresh_active_sector_scene() && self.teleport_loading {
+        if self.refresh_active_sector_scene()
+            && self.teleport_loading
+            && self.last_render_position.iter().all(|p| p.is_finite())
+        {
             self.teleport_loading = false;
             self.gpu.scene_visible = true;
             self.connection_status = "Earth: przeniesiono".into();
@@ -112,7 +122,11 @@ impl Renderer {
         self.update_remote_player_rendering(Instant::now());
 
         let (view, far) = if self.overview_open {
-            self.overview_camera()
+            let (view, far) = self.overview_camera();
+            (
+                view * glam::Mat4::from_translation(glam::Vec3::from_array(self.gpu.render_origin)),
+                far,
+            )
         } else {
             let direction =
                 camera_direction(self.game.character, self.input.yaw, self.input.pitch).normalize();
@@ -153,11 +167,7 @@ impl Renderer {
             (glam::Mat4::look_to_rh(local_camera, direction, up), far)
         };
         let camera_eye_local = view.inverse().transform_point3(glam::Vec3::ZERO);
-        let render_origin = if self.overview_open {
-            glam::Vec3::ZERO
-        } else {
-            glam::Vec3::from_array(self.gpu.render_origin)
-        };
+        let render_origin = glam::Vec3::from_array(self.gpu.render_origin);
         let camera_eye_world = (camera_eye_local + render_origin).as_dvec3().to_array();
         // The overview camera is millions of metres from the globe. A 5 cm
         // near plane rounds its depth to 1.0 in f32 and hides the surface.
@@ -178,7 +188,28 @@ impl Renderer {
                 .unwrap_or(10_000.0);
             radius * ((self.overview_zoom - 1.0) * 0.08).max(0.001)
         } else {
-            0.05
+            let terrain_near = self.gpu.world_geometry.surface_near(
+                self.game.current_instance,
+                &self.gpu.active_sector_keys,
+                camera_eye_world,
+            );
+            self.game
+                .reconciliation
+                .tracks()
+                .iter()
+                .flatten()
+                .map(|track| {
+                    let distance = (0..3)
+                        .map(|axis| {
+                            (camera_eye_world[axis]
+                                - track.displayed_position_mm[axis] as f64 / 1000.0)
+                                .powi(2)
+                        })
+                        .sum::<f64>()
+                        .sqrt();
+                    ((distance - 2.0).max(0.0) * 0.01).max(0.05) as f32
+                })
+                .fold(terrain_near, f32::min)
         };
         let view = if self.is_earth_world() {
             glam::Mat4::from_scale(glam::Vec3::new(-1.0, 1.0, 1.0)) * view
@@ -205,11 +236,7 @@ impl Renderer {
                     / 1000.0
             })
             .unwrap_or(0.0);
-        let render_origin_m = if self.overview_open {
-            [0.0; 3]
-        } else {
-            self.gpu.render_origin.map(f64::from)
-        };
+        let render_origin_m = self.gpu.render_origin.map(f64::from);
         let render_view = RenderViewFrame::from_camera(RenderViewInput {
             view,
             projection,
@@ -247,13 +274,30 @@ impl Renderer {
                 descriptor.profile() == minimium_environment::EnvironmentProfile::Earth
             });
         self.gpu.atmosphere_gpu.upload(
+            &self.gpu.device,
             &self.gpu.queue,
+            prepared_environment.frame.render_view,
             if earth {
-                game_planet_radius_m as f32
+                game_planet_radius_m
+                    + self
+                        .game
+                        .world_manifests
+                        .get(&self.game.current_instance)
+                        .and_then(|m| m.planet())
+                        .map_or(0.0, |p| p.sea_level_mm as f64 / 1000.0)
             } else {
                 0.0
             },
+            self.game
+                .world_manifests
+                .get(&self.game.current_instance)
+                .and_then(|m| m.planet())
+                .filter(|p| p.mode == 1)
+                .map_or(1.0, |p| p.height_scale_permille as f64 / 1000.0),
             self.sky_quality.effective == minimium_renderer::quality::SkyQuality::Standard,
+            self.environment_frame
+                .render_world_utc_ms
+                .map_or(0.0, |t| t as f64 / 1000.0),
         );
 
         let celestial_labels = if self.show_celestial_names {

@@ -10,7 +10,9 @@ impl ClientSession {
                     let planet = match &message {
                         ServerMessage::Welcome { manifest, .. }
                         | ServerMessage::TransitionPrepare { manifest, .. }
-                        | ServerMessage::TransitionCommitted { manifest, .. } => manifest.planet(),
+                        | ServerMessage::TransitionCommitted { manifest, .. } => {
+                            manifest.planet().filter(|planet| planet.mode == 1)
+                        }
                         _ => None,
                     };
                     if let Some(definition) = planet {
@@ -36,6 +38,19 @@ impl ClientSession {
                         }
                     }
                     match &message {
+                        ServerMessage::ContentOffer {
+                            material_hash,
+                            http_port,
+                            climate,
+                        } => {
+                            if let Err(error) =
+                                self.begin_content(*material_hash, *http_port, climate.clone())
+                            {
+                                self.disconnect(DisconnectReason::Materials(error), events);
+                                return;
+                            }
+                            continue;
+                        }
                         ServerMessage::Welcome {
                             map_fingerprint,
                             context,

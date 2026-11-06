@@ -23,6 +23,7 @@ pub(crate) const WIND: [f64; 3] = [5.0, 10.0, 20.0];
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SeasonalProfile {
     AnnualMean,
+    Seasonal,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -121,7 +122,9 @@ pub struct WeatherModel<T: TerrainSampler> {
     pub manifest: WorldManifest,
     pub radius: f64,
     pub scale: f64,
+    elevation_scale: f64,
     pub profile: SeasonalProfile,
+    scenario: crate::climate::ClimateScenario,
     terrain: T,
     is_earth: bool,
     cache: HashMap<u64, Cloud>,
@@ -129,6 +132,10 @@ pub struct WeatherModel<T: TerrainSampler> {
 
 pub trait TerrainSampler: Send + Sync + 'static {
     fn sample(&self, direction: DVec3) -> (f64, bool);
+    /// Source height above the sea datum, before any relief exaggeration.
+    fn source_elevation_m(&self, _direction: DVec3) -> Option<f64> {
+        None
+    }
     fn contains_lake(&self, latitude_degrees: f64, longitude_degrees: f64) -> bool;
     fn earth_elevation_upper_bound_m(&self, direction: DVec3, angle: f64) -> Option<f64>;
     fn relief_bound_m(&self) -> f64;
@@ -152,7 +159,14 @@ impl<T: TerrainSampler> WeatherModel<T> {
             manifest,
             radius: radius_m,
             scale: radius_m / EARTH_RADIUS,
+            elevation_scale: manifest
+                .planet()
+                .filter(|planet| planet.mode == 1)
+                .map_or(1.0, |planet| {
+                    f64::from(planet.height_scale_permille.max(1)) / 1000.0
+                }),
             profile,
+            scenario: crate::climate::ClimateScenario::default(),
             terrain,
             is_earth,
             cache: HashMap::with_capacity(MAX_CACHED_CLOUDS),
@@ -161,6 +175,70 @@ impl<T: TerrainSampler> WeatherModel<T> {
 
     pub fn sample(&self, direction: DVec3, utc: f64) -> Conditions {
         climate::sample(self, direction.normalize(), utc)
+    }
+
+    pub fn set_scenario(
+        &mut self,
+        scenario: crate::climate::ClimateScenario,
+    ) -> Result<(), &'static str> {
+        scenario.validate()?;
+        if self.scenario == scenario {
+            return Ok(());
+        }
+        self.scenario = scenario;
+        self.cache.clear();
+        Ok(())
+    }
+
+    pub fn surface_cover(&self, direction: DVec3, utc: f64) -> crate::climate::SurfaceCoverSample {
+        self.surface_state(direction, utc).cover
+    }
+
+    pub fn surface_state(&self, direction: DVec3, utc: f64) -> crate::climate::SurfaceState {
+        let direction = direction.normalize();
+        let site = climate::site(self, direction);
+        let at = |time| {
+            let (temperature_c, humidity, _) = climate::climate_at(self, direction, time, &site);
+            crate::climate::ClimateSample {
+                temperature_c,
+                moisture: humidity,
+                seasonality: crate::climate::seasonality(direction, time),
+            }
+        };
+        crate::climate::SurfaceState {
+            cover: crate::climate::surface_cover(utc, at),
+            climate: at(utc),
+            source_elevation_m: self.ground_elevation_m(direction),
+            climate_elevation_m: self.climate_elevation_m(direction),
+        }
+    }
+
+    /// Physical source elevation for presentation weather, without GPU or I/O.
+    pub fn ground_elevation_m(&self, direction: DVec3) -> f64 {
+        if let Some(p) = self.manifest.planet().filter(|p| p.peak_relief.enabled()) {
+            let direction = direction.normalize();
+            return self
+                .terrain
+                .source_elevation_m(direction)
+                .map(|h| h.max(0.0))
+                .unwrap_or_else(|| p.source_height_above_sea_m(self.terrain(direction).0));
+        }
+        self.terrain(direction.normalize()).0 / self.elevation_scale
+    }
+
+    /// Rendered ground expressed in the linear optical atmosphere coordinate scale.
+    pub fn atmospheric_ground_height_m(&self, direction: DVec3) -> f64 {
+        self.terrain(direction.normalize()).0 / self.elevation_scale
+    }
+
+    pub fn climate_elevation_m(&self, direction: DVec3) -> f64 {
+        let source = self.ground_elevation_m(direction);
+        let influence = self.scenario.relief_influence;
+        if influence == 0.0 {
+            source
+        } else {
+            source + (self.atmospheric_ground_height_m(direction) - source) * influence
+        }
     }
 
     fn seed(&self) -> u64 {

@@ -6,6 +6,12 @@ Parses and validates map, OBJ, sky catalog and authored world-definition data. P
 
 ## Public API
 
+`terrain_material` validates version 1 manifests, the six ordered roles and bounded
+4096 BC / 2048 RGBA variants with SHA-256 file identities. `ktx2` validates the
+supported six-layer 2D, full-mipmap subset before allocation. `land_cover` reads
+two-minute fractional WorldCover fields with bilinear interpolation, longitude
+wrapping and an explicit validity mask. These APIs consume bytes without I/O.
+
 `parse_map`, `parse_map_with_mesh_loader`, `parse_world_definition`, and embedded sky-catalog accessors are exported from `src/lib.rs`.
 
 ## Dependencies

@@ -290,9 +290,34 @@ pub(crate) fn run(options: ClientOptions) -> Result<(), Box<dyn Error>> {
                             println!("sky display settings are available in the desktop renderer");
                         }
                         FrontendAction::WeatherStatus
+                        | FrontendAction::AtmosphereDebug(_)
+                        | FrontendAction::AtmosphereStatus
                         | FrontendAction::WeatherDebug(_)
+                        | FrontendAction::TerrainStatus
+                        | FrontendAction::TerrainDebug(_)
                         | FrontendAction::WeatherDetail(_) => {
                             println!("Regional weather diagnostics require the graphical client.");
+                        }
+                        FrontendAction::SetTime { minute, local } => {
+                            let longitude = match &last_snapshot {
+                                Some(ServerMessage::Snapshot {
+                                    self_position_mm, ..
+                                }) if local => {
+                                    let [x, _, z] = self_position_mm.0.map(|value| value as f64);
+                                    (x.hypot(z) > 0.0).then(|| z.atan2(x))
+                                }
+                                _ if !local => Some(0.0),
+                                _ => None,
+                            };
+                            let result = longitude
+                                .ok_or_else(|| "player longitude is unavailable".to_owned())
+                                .and_then(|longitude| {
+                                    connection.request_set_time(minute, longitude)
+                                });
+                            match result {
+                                Ok(()) => println!("time change request sent"),
+                                Err(error) => println!("time: {error}"),
+                            }
                         }
                         FrontendAction::TimeStatus => {
                             let unavailable =
@@ -368,6 +393,16 @@ fn print_session_event(event: SessionEvent, show_snapshot: bool) {
             ServerMessage::Bye => {
                 println!("{}", Text::ServerClosed);
             }
+            ServerMessage::AltitudeResult { position_mm, .. } => {
+                println!(
+                    "set_altitude: {}",
+                    if position_mm.is_some() {
+                        "destination reached"
+                    } else {
+                        "rejected: requires fly on, a planet and a valid height"
+                    }
+                );
+            }
             ServerMessage::Pong => println!("{}", Text::Pong),
             ServerMessage::Accepted => println!("{}", Text::Accepted),
             ServerMessage::Chat {
@@ -440,7 +475,7 @@ fn print_session_event(event: SessionEvent, show_snapshot: bool) {
             ServerMessage::TransitionCommitted { .. } => println!("world transfer committed"),
             ServerMessage::TransitionCancelled { .. } => println!("world transfer cancelled"),
             ServerMessage::EnvironmentSync { .. } | ServerMessage::TimeProbeReply { .. } => {}
-            ServerMessage::MapTeleportResult { .. } => {}
+            ServerMessage::MapTeleportResult { .. } | ServerMessage::ContentOffer { .. } => {}
         },
     }
 }

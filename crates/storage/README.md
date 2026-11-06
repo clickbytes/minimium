@@ -35,3 +35,10 @@ Change snapshot format and validation here. Build runtime `WorldSaveInput` value
 ## Verification
 
 Run `rtk cargo check -p minimium-storage -p minimium-server` and architecture/file-length checks. Runtime acceptance is deferred.
+
+Snapshot v9 retains the unchanged records for generation revisions 1..4.
+A present v5 planet definition appends four u32 decimal fields after its package
+digest: peak start metres, full metres, multiplier permille and exponent.
+Parsing is gated by the manifest's generator revision, including embedded
+manifests. Old manifests receive the neutral curve; invalid settings are rejected.
+This is a generator-specific record extension, not a migration of existing worlds.

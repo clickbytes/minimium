@@ -1,5 +1,6 @@
 //! Renderer-independent sky observation and astronomical catalogue contracts.
 
+pub mod climate;
 mod commands;
 mod model;
 pub mod time;
@@ -10,6 +11,7 @@ pub use model::{
     EnvironmentProfile,
 };
 
+pub mod clock_command;
 pub mod sky;
 pub mod universe;
 pub mod weather;

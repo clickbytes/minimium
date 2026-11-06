@@ -18,6 +18,51 @@ impl ServerRuntime {
             }
             let player_id = self.connections.clients[index].player_id();
             let message = match message {
+                ClientMessage::Presentation(capability)
+                    if player_id.is_none()
+                        && self.connections.clients[index].pending_profile.is_none() =>
+                {
+                    self.connections.clients[index].presentation = capability.is_some();
+                    continue;
+                }
+                ClientMessage::Identify(profile)
+                    if player_id.is_none()
+                        && self.connections.clients[index].presentation
+                        && !self.connections.clients[index].content_ready =>
+                {
+                    if self.connections.clients[index].pending_profile.is_some() {
+                        self.connections.disconnected.push(index);
+                        continue;
+                    }
+                    self.connections.clients[index].pending_profile = Some(profile);
+                    if !queue_message(
+                        &mut self.connections.clients[index],
+                        &mut self.metrics,
+                        ServerMessage::ContentOffer {
+                            material_hash: self.content.hash,
+                            http_port: self.content.port,
+                            climate: self.content.climate.clone(),
+                        },
+                    ) {
+                        self.connections.disconnected.push(index);
+                    }
+                    continue;
+                }
+                ClientMessage::ContentReady(hash) if player_id.is_none() => {
+                    if hash != self.content.hash
+                        || self.connections.clients[index].pending_profile.is_none()
+                    {
+                        self.connections.disconnected.push(index);
+                        continue;
+                    }
+                    self.connections.clients[index].content_ready = true;
+                    ClientMessage::Identify(
+                        self.connections.clients[index]
+                            .pending_profile
+                            .take()
+                            .unwrap(),
+                    )
+                }
                 ClientMessage::WorldInput {
                     context,
                     input: ClientWorldInput::UsePortal,
@@ -41,6 +86,33 @@ impl ServerRuntime {
                     } else {
                         self.metrics.rejected_inputs =
                             self.metrics.rejected_inputs.saturating_add(1);
+                    }
+                    continue;
+                }
+                ClientMessage::WorldInput {
+                    context,
+                    input: ClientWorldInput::SetAltitude { km },
+                } => {
+                    if let Some(player) = player_id {
+                        if self
+                            .game
+                            .worlds
+                            .world_input_context_is_current(player, context)
+                            && self.game.pending_world_inputs.len() + self.connections.clients.len()
+                                < MAX_PENDING_WORLD_INPUTS
+                        {
+                            self.game.pending_world_inputs.push((
+                                WorldInput::SetAltitude(player, context, km),
+                                Some(decoded_at),
+                            ));
+                        } else {
+                            self.metrics.rejected_inputs =
+                                self.metrics.rejected_inputs.saturating_add(1);
+                        }
+                    } else {
+                        self.connections.clients[index].disconnect_reason =
+                            Some(CloseReason::InvalidSequence);
+                        self.connections.disconnected.push(index);
                     }
                     continue;
                 }
@@ -128,7 +200,8 @@ impl ServerRuntime {
                         ClientWorldInput::Fire { direction } => ClientMessage::Fire { direction },
                         ClientWorldInput::Chat(text) => ClientMessage::Chat(text),
                         ClientWorldInput::UsePortal => unreachable!("portal branch handled above"),
-                        ClientWorldInput::MapTeleport { .. } => {
+                        ClientWorldInput::SetAltitude { .. }
+                        | ClientWorldInput::MapTeleport { .. } => {
                             unreachable!("teleport branch handled above")
                         }
                     }

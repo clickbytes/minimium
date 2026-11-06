@@ -109,7 +109,14 @@ fn main() {
         if options.console {
             terminal_client::run(options)
         } else {
-            renderer::run(options)
+            #[cfg(feature = "desktop")]
+            {
+                renderer::run(options)
+            }
+            #[cfg(not(feature = "desktop"))]
+            {
+                Err("desktop support was not compiled; use --console".into())
+            }
         }
     })();
     if let Err(error) = result {
@@ -118,7 +125,9 @@ fn main() {
     }
 }
 
+#[cfg(feature = "desktop")]
 mod console;
+#[cfg(feature = "desktop")]
 mod renderer;
 
 mod client_commands;
@@ -126,5 +135,6 @@ mod environment;
 mod messages;
 mod options;
 pub(crate) use minimium_client_runtime as session;
+#[cfg(feature = "desktop")]
 mod stats;
 mod terminal_client;

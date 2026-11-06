@@ -17,6 +17,13 @@ pub fn decode_client(input: &[u8]) -> Result<Option<(ClientMessage, usize)>, Pro
     };
     let mut reader = Reader::new(payload);
     let message = match ClientKind::try_from(kind)? {
+        ClientKind::Presentation => ClientMessage::Presentation(match reader.byte()? {
+            0 => None,
+            1 => Some(true),
+            2 => Some(false),
+            _ => return Err(ProtocolError::InvalidPayload),
+        }),
+        ClientKind::ContentReady => ClientMessage::ContentReady(reader.fixed()?),
         ClientKind::Identify => ClientMessage::Identify(reader.profile_id()?),
         ClientKind::Ping => ClientMessage::Ping,
         ClientKind::SetName => ClientMessage::SetName(reader.name()?),
@@ -56,6 +63,13 @@ pub fn decode_client(input: &[u8]) -> Result<Option<(ClientMessage, usize)>, Pro
                     }
                     super::models::ClientWorldInput::MapTeleport { direction }
                 }
+                8 => {
+                    let km = f32::from_le_bytes(reader.fixed()?);
+                    if !km.is_finite() || !(0.0..=10000.0).contains(&km) {
+                        return Err(ProtocolError::InvalidPayload);
+                    }
+                    super::models::ClientWorldInput::SetAltitude { km }
+                }
                 7 => super::models::ClientWorldInput::Motion(super::movement_codec::read(
                     &mut reader,
                 )?),
@@ -85,6 +99,11 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
     };
     let mut reader = Reader::new(payload);
     let message = match ServerKind::try_from(kind)? {
+        ServerKind::ContentOffer => ServerMessage::ContentOffer {
+            material_hash: reader.fixed()?,
+            http_port: reader.u16()?,
+            climate: super::content_codec::read(&mut reader)?,
+        },
         ServerKind::Welcome => {
             let id = PlayerId::new(reader.u64()?);
             let map_fingerprint = reader.u64()?;
@@ -113,6 +132,18 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
                 transition_id,
                 clock_sample,
                 environment,
+            }
+        }
+        ServerKind::AltitudeResult => {
+            let context = reader.world_context()?;
+            let position_mm = if reader.boolean()? {
+                Some(reader.position_mm()?)
+            } else {
+                None
+            };
+            ServerMessage::AltitudeResult {
+                context,
+                position_mm,
             }
         }
         ServerKind::Pong => ServerMessage::Pong,

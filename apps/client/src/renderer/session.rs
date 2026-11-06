@@ -157,6 +157,7 @@ impl Renderer {
         if self.connection.session().is_some() {
             self.ui.session_events.clear();
             self.connection.poll_session(&mut self.ui.session_events);
+            self.prepare_session_materials();
         }
         let mut events = std::mem::take(&mut self.ui.session_events);
         for event in events.drain(..) {
@@ -337,3 +338,5 @@ impl GameplayView {
         true
     }
 }
+
+mod world_install;

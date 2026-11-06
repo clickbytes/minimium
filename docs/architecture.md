@@ -16,6 +16,24 @@ Local play launches the server as a child process and connects through the norma
 
 ## Current ownership and target boundaries
 
+Terrain presentation now uses protocol v15 content readiness, separate material
+HTTP transport, validated KTX2 packages, a typed terrain vertex path and shared
+seasonal climate/cover history. `assets` owns manifests/KTX2/fractional coverage;
+`asset-io` owns package access, downloads and cache; `environment` owns scenarios
+and cover; `procgen` owns surface samples; `renderer` owns terrain resources;
+`client-runtime` owns preparation deadlines and readiness. Sample recipes live
+in `games/sample`. Climate configuration is a world sidecar, without snapshot or
+geometry format changes. [Terrain implementation and pending acceptance](terrain-materials.md)
+documents build/packaging, external WorldCover import and current approximations.
+Older protocol references below describe earlier milestones, not the current
+v15 framing. No new runtime/visual acceptance has been performed.
+
+The client's optional `desktop` feature enables GPU, window, clipboard and
+astronomy adapters. A `--no-default-features` client defaults to the terminal,
+skips material cooking and consumes only CPU camera/quality/debug contracts from
+the renderer with its `gpu` feature disabled. This provides a terminal Cargo
+graph without wgpu/winit in addition to the existing `--console` desktop mode.
+
 `architecture.toml` is the machine-readable declaration of current Cargo package responsibilities and selected forbidden dependencies. The check in `scripts/check_architecture.py` reads this file and evaluates the full resolved Cargo production graph. Planned boundaries below are architectural destinations, not claims that those packages exist today.
 
 Current packages and responsibilities:
@@ -170,3 +188,86 @@ The client application composes the window, GPU resources, renderer-local presen
 Startup acquires the data lock, loads the map and player snapshot with the optional saved clock, starts the persistence worker, binds listeners and publishes the endpoint. ServerRuntime::new then restores the clock before entering the loop that accepts clients; a restore failure does not admit players. Shutdown drains admin replies, closes clients, captures a final immutable player/sector/clock snapshot, joins the worker, removes the owned endpoint and writes the owner-bound result before releasing the lock. A runtime error remains primary if final save or cleanup also fails; secondary errors are reported. This describes ordering, not a verified crash recovery guarantee.
 
 The current extension API is Rust source, map data and validated world definitions, not a dynamic plugin ABI. Keep matching map/world-definition files on clients and server. New simulation rules belong in `minimium-simulation` behind `minimium-world` contracts, never in the renderer or transport. New protocol messages require a separately planned version decision; gameplay remains protocol v13 while world snapshots are save v9. Sample combat mechanics live in simulation; game-specific defaults and scenario setup belong to `minimium-game-sample`. Historical E002/E003 test records cover procedural generation, sector lifecycle, movement, isolated instances, transfer, save migration and profile restoration. A historical wire-level v9 demonstration covered planet → dungeon → planet and restart reconnect. These are not E004 acceptance evidence: protocol v13, save v9 and rendered time/sky scenarios remain RUNTIME NOT RUN after the user-directed closeout without E004-16 verification.
+
+Atmosphere presentation now has one camera-relative renderer path from the ground
+to orbit. Renderer owns bounded optical/sky/aerial LUTs, regional fog presentation,
+RGB scene composition and optional asynchronous GPU timing. Common frame bindings
+include a separate 256-byte atmosphere view/optics uniform; the 224-byte camera
+uniform remains unchanged. The client prepares a render-only astronomical
+reference at the camera's latitude/longitude with bounded reference altitude,
+while optical rendering uses the uncapped camera. This supersedes the earlier
+player-only render-observer description above. Environment exposes physical
+source elevation through its terrain port, and client workers publish
+sea-level-relative weather/fog grids. No new server, protocol or save data is
+introduced by this atmosphere integration. Runtime visual acceptance is pending.
+
+
+Terrain presentation preparation now runs on client-owned latest-request workers,
+independently for active and prepared target worlds. Renderer owns bounded mesh
+selection/cache, pure CPU vertex preparation, frame-wide upload budgets and GPU
+rebasing. Sector collision generation/lifecycle remains with the existing
+procgen/sectors/application path. Protocol v16 adds a context-bound altitude
+request; server runtime composes authoritative collision sampling and relocation.
+The headless client runtime and protocol retain no GPU dependencies.
+
+The client also schedules planet collision materialization on a bounded worker.
+The immutable map/manifest/geography cross the worker boundary; ticket installation,
+pinning, readiness and CollisionIndex publication remain on the client owner lane.
+
+## Shared planet presentation update (2026-11-06)
+
+This supersedes the earlier separate globe ownership description. Both planet
+cameras use the terrain worker/quadtree/material pipeline. Presentation interest
+carries camera projection scale independently of collision interest. Procgen
+owns static landforms/coverage, environment owns shared site climate/history,
+renderer owns edge conformance/LOD/atomic GPU publication, and the client owns
+worker/camera lifetimes. Sample content owns the surface recipe.
+No new crate, protocol version, save change or generator revision is introduced.
+
+The baked globe palette/height texture and detail sphere have been removed.
+Global/local surface weather uses the same UTC/scenario model; fog retains its
+own local presentation grid. See [terrain presentation](terrain-materials.md)
+for contracts, diagnostics, approximation limits and deferred acceptance.
+
+Earth water presentation (2026-11-06): procgen exposes separate signed ground
+and canonical sea-level samples while authoritative sampling stays unchanged.
+Renderer owns a sea-level sphere tessellated with the ground quadtree, paired
+edge conformance, submerged-ground rejection, ocean vertex/shader resources and
+atomic publication/rebasing with land. The client worker supplies both meshes.
+Binary shoreline clipping and material water blending no longer define the coast.
+This introduces no filesystem, transport or GPU effects into domain sampling.
+
+Peak relief and climate policy (2026-11-06): world owns the pure bounded curve;
+sample content owns the preset adapter; procgen applies it identically to
+authoritative and presented Earth height. Generator v5 opts in, preserving v3/v4.
+Storage gates four extra manifest fields on v5 while retaining snapshot header v9.
+Protocol v17 carries curve settings and climate influence to all consumers.
+Environment owns the separately persisted climate-relief influence, with source
+height defaulting to Earth. Renderer carries both elevations (112-byte vertices)
+and uses the same influence for temperature/snow correction. Fog/cloud clearance
+continues to follow displayed geometry. Server startup owns validated, atomic
+updates to the independent world.climate.ron configuration.
+
+Local child-process stderr collection belongs to client-runtime bootstrap. A
+bounded tail is forwarded with connection errors; the application only renders
+the supplied message. Startup diagnostics do not introduce a storage/GPU coupling.
+
+Optional process-environment values are normalized by client-runtime bootstrap
+before attachment decisions or child argument construction. The Earth launcher
+removes omitted entries explicitly; server-runtime owns numeric CLI validation.
+
+Renderer owns guarded overview frustum selection and cached source-height coast
+classification on the procgen-owned render block lattice. The application supplies
+viewport/camera values and runs existing preparation workers. Shared ground/ocean
+geometry, collision generation, saves and shader ownership remain unchanged.
+
+
+Camera-dependent shadows (2026-11-06): renderer owns pure ShadowRegion fitting,
+world-anchored f64 light-space projection, bounded off-screen caster LOD and
+pre-exposed HDR surface/atmosphere presentation. The client owns live buffer
+selection, source selection, map/player readiness and padded authored-map caching.
+Both planetary cameras use one dominant Sun/Moon depth pass at fixed resolution.
+Night view exposure is derived from the rendered footprint and preserves lunar
+irradiance; it does not modify astronomy, climate, world time or snapshots.
+Existing celestial sprites remain display-calibrated. No new package, protocol
+revision, persistent world field or gameplay effect is introduced.

@@ -63,6 +63,7 @@ pub struct PlanetTerrain {
     surface: PlanetSurfaceSpec,
     definition: Option<PlanetDefinition>,
     geography: Option<Arc<dyn crate::PreparedGeography>>,
+    pub(crate) surface_recipe: crate::surface_habitat::SurfaceRecipe,
 }
 
 impl PlanetTerrain {
@@ -75,7 +76,19 @@ impl PlanetTerrain {
             surface,
             definition: None,
             geography: None,
+            surface_recipe: Default::default(),
         })
+    }
+
+    pub fn with_surface_recipe(
+        mut self,
+        recipe: crate::surface_habitat::SurfaceRecipe,
+    ) -> Option<Self> {
+        if !recipe.valid() {
+            return None;
+        }
+        self.surface_recipe = recipe;
+        Some(self)
     }
 
     pub fn with_geography(mut self, geography: Arc<dyn crate::PreparedGeography>) -> Self {
@@ -102,7 +115,42 @@ impl PlanetTerrain {
             .is_some_and(|definition| definition.mode == 1)
     }
 
+    pub(crate) fn land_cover(&self, direction: [f64; 3]) -> Option<[f32; 6]> {
+        if self.is_earth() {
+            self.geography.as_ref()?.land_cover(direction)
+        } else {
+            None
+        }
+    }
+
+    /// Presentation-only conversion from scaled terrain metres to source metres.
+    pub fn presentation_height_scale(&self) -> f32 {
+        self.definition.map_or(1.0, |definition| {
+            if definition.mode == 1 {
+                definition.height_scale_permille.max(1) as f32 / 1000.0
+            } else {
+                1.0
+            }
+        })
+    }
+
     pub fn sample(&self, cube_sample: CubeSampleKey) -> PlanetPoint {
+        self.sample_surface(cube_sample, true)
+    }
+
+    /// Presentation ground retains Earth bathymetry beneath the separate ocean.
+    /// The authoritative sample remains sea-clamped for saves and collision.
+    pub fn ground_sample(&self, cube_sample: CubeSampleKey) -> PlanetPoint {
+        self.sample_surface(cube_sample, false)
+    }
+
+    /// Canonical sea-level vertex, with the same quantization as planet ground.
+    pub fn sea_position(&self, cube_sample: CubeSampleKey) -> Position3Mm {
+        let radius = (self.radius_mm() as i64 + self.sea_level_mm()).max(1) as u64;
+        self.position_at(cube_sample, radius)
+    }
+
+    fn sample_surface(&self, cube_sample: CubeSampleKey, sea_clamped: bool) -> PlanetPoint {
         let (offset, ocean) = if let Some(definition) =
             self.definition.filter(|definition| definition.mode == 1)
         {
@@ -113,8 +161,7 @@ impl PlanetTerrain {
                 .map(|geography| geography.elevation_m(direction))
                 .unwrap_or(Err(crate::EarthSampleError::PackageUnavailable))
                 .expect("Earth generation requires its prepared geography");
-            let elevation =
-                (elevation_m * f64::from(definition.height_scale_permille)).round() as i64;
+            let elevation = definition.earth_elevation_mm(elevation_m).round() as i64;
             let ocean = elevation < definition.sea_level_mm;
             let detail = if ocean {
                 0
@@ -131,12 +178,15 @@ impl PlanetTerrain {
                 ) * i64::from(definition.detail_strength_mm)
                     / 32_768
             };
-            (
+            let ground = (elevation + detail).min(i64::from(definition.mountain_limit_mm));
+            let offset = if sea_clamped {
                 (elevation + detail)
                     .max(definition.sea_level_mm)
-                    .min(i64::from(definition.mountain_limit_mm)),
-                ocean,
-            )
+                    .min(i64::from(definition.mountain_limit_mm))
+            } else {
+                ground.max(1 - self.radius_mm() as i64)
+            };
+            (offset, ocean)
         } else if let Some(definition) = self.definition {
             let band_step = (PLANET_SAMPLE_COORDINATE_SCALE
                 / definition.mountain_band_frequency.max(1) as i32)
@@ -205,6 +255,17 @@ impl PlanetTerrain {
             Err(crate::EarthSampleError::PackageUnavailable),
             |geography| geography.elevation_upper_bound_m(direction, angle),
         )
+    }
+
+    /// Unexaggerated source metres above the configured sea datum for climate.
+    pub fn source_elevation_m(&self, direction: [f64; 3]) -> Option<f64> {
+        let definition = self.definition.filter(|p| p.mode == 1)?;
+        let raw = self.geography.as_ref()?.elevation_m(direction).ok()?;
+        Some(raw - definition.sea_level_mm as f64 / f64::from(definition.height_scale_permille))
+    }
+
+    pub fn has_peak_relief(&self) -> bool {
+        self.definition.is_some_and(|p| p.peak_relief.enabled())
     }
 
     /// Safe deterministic spawn and entrance on one face, joined by sampled

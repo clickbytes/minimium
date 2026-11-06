@@ -34,6 +34,7 @@ struct PackageIndex {
 }
 
 pub struct PreparedEarthGeography {
+    land_cover: Option<Mmap>,
     package_digest: [u8; 32],
     tiles: Vec<Mmap>,
     width: usize,
@@ -103,6 +104,7 @@ pub fn open_earth_package(
         tiles.push(tile);
     }
     let package = PreparedEarthGeography {
+        land_cover: crate::land_cover::open(path)?,
         package_digest: package_hash.finalize().into(),
         tiles,
         width,
@@ -205,6 +207,11 @@ impl PreparedEarthGeography {
 }
 
 impl minimium_procgen::PreparedGeography for PreparedEarthGeography {
+    fn land_cover(&self, direction: [f64; 3]) -> Option<[f32; 6]> {
+        minimium_assets::land_cover::LandCover::parse(self.land_cover.as_ref()?)
+            .ok()?
+            .sample(direction)
+    }
     fn package_digest(&self) -> [u8; 32] {
         self.package_digest
     }

@@ -25,6 +25,7 @@ struct Stamp {
 
 #[derive(Clone)]
 struct Request {
+    climate: Arc<minimium_environment::climate::ClimateScenario>,
     stamp: Stamp,
     utc: f64,
     observer: DVec3,

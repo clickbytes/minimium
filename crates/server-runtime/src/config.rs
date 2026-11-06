@@ -22,6 +22,10 @@ impl LaneSelection {
 }
 
 pub struct ServerConfig {
+    pub material_package_path: Option<PathBuf>,
+    pub material_http_port: u16,
+    pub climate_scenario_path: Option<PathBuf>,
+    pub climate_relief_influence: Option<f64>,
     pub seed: Option<u128>,
     pub lanes: LaneSelection,
     pub data_dir: PathBuf,
@@ -49,6 +53,10 @@ impl ServerConfig {
             world_definition_path: None,
             planet_config_path: None,
             environment_config_path: None,
+            material_package_path: None,
+            material_http_port: 0,
+            climate_scenario_path: None,
+            climate_relief_influence: None,
             bind_address: String::from("127.0.0.1"),
             game_port: 0,
             max_players: MAX_PLAYERS,
@@ -58,6 +66,41 @@ impl ServerConfig {
         let mut index = usize::from(!args.is_empty());
         while index < args.len() {
             match args[index].as_str() {
+                "--material-package" => {
+                    index += 1;
+                    config.material_package_path = Some(PathBuf::from(
+                        args.get(index).ok_or("--material-package requires PATH")?,
+                    ));
+                }
+                "--material-http-port" => {
+                    index += 1;
+                    config.material_http_port = args
+                        .get(index)
+                        .ok_or("--material-http-port requires PORT")?
+                        .parse()?;
+                }
+                "--climate-scenario" => {
+                    index += 1;
+                    config.climate_scenario_path = Some(PathBuf::from(
+                        args.get(index).ok_or("--climate-scenario requires PATH")?,
+                    ));
+                }
+                "--climate-relief-influence" => {
+                    index += 1;
+                    let value: f64 = args
+                        .get(index)
+                        .ok_or("--climate-relief-influence requires 0..1")?
+                        .parse()
+                        .map_err(|_| {
+                            "--climate-relief-influence requires a finite number in 0..1"
+                        })?;
+                    if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+                        return Err(
+                            "--climate-relief-influence requires a finite value in 0..1".into()
+                        );
+                    }
+                    config.climate_relief_influence = Some(value);
+                }
                 "--seed" => {
                     index += 1;
                     let value = args

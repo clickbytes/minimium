@@ -1,6 +1,9 @@
+pub mod ktx2;
+pub mod land_cover;
 mod map;
 mod obj;
 mod sky_catalog;
+pub mod terrain_material;
 #[cfg(test)]
 mod tests;
 mod world_definition;

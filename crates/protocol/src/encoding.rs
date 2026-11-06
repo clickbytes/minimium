@@ -10,6 +10,18 @@ use super::{
 pub fn encode_client(message: &ClientMessage) -> Result<Vec<u8>, ProtocolError> {
     let mut payload = Vec::with_capacity(16);
     let kind = match message {
+        ClientMessage::Presentation(presentation) => {
+            payload.push(match presentation {
+                None => 0,
+                Some(true) => 1,
+                Some(false) => 2,
+            });
+            ClientKind::Presentation
+        }
+        ClientMessage::ContentReady(hash) => {
+            payload.extend_from_slice(hash);
+            ClientKind::ContentReady
+        }
         ClientMessage::Identify(profile_id) => {
             payload.extend_from_slice(profile_id.as_bytes());
             ClientKind::Identify
@@ -29,7 +41,9 @@ pub fn encode_client(message: &ClientMessage) -> Result<Vec<u8>, ProtocolError> 
             write_unit_direction(*direction, &mut payload)?;
             ClientKind::Fire
         }
-        ClientMessage::MapTeleport { .. } => return Err(ProtocolError::InvalidPayload),
+        ClientMessage::SetAltitude { .. } | ClientMessage::MapTeleport { .. } => {
+            return Err(ProtocolError::InvalidPayload)
+        }
         ClientMessage::Chat(text) => {
             write_chat_text(text, &mut payload)?;
             ClientKind::Chat
@@ -57,6 +71,13 @@ pub fn encode_client(message: &ClientMessage) -> Result<Vec<u8>, ProtocolError> 
                 ClientWorldInput::Chat(text) => {
                     payload.push(4);
                     write_chat_text(text, &mut payload)?;
+                }
+                ClientWorldInput::SetAltitude { km } => {
+                    if !km.is_finite() || !(0.0..=10000.0).contains(km) {
+                        return Err(ProtocolError::InvalidPayload);
+                    }
+                    payload.push(8);
+                    payload.extend_from_slice(&km.to_le_bytes());
                 }
                 ClientWorldInput::UsePortal => payload.push(5),
                 ClientWorldInput::MapTeleport { direction } => {
@@ -107,6 +128,16 @@ pub fn encode_server_into(
     let payload_start = frame.len();
     let encoded = (|| {
         let kind = match message {
+            ServerMessage::ContentOffer {
+                material_hash,
+                http_port,
+                climate,
+            } => {
+                frame.extend_from_slice(material_hash);
+                frame.extend_from_slice(&http_port.to_le_bytes());
+                super::content_codec::write(climate, frame)?;
+                ServerKind::ContentOffer
+            }
             ServerMessage::Welcome {
                 id,
                 map_fingerprint,
@@ -135,6 +166,17 @@ pub fn encode_server_into(
                 }
                 environment_codec::write_pair(*clock_sample, *environment, frame)?;
                 ServerKind::Welcome
+            }
+            ServerMessage::AltitudeResult {
+                context,
+                position_mm,
+            } => {
+                write_world_context(*context, frame);
+                frame.push(u8::from(position_mm.is_some()));
+                if let Some(position) = position_mm {
+                    write_position_mm(*position, frame);
+                }
+                ServerKind::AltitudeResult
             }
             ServerMessage::Pong => ServerKind::Pong,
             ServerMessage::MapTeleportResult { position_mm } => {
@@ -362,6 +404,10 @@ fn write_world_manifest(manifest: minimium_world::world::WorldManifest, output: 
         output.extend_from_slice(&planet.detail_wavelength_mm.to_le_bytes());
         output.extend_from_slice(&planet.mountain_band_frequency.to_le_bytes());
         output.extend_from_slice(&planet.package_digest);
+        output.extend_from_slice(&planet.peak_relief.start_m.to_le_bytes());
+        output.extend_from_slice(&planet.peak_relief.full_m.to_le_bytes());
+        output.extend_from_slice(&planet.peak_relief.multiplier_permille.to_le_bytes());
+        output.extend_from_slice(&planet.peak_relief.exponent.to_le_bytes());
     } else {
         output.push(0);
     }

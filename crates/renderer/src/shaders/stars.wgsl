@@ -79,11 +79,12 @@ fn star_hash(id: u32) -> f32 {
     let overview = environment.flags.y == 1u;
     var background = vec3<f32>(0.0);
     var transmission = 1.0;
-    if !overview {
+    if !overview && !physical_atmosphere() {
         let atmosphere = sample_clear_sky(ray_world);
         background = atmosphere.scattering_rgb;
-        transmission = atmosphere.transmittance * environment.sky_horizon_rgb_star_visibility.w;
+        transmission = atmosphere.transmittance * celestial_contrast();
     }
+    if physical_atmosphere() {transmission=celestial_contrast();}
     let visibility = horizon * transmission;
     if visibility <= 0.0 {
         discard;
@@ -108,7 +109,9 @@ fn star_hash(id: u32) -> f32 {
     let seed = star_hash(input.catalog_star_id);
     let second_seed = star_hash(input.catalog_star_id ^ 0x68bc21ebu);
     let altitude = clamp(dot(normalize(environment.observer_up_horizon_cos.xyz), ray_world), 0.0, 1.0);
-    let twinkle_strength = mix(0.28, 0.08, altitude);
+    var air_density=1.0;
+    if atmosphere.config.x>0.0 {air_density=exp(-max(atmosphere.up_height.w,0.0)/8000.0);}
+    let twinkle_strength = mix(0.28, 0.08, altitude)*air_density;
     let time = environment.star_animation.x;
     let twinkle = 1.0 + twinkle_strength * (
         0.7 * sin(time * (5.0 + 5.0 * seed) + 6.2831853 * second_seed)

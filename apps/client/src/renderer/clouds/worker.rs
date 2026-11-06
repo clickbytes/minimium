@@ -11,11 +11,20 @@ struct ClientTerrain {
 }
 
 impl TerrainSampler for ClientTerrain {
+    fn source_elevation_m(&self, direction: DVec3) -> Option<f64> {
+        self.terrain.source_elevation_m(direction.to_array())
+    }
+
     fn sample(&self, direction: DVec3) -> (f64, bool) {
         let point = self
             .terrain
             .sample(minimium_environment::weather::surface_key(direction));
-        (point.height_mm as f64 / 1000.0 - self.radius_m, point.ocean)
+        (
+            point.height_mm as f64 / 1000.0
+                - self.radius_m
+                - self.terrain.sea_level_mm() as f64 / 1000.0,
+            point.ocean,
+        )
     }
 
     fn contains_lake(&self, latitude_degrees: f64, longitude_degrees: f64) -> bool {
@@ -68,6 +77,10 @@ fn create_weather_model(
 
 #[derive(Default)]
 struct Mailbox {
+    cover: Option<(
+        super::Stamp,
+        Arc<minimium_renderer::surface_cover::CoverGrid>,
+    )>,
     pending: Option<Request>,
     completed: Option<Arc<Publication>>,
     stop: bool,
@@ -88,6 +101,9 @@ impl CloudWorker {
                 let mut model: Option<WeatherModel<ClientTerrain>> = None;
                 let mut meshes = MeshCache::default();
                 let mut stamp = None;
+                let mut cover_stamp = None;
+                let mut atlas = None;
+                let mut atlas_stamp = None;
                 loop {
                     let request = {
                         let (lock, wake) = &*shared;
@@ -111,13 +127,69 @@ impl CloudWorker {
                     {
                         model = create_weather_model(
                             request.stamp.manifest,
-                            SeasonalProfile::AnnualMean,
+                            SeasonalProfile::Seasonal,
                             request.geography.clone(),
                         );
                     }
                     let Some(model) = &mut model else {
                         continue;
                     };
+                    if model.set_scenario((*request.climate).clone()).is_err() {
+                        continue;
+                    }
+                    let next_cover_stamp = (
+                        request.stamp,
+                        (request.utc / 3600.0).floor() as i64,
+                        (request.observer * 1000.0)
+                            .round()
+                            .to_array()
+                            .map(|v| v as i64),
+                    );
+                    let next_atlas_stamp = (
+                        request.stamp,
+                        next_cover_stamp.1,
+                        (*request.climate).clone(),
+                    );
+                    if atlas_stamp.as_ref() != Some(&next_atlas_stamp) {
+                        let built = minimium_renderer::surface_atlas::SurfaceAtlas::build(
+                            model,
+                            request.utc,
+                            || {
+                                let state = shared.0.lock().unwrap();
+                                state.stop
+                                    || state
+                                        .pending
+                                        .as_ref()
+                                        .is_some_and(|next| next.stamp != request.stamp)
+                            },
+                        );
+                        let Some(built) = built else {
+                            continue;
+                        };
+                        atlas = Some(Arc::new(built));
+                        atlas_stamp = Some(next_atlas_stamp);
+                        cover_stamp = None;
+                    }
+                    if cover_stamp != Some(next_cover_stamp) {
+                        let mut cover = minimium_renderer::surface_cover::CoverGrid::build(
+                            model,
+                            request.observer,
+                            request.utc,
+                        );
+                        cover.atlas = atlas.clone();
+                        let cover = Arc::new(cover);
+                        cover_stamp = Some(next_cover_stamp);
+                        // Publish cover before cloud meshing, which can be cancelled or slow.
+                        let mut state = shared.0.lock().unwrap();
+                        if !state.stop
+                            && state
+                                .pending
+                                .as_ref()
+                                .is_none_or(|next| next.stamp == request.stamp)
+                        {
+                            state.cover = Some((request.stamp, cover));
+                        }
+                    }
                     let snapshot = model.query(request.observer, request.utc, request.revision);
                     let mesh = meshes.build(&snapshot, request.detail, || {
                         let state = shared.0.lock().unwrap();
@@ -172,10 +244,20 @@ impl CloudWorker {
         self.mailbox.0.lock().unwrap().completed.take()
     }
 
+    pub(super) fn take_cover(
+        &self,
+    ) -> Option<(
+        super::Stamp,
+        Arc<minimium_renderer::surface_cover::CoverGrid>,
+    )> {
+        self.mailbox.0.lock().unwrap().cover.take()
+    }
+
     pub(super) fn clear(&self) {
         let mut state = self.mailbox.0.lock().unwrap();
         state.pending = None;
         state.completed = None;
+        state.cover = None;
     }
 }
 

@@ -9,14 +9,35 @@ impl GpuResources {
         instance: minimium_world::world::WorldInstanceId,
         scene: &ClientSectorScene,
     ) -> bool {
-        let result = self.world_geometry.cache_scene(
-            &self.device,
-            instance,
-            scene.generation,
-            scene.content_revision,
-            &scene.render_sectors,
-            self.render_origin,
-        );
+        if scene.origin != self.render_origin {
+            return false;
+        }
+        let result = if let Some(prepared) = &scene.prepared {
+            self.world_geometry.cache_prepared(
+                &self.device,
+                instance,
+                scene.generation,
+                scene.content_revision,
+                &prepared.patches,
+                if self.active_world_instance == instance {
+                    &self.active_sector_keys
+                } else {
+                    &[]
+                },
+            )
+        } else if scene.render_sectors.is_empty() {
+            return false;
+        } else {
+            self.world_geometry.cache_scene(
+                &self.device,
+                instance,
+                scene.generation,
+                scene.content_revision,
+                &scene.render_sectors,
+                self.render_origin,
+                None,
+            )
+        };
         self.fixed_gpu_bytes = self
             .fixed_gpu_bytes
             .saturating_sub(result.released_bytes)
@@ -65,11 +86,14 @@ impl GpuResources {
         if self.render_origin == origin {
             return false;
         }
+        let delta = std::array::from_fn(|axis| self.render_origin[axis] - origin[axis]);
         self.render_origin = origin;
-        self.fixed_gpu_bytes = self
-            .fixed_gpu_bytes
-            .saturating_sub(self.world_geometry.clear());
-        self.active_sector_keys.clear();
+        if !self.world_geometry.rebase(&self.device, &self.queue, delta) {
+            self.fixed_gpu_bytes = self
+                .fixed_gpu_bytes
+                .saturating_sub(self.world_geometry.clear());
+            self.active_sector_keys.clear();
+        }
         self.shadow_gpu.clear_player_casters();
         self.shadow_remote_complete = false;
         self.shadow_remote_dirty = true;
@@ -125,7 +149,8 @@ impl GpuResources {
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("minimium-device"),
-                required_features: wgpu::Features::empty(),
+                required_features: adapter.features()
+                    & (wgpu::Features::TEXTURE_COMPRESSION_BC | wgpu::Features::TIMESTAMP_QUERY),
                 required_limits,
                 experimental_features: Default::default(),
                 memory_hints: wgpu::MemoryHints::MemoryUsage,
@@ -137,9 +162,14 @@ impl GpuResources {
             .ok_or("graphics adapter does not support this surface")?;
         surface.configure(&device, &config);
         let hdr_format = adapter.get_texture_format_features(wgpu::TextureFormat::Rgba16Float);
-        let hdr_usage =
-            wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING;
-        let hdr_enabled = hdr_format.allowed_usages.contains(hdr_usage)
+        let hdr_usage = wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::STORAGE_BINDING;
+        let hdr_enabled = adapter
+            .get_downlevel_capabilities()
+            .flags
+            .contains(wgpu::DownlevelFlags::COMPUTE_SHADERS)
+            && hdr_format.allowed_usages.contains(hdr_usage)
             && hdr_format
                 .flags
                 .contains(wgpu::TextureFormatFeatureFlags::BLENDABLE)
@@ -166,8 +196,16 @@ impl GpuResources {
                     hdr_enabled,
                 )
             });
-        let frame_bindings =
-            minimium_renderer::gpu_bindings::EnvironmentGpuBindings::create(&device);
+        let atmosphere_resources =
+            minimium_renderer::atmosphere_resources::AtmosphereResources::new(
+                &device,
+                &queue,
+                hdr_enabled,
+            );
+        let frame_bindings = minimium_renderer::gpu_bindings::EnvironmentGpuBindings::create(
+            &device,
+            &atmosphere_resources,
+        );
         let milky_way = minimium_renderer::MilkyWayGpu::new(&device, &queue);
         let environment_pipelines = minimium_renderer::EnvironmentPipelines::new(
             &device,
@@ -214,6 +252,7 @@ impl GpuResources {
             &frame_bindings.layout,
             scene_color_format,
             &depth_view,
+            atmosphere_resources,
         );
         let mut shadow_gpu = minimium_renderer::ShadowGpu::new(
             &device,
@@ -236,6 +275,35 @@ impl GpuResources {
             &device,
             &pipeline_layout,
             scene_color_format,
+        );
+        let compressed = device
+            .features()
+            .contains(wgpu::Features::TEXTURE_COMPRESSION_BC)
+            && device.limits().max_texture_dimension_2d >= 4096;
+        let material_path = std::env::current_exe()?
+            .parent()
+            .ok_or("client executable has no directory")?
+            .join("materials/sample-v1");
+        let material_path = if material_path.exists() {
+            material_path
+        } else {
+            std::path::PathBuf::from(env!("MINIMIUM_BUILT_MATERIALS"))
+        };
+        let package =
+            minimium_asset_io::materials::MaterialPackage::open(&material_path, compressed)?;
+        let terrain_gpu = minimium_renderer::terrain_gpu::TerrainGpu::new(
+            &device,
+            &queue,
+            &frame_bindings.layout,
+            &shadow_gpu.group2_layout,
+            scene_color_format,
+            &package.manifest,
+            package.variant,
+            &package.maps,
+        )?;
+        eprintln!(
+            "terrain_materials resident_edge=2048 layers=6 gpu_mib={:.1}",
+            terrain_gpu.bytes as f64 / 1048576.0
         );
         let ui = minimium_renderer::ui_pipeline::UiGpuResources::new(
             &device,
@@ -261,7 +329,8 @@ impl GpuResources {
             "network-player-vertices",
             512 * 36,
         );
-        let fixed_gpu_bytes = frame_bindings.camera_buffer.size()
+        let fixed_gpu_bytes = terrain_gpu.bytes
+            + frame_bindings.camera_buffer.size()
             + frame_bindings.environment_buffer.size()
             + initial_world.size_bytes()
             + remote_vertices.size_bytes()
@@ -269,12 +338,14 @@ impl GpuResources {
             + ui.vertex_buffer.size()
             + stars.buffer.size()
             + minimium_renderer::MilkyWayGpu::BYTES
-            + super::atmosphere_gpu::AtmosphereGpu::BYTES
+            + atmosphere_gpu.bytes()
             + cloud_gpu.bytes()
             + output_encoder
                 .as_ref()
                 .map_or(0, |output| output.size_bytes())
             + (crate::console::ATLAS_WIDTH * crate::console::ATLAS_HEIGHT) as u64;
+        let world_geometry =
+            minimium_renderer::world_geometry_gpu::WorldGeometryGpu::new(&device, hdr_enabled);
         Ok(Self {
             surface,
             device,
@@ -283,6 +354,8 @@ impl GpuResources {
             scene_color_format,
             hdr_enabled,
             pipeline,
+            terrain_gpu,
+            frame_layout: frame_bindings.layout,
             shadow_gpu,
             shadow_state: super::shadows::ShadowState::default(),
             environment_pipelines,
@@ -305,7 +378,7 @@ impl GpuResources {
             depth_view,
             size,
             fixed_gpu_bytes,
-            world_geometry: minimium_renderer::world_geometry_gpu::WorldGeometryGpu::default(),
+            world_geometry,
             active_sector_keys: Vec::new(),
             active_world_instance: minimium_world::world::WorldInstanceId::new(1)
                 .expect("primary world ID is nonzero"),
@@ -313,14 +386,14 @@ impl GpuResources {
             shadow_map_instance: None,
             shadow_map_fingerprint: None,
             shadow_map_center: None,
+            shadow_map_radius: None,
             overview_buffers: minimium_renderer::overview_gpu::OverviewGpuBuffers::default(),
             environment_draw_calls: super::sky::EnvironmentDrawCalls::default(),
             last_shadow_prepare_cpu: None,
             last_environment_upload_cpu: None,
             overview_active: false,
-            overview_globe: false,
+            overview_planet: false,
             scene_visible: true,
-            globe: None,
             output_encoder,
         })
     }
@@ -334,7 +407,10 @@ impl GpuResources {
         self.config.height = size.height;
         self.surface.configure(&self.device, &self.config);
         self.depth_view = super::gpu_surface::create_depth_view(&self.device, size);
+        let old_atmosphere_bytes = self.atmosphere_gpu.bytes();
         self.atmosphere_gpu.resize(&self.device, &self.depth_view);
+        self.fixed_gpu_bytes =
+            self.fixed_gpu_bytes.saturating_sub(old_atmosphere_bytes) + self.atmosphere_gpu.bytes();
         let cloud_bytes = self.cloud_gpu.bytes();
         self.cloud_gpu
             .resize(&self.device, &self.depth_view, [size.width, size.height]);

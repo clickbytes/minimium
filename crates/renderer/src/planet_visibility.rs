@@ -13,8 +13,53 @@ pub fn render_patches(
     collision: &[(SectorKey, Arc<SectorGeometry>)],
     geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
 ) -> Vec<(SectorKey, u8, Arc<SectorGeometry>)> {
+    render_patches_cached(
+        manifest,
+        position,
+        collision,
+        geography,
+        &mut crate::render_patch_cache::RenderPatchCache::default(),
+    )
+}
+
+pub fn render_patches_cached(
+    manifest: WorldManifest,
+    position: [f32; 3],
+    collision: &[(SectorKey, Arc<SectorGeometry>)],
+    geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
+    cache: &mut crate::render_patch_cache::RenderPatchCache,
+) -> Vec<(SectorKey, u8, Arc<SectorGeometry>)> {
+    render_patches_cancellable(manifest, position, collision, geography, cache, &|| false)
+}
+pub fn render_patches_cancellable(
+    manifest: WorldManifest,
+    position: [f32; 3],
+    collision: &[(SectorKey, Arc<SectorGeometry>)],
+    geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
+    cache: &mut crate::render_patch_cache::RenderPatchCache,
+    cancelled: &dyn Fn() -> bool,
+) -> Vec<(SectorKey, u8, Arc<SectorGeometry>)> {
+    render_patches_for_view(
+        manifest,
+        crate::terrain_view::TerrainView::legacy(position),
+        collision,
+        geography,
+        cache,
+        cancelled,
+    )
+}
+
+pub fn render_patches_for_view(
+    manifest: WorldManifest,
+    view: crate::terrain_view::TerrainView,
+    collision: &[(SectorKey, Arc<SectorGeometry>)],
+    geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
+    cache: &mut crate::render_patch_cache::RenderPatchCache,
+    cancelled: &dyn Fn() -> bool,
+) -> Vec<(SectorKey, u8, Arc<SectorGeometry>)> {
+    let position = view.position;
     if manifest.planet().is_some() {
-        return dense_render_patches(manifest, position, collision, geography);
+        return dense_render_patches(manifest, view, collision, geography, cache, cancelled);
     }
     let mut terrain = PlanetTerrain::new(manifest.generation(), planet_surface_for(manifest))
         .expect("planet manifest is compatible with the surface");
@@ -35,6 +80,9 @@ pub fn render_patches(
     let mut visited = HashSet::new();
     let mut patches = Vec::new();
     while let Some(key) = queue.pop_front() {
+        if cancelled() {
+            break;
+        }
         if !visited.insert(key) || patches.len() >= MAX_VISIBLE_SECTORS {
             continue;
         }
@@ -65,18 +113,28 @@ pub fn render_patches(
             2
         };
         let sector = SectorKey::Planet(key);
-        let mut patch = minimium_procgen::generate_planet_render_patch_with_geography(
-            manifest,
-            key,
-            subdivisions,
-            geography.clone(),
+        let patch = cache.get(sector, subdivisions as u8, || {
+            let mut patch = minimium_procgen::generate_planet_render_patch_with_geography(
+                manifest,
+                key,
+                subdivisions,
+                geography.clone(),
+            );
+            if let Some((_, g)) = collision.iter().find(|(k, _)| *k == sector) {
+                patch.boxes = g.boxes.clone();
+            }
+            patch
+        });
+        let patch = cache.with_boxes(
+            sector,
+            subdivisions as u8,
+            patch,
+            collision
+                .iter()
+                .find(|(k, _)| *k == sector)
+                .map(|(_, g)| g.boxes.as_slice()),
         );
-        if let Some((_, collision_geometry)) =
-            collision.iter().find(|(candidate, _)| *candidate == sector)
-        {
-            patch.boxes = collision_geometry.boxes.clone();
-        }
-        patches.push((sector, subdivisions as u8, Arc::new(patch)));
+        patches.push((sector, subdivisions as u8, patch));
         queue.extend(key.neighbors_with_count(count));
     }
     patches
@@ -84,98 +142,161 @@ pub fn render_patches(
 
 fn dense_render_patches(
     manifest: WorldManifest,
-    position: [f32; 3],
+    view: crate::terrain_view::TerrainView,
     collision: &[(SectorKey, Arc<SectorGeometry>)],
     geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
+    cache: &mut crate::render_patch_cache::RenderPatchCache,
+    cancelled: &dyn Fn() -> bool,
 ) -> Vec<(SectorKey, u8, Arc<SectorGeometry>)> {
     let count = minimium_procgen::planet_sector_count(manifest);
     let radius = minimium_procgen::planet_surface_for(manifest).radius_mm() as f64 / 1000.0;
-    let camera = position.map(f64::from);
-    let camera_radius = camera.iter().map(|value| value * value).sum::<f64>().sqrt();
-    let horizon = (camera_radius * camera_radius - radius * radius)
+    let camera = view.position.map(f64::from);
+    let camera_radius = camera.iter().map(|v| v * v).sum::<f64>().sqrt();
+    let visibility_radius = radius
+        + manifest
+            .planet()
+            .map_or(0.0, |d| d.sea_level_mm as f64 / 1000.0);
+    let horizon = (camera_radius * camera_radius - visibility_radius * visibility_radius)
         .max(0.0)
         .sqrt()
         .max(220.0);
-    let mut terrain = PlanetTerrain::new(
-        manifest.generation(),
-        minimium_procgen::planet_surface_for(manifest),
-    )
-    .expect("planet manifest is compatible with the surface");
-    if let Some(definition) = manifest.planet() {
-        terrain = terrain.with_definition(definition);
+    let relief = manifest.planet().map_or(100.0, |d| {
+        (f64::from(d.mountain_limit_mm) + d.sea_level_mm.unsigned_abs() as f64) / 1000.0
+    });
+    let mut terrain = PlanetTerrain::new(manifest.generation(), planet_surface_for(manifest))
+        .expect("valid planet");
+    if let Some(d) = manifest.planet() {
+        terrain = terrain.with_definition(d);
     }
-    if let Some(geography) = geography.clone() {
-        terrain = terrain.with_geography(geography);
+    if let Some(g) = geography.clone() {
+        terrain = terrain.with_geography(g);
     }
-    let mut stack: Vec<_> = PlanetFace::ALL
-        .iter()
-        .map(|face| (*face, 0_u16, 0_u16, count))
-        .collect();
-    let mut patches = Vec::new();
-    while let Some((face, u, v, span)) = stack.pop() {
-        let grid_u = u32::from(u) * 2 + u32::from(span);
-        let grid_v = u32::from(v) * 2 + u32::from(span);
+    let cell_width = radius * 2.0
+        / f64::from(count)
+        / f64::from(minimium_procgen::PLANET_RENDER_BLOCK_SUBDIVISIONS);
+    let coasts = &mut cache.coasts;
+    let mut candidate = |face: PlanetFace, u: u16, v: u16, span: u16| {
         let scale = PLANET_SAMPLE_COORDINATE_SCALE as i64;
-        let cube_u = (-scale + scale * i64::from(grid_u) / i64::from(count)) as i32;
-        let cube_v = (-scale + scale * i64::from(grid_v) / i64::from(count)) as i32;
+        let coordinate = |p: u16| {
+            (-scale + scale * (2 * i64::from(p) + i64::from(span)) / i64::from(count)) as i32
+        };
         let sample = face
-            .cube_sample(cube_u, cube_v)
-            .expect("quadtree midpoint lies on face");
-        let center = terrain
-            .sample(sample)
-            .position_mm
-            .coordinates()
-            .map(|x| x as f64 / 1000.0);
+            .cube_sample(coordinate(u), coordinate(v))
+            .expect("face sample");
+        let point = terrain.sample(sample);
+        let center = point.position_mm.coordinates().map(|x| x as f64 / 1000.0);
         let distance = center
             .iter()
             .zip(camera)
-            .map(|(a, b)| (a - b) * (a - b))
+            .map(|(x, c)| (x - c).powi(2))
             .sum::<f64>()
             .sqrt();
-        let bound = radius * 3.0 * f64::from(span) / f64::from(count);
-        if distance - bound > horizon + 100.0 {
-            continue;
+        let bound = radius * 3.0 * f64::from(span) / f64::from(count) + relief;
+        // A raised ridge beyond the ground horizon can still cast into the view.
+        // Retain a coarse halo outside the camera frustum; only on-screen leaves
+        // compete for detail. The same leaf budget and upload limits still apply.
+        let caster_horizon = (2.0 * visibility_radius * relief.max(0.0)).sqrt();
+        if distance - bound > horizon + caster_horizon + 100.0 {
+            return None;
         }
-        let closest = (distance - bound).max(0.0);
-        let desired = if closest < 100.0 {
-            1
-        } else if closest < 500.0 {
-            2
-        } else if closest < 1_000.0 {
-            4
-        } else {
-            ((closest / 250.0).ceil() as u32)
-                .next_power_of_two()
-                .clamp(8, 2048)
+        let mut score = cell_width * f64::from(span) / distance.max(cell_width * 0.5);
+        if !view.intersects(center, bound) || distance - bound > horizon + 100.0 {
+            score = 0.0;
+        }
+        // Probe the mesh lattice only when its classification can affect a split.
+        // Cache source coverage independently of camera/LOD hysteresis. In overview,
+        // spend detail on coastline silhouettes, then land, before uniform ocean.
+        let max_priority = view.surface_priority(crate::coast_probe::SurfaceClass::Coast);
+        if terrain.is_earth() && span > 1 && score > view.cell_error_limit() * 0.75 / max_priority {
+            score *= view.surface_priority(coasts.classify(&terrain, (face, u, v, span), count));
+        }
+        Some((face, u, v, span, score))
+    };
+    let mut leaves: Vec<_> = PlanetFace::ALL
+        .iter()
+        .filter_map(|f| candidate(*f, 0, 0, count))
+        .collect();
+    // Refine the most visible error first. Keep every parent until all of its
+    // children fit, so the budget cannot create holes or truncate coverage.
+    while leaves.len() + 3 <= view.patch_budget() {
+        if cancelled() {
+            return Vec::new();
+        }
+        let next = leaves
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| {
+                let hysteresis = if cache.refined.contains(&(n.0, n.1, n.2, n.3)) {
+                    0.75
+                } else {
+                    1.0
+                };
+                n.3 > 1 && n.4 > view.cell_error_limit() * hysteresis
+            })
+            .max_by(|(_, a), (_, b)| a.4.total_cmp(&b.4))
+            .map(|(i, _)| i);
+        let Some(index) = next else {
+            break;
         };
-        if u32::from(span) > desired {
-            let half = span / 2;
-            for dy in [0, half] {
-                for dx in [0, half] {
-                    stack.push((face, u + dx, v + dy, half));
+        let (face, u, v, span, _) = leaves.swap_remove(index);
+        let half = span / 2;
+        for dy in [0, half] {
+            for dx in [0, half] {
+                if let Some(child) = candidate(face, u + dx, v + dy, half) {
+                    leaves.push(child);
                 }
             }
-            continue;
         }
-        let key =
-            SectorKey::Planet(PlanetSectorKey::new(face, u, v).expect("quadtree key is valid"));
-        let lod = 16 + span.trailing_zeros() as u8;
-        let mut geometry = minimium_procgen::generate_planet_render_block_with_geography(
-            manifest,
-            face,
-            u,
-            v,
-            span,
-            geography.clone(),
-        );
-        if span == 1 {
-            if let Some((_, collision_geometry)) =
-                collision.iter().find(|(candidate, _)| *candidate == key)
-            {
-                geometry.boxes = collision_geometry.boxes.clone();
-            }
-        }
-        patches.push((key, lod, Arc::new(geometry)));
     }
-    patches
+    let selected: Vec<_> = leaves
+        .into_iter()
+        .map(|(f, u, v, s, _)| (f, u, v, s))
+        .collect();
+    cache.refined.clear();
+    for &(face, u, v, span) in &selected {
+        let mut parent = u32::from(span) * 2;
+        while parent <= u32::from(count) {
+            let s = parent as u16;
+            cache.refined.insert((face, u / s * s, v / s * s, s));
+            parent *= 2;
+        }
+    }
+    selected
+        .into_iter()
+        .take_while(|_| !cancelled())
+        .map(|(face, u, v, span)| {
+            let key = SectorKey::Planet(PlanetSectorKey::new(face, u, v).expect("valid leaf"));
+            let lod = 16 + span.trailing_zeros() as u8;
+            let geometry = cache.get(key, lod, || {
+                let mut geometry = minimium_procgen::generate_planet_render_block_with_geography(
+                    manifest,
+                    face,
+                    u,
+                    v,
+                    span,
+                    geography.clone(),
+                );
+                if span == 1 {
+                    if let Some((_, g)) = collision.iter().find(|(k, _)| *k == key) {
+                        geometry.boxes = g.boxes.clone();
+                    }
+                }
+                geometry
+            });
+            let geometry = cache.with_boxes(
+                key,
+                lod,
+                geometry,
+                if span == 1 {
+                    collision
+                        .iter()
+                        .find(|(k, _)| *k == key)
+                        .map(|(_, g)| g.boxes.as_slice())
+                } else {
+                    None
+                },
+            );
+            (key, lod, geometry)
+        })
+        .collect()
 }

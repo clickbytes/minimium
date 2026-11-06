@@ -13,6 +13,7 @@ pub struct ClientOptions {
     pub demo: bool,
     pub require_earth: bool,
     pub console: bool,
+    pub windowed: bool,
     pub help: bool,
     pub threads: ThreadLane,
     pub sky_quality: SkyQuality,
@@ -29,7 +30,8 @@ impl ClientOptions {
             world_definition_path: None,
             demo: false,
             require_earth: false,
-            console: false,
+            console: !cfg!(feature = "desktop"),
+            windowed: false,
             help: false,
             threads: ThreadLane::One,
             sky_quality: SkyQuality::Standard,
@@ -42,6 +44,7 @@ impl ClientOptions {
         let mut seen_demo = false;
         let mut seen_require_earth = false;
         let mut seen_console = false;
+        let mut seen_windowed = false;
         let mut seen_help = false;
         let mut seen_threads = false;
         let mut seen_sky_quality = false;
@@ -96,6 +99,10 @@ impl ClientOptions {
                 "--require-earth" => {
                     reject_duplicate(&mut seen_require_earth, "--require-earth")?;
                     options.require_earth = true;
+                }
+                "--windowed" => {
+                    reject_duplicate(&mut seen_windowed, "--windowed")?;
+                    options.windowed = true;
                 }
                 "--console" => {
                     reject_duplicate(&mut seen_console, "--console")?;

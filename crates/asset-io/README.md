@@ -6,6 +6,15 @@ Owns bounded file access for authored maps, referenced OBJ meshes and world defi
 
 ## Public API
 
+`materials::MaterialPackage` verifies file sizes, hashes, KTX2 dimensions and GPU
+byte budgets. `materials::install` stages downloads into unique temporary files,
+reuses verified hash blobs and publishes a receipt after complete validation.
+`material_http::fetch` reads bounded HTTP responses from an explicit endpoint.
+The runtime supplies worker ownership. Prepared Earth geography optionally maps
+`worldcover.bin` with `worldcover.sha256`; absence uses procedural coverage without
+changing the GEBCO identity or geometry. `examples/validate_materials.rs` is an
+offline static package validator; it never starts a game or requests a GPU.
+
 `load_map` opens a map and supplies bounded mesh text to assets. `load_world_definition` reads a bounded source file and delegates validation to assets. `open_earth_package` validates and returns an immutable, shareable package that implements procgen's `PreparedGeography` port.
 
 ## Dependencies

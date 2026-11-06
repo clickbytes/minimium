@@ -1,10 +1,10 @@
-//! Shader layout and deterministic local shadow projection preparation.
+//! Shader layout and deterministic directional shadow projection preparation.
 
 use crate::ShadowSettings;
 
 const SHADOW_SOURCE_NONE: u32 = 0;
 
-/// Uniform shared by the local shadow depth and sampling passes.
+/// Uniform shared by shadow depth and sampling passes at every viewing scale.
 #[repr(C, align(16))]
 #[derive(Clone, Copy, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ShadowUniform {
@@ -22,25 +22,63 @@ pub fn prepare(
     settings: ShadowSettings,
     source_id: u32,
 ) -> Option<ShadowUniform> {
+    prepare_at_origin(
+        direction_to_body,
+        center_relative,
+        [0.0; 3],
+        settings,
+        source_id,
+    )
+}
+
+/// Snap in absolute f64 light space so a floating-origin shift does not move
+/// the shadow texels. Cast to f32 only after constructing the relative matrix.
+pub fn prepare_at_origin(
+    direction_to_body: [f64; 3],
+    center_world: [f64; 3],
+    render_origin: [f64; 3],
+    settings: ShadowSettings,
+    source_id: u32,
+) -> Option<ShadowUniform> {
     let to_body = glam::DVec3::from_array(direction_to_body).normalize();
-    let center = glam::DVec3::from_array(center_relative);
-    if !to_body.is_finite() || !center.is_finite() || to_body.length_squared() < 0.99 {
+    let center = glam::DVec3::from_array(center_world);
+    let origin = glam::DVec3::from_array(render_origin);
+    if !to_body.is_finite()
+        || !center.is_finite()
+        || !origin.is_finite()
+        || to_body.length_squared() < 0.99
+        || settings.receiver_radius_m <= 0.0
+        || settings.caster_radius_m < settings.receiver_radius_m
+    {
         return None;
     }
     let view_direction = -to_body;
     let reference_up = least_parallel_axis(view_direction);
     let right = view_direction.cross(reference_up).normalize();
     let up = right.cross(view_direction).normalize();
-    let texel_m = 514.0 / f64::from(settings.resolution.max(1));
+    let half_extent = f64::from(settings.receiver_radius_m) * 1.01;
+    let texel_m = half_extent * 2.0 / f64::from(settings.resolution.max(1));
     let light_x = center.dot(right);
     let light_y = center.dot(up);
     let snapped_x = (light_x / texel_m).round() * texel_m;
     let snapped_y = (light_y / texel_m).round() * texel_m;
     let snapped_center = center + right * (snapped_x - light_x) + up * (snapped_y - light_y);
-    let eye = snapped_center + to_body * 512.0;
-    let view = glam::Mat4::look_at_rh(eye.as_vec3(), snapped_center.as_vec3(), up.as_vec3());
-    let projection = glam::Mat4::orthographic_rh(-257.0, 257.0, -257.0, 257.0, 128.0, 896.0);
-    let matrix = projection * view;
+    let depth_radius = f64::from(settings.caster_radius_m) * 1.01;
+    let relative = snapped_center - origin;
+    let eye = relative + to_body * (depth_radius + 1.0);
+    let view = glam::DMat4::look_at_rh(eye, relative, up);
+    let near = 1.0;
+    let far = 1.0 + 2.0 * depth_radius;
+    let projection = glam::DMat4::orthographic_rh(
+        -half_extent,
+        half_extent,
+        -half_extent,
+        half_extent,
+        near,
+        far,
+    );
+    let matrix = (projection * view).as_mat4();
+    let center_relative = (center - origin).to_array();
     let uniform = ShadowUniform {
         light_view_projection: matrix.to_cols_array_2d(),
         receiver_center_relative_radius: [
@@ -52,8 +90,8 @@ pub fn prepare(
         texel_depth_range: [
             1.0 / settings.resolution.max(1) as f32,
             1.0 / settings.resolution.max(1) as f32,
-            128.0,
-            896.0,
+            near as f32,
+            far as f32,
         ],
         bias_fade: [
             settings.constant_bias_m,

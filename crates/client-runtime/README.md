@@ -6,6 +6,15 @@ Owns the nonblocking protocol session, connection controller, connector, local-s
 
 ## Public API
 
+Protocol v15 presentation clients negotiate `ContentOffer` before `Welcome`.
+Content preparation has its own 300-second deadline. A bounded worker fetches the
+required package over a separate HTTP endpoint at the game peer's IP and caches
+verified hash blobs. The host takes the complete package, installs GPU resources,
+then calls `finish_content`. A zero material hash selects the offline base set;
+required custom sets never silently fall back. Failures disconnect with a retry
+message; `connect` retries and reuses verified blobs. The offered climate scenario
+is immutable for the session. Text clients declare no presentation and skip assets.
+
 `ClientSession` is created with a connected stream, identity and expected map fingerprint. `ConnectionController` coordinates session, remote/local connection attempts and process cleanup; `Connector` exposes typed attempt events. `ClientPrediction` accumulates elapsed time, reconciles authoritative local snapshots and returns one shared-integrator step with rollback state; the host supplies collision and geography snapshots. `SnapshotReconciler` applies bounded remote-player snapshots and interpolates positions into a reusable host buffer. `ClientView` is an immutable, GPU-independent snapshot of active world, local character/position, health, remote positions and sector readiness for the presentation adapter. The host calls `poll` and consumes typed `SessionEvent` values; `queue` returns typed backpressure and state errors. `prepared_geography()` exposes the immutable geography prepared for the active Earth manifest.
 
 ## Dependencies
@@ -26,7 +35,10 @@ Preserve bounded read/write work, frame limits, heartbeat behavior, world finger
 
 ## Commands
 
-No user commands. The client application owns command parsing and dispatch.
+The client application owns command parsing and dispatch. Runtime requests for
+time scale and time-of-day changes use the authenticated endpoint of the owned
+local server. `request_set_time` maps the requested minute and observer longitude
+to UTC before dispatch; server clock validation remains authoritative.
 
 ## Change guide
 
@@ -35,3 +47,27 @@ Change connection/session lifecycle and clock synchronization behavior here. Kee
 ## Verification
 
 Run `rtk cargo check -p minimium-client-runtime -p minimium-client` and architecture/file-length checks. Runtime acceptance is deferred.
+
+
+Protocol v16 adds contextual `SetAltitude` wrapping and `AltitudeResult`.
+The application owns parsing and presentation; the server computes and validates
+the destination. No GPU dependency is introduced into the runtime.
+
+Protocol v17 carries peak geometry settings and climate-relief influence.
+Local bootstrap forwards MINIMIUM_LOCAL_CLIMATE_RELIEF_INFLUENCE to the server's
+validated startup option. An explicit climate override refuses attachment to an
+already running server, including startup races, rather than silently ignoring it.
+No graphics dependency or automatic server shutdown is added.
+
+Local bootstrap continuously drains child stderr on one reader thread while
+forwarding it to the terminal. It retains at most 8 KiB and includes the final
+server error (up to 2048 characters) in the connection failure shown by the host.
+The reader is installed after the process guard, so capture failures still reap
+only the owned child. Failed-start diagnostics wait for EOF only after child exit.
+This changes error reporting, not world loading or saved data.
+
+Optional local startup environment values are normalized at the bootstrap
+boundary: empty seed, planet-config and climate-relief values mean omitted.
+Attachment checks and child argument construction use the same rule. Explicit
+zero remains a climate override; invalid nonempty values are rejected by the
+server. This prevents omitted launcher options becoming empty CLI arguments.

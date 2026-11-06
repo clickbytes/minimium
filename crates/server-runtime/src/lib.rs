@@ -4,6 +4,7 @@ mod admin;
 mod commands;
 mod config;
 mod connection;
+mod content;
 mod environment;
 mod executor;
 mod lifecycle;
@@ -43,7 +44,8 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         println!(
             "minimium-server run [--seed DECIMAL|0xHEX] [--planet-config PATH] \\
-             [--environment-config PATH] [--threads 1..64|auto] [--max-players N] \\
+             [--environment-config PATH] [--climate-scenario PATH] [--climate-relief-influence 0..1] [--threads 1..64|auto] [--max-players N] \\
+             [--material-package PATH] [--material-http-port PORT] \\
              [--bind IP] [--game-port PORT] [--data-dir PATH] \\
              [--map PATH | --world-definition PATH] [--autosave-seconds N] [--headless]\n\\
              minimium-server --version\n\\

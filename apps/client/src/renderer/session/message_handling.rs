@@ -34,7 +34,7 @@ impl Renderer {
                 }
                 self.game.session_context = Some(context);
                 self.game.health = health;
-                self.gpu.scene_visible = true;
+                self.gpu.scene_visible = !self.teleport_loading;
                 self.connection_status = if self.settings.require_earth {
                     "Earth: połączono".into()
                 } else {
@@ -50,6 +50,24 @@ impl Renderer {
             ServerMessage::Pong => {
                 if self.ui.console.open {
                     self.ui.console.push_line(Text::Pong.to_string());
+                }
+            }
+            ServerMessage::AltitudeResult {
+                context,
+                position_mm,
+            } => {
+                if Some(context) != self.game.session_context {
+                    return;
+                }
+                if let Some(position) = position_mm {
+                    self.apply_altitude_position(position);
+                    self.ui
+                        .console
+                        .push_line("set_altitude: destination reached");
+                } else {
+                    self.ui.console.push_error(
+                        "set_altitude: rejected; requires fly on, a planet and a valid height",
+                    );
                 }
             }
             ServerMessage::MapTeleportResult { position_mm } => {
@@ -305,86 +323,6 @@ impl Renderer {
         true
     }
 
-    fn install_world(
-        &mut self,
-        instance: minimium_world::world::WorldInstanceId,
-        fingerprint: u64,
-        destination: Option<[f32; 3]>,
-        manifest: WorldManifest,
-    ) -> bool {
-        let Some(map) = self.world_catalog.get(&instance) else {
-            return false;
-        };
-        if map.fingerprint() != fingerprint {
-            return false;
-        }
-        if self.game.world_manifests.get(&instance) != Some(&manifest) {
-            return false;
-        }
-        let target_position = destination.unwrap_or_else(|| map.spawn());
-        let Some(scene) = self.sector_cache.ensure_scene(
-            instance,
-            manifest,
-            target_position,
-            &self.world_catalog,
-            &self.game.world_manifests,
-            self.connection
-                .session()
-                .and_then(|session| session.prepared_geography()),
-        ) else {
-            return false;
-        };
-        if !self.gpu.cache_sector_scene(instance, &scene)
-            || !self.gpu.activate_sector_scene(instance, &scene)
-        {
-            return false;
-        }
-        let previous_instance = self.game.current_instance;
-        self.game.collision_index = scene.collision.clone();
-        self.game.character = CharacterState::at_spawn_with_gravity(
-            target_position,
-            super::camera::gravity_for_manifest(manifest),
-        );
-        self.game.position_mm = manifest.planet().map(|_| {
-            if target_position == map.spawn() {
-                map.spawn_position_mm().unwrap_or_else(|| {
-                    minimium_world::world::Position3Mm(
-                        target_position.map(|value| (f64::from(value) * 1000.0).round() as i64),
-                    )
-                })
-            } else {
-                minimium_world::world::Position3Mm(
-                    target_position.map(|value| (f64::from(value) * 1000.0).round() as i64),
-                )
-            }
-        });
-        self.game.sectors_ready = true;
-        self.active_sector_keys.clone_from(&scene.keys);
-        self.last_render_position = target_position;
-        self.game.prediction.reset_time();
-        self.reset_remote_gameplay();
-        self.input.yaw = -std::f32::consts::FRAC_PI_2;
-        self.input.pitch = 0.0;
-        self.input.keys.clear();
-        self.input.jump_pending = false;
-        self.input.last_sent_direction = [0.0; 2];
-        self.input.input_keepalive = 0.0;
-        self.game.current_instance = instance;
-        self.pending_sector_transitions
-            .retain(|_, pending| pending.context.instance() != instance);
-        if previous_instance != instance {
-            self.sector_cache.release_interest(previous_instance);
-            self.gpu.release_world_sectors(previous_instance);
-        }
-        self.metrics.frame_stats.set_gpu_bytes(
-            self.gpu.fixed_gpu_bytes
-                + u64::from(self.gpu.size.width.max(1))
-                    * u64::from(self.gpu.size.height.max(1))
-                    * 4,
-        );
-        true
-    }
-
     pub(in crate::renderer) fn refresh_active_sector_scene(&mut self) -> bool {
         let Some(manifest) = self
             .game
@@ -395,29 +333,13 @@ impl Renderer {
             self.game.sectors_ready = false;
             return false;
         };
-        let keys =
-            minimium_procgen::sector_neighborhood_for(manifest, self.game.character.position);
-        let render_distance_squared = self
-            .game
-            .character
-            .position
-            .iter()
-            .zip(self.last_render_position)
-            .map(|(current, previous)| (current - previous) * (current - previous))
-            .sum::<f32>();
-        if self.active_sector_keys == keys
-            && render_distance_squared < 400.0
-            && self
-                .sector_cache
-                .interest_matches(self.game.current_instance, &keys, manifest)
-        {
-            self.game.sectors_ready = true;
-            return true;
-        }
+        let view = self.terrain_view();
         let Some(scene) = self.sector_cache.ensure_scene(
             self.game.current_instance,
             manifest,
             self.game.character.position,
+            view,
+            self.gpu.render_origin,
             &self.world_catalog,
             &self.game.world_manifests,
             self.connection
@@ -434,12 +356,17 @@ impl Renderer {
                 .gpu
                 .activate_sector_scene(self.game.current_instance, &scene)
         {
-            self.game.sectors_ready = false;
-            return false;
+            self.game.collision_index = scene.collision;
+            self.last_render_position = [f32::INFINITY; 3];
+            self.game.sectors_ready = true;
+            return true;
         }
         self.game.collision_index = scene.collision;
         self.active_sector_keys.clone_from(&scene.keys);
-        self.last_render_position = self.game.character.position;
+        self.last_render_position = scene
+            .prepared
+            .as_ref()
+            .map_or(self.game.character.position, |p| p.position());
         self.game.sectors_ready = true;
         true
     }
@@ -457,6 +384,12 @@ impl Renderer {
                 instance,
                 pending.manifest,
                 pending.destination,
+                minimium_renderer::terrain_view::TerrainView::new(
+                    pending.destination,
+                    self.fov_degrees.to_radians(),
+                    self.gpu.size.height,
+                ),
+                self.gpu.render_origin,
                 &self.world_catalog,
                 &self.game.world_manifests,
                 self.connection

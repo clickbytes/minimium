@@ -73,14 +73,18 @@ pub(super) fn prepare_client(
     profile_id[..8].copy_from_slice(&(client_id as u64).to_le_bytes());
     profile_id[8..].copy_from_slice(&process_salt[..8]);
     let profile_id = PlayerProfileId::from_bytes(profile_id);
-    let identity_frame = match encode_client(&ClientMessage::Identify(profile_id)) {
-        Ok(frame) => frame,
-        Err(_) => {
-            stats.errors = stats.errors.saturating_add(1);
-            stats.handshake_failures = stats.handshake_failures.saturating_add(1);
-            return None;
-        }
-    };
+    let identity_frame =
+        match encode_client(&ClientMessage::Presentation(None)).and_then(|mut frame| {
+            frame.extend(encode_client(&ClientMessage::Identify(profile_id))?);
+            Ok(frame)
+        }) {
+            Ok(frame) => frame,
+            Err(_) => {
+                stats.errors = stats.errors.saturating_add(1);
+                stats.handshake_failures = stats.handshake_failures.saturating_add(1);
+                return None;
+            }
+        };
     let mut receive_buffer = Vec::with_capacity(2048);
     let deadline = Instant::now() + HANDSHAKE_TIMEOUT;
     if write_setup_frame(&mut stream, &identity_frame, deadline, stats).is_err()

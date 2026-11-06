@@ -175,6 +175,7 @@ pub struct PlanetDefinition {
     pub detail_wavelength_mm: u32,
     pub mountain_band_frequency: u32,
     pub package_digest: [u8; 32],
+    pub peak_relief: super::PeakRelief,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -208,6 +209,8 @@ impl PlanetDefinition {
             && self.mountain_band_frequency <= 1024
             && self.sea_level_mm >= -20_000_000
             && self.sea_level_mm <= 20_000_000
+            && self.peak_relief.is_valid()
+            && (self.mode == 1 || !self.peak_relief.enabled())
     }
 }
 

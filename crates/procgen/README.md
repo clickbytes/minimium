@@ -4,7 +4,27 @@
 
 Owns deterministic, addressable world generation, planet and dungeon geometry, and world materialization. It validates generator compatibility for manifests before materialization. Earth sampling uses the `PreparedGeography` port; this crate does not read files or own a global package. Worker scheduling, transport and rendering are outside this crate.
 
+## Presentation surface
+
+SurfaceRecipe supplies validated, presentation-only landform parameters.
+TerrainSurfaceSample includes physical source elevation, retention, exposure and
+coverage provenance. Landforms use the same fixed height neighborhood across
+sectors/LODs/faces. Sampling does not change generated mesh, collision or generator
+identity. Hosts select the recipe through PlanetTerrain::with_surface_recipe;
+sample defaults are owned by games/sample.
+
 ## Public API
+
+`terrain_surface::TerrainSurfaceSample` contains elevation, slope, water,
+world-space normal and six ordered material fractions. Sampling uses a fixed
+physical derivative footprint across sector/face/LOD boundaries. The optional
+`PreparedGeography::land_cover` port supplies interpolated real-world fractions;
+otherwise procedural fractions apply. This presentation path leaves `MapTriangle`,
+generation digests, saved geometry and collision sampling unchanged.
+
+Without WorldCover, presentation fractions distinguish arid latitude belts,
+temperate ground and alpine rock using physical source elevation. They no longer
+assign the same grass-dominated mixture to all low-elevation land.
 
 See the re-exports in `src/lib.rs`, including sector materialization, planet sampling, dungeon generation, generator contract validation and addressable randomness. `PreparedGeography` is the host port for immutable geographic samples; `PlanetTerrain::with_geography` carries it into terrain and weather sampling. Sample world composition belongs to `minimium-game-sample`.
 
@@ -24,6 +44,14 @@ Generation functions are called by client/server owners or their scheduled work.
 
 Preserve seeds, address calculations, rounding, scales and algorithm order. Generation must remain reproducible for the same inputs.
 
+Render patches and coarse blocks sample signed ground heights through
+PlanetTerrain::ground_sample; Earth bathymetry remains below sea level.
+PlanetTerrain::sea_position supplies canonical sea-level vertices for presentation.
+The renderer owns the separate ocean mesh and its intersection with ground.
+The earlier binary shoreline clipping is removed. PlanetTerrain::sample and
+collision sector generation retain their original sea-clamped results and rounding;
+no generator revision, save migration or world reset is required.
+
 ## Commands
 
 None.
@@ -35,3 +63,13 @@ Change terrain or dungeon algorithms here. Keep file discovery and persistent da
 ## Verification
 
 Run `rtk cargo check -p minimium-procgen` and `rtk python scripts/check_architecture.py`. Runtime acceptance is deferred.
+
+Opt-in Earth generator v5 applies PlanetDefinition::earth_elevation_mm to the
+shared collision, presentation and traversal height. The v5 generator digest is
+distinct; v3/v4 retain neutral relief and their original digest/sampling.
+Source geography remains available for climate independently of shaped terrain.
+Height derivatives and both planet views follow the same mapped field.
+
+PLANET_RENDER_BLOCK_SUBDIVISIONS publishes the unchanged 16-cell presentation
+lattice to renderer coast probes, projected-cell scoring and edge conformance.
+Collision subdivisions remain independent; generation output is unchanged.

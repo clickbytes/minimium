@@ -70,6 +70,24 @@ impl RenderFrame {
         self.ui_vertices.len() as u32
     }
 
+    /// Resolves output exposure once from immutable camera/lighting metadata.
+    pub fn presentation_environment(
+        &self,
+        hdr_enabled: bool,
+        physical_atmosphere: bool,
+    ) -> EnvironmentUniform {
+        let mut environment = self.environment;
+        environment.flags[3] = u32::from(hdr_enabled);
+        if hdr_enabled && physical_atmosphere {
+            environment.ambient_rgb_exposure[3] = crate::lighting::view_exposure(
+                self.view,
+                environment.global_sun_direction,
+                environment.ambient_rgb_exposure[3],
+            );
+        }
+        environment
+    }
+
     /// Uploads this frame's camera, environment and overlay values to caller-owned GPU buffers.
     pub fn upload(
         &self,
@@ -78,14 +96,16 @@ impl RenderFrame {
         environment_buffer: &wgpu::Buffer,
         ui_buffer: &wgpu::Buffer,
         hdr_enabled: bool,
+        physical_atmosphere: bool,
         output: Option<&crate::OutputEncoder>,
     ) -> u32 {
         queue.write_buffer(camera_buffer, 0, bytemuck::bytes_of(&self.camera));
-        let mut environment = self.environment;
-        environment.flags[3] = u32::from(hdr_enabled);
+        let environment = self.presentation_environment(hdr_enabled, physical_atmosphere);
         queue.write_buffer(environment_buffer, 0, bytemuck::bytes_of(&environment));
         if let Some(output) = output {
-            output.update_exposure(queue, environment.ambient_rgb_exposure[3]);
+            // HDR scene values are already exposed before storage. Only tone
+            // mapping remains here; diagnostics and display-referred UI stay stable.
+            output.update_exposure(queue, 1.0);
         }
         self.upload_ui(queue, ui_buffer)
     }

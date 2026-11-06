@@ -1,4 +1,4 @@
-use crate::terrain_color::{mostly_ocean, terrain_color};
+use crate::terrain_color::terrain_color;
 use crate::{PlanetSurfaceSpec, PlanetTerrain, SectorGeometry};
 use minimium_world::world::{
     MapTriangle, PlanetFace, PlanetSectorKey, WorldManifest, PLANET_DENSE_SECTORS_PER_FACE,
@@ -10,6 +10,8 @@ use std::sync::Arc;
 /// Neighboring sectors, including those on different cube faces, sample the
 /// same canonical cube points at their shared border.
 pub const PLANET_COLLISION_SUBDIVISIONS: u32 = 16;
+/// Presentation lattice shared with coast probes and coarse/fine edge conformance.
+pub const PLANET_RENDER_BLOCK_SUBDIVISIONS: u32 = 16;
 pub const PLANET_RADIUS_MM: u64 = 10_000_000;
 pub const PLANET_RELIEF_MM: u64 = 30_000;
 
@@ -204,7 +206,7 @@ pub fn generate_planet_render_patch_with_geography(
         let sample = key
             .cube_sample_with_count(u, v, 16, count)
             .expect("render edge sample is valid");
-        terrain.sample(sample)
+        terrain.ground_sample(sample)
     };
     for cell_v in 0..subdivisions {
         for cell_u in 0..subdivisions {
@@ -215,7 +217,7 @@ pub fn generate_planet_render_patch_with_geography(
             let center_sample = key
                 .cube_sample_with_count(cell_u * 2 + 1, cell_v * 2 + 1, subdivisions * 2, count)
                 .expect("render cell center is valid");
-            let center = terrain.sample(center_sample);
+            let center = terrain.ground_sample(center_sample);
             let mut border = Vec::with_capacity(4 * edge_step as usize);
             let edges = [
                 ((u0, v0), (u1, v0), v0 == 0),
@@ -237,26 +239,7 @@ pub fn generate_planet_render_patch_with_geography(
             for index in 0..border.len() {
                 let next = border[(index + 1) % border.len()];
                 let current = border[index];
-                add_precise_triangle(
-                    &mut triangles,
-                    [
-                        center.position_mm.coordinates(),
-                        current.position_mm.coordinates(),
-                        next.position_mm.coordinates(),
-                    ],
-                    center.ocean || current.ocean || next.ocean,
-                    false,
-                );
-                let water = mostly_ocean([center.ocean, current.ocean, next.ocean]);
-                let height = [center, current, next]
-                    .map(|point| {
-                        point.height_mm as i64 - terrain.radius_mm() as i64 - terrain.sea_level_mm()
-                    })
-                    .into_iter()
-                    .sum::<i64>()
-                    / 3;
-                triangles.last_mut().expect("triangle was added").color =
-                    terrain_color(height, water);
+                add_ground_triangle(&mut triangles, [center, current, next]);
             }
         }
     }
@@ -286,7 +269,7 @@ pub fn generate_planet_render_block_with_geography(
     span: u16,
     geography: Option<Arc<dyn crate::PreparedGeography>>,
 ) -> SectorGeometry {
-    const STEPS: usize = 16;
+    const STEPS: usize = PLANET_RENDER_BLOCK_SUBDIVISIONS as usize;
     let count = u32::from(planet_sector_count(manifest));
     let scale = minimium_world::world::PLANET_SAMPLE_COORDINATE_SCALE;
     let mut terrain = PlanetTerrain::new(manifest.generation(), planet_surface_for(manifest))
@@ -297,6 +280,7 @@ pub fn generate_planet_render_block_with_geography(
     if let Some(geography) = geography {
         terrain = terrain.with_geography(geography);
     }
+    let mut samples = Vec::with_capacity((STEPS + 1) * (STEPS + 1));
     let mut points = Vec::with_capacity((STEPS + 1) * (STEPS + 1));
     let mut ocean = Vec::with_capacity((STEPS + 1) * (STEPS + 1));
     let mut heights = Vec::with_capacity((STEPS + 1) * (STEPS + 1));
@@ -313,7 +297,8 @@ pub fn generate_planet_render_block_with_geography(
             let sample = face
                 .cube_sample(cube_u, cube_v)
                 .expect("block lies on face");
-            let point = terrain.sample(sample);
+            let point = terrain.ground_sample(sample);
+            samples.push(point);
             points.push(point.position_mm.coordinates());
             ocean.push(point.ocean);
             heights
@@ -321,27 +306,21 @@ pub fn generate_planet_render_block_with_geography(
         }
     }
     let mut triangles = Vec::with_capacity(STEPS * STEPS * 2 + STEPS * 8);
-    let mut add = |vertices: [[i64; 3]; 3], color: [f32; 3]| {
-        add_precise_triangle(&mut triangles, vertices, false, false);
-        triangles.last_mut().expect("triangle was added").color = color;
-    };
     for row in 0..STEPS {
         for column in 0..STEPS {
-            let a = points[row * (STEPS + 1) + column];
-            let b = points[(row + 1) * (STEPS + 1) + column];
-            let c = points[row * (STEPS + 1) + column + 1];
-            let d = points[(row + 1) * (STEPS + 1) + column + 1];
             let ia = row * (STEPS + 1) + column;
             let ib = (row + 1) * (STEPS + 1) + column;
             let ic = ia + 1;
             let id = ib + 1;
-            for (vertices, indices) in [([a, b, c], [ia, ib, ic]), ([c, b, d], [ic, ib, id])] {
-                let water = mostly_ocean(indices.map(|index| ocean[index]));
-                let height = indices.map(|index| heights[index]).into_iter().sum::<i64>() / 3;
-                add(vertices, terrain_color(height, water));
+            for indices in [[ia, ib, ic], [ic, ib, id]] {
+                add_ground_triangle(&mut triangles, indices.map(|i| samples[i]));
             }
         }
     }
+    let mut add = |vertices: [[i64; 3]; 3], color: [f32; 3]| {
+        add_precise_triangle(&mut triangles, vertices, false, false);
+        triangles.last_mut().expect("triangle was added").color = color;
+    };
     let skirt_depth = manifest
         .planet()
         .map(|definition| definition.mountain_limit_mm as f32 / 1000.0 + 10.0)
@@ -379,7 +358,16 @@ pub fn generate_planet_render_block_with_geography(
     }
 }
 
-fn add_precise_triangle(
+fn add_ground_triangle(triangles: &mut Vec<MapTriangle>, points: [crate::PlanetPoint; 3]) {
+    add_precise_triangle(
+        triangles,
+        points.map(|p| p.position_mm.coordinates()),
+        points.iter().all(|p| p.ocean),
+        false,
+    );
+}
+
+pub(crate) fn add_precise_triangle(
     triangles: &mut Vec<MapTriangle>,
     mut vertices: [[i64; 3]; 3],
     water: bool,

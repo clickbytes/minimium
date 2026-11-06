@@ -64,21 +64,24 @@ pub fn encode_frame(encoder: &mut wgpu::CommandEncoder, frame: FramePasses<'_>) 
             .chain(frame.shadow.player.into_iter()),
         frame.shadow.enabled,
     );
+    if frame.scene.scene_visible {
+        frame.scene.atmosphere.prepare(encoder, frame.scene.camera);
+    }
     let scene = scene_encoder::encode_main_scene_pass(encoder, frame.scene);
     let atmosphere = frame.scene.atmosphere.encode(
         encoder,
         frame.scene.color_view,
         frame.scene.camera,
-        frame.scene.scene_visible
-            && frame.scene.overview_active
-            && frame.scene.overview_globe
-            && frame.scene.globe.is_some(),
+        frame.final_passes.output.map(|o| o.texture()),
+        frame.scene.scene_visible && frame.scene.terrain_gpu.uniform.debug[0] == 0,
     );
     let clouds = frame.clouds.encode(
         encoder,
         frame.scene.color_view,
         frame.scene.camera,
-        frame.scene.scene_visible,
+        frame.scene.scene_visible
+            && frame.scene.terrain_gpu.uniform.debug[0] == 0
+            && frame.scene.atmosphere.debug == 0,
     );
     let final_passes = encode_final_passes(encoder, frame.final_passes);
     FrameDrawStats {

@@ -1,13 +1,18 @@
 //! Static shader compilation only: does not create an adapter or run the game.
-#[path = "../../../apps/client/src/renderer/shader_source.rs"]
+#[path = "../../../crates/renderer/src/shader_source.rs"]
 mod source;
 
 fn main() {
     let variants = [
+        (
+            "geometry_rebase",
+            include_str!("../../../crates/renderer/src/shaders/geometry_rebase.wgsl").to_owned(),
+        ),
         ("clouds", source::clouds()),
         ("cloud_composite", source::cloud_composite()),
         ("world", source::world()),
-        ("globe", source::globe()),
+        ("terrain", source::terrain()),
+        ("ocean", source::ocean()),
         ("sky", source::sky()),
         ("sun", source::sun()),
         ("stars", source::stars()),
@@ -15,6 +20,12 @@ fn main() {
         ("moon_sphere", source::moon_sphere()),
         ("celestial_halo", source::celestial_halo()),
         ("atmosphere", source::atmosphere()),
+        ("atmosphere_sky_lut", source::atmosphere_compute("sky")),
+        (
+            "atmosphere_aerial_lut",
+            source::atmosphere_compute("aerial"),
+        ),
+        ("atmosphere_multi_lut", source::atmosphere_compute("multi")),
         ("marker", source::marker()),
         ("ui", source::ui()),
         ("encode_output", source::encode_output()),
@@ -30,13 +41,56 @@ fn main() {
         )
         .validate(&module)
         .unwrap_or_else(|error| panic!("{name}: {}", error.emit_to_string(&code)));
-        if matches!(name, "globe" | "atmosphere") {
+        if matches!(
+            name,
+            "atmosphere" | "atmosphere_sky_lut" | "atmosphere_aerial_lut" | "atmosphere_multi_lut"
+        ) {
             atmosphere_contract(&module, &info, name == "globe");
         }
         if name == "clouds" {
             cloud_contract(&module, &info);
         }
+        if matches!(name, "terrain" | "ocean") {
+            terrain_contract(&module, &info);
+        }
         println!("{name}: valid");
+    }
+}
+
+fn terrain_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
+    for (_, ty) in module.types.iter() {
+        if ty.name.as_deref() == Some("TerrainSettings") {
+            let naga::TypeInner::Struct { members, span } = &ty.inner else {
+                panic!("expected terrain uniform");
+            };
+            assert_eq!(*span, 240);
+            assert_eq!(members.len(), 10);
+            for (i, member) in members.iter().enumerate() {
+                assert_eq!(member.offset, i as u32 * 16);
+            }
+        }
+    }
+    for (index, entry) in module.entry_points.iter().enumerate() {
+        for (handle, global) in module.global_variables.iter() {
+            if info.get_entry_point(index)[handle].is_empty() {
+                continue;
+            }
+            let Some(binding) = global.binding else {
+                continue;
+            };
+            let visible = match (binding.group, binding.binding) {
+                (0, 0..=2) => true,
+                (0, 3..=10) => entry.stage != naga::ShaderStage::Vertex,
+                (1, 4) => true,
+                (1, 0..=3) | (1, 5..=6) | (2, 0..=2) => entry.stage == naga::ShaderStage::Fragment,
+                _ => false,
+            };
+            assert!(
+                visible,
+                "terrain binding {binding:?} unavailable in {:?}",
+                entry.stage
+            );
+        }
     }
 }
 
@@ -65,7 +119,8 @@ fn cloud_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
                 continue;
             };
             let visible = match (binding.group, binding.binding) {
-                (0, 0..=1) | (1, 0..=1) => true,
+                (0, 0..=2) | (1, 0..=1) => true,
+                (0, 3..=10) => entry.stage != naga::ShaderStage::Vertex,
                 (1, 2) => entry.stage == naga::ShaderStage::Fragment,
                 _ => false,
             };
@@ -81,7 +136,7 @@ fn cloud_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
 fn atmosphere_contract(module: &naga::Module, info: &naga::valid::ModuleInfo, globe: bool) {
     for (_, ty) in module.types.iter() {
         let expected = match ty.name.as_deref() {
-            Some("AtmosphereUniform") => 80,
+            Some("AtmosphereUniform") => 256,
             _ => continue,
         };
         let naga::TypeInner::Struct { members, span } = &ty.inner else {
@@ -101,8 +156,9 @@ fn atmosphere_contract(module: &naga::Module, info: &naga::valid::ModuleInfo, gl
                 continue;
             };
             let visible = match (binding.group, binding.binding) {
-                (0, 0..=1) => true,
-                (1, 0..=1) | (2, 0) => entry.stage == naga::ShaderStage::Fragment,
+                (0, 0..=2) => true,
+                (0, 3..=10) => entry.stage != naga::ShaderStage::Vertex,
+                (1, 0..=1) | (2, 0) => entry.stage != naga::ShaderStage::Vertex,
                 (1, 2) if !globe => entry.stage == naga::ShaderStage::Fragment,
                 (2, 1..=2) if globe => entry.stage == naga::ShaderStage::Fragment,
                 _ => false,

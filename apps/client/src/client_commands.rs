@@ -22,7 +22,12 @@ mod weather;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum ClientCommand {
+    AtmosphereDebug(minimium_renderer::atmosphere_debug::AtmosphereDebug),
+    AtmosphereStatus,
+    TerrainDebug(minimium_renderer::terrain_debug::TerrainDebug),
+    TerrainStatus,
     Movement(movement::Setting),
+    SetAltitude(f32),
     Help,
     Print(String),
     HostLocal(Option<ThreadLane>),
@@ -49,6 +54,7 @@ pub(crate) enum ClientCommand {
     ShowCelestialNames(bool),
     TimeStatus,
     TimeScale(String),
+    SetTime { minute: u16, local: bool },
     WeatherStatus,
     WeatherDebug(minimium_environment::weather::CloudDebug),
     WeatherDetail(u8),
@@ -98,6 +104,7 @@ pub(crate) enum ParseError {
     FovUsage,
     CelestialNamesUsage,
     TimeScaleUsage,
+    SetTimeUsage,
     UnknownCommand,
     Usage(&'static str),
 }
@@ -146,6 +153,10 @@ pub(crate) struct CommandContext<'a> {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum FrontendAction {
+    AtmosphereDebug(minimium_renderer::atmosphere_debug::AtmosphereDebug),
+    AtmosphereStatus,
+    TerrainDebug(minimium_renderer::terrain_debug::TerrainDebug),
+    TerrainStatus,
     Help,
     Print(String),
     Connect(String),
@@ -165,6 +176,7 @@ pub(crate) enum FrontendAction {
     ShowCelestialNames(bool),
     TimeStatus,
     TimeScale(String),
+    SetTime { minute: u16, local: bool },
     WeatherStatus,
     WeatherDebug(minimium_environment::weather::CloudDebug),
     WeatherDetail(u8),
@@ -179,10 +191,30 @@ pub(crate) enum CommandResult {
 
 pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) -> CommandResult {
     let message = match command {
+        ClientCommand::AtmosphereDebug(mode) => {
+            return CommandResult::Action(FrontendAction::AtmosphereDebug(mode))
+        }
+        ClientCommand::AtmosphereStatus => {
+            return CommandResult::Action(FrontendAction::AtmosphereStatus)
+        }
+        ClientCommand::SetAltitude(km) => {
+            if !context.connection.movement.fly {
+                return CommandResult::Action(FrontendAction::Print(
+                    "set_altitude requires fly on".into(),
+                ));
+            }
+            ClientMessage::SetAltitude { km }
+        }
         ClientCommand::Movement(setting) => return movement::execute(setting, context),
         ClientCommand::Print(text) => return CommandResult::Action(FrontendAction::Print(text)),
         ClientCommand::WeatherStatus => {
             return CommandResult::Action(FrontendAction::WeatherStatus)
+        }
+        ClientCommand::TerrainStatus => {
+            return CommandResult::Action(FrontendAction::TerrainStatus)
+        }
+        ClientCommand::TerrainDebug(mode) => {
+            return CommandResult::Action(FrontendAction::TerrainDebug(mode))
         }
         ClientCommand::WeatherDebug(mode) => {
             return CommandResult::Action(FrontendAction::WeatherDebug(mode))
@@ -235,6 +267,9 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
         ClientCommand::Fov(degrees) => return CommandResult::Action(FrontendAction::Fov(degrees)),
         ClientCommand::ShowCelestialNames(enabled) => {
             return CommandResult::Action(FrontendAction::ShowCelestialNames(enabled))
+        }
+        ClientCommand::SetTime { minute, local } => {
+            return CommandResult::Action(FrontendAction::SetTime { minute, local })
         }
         ClientCommand::TimeStatus => return CommandResult::Action(FrontendAction::TimeStatus),
         ClientCommand::TimeScale(value) => {

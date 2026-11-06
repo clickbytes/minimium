@@ -48,6 +48,9 @@ pub(crate) enum ConnectionPhase {
 }
 
 pub(crate) struct Client {
+    pub(crate) presentation: bool,
+    pub(crate) content_ready: bool,
+    pub(crate) pending_profile: Option<PlayerProfileId>,
     phase: ConnectionPhase,
     pub(crate) disconnect_reason: Option<CloseReason>,
     pub(crate) stream: TcpStream,
@@ -79,6 +82,9 @@ impl Client {
     pub(crate) fn new(stream: TcpStream, connected_at: Instant) -> Self {
         Self {
             phase: ConnectionPhase::AwaitIdentify,
+            presentation: false,
+            content_ready: false,
+            pending_profile: None,
             disconnect_reason: None,
             stream,
             input: Vec::with_capacity(512),

@@ -22,6 +22,7 @@ use std::{
 };
 
 mod clock;
+mod content;
 mod environment;
 mod receive;
 
@@ -54,6 +55,7 @@ pub enum DisconnectReason {
     MapMismatch { expected: u64, actual: u64 },
     GeneratorMismatch,
     EarthPackage(String),
+    Materials(String),
     EnvironmentMismatch,
     Io(io::ErrorKind),
     BufferLimit,
@@ -90,6 +92,7 @@ pub enum QueueError {
 
 /// A single nonblocking TCP protocol session.
 pub struct ClientSession {
+    content: content::ContentPreparation,
     stream: Option<TcpStream>,
     state: SessionState,
     expected_map_fingerprint: u64,
@@ -125,10 +128,22 @@ impl ClientSession {
         profile_id: PlayerProfileId,
         expected_map_fingerprint: u64,
     ) -> io::Result<Self> {
+        Self::with_presentation(stream, profile_id, expected_map_fingerprint, None)
+    }
+
+    pub fn with_presentation(
+        stream: TcpStream,
+        profile_id: PlayerProfileId,
+        expected_map_fingerprint: u64,
+        capability: Option<bool>,
+    ) -> io::Result<Self> {
         stream.set_nonblocking(true)?;
         stream.set_nodelay(true)?;
         let now = Instant::now();
+        let mut content = content::ContentPreparation::default();
+        content.capability = capability;
         let mut session = Self {
+            content,
             stream: Some(stream),
             state: SessionState::AwaitingWelcome,
             expected_map_fingerprint,
@@ -154,6 +169,9 @@ impl ClientSession {
             metrics: SessionMetrics::default(),
             prepared_geography: None,
         };
+        session
+            .append_encoded(&ClientMessage::Presentation(capability))
+            .expect("presentation frame is bounded");
         session
             .append_encoded(&ClientMessage::Identify(profile_id))
             .expect("Identify frame is within protocol limits");
@@ -223,6 +241,7 @@ impl ClientSession {
 
     /// Close the current socket and discard all buffered data.
     pub fn close(&mut self) {
+        self.content = Default::default();
         self.stream = None;
         self.state = SessionState::Disconnected;
         self.pending_ping_at = None;
@@ -272,6 +291,10 @@ impl ClientSession {
                 input: ClientWorldInput::Fire {
                     direction: *direction,
                 },
+            }),
+            ClientMessage::SetAltitude { km } => Some(ClientMessage::WorldInput {
+                context: self.world_context.ok_or(QueueError::AwaitingWelcome)?,
+                input: ClientWorldInput::SetAltitude { km: *km },
             }),
             ClientMessage::MapTeleport { direction } => Some(ClientMessage::WorldInput {
                 context: self.world_context.ok_or(QueueError::AwaitingWelcome)?,
@@ -329,6 +352,7 @@ mod tests {
     fn connected_session(context: WorldContext) -> ClientSession {
         let now = Instant::now();
         ClientSession {
+            content: Default::default(),
             stream: None,
             state: SessionState::Connected,
             expected_map_fingerprint: 1,

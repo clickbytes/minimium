@@ -16,6 +16,7 @@ pub(crate) enum WorldInput {
     Move(PlayerId, CharacterInput),
     Fire(PlayerId, [f32; 3]),
     MapTeleport(PlayerId, WorldContext, [f32; 3]),
+    SetAltitude(PlayerId, WorldContext, f32),
     Chat(PlayerId, String),
     Rename(PlayerId, String),
     UsePortal(PlayerId, WorldContext),

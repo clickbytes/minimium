@@ -335,18 +335,21 @@ fn push_shadow_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer
     snapshot.push(
         "shadow_range_m",
         if enabled {
-            gpu.shadow_gpu.settings.receiver_radius_m.to_string()
+            gpu.shadow_state.receiver_radius_m.to_string()
         } else {
             "n/a".to_owned()
         },
     );
+    snapshot.push_optional("shadow_texel_m", valid.then_some(gpu.shadow_state.texel_m));
     let caster_count = usize::from(gpu.shadow_gpu.map_casters().is_some())
         + usize::from(gpu.shadow_gpu.player_casters().is_some())
         + gpu.shadow_state.caster_keys.len();
     snapshot.push_optional("shadow_caster_count", enabled.then_some(caster_count));
     snapshot.push_optional(
         "shadow_coverage_complete",
-        enabled.then_some(gpu.shadow_state.valid && gpu.shadow_remote_complete),
+        enabled.then_some(
+            gpu.shadow_state.valid && (gpu.overview_active || gpu.shadow_remote_complete),
+        ),
     );
     snapshot.push(
         "shadow_incomplete_reason",

@@ -94,5 +94,6 @@ fn finite_vec3(value: vec3<f32>) -> bool {
     } else if shape == 4u {
         radiance *= 1.25;
     }
-    return vec4<f32>(tone_map_linear(radiance * visibility * horizon), 0.0);
+    if physical_atmosphere() && (shape == 0u || shape == 1u) { discard; }
+    return vec4<f32>(tone_map_display(radiance * visibility * horizon), 0.0);
 }

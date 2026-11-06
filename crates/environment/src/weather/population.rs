@@ -113,7 +113,7 @@ fn trajectory_floor<T: TerrainSampler>(model: &WeatherModel<T>, cloud: Cloud) ->
                 .terrain
                 .earth_elevation_upper_bound_m(midpoint, angle)
                 .map(|height| {
-                    (height * f64::from(p.height_scale_permille) / 1000.0
+                    (p.earth_elevation_mm(height) / 1000.0
                         + f64::from(p.detail_strength_mm) / 1000.0)
                         .max(p.sea_level_mm as f64 / 1000.0)
                         .min(limit)

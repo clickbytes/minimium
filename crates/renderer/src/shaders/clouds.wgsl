@@ -95,10 +95,16 @@ fn cloud_color(input: CloudVertex) -> vec4<f32> {
     let sun = environment.global_sun_direction.xyz;
     let sun_visibility = smoothstep(-0.03, 0.03, dot(up, sun));
     let moon_visibility = smoothstep(-0.03, 0.03, dot(up, environment.moon_apparent_world.xyz));
-    let direct = environment.global_sun_rgb.xyz * sun_visibility * (0.24 + 0.76 * max(dot(n, sun), 0.0));
-    let lunar = environment.local_moon_rgb_visibility.xyz * moon_visibility
+    var direct = environment.global_sun_rgb.xyz * sun_visibility * (0.24 + 0.76 * max(dot(n, sun), 0.0));
+    var lunar = environment.local_moon_rgb_visibility.xyz * moon_visibility
         * (0.3 + 0.7 * max(dot(n, environment.moon_apparent_world.xyz), 0.0));
-    var color = environment.ambient_rgb_exposure.xyz * (0.55 + 0.45 * max(dot(n, up), 0.0)) + direct + lunar;
+    var ambient=environment.ambient_rgb_exposure.xyz;
+    if physical_atmosphere() {
+        direct=physical_sun(input.local)*(0.24+0.76*max(dot(n,sun),0.0));
+        lunar=physical_moon(input.local)*(0.3+0.7*max(dot(n,surface_moon_direction()),0.0));
+        ambient=physical_ambient(input.local);
+    }
+    var color = ambient * (0.55 + 0.45 * max(dot(n, up), 0.0)) + direct + lunar;
     if cloud_frame.config.x == 2u {
         let colors = array<vec3<f32>,3>(vec3(0.3,0.8,1.0), vec3(1.0,0.65,0.2), vec3(0.8,0.4,1.0));
         color = colors[u32(input.parameters.z)];
@@ -113,6 +119,11 @@ fn cloud_color(input: CloudVertex) -> vec4<f32> {
     if cloud_frame.config.x == 5u {
         color = mix(vec3(0.15,0.3,1.0), vec3(1.0,0.2,0.1), input.detail.y / 6.0);
     }
+    if physical_atmosphere() && cloud_frame.config.x == 0u {
+        let path=sample_aerial(input.local);
+        color=color*path.transmission+path.scattering;
+    }
+    if cloud_frame.config.x != 0u {return vec4(tone_map_display(color),alpha);}
     return vec4(tone_map_linear(color), alpha);
 }
 

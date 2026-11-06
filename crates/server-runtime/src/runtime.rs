@@ -1,4 +1,5 @@
 mod admission;
+mod altitude;
 mod environment;
 mod inputs;
 mod network;
@@ -75,6 +76,7 @@ struct Scheduler {
     autosave_interval: Duration,
 }
 pub(crate) struct ServerRuntime {
+    content: crate::content::ContentServer,
     executor: Executor,
     schedule: schedule::ServerSchedule,
     game: GameState,
@@ -103,6 +105,7 @@ pub(crate) struct ServerRuntime {
 
 impl ServerRuntime {
     pub(crate) fn new(config: ServerConfig, startup: Startup) -> io::Result<Self> {
+        let content = crate::content::ContentServer::new(&config)?;
         let lanes = config.lanes.count();
         let Startup {
             map,
@@ -194,6 +197,7 @@ impl ServerRuntime {
         let autosave_interval = Duration::from_secs(config.autosave_seconds);
         Ok(Self {
             game,
+            content,
             schedule,
             environment_clock,
             connections,

@@ -4,14 +4,18 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[features]
+default = ["gpu"]
+gpu = ["dep:wgpu", "dep:pollster", "dep:minimium-astronomy"]
+
 [dependencies]
 glam = "0.30"
 bytemuck = { version = "1.25", features = ["derive"] }
 minimium-procgen = { path = "../procgen" }
 minimium-world = { path = "../world" }
-minimium-astronomy = { path = "../astronomy" }
+minimium-astronomy = { path = "../astronomy", optional = true }
 minimium-environment = { path = "../environment" }
 minimium-assets = { path = "../assets" }
-wgpu = "30"
-pollster = "0.4"
-half = "2"
+wgpu = { version = "30", optional = true }
+pollster = { version = "0.4", optional = true }
+half = { version = "2", features = ["bytemuck"] }

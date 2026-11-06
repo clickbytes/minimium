@@ -26,7 +26,7 @@ use winit::{
     event::{DeviceEvent, ElementState, MouseButton, WindowEvent},
     event_loop::{ActiveEventLoop, EventLoop},
     keyboard::{KeyCode, PhysicalKey},
-    window::{CursorGrabMode, Window, WindowAttributes, WindowId},
+    window::{CursorGrabMode, Window, WindowId},
 };
 
 mod atmosphere_gpu;
@@ -39,23 +39,25 @@ mod controller;
 mod diagnostics;
 mod environment;
 mod environment_gpu;
-mod globe;
-mod globe_detail;
 mod gpu;
 mod gpu_surface;
 mod init;
+mod materials;
 mod overview;
 mod quality;
 mod render;
 mod scene_bridge;
 mod sector_scene;
+mod sector_worker;
 mod session;
 mod shadow_gpu;
 mod shadow_map_cache;
 mod shadows;
 mod sky;
+mod terrain_status;
 mod window;
 mod window_metrics;
+mod window_mode;
 
 use environment::{EnvironmentFrame, RenderViewFrame, RenderViewInput};
 use minimium_renderer::geometry::{cube, sector_geometry, Vertex};
@@ -99,6 +101,8 @@ struct GpuResources {
     scene_color_format: wgpu::TextureFormat,
     hdr_enabled: bool,
     pipeline: wgpu::RenderPipeline,
+    terrain_gpu: minimium_renderer::terrain_gpu::TerrainGpu,
+    frame_layout: wgpu::BindGroupLayout,
     shadow_gpu: minimium_renderer::ShadowGpu,
     shadow_state: shadows::ShadowState,
     environment_pipelines: minimium_renderer::EnvironmentPipelines,
@@ -128,14 +132,14 @@ struct GpuResources {
     shadow_map_instance: Option<minimium_world::world::WorldInstanceId>,
     shadow_map_fingerprint: Option<u64>,
     shadow_map_center: Option<[f64; 3]>,
+    shadow_map_radius: Option<f32>,
     overview_buffers: minimium_renderer::overview_gpu::OverviewGpuBuffers,
     environment_draw_calls: sky::EnvironmentDrawCalls,
     last_shadow_prepare_cpu: Option<Duration>,
     last_environment_upload_cpu: Option<Duration>,
     overview_active: bool,
-    overview_globe: bool,
+    overview_planet: bool,
     scene_visible: bool,
-    globe: Option<globe::GlobeGpu>,
     output_encoder: Option<minimium_renderer::OutputEncoder>,
 }
 
@@ -218,8 +222,6 @@ struct Renderer {
     overview_open: bool,
     overview_instance: Option<minimium_world::world::WorldInstanceId>,
     connection_status: String,
-    globe_loading: Option<std::sync::mpsc::Receiver<Vec<u8>>>,
-    globe_detail_loading: Option<std::sync::mpsc::Receiver<(globe_detail::Region, Vec<u8>)>>,
     overview_yaw: f32,
     overview_pitch: f32,
     overview_zoom: f32,
@@ -242,3 +244,5 @@ struct PendingSectorTransition {
 }
 
 pub use window::run;
+
+mod collision_worker;

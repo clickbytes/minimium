@@ -10,6 +10,10 @@ pub struct ShadowBounds {
 
 impl ShadowBounds {
     pub fn intersects_sphere(self, center: [f64; 3], radius: f64) -> bool {
+        self.distance_to(center) <= radius
+    }
+
+    pub fn distance_to(self, center: [f64; 3]) -> f64 {
         let distance_squared = (0..3)
             .map(|axis| {
                 let outside = if center[axis] < self.minimum[axis] {
@@ -22,7 +26,7 @@ impl ShadowBounds {
                 outside * outside
             })
             .sum::<f64>();
-        distance_squared <= radius * radius
+        distance_squared.sqrt()
     }
 }
 

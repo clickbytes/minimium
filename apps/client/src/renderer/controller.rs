@@ -46,10 +46,37 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
         CommandResult::Action(action) => action,
     };
     match action {
+        FrontendAction::AtmosphereDebug(mode) => {
+            renderer.gpu.terrain_gpu.uniform.debug[0] = 0;
+            renderer.gpu.atmosphere_gpu.debug = mode as u32;
+            renderer
+                .ui
+                .console
+                .push_line(format!("atmosphere debug {mode:?}"));
+        }
+        FrontendAction::AtmosphereStatus => {
+            for line in renderer.gpu.atmosphere_gpu.status() {
+                renderer.ui.console.push_line(line);
+            }
+        }
         FrontendAction::WeatherStatus => {
             for line in renderer.weather_status() {
                 renderer.ui.console.push_line(line);
             }
+        }
+        FrontendAction::TerrainStatus => {
+            for line in renderer.terrain_status() {
+                renderer.ui.console.push_line(line);
+            }
+        }
+        FrontendAction::TerrainDebug(mode) => {
+            renderer.gpu.atmosphere_gpu.debug = 0;
+            renderer.gpu.terrain_gpu.uniform.debug[0] = mode as u32;
+            renderer.gpu.terrain_gpu.update(&renderer.gpu.queue);
+            renderer
+                .ui
+                .console
+                .push_line(format!("terrain debug {mode:?}"));
         }
         FrontendAction::WeatherDebug(mode) => {
             renderer.weather.debug = mode;
@@ -213,6 +240,20 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
             } else {
                 "celestial names disabled"
             });
+        }
+        FrontendAction::SetTime { minute, local } => {
+            let [x, _, z] = renderer.game.view().player_position_m;
+            let result = if local && (!renderer.is_earth_world() || x.hypot(z) < 1.0e-6) {
+                Err("local solar time requires an Earth observer away from the poles".into())
+            } else {
+                renderer
+                    .connection
+                    .request_set_time(minute, if local { z.atan2(x) } else { 0.0 })
+            };
+            match result {
+                Ok(()) => renderer.ui.console.push_line("time change request sent"),
+                Err(error) => renderer.ui.console.push_error(error),
+            }
         }
         FrontendAction::TimeStatus => renderer
             .ui

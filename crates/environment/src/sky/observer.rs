@@ -79,7 +79,7 @@ impl EarthHeightReference {
         if !(1..=1000).contains(&scale) {
             return Err(ObserverError::InvalidPlanet);
         }
-        let scaled_gebco_mm = raw_gebco_m * f64::from(scale);
+        let scaled_gebco_mm = definition.earth_elevation_mm(raw_gebco_m);
         if !scaled_gebco_mm.is_finite()
             || scaled_gebco_mm < i64::MIN as f64
             || scaled_gebco_mm > i64::MAX as f64

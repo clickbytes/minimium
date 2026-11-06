@@ -9,3 +9,4 @@ minimium-core = { path = "../core" }
 minimium-commands = { path = "../commands" }
 minimium-world = { path = "../world" }
 glam = "0.30"
+serde = { version = "1", features = ["derive"] }

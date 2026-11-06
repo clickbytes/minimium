@@ -1,6 +1,8 @@
 use super::{ClientCommand, CommandRegistry, CommandSpec, ParseError};
 
 const COMMANDS: &[CommandSpec] = &[
+    CommandSpec { name: "set_altitude", alias: None,
+        usage: "set_altitude <0..10000 km> - height above local ground; requires fly on", parser: parse },
     CommandSpec { name: "movement fly", alias: Some("fly"),
         usage: "movement fly [on|off] - noclip; Space up, Ctrl down; inherits walk speed and accel", parser: parse },
     CommandSpec { name: "movement speed", alias: None,
@@ -22,6 +24,17 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
 fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
     let args: Vec<_> = words[1].split_whitespace().collect();
+    if words[0] == "set_altitude" {
+        return match args.as_slice() {
+            [value] => value
+                .parse::<f32>()
+                .ok()
+                .filter(|v| v.is_finite() && (0.0..=10000.0).contains(v))
+                .map(ClientCommand::SetAltitude)
+                .ok_or(ParseError::UnknownCommand),
+            _ => Err(ParseError::UnknownCommand),
+        };
+    }
     let setting = match words[0] {
         "movement fly" => Setting::Fly(match args.as_slice() {
             [] => None,

@@ -30,6 +30,7 @@ pub enum ConnectionEvent {
 
 /// Owns the connector, session and any local process independently of a UI.
 pub struct ConnectionController {
+    presentation: Option<bool>,
     pub movement: minimium_simulation::MovementSettings,
     connector: Connector,
     active: Option<AttemptId>,
@@ -46,6 +47,7 @@ pub struct ConnectionController {
 impl ConnectionController {
     pub fn new(profile: PlayerProfileId, fingerprint: u64) -> Self {
         Self {
+            presentation: None,
             movement: Default::default(),
             connector: Connector::default(),
             active: None,
@@ -67,6 +69,10 @@ impl ConnectionController {
         self.world_fingerprints = fingerprints;
     }
 
+    pub fn set_presentation(&mut self, compressed: bool) {
+        self.presentation = Some(compressed);
+    }
+
     pub fn busy(&self) -> bool {
         self.session.is_some() || self.active.is_some() || self.cleanup.is_some()
     }
@@ -86,6 +92,25 @@ impl ConnectionController {
 
     /// Sends a server-authoritative time change without blocking the UI loop.
     pub fn request_time_scale(&mut self, value: String) -> Result<(), String> {
+        minimium_environment::parse_scale_ppm(&value)?;
+        self.request_time_command(format!("time scale {value}"))
+    }
+
+    pub fn request_set_time(&mut self, minute: u16, longitude_rad: f64) -> Result<(), String> {
+        let current = self
+            .session
+            .as_ref()
+            .and_then(|session| session.environment_frame().estimated_world_utc_ms)
+            .ok_or("synchronized world time is unavailable")?;
+        let target =
+            minimium_environment::clock_command::utc_at_time(current, minute, longitude_rad)?;
+        let date = crate::environment::format_utc(target)
+            .replace(" UTC", "Z")
+            .replace(' ', "T");
+        self.request_time_command(format!("time set {date}"))
+    }
+
+    fn request_time_command(&mut self, command: String) -> Result<(), String> {
         if !self
             .session
             .as_ref()
@@ -93,7 +118,7 @@ impl ConnectionController {
             || !self.session_owns_server
         {
             return Err(String::from(
-                "time scale requires a connection to a server started by this client",
+                "time changes require a connection to a server started by this client",
             ));
         }
         if self.time_scale_request.is_some() {
@@ -107,7 +132,7 @@ impl ConnectionController {
             .map_err(|error| error.to_string())?
             .ok_or("owned server is not running")?;
         self.time_scale_request = Some(thread::spawn(move || {
-            admin_client::request(&endpoint, &format!("time scale {value}"))
+            admin_client::request(&endpoint, &command)
         }));
         Ok(())
     }
@@ -207,7 +232,12 @@ impl ConnectionController {
                 if let Some(server) = local_server {
                     self.retain_local_server(server);
                 }
-                match ClientSession::new(stream, self.profile, self.fingerprint) {
+                match ClientSession::with_presentation(
+                    stream,
+                    self.profile,
+                    self.fingerprint,
+                    self.presentation,
+                ) {
                     Ok(mut session) => {
                         session.set_world_fingerprints(self.world_fingerprints.clone());
                         self.session = Some(session);

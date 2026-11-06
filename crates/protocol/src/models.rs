@@ -7,6 +7,9 @@ use std::{error::Error, fmt, sync::Arc};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClientMessage {
+    /// None means no presentation; Some selects compressed or fallback textures.
+    Presentation(Option<bool>),
+    ContentReady([u8; 32]),
     Identify(PlayerProfileId),
     Ping,
     SetName(String),
@@ -20,6 +23,9 @@ pub enum ClientMessage {
     },
     MapTeleport {
         direction: [f32; 3],
+    },
+    SetAltitude {
+        km: f32,
     },
     Chat(String),
     WorldInput {
@@ -46,6 +52,7 @@ pub enum ClientWorldInput {
     Move { direction: [f32; 2], jump: bool },
     Fire { direction: [f32; 3] },
     MapTeleport { direction: [f32; 3] },
+    SetAltitude { km: f32 },
     Chat(String),
     UsePortal,
 }
@@ -144,6 +151,11 @@ impl RemotePlayerIds {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ServerMessage {
+    ContentOffer {
+        material_hash: [u8; 32],
+        http_port: u16,
+        climate: minimium_environment::climate::ClimateScenario,
+    },
     Welcome {
         id: PlayerId,
         map_fingerprint: u64,
@@ -158,6 +170,10 @@ pub enum ServerMessage {
     },
     Pong,
     MapTeleportResult {
+        position_mm: Option<Position3Mm>,
+    },
+    AltitudeResult {
+        context: WorldContext,
         position_mm: Option<Position3Mm>,
     },
     Accepted,

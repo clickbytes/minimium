@@ -4,9 +4,19 @@ use super::{
 use glam::DVec3;
 
 pub(super) fn sample<T: TerrainSampler>(model: &WeatherModel<T>, p: DVec3, utc: f64) -> Conditions {
+    sample_at(model, p, utc, &site(model, p))
+}
+
+pub(super) struct Site {
+    ground: f64,
+    climate_ground: f64,
+    ocean: bool,
+    supply: f64,
+    uplift: f64,
+}
+
+pub(super) fn site<T: TerrainSampler>(model: &WeatherModel<T>, p: DVec3) -> Site {
     let (ground, ocean) = model.terrain(p);
-    let lat = p.y.asin();
-    let lon = p.z.atan2(p.x);
     let water = |d: DVec3| {
         let (_, ocean) = model.terrain(d);
         f64::from(ocean || (model.is_earth() && model.contains_lake(d)))
@@ -21,13 +31,46 @@ pub(super) fn sample<T: TerrainSampler>(model: &WeatherModel<T>, p: DVec3, utc: 
             supply += water((upstream + north * side * 0.002).normalize()) * 0.0625;
         }
     }
-    let upstream_ground = model.terrain((p - east * 0.004).normalize()).0;
-    let uplift = ((ground - upstream_ground) / model.scale / 1800.0).clamp(-1.0, 1.0);
+    let climate_ground = model.climate_elevation_m(p);
+    let upstream_ground = model.climate_elevation_m((p - east * 0.004).normalize());
+    let uplift = ((climate_ground - upstream_ground) / 1800.0).clamp(-1.0, 1.0);
+    Site {
+        ground,
+        climate_ground,
+        ocean,
+        supply,
+        uplift,
+    }
+}
+
+pub(super) fn climate_at<T: TerrainSampler>(
+    model: &WeatherModel<T>,
+    p: DVec3,
+    utc: f64,
+    site: &Site,
+) -> (f64, f64, f64) {
+    let Site {
+        climate_ground,
+        ocean,
+        supply,
+        uplift,
+        ..
+    } = *site;
+    let lat = p.y.asin();
+    let lon = p.z.atan2(p.x);
     let time = utc.rem_euclid(86400.0) / 86400.0 * std::f64::consts::TAU + lon;
     let baseline = match model.profile {
-        SeasonalProfile::AnnualMean => 28.0 - 52.0 * lat.sin().powi(2),
+        SeasonalProfile::AnnualMean | SeasonalProfile::Seasonal => {
+            crate::climate::annual_temperature_c(lat)
+        }
     };
-    let temperature = baseline - 0.0065 * ground.max(0.0) / model.scale
+    let seasonal = if model.profile == SeasonalProfile::Seasonal {
+        crate::climate::seasonality(p, utc) * if ocean { 7.0 } else { 18.0 }
+    } else {
+        0.0
+    };
+    let offset = model.scenario.offset(p, utc);
+    let temperature = baseline + seasonal + offset.temperature_c - 0.0065 * climate_ground.max(0.0)
         + (if ocean { 1.5 } else { 5.0 }) * (time - std::f64::consts::PI * 1.25).cos();
     let moving = rotate(
         p,
@@ -36,9 +79,26 @@ pub(super) fn sample<T: TerrainSampler>(model: &WeatherModel<T>, p: DVec3, utc: 
     let seed = model.seed();
     let weather = noise(moving * 34.0, seed) * 0.65 + noise(moving * 73.0, seed ^ 19) * 0.35;
     let dry_belt = (-((lat.abs() - 0.5) / 0.16).powi(2)).exp();
-    let humidity = (0.28 + 0.44 * supply + 0.4 * (weather - 0.5) + uplift.max(0.0) * 0.18
-        - dry_belt * 0.17)
-        .clamp(0.02, 0.99);
+    let humidity =
+        (0.28 + offset.moisture + 0.44 * supply + 0.4 * (weather - 0.5) + uplift.max(0.0) * 0.18
+            - dry_belt * 0.17)
+            .clamp(0.02, 0.99);
+    (temperature, humidity, weather)
+}
+
+pub(super) fn sample_at<T: TerrainSampler>(
+    model: &WeatherModel<T>,
+    p: DVec3,
+    utc: f64,
+    site: &Site,
+) -> Conditions {
+    let (temperature, humidity, weather) = climate_at(model, p, utc, site);
+    let Site {
+        ground,
+        supply,
+        uplift,
+        ..
+    } = *site;
     let layers = std::array::from_fn(|layer| {
         let threshold = [0.38, 0.45, 0.5][layer];
         let thermal = if layer == 2 {

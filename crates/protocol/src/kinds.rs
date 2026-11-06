@@ -26,6 +26,7 @@ kinds!(ClientKind {
     Ping = 1, SetName = 2, Move = 3, Quit = 4, Identify = 5, Fire = 6, Chat = 7,
     WorldInput = 8, TransitionReady = 9, UsePortal = 10, CancelTransition = 11,
     TimeProbe = 0x0c,
+    Presentation = 0x0d, ContentReady = 0x0e,
 });
 kinds!(ServerKind {
     Welcome = 0x81, Pong = 0x82, Accepted = 0x83, Bye = 0x84, Error = 0x85,
@@ -33,4 +34,5 @@ kinds!(ServerKind {
     TransitionPrepare = 0x8a, TransitionCommitted = 0x8b,
     TransitionCancelled = 0x8c, MapTeleportResult = 0x8d,
     EnvironmentSync = 0x8e, TimeProbeReply = 0x8f,
+    ContentOffer = 0x90, AltitudeResult = 0x91,
 });

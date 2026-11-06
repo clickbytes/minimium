@@ -43,6 +43,30 @@ impl WeatherState {
 
 impl Renderer {
     pub(in crate::renderer) fn update_weather(&mut self, frame: &EnvironmentFrame) {
+        // The inexpensive seasonal fallback is available even before cloud publication.
+        if let (Some(manifest), Some(utc)) = (
+            self.game.world_manifests.get(&self.game.current_instance),
+            self.environment_frame.render_world_utc_ms,
+        ) {
+            let utc = utc as f64 / 1000.0;
+            let seed = manifest.generation().seed().get();
+            self.gpu.terrain_gpu.uniform.debug[1] = seed as u32 ^ (seed >> 64) as u32;
+            self.gpu.terrain_gpu.uniform.debug[2] = (seed >> 32) as u32 ^ (seed >> 96) as u32;
+            let direction =
+                DVec3::from_array(frame.render_view.camera_eye_world_m).normalize_or_zero();
+            let scenario = self
+                .connection
+                .session()
+                .map(|s| s.climate_scenario())
+                .unwrap_or_default();
+            let offset = scenario.offset(direction, utc);
+            self.gpu.terrain_gpu.uniform.climate = [
+                minimium_environment::climate::seasonality(DVec3::Y, utc) as f32,
+                offset.temperature_c as f32,
+                offset.moisture as f32,
+                scenario.relief_influence as f32,
+            ];
+        }
         let inputs = self
             .game
             .world_manifests
@@ -65,6 +89,8 @@ impl Renderer {
             self.weather.worker.clear();
             self.gpu.cloud_gpu.count = 0;
             self.gpu.cloud_gpu.debug = false;
+            self.gpu.terrain_gpu.clear_cover();
+            self.gpu.atmosphere_gpu.clear_weather();
             return;
         };
         let stamp = Stamp {
@@ -73,18 +99,24 @@ impl Renderer {
             clock_revision,
         };
         let utc = utc as f64 / 1000.0;
-        let position = self.game.position_mm.map_or_else(
-            || DVec3::from_array(self.game.character.position.map(f64::from)),
-            |p| DVec3::from_array(p.0.map(|v| v as f64 / 1000.0)),
-        );
+        let position = DVec3::from_array(frame.render_view.camera_eye_world_m);
         let observer = position.normalize_or_zero();
         if self.weather.stamp != Some(stamp) {
+            self.gpu.terrain_gpu.clear_cover();
+            self.gpu.atmosphere_gpu.clear_weather();
             self.weather.stamp = Some(stamp);
             self.weather.published = None;
             self.weather.last_request = None;
             self.weather.worker.clear();
             self.gpu.cloud_gpu.count = 0;
         }
+        if let Some((cover_stamp, cover)) = self.weather.worker.take_cover() {
+            if cover_stamp == stamp {
+                self.gpu.terrain_gpu.upload_cover(&self.gpu.queue, &cover);
+                self.gpu.atmosphere_gpu.set_weather(&self.gpu.queue, &cover);
+            }
+        }
+        self.gpu.terrain_gpu.set_cover_time(utc);
         if let Some(result) = self.weather.worker.take() {
             if result.request.stamp == stamp && result.request.detail == self.weather.detail {
                 self.weather.published = Some(result);
@@ -98,6 +130,11 @@ impl Renderer {
         {
             self.weather.sequence += 1;
             self.weather.worker.submit(Request {
+                climate: self
+                    .connection
+                    .session()
+                    .map(|s| s.climate_scenario())
+                    .unwrap_or_default(),
                 stamp,
                 utc,
                 observer,
@@ -125,7 +162,10 @@ impl Renderer {
         );
         let view = frame.render_view;
         let origin = DVec3::from_array(view.render_origin_m);
-        let radius = view.game_planet_radius_m;
+        let radius = view.game_planet_radius_m
+            + manifest
+                .planet()
+                .map_or(0.0, |p| p.sea_level_mm as f64 / 1000.0);
         let records: Vec<_> = publication
             .snapshot
             .clouds
@@ -187,7 +227,19 @@ impl Renderer {
 
     pub(in crate::renderer) fn weather_status(&self) -> Vec<String> {
         let Some(p) = &self.weather.published else {
-            return vec!["weather unavailable / preparing regional snapshot".into()];
+            return vec![
+                "weather unavailable / preparing regional snapshot".into(),
+                format!(
+                    "terrain cover={} seasonal_phase={:.2} materials={:.1}MiB",
+                    if self.gpu.terrain_gpu.uniform.cover_center[3] > 0.0 {
+                        "history-grid"
+                    } else {
+                        "analytic-fallback"
+                    },
+                    self.gpu.terrain_gpu.uniform.climate[0],
+                    self.gpu.terrain_gpu.bytes as f64 / 1048576.0
+                ),
+            ];
         };
         let s = &p.snapshot;
         let c = s.conditions;
@@ -245,7 +297,8 @@ impl Renderer {
             .filter(|(cloud, morph)| utc - cloud.birth_utc > morph.start + morph.step)
             .count();
         vec![
-            format!("weather AnnualMean region={:?} T={:.1}C humidity={:.0}% water={:.0}% uplift={:.2}", s.region, c.temperature_c, c.humidity * 100.0, c.water_supply * 100.0, c.uplift),
+            format!("terrain cover={} materials={:.1}MiB", if self.gpu.terrain_gpu.uniform.cover_center[3] > 0.0 { "history-grid" } else { "analytic-fallback" }, self.gpu.terrain_gpu.bytes as f64/1048576.0),
+            format!("weather Seasonal region={:?} T={:.1}C humidity={:.0}% water={:.0}% uplift={:.2}", s.region, c.temperature_c, c.humidity * 100.0, c.water_supply * 100.0, c.uplift),
             format!("layers [{}] wind W->E reference=5/10/20 m/s world={:.3}/{:.3}/{:.3} m/s", active.join(" | "), 5.0 * wind_scale, 10.0 * wind_scale, 20.0 * wind_scale),
             format!("clouds={} faces={} regions={} rev={} limited={} mode={} GPU={:.1}MiB mesh={:.1}MiB", s.clouds.len(), p.faces.len(), s.regions.len(), s.revision, s.limited || p.limited, if gpu.oit { "weighted_blended_oit" } else { "sorted_face_alpha" }, gpu.bytes() as f64 / 1048576.0, (p.faces.capacity() * std::mem::size_of::<super::Face>()) as f64 / 1048576.0),
             format!("publication age={:.2}s world_lag={:.2}s build={:.1}ms player_offset={:.4}rad debug={:?}", p.request.started.elapsed().as_secs_f64(), utc - s.utc, p.build_ms, s.observer.dot(DVec3::from_array(self.game.character.position.map(f64::from)).normalize()).clamp(-1.0, 1.0).acos(), self.weather.debug),

@@ -25,9 +25,8 @@ impl ApplicationHandler for App {
         if self.window.is_some() {
             return;
         }
-        let attributes = WindowAttributes::default()
-            .with_title(Text::WindowTitle.to_string())
-            .with_inner_size(PhysicalSize::new(1920, 1080));
+        let attributes = super::window_mode::attributes(event_loop, self.options.windowed)
+            .with_title(Text::WindowTitle.to_string());
         let window = match event_loop.create_window(attributes) {
             Ok(window) => Arc::new(window),
             Err(error) => {
@@ -37,6 +36,9 @@ impl ApplicationHandler for App {
                 return;
             }
         };
+        if self.options.windowed {
+            super::window_mode::fit_windowed(&window, event_loop);
+        }
         let world_map = self
             .world_map
             .take()
@@ -90,6 +92,11 @@ impl ApplicationHandler for App {
             WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
+                    if code == KeyCode::F11 && event.state == ElementState::Pressed && !event.repeat
+                    {
+                        super::window_mode::toggle(window, event_loop);
+                        return;
+                    }
                     if code == KeyCode::F1 && event.state == ElementState::Pressed && !event.repeat
                     {
                         renderer.ui.console.open = !renderer.ui.console.open;

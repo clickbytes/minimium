@@ -1,4 +1,6 @@
 use crate::options::ThreadLane;
+mod diagnostics;
+use diagnostics::ServerStderr;
 use minimium_platform::{
     admin_client,
     endpoint::{new_admin_token, ServerEndpoint},
@@ -28,6 +30,7 @@ pub enum LocalServer {
 /// RAII guard for a locally started server process.
 pub struct OwnedServer {
     child: Option<Child>,
+    stderr: Option<ServerStderr>,
     endpoint: Option<ServerEndpoint>,
     data_dir: PathBuf,
     shutdown_attempted: bool,
@@ -194,6 +197,7 @@ pub fn connect_or_start_until(
 
     if let Ok(endpoint) = ServerEndpoint::read(data_dir) {
         if validate_live_endpoint(data_dir, &endpoint, deadline).unwrap_or(false) {
+            validate_attachment_options()?;
             let stream = connect_game(&endpoint, remaining(deadline)?)?;
             return Ok((stream, LocalServer::Attached));
         }
@@ -211,10 +215,14 @@ pub fn connect_or_start_until(
     // This guard is established immediately after spawn, before any fallible startup work.
     let mut owned = OwnedServer {
         child: Some(child),
+        stderr: None,
         endpoint: None,
         data_dir: data_dir.to_owned(),
         shutdown_attempted: false,
     };
+    owned.stderr = Some(ServerStderr::capture(
+        owned.child.as_mut().expect("startup child exists"),
+    )?);
     let mut child_exit_status: Option<ExitStatus> = None;
     loop {
         if child_exit_status.is_none() {
@@ -275,13 +283,21 @@ pub fn connect_or_start_until(
             {
                 // Another process won the lock. Reap only the unsuccessful child we spawned.
                 owned.terminate()?;
+                validate_attachment_options()?;
                 let stream = connect_game(&endpoint, remaining(deadline)?)?;
                 return Ok((stream, LocalServer::Attached));
             }
         }
         if Instant::now() >= deadline {
             if let Some(status) = child_exit_status {
-                return Err(format!("local server exited during startup: {status}").into());
+                let detail = owned.stderr.as_mut().and_then(ServerStderr::finish);
+                return Err(match detail {
+                    Some(detail) => {
+                        format!("local server exited during startup ({status}): {detail}")
+                    }
+                    None => format!("local server exited during startup: {status}"),
+                }
+                .into());
             }
             // Startup never established ownership of a validated endpoint.
             // Reap only our own child and report the useful startup error rather
@@ -311,6 +327,19 @@ fn validate_live_endpoint(
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error),
     }
+}
+
+fn validate_attachment_options() -> io::Result<()> {
+    if local_env_option("MINIMIUM_LOCAL_CLIMATE_RELIEF_INFLUENCE").is_some() {
+        return Err(io::Error::other("restart the local server to apply ClimateReliefInfluence; attaching would ignore this startup setting"));
+    }
+    Ok(())
+}
+
+/// Launchers may leave an empty environment entry when an option is omitted.
+/// Keep that equivalent to absence; an explicit numeric zero remains an override.
+fn local_env_option(name: &str) -> Option<std::ffi::OsString> {
+    std::env::var_os(name).filter(|value| !value.is_empty())
 }
 
 fn same_endpoint(left: &ServerEndpoint, right: &ServerEndpoint) -> bool {
@@ -373,18 +402,19 @@ fn start_local_server(
     if let Some(world_definition_path) = world_definition_path {
         command.arg("--world-definition").arg(world_definition_path);
     }
-    if let Some(planet_config) = std::env::var_os("MINIMIUM_LOCAL_PLANET_CONFIG") {
+    if let Some(planet_config) = local_env_option("MINIMIUM_LOCAL_PLANET_CONFIG") {
         command.arg("--planet-config").arg(planet_config);
     }
-    if let Some(seed) = std::env::var_os("MINIMIUM_LOCAL_SEED") {
-        if !seed.is_empty() {
-            command.arg("--seed").arg(seed);
-        }
+    if let Some(influence) = local_env_option("MINIMIUM_LOCAL_CLIMATE_RELIEF_INFLUENCE") {
+        command.arg("--climate-relief-influence").arg(influence);
+    }
+    if let Some(seed) = local_env_option("MINIMIUM_LOCAL_SEED") {
+        command.arg("--seed").arg(seed);
     }
     command
         .stdin(Stdio::null())
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::piped())
         .spawn()
 }
 

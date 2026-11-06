@@ -115,6 +115,9 @@ impl OutputEncoder {
     pub fn target_view(&self) -> &wgpu::TextureView {
         &self.view
     }
+    pub fn texture(&self) -> &wgpu::Texture {
+        &self.texture
+    }
 
     pub fn pipeline(&self) -> &wgpu::RenderPipeline {
         &self.pipeline
@@ -161,7 +164,9 @@ fn output_texture(
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_SRC,
         view_formats: &[],
     })
 }

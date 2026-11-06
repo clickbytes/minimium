@@ -21,6 +21,35 @@ pub fn entry() -> wgpu::BindGroupLayoutEntry {
 }
 
 pub fn create(device: &wgpu::Device, queue: &wgpu::Queue, profile: Optics) -> wgpu::TextureView {
+    let pixels = pixels(profile);
+    let texture = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("spherical atmosphere optical depth"),
+        size: wgpu::Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba16Float,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        texture.as_image_copy(),
+        bytemuck::cast_slice(&pixels),
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(WIDTH * 8),
+            rows_per_image: Some(HEIGHT),
+        },
+        texture.size(),
+    );
+    texture.create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+fn pixels(profile: Optics) -> Vec<u16> {
     let radius = profile.radius_m;
     let top = profile.atmospheric_top_m;
     let mut pixels = Vec::with_capacity((WIDTH * HEIGHT * 4) as usize);
@@ -51,23 +80,14 @@ pub fn create(device: &wgpu::Device, queue: &wgpu::Queue, profile: Optics) -> wg
             pixels.push(0);
         }
     }
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("spherical atmosphere optical depth"),
-        size: wgpu::Extent3d {
-            width: WIDTH,
-            height: HEIGHT,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba16Float,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
-    });
+    pixels
+}
+
+pub fn update(queue: &wgpu::Queue, texture: &wgpu::Texture, profile: Optics) {
+    let data = pixels(profile);
     queue.write_texture(
         texture.as_image_copy(),
-        bytemuck::cast_slice(&pixels),
+        bytemuck::cast_slice(&data),
         wgpu::TexelCopyBufferLayout {
             offset: 0,
             bytes_per_row: Some(WIDTH * 8),
@@ -75,5 +95,4 @@ pub fn create(device: &wgpu::Device, queue: &wgpu::Queue, profile: Optics) -> wg
         },
         texture.size(),
     );
-    texture.create_view(&wgpu::TextureViewDescriptor::default())
 }

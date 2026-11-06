@@ -4,6 +4,18 @@ use minimium_renderer::quality::SkyQuality;
 
 const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
+        name: "set_time",
+        alias: None,
+        usage: "set_time HHMM (UTC; owned local server)",
+        parser: parse,
+    },
+    CommandSpec {
+        name: "set_time_local",
+        alias: None,
+        usage: "set_time_local HHMM (local mean solar time at player; owned local server)",
+        parser: parse,
+    },
+    CommandSpec {
         name: "sky quality",
         alias: None,
         usage: "sky quality low|standard",
@@ -83,6 +95,15 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
         ("sky names", ["true"]) => Ok(ClientCommand::ShowCelestialNames(true)),
         ("sky names", ["false"]) => Ok(ClientCommand::ShowCelestialNames(false)),
         ("sky names", _) => Err(ParseError::CelestialNamesUsage),
+        (name @ ("set_time" | "set_time_local"), [value]) => {
+            let minute = minimium_environment::clock_command::parse_hhmm(value)
+                .map_err(|_| ParseError::SetTimeUsage)?;
+            Ok(ClientCommand::SetTime {
+                minute,
+                local: name == "set_time_local",
+            })
+        }
+        ("set_time" | "set_time_local", _) => Err(ParseError::SetTimeUsage),
         ("time status", []) => Ok(ClientCommand::TimeStatus),
         ("time scale", [value]) => {
             parse_scale_ppm(value).map_err(|_| ParseError::TimeScaleUsage)?;

@@ -8,6 +8,7 @@ use std::fmt;
 
 /// A display message with typed values supplied by the client event.
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(not(feature = "desktop"), allow(dead_code))]
 pub enum ClientText {
     ConnectingTo(String),
     StartingLocalServer,
@@ -158,7 +159,9 @@ impl From<DisconnectReason> for ClientText {
             ),
             DisconnectReason::PeerClosed => Self::PeerDisconnected,
             DisconnectReason::ServerClosed => Self::ServerClosed,
-            DisconnectReason::EarthPackage(error) => Self::ConnectionLost(error),
+            DisconnectReason::EarthPackage(error) | DisconnectReason::Materials(error) => {
+                Self::ConnectionLost(error)
+            }
             other => Self::ConnectionLost(format!("{other:?}")),
         }
     }
@@ -239,6 +242,7 @@ impl fmt::Display for ClientText {
                 ParseError::SkyQualityUsage => "usage: sky quality low|standard",
                 ParseError::FovUsage => "usage: fov [30..110] (degrees)",
                 ParseError::CelestialNamesUsage => "usage: show_celestial_names true|false",
+                ParseError::SetTimeUsage => "usage: set_time HHMM | set_time_local HHMM (0000..2359)",
                 ParseError::TimeScaleUsage => {
                     "usage: time scale DECIMAL (or timescale DECIMAL; 0.1-1000000 or 0 to pause, at most 6 fractional digits)"
                 }
@@ -250,7 +254,7 @@ impl fmt::Display for ClientText {
                 f.write_str("Minimium client console. Type `help` for commands.")
             }
             Self::CommandLineHelp => f.write_str(
-                "minimium-client [--connect HOST:PORT] [--map PATH | --world-definition PATH] [--profile-dir PATH] [--server-data-dir PATH] [--threads 1|2|auto] [--sky-quality low|standard] [--demo] [--console] [--require-earth]\nDefault sky quality: standard. It affects local rendering only. F1 opens the console. --console selects the text client; host local starts/attaches its server.",
+                "minimium-client [--connect HOST:PORT] [--map PATH | --world-definition PATH] [--profile-dir PATH] [--server-data-dir PATH] [--threads 1|2|auto] [--sky-quality low|standard] [--demo] [--console] [--require-earth] [--windowed]\nDesktop starts fullscreen; F11 toggles window mode. Default sky quality: standard. It affects local rendering only. F1 opens the console. --console selects the text client; host local starts/attaches its server.",
             ),
             Self::InputPrompt => f.write_str("> "),
             Self::ClientError(error) => write!(f, "client error: {error}"),

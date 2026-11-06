@@ -10,9 +10,16 @@ const CLEAR_AIR_EXTINCTION = 0.08;
 
 fn tone_map_linear(rgb: vec3<f32>) -> vec3<f32> {
     if environment.flags.w != 0u {
-        return rgb;
+        return min(rgb*scene_exposure(),vec3<f32>(65000.0));
     }
     return tone_map_color(rgb * environment.ambient_rgb_exposure.w);
+}
+
+// Existing celestial sprites/marker colors are calibrated for display, unlike
+// irradiance on surfaces. Do not amplify those authored colors by night gain.
+fn tone_map_display(rgb: vec3<f32>) -> vec3<f32> {
+    if environment.flags.w != 0u {return rgb;}
+    return tone_map_color(rgb);
 }
 
 fn horizon_visibility(ray_world: vec3<f32>) -> f32 {
@@ -52,5 +59,7 @@ fn sample_clear_sky(ray_world: vec3<f32>) -> SkySample {
             * (vec3<f32>(18.0, 24.0, 42.0) + vec3<f32>(44.0, 58.0, 86.0) * moon_halo);
         scattering += moon_scatter * clear_air_transmittance(altitude);
     }
-    return SkySample(scattering, clear_air_transmittance(altitude));
+    var density=1.0;
+    if atmosphere.config.x>0.0 {density=exp(-max(atmosphere.up_height.w,0.0)/8000.0);}
+    return SkySample(scattering*density, pow(clear_air_transmittance(altitude),density));
 }

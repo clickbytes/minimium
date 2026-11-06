@@ -57,3 +57,6 @@ fn read_bounded(path: &Path, max_bytes: usize) -> io::Result<String> {
         .read_to_string(&mut source)?;
     Ok(source)
 }
+mod land_cover;
+pub mod material_http;
+pub mod materials;

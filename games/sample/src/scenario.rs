@@ -64,7 +64,11 @@ pub fn generate_worlds_with_planet_revision_and_geography(
     revision: u32,
     geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
 ) -> Result<[GeneratedWorld; 2], String> {
-    if !matches!(revision, 3 | 4) {
+    if !matches!(revision, 3 | 4 | 5)
+        || (revision >= 4 && definition.mode != 1)
+        || (definition.peak_relief.enabled() && revision != 5)
+        || !definition.is_valid()
+    {
         return Err("unsupported planet generator revision".into());
     }
     let surface = PlanetSurfaceSpec::new(
