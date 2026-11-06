@@ -59,6 +59,41 @@ impl<T, E> Default for CommandRegistry<T, E> {
 }
 
 impl<T, E> CommandRegistry<T, E> {
+    /// Lexes and resolves a source line without losing the original raw tail.
+    pub fn parse_line(&self, input: &str) -> Result<CommandOutcome<T, E>, crate::CommandError> {
+        let tokens = crate::lex_command_line_with_spans(input)?;
+        let words = tokens
+            .iter()
+            .map(|token| token.value.as_str())
+            .collect::<Vec<_>>();
+        let matched = self
+            .commands
+            .iter()
+            .filter_map(|spec| {
+                let count = [Some(spec.name), spec.alias]
+                    .into_iter()
+                    .flatten()
+                    .map(|name| name.split_whitespace().collect::<Vec<_>>())
+                    .filter(|name| words.starts_with(name))
+                    .map(|name| name.len())
+                    .max()?;
+                Some((spec, count))
+            })
+            .max_by_key(|(_, count)| *count);
+        let Some((spec, command_length)) = matched else {
+            return Ok(CommandOutcome::Unknown);
+        };
+        let tail = tokens
+            .get(command_length)
+            .map_or("", |token| input[token.span.start..].trim_start());
+        let arguments = [spec.name, tail];
+        Ok(CommandOutcome::Matched {
+            name: spec.name,
+            usage: spec.usage,
+            result: (spec.parser)(&arguments),
+        })
+    }
+
     pub fn register(&mut self, specs: &'static [CommandSpec<T, E>]) {
         self.try_register(specs)
             .unwrap_or_else(|error| panic!("command registration failed: {error}"));

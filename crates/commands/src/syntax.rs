@@ -1,40 +1,85 @@
 use crate::{CommandError, CommandErrorCode};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SourceSpan {
+    pub start: usize,
+    pub end: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CommandToken {
+    pub value: String,
+    pub span: SourceSpan,
+}
+
 /// Splits a command line into words while preserving whitespace inside quotes.
 pub fn lex_command_line(line: &str) -> Result<Vec<String>, CommandError> {
+    Ok(lex_command_line_with_spans(line)?
+        .into_iter()
+        .map(|token| token.value)
+        .collect())
+}
+
+/// Tokenizes command text while retaining source byte ranges for raw-tail consumers.
+/// Single quotes are literal; double quotes only escape `\\` and `\"`.
+pub fn lex_command_line_with_spans(line: &str) -> Result<Vec<CommandToken>, CommandError> {
     let mut words = Vec::new();
     let mut word = String::new();
-    let mut quoted = false;
-    let mut escaped = false;
+    let mut quote = None;
     let mut started = false;
-    for character in line.chars() {
+    let mut start = 0;
+    let mut index = 0;
+    let mut characters = line.char_indices().peekable();
+    while let Some((offset, character)) = characters.next() {
+        index = offset + character.len_utf8();
         if character.is_control() {
             return Err(syntax_error("command contains a control character"));
         }
-        if escaped {
-            word.push(character);
-            escaped = false;
+        if let Some(delimiter) = quote {
+            if character == delimiter {
+                quote = None;
+            } else if delimiter == '"' && character == '\\' {
+                match characters.peek().copied() {
+                    Some((_, escaped @ ('\\' | '"'))) => {
+                        characters.next();
+                        index += escaped.len_utf8();
+                        word.push(escaped);
+                    }
+                    _ => word.push(character),
+                }
+            } else {
+                word.push(character);
+            }
+        } else if matches!(character, '\'' | '"') {
+            quote = Some(character);
+            if !started {
+                start = offset;
+            }
             started = true;
-        } else if quoted && character == '\\' {
-            escaped = true;
-        } else if character == '"' {
-            quoted = !quoted;
-            started = true;
-        } else if character.is_whitespace() && !quoted {
+        } else if character.is_whitespace() {
             if started {
-                words.push(std::mem::take(&mut word));
+                words.push(CommandToken {
+                    value: std::mem::take(&mut word),
+                    span: SourceSpan { start, end: offset },
+                });
                 started = false;
             }
         } else {
+            if !started {
+                start = offset;
+            }
             word.push(character);
             started = true;
         }
     }
-    if escaped || quoted {
+    if quote.is_some() {
         return Err(syntax_error("command has an unclosed quoted value"));
     }
     if started {
-        words.push(word);
+        words.push(CommandToken {
+            value: word,
+            span: SourceSpan { start, end: index },
+        });
     }
     Ok(words)
 }

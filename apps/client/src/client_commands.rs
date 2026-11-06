@@ -7,8 +7,8 @@
 
 use crate::{options::ThreadLane, session::QueueError};
 use minimium_commands::{
-    CommandError, CommandErrorCode, CommandOutcome, CommandRegistry as SharedCommandRegistry,
-    CommandSpec as SharedCommandSpec,
+    lex_command_line_with_spans, CommandError, CommandErrorCode, CommandOutcome,
+    CommandRegistry as SharedCommandRegistry, CommandSpec as SharedCommandSpec,
 };
 use minimium_protocol::ClientMessage;
 use minimium_renderer::quality::SkyQuality;
@@ -138,16 +138,20 @@ pub(crate) fn parse_command(input: &str) -> Result<Option<ClientCommand>, ParseE
     if trimmed.is_empty() {
         return Ok(None);
     }
+    let tokens = lex_command_line_with_spans(trimmed).map_err(ParseError::Structured)?;
+    let words = tokens
+        .iter()
+        .map(|token| token.value.as_str())
+        .collect::<Vec<_>>();
     if matches!(
-        trimmed.split_whitespace().next(),
+        words.first().copied(),
         Some("get" | "set" | "reset" | "list")
-    ) || (trimmed.starts_with("help ") && trimmed.len() > "help ".len())
+    ) || matches!(words.first().copied(), Some("help"))
     {
         if let Some(command) = properties::parse(trimmed)? {
             return Ok(Some(command));
         }
     }
-    let words = trimmed.split_whitespace().collect::<Vec<_>>();
     let group: Vec<_> = command_specs()
         .iter()
         .filter(|spec| spec.name.starts_with(&format!("{trimmed} ")))
@@ -156,7 +160,10 @@ pub(crate) fn parse_command(input: &str) -> Result<Option<ClientCommand>, ParseE
     if !group.is_empty() {
         return Ok(Some(ClientCommand::Print(group.join("\n"))));
     }
-    match registry().parse_outcome(trimmed, &words) {
+    match registry()
+        .parse_line(trimmed)
+        .map_err(ParseError::Structured)?
+    {
         CommandOutcome::Matched { usage, result, .. } => result
             .map_err(|error| match error {
                 ParseError::UnknownCommand => ParseError::Usage(usage),

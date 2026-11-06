@@ -237,7 +237,7 @@ impl ServerCommand {
             return parse_property(line.trim())
                 .map_err(|error| typed_property_error(&normalized, error));
         }
-        match server_registry().parse_outcome(&normalized, &words) {
+        match server_registry().parse_line(line)? {
             CommandOutcome::Matched {
                 result: Ok(command),
                 ..
