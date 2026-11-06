@@ -3,7 +3,9 @@ use std::{
     io,
     net::IpAddr,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Child, Command, ExitStatus, Stdio},
+    thread::{self, JoinHandle},
+    time::{Duration, Instant},
 };
 
 const MAX_CONFIG_OUTPUT: usize = 64 * 1024;
@@ -22,12 +24,22 @@ pub struct LocalServerLaunchConfig {
 }
 
 impl LocalServerLaunchConfig {
-    pub(crate) fn resolve(&self, server_executable: &Path) -> io::Result<ResolvedLaunch> {
+    pub(crate) fn resolve(
+        &self,
+        server_executable: &Path,
+        deadline: Instant,
+    ) -> io::Result<ResolvedLaunch> {
+        if Instant::now() >= deadline {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "server config preview deadline expired",
+            ));
+        }
         let mut command = server_command(server_executable, self);
         command.args(["config", "show", "--sources", "--format", "json"]);
         self.append_config_inputs(&mut command);
-        let output = command.output()?;
-        if output.stdout.len() > MAX_CONFIG_OUTPUT {
+        let output = run_preview(command, deadline)?;
+        if output.stdout_exceeded {
             return Err(io::Error::other("server config preview exceeded 64 KiB"));
         }
         if !output.status.success() {
@@ -119,6 +131,106 @@ impl LocalServerLaunchConfig {
         clear_server_environment(command);
         command.envs(&self.environment);
     }
+}
+
+struct PreviewOutput {
+    status: ExitStatus,
+    stdout: Vec<u8>,
+    stdout_exceeded: bool,
+    stderr: Vec<u8>,
+}
+
+struct CapturedStream {
+    bytes: Vec<u8>,
+    exceeded: bool,
+}
+
+fn run_preview(mut command: Command, deadline: Instant) -> io::Result<PreviewOutput> {
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    let mut child = command.spawn()?;
+    let stdout = child.stdout.take().expect("preview stdout is piped");
+    let stdout_reader = match spawn_reader(stdout, MAX_CONFIG_OUTPUT, "server-config-stdout") {
+        Ok(reader) => reader,
+        Err(error) => {
+            kill_and_reap(&mut child);
+            return Err(error);
+        }
+    };
+    let stderr = child.stderr.take().expect("preview stderr is piped");
+    let stderr_reader = match spawn_reader(stderr, MAX_DIAGNOSTICS, "server-config-stderr") {
+        Ok(reader) => reader,
+        Err(error) => {
+            kill_and_reap(&mut child);
+            let _ = stdout_reader.join();
+            return Err(error);
+        }
+    };
+    let status = loop {
+        if Instant::now() >= deadline {
+            kill_and_reap(&mut child);
+            let _ = join_reader(stdout_reader);
+            let _ = join_reader(stderr_reader);
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "server config preview exceeded startup deadline",
+            ));
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => thread::sleep(Duration::from_millis(5)),
+            Err(error) => {
+                kill_and_reap(&mut child);
+                let _ = join_reader(stdout_reader);
+                let _ = join_reader(stderr_reader);
+                return Err(error);
+            }
+        }
+    };
+    let stdout = join_reader(stdout_reader)?;
+    let stderr = join_reader(stderr_reader)?;
+    Ok(PreviewOutput {
+        status,
+        stdout: stdout.bytes,
+        stdout_exceeded: stdout.exceeded,
+        stderr: stderr.bytes,
+    })
+}
+
+fn spawn_reader<R: io::Read + Send + 'static>(
+    mut reader: R,
+    limit: usize,
+    name: &str,
+) -> io::Result<JoinHandle<io::Result<CapturedStream>>> {
+    thread::Builder::new().name(name.to_owned()).spawn(move || {
+        let mut captured = Vec::with_capacity(limit.min(8192));
+        let mut buffer = [0; 4096];
+        let mut exceeded = false;
+        loop {
+            let count = reader.read(&mut buffer)?;
+            if count == 0 {
+                break;
+            }
+            let remaining = limit.saturating_sub(captured.len());
+            let retained = count.min(remaining);
+            captured.extend_from_slice(&buffer[..retained]);
+            exceeded |= retained != count;
+        }
+        Ok(CapturedStream {
+            bytes: captured,
+            exceeded,
+        })
+    })
+}
+
+fn join_reader(reader: JoinHandle<io::Result<CapturedStream>>) -> io::Result<CapturedStream> {
+    reader
+        .join()
+        .map_err(|_| io::Error::other("server config preview output reader panicked"))?
+}
+
+fn kill_and_reap(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 pub(crate) struct ResolvedLaunch {

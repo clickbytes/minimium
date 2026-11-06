@@ -194,7 +194,7 @@ pub fn connect_or_start_until(
 ) -> Result<(TcpStream, LocalServer), Box<dyn Error>> {
     let deadline = deadline.min(Instant::now() + STARTUP_TIMEOUT);
     let executable = server_executable_path()?;
-    let resolved = config.resolve(&executable)?;
+    let resolved = config.resolve(&executable, deadline)?;
     let data_dir = &resolved.data_dir;
 
     if let Ok(endpoint) = ServerEndpoint::read(data_dir) {
