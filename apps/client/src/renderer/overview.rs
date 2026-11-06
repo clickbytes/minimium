@@ -53,12 +53,13 @@ impl Renderer {
             &mut marker_vertices,
             (glam::Vec3::from_array(if earth {
                 let radial =
-                    glam::Vec3::from_array(self.game.character.position).normalize_or_zero();
+                    glam::Vec3::from_array(self.game.gameplay.prediction.character.position)
+                        .normalize_or_zero();
                 let radius =
                     minimium_procgen::planet_surface_for(manifest).radius_mm() as f32 / 1000.0;
                 (radial * radius * (1.0 + self.marker_height())).to_array()
             } else {
-                self.game.character.position
+                self.game.gameplay.prediction.character.position
             }) - glam::Vec3::from_array(self.gpu.render_origin))
             .to_array(),
             marker_size,
@@ -112,7 +113,8 @@ impl Renderer {
             return;
         };
         let radius = minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0;
-        let radial = glam::Vec3::from_array(self.game.character.position).normalize_or_zero();
+        let radial = glam::Vec3::from_array(self.game.gameplay.prediction.character.position)
+            .normalize_or_zero();
         let mut vertices = Vec::new();
         cube(
             &mut vertices,
@@ -222,7 +224,7 @@ impl Renderer {
             );
         }
         minimium_renderer::terrain_view::TerrainView::new(
-            self.game.character.position,
+            self.game.gameplay.prediction.character.position,
             self.fov_degrees.to_radians(),
             self.gpu.size.height,
         )
@@ -235,7 +237,8 @@ impl Renderer {
             .get(&self.game.current_instance)
             .map(|manifest| manifest.topology());
         if topology == Some(WorldTopology::Planet) {
-            let radial = glam::Vec3::from_array(self.game.character.position).normalize_or_zero();
+            let radial = glam::Vec3::from_array(self.game.gameplay.prediction.character.position)
+                .normalize_or_zero();
             let radial = if radial.length_squared() > 0.0 {
                 radial
             } else {

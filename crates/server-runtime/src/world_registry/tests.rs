@@ -10,12 +10,30 @@ use minimium_world::world::{
     WorldSeed,
 };
 
+fn registry_from_sample(worlds: Vec<minimium_game_sample::GeneratedWorld>) -> WorldRegistry {
+    WorldRegistry::from_world_definitions(
+        worlds
+            .into_iter()
+            .map(|world| WorldDefinition {
+                instance: world.instance,
+                manifest: world.manifest,
+                map: world.map,
+                portal: world.portal.map(|portal| WorldPortal {
+                    position: portal.position,
+                    target_instance: portal.target_instance,
+                    destination: portal.destination,
+                }),
+            })
+            .collect(),
+    )
+}
+
 #[test]
 fn equal_coordinates_in_separate_instances_have_isolated_membership() {
     let worlds = generate_demo_worlds().unwrap();
     let planet = worlds[0].instance;
     let dungeon = worlds[1].instance;
-    let mut registry = WorldRegistry::from_generated_worlds(worlds.to_vec());
+    let mut registry = registry_from_sample(worlds.to_vec());
     let planet_player = PlayerId::new(10);
     let dungeon_player = PlayerId::new(11);
     let same_position = [12.0, 34.0, 56.0];
@@ -77,7 +95,7 @@ fn planet_spawn_can_walk_the_generated_approach_to_the_portal() {
     let planet_id = worlds[0].instance;
     let spawn = worlds[0].map.spawn();
     let portal = worlds[0].portal.unwrap().position;
-    let mut registry = WorldRegistry::from_generated_worlds(worlds.to_vec());
+    let mut registry = registry_from_sample(worlds.to_vec());
     let player = PlayerId::new(12);
     registry
         .join_at(planet_id, player, "Walker".into(), spawn, 100)
@@ -140,7 +158,7 @@ fn portal_transfer_waits_for_readiness_and_round_trips_to_saved_location() {
     let dungeon_id = worlds[1].instance;
     let planet_portal = worlds[0].portal.unwrap();
     let dungeon_portal = worlds[1].portal.unwrap();
-    let mut registry = WorldRegistry::from_generated_worlds(worlds.to_vec());
+    let mut registry = registry_from_sample(worlds.to_vec());
     let player = PlayerId::new(17);
     registry
         .join_at(
@@ -371,7 +389,7 @@ fn dungeon_path(
 fn sector_state_revisions_are_monotonic_and_topology_bound() {
     let worlds = generate_demo_worlds().unwrap();
     let planet_id = worlds[0].instance;
-    let mut registry = WorldRegistry::from_generated_worlds(worlds.to_vec());
+    let mut registry = registry_from_sample(worlds.to_vec());
     let key = SectorKey::planet(PlanetFace::PositiveY, 3, 4).unwrap();
     let first = WorldSectorState::new(key, SectorRevision::new(1).unwrap(), Vec::new()).unwrap();
     let stale = WorldSectorState::new(key, SectorRevision::new(1).unwrap(), Vec::new()).unwrap();
@@ -399,7 +417,7 @@ fn sector_state_revisions_are_monotonic_and_topology_bound() {
 fn component_sector_state_rehydrates_without_claiming_legacy_objects() {
     let worlds = generate_demo_worlds().unwrap();
     let instance = worlds[0].instance;
-    let mut owner = WorldRegistry::from_generated_worlds(worlds.to_vec());
+    let mut owner = registry_from_sample(worlds.to_vec());
     let mut components = ComponentRegistry::default();
     let kind = ComponentTypeId::new(1).unwrap();
     let schema = SchemaVersion::new(1).unwrap();
@@ -431,7 +449,7 @@ fn component_sector_state_rehydrates_without_claiming_legacy_objects() {
             .unwrap()
             .is_none()
     );
-    let mut restored = WorldRegistry::from_generated_worlds(worlds.to_vec());
+    let mut restored = registry_from_sample(worlds.to_vec());
     restored.restore_sector_states(saved).unwrap();
     restored.rehydrate_component_objects(&components).unwrap();
     assert_eq!(

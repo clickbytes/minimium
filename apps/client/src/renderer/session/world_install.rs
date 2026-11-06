@@ -1,5 +1,57 @@
 use super::*;
 impl Renderer {
+    pub(super) fn load_generated_catalog(
+        &mut self,
+        instance: minimium_world::world::WorldInstanceId,
+        manifest: WorldManifest,
+    ) -> bool {
+        if !matches!(manifest.generation().revision().get(), 2..=4)
+            || !matches!(instance.get(), 1 | 2)
+        {
+            return true;
+        }
+        let seed = manifest.generation().seed().get()
+            ^ if instance.get() == 2 {
+                0x0030_0000_0000_0003
+            } else {
+                0
+            };
+        let generated = if let Some(planet) = manifest.planet() {
+            minimium_game_sample::generate_worlds_with_planet_revision_and_geography(
+                seed,
+                planet,
+                manifest.generation().revision().get(),
+                self.connection
+                    .session()
+                    .and_then(|session| session.prepared_geography()),
+            )
+        } else {
+            minimium_game_sample::generate_worlds(seed)
+        };
+        let Ok(worlds) = generated else {
+            return false;
+        };
+        if worlds[instance.get() as usize - 1].manifest != manifest {
+            return false;
+        }
+        if self.game.world_manifests.get(&instance) != Some(&manifest) {
+            self.sector_cache.reset();
+            for generated_instance in [1, 2] {
+                self.gpu.release_world_sectors(
+                    minimium_world::world::WorldInstanceId::new(generated_instance)
+                        .expect("generated instance ID is nonzero"),
+                );
+            }
+        }
+        for world in worlds {
+            self.game
+                .world_manifests
+                .insert(world.instance, world.manifest);
+            self.world_catalog.insert(world.instance, world.map);
+        }
+        true
+    }
+
     pub(super) fn install_world(
         &mut self,
         instance: minimium_world::world::WorldInstanceId,
@@ -40,15 +92,15 @@ impl Renderer {
         self.teleport_loading = !gpu_ready;
         self.gpu.scene_visible = gpu_ready;
         let previous_instance = self.game.current_instance;
-        self.game.collision_index = scene.as_ref().map_or_else(
+        self.game.gameplay.collision_index = scene.as_ref().map_or_else(
             || minimium_simulation::CollisionIndex::from_geometry(Vec::new(), Vec::new()),
             |s| s.collision.clone(),
         );
-        self.game.character = CharacterState::at_spawn_with_gravity(
+        self.game.gameplay.prediction.character = CharacterState::at_spawn_with_gravity(
             target_position,
             super::camera::gravity_for_manifest(manifest),
         );
-        self.game.position_mm = manifest.planet().map(|_| {
+        self.game.gameplay.prediction.position_mm = manifest.planet().map(|_| {
             if target_position == map.spawn() {
                 map.spawn_position_mm().unwrap_or_else(|| {
                     minimium_world::world::Position3Mm(
@@ -61,14 +113,14 @@ impl Renderer {
                 )
             }
         });
-        self.game.sectors_ready = scene.is_some();
+        self.game.gameplay.sectors_ready = scene.is_some();
         self.active_sector_keys = scene.as_ref().map_or_else(Vec::new, |s| s.keys.clone());
         self.last_render_position = if gpu_ready {
             target_position
         } else {
             [f32::INFINITY; 3]
         };
-        self.game.prediction.reset_time();
+        self.game.gameplay.prediction.reset_time();
         self.reset_remote_gameplay();
         self.input.yaw = -std::f32::consts::FRAC_PI_2;
         self.input.pitch = 0.0;
@@ -95,19 +147,21 @@ impl Renderer {
 
 impl Renderer {
     pub(super) fn apply_altitude_position(&mut self, position: minimium_world::world::Position3Mm) {
-        self.game.position_mm = Some(position);
-        self.game.character.position = position.0.map(|v| v as f32 / 1000.0);
+        self.game.gameplay.prediction.position_mm = Some(position);
+        self.game.gameplay.prediction.character.position = position.0.map(|v| v as f32 / 1000.0);
         self.gpu.set_render_origin(
             self.game
+                .gameplay
+                .prediction
                 .character
                 .position
                 .map(|v| (v / 4096.0).round() * 4096.0),
         );
-        self.game.character.velocity = [0.0; 3];
-        self.game.character.grounded = false;
-        self.game.prediction.reset_time();
+        self.game.gameplay.prediction.character.velocity = [0.0; 3];
+        self.game.gameplay.prediction.character.grounded = false;
+        self.game.gameplay.prediction.reset_time();
         self.last_render_position = [f32::INFINITY; 3];
-        self.game.sectors_ready = false;
+        self.game.gameplay.sectors_ready = false;
         self.teleport_loading = true;
         self.gpu.scene_visible = false;
         self.input.keys.clear();

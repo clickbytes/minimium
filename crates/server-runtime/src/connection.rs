@@ -222,6 +222,18 @@ pub(crate) fn queue_close_response(
     true
 }
 
+pub(crate) fn mark_disconnected(
+    index: usize,
+    client: &mut Client,
+    disconnected: &mut Vec<usize>,
+    reason: Option<CloseReason>,
+) {
+    if let Some(reason) = reason {
+        client.disconnect_reason = Some(reason);
+    }
+    disconnected.push(index);
+}
+
 pub(crate) fn queue_message(
     client: &mut Client,
     metrics: &mut RuntimeMetrics,

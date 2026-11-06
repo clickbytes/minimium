@@ -34,60 +34,103 @@ pub(crate) struct ShutdownContext<'a> {
 }
 
 pub(crate) fn shutdown(mut context: ShutdownContext<'_>) -> io::Result<()> {
-    context.admin.reject_pending("server stopping");
+    drain_admin_requests(context.admin, &mut context.runtime_error);
+    close_client_sockets(context.clients);
+    let snapshot = capture_final_snapshot(
+        context.server_started,
+        context.environment_clock,
+        context.worlds,
+        context.map_fingerprint,
+        context.player_store,
+    );
+    let save_result = persist_final_snapshot(context.persistence, snapshot);
+    finish_shutdown(
+        context.data_dir,
+        context.endpoint,
+        context.runtime_error,
+        save_result,
+    )
+}
+
+fn drain_admin_requests(admin: &mut AdminServer, runtime_error: &mut Option<io::Error>) {
+    admin.reject_pending("server stopping");
     let drain_deadline = Instant::now() + Duration::from_secs(2);
-    while context.admin.has_pending_output() && Instant::now() < drain_deadline {
-        match context.admin.poll(Instant::now()) {
+    while admin.has_pending_output() && Instant::now() < drain_deadline {
+        match admin.poll(Instant::now()) {
             Ok(requests) => {
                 for request in requests {
-                    context.admin.respond(request.id, false, "server stopping");
+                    admin.respond(request.id, false, "server stopping");
                 }
             }
             Err(error) => {
-                context.runtime_error.get_or_insert(error);
+                runtime_error.get_or_insert(error);
                 break;
             }
         }
         thread::sleep(Duration::from_millis(5));
     }
-    for client in context.clients {
+}
+
+fn close_client_sockets(clients: &mut [Client]) {
+    for client in clients {
         let _ = client.stream.shutdown(std::net::Shutdown::Both);
     }
+}
+
+fn capture_final_snapshot(
+    server_started: Instant,
+    environment_clock: &mut EnvironmentClock,
+    worlds: &WorldRegistry,
+    map_fingerprint: u64,
+    player_store: &mut PlayerStore,
+) -> io::Result<crate::storage::SaveSnapshot> {
     let capture_at = Instant::now();
     let monotonic_ms = u64::try_from(
         capture_at
-            .saturating_duration_since(context.server_started)
+            .saturating_duration_since(server_started)
             .as_millis(),
     )
     .map(MonotonicMs::new)
     .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "server monotonic time overflow"));
     let snapshot = monotonic_ms
         .and_then(|at| {
-            context
-                .environment_clock
-                .capture_saved_state(at)
-                .map_err(|error| {
-                    io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        format!("environment clock: {error}"),
-                    )
-                })
+            environment_clock.capture_saved_state(at).map_err(|error| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("environment clock: {error}"),
+                )
+            })
         })
         .and_then(|saved_clock| {
-            let input = context.worlds.snapshot_for_save(context.map_fingerprint)?;
-            context.player_store.save_snapshot(input, saved_clock)
+            let input = worlds.snapshot_for_save(map_fingerprint)?;
+            player_store.save_snapshot(input, saved_clock)
         });
-    let save_result = match snapshot {
-        Ok(snapshot) => context.persistence.shutdown(Some(snapshot)),
+    snapshot
+}
+
+fn persist_final_snapshot(
+    persistence: &mut PersistenceWorker,
+    snapshot: io::Result<crate::storage::SaveSnapshot>,
+) -> io::Result<()> {
+    match snapshot {
+        Ok(snapshot) => persistence.shutdown(Some(snapshot)),
         Err(error) => {
-            if let Err(cleanup_error) = context.persistence.shutdown(None) {
+            if let Err(cleanup_error) = persistence.shutdown(None) {
                 eprintln!("storage shutdown after snapshot failure: {cleanup_error}");
             }
             Err(error)
         }
-    };
-    let endpoint_result = context.endpoint.remove_if_owned(context.data_dir);
-    let mut primary_error = context.runtime_error;
+    }
+}
+
+fn finish_shutdown(
+    data_dir: &Path,
+    endpoint: &ServerEndpoint,
+    runtime_error: Option<io::Error>,
+    save_result: io::Result<()>,
+) -> io::Result<()> {
+    let endpoint_result = endpoint.remove_if_owned(data_dir);
+    let mut primary_error = runtime_error;
     for (operation, result) in [
         ("final save", save_result),
         ("endpoint cleanup", endpoint_result),
@@ -101,7 +144,7 @@ pub(crate) fn shutdown(mut context: ShutdownContext<'_>) -> io::Result<()> {
         }
     }
     let shutdown_result = primary_error.map_or(Ok(()), Err);
-    let status_result = write_shutdown_status(context.data_dir, context.endpoint, &shutdown_result);
+    let status_result = write_shutdown_status(data_dir, endpoint, &shutdown_result);
     if let Err(error) = &status_result {
         if shutdown_result.is_err() {
             eprintln!("shutdown status write also failed: {error}");

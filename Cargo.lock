@@ -1092,8 +1092,15 @@ dependencies = [
 name = "minimium-server"
 version = "0.1.0"
 dependencies = [
+ "minimium-asset-io",
+ "minimium-assets",
+ "minimium-game-sample",
+ "minimium-procgen",
  "minimium-server-runtime",
+ "minimium-simulation",
  "minimium-telemetry",
+ "minimium-world",
+ "ron",
 ]
 
 [[package]]

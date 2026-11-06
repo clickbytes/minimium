@@ -9,8 +9,8 @@
 use minimium_core::identity::PlayerProfileId;
 use minimium_environment::{time::ClockSample, EnvironmentDescriptor};
 use minimium_protocol::{
-    decode_server, encode_client, ClientMessage, ClientWorldInput, ProtocolError, ServerMessage,
-    WorldContext, MAX_FRAME_BYTES,
+    decode_server, encode_client, ClientMessage, ProtocolError, ServerMessage, WorldContext,
+    MAX_FRAME_BYTES,
 };
 use minimium_world::world::TransitionId;
 use std::{
@@ -23,6 +23,7 @@ use std::{
 
 mod clock;
 mod content;
+mod contextualize;
 mod environment;
 mod receive;
 
@@ -270,51 +271,7 @@ impl ClientSession {
         if matches!(message, ClientMessage::Identify(_)) {
             return Err(QueueError::IdentifyReserved);
         }
-        let contextual = match message {
-            ClientMessage::Motion(input) => Some(ClientMessage::WorldInput {
-                context: self.world_context.ok_or(QueueError::AwaitingWelcome)?,
-                input: ClientWorldInput::Motion(*input),
-            }),
-            ClientMessage::SetName(name) => Some(ClientMessage::WorldInput {
-                context: self.world_context.ok_or(QueueError::AwaitingWelcome)?,
-                input: ClientWorldInput::SetName(name.clone()),
-            }),
-            ClientMessage::Move { direction, jump } => Some(ClientMessage::WorldInput {
-                context: self.world_context.ok_or(QueueError::AwaitingWelcome)?,
-                input: ClientWorldInput::Move {
-                    direction: *direction,
-                    jump: *jump,
-                },
-            }),
-            ClientMessage::Fire { direction } => Some(ClientMessage::WorldInput {
-                context: self.world_context.ok_or(QueueError::AwaitingWelcome)?,
-                input: ClientWorldInput::Fire {
-                    direction: *direction,
-                },
-            }),
-            ClientMessage::SetAltitude { km } => Some(ClientMessage::WorldInput {
-                context: self.world_context.ok_or(QueueError::AwaitingWelcome)?,
-                input: ClientWorldInput::SetAltitude { km: *km },
-            }),
-            ClientMessage::MapTeleport { direction } => Some(ClientMessage::WorldInput {
-                context: self.world_context.ok_or(QueueError::AwaitingWelcome)?,
-                input: ClientWorldInput::MapTeleport {
-                    direction: *direction,
-                },
-            }),
-            ClientMessage::Chat(text) => Some(ClientMessage::WorldInput {
-                context: self.world_context.ok_or(QueueError::AwaitingWelcome)?,
-                input: ClientWorldInput::Chat(text.clone()),
-            }),
-            ClientMessage::UsePortal => Some(ClientMessage::WorldInput {
-                context: self.world_context.ok_or(QueueError::AwaitingWelcome)?,
-                input: ClientWorldInput::UsePortal,
-            }),
-            ClientMessage::WorldInput { context, .. } if Some(*context) != self.world_context => {
-                return Err(QueueError::StaleWorldContext);
-            }
-            _ => None,
-        };
+        let contextual = contextualize::contextualize(message, self.world_context)?;
         let frame =
             encode_client(contextual.as_ref().unwrap_or(message)).map_err(QueueError::Protocol)?;
         self.append_frame(&frame)
@@ -337,6 +294,7 @@ fn manifest_matches_generator(manifest: &minimium_world::world::WorldManifest) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use minimium_protocol::ClientWorldInput;
     use minimium_world::world::{
         GeneratorDigest, MembershipEpoch, WorldContentRevision, WorldInstanceId,
     };

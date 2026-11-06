@@ -14,11 +14,11 @@ Consumes core identity, world and simulation values, environment clock state, te
 
 ## Data flow
 
-The owning server lane builds a snapshot input from world state. Storage validates and serializes the immutable snapshot, then reports completion through its bounded worker queue.
+The owning server lane builds a snapshot input from world state. `PlayerStore` updates its profile shards and captures immutable `SaveSnapshot` values; the persistence worker queues and writes those snapshots. The format adapter parses the header, then validates clock, world, sector and player records in order, or serializes the same records to a temporary file before atomic replacement.
 
 ## Ownership and execution
 
-The server owns `PlayerStore` and captures all live world data on its owner lane. The worker owns only queued immutable snapshots and the configured data directory.
+The server owns `PlayerStore` and captures all live world data on its owner lane. Profile operations and legacy location migration are separate `player_store` modules; snapshot capture keeps the public `PlayerStore::save_snapshot` entry point. The worker owns its bounded request channel, save-status bookkeeping, queued immutable snapshots and configured data directory. Its shutdown path sends a final snapshot, waits for the reply, joins the worker and collects pending completion status.
 
 ## Invariants and errors
 

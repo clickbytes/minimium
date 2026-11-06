@@ -132,71 +132,71 @@ impl ServerRuntime {
         }
         for transfer in committed {
             committed_players.insert(transfer.player);
-            self.operations
-                .player_store
-                .set_return_location(transfer.player, transfer.source_location);
-            self.game.active_inputs.insert(
-                transfer.player,
-                minimium_simulation::CharacterInput::default(),
-            );
-            self.game
-                .input_last_received
-                .insert(transfer.player, Instant::now());
-            let Some(index) = self
-                .connections
-                .client_indices_by_player
-                .get(&transfer.player)
-                .copied()
-            else {
-                continue;
-            };
-            let (clock_sample, environment) = match self
-                .environment_state_for_instance(transfer.context.instance(), Instant::now())
-            {
-                Ok(state) => state,
-                Err(error) => {
-                    eprintln!("could not sample committed environment: {error}");
-                    if let Some(client) = self.connections.clients.get_mut(index) {
-                        client.disconnect_reason =
-                            Some(crate::connection::CloseReason::InvalidSequence);
-                    }
-                    self.connections.disconnected.push(index);
-                    continue;
-                }
-            };
-            let Some(client) = self.connections.clients.get_mut(index) else {
-                continue;
-            };
-            client.replicated_players = minimium_protocol::RemotePlayers::default();
-            client.replication_initialized = false;
-            let queued = crate::connection::queue_message(
-                client,
-                &mut self.metrics,
-                minimium_protocol::ServerMessage::TransitionCommitted {
-                    transition_id: transfer.transition_id,
-                    context: transfer.context,
-                    map_fingerprint: transfer.map_fingerprint,
-                    destination: transfer.destination,
-                    destination_mm: transfer.destination_mm,
-                    health: transfer.health,
-                    manifest: transfer.manifest,
-                    clock_sample,
-                    environment,
-                },
-            );
-            if !queued {
-                self.metrics.dropped_messages = self.metrics.dropped_messages.saturating_add(1);
-                client.disconnect_reason = Some(crate::connection::CloseReason::Backpressure);
-                self.connections.disconnected.push(index);
-            } else {
-                client.mark_environment_sent(
-                    transfer.context,
-                    clock_sample.revision(),
-                    Instant::now(),
-                );
-            }
+            self.send_transition_committed(transfer);
         }
         committed_players
+    }
+
+    fn send_transition_committed(&mut self, transfer: crate::world_registry::CommittedTransfer) {
+        self.operations
+            .player_store
+            .set_return_location(transfer.player, transfer.source_location);
+        self.game.active_inputs.insert(
+            transfer.player,
+            minimium_simulation::CharacterInput::default(),
+        );
+        self.game
+            .input_last_received
+            .insert(transfer.player, Instant::now());
+        let Some(index) = self
+            .connections
+            .client_indices_by_player
+            .get(&transfer.player)
+            .copied()
+        else {
+            return;
+        };
+        let (clock_sample, environment) = match self
+            .environment_state_for_instance(transfer.context.instance(), Instant::now())
+        {
+            Ok(state) => state,
+            Err(error) => {
+                eprintln!("could not sample committed environment: {error}");
+                if let Some(client) = self.connections.clients.get_mut(index) {
+                    client.disconnect_reason =
+                        Some(crate::connection::CloseReason::InvalidSequence);
+                }
+                self.connections.disconnected.push(index);
+                return;
+            }
+        };
+        let Some(client) = self.connections.clients.get_mut(index) else {
+            return;
+        };
+        client.replicated_players = minimium_protocol::RemotePlayers::default();
+        client.replication_initialized = false;
+        let queued = crate::connection::queue_message(
+            client,
+            &mut self.metrics,
+            minimium_protocol::ServerMessage::TransitionCommitted {
+                transition_id: transfer.transition_id,
+                context: transfer.context,
+                map_fingerprint: transfer.map_fingerprint,
+                destination: transfer.destination,
+                destination_mm: transfer.destination_mm,
+                health: transfer.health,
+                manifest: transfer.manifest,
+                clock_sample,
+                environment,
+            },
+        );
+        if !queued {
+            self.metrics.dropped_messages = self.metrics.dropped_messages.saturating_add(1);
+            client.disconnect_reason = Some(crate::connection::CloseReason::Backpressure);
+            self.connections.disconnected.push(index);
+        } else {
+            client.mark_environment_sent(transfer.context, clock_sample.revision(), Instant::now());
+        }
     }
     fn simulate_tick(&mut self) {
         let simulation_phase = allocations::enter(Phase::Simulation);

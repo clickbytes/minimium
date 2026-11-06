@@ -15,7 +15,7 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
         }
     };
     let direction = super::camera::camera_direction(
-        renderer.game.character,
+        renderer.game.gameplay.prediction.character,
         renderer.input.yaw,
         renderer.input.pitch,
     )
@@ -159,15 +159,15 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
                         .previous_bytes_received
                         .saturating_add(metrics.bytes_received),
                     ping_milliseconds: metrics.ping_round_trip.map(|duration| duration.as_millis()),
-                    nearby_players: Some(renderer.game.reconciliation.player_count()),
+                    nearby_players: Some(renderer.game.gameplay.reconciliation.player_count()),
                 }
             ));
         }
         FrontendAction::State => renderer.ui.console.push_line(
             Text::PlayerState {
-                position: renderer.game.character.position,
-                health: renderer.game.health,
-                nearby_players: renderer.game.reconciliation.player_count(),
+                position: renderer.game.gameplay.prediction.character.position,
+                health: renderer.game.gameplay.health,
+                nearby_players: renderer.game.gameplay.reconciliation.player_count(),
             }
             .to_string(),
         ),
