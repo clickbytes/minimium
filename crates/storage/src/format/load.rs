@@ -134,101 +134,14 @@ pub(super) fn load(
             return Err(invalid_world_snapshot("missing CLOCK record in snapshot"));
         }
         player_records_started = true;
-        if store.profile_by_player.len() >= MAX_STORED_PLAYERS {
-            return Err(invalid_world_snapshot("snapshot has too many players"));
-        }
-        let mut fields = line.split('\t');
-        let id = PlayerId::new(parse_saved_id(fields.next())?);
-        let profile_id = PlayerProfileId::from_hex(
-            fields
-                .next()
-                .ok_or_else(|| invalid_world_snapshot("missing player profile id"))?,
-        )
-        .map_err(|_| invalid_world_snapshot("invalid player profile id"))?;
-        let name = fields
-            .next()
-            .ok_or_else(|| invalid_world_snapshot("missing player name"))?;
-        let name = StoredName::new(name)
-            .ok_or_else(|| invalid_world_snapshot("invalid saved player name"))?;
-        let (location, return_location, health) = if source_version >= 4 {
-            let location = parse_location(&mut fields)?;
-            let health = parse_saved_health(fields.next())?;
-            let return_location = parse_location(&mut fields)?;
-            (location, return_location, health)
-        } else {
-            let position = [
-                parse_saved_coordinate(fields.next())?,
-                parse_saved_coordinate(fields.next())?,
-                parse_saved_coordinate(fields.next())?,
-            ];
-            let health = if source_version == 3 {
-                parse_saved_health(fields.next())?
-            } else {
-                PLAYER_MAX_HEALTH
-            };
-            let location = legacy_location(legacy_world, position);
-            (location, location, health)
-        };
-        if source_version == 4 {
-            let primary_instance = worlds
-                .first()
-                .map(|(instance, _, _)| *instance)
-                .ok_or_else(|| invalid_world_snapshot("no primary world is loaded"))?;
-            if location.instance() != primary_instance
-                || return_location.instance() != primary_instance
-            {
-                return Err(invalid_world_snapshot(
-                    "snapshot version 4 does not pin target world manifests",
-                ));
-            }
-        }
-        if source_version >= 5
-            && (!saved_world_instances.contains(&location.instance())
-                || !saved_world_instances.contains(&return_location.instance()))
-        {
-            return Err(invalid_world_snapshot(
-                "player location references an unrecorded world instance",
-            ));
-        }
-        if fields.next().is_some() {
-            return Err(invalid_world_snapshot("player record has extra fields"));
-        }
-        let position = position_from_location(location);
-        let current_map = map_for_world(worlds, location.instance())?;
-        let current_gravity = gravity_for_world(worlds, location.instance())?;
-        if !current_map.can_place_player_with_gravity(position, current_gravity) {
-            return Err(invalid_world_snapshot(
-                "saved player position overlaps map geometry",
-            ));
-        }
-        let return_map = map_for_world(worlds, return_location.instance())?;
-        let return_gravity = gravity_for_world(worlds, return_location.instance())?;
-        if !return_map
-            .can_place_player_with_gravity(position_from_location(return_location), return_gravity)
-        {
-            return Err(invalid_world_snapshot(
-                "saved return point overlaps map geometry",
-            ));
-        }
-
-        let shard = usize::from(profile_id.as_bytes()[0]);
-        let duplicate_profile = Arc::make_mut(&mut store.players[shard])
-            .insert(
-                profile_id,
-                StoredPlayer {
-                    id,
-                    name,
-                    position,
-                    health,
-                    location,
-                    return_location,
-                },
-            )
-            .is_some();
-        let duplicate_player = store.profile_by_player.insert(id, profile_id).is_some();
-        if duplicate_profile || duplicate_player {
-            return Err(invalid_world_snapshot("duplicate saved player identity"));
-        }
+        parse_player_record(
+            line,
+            source_version,
+            legacy_world,
+            worlds,
+            &saved_world_instances,
+            &mut store,
+        )?;
     }
     if source_version >= 8 && saved_clock.is_none() {
         return Err(invalid_world_snapshot("missing CLOCK record in snapshot"));
@@ -238,6 +151,151 @@ pub(super) fn load(
         saved_clock,
         source_version,
     ))
+}
+
+fn parse_player_record(
+    line: &str,
+    source_version: u8,
+    legacy_world: WorldInstanceId,
+    worlds: &[(WorldInstanceId, WorldMap, WorldManifest)],
+    saved_world_instances: &HashSet<WorldInstanceId>,
+    store: &mut PlayerStore,
+) -> io::Result<()> {
+    if store.profile_by_player.len() >= MAX_STORED_PLAYERS {
+        return Err(invalid_world_snapshot("snapshot has too many players"));
+    }
+    let mut fields = line.split('\t');
+    let id = PlayerId::new(parse_saved_id(fields.next())?);
+    let profile_id = PlayerProfileId::from_hex(
+        fields
+            .next()
+            .ok_or_else(|| invalid_world_snapshot("missing player profile id"))?,
+    )
+    .map_err(|_| invalid_world_snapshot("invalid player profile id"))?;
+    let name = fields
+        .next()
+        .ok_or_else(|| invalid_world_snapshot("missing player name"))?;
+    let name =
+        StoredName::new(name).ok_or_else(|| invalid_world_snapshot("invalid saved player name"))?;
+    let (location, return_location, health) =
+        parse_player_locations(&mut fields, source_version, legacy_world)?;
+    validate_player_world_references(
+        source_version,
+        location,
+        return_location,
+        worlds,
+        saved_world_instances,
+    )?;
+    if fields.next().is_some() {
+        return Err(invalid_world_snapshot("player record has extra fields"));
+    }
+    let position = position_from_location(location);
+    let current_map = map_for_world(worlds, location.instance())?;
+    let current_gravity = gravity_for_world(worlds, location.instance())?;
+    if !current_map.can_place_player_with_gravity(position, current_gravity) {
+        return Err(invalid_world_snapshot(
+            "saved player position overlaps map geometry",
+        ));
+    }
+    let return_map = map_for_world(worlds, return_location.instance())?;
+    let return_gravity = gravity_for_world(worlds, return_location.instance())?;
+    if !return_map
+        .can_place_player_with_gravity(position_from_location(return_location), return_gravity)
+    {
+        return Err(invalid_world_snapshot(
+            "saved return point overlaps map geometry",
+        ));
+    }
+
+    let shard = usize::from(profile_id.as_bytes()[0]);
+    let duplicate_profile = Arc::make_mut(&mut store.players[shard])
+        .insert(
+            profile_id,
+            StoredPlayer {
+                id,
+                name,
+                position,
+                health,
+                location,
+                return_location,
+            },
+        )
+        .is_some();
+    let duplicate_player = store.profile_by_player.insert(id, profile_id).is_some();
+    if duplicate_profile || duplicate_player {
+        return Err(invalid_world_snapshot("duplicate saved player identity"));
+    }
+    Ok(())
+}
+
+fn parse_player_locations(
+    fields: &mut std::str::Split<'_, char>,
+    source_version: u8,
+    legacy_world: WorldInstanceId,
+) -> io::Result<(WorldLocation, WorldLocation, u16)> {
+    if source_version >= 4 {
+        parse_current_player_locations(fields)
+    } else {
+        parse_legacy_player_location(fields, source_version, legacy_world)
+    }
+}
+
+fn parse_current_player_locations(
+    fields: &mut std::str::Split<'_, char>,
+) -> io::Result<(WorldLocation, WorldLocation, u16)> {
+    let location = parse_location(fields)?;
+    let health = parse_saved_health(fields.next())?;
+    let return_location = parse_location(fields)?;
+    Ok((location, return_location, health))
+}
+
+fn parse_legacy_player_location(
+    fields: &mut std::str::Split<'_, char>,
+    source_version: u8,
+    legacy_world: WorldInstanceId,
+) -> io::Result<(WorldLocation, WorldLocation, u16)> {
+    let position = [
+        parse_saved_coordinate(fields.next())?,
+        parse_saved_coordinate(fields.next())?,
+        parse_saved_coordinate(fields.next())?,
+    ];
+    let health = if source_version == 3 {
+        parse_saved_health(fields.next())?
+    } else {
+        PLAYER_MAX_HEALTH
+    };
+    let location = legacy_location(legacy_world, position);
+    Ok((location, location, health))
+}
+
+fn validate_player_world_references(
+    source_version: u8,
+    location: WorldLocation,
+    return_location: WorldLocation,
+    worlds: &[(WorldInstanceId, WorldMap, WorldManifest)],
+    saved_world_instances: &HashSet<WorldInstanceId>,
+) -> io::Result<()> {
+    if source_version == 4 {
+        let primary_instance = worlds
+            .first()
+            .map(|(instance, _, _)| *instance)
+            .ok_or_else(|| invalid_world_snapshot("no primary world is loaded"))?;
+        if location.instance() != primary_instance || return_location.instance() != primary_instance
+        {
+            return Err(invalid_world_snapshot(
+                "snapshot version 4 does not pin target world manifests",
+            ));
+        }
+    }
+    if source_version >= 5
+        && (!saved_world_instances.contains(&location.instance())
+            || !saved_world_instances.contains(&return_location.instance()))
+    {
+        return Err(invalid_world_snapshot(
+            "player location references an unrecorded world instance",
+        ));
+    }
+    Ok(())
 }
 
 fn map_for_world(
