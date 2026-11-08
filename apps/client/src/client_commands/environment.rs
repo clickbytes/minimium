@@ -5,6 +5,8 @@ use super::{
 use minimium_environment::parse_scale_ppm;
 use minimium_renderer::quality::SkyQuality;
 
+use super::MeteorPreset;
+
 const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "set_time",
@@ -82,6 +84,36 @@ const COMMANDS: &[CommandSpec] = &[
             None,
             "toggle local sky demo",
         )],
+        parser: parse,
+    },
+    CommandSpec {
+        name: "sky meteors status",
+        alias: None,
+        usage: "sky meteors status",
+        arguments: &[],
+        parser: parse,
+    },
+    CommandSpec {
+        name: "sky meteors spawn",
+        alias: None,
+        usage: "sky meteors spawn faint|bright|fireball (manual diagnostic event)",
+        arguments: &[Arg::new(
+            "preset",
+            ArgType::Enumeration,
+            false,
+            false,
+            Some(&["faint", "bright", "fireball"]),
+            None,
+            None,
+            "manual ambient meteor preset",
+        )],
+        parser: parse,
+    },
+    CommandSpec {
+        name: "sky meteors clear",
+        alias: None,
+        usage: "sky meteors clear",
+        arguments: &[],
         parser: parse,
     },
     CommandSpec {
@@ -166,6 +198,12 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
         ("sky bodies", []) => Ok(ClientCommand::SkyBodies),
         ("sky demo", ["on"]) => Ok(ClientCommand::SkyDemo(true)),
         ("sky demo", ["off"]) => Ok(ClientCommand::SkyDemo(false)),
+        ("sky meteors status", []) => Ok(ClientCommand::SkyMeteorsStatus),
+        ("sky meteors spawn", [value]) => Ok(ClientCommand::SkyMeteorsSpawn(
+            MeteorPreset::parse(value).ok_or(ParseError::MeteorUsage)?,
+        )),
+        ("sky meteors spawn", _) => Err(ParseError::MeteorUsage),
+        ("sky meteors clear", []) => Ok(ClientCommand::SkyMeteorsClear),
         ("camera fov", []) => Ok(ClientCommand::Fov(None)),
         ("camera fov", [value]) => Ok(ClientCommand::Fov(Some(parse_fov_value(value)?))),
         ("camera fov", _) => Err(ParseError::FovUsage),

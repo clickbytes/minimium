@@ -324,9 +324,11 @@ impl Renderer {
             None => {
                 self.render_environment_frame =
                     EnvironmentFrame::unavailable(RenderViewFrame::default());
+                let meteors = self.meteors.build_frame(&self.render_environment_frame);
                 environment::PreparedEnvironmentFrame::new(
                     self.render_environment_frame.clone(),
                     None,
+                    meteors,
                 )
             }
         };

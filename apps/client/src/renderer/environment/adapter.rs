@@ -1,6 +1,6 @@
 use super::{
-    EnvironmentFrame, EnvironmentFrameDiagnostics, EnvironmentFrameStatus, EnvironmentSettings,
-    GlobalSunFrame, RenderViewFrame, SkyFrameInput,
+    EnvironmentFrame, EnvironmentFrameDiagnostics, EnvironmentFrameError, EnvironmentFrameStatus,
+    EnvironmentSettings, GlobalSunFrame, RenderViewFrame, SkyFrameInput,
 };
 use bytemuck::Zeroable;
 use minimium_astronomy::{ASTRONOMY_MODEL_REVISION, SkyState};
@@ -12,32 +12,10 @@ use minimium_environment::{
 use minimium_protocol::WorldContext;
 use minimium_renderer::gpu_frame::EnvironmentUniform;
 use minimium_renderer::gpu_frame::camera_uniform;
-use std::{error::Error, f64::consts::PI, fmt};
+use std::f64::consts::PI;
 
 // Presentation scale for sky disks; physical angular radii still drive lighting and visibility.
 const SKY_DISK_DISPLAY_SCALE: f64 = 1.8;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum EnvironmentFrameError {
-    DescriptorMismatch,
-    SkyStateInvalid,
-    ObserverMismatch,
-    SettingsInvalid,
-}
-
-impl fmt::Display for EnvironmentFrameError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let message = match self {
-            Self::DescriptorMismatch => "environment descriptor is incompatible with the sky",
-            Self::SkyStateInvalid => "astronomy returned an invalid sky state",
-            Self::ObserverMismatch => "observer and sky model revisions differ",
-            Self::SettingsInvalid => "environment settings contain an invalid value",
-        };
-        formatter.write_str(message)
-    }
-}
-
-impl Error for EnvironmentFrameError {}
 
 pub(super) fn from_sky_state(
     sky: &SkyState,
@@ -49,6 +27,7 @@ pub(super) fn from_sky_state(
         clock_revision,
         descriptor,
         render_view,
+        meteor_surface_scale,
         observed_bodies,
         settings,
     } = input;
@@ -239,6 +218,7 @@ pub(super) fn from_sky_state(
             star_frame: None,
         },
         status: EnvironmentFrameStatus::Available,
+        meteor_surface_scale,
         camera_uniform: camera_uniform(render_view),
         environment_uniform,
     })
@@ -277,6 +257,7 @@ pub(super) fn interior(
             star_frame: None,
         },
         status: EnvironmentFrameStatus::Interior,
+        meteor_surface_scale: minimium_renderer::meteors::coords::PlanetSurfaceScale::UNIT,
         camera_uniform: camera_uniform(render_view),
         environment_uniform: EnvironmentUniform {
             ambient_rgb_exposure: color_exposure(settings.ambient, settings.exposure)?,
@@ -308,6 +289,7 @@ pub(super) fn unavailable(render_view: RenderViewFrame) -> EnvironmentFrame {
         local_moon: None,
         diagnostics: EnvironmentFrameDiagnostics::default(),
         status: EnvironmentFrameStatus::Unavailable,
+        meteor_surface_scale: minimium_renderer::meteors::coords::PlanetSurfaceScale::UNIT,
         camera_uniform: camera_uniform(render_view),
         environment_uniform: EnvironmentUniform {
             ambient_rgb_exposure: [0.08, 0.09, 0.12, 1.0],

@@ -82,6 +82,7 @@ pub enum UiNotice {
     MapTeleportDesktopOnly,
     SkyInfoDesktopOnly,
     WeatherRequiresDesktop,
+    MeteorsRequireDesktop,
     SkyQualityDesktopOnly,
     MapTeleportBusy,
     MapTeleportRequiresEarth,

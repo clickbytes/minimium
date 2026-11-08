@@ -1,4 +1,4 @@
-use super::{RenderViewFrame, adapter::EnvironmentFrameError};
+use super::{EnvironmentFrameError, RenderViewFrame};
 use minimium_astronomy::{MOON_MEAN_RADIUS_M, SkyState};
 
 const EARTH_REFERENCE_RADIUS_M: f64 = 6_371_000.0;

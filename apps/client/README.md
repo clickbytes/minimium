@@ -116,6 +116,10 @@ diagnostics writer receives the remaining time.
 ## Invariants and errors
 
 Preserve desktop/text command behavior and keep protocol/session handling out of rendering algorithms.
+Ambient meteors (E047) stay cosmetic and client-local: one client monotonic clock
+seeds the deterministic manual events, the bounded meteor contract dismisses every
+pending event instantly on world/teleport/reconnect/interior/unavailable changes,
+and the planet scale always resolves from the world manifest.
 
 ## Commands
 
@@ -137,6 +141,12 @@ with a capped reference height within the astronomy contract; optical rendering
 uses the uncapped height. Player/domain observer contracts remain unchanged.
 Regional weather/cover/fog requests follow the view, with UTC-hour endpoint
 interpolation. Workers supply sea-level-relative ground and a bounded fog grid.
+
+`sky meteors status|spawn faint|bright|fireball|clear` run the client-local
+ambient meteor runtime: each desktop command spawns one bounded, deterministic
+diagnostic event that initializes only on valid environment frames, rebuilds the
+CPU `MeteorFrame` once per frame and never touches server, protocol, save or GPU
+state (visible sky integration is E047-03, the automatic generator E047-04).
 
 `atmosphere status` reports quality, optical altitude, logical GPU memory and
 optional asynchronous GPU timings. `atmosphere debug

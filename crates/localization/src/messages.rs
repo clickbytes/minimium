@@ -378,6 +378,7 @@ impl UiMessage {
                     UiNotice::MapTeleportDesktopOnly => "map_teleport_desktop_only",
                     UiNotice::SkyInfoDesktopOnly => "sky_info_desktop_only",
                     UiNotice::WeatherRequiresDesktop => "weather_requires_desktop",
+                    UiNotice::MeteorsRequireDesktop => "meteors_require_desktop",
                     UiNotice::SkyQualityDesktopOnly => "sky_quality_desktop_only",
                     UiNotice::MapTeleportBusy => "map_teleport_busy",
                     UiNotice::MapTeleportRequiresEarth => "map_teleport_requires_earth",

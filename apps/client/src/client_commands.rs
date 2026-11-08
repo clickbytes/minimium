@@ -19,11 +19,13 @@ mod environment;
 mod gameplay;
 mod help;
 mod interface;
+mod meteors;
 mod movement;
 mod properties;
 mod weather;
 
 pub(crate) use help::{command_error, command_help, command_help_group, help_lines};
+pub(crate) use meteors::MeteorPreset;
 pub(crate) use minimium_commands::{
     CommandArgumentSpec as ArgumentSpec, CommandArgumentType as ArgumentType,
 };
@@ -66,6 +68,9 @@ pub(crate) enum ClientCommand {
     SkyInfo,
     SkyBodies,
     SkyDemo(bool),
+    SkyMeteorsStatus,
+    SkyMeteorsSpawn(MeteorPreset),
+    SkyMeteorsClear,
     Fov(Option<f32>),
     ShowCelestialNames(bool),
     TimeStatus,
@@ -126,6 +131,7 @@ pub(crate) enum ParseError {
     CelestialNamesUsage,
     TimeScaleUsage,
     SetTimeUsage,
+    MeteorUsage,
     UnknownCommand,
     Usage(&'static str),
     Structured(CommandError),
@@ -209,6 +215,7 @@ pub(crate) fn parse_command_typed(input: &str) -> Result<Option<ClientCommand>, 
             "field of view must be finite and between 30 and 110 degrees",
             Some("camera fov [30..=110]"),
         ),
+        ParseError::MeteorUsage => meteors::command_error(),
         ParseError::Usage(usage) => CommandError::new(
             CommandErrorCode::InvalidArguments,
             input.split_whitespace().next(),
@@ -253,6 +260,9 @@ pub(crate) enum FrontendAction {
     ConfigSave(std::path::PathBuf),
     TimeStatus,
     TimeScale(String),
+    SkyMeteorsStatus,
+    SkyMeteorsSpawn(MeteorPreset),
+    SkyMeteorsClear,
     SpawnRandomBolid,
     TimeMode(String),
     TimeOfflinePolicy(String),
@@ -372,6 +382,15 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
             )))
         }
         ClientCommand::SkyInfo => return CommandResult::Action(FrontendAction::SkyInfo),
+        ClientCommand::SkyMeteorsStatus => {
+            return CommandResult::Action(FrontendAction::SkyMeteorsStatus);
+        }
+        ClientCommand::SkyMeteorsSpawn(preset) => {
+            return CommandResult::Action(FrontendAction::SkyMeteorsSpawn(preset));
+        }
+        ClientCommand::SkyMeteorsClear => {
+            return CommandResult::Action(FrontendAction::SkyMeteorsClear);
+        }
         ClientCommand::SkyBodies => return CommandResult::Action(FrontendAction::SkyBodies),
         ClientCommand::SkyDemo(enabled) => {
             return CommandResult::Action(FrontendAction::Property(ClientPropertyCommand::Set(

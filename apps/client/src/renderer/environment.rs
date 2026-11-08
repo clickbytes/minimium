@@ -11,11 +11,12 @@ use minimium_environment::sky::ObserverFrame;
 use minimium_environment::{EnvironmentDescriptor, time::ClockRevision};
 use minimium_protocol::WorldContext;
 use minimium_renderer::gpu_frame::{CameraUniform, EnvironmentUniform};
+use minimium_renderer::meteors::coords::PlanetSurfaceScale;
 pub(crate) use minimium_renderer::{EnvironmentViewKind, RenderViewFrame, RenderViewInput};
+use std::{error::Error, fmt};
 
 pub(crate) use minimium_renderer::gpu_frame::{HaloSource, MAX_HALO_BODIES};
 
-pub(crate) use adapter::EnvironmentFrameError;
 pub(crate) use minimium_renderer::profiles::LightingProfile as EnvironmentSettings;
 pub(super) use prepared::{PreparedEnvironmentFrame, PreparedStarUpload};
 
@@ -25,6 +26,9 @@ pub(crate) struct SkyFrameInput {
     pub(crate) clock_revision: ClockRevision,
     pub(crate) descriptor: EnvironmentDescriptor,
     pub(crate) render_view: RenderViewFrame,
+    /// Manifest-resolved vertical scale at the camera reference instant;
+    /// the meteor runtime reuses the identical mapping.
+    pub(crate) meteor_surface_scale: PlanetSurfaceScale,
     pub(crate) observed_bodies: Vec<ObservedBody>,
     pub(crate) settings: EnvironmentSettings,
 }
@@ -47,6 +51,30 @@ pub(crate) struct LocalBodyFrame {
     pub(crate) visible_fraction: f32,
     pub(crate) effective_linear_rgb: [f32; 3],
 }
+
+/// Reasons a prepared environment frame (sky, interior or unavailable) could
+/// not be built or validated this frame.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum EnvironmentFrameError {
+    DescriptorMismatch,
+    SkyStateInvalid,
+    ObserverMismatch,
+    SettingsInvalid,
+}
+
+impl fmt::Display for EnvironmentFrameError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let message = match self {
+            Self::DescriptorMismatch => "environment descriptor is incompatible with the sky",
+            Self::SkyStateInvalid => "astronomy returned an invalid sky state",
+            Self::ObserverMismatch => "observer and sky model revisions differ",
+            Self::SettingsInvalid => "environment settings contain an invalid value",
+        };
+        formatter.write_str(message)
+    }
+}
+
+impl Error for EnvironmentFrameError {}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum EnvironmentFrameStatus {
@@ -85,6 +113,9 @@ pub(crate) struct EnvironmentFrame {
     pub(crate) local_moon: Option<LocalBodyFrame>,
     pub(crate) diagnostics: EnvironmentFrameDiagnostics,
     pub(crate) status: EnvironmentFrameStatus,
+    /// Manifest-resolved vertical scale for the meteor runtime; the neutral
+    /// unit scale marks frames where meteors never run (interior/unavailable).
+    pub(crate) meteor_surface_scale: PlanetSurfaceScale,
     pub(crate) camera_uniform: CameraUniform,
     pub(crate) environment_uniform: EnvironmentUniform,
 }

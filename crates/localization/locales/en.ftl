@@ -124,6 +124,7 @@ ui-notice = { $notice ->
     [map_teleport_desktop_only] map_telepo is available in the desktop Earth overview
     [sky_info_desktop_only] Sky info is unavailable; desktop renderer required
     [weather_requires_desktop] Regional weather diagnostics require the graphical client
+    [meteors_require_desktop] Ambient meteor commands are available in the desktop client only
     [sky_quality_desktop_only] --sky-quality is available only in the desktop renderer
     [map_teleport_busy] map_telepo: wait for the previous destination
     [map_teleport_requires_earth] map_telepo requires a connected Earth world

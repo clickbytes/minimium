@@ -289,6 +289,7 @@ impl Renderer {
             environment_frame: EnvironmentFrameInput::unavailable(),
             render_environment_frame: EnvironmentFrame::unavailable(RenderViewFrame::default()),
             environment_observer: environment::observer::ObserverAdapter::default(),
+            meteors: meteors::MeteorRuntime::new(),
             sky_calculator: minimium_astronomy::SkyCalculator::default(),
             sky_catalogue,
             environment_error: None,

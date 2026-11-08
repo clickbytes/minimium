@@ -19,7 +19,12 @@ impl Renderer {
     ) -> PreparedEnvironmentFrame {
         let started = std::time::Instant::now();
         let stars = self.update_render_environment_inner(render_view);
-        let prepared = PreparedEnvironmentFrame::new(self.render_environment_frame.clone(), stars);
+        // The client-local meteor runtime consumes the freshly rebuilt
+        // environment frame on the client monotonic clock and produces one
+        // bounded, origin-relative `MeteorFrame` per frame (ADR 0013 § 5).
+        let meteors = self.meteors.build_frame(&self.render_environment_frame);
+        let prepared =
+            PreparedEnvironmentFrame::new(self.render_environment_frame.clone(), stars, meteors);
         self.metrics
             .frame_stats
             .record_environment_cpu(started.elapsed());
@@ -150,10 +155,12 @@ impl Renderer {
                     .flatten()
             });
         let mut eye_height = DEFAULT_OBSERVER_EYE_HEIGHT_MM;
+        let mut meteor_surface_scale = minimium_renderer::meteors::coords::PlanetSurfaceScale::UNIT;
         if manifest.planet().is_some() {
             match super::observer::camera_reference(manifest, render_view, geography.as_deref()) {
-                Ok(position) => {
+                Ok((position, surface_scale)) => {
                     feet_position_mm = Some(position);
+                    meteor_surface_scale = surface_scale;
                     eye_height = 0;
                 }
                 Err(error) => {
@@ -259,6 +266,7 @@ impl Renderer {
                 clock_revision: revision,
                 descriptor,
                 render_view,
+                meteor_surface_scale,
                 observed_bodies: observations,
                 settings: EnvironmentSettings::planetary(),
             },

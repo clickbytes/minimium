@@ -756,8 +756,11 @@ Frame caps: at most 16 bright cores, 4 transient lights and 128 trail points
 dust envelopes. GPU positions stay origin-relative f32; lifetimes run on the
 client monotonic clock, and world UTC only gates exposure conditions.
 
-The producer seam is dormant by design until E047-02; `Tracked` is an input
-marker with no server producer, protocol message, save field or world entity.
+The first producer is the client-local manual runtime (E047-02,
+`apps/client/src/renderer/meteors`): manual presets seed deterministic events
+that rebuild one bounded `MeteorFrame` per frame on the client monotonic clock;
+`Tracked` remains an input marker with no server producer, protocol message,
+save field or world entity.
 `RenderFrame::meteors` carries the frame on every prepared render frame with
 explicit disabled states for interior/unavailable environments and an
 explicitly empty ready state otherwise; the scene snapshot exposes it and
@@ -765,7 +768,9 @@ explicitly empty ready state otherwise; the scene snapshot exposes it and
 `meteors_state`/`meteors_cores`/`meteors_contract` diagnostics without GPU
 work while all counts stay zero. The observer astronomy reference now maps
 eye height through `PlanetSurfaceScale`, keeping one physical-metre
-convention for Earth-relief and procedural planets. The existing
+convention for Earth-relief and procedural planets, and the identical
+resolved scale threads into `EnvironmentFrame::meteor_surface_scale` for the
+meteor runtime. The existing
 `BolidEvent`/`bolid_dust`/point-light stack is untouched. Later passes slot
 into the `frame_encoder::encode_frame` order described in the ADR, and
 `TransientLightUniform` (E047-09) extends the shared frame bind group. The

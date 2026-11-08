@@ -43,6 +43,7 @@ mod gpu;
 mod gpu_surface;
 mod init;
 mod materials;
+mod meteors;
 mod overview;
 mod quality;
 mod render;
@@ -172,6 +173,7 @@ struct Renderer {
     environment_frame: EnvironmentFrameInput,
     render_environment_frame: EnvironmentFrame,
     environment_observer: environment::observer::ObserverAdapter,
+    meteors: meteors::MeteorRuntime,
     sky_calculator: minimium_astronomy::SkyCalculator,
     sky_catalogue: Option<minimium_renderer::stars::StarCatalogueAdapter>,
     environment_error: Option<String>,

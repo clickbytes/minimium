@@ -1,6 +1,7 @@
-use super::{EnvironmentFrame, EnvironmentFrameStatus, StarFrameStamp};
+use super::{EnvironmentFrame, StarFrameStamp};
 use crate::renderer::{GpuResources, environment_gpu};
 use minimium_renderer::RenderFrame;
+use minimium_renderer::meteors::MeteorFrame;
 use minimium_renderer::stars::{STAR_GPU_RECORD_COUNT, StarInstanceGpu};
 
 /// One immutable CPU result, consumed only after acquiring a surface frame.
@@ -18,33 +19,15 @@ pub(in crate::renderer) struct PreparedStarUpload {
 }
 
 impl PreparedEnvironmentFrame {
+    /// The meteor frame is built once per frame by the client-local runtime
+    /// (`crate::renderer::meteors`) and consumed here; the environment frame
+    /// still carries the manifest-resolved surface scale at the same seam.
     pub(in crate::renderer) fn new(
         frame: EnvironmentFrame,
         stars: Option<PreparedStarUpload>,
+        meteors: MeteorFrame,
     ) -> Self {
         let uniform = environment_gpu::environment_uniform(&frame);
-        let context = minimium_renderer::meteors::MeteorFrameContext {
-            camera_eye_world_m: frame.render_view.camera_eye_world_m,
-            render_origin_m: frame.render_view.render_origin_m,
-            game_radius_m: frame.render_view.game_planet_radius_m,
-            // The neutral unit scale is exact while no sample has to traverse
-            // the adapter; the runtime's resolved manifest scale plugs in at
-            // the same seam when producers exist (E047-02).
-            surface_scale: minimium_renderer::meteors::coords::PlanetSurfaceScale::UNIT,
-        };
-        let meteors = match frame.status {
-            EnvironmentFrameStatus::Available => {
-                minimium_renderer::meteors::MeteorFrame::ready(context)
-            }
-            EnvironmentFrameStatus::Interior => minimium_renderer::meteors::MeteorFrame::disabled(
-                minimium_renderer::meteors::MeteorDisabledReason::Interior,
-            ),
-            EnvironmentFrameStatus::Unavailable => {
-                minimium_renderer::meteors::MeteorFrame::disabled(
-                    minimium_renderer::meteors::MeteorDisabledReason::NoEnvironment,
-                )
-            }
-        };
         let render_frame = RenderFrame::new(
             frame.render_view,
             frame.camera_uniform,

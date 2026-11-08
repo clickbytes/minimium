@@ -126,6 +126,7 @@ ui-notice = { $notice ->
     [map_teleport_desktop_only] map_telepo jest dostępne w graficznym przeglądzie Earth
     [sky_info_desktop_only] Informacje o niebie wymagają klienta graficznego
     [weather_requires_desktop] Diagnostyka pogody regionalnej wymaga klienta graficznego
+    [meteors_require_desktop] Polecenia meteorów otoczenia są dostępne tylko w kliencie graficznym
     [sky_quality_desktop_only] --sky-quality jest dostępne tylko w kliencie graficznym
     [map_teleport_busy] map_telepo: poczekaj na poprzednie przeniesienie
     [map_teleport_requires_earth] map_telepo wymaga połączenia ze światem Earth

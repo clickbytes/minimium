@@ -235,6 +235,19 @@ pub(super) fn handle(
                 )
             );
         }
+        FrontendAction::SkyMeteorsStatus
+        | FrontendAction::SkyMeteorsSpawn(_)
+        | FrontendAction::SkyMeteorsClear => {
+            println!(
+                "{}",
+                localizer.format(
+                    options.locale,
+                    &minimium_localization::UiMessage::Notice(
+                        minimium_localization::UiNotice::MeteorsRequireDesktop
+                    )
+                )
+            );
+        }
         FrontendAction::SetTime { minute, local } => {
             let longitude = match last_snapshot.as_ref() {
                 Some(ServerMessage::Snapshot {

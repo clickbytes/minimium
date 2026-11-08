@@ -258,6 +258,26 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
                 }
             }
         }
+        FrontendAction::SkyMeteorsStatus => {
+            for line in renderer.meteors.status_lines() {
+                renderer.application.ui.console.push_line(line);
+            }
+        }
+        FrontendAction::SkyMeteorsSpawn(preset) => {
+            let message = match renderer.meteors.spawn(preset) {
+                Ok(message) => message,
+                Err(message) => message,
+            };
+            renderer.application.ui.console.push_line(message);
+        }
+        FrontendAction::SkyMeteorsClear => {
+            let cleared = renderer.meteors.clear();
+            renderer
+                .application
+                .ui
+                .console
+                .push_line(format!("meteors: cleared {cleared} active event(s)"));
+        }
         FrontendAction::Property(command) => {
             for line in renderer.apply_property(command).lines() {
                 renderer.application.ui.console.push_line(line);
