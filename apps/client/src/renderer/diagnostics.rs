@@ -51,6 +51,7 @@ impl Renderer {
         push_shadow_fields(&mut snapshot, self);
         push_gpu_fields(&mut snapshot, self);
         push_milky_way_fields(&mut snapshot, self);
+        push_meteor_fields(&mut snapshot, self);
         snapshot.lines().collect()
     }
 }
@@ -87,6 +88,20 @@ fn push_milky_way_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Rende
         minimium_renderer::MilkyWayGpu::BYTES,
     );
     snapshot.push("scene_linear_HDR", renderer.gpu.hdr_enabled);
+}
+
+fn push_meteor_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
+    let status = renderer.gpu.meteors_status;
+    snapshot.push("meteors_state", status.label());
+    snapshot.push("meteors_cores", status.core_count());
+    snapshot.push(
+        "meteors_contract",
+        if status.contract_ok() {
+            "ok"
+        } else {
+            "violation"
+        },
+    );
 }
 
 fn push_clock_fields(

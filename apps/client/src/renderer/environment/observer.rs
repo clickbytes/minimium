@@ -26,14 +26,20 @@ pub(super) fn camera_reference(
     let actual = Position3Mm(eye.to_array().map(|v| (v * 1000.0).round() as i64));
     let offset = if let Some(definition) = manifest.planet().filter(|p| p.mode == 1) {
         let reference = minimium_procgen::earth_height_reference(actual, definition, geography)?;
-        let scale = definition.height_scale_permille as f64 / 1000.0;
-        let physical_height = if definition.peak_relief.enabled() {
-            reference.physical_anchor_m
-                + (eye.length() - radius - reference.baseline_game_mm as f64 / 1000.0) / scale
+        let scale = if definition.peak_relief.enabled() {
+            minimium_renderer::meteors::coords::PlanetSurfaceScale::from_earth(
+                definition.height_scale_permille,
+                reference,
+            )
         } else {
-            (eye.length() - radius) / scale
+            minimium_renderer::meteors::coords::PlanetSurfaceScale::from_permille(
+                definition.height_scale_permille,
+            )
         }
-        .clamp(-1000.0, 80000.0);
+        .ok_or(ObserverError::InvalidPlanet)?;
+        let physical_height = scale
+            .physical_altitude_m(eye.length() - radius)
+            .clamp(-1000.0, 80000.0);
         reference.baseline_game_mm as f64 / 1000.0 + physical_height - reference.physical_anchor_m
     } else {
         (eye.length() - radius).clamp(-1000.0, 80000.0)

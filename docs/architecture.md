@@ -269,4 +269,6 @@ the shared GPU/bind-group extension; `minimium-client` owns the local lifecycle,
 spawner and developer commands. Lifetimes run on the client monotonic clock;
 synchronized world UTC only gates exposure conditions. The existing protocol-v19
 `BolidEvent` demo path and the `sky demo`/`sky quality` semantics are unchanged.
-No meteor code exists at this baseline.
+The CPU-only contract has landed (E047-01): the producer seam stays dormant
+until E047-02 and still no GPU pass, server, protocol, save or world entity
+change exists.

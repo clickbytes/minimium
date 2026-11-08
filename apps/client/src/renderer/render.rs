@@ -102,6 +102,12 @@ impl GpuResources {
             environment_upload.ambient_rgb_exposure[3] *=
                 minimium_renderer::bolid_light::exposure_scale(incident, exposed_gain);
         }
+        let meteors = snapshot.meteors();
+        // Consumer branch (E047-01): the frame joins the validated render path
+        // every frame; the producer supplies only empty flows today, so this
+        // read costs no GPU work. The draw and uniform consumers arrive with
+        // E047-03 and E047-09 on the same status seam.
+        self.meteors_status = meteors.render_status();
         self.atmosphere_gpu.mark_environment(&environment_upload);
         self.terrain_gpu.uniform.eye_relative = std::array::from_fn(|i| {
             if i < 3 {

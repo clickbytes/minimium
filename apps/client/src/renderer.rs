@@ -109,6 +109,7 @@ struct GpuResources {
     shadow_map_key: Option<shadow_map_cache::ShadowMapCacheKey>,
     overview_buffers: minimium_renderer::overview_gpu::OverviewGpuBuffers,
     environment_draw_calls: sky::EnvironmentDrawCalls,
+    meteors_status: minimium_renderer::meteors::MeteorRenderStatus,
     last_shadow_prepare_cpu: Option<Duration>,
     last_environment_upload_cpu: Option<Duration>,
     overview_active: bool,

@@ -60,6 +60,7 @@ pub mod gpu_bindings;
 pub mod gpu_frame;
 #[cfg(feature = "gpu")]
 pub mod lighting;
+pub mod meteors;
 #[cfg(feature = "gpu")]
 pub mod milky_way_gpu;
 #[cfg(feature = "gpu")]

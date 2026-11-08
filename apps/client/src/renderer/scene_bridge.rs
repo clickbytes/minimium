@@ -1,4 +1,5 @@
 use super::{environment::PreparedEnvironmentFrame, shadow_prepare::PreparedShadowFrame};
+use minimium_renderer::meteors::MeteorFrame;
 use minimium_renderer::world_geometry_gpu::GeometryPublication;
 
 /// Immutable value and read-only world inputs consumed by the GPU renderer.
@@ -22,5 +23,10 @@ impl<'a> RenderSceneSnapshot<'a> {
             shadow,
             publication,
         }
+    }
+
+    /// The bounded per-frame meteor contract of the prepared environment.
+    pub(super) fn meteors(&self) -> MeteorFrame {
+        self.environment.render_frame.meteors
     }
 }

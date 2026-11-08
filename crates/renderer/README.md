@@ -737,17 +737,37 @@ terrain.wgsl and shadow_sampling.wgsl were restored from exact pre-experiment
 copies; no extra interpolator or alternate sampling API remains. Compilation
 and 23 WGSL validation modules passed for the experiment; no tests were run.
 
-## Ambient cosmetic meteors (planned contract - ADR 0013 baseline)
+## Ambient cosmetic meteors (CPU contract - ADR 0013, E047-01)
 
-`docs/adr/0013-ambient-meteors.md` freezes the E047 design before any
-implementation lands. When the contract is implemented (E047-01), this crate
-gains `meteors`: the CPU-only `MeteorFrame` input with
-`MeteorSource { Cosmetic, Tracked }`, `MeteorSample`/`MeteorTrailSample`/
-`TransientLightSample`, one f64-physical-metre adapter, and fixed bounds of at
-most 16 bright cores and 4 transient lights per frame. GPU positions are
-render-origin-relative f32; lifetimes use the client monotonic clock; world UTC
-only gates exposure conditions. Meteors add no server, protocol, save or
-world-entity change, and the existing `BolidEvent`/`bolid_dust`/point-light
-stack is not rewritten by that work. At this baseline no meteor code exists;
-later passes slot into the `frame_encoder::encode_frame` order described in the
-ADR, and `TransientLightUniform` (E047-09) extends the shared frame bind group.
+`docs/adr/0013-ambient-meteors.md` freezes the E047 design; E047-01 lands this
+crate's CPU-only contract in `meteors`. `meteors::model` holds
+`MeteorSource { Cosmetic, Tracked }`, `MeteorSample`, `MeteorTrailSample` and
+`TransientLightSample` with hard finite/non-negative/bounds validation.
+`meteors::coords` is the single physical-metre ↔ game ↔ render-origin adapter:
+`PlanetSurfaceScale` mirrors the observer camera mapping (Earth relief and
+uniform procedural scales, manifest `height_scale_permille`, no hard-coded
+radius), and `render_relative_m` subtracts the floating origin in `f64` before
+any `f32` cast. `meteors::frame` owns the bounded, non-allocating
+`MeteorFrame` with `MeteorFrameContext` and deterministic priority pushes
+(importance-at-observer with id tie-breakers, sorted cores/trails/lights).
+Frame caps: at most 16 bright cores, 4 transient lights and 128 trail points
+(8 per core), with `RENDER_REL_M_MAX` bounding origin-relative magnitudes;
+`MAX_METEOR_HISTORY_SAMPLES` and `MAX_DUST_SEGMENTS` reserve the lifecycle and
+dust envelopes. GPU positions stay origin-relative f32; lifetimes run on the
+client monotonic clock, and world UTC only gates exposure conditions.
+
+The producer seam is dormant by design until E047-02; `Tracked` is an input
+marker with no server producer, protocol message, save field or world entity.
+`RenderFrame::meteors` carries the frame on every prepared render frame with
+explicit disabled states for interior/unavailable environments and an
+explicitly empty ready state otherwise; the scene snapshot exposes it and
+`GpuResources::meteors_status` records the per-frame status surfaced as
+`meteors_state`/`meteors_cores`/`meteors_contract` diagnostics without GPU
+work while all counts stay zero. The observer astronomy reference now maps
+eye height through `PlanetSurfaceScale`, keeping one physical-metre
+convention for Earth-relief and procedural planets. The existing
+`BolidEvent`/`bolid_dust`/point-light stack is untouched. Later passes slot
+into the `frame_encoder::encode_frame` order described in the ADR, and
+`TransientLightUniform` (E047-09) extends the shared frame bind group. The
+frame implementation got its own `meteors/frame.rs` so every hand-maintained
+file stays within the 500-line policy.

@@ -1,6 +1,7 @@
 //! Immutable CPU-owned presentation data for one frame.
 use crate::{
     gpu_frame::{CameraUniform, EnvironmentUniform},
+    meteors::{MeteorDisabledReason, MeteorFrame},
     RenderViewFrame, UiVertex,
 };
 use minimium_world::world::WorldInstanceId;
@@ -21,6 +22,9 @@ pub struct RenderFrame {
     pub camera: CameraUniform,
     pub environment: EnvironmentUniform,
     pub halo_count: u32,
+    /// Bounded CPU-only meteor contract (ADR 0013); carried explicitly even
+    /// while zero active so later passes consume one stable seam.
+    pub meteors: MeteorFrame,
     /// Client presentation context attached by the application adapter.
     pub client: Option<ClientFrameState>,
     ui_vertices: Vec<UiVertex>,
@@ -39,9 +43,16 @@ impl RenderFrame {
             camera,
             environment,
             halo_count,
+            meteors: MeteorFrame::disabled(MeteorDisabledReason::NoEnvironment),
             client: None,
             ui_vertices: Vec::new(),
         }
+    }
+
+    /// Attaches the bounded meteor contract built for this prepared frame.
+    pub fn with_meteors(mut self, meteors: MeteorFrame) -> Self {
+        self.meteors = meteors;
+        self
     }
 
     /// Attaches the immutable client state mapped from `ClientView` by the host.

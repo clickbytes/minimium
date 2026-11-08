@@ -431,6 +431,7 @@ impl GpuResources {
             shadow_map_key: None,
             overview_buffers: minimium_renderer::overview_gpu::OverviewGpuBuffers::default(),
             environment_draw_calls: super::sky::EnvironmentDrawCalls::default(),
+            meteors_status: minimium_renderer::meteors::MeteorRenderStatus::NotRendered,
             last_shadow_prepare_cpu: None,
             last_environment_upload_cpu: None,
             overview_active: false,
