@@ -262,14 +262,22 @@ fn check_nonnegative(domain: &'static str, value: f64) -> Result<(), MeteorContr
     check_between(domain, value, 0.0, f64::INFINITY)
 }
 
-/// Rejects NaN, infinite values and components outside `[0, cap]`.
+/// Rejects NaN, infinite values and component magnitudes above `cap`.
+///
+/// Positions and velocities live on world-aligned axes centred on the planet,
+/// so every component carries a sign; the hard bound applies to `|value|`.
 fn check_bounded(
     domain: &'static str,
     values: [f64; 3],
     cap: f64,
 ) -> Result<(), MeteorContractError> {
     for value in values {
-        check_between(domain, value, 0.0, cap)?;
+        let magnitude = value.abs();
+        match (magnitude.is_finite(), magnitude <= cap) {
+            (true, true) => {}
+            (true, false) => return Err(MeteorContractError::OutOfRange(domain)),
+            (false, _) => return Err(MeteorContractError::NonFinite(domain)),
+        }
     }
     Ok(())
 }
