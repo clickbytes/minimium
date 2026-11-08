@@ -736,3 +736,18 @@ weakens scene-origin interpolation precision as the primary cause. Both
 terrain.wgsl and shadow_sampling.wgsl were restored from exact pre-experiment
 copies; no extra interpolator or alternate sampling API remains. Compilation
 and 23 WGSL validation modules passed for the experiment; no tests were run.
+
+## Ambient cosmetic meteors (planned contract - ADR 0013 baseline)
+
+`docs/adr/0013-ambient-meteors.md` freezes the E047 design before any
+implementation lands. When the contract is implemented (E047-01), this crate
+gains `meteors`: the CPU-only `MeteorFrame` input with
+`MeteorSource { Cosmetic, Tracked }`, `MeteorSample`/`MeteorTrailSample`/
+`TransientLightSample`, one f64-physical-metre adapter, and fixed bounds of at
+most 16 bright cores and 4 transient lights per frame. GPU positions are
+render-origin-relative f32; lifetimes use the client monotonic clock; world UTC
+only gates exposure conditions. Meteors add no server, protocol, save or
+world-entity change, and the existing `BolidEvent`/`bolid_dust`/point-light
+stack is not rewritten by that work. At this baseline no meteor code exists;
+later passes slot into the `frame_encoder::encode_frame` order described in the
+ADR, and `TransientLightUniform` (E047-09) extends the shared frame bind group.

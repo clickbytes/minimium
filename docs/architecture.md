@@ -257,3 +257,16 @@ Night view exposure is derived from the rendered footprint and preserves lunar
 irradiance; it does not modify astronomy, climate, world time or snapshots.
 Existing celestial sprites remain display-calibrated. No new package, protocol
 revision, persistent world field or gameplay effect is introduced.
+
+## Ambient cosmetic meteors baseline (2026-11-08)
+
+[ADR 0013](adr/0013-ambient-meteors.md) freezes the E047 contract before any
+implementation: standard meteors are client-local cosmetic presentation effects
+with no server tick, world entity, replication, collision, save, protocol message
+or generator change. `minimium-renderer` owns the CPU-only `MeteorFrame`/
+transient-light contract, the f64-physical-metre-to-f32-render-origin adapter and
+the shared GPU/bind-group extension; `minimium-client` owns the local lifecycle,
+spawner and developer commands. Lifetimes run on the client monotonic clock;
+synchronized world UTC only gates exposure conditions. The existing protocol-v19
+`BolidEvent` demo path and the `sky demo`/`sky quality` semantics are unchanged.
+No meteor code exists at this baseline.

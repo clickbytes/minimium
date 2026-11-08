@@ -4,8 +4,6 @@
 //! this crate owns renderer-specific geometry layouts, resources and pipelines. Window
 //! lifecycle, sessions, simulation and frame scheduling remain application concerns.
 
-#[cfg(feature = "gpu")]
-pub mod bolid_light;
 pub mod atmosphere;
 pub mod atmosphere_debug;
 #[cfg(feature = "gpu")]
@@ -22,6 +20,12 @@ mod atmosphere_timing;
 pub mod atmosphere_uniform;
 #[cfg(feature = "gpu")]
 pub mod atmosphere_view;
+#[cfg(feature = "gpu")]
+mod bolid_dust;
+#[cfg(feature = "gpu")]
+mod bolid_layer;
+#[cfg(feature = "gpu")]
+pub mod bolid_light;
 #[cfg(feature = "gpu")]
 pub mod catalogue;
 #[cfg(feature = "gpu")]
@@ -58,8 +62,6 @@ pub mod gpu_frame;
 pub mod lighting;
 #[cfg(feature = "gpu")]
 pub mod milky_way_gpu;
-mod bolid_dust;
-mod bolid_layer;
 #[cfg(feature = "gpu")]
 pub mod moon_disk;
 #[cfg(feature = "gpu")]

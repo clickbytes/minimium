@@ -382,3 +382,16 @@ reproduces the bands: target/bolid-shadow-fixed-path.png; exact setup and
 command saved in target/bolid-shadow-repro.txt. Prepared shadow weight 0.6839.
 Compilation, release build, architecture and file-length checks passed.
 No automated tests were run.
+
+## Planned ambient cosmetic meteors (E047 baseline; ADR 0013)
+
+Ambient cosmetic meteors will keep their local lifecycle in this application
+(`docs/adr/0013-ambient-meteors.md`, implemented by later E047 issues): a
+`renderer/meteors` adapter owns spawn rate, seed, lifetime and expiry on the
+client monotonic clock, consumes existing `EnvironmentFrame` conditions, and
+submits the CPU-only `MeteorFrame` contract to the renderer; `sky meteors ...`
+developer commands and properties will register in the shared console registry
+(E047-14). Server-timed `spawn_random_bolid` and the automatic bolid scheduler
+are not touched by that work, and meteors stay local presentation effects with
+no protocol, save or world-entity change. This baseline contains no meteor
+runtime; the contract, units and limits are frozen in the ADR.
