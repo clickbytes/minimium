@@ -71,7 +71,6 @@ impl fmt::Display for StarPrepareError {
 
 impl Error for StarPrepareError {}
 
-#[allow(dead_code)]
 pub struct StarCatalogueAdapter {
     identity: SkyCatalogIdentity,
     records: &'static [StarRecord],
@@ -79,7 +78,6 @@ pub struct StarCatalogueAdapter {
     astrometry: Box<[StarAstrometry]>,
 }
 
-#[allow(dead_code)]
 impl StarCatalogueAdapter {
     pub fn load_embedded() -> Result<Self, CatalogError> {
         let catalogue = embedded_sky_catalog()?;

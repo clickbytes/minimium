@@ -13,6 +13,8 @@ pub(crate) fn accept_clients(
     clients: &mut Vec<Client>,
     max_client_connections: usize,
     pending_world_input_count: usize,
+    logger: &minimium_diagnostics::DomainLogger,
+    protocol_logger: &minimium_diagnostics::DomainLogger,
 ) -> io::Result<()> {
     let mut accepted_this_poll = 0usize;
     loop {
@@ -23,7 +25,15 @@ pub(crate) fn accept_clients(
             Ok((stream, _)) => {
                 accepted_this_poll += 1;
                 if let Err(error) = stream.set_nonblocking(true) {
-                    eprintln!("client I/O setup failed: {error}");
+                    crate::diagnostics::emit(
+                        logger,
+                        minimium_diagnostics::Level::Warn,
+                        "transport.client_socket_setup_failed",
+                        &[
+                            ("operation", "nonblocking".to_owned()),
+                            ("error_kind", format!("{:?}", error.kind())),
+                        ],
+                    );
                     continue;
                 }
                 let rejection = if clients.len() >= max_client_connections
@@ -48,15 +58,35 @@ pub(crate) fn accept_clients(
                     continue;
                 }
                 if let Err(error) = stream.set_nodelay(true) {
-                    eprintln!("client I/O setup failed: {error}");
+                    crate::diagnostics::emit(
+                        logger,
+                        minimium_diagnostics::Level::Warn,
+                        "transport.client_socket_setup_failed",
+                        &[
+                            ("operation", "nodelay".to_owned()),
+                            ("error_kind", format!("{:?}", error.kind())),
+                        ],
+                    );
                     continue;
                 }
                 if let Err(error) = stream.set_nonblocking(true) {
-                    eprintln!("client I/O setup failed: {error}");
+                    crate::diagnostics::emit(
+                        logger,
+                        minimium_diagnostics::Level::Warn,
+                        "transport.client_socket_setup_failed",
+                        &[
+                            ("operation", "nonblocking".to_owned()),
+                            ("error_kind", format!("{:?}", error.kind())),
+                        ],
+                    );
                     continue;
                 }
                 let connected_at = Instant::now();
-                clients.push(Client::new(stream, connected_at));
+                clients.push(Client::new(
+                    stream,
+                    connected_at,
+                    Some(protocol_logger.clone()),
+                ));
             }
             Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
             Err(error) => return Err(error),

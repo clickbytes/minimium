@@ -6,6 +6,8 @@ license.workspace = true
 
 [dependencies]
 minimium-platform = { path = "../../crates/platform" }
+minimium-core = { path = "../../crates/core" }
+minimium-diagnostics = { path = "../../crates/diagnostics" }
 minimium-asset-io = { path = "../../crates/asset-io" }
 minimium-assets = { path = "../../crates/assets" }
 minimium-game-sample = { path = "../../games/sample" }
@@ -14,8 +16,12 @@ minimium-procgen = { path = "../../crates/procgen" }
 minimium-simulation = { path = "../../crates/simulation" }
 minimium-world = { path = "../../crates/world" }
 ron = "0.12.3"
-minimium-telemetry = { path = "../../crates/telemetry", optional = true, features = ["allocation-metrics"] }
+ctrlc = { version = "3.5.2", features = ["termination"] }
+minimium-telemetry = { path = "../../crates/telemetry" }
 
 [features]
 default = []
-allocation-metrics = ["dep:minimium-telemetry", "minimium-server-runtime/allocation-metrics"]
+allocation-metrics = [
+    "minimium-telemetry/allocation-metrics",
+    "minimium-server-runtime/allocation-metrics",
+]

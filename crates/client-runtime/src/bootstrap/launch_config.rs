@@ -15,6 +15,9 @@ const MAX_DIAGNOSTICS: usize = 2048;
 #[derive(Clone, Debug)]
 pub struct LocalServerLaunchConfig {
     pub data_dir: PathBuf,
+    pub log_dir: PathBuf,
+    pub parent_run_id: String,
+    pub diagnostic_logger: Option<minimium_diagnostics::DomainLogger>,
     pub data_dir_explicit: bool,
     pub config_path: Option<PathBuf>,
     pub settings: BTreeMap<String, String>,
@@ -91,7 +94,12 @@ impl LocalServerLaunchConfig {
             .collect()
     }
 
-    pub(crate) fn append_run_arguments(&self, command: &mut Command, resolved: &ResolvedLaunch) {
+    pub(crate) fn append_run_arguments(
+        &self,
+        command: &mut Command,
+        resolved: &ResolvedLaunch,
+        attempt_id: &str,
+    ) {
         command.arg("run");
         if !resolved
             .view
@@ -110,10 +118,24 @@ impl LocalServerLaunchConfig {
         if !data_dir_is_resolved_setting || self.data_dir_explicit {
             command.arg("--data-dir").arg(&resolved.data_dir);
         }
+        command.arg("--log-dir").arg(&self.log_dir);
+        command.arg("--parent-run-id").arg(&self.parent_run_id);
+        command.arg("--startup-attempt-id").arg(attempt_id);
+        let dev_mode = resolved
+            .view
+            .settings
+            .get("server.dev-mode")
+            .is_some_and(|setting| setting.effective == "true");
+        if dev_mode {
+            command.arg("--dev");
+        }
         if let Some(path) = &self.config_path {
             command.arg("--config").arg(path);
         }
         for (key, value) in &self.settings {
+            if dev_mode && key == "server.dev-mode" {
+                continue;
+            }
             command.arg("--set").arg(format!("{key}={value}"));
         }
     }
@@ -290,19 +312,9 @@ fn validate_client_world_inputs(
             )));
         }
     }
-    for key in ["world.seed", "world.planet_config"] {
-        let resolved = view
-            .settings
-            .get(key)
-            .ok_or_else(|| io::Error::other(format!("server config preview omitted {key}")))?;
-        let is_default_seed = key == "world.seed" && resolved.effective == "auto";
-        if !resolved.effective.is_empty() && !is_default_seed {
-            return Err(io::Error::other(format!(
-                "client local world input does not match resolved {key}={}",
-                resolved.effective
-            )));
-        }
-    }
+    // The preview includes the same settings and environment passed to the
+    // locally owned server. A selected seed or planet preset is therefore a
+    // valid resolved input, not a mismatch with a separate client world.
     Ok(())
 }
 

@@ -1,10 +1,9 @@
 use crate::terrain_color::{mostly_ocean, terrain_color};
-use crate::{DungeonBlueprint, DungeonTile, PlanetLandmarks, PlanetTerrain};
+use crate::{DungeonBlueprint, DungeonTile, GenerationError, PlanetLandmarks, PlanetTerrain};
 use minimium_world::world::{
     MapBox, MapTriangle, PlanetFace, WorldMap, PLANET_SAMPLE_COORDINATE_SCALE,
 };
 
-const TERRAIN_COLOR: [f32; 3] = [0.18, 0.42, 0.19];
 const ROOM_COLOR: [f32; 3] = [0.34, 0.32, 0.28];
 const WALL_COLOR: [f32; 3] = [0.28, 0.30, 0.33];
 const PLANET_SPAWN_CLEARANCE_MM: i64 = 2_000;
@@ -76,7 +75,7 @@ pub fn materialize_planet_overview(terrain: PlanetTerrain) -> Vec<MapTriangle> {
 pub fn materialize_planet_map(
     terrain: PlanetTerrain,
     landmarks: PlanetLandmarks,
-) -> Result<WorldMap, String> {
+) -> Result<WorldMap, GenerationError> {
     let _ = terrain;
     let spawn_mm = radial_clearance(
         landmarks.spawn.position_mm.coordinates(),
@@ -91,70 +90,12 @@ pub fn materialize_planet_map(
         solid: false,
     };
     WorldMap::from_parts(spawn, vec![marker], Vec::new())
+        .map_err(GenerationError::materialization)
         .map(|map| map.with_spawn_position_mm(minimium_world::world::Position3Mm(spawn_mm)))
 }
 
-/// The v1 landing mesh is retained solely for reading its saved fingerprint.
-pub fn materialize_legacy_planet_map(
-    terrain: PlanetTerrain,
-    landmarks: PlanetLandmarks,
-) -> Result<WorldMap, String> {
-    let u_steps = 16_usize;
-    let v_steps = 36_usize;
-    let scale = PLANET_SAMPLE_COORDINATE_SCALE;
-    let half_u = scale / 32;
-    let v_start = -(scale / 8 + scale / 64);
-    let v_span = scale / 4 + scale / 32;
-    let mut points = Vec::with_capacity((u_steps + 1) * (v_steps + 1));
-    for v_index in 0..=v_steps {
-        let v = v_start + v_span * v_index as i32 / v_steps as i32;
-        for u_index in 0..=u_steps {
-            let u = -half_u + 2 * half_u * u_index as i32 / u_steps as i32;
-            let sample = PlanetFace::PositiveY
-                .cube_sample(u, v)
-                .ok_or_else(|| String::from("legacy planet sample is outside face bounds"))?;
-            points.push(millimeters_to_world(
-                terrain.sample(sample).position_mm.coordinates(),
-            ));
-        }
-    }
-    let mut triangles = Vec::with_capacity(u_steps * v_steps * 2);
-    for v_index in 0..v_steps {
-        for u_index in 0..u_steps {
-            let lower_left = v_index * (u_steps + 1) + u_index;
-            let lower_right = lower_left + 1;
-            let upper_left = lower_left + u_steps + 1;
-            let upper_right = upper_left + 1;
-            triangles.push(MapTriangle {
-                vertices: [points[lower_left], points[upper_left], points[lower_right]],
-                precise_vertices: None,
-                color: TERRAIN_COLOR,
-                solid: true,
-            });
-            triangles.push(MapTriangle {
-                vertices: [points[lower_right], points[upper_left], points[upper_right]],
-                precise_vertices: None,
-                color: TERRAIN_COLOR,
-                solid: true,
-            });
-        }
-    }
-    let spawn = millimeters_to_world(radial_clearance(
-        landmarks.spawn.position_mm.coordinates(),
-        PLANET_SPAWN_CLEARANCE_MM,
-    ));
-    let entrance = millimeters_to_world(landmarks.entrance.position_mm.coordinates());
-    let marker = MapBox {
-        center: [entrance[0], entrance[1] + 0.6, entrance[2]],
-        size: [0.65, 1.2, 0.65],
-        color: [0.86, 0.53, 0.16],
-        solid: false,
-    };
-    WorldMap::from_parts(spawn, vec![marker], triangles)
-}
-
 /// Turns a connected dungeon floor plan into shared render and collision geometry.
-pub fn materialize_dungeon_map(blueprint: &DungeonBlueprint) -> Result<WorldMap, String> {
+pub fn materialize_dungeon_map(blueprint: &DungeonBlueprint) -> Result<WorldMap, GenerationError> {
     let (width, height) = blueprint.dimensions();
     let mut triangles = Vec::new();
     let mut walls = Vec::new();
@@ -177,7 +118,7 @@ pub fn materialize_dungeon_map(blueprint: &DungeonBlueprint) -> Result<WorldMap,
                     solid: true,
                 }),
                 None => {
-                    return Err(String::from(
+                    return Err(GenerationError::invalid_blueprint(
                         "dungeon blueprint dimensions are inconsistent",
                     ))
                 }
@@ -202,7 +143,7 @@ pub fn materialize_dungeon_map(blueprint: &DungeonBlueprint) -> Result<WorldMap,
         color: [0.86, 0.53, 0.16],
         solid: false,
     });
-    WorldMap::from_parts(spawn, walls, triangles)
+    WorldMap::from_parts(spawn, walls, triangles).map_err(GenerationError::materialization)
 }
 
 fn floor_triangles(x: u16, y: u16, color: [f32; 3]) -> [MapTriangle; 2] {

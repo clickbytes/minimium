@@ -1,10 +1,47 @@
 #[cfg(not(windows))]
 use std::fs;
 use std::{
-    fs::File,
+    fs::{File, OpenOptions},
     io::{self, Read, Write},
     path::Path,
 };
+
+/// Opens and locks a coordination file. The lock is released when the file is
+/// dropped, including when the owning process exits unexpectedly.
+pub fn lock_file(path: &Path, exclusive: bool) -> io::Result<File> {
+    let file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(path)?;
+    if exclusive {
+        fs2::FileExt::lock_exclusive(&file)?;
+    } else {
+        fs2::FileExt::lock_shared(&file)?;
+    }
+    Ok(file)
+}
+
+/// Attempts to acquire an exclusive lock without waiting.
+pub fn try_lock_file(path: &Path) -> io::Result<Option<File>> {
+    let file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(path)?;
+    match fs2::FileExt::try_lock_exclusive(&file) {
+        Ok(()) => Ok(Some(file)),
+        Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+/// Downgrades an exclusive cache update lock to a shared active-use lease.
+pub fn downgrade_lock(file: File) -> io::Result<File> {
+    fs2::FileExt::unlock(&file)?;
+    fs2::FileExt::lock_shared(&file)?;
+    Ok(file)
+}
 
 /// Default server data directory used by the server and its control client.
 pub const DEFAULT_SERVER_DATA_DIR: &str = ".minimium";
@@ -18,7 +55,7 @@ pub fn read_bounded_file(path: &Path, maximum_bytes: usize) -> io::Result<Vec<u8
     File::open(path)?.take(limit).read_to_end(&mut bytes)?;
     if bytes.len() > maximum_bytes {
         return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
+            io::ErrorKind::FileTooLarge,
             "file exceeds size limit",
         ));
     }
@@ -31,9 +68,20 @@ pub fn atomic_write_file(
     destination: &Path,
     bytes: &[u8],
 ) -> io::Result<()> {
+    atomic_write_with(temporary_path, destination, |writer| {
+        writer.write_all(bytes)
+    })
+}
+
+/// Streams a bounded-format payload to a temporary file and atomically replaces the destination.
+pub fn atomic_write_with(
+    temporary_path: &Path,
+    destination: &Path,
+    write_payload: impl FnOnce(&mut File) -> io::Result<()>,
+) -> io::Result<()> {
     let result = (|| {
         let mut file = File::create(temporary_path)?;
-        file.write_all(bytes)?;
+        write_payload(&mut file)?;
         file.sync_all()?;
         atomic_replace_file(temporary_path, destination)?;
         #[cfg(unix)]

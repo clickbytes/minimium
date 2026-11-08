@@ -20,6 +20,7 @@ impl ServerRuntime {
             }
             dispatch::dispatch_message(self, index, message, decoded_at);
         }
+        identity::poll_authentication(self);
         self.connections.messages = messages;
     }
 }

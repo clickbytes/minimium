@@ -1,9 +1,7 @@
-pub use minimium_renderer::UiVertex;
-
-use super::theme::{
-    ASCII_GLYPHS, ATLAS_HEIGHT, ATLAS_WIDTH, CELL, COLUMNS, GLYPH_ADVANCE, MAX_VERTICES,
-    POLISH_GLYPHS,
-};
+use super::glyph_atlas::{self, Glyph};
+use super::theme::{ATLAS_HEIGHT, ATLAS_WIDTH, CELL, COLUMNS, MAX_VERTICES, WHITE_CELL};
+pub(super) use minimium_renderer::UiVertex;
+use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Clone, Copy)]
 pub(super) struct DrawContext {
@@ -17,6 +15,7 @@ impl DrawContext {
     }
 }
 
+#[derive(Clone, Copy)]
 pub(super) struct TextDraw<'a> {
     pub(super) x: f32,
     pub(super) y: f32,
@@ -38,7 +37,7 @@ pub(super) struct QuadDraw {
 
 impl QuadDraw {
     pub(super) fn solid(x: f32, y: f32, width: f32, height: f32, color: [f32; 3]) -> Self {
-        let uv = super::theme::white_uv();
+        let uv = white_uv();
         Self {
             x,
             y,
@@ -51,48 +50,66 @@ impl QuadDraw {
     }
 }
 
+pub(super) fn glyph_advance() -> f32 {
+    glyph_atlas::advance()
+}
+
 pub(super) fn append_text(vertices: &mut Vec<UiVertex>, context: DrawContext, draw: TextDraw<'_>) {
-    for (column, character) in draw.text.chars().take(draw.max_chars).enumerate() {
-        if vertices.len() + 6 > MAX_VERTICES {
-            return;
+    let mut pen_x = draw.x;
+    let baseline = draw.y + glyph_atlas::baseline() * draw.scale;
+    let mut last_base_x = pen_x;
+    for grapheme in draw.text.graphemes(true).take(draw.max_chars) {
+        for character in grapheme.chars() {
+            if vertices.len() + 6 > MAX_VERTICES {
+                return;
+            }
+            let glyph = glyph_atlas::get(character);
+            append_glyph(vertices, context, glyph, draw, pen_x, last_base_x, baseline);
+            if glyph.advance != 0.0 {
+                last_base_x = pen_x;
+                pen_x += glyph.advance * draw.scale;
+            }
         }
-        let code = glyph_index(character);
-        let cell_x = (code % COLUMNS) * CELL;
-        let cell_y = (code / COLUMNS) * CELL;
-        let uv_min = [
-            (cell_x as f32 + 0.5) / ATLAS_WIDTH as f32,
-            (cell_y as f32 + 0.5) / ATLAS_HEIGHT as f32,
-        ];
-        let uv_max = [
-            (cell_x as f32 + CELL as f32 - 0.5) / ATLAS_WIDTH as f32,
-            (cell_y as f32 + CELL as f32 - 0.5) / ATLAS_HEIGHT as f32,
-        ];
-        let left = draw.x + column as f32 * GLYPH_ADVANCE * draw.scale;
-        append_quad(
-            vertices,
-            context,
-            QuadDraw {
-                x: left,
-                y: draw.y,
-                width: CELL as f32 * draw.scale,
-                height: CELL as f32 * draw.scale,
-                color: draw.color,
-                uv_min,
-                uv_max,
-            },
-        );
     }
 }
 
-fn glyph_index(character: char) -> usize {
-    if character.is_ascii() && (character as usize) < ASCII_GLYPHS {
-        character as usize
-    } else {
-        POLISH_GLYPHS
-            .iter()
-            .position(|&glyph| glyph == character)
-            .map_or('?' as usize, |index| ASCII_GLYPHS + index)
+fn append_glyph(
+    vertices: &mut Vec<UiVertex>,
+    context: DrawContext,
+    glyph: Glyph,
+    draw: TextDraw<'_>,
+    pen_x: f32,
+    last_base_x: f32,
+    baseline: f32,
+) {
+    if glyph.width == 0 || glyph.height == 0 {
+        return;
     }
+    let glyph_x = if glyph.advance == 0.0 {
+        last_base_x
+    } else {
+        pen_x
+    };
+    append_quad(
+        vertices,
+        context,
+        QuadDraw {
+            x: glyph_x + glyph.xmin as f32 * draw.scale,
+            y: baseline - (glyph.ymin + glyph.height as i32) as f32 * draw.scale,
+            width: glyph.width as f32 * draw.scale,
+            height: glyph.height as f32 * draw.scale,
+            color: draw.color,
+            uv_min: glyph.uv_min,
+            uv_max: glyph.uv_max,
+        },
+    );
+}
+
+fn white_uv() -> [f32; 2] {
+    [
+        (WHITE_CELL % COLUMNS * CELL) as f32 / ATLAS_WIDTH as f32 + 3.5 / ATLAS_WIDTH as f32,
+        (WHITE_CELL / COLUMNS * CELL) as f32 / ATLAS_HEIGHT as f32 + 3.5 / ATLAS_HEIGHT as f32,
+    ]
 }
 
 pub(super) fn append_quad(vertices: &mut Vec<UiVertex>, context: DrawContext, draw: QuadDraw) {

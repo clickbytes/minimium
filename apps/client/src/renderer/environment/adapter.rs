@@ -3,15 +3,15 @@ use super::{
     GlobalSunFrame, RenderViewFrame, SkyFrameInput,
 };
 use bytemuck::Zeroable;
-use minimium_astronomy::{SkyState, ASTRONOMY_MODEL_REVISION};
+use minimium_astronomy::{ASTRONOMY_MODEL_REVISION, SkyState};
 use minimium_environment::sky::SkyModel;
 use minimium_environment::{
     time::{ClockId, ClockRevision},
     {EnvironmentDescriptor, EnvironmentProfile},
 };
 use minimium_protocol::WorldContext;
-use minimium_renderer::gpu_frame::camera_uniform;
 use minimium_renderer::gpu_frame::EnvironmentUniform;
+use minimium_renderer::gpu_frame::camera_uniform;
 use std::{error::Error, f64::consts::PI, fmt};
 
 // Presentation scale for sky disks; physical angular radii still drive lighting and visibility.
@@ -218,6 +218,7 @@ pub(super) fn from_sky_state(
         moon_orbit_world,
         halo_count: [halo_count, 0, 0, 0],
         halo_sources,
+        ..Default::default()
     };
     Ok(EnvironmentFrame {
         context: Some(context),

@@ -97,7 +97,7 @@ pub(super) fn append_hud(vertices: &mut Vec<UiVertex>, context: DrawContext, sta
 }
 
 pub(super) fn append_status(vertices: &mut Vec<UiVertex>, context: DrawContext, status: &str) {
-    let max_chars = ((context.width - 32.0) / super::theme::GLYPH_ADVANCE).max(1.0) as usize;
+    let max_chars = ((context.width - 32.0) / text::glyph_advance()).max(1.0) as usize;
     text::append_quad(
         vertices,
         context,

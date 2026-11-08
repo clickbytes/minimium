@@ -88,6 +88,14 @@ const OPTIONS: &[CliOptionSpec] = &[
         help: false,
     },
     CliOptionSpec {
+        name: "--log-dir",
+        alias: None,
+        value_name: Some("PATH"),
+        description: "Select the process log directory (default: ./logs).",
+        repeatable: false,
+        help: false,
+    },
+    CliOptionSpec {
         name: "--help",
         alias: Some("-h"),
         value_name: None,
@@ -136,6 +144,7 @@ pub(super) struct StartupConfig {
     pub(super) cpu_mhz: Option<u32>,
     pub(super) scenario_id: Option<String>,
     pub(super) server_data_dir: Option<PathBuf>,
+    pub(super) log_dir: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy)]
@@ -256,6 +265,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<ParseOutcome, Co
         ));
     }
     let server_data_dir = values.get("--server-data-dir").map(PathBuf::from);
+    let log_dir = values.get("--log-dir").map(PathBuf::from);
     Ok(ParseOutcome::Config(StartupConfig {
         address: address.to_owned(),
         clients,
@@ -267,6 +277,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<ParseOutcome, Co
         cpu_mhz,
         scenario_id,
         server_data_dir,
+        log_dir,
     }))
 }
 

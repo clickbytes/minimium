@@ -30,10 +30,15 @@ impl ServerRuntime {
         context: minimium_protocol::WorldContext,
         km: f32,
     ) -> Option<minimium_world::world::Position3Mm> {
+        let can_fly = self
+            .game
+            .player_movement_policies
+            .get(&id)
+            .is_some_and(|policy| policy.can_fly);
         if !km.is_finite()
             || !(0.0..=10000.0).contains(&km)
             || !self.game.worlds.can_map_teleport(id, context)
-            || !self.game.active_inputs.get(&id)?.movement.fly
+            || !can_fly
         {
             return None;
         }
@@ -93,7 +98,12 @@ impl ServerRuntime {
                     .player_store
                     .update_from_player(player, instance, world.gravity())
             {
-                eprintln!("could not record altitude for player {id}: {error}");
+                crate::diagnostics::emit(
+                    &self.server_logger,
+                    minimium_diagnostics::Level::Error,
+                    "server.altitude_save_failed",
+                    &[("player_id", id.to_string()), ("reason", error.to_string())],
+                );
             }
         }
         if let Some(input) = self.game.active_inputs.get_mut(&id) {

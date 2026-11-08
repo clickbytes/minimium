@@ -8,6 +8,8 @@ Owns world manifests, topology, addressing, map geometry, entities and neutral c
 
 The `world` module exposes manifests, maps, topology/addressing, collision geometry and the current `World` state API. The `entity` module exposes the world-scoped component registry and entity store.
 
+Component schemas require an exact registered version; the world crate does not migrate older component payloads. Replicated descriptors explicitly declare either a spatial position decoder or global visibility; spatial entities are filtered through active sectors, and global visibility is never inferred from a missing position. Payloads are limited to 2048 bytes, each entity to 16 components, and each store to 16,384 entities; storage/runtime enforces the 4 MiB aggregate snapshot component payload cap across worlds. Store mutations advance a monotone revision and remain available through `changes_since`; component removal and entity despawn are explicit change records. Component persistence belongs to storage/runtime composition and is not encoded into sector object blobs.
+
 ## Dependencies
 
 Depends only on core identity values. It has no dependency on client/server adapters or generation packages.

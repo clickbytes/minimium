@@ -69,7 +69,10 @@ impl GeometryRebase {
                         },
                     ],
                 });
-                (group, (buffer.size() / u64::from(stride) / 4) as u32)
+                let vertices = (buffer.size() / u64::from(stride) / 4) as u32;
+                // Terrain updates one complete triangle and its plane normal.
+                let invocations = if stride == 28 { vertices / 3 } else { vertices };
+                (group, invocations)
             })
             .collect();
         let mut encoder = device.create_command_encoder(&Default::default());

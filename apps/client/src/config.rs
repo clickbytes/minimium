@@ -8,6 +8,7 @@ use std::{collections::BTreeMap, path::Path};
 
 const FOV_KEY: &str = "client.camera.fov";
 const SENSITIVITY_KEY: &str = "client.input.mouse_sensitivity";
+const INPUT_BINDINGS_KEY: &str = "client.input.bindings";
 const SKY_QUALITY_KEY: &str = "client.graphics.sky_quality";
 const SKY_NAMES_KEY: &str = "client.sky.names";
 const CLOUD_DETAIL_KEY: &str = "client.weather.cloud_detail";
@@ -15,9 +16,11 @@ const ATMOSPHERE_DEBUG_KEY: &str = "client.debug.atmosphere";
 const TERRAIN_DEBUG_KEY: &str = "client.debug.terrain";
 const CLOUD_DEBUG_KEY: &str = "client.debug.clouds";
 const SKY_DEMO_KEY: &str = "client.sky.demo";
+const LOCALE_KEY: &str = "ui.locale";
 const DEFAULTS: &[(&str, &str)] = &[
     (FOV_KEY, "70"),
     (SENSITIVITY_KEY, "0.0025"),
+    (INPUT_BINDINGS_KEY, ""),
     (SKY_QUALITY_KEY, "standard"),
     (SKY_NAMES_KEY, "false"),
     (CLOUD_DETAIL_KEY, "6"),
@@ -25,17 +28,21 @@ const DEFAULTS: &[(&str, &str)] = &[
     (TERRAIN_DEBUG_KEY, "off"),
     (CLOUD_DEBUG_KEY, "off"),
     (SKY_DEMO_KEY, "false"),
+    (LOCALE_KEY, "en"),
 ];
 const PERSISTENT_KEYS: &[&str] = &[
     FOV_KEY,
     SENSITIVITY_KEY,
+    INPUT_BINDINGS_KEY,
     SKY_QUALITY_KEY,
     SKY_NAMES_KEY,
     CLOUD_DETAIL_KEY,
+    LOCALE_KEY,
 ];
 const KNOWN_KEYS: &[&str] = &[
     FOV_KEY,
     SENSITIVITY_KEY,
+    INPUT_BINDINGS_KEY,
     SKY_QUALITY_KEY,
     SKY_NAMES_KEY,
     CLOUD_DETAIL_KEY,
@@ -43,6 +50,7 @@ const KNOWN_KEYS: &[&str] = &[
     TERRAIN_DEBUG_KEY,
     CLOUD_DEBUG_KEY,
     SKY_DEMO_KEY,
+    LOCALE_KEY,
 ];
 const OFFLINE_OPTIONS: &[CliOptionSpec] = &[
     CliOptionSpec {
@@ -57,7 +65,7 @@ const OFFLINE_OPTIONS: &[CliOptionSpec] = &[
         name: "--sources",
         alias: None,
         value_name: None,
-        description: "Include setting sources in show output.",
+        description: "Include requested/effective values, source and reason in show output.",
         repeatable: false,
         help: false,
     },
@@ -72,8 +80,10 @@ const OFFLINE_OPTIONS: &[CliOptionSpec] = &[
 ];
 
 pub(crate) struct ClientPreferenceConfig {
+    pub(crate) locale: minimium_localization::Locale,
     pub(crate) fov_degrees: f32,
     pub(crate) mouse_sensitivity: f32,
+    pub(crate) input_bindings: String,
     pub(crate) sky_quality: SkyQuality,
     pub(crate) sky_names: bool,
     pub(crate) cloud_detail: u8,
@@ -119,7 +129,27 @@ pub(crate) fn resolve_preferences(
     for (key, value) in resolved.iter() {
         sources.insert(key.to_owned(), value.source);
         resolved_values.insert(key.to_owned(), value.requested.clone());
-        parse_setting_value(key, &value.requested)?;
+        if key == LOCALE_KEY {
+            if minimium_localization::Locale::from_setting(&value.requested).is_none() {
+                return Err(CommandError::new(
+                    CommandErrorCode::InvalidValue,
+                    Some(LOCALE_KEY),
+                    "expected en or pl",
+                    Some("config show ui.locale"),
+                ));
+            }
+        } else if key == INPUT_BINDINGS_KEY {
+            crate::input::InputMapper::from_setting(&value.requested).map_err(|error| {
+                CommandError::new(
+                    CommandErrorCode::InvalidValue,
+                    Some(INPUT_BINDINGS_KEY),
+                    error,
+                    Some("config show client.input.bindings"),
+                )
+            })?;
+        } else {
+            parse_setting_value(key, &value.requested)?;
+        }
     }
     let value = |key: &str| resolved_values.get(key).expect("setting has a default");
     let typed = |key: &str| parse_setting_value(key, value(key)).expect("validated setting");
@@ -127,10 +157,13 @@ pub(crate) fn resolve_preferences(
         ClientPropertyValue::CameraFov(value) => value,
         _ => unreachable!("FOV key has a decimal descriptor"),
     };
+    let locale = minimium_localization::Locale::from_setting(value(LOCALE_KEY))
+        .expect("locale was validated above");
     let mouse_sensitivity = match typed(SENSITIVITY_KEY) {
         ClientPropertyValue::MouseSensitivity(value) => value,
         _ => unreachable!("sensitivity key has a decimal descriptor"),
     };
+    let input_bindings = value(INPUT_BINDINGS_KEY).clone();
     let sky_quality = match typed(SKY_QUALITY_KEY) {
         ClientPropertyValue::SkyQuality(value) => value,
         _ => unreachable!("quality key has an enum descriptor"),
@@ -170,8 +203,10 @@ pub(crate) fn resolve_preferences(
         ));
     }
     Ok(ClientPreferenceConfig {
+        locale,
         fov_degrees,
         mouse_sensitivity,
+        input_bindings,
         sky_quality,
         sky_names,
         cloud_detail,
@@ -259,12 +294,30 @@ pub(crate) fn handle_offline_command(args: &[String]) -> Result<Option<String>, 
         )));
     }
     let include_sources = values.contains("--sources");
+    let mut records = crate::application::SettingsStore::new(
+        resolved.resolved_values.clone(),
+        resolved.sources.clone(),
+    );
+    for key in resolved.resolved_values.keys() {
+        records.set_unavailable(
+            key,
+            "configuration preview; no client consumer applied the value".to_owned(),
+        );
+    }
     let output = resolved
         .resolved_values
-        .iter()
-        .map(|(key, value)| {
+        .keys()
+        .map(|key| {
+            let value = records
+                .requested(key)
+                .expect("resolved setting record exists");
             if include_sources {
-                format!("{key}={value} source={}", resolved.sources[key].as_str())
+                format!(
+                    "{key} requested={value} effective={} source={} reason={}",
+                    records.effective(key).unwrap_or("unavailable"),
+                    records.source(key).as_str(),
+                    records.difference_reason(key).unwrap_or("none"),
+                )
             } else {
                 format!("{key}={value}")
             }

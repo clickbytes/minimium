@@ -5,6 +5,19 @@ use std::sync::OnceLock;
 
 const CLIENT_PROPERTIES: &[PropertySpec] = &[
     PropertySpec::new(
+        "ui.locale",
+        PropertyType::Enumeration,
+        None,
+        "User interface language.",
+        Some("en"),
+        Some("en|pl"),
+        "apps/client::application",
+        PropertyPermission::Local,
+        PropertyLifecycle::Live,
+        true,
+        true,
+    ),
+    PropertySpec::new(
         "client.camera.fov",
         PropertyType::Decimal,
         Some("degrees"),
@@ -25,6 +38,19 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         Some("0.0025"),
         Some("finite 0..=0.1"),
         "apps/client::renderer",
+        PropertyPermission::Local,
+        PropertyLifecycle::Live,
+        true,
+        true,
+    ),
+    PropertySpec::new(
+        "client.input.bindings",
+        PropertyType::Text,
+        None,
+        "Physical key bindings by input context; semicolon-separated context.action=control entries.",
+        Some(""),
+        Some("global|gameplay|console|map|modal; conflicting controls in one context are rejected"),
+        "apps/client::application::input",
         PropertyPermission::Local,
         PropertyLifecycle::Live,
         true,
@@ -141,7 +167,7 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         "Local walk/fly speed input; queue acceptance is not server confirmation.",
         Some("5"),
         Some("finite 0..=10000"),
-        "crates/simulation::MovementSettings",
+        "crates/simulation::MovementPolicy",
         PropertyPermission::Player,
         PropertyLifecycle::Live,
         false,
@@ -154,7 +180,7 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         "Local walk/fly acceleration input; queue acceptance is not server confirmation.",
         Some("30"),
         Some("finite 0..=10000"),
-        "crates/simulation::MovementSettings",
+        "crates/simulation::MovementPolicy",
         PropertyPermission::Player,
         PropertyLifecycle::Live,
         false,
@@ -239,7 +265,10 @@ pub(super) fn registry() -> &'static PropertyRegistry {
     })
 }
 
-pub(super) fn format_property_help(spec: &PropertySpec) -> String {
+pub(super) fn format_property_help_with_description(
+    spec: &PropertySpec,
+    description: &str,
+) -> String {
     format!(
         "{}: {}{}; default {}; constraints {}; owner {}; permission {:?}; lifecycle {:?}; persistent {}; resettable {}\n{}",
         spec.key,
@@ -258,6 +287,6 @@ pub(super) fn format_property_help(spec: &PropertySpec) -> String {
         spec.lifecycle,
         spec.persistent,
         spec.resettable,
-        spec.description,
+        description,
     )
 }

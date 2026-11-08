@@ -8,6 +8,7 @@ pub(super) struct PendingGeometry {
     pub terrain: Option<TerrainBuffers>,
     bounds: Option<ShadowBounds>,
     source: Arc<SectorGeometry>,
+    pub origin_generation: u64,
 }
 
 impl PendingGeometry {
@@ -25,6 +26,7 @@ impl WorldGeometryGpu {
         content_revision: WorldContentRevision,
         patches: &[Arc<PreparedSector>],
         active: &[(SectorKey, u8)],
+        origin_generation: u64,
     ) -> GeometryCacheResult {
         let version = (generation, content_revision);
         let mut released = if self.versions.get(&instance).is_some_and(|v| *v != version) {
@@ -37,9 +39,10 @@ impl WorldGeometryGpu {
         let protected: HashSet<_> = active.iter().copied().collect();
         self.pending.retain(|(owner, key, lod), p| {
             let keep = *owner != instance
-                || required
-                    .get(&(*key, *lod))
-                    .is_some_and(|next| Arc::ptr_eq(&next.geometry, &p.source));
+                || (p.origin_generation == origin_generation
+                    && required
+                        .get(&(*key, *lod))
+                        .is_some_and(|next| Arc::ptr_eq(&next.geometry, &p.source)));
             if !keep {
                 released += p.bytes();
             }
@@ -54,6 +57,8 @@ impl WorldGeometryGpu {
             }
             keep
         });
+        self.catalog_origin_generation
+            .retain(|key, _| self.catalog.contains_key(key));
         self.terrain.retain(|k, b| {
             let keep = self.catalog.contains_key(k);
             if !keep {
@@ -69,11 +74,11 @@ impl WorldGeometryGpu {
             let current = self
                 .sources
                 .get(&key)
-                .is_some_and(|s| Arc::ptr_eq(s, &patch.geometry));
-            let staged = self
-                .pending
-                .get(&key)
-                .is_some_and(|s| Arc::ptr_eq(&s.source, &patch.geometry));
+                .is_some_and(|s| Arc::ptr_eq(s, &patch.geometry))
+                && self.catalog_origin_generation.get(&key) == Some(&origin_generation);
+            let staged = self.pending.get(&key).is_some_and(|s| {
+                s.origin_generation == origin_generation && Arc::ptr_eq(&s.source, &patch.geometry)
+            });
             if current || staged {
                 continue;
             }
@@ -104,6 +109,7 @@ impl WorldGeometryGpu {
                 terrain,
                 bounds: patch.bounds,
                 source: patch.geometry.clone(),
+                origin_generation,
             };
             let bytes = next.bytes();
             allocated += bytes;
@@ -114,15 +120,24 @@ impl WorldGeometryGpu {
         let ready = !patches.is_empty()
             && patches.iter().all(|p| {
                 let key = (instance, p.key, p.lod);
-                self.sources
+                let active = self
+                    .sources
                     .get(&key)
                     .is_some_and(|s| Arc::ptr_eq(s, &p.geometry))
-                    || self
-                        .pending
-                        .get(&key)
-                        .is_some_and(|s| Arc::ptr_eq(&s.source, &p.geometry))
+                    && self.catalog_origin_generation.get(&key) == Some(&origin_generation);
+                let staged = self.pending.get(&key).is_some_and(|s| {
+                    s.origin_generation == origin_generation && Arc::ptr_eq(&s.source, &p.geometry)
+                });
+                active || staged
             });
         if ready {
+            if self
+                .publication
+                .as_ref()
+                .is_some_and(|publication| publication.stamp.instance == instance)
+            {
+                self.publication = None;
+            }
             for patch in patches {
                 let key = (instance, patch.key, patch.lod);
                 let Some(next) = self.pending.remove(&key) else {
@@ -142,6 +157,8 @@ impl WorldGeometryGpu {
                     self.bounds.insert(key, bounds);
                 }
                 self.sources.insert(key, next.source);
+                self.catalog_origin_generation
+                    .insert(key, origin_generation);
             }
             self.catalog.retain(|(owner, key, lod), (b, _)| {
                 let keep = *owner != instance || required.contains_key(&(*key, *lod));
@@ -159,6 +176,8 @@ impl WorldGeometryGpu {
             });
             self.sources.retain(|key, _| self.catalog.contains_key(key));
             self.bounds.retain(|key, _| self.catalog.contains_key(key));
+            self.catalog_origin_generation
+                .retain(|key, _| self.catalog.contains_key(key));
         }
         GeometryCacheResult {
             ready,

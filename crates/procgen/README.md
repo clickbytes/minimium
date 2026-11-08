@@ -42,15 +42,14 @@ Generation functions are called by client/server owners or their scheduled work.
 
 ## Invariants and errors
 
-Preserve seeds, address calculations, rounding, scales and algorithm order. Generation must remain reproducible for the same inputs.
+Preserve seeds, address calculations, rounding, scales and algorithm order. Generation must remain reproducible for the same inputs. Manifest validation and map materialization return `GenerationError` with a stable code and concrete category rather than requiring callers to parse an error string.
 
 Render patches and coarse blocks sample signed ground heights through
 PlanetTerrain::ground_sample; Earth bathymetry remains below sea level.
 PlanetTerrain::sea_position supplies canonical sea-level vertices for presentation.
 The renderer owns the separate ocean mesh and its intersection with ground.
 The earlier binary shoreline clipping is removed. PlanetTerrain::sample and
-collision sector generation retain their original sea-clamped results and rounding;
-no generator revision, save migration or world reset is required.
+collision sector generation retain their original sea-clamped results and rounding.
 
 ## Commands
 
@@ -64,12 +63,18 @@ Change terrain or dungeon algorithms here. Keep file discovery and persistent da
 
 Run `rtk cargo check -p minimium-procgen` and `rtk python scripts/check_architecture.py`. Runtime acceptance is deferred.
 
-Opt-in Earth generator v5 applies PlanetDefinition::earth_elevation_mm to the
+Generator revision 5 applies PlanetDefinition::earth_elevation_mm to the
 shared collision, presentation and traversal height. The v5 generator digest is
-distinct; v3/v4 retain neutral relief and their original digest/sampling.
+the only currently accepted generated-world contract. World kind selects the
+procedural planet, Earth, or dungeon algorithm explicitly.
 Source geography remains available for climate independently of shaped terrain.
 Height derivatives and both planet views follow the same mapped field.
 
 PLANET_RENDER_BLOCK_SUBDIVISIONS publishes the unchanged 16-cell presentation
 lattice to renderer coast probes, projected-cell scoring and edge conformance.
 Collision subdivisions remain independent; generation output is unchanged.
+
+Generated manifests require revision 5, a topology-matching generator digest,
+and topology-specific planet settings. Authored manifests use an `AUTH`
+fingerprint marker; hosting and client composition verify it against the
+materialized map before publishing or installing that content.

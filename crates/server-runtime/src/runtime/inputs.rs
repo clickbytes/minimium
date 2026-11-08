@@ -5,20 +5,55 @@ use crate::world_inputs::{WorldEvent, WorldInput};
 const INPUT_IDLE_TIMEOUT: Duration = Duration::from_millis(250);
 
 impl ServerRuntime {
+    pub(super) fn resolve_movement_input(
+        &mut self,
+        player: minimium_core::ids::PlayerId,
+        input_seq: u64,
+    ) {
+        if let Some(pending) = self.game.pending_input_seqs.get_mut(&player) {
+            pending.remove(&input_seq);
+            if pending.is_empty() {
+                self.game.pending_input_seqs.remove(&player);
+            }
+        }
+        let first_pending = self
+            .game
+            .pending_input_seqs
+            .get(&player)
+            .and_then(|set| set.first().copied());
+        let resolved = first_pending.map_or_else(
+            || self.game.last_input_seq.get(&player).copied().unwrap_or(0),
+            |first| first.saturating_sub(1),
+        );
+        self.game
+            .resolved_input_seq
+            .entry(player)
+            .and_modify(|seq| *seq = (*seq).max(resolved))
+            .or_insert(resolved);
+    }
+
     pub(super) fn apply_inputs(&mut self) {
         // Reuse the allocation and deliver each event before the next input.
         let mut pending = std::mem::take(&mut self.game.pending_world_inputs);
+        let mut teleported = std::collections::HashSet::new();
         for (input, decoded_at) in pending.drain(..) {
             if let Some(decoded_at) = decoded_at {
                 self.metrics
                     .input_wait
                     .record(Instant::now().saturating_duration_since(decoded_at));
             }
-            if let Some(event) = self.apply_input(input) {
+            if let WorldInput::Move(player, sample) = &input {
+                if teleported.contains(player) {
+                    self.resolve_movement_input(*player, sample.input_seq);
+                    continue;
+                }
+            }
+            if let Some(event) = self.apply_input(input, &mut teleported) {
                 self.emit_world_event(event);
             }
         }
         self.game.pending_world_inputs = pending;
+        self.apply_scheduled_movement_inputs();
         let now = Instant::now();
         for (id, last_received) in &self.game.input_last_received {
             if now.duration_since(*last_received) > INPUT_IDLE_TIMEOUT {
@@ -30,7 +65,50 @@ impl ServerRuntime {
         }
     }
 
-    fn apply_input(&mut self, input: WorldInput) -> Option<WorldEvent> {
+    fn apply_scheduled_movement_inputs(&mut self) {
+        let tick = self.scheduler.simulation_tick;
+        let players: Vec<_> = self.game.pending_movement_inputs.keys().copied().collect();
+        for player in players {
+            let (current, due_sequences, empty) = {
+                let Some(samples) = self.game.pending_movement_inputs.get_mut(&player) else {
+                    continue;
+                };
+                let due: Vec<_> = samples
+                    .range(..=tick)
+                    .map(|(target, sample)| (*target, *sample))
+                    .collect();
+                let current = due
+                    .iter()
+                    .filter(|(target, _)| *target == tick)
+                    .map(|(_, sample)| *sample)
+                    .max_by_key(|sample| sample.input_seq);
+                let sequences = due
+                    .iter()
+                    .map(|(_, sample)| sample.input_seq)
+                    .collect::<Vec<_>>();
+                for (target, _) in due {
+                    samples.remove(&target);
+                }
+                (current, sequences, samples.is_empty())
+            };
+            if empty {
+                self.game.pending_movement_inputs.remove(&player);
+            }
+            if let Some(sample) = current {
+                self.game.active_inputs.insert(player, sample.intent);
+                self.game.input_last_received.insert(player, Instant::now());
+            }
+            for seq in due_sequences {
+                self.resolve_movement_input(player, seq);
+            }
+        }
+    }
+
+    fn apply_input(
+        &mut self,
+        input: WorldInput,
+        teleported: &mut std::collections::HashSet<minimium_core::ids::PlayerId>,
+    ) -> Option<WorldEvent> {
         match input {
             WorldInput::Join {
                 id,
@@ -48,12 +126,21 @@ impl ServerRuntime {
                     position_mm,
                     health,
                 ) {
-                    eprintln!("could not add player {id} to instance {instance}: {error:?}");
+                    crate::diagnostics::emit(
+                        &self.world_logger,
+                        minimium_diagnostics::Level::Warn,
+                        "world.player_join_rejected",
+                        &[
+                            ("player_id", id.to_string()),
+                            ("world_instance", format!("{instance:?}")),
+                            ("reason", format!("{error:?}")),
+                        ],
+                    );
                     return None;
                 }
                 self.game
                     .active_inputs
-                    .insert(id, CharacterInput::default());
+                    .insert(id, MovementIntent::default());
                 self.game.input_last_received.insert(id, Instant::now());
             }
             WorldInput::Leave(id) => {
@@ -66,7 +153,12 @@ impl ServerRuntime {
                                 instance_id,
                                 gravity,
                             ) {
-                                eprintln!("could not capture player {} before leave: {error}", id);
+                                crate::diagnostics::emit(
+                                    &self.server_logger,
+                                    minimium_diagnostics::Level::Error,
+                                    "server.player_leave_save_failed",
+                                    &[("player_id", id.to_string()), ("reason", error.to_string())],
+                                );
                             }
                         }
                     }
@@ -74,20 +166,43 @@ impl ServerRuntime {
                 self.game.worlds.leave(id);
                 self.game.active_inputs.remove(&id);
                 self.game.input_last_received.remove(&id);
+                self.game.pending_movement_inputs.remove(&id);
+                self.game.last_input_seq.remove(&id);
+                self.game.pending_input_seqs.remove(&id);
+                self.game.resolved_input_seq.remove(&id);
                 if let Some(profile) = self.operations.player_store.profile_for_player(id) {
                     self.game.pending_departures.remove(&profile);
                 }
             }
-            WorldInput::Move(id, input) => {
-                let current = self.game.active_inputs.entry(id).or_default();
-                let jump = current.jump || input.jump;
-                *current = input;
-                current.jump = jump;
-                self.game.input_last_received.insert(id, Instant::now());
+            WorldInput::Move(id, sample) => {
+                let previous = self
+                    .game
+                    .pending_movement_inputs
+                    .entry(id)
+                    .or_default()
+                    .insert(sample.target_tick, sample);
+                if let Some(previous) =
+                    previous.filter(|previous| previous.input_seq != sample.input_seq)
+                {
+                    self.resolve_movement_input(id, previous.input_seq);
+                }
+                self.game
+                    .last_input_seq
+                    .entry(id)
+                    .and_modify(|seq| *seq = (*seq).max(sample.input_seq))
+                    .or_insert(sample.input_seq);
             }
             WorldInput::SetAltitude(id, context, km) => self.apply_altitude(id, context, km),
             WorldInput::MapTeleport(id, context, direction) => {
                 let position_mm = self.map_teleport(id, context, direction);
+                if position_mm.is_some() {
+                    teleported.insert(id);
+                    if let Some(samples) = self.game.pending_movement_inputs.remove(&id) {
+                        for sample in samples.values() {
+                            self.resolve_movement_input(id, sample.input_seq);
+                        }
+                    }
+                }
                 if let Some(index) = self.connections.client_indices_by_player.get(&id).copied() {
                     if let Some(client) = self.connections.clients.get_mut(index) {
                         if !queue_message(
@@ -146,51 +261,96 @@ impl ServerRuntime {
                     .rename_player(id, name.clone());
                 self.operations.player_store.rename(id, name);
             }
-            WorldInput::UsePortal(id, source_context) => {
-                let offer = self.game.worlds.prepare_portal_transfer(
-                    id,
-                    source_context,
-                    self.operations.player_store.return_location_for(id),
-                )?;
-                let Some(index) = self.connections.client_indices_by_player.get(&id).copied()
-                else {
-                    self.game.worlds.cancel_transfer(id, offer.transition_id);
-                    return None;
-                };
-                let (clock_sample, environment) = match self
-                    .environment_state_for_instance(offer.target_context.instance(), Instant::now())
-                {
-                    Ok(state) => state,
-                    Err(error) => {
-                        eprintln!("could not sample target environment for transfer: {error}");
-                        self.game.worlds.cancel_transfer(id, offer.transition_id);
-                        return None;
-                    }
-                };
-                if let Some(client) = self.connections.clients.get_mut(index) {
-                    if !queue_message(
-                        client,
-                        &mut self.metrics,
-                        minimium_protocol::ServerMessage::TransitionPrepare {
-                            transition_id: offer.transition_id,
-                            source_context: offer.source_context,
-                            target_context: offer.target_context,
-                            map_fingerprint: offer.map_fingerprint,
-                            destination: offer.destination,
-                            destination_mm: offer.destination_mm,
-                            manifest: offer.manifest,
-                            clock_sample,
-                            environment,
-                        },
-                    ) {
-                        self.game.worlds.cancel_transfer(id, offer.transition_id);
-                        self.metrics.dropped_messages =
-                            self.metrics.dropped_messages.saturating_add(1);
-                    }
-                }
+            WorldInput::InteractEntity(id, source_context, entity) => {
+                self.publish_portal_use(id, source_context, entity);
             }
         }
         None
+    }
+
+    fn publish_portal_use(
+        &mut self,
+        id: minimium_core::ids::PlayerId,
+        source_context: minimium_protocol::WorldContext,
+        entity: minimium_world::entity::EntityId,
+    ) {
+        if self.game.gameplay_events.len() < crate::MAX_PENDING_WORLD_INPUTS {
+            if let Some(position) = self
+                .game
+                .worlds
+                .player_position_in_context(id, source_context)
+            {
+                self.game
+                    .gameplay_events
+                    .push(crate::modules::GameplayEvent::PortalUseRequested {
+                        player: id,
+                        world: source_context.instance(),
+                        entity,
+                        position,
+                    });
+            }
+        }
+    }
+
+    pub(super) fn begin_entity_transfer(
+        &mut self,
+        id: minimium_core::ids::PlayerId,
+        source_context: minimium_protocol::WorldContext,
+        target_world: minimium_world::world::WorldInstanceId,
+        destination: [f32; 3],
+    ) {
+        let Some(offer) = self.game.worlds.prepare_entity_transfer(
+            id,
+            source_context,
+            target_world,
+            destination,
+            self.operations.player_store.return_location_for(id),
+        ) else {
+            return;
+        };
+        let Some(index) = self.connections.client_indices_by_player.get(&id).copied() else {
+            self.game.worlds.cancel_transfer(id, offer.transition_id);
+            return;
+        };
+        let (clock_sample, environment) = match self
+            .environment_state_for_instance(offer.target_context.instance(), Instant::now())
+        {
+            Ok(state) => state,
+            Err(error) => {
+                crate::diagnostics::emit(
+                    &self.server_logger,
+                    minimium_diagnostics::Level::Error,
+                    "server.transfer_environment_failed",
+                    &[
+                        ("player_id", id.to_string()),
+                        ("error_code", error.code().to_owned()),
+                        ("reason", error.to_string()),
+                    ],
+                );
+                self.game.worlds.cancel_transfer(id, offer.transition_id);
+                return;
+            }
+        };
+        if let Some(client) = self.connections.clients.get_mut(index) {
+            if !queue_message(
+                client,
+                &mut self.metrics,
+                minimium_protocol::ServerMessage::TransitionPrepare {
+                    transition_id: offer.transition_id,
+                    source_context: offer.source_context,
+                    target_context: offer.target_context,
+                    map_fingerprint: offer.map_fingerprint,
+                    destination: offer.destination,
+                    destination_mm: offer.destination_mm,
+                    manifest: offer.manifest,
+                    clock_sample,
+                    environment,
+                },
+            ) {
+                self.game.worlds.cancel_transfer(id, offer.transition_id);
+                self.metrics.dropped_messages = self.metrics.dropped_messages.saturating_add(1);
+            }
+        }
     }
 
     fn map_teleport(
@@ -239,12 +399,17 @@ impl ServerRuntime {
                     .player_store
                     .update_from_player(player, instance, world.gravity())
             {
-                eprintln!("could not record map teleport for player {id}: {error}");
+                crate::diagnostics::emit(
+                    &self.server_logger,
+                    minimium_diagnostics::Level::Error,
+                    "server.teleport_save_failed",
+                    &[("player_id", id.to_string()), ("reason", error.to_string())],
+                );
             }
         }
         self.game
             .active_inputs
-            .insert(id, minimium_simulation::CharacterInput::default());
+            .insert(id, minimium_simulation::MovementIntent::default());
         self.game.input_last_received.insert(id, Instant::now());
         self.scheduler.next_snapshot = Instant::now();
         Some(position_mm)

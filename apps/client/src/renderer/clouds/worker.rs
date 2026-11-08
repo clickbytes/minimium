@@ -1,4 +1,4 @@
-use super::{cache::MeshCache, Publication, Request};
+use super::{Publication, Request, cache::MeshCache};
 use glam::DVec3;
 use minimium_environment::weather::{SeasonalProfile, TerrainSampler, WeatherModel};
 use minimium_procgen::PlanetTerrain;
@@ -92,6 +92,24 @@ pub(super) struct CloudWorker {
 }
 
 impl CloudWorker {
+    pub(super) fn shutdown_until(&mut self, deadline: std::time::Instant) -> bool {
+        self.mailbox.0.lock().unwrap().stop = true;
+        self.mailbox.1.notify_one();
+        while self
+            .thread
+            .as_ref()
+            .is_some_and(|thread| !thread.is_finished())
+            && std::time::Instant::now() < deadline
+        {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        match self.thread.take() {
+            Some(thread) if thread.is_finished() => thread.join().is_ok(),
+            Some(_) => false,
+            None => true,
+        }
+    }
+
     pub(super) fn new() -> Self {
         let mailbox = Arc::new((Mutex::new(Mailbox::default()), Condvar::new()));
         let shared = Arc::clone(&mailbox);
@@ -265,9 +283,7 @@ impl Drop for CloudWorker {
     fn drop(&mut self) {
         self.mailbox.0.lock().unwrap().stop = true;
         self.mailbox.1.notify_one();
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
+        self.thread.take();
     }
 }
 

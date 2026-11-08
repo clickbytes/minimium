@@ -117,7 +117,7 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
         ])),
         ("movement move", _) => Err(ParseError::MoveUsage),
         ("movement jump", []) => Ok(ClientCommand::Jump),
-        ("world portal", []) => Ok(ClientCommand::UsePortal),
+        ("world portal", []) => Ok(ClientCommand::InteractPortal),
         ("world teleport", []) => Ok(ClientCommand::MapTeleport),
         ("combat fire", []) => Ok(ClientCommand::Fire),
         ("social name", [name]) => Ok(ClientCommand::SetName((*name).to_owned())),

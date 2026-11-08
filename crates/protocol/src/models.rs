@@ -1,7 +1,8 @@
 use super::world_context::WorldContext;
 use super::{limits::MAX_VISIBLE_PLAYERS, ServerErrorCode};
-use minimium_core::{identity::PlayerProfileId, ids::PlayerId};
+use minimium_core::ids::PlayerId;
 use minimium_environment::{time::ClockSample, EnvironmentDescriptor};
+use minimium_world::entity::{ComponentTypeId, EntityId, SchemaVersion};
 use minimium_world::world::{Position3Mm, TransitionId, WorldManifest};
 use std::{error::Error, fmt, sync::Arc};
 
@@ -10,24 +11,16 @@ pub enum ClientMessage {
     /// None means no presentation; Some selects compressed or fallback textures.
     Presentation(Option<bool>),
     ContentReady([u8; 32]),
-    Identify(PlayerProfileId),
+    Authenticate {
+        provider_id: String,
+        credentials: Vec<u8>,
+    },
     Ping,
-    SetName(String),
-    Motion(minimium_simulation::CharacterInput),
-    Move {
-        direction: [f32; 2],
-        jump: bool,
-    },
-    Fire {
+    SkyView {
+        context: WorldContext,
         direction: [f32; 3],
+        night: bool,
     },
-    MapTeleport {
-        direction: [f32; 3],
-    },
-    SetAltitude {
-        km: f32,
-    },
-    Chat(String),
     WorldInput {
         context: WorldContext,
         input: ClientWorldInput,
@@ -41,20 +34,63 @@ pub enum ClientMessage {
         seq: u32,
         client_send_monotonic_ms: u64,
     },
-    UsePortal,
+    ReplicationAck {
+        context: WorldContext,
+        sync_id: u64,
+        revision: u64,
+        accepted: bool,
+    },
     Quit,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClientWorldInput {
     SetName(String),
-    Motion(minimium_simulation::CharacterInput),
-    Move { direction: [f32; 2], jump: bool },
+    Motion(MovementSample),
     Fire { direction: [f32; 3] },
     MapTeleport { direction: [f32; 3] },
     SetAltitude { km: f32 },
+    SetMovementPolicy { speed: f32, accel: f32 },
+    SetFlightEnabled(bool),
     Chat(String),
-    UsePortal,
+    InteractEntity { entity: EntityId },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum EntityReplicationOperation {
+    Spawn {
+        entity: EntityId,
+    },
+    ComponentUpsert {
+        entity: EntityId,
+        kind: ComponentTypeId,
+        schema: SchemaVersion,
+        bytes: Vec<u8>,
+    },
+    ComponentRemove {
+        entity: EntityId,
+        kind: ComponentTypeId,
+    },
+    Despawn {
+        entity: EntityId,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MovementSample {
+    pub input_seq: u64,
+    pub target_tick: u64,
+    pub intent: minimium_simulation::MovementIntent,
+}
+
+impl MovementSample {
+    pub const fn new(intent: minimium_simulation::MovementIntent) -> Self {
+        Self {
+            input_seq: 0,
+            target_tick: 0,
+            intent,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -151,12 +187,36 @@ impl RemotePlayerIds {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ServerMessage {
+    Bolid {
+        context: WorldContext,
+        event: BolidEvent,
+    },
+    MovementPolicy(minimium_simulation::MovementPolicy),
+    EntitySyncBegin {
+        context: WorldContext,
+        sync_id: u64,
+        base_revision: u64,
+        target_revision: u64,
+        full: bool,
+    },
+    EntitySyncRecord {
+        context: WorldContext,
+        sync_id: u64,
+        revision: u64,
+        operation: EntityReplicationOperation,
+    },
+    EntitySyncComplete {
+        context: WorldContext,
+        sync_id: u64,
+        target_revision: u64,
+    },
     ContentOffer {
         material_hash: [u8; 32],
         http_port: u16,
         climate: minimium_environment::climate::ClimateScenario,
     },
     Welcome {
+        server_tick: u64,
         id: PlayerId,
         map_fingerprint: u64,
         health: u16,
@@ -192,8 +252,11 @@ pub enum ServerMessage {
     },
     Snapshot {
         server_time_ms: u64,
+        server_tick: u64,
+        resolved_input_seq: u64,
         context: WorldContext,
         full_snapshot: bool,
+        self_movement: minimium_simulation::MovementIntent,
         self_position: [f32; 3],
         self_position_mm: Position3Mm,
         self_velocity: [f32; 3],
@@ -214,6 +277,7 @@ pub enum ServerMessage {
     },
     TransitionCommitted {
         transition_id: TransitionId,
+        server_tick: u64,
         context: WorldContext,
         map_fingerprint: u64,
         destination: [f32; 3],
@@ -239,6 +303,38 @@ pub enum ServerMessage {
         server_send_monotonic_ms: u64,
         session_nonce: minimium_environment::time::SessionNonce,
     },
+}
+
+/// A transient, server-timed atmospheric streak in world coordinates.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BolidEvent {
+    pub id: u64,
+    pub start_monotonic_ms: u64,
+    pub seed: u64,
+    pub start_world_m: [f32; 3],
+    pub end_world_m: [f32; 3],
+    pub duration_ms: u16,
+    pub kind: u8,
+}
+
+impl BolidEvent {
+    pub fn valid(self) -> bool {
+        self.id != 0
+            && (300..=6000).contains(&self.duration_ms)
+            && self.kind <= 2
+            && self
+                .start_world_m
+                .iter()
+                .chain(self.end_world_m.iter())
+                .all(|x| x.is_finite() && x.abs() <= 10_000_000.0)
+            && self
+                .start_world_m
+                .iter()
+                .zip(self.end_world_m)
+                .map(|(a, b)| (*a - b).powi(2))
+                .sum::<f32>()
+                > 1.0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

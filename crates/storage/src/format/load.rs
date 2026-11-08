@@ -1,14 +1,21 @@
 use super::*;
 
+mod entities;
 mod header;
 
+use entities::{parse_component, parse_entity, parse_entity_counter, parse_world_initialization};
 use header::parse_snapshot_header;
+use std::collections::HashMap;
 
 pub(super) fn load(
     data_dir: &Path,
     worlds: &[(WorldInstanceId, WorldMap, WorldManifest)],
+    components_registry: &minimium_world::entity::ComponentRegistry,
 ) -> io::Result<LoadedState> {
     let path = data_dir.join("world.snapshot");
+    if worlds.len() > crate::MAX_SNAPSHOT_WORLDS {
+        return Err(invalid_world_snapshot("snapshot world count exceeds limit"));
+    }
     let bytes = match minimium_platform::files::read_bounded_file(&path, MAX_WORLD_SNAPSHOT_BYTES) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(LoadedState::empty()),
@@ -22,28 +29,28 @@ pub(super) fn load(
         .ok_or_else(|| invalid_world_snapshot("snapshot is empty"))?;
     let parsed_header = parse_snapshot_header(header, worlds)?;
     let source_version = parsed_header.source_version;
-    let legacy_world = parsed_header.legacy_world;
 
     let mut store = PlayerStore::default();
     let mut saved_world_instances = HashSet::new();
-    if source_version >= 5 {
-        let (primary_instance, _, _) = worlds
-            .first()
-            .ok_or_else(|| invalid_world_snapshot("no primary world is loaded"))?;
-        saved_world_instances.insert(*primary_instance);
-    }
+    let (primary_instance, _, _) = worlds
+        .first()
+        .ok_or_else(|| invalid_world_snapshot("no primary world is loaded"))?;
+    saved_world_instances.insert(*primary_instance);
     let mut player_records_started = false;
     let mut sector_records_started = false;
     let mut sector_limits = SectorRecordLimits::default();
     let mut saved_clock = None;
+    let mut entity_counters = Vec::new();
+    let mut world_initialization = Vec::new();
+    let mut entities: Vec<crate::PersistedEntity> = Vec::new();
+    let mut entity_indices = HashMap::new();
+    let mut component_ids = HashSet::new();
+    let mut component_bytes = 0usize;
+    let mut component_payload_reservations = Vec::new();
+    let mut entity_records_started = false;
     let mut lines = lines.peekable();
     while let Some(line) = lines.next() {
         if line == "CLOCK" || line.starts_with("CLOCK\t") {
-            if source_version < 8 {
-                return Err(invalid_world_snapshot(
-                    "CLOCK record is not allowed in a legacy snapshot",
-                ));
-            }
             if saved_clock.is_some() {
                 return Err(invalid_world_snapshot("duplicate CLOCK record"));
             }
@@ -52,10 +59,10 @@ pub(super) fn load(
                     "CLOCK record appears after state records",
                 ));
             }
-            saved_clock = Some(parse_saved_clock(line, source_version)?);
+            saved_clock = Some(parse_saved_clock(line)?);
             continue;
         }
-        if source_version >= 5 && line.starts_with("WORLD\t") {
+        if line.starts_with("WORLD\t") {
             if player_records_started || sector_records_started || saved_clock.is_some() {
                 return Err(invalid_world_snapshot(
                     "world manifest appears after clock or state records",
@@ -64,13 +71,13 @@ pub(super) fn load(
             parse_world_record(line, worlds, &mut saved_world_instances)?;
             continue;
         }
-        if source_version >= 6 && line.starts_with("SECTOR\t") {
-            if player_records_started {
+        if line.starts_with("SECTOR\t") {
+            if player_records_started || entity_records_started {
                 return Err(invalid_world_snapshot(
                     "sector state appears after player records",
                 ));
             }
-            if source_version >= 8 && saved_clock.is_none() {
+            if saved_clock.is_none() {
                 return Err(invalid_world_snapshot("missing CLOCK record in snapshot"));
             }
             sector_records_started = true;
@@ -84,26 +91,161 @@ pub(super) fn load(
             )?;
             continue;
         }
-        if source_version >= 8 && saved_clock.is_none() {
+        if line.starts_with("ENTITY_COUNTER\t") {
+            if saved_clock.is_none() {
+                return Err(invalid_world_snapshot(
+                    "entity counter appears before CLOCK",
+                ));
+            }
+            if player_records_started || entity_records_started {
+                return Err(invalid_world_snapshot(
+                    "entity counter appears after entity or player records",
+                ));
+            }
+            let (world, next_id) = parse_entity_counter(line, &saved_world_instances)?;
+            if entity_counters
+                .iter()
+                .any(|(instance, _)| *instance == world)
+            {
+                return Err(invalid_world_snapshot("duplicate entity counter"));
+            }
+            entity_counters.push((world, next_id));
+            continue;
+        }
+        if line.starts_with("WORLD_INIT\t") {
+            if saved_clock.is_none() {
+                return Err(invalid_world_snapshot(
+                    "world initialization marker appears before CLOCK",
+                ));
+            }
+            if player_records_started || entity_records_started {
+                return Err(invalid_world_snapshot(
+                    "world initialization marker appears after entity or player records",
+                ));
+            }
+            let (world, initialized) = parse_world_initialization(line, &saved_world_instances)?;
+            if world_initialization
+                .iter()
+                .any(|(instance, _)| *instance == world)
+            {
+                return Err(invalid_world_snapshot(
+                    "duplicate world initialization marker",
+                ));
+            }
+            world_initialization.push((world, initialized));
+            continue;
+        }
+        if line.starts_with("ENTITY\t") {
+            if saved_clock.is_none() || player_records_started {
+                return Err(invalid_world_snapshot(
+                    "entity record appears outside entity section",
+                ));
+            }
+            entity_records_started = true;
+            let (world, entity) = parse_entity(line, &saved_world_instances)?;
+            if entity_indices.contains_key(&(world, entity))
+                || entities.len() >= minimium_world::entity::MAX_PERSISTENT_ENTITIES
+            {
+                return Err(invalid_world_snapshot(
+                    "duplicate entity or entity limit exceeded",
+                ));
+            }
+            let record_bytes = entity_record_bytes(world, entity)?;
+            store.snapshot_budget.reserve(
+                crate::budget::SnapshotRecordKey::Entity(world, entity),
+                record_bytes,
+            )?;
+            entity_indices.insert((world, entity), entities.len());
+            entities.push(crate::PersistedEntity {
+                world,
+                id: entity,
+                components: Vec::new(),
+            });
+            continue;
+        }
+        if line.starts_with("COMPONENT\t") {
+            if saved_clock.is_none() || player_records_started || !entity_records_started {
+                return Err(invalid_world_snapshot(
+                    "component record appears outside entity section",
+                ));
+            }
+            let (world, entity, component) = parse_component(line)?;
+            components_registry
+                .upgrade(component.kind, component.schema, &component.bytes)
+                .map_err(|error| {
+                    invalid_world_snapshot(&format!("component schema is incompatible: {error:?}"))
+                })?;
+            let index = entity_indices
+                .get(&(world, entity))
+                .copied()
+                .ok_or_else(|| {
+                    invalid_world_snapshot("component references an unrecorded entity")
+                })?;
+            let owner = &mut entities[index];
+            if !component_ids.insert((world, entity, component.kind))
+                || owner.components.len() >= minimium_world::entity::MAX_COMPONENTS_PER_ENTITY
+            {
+                return Err(invalid_world_snapshot(
+                    "duplicate component or component limit exceeded",
+                ));
+            }
+            component_bytes = component_bytes.saturating_add(component.bytes.len());
+            if component_bytes > minimium_world::entity::MAX_COMPONENT_PAYLOAD_BYTES {
+                return Err(invalid_world_snapshot("component payload budget exceeded"));
+            }
+            let blob = minimium_world::entity::ComponentBlob {
+                schema: component.schema,
+                bytes: component.bytes.clone(),
+            };
+            let record_bytes = component_record_bytes(world, entity, component.kind, &blob)?;
+            store.snapshot_budget.reserve(
+                crate::budget::SnapshotRecordKey::Component(world, entity, component.kind),
+                record_bytes,
+            )?;
+            component_payload_reservations.push((
+                crate::budget::SnapshotRecordKey::Component(world, entity, component.kind),
+                component.bytes.len(),
+            ));
+            owner.components.push(component);
+            continue;
+        }
+        if !line.starts_with("PLAYER\t") {
+            return Err(invalid_world_snapshot("unknown snapshot record"));
+        }
+        if saved_clock.is_none() {
             return Err(invalid_world_snapshot("missing CLOCK record in snapshot"));
         }
         player_records_started = true;
-        parse_player_record(
-            line,
-            source_version,
-            legacy_world,
-            worlds,
-            &saved_world_instances,
-            &mut store,
-        )?;
+        parse_player_record(line, worlds, &saved_world_instances, &mut store)?;
     }
-    if source_version >= 8 && saved_clock.is_none() {
+    if saved_clock.is_none() {
         return Err(invalid_world_snapshot("missing CLOCK record in snapshot"));
+    }
+    if entity_counters.len() != saved_world_instances.len()
+        || world_initialization.len() != saved_world_instances.len()
+    {
+        return Err(invalid_world_snapshot("missing per-world entity metadata"));
+    }
+    store
+        .snapshot_budget
+        .reserve_component_payloads(component_payload_reservations)?;
+    for (world, entity) in entity_indices.keys() {
+        let counter = entity_counters
+            .iter()
+            .find(|(instance, _)| instance == world)
+            .map(|(_, next)| *next)
+            .unwrap_or(0);
+        if entity.get() > counter {
+            return Err(invalid_world_snapshot("entity ID exceeds saved counter"));
+        }
     }
     Ok(LoadedState::from_snapshot(
         store,
         saved_clock,
         source_version,
+        entity_counters,
+        world_initialization,
+        entities,
     ))
 }
 
@@ -188,8 +330,6 @@ fn parse_sector_record(
 
 fn parse_player_record(
     line: &str,
-    source_version: u8,
-    legacy_world: WorldInstanceId,
     worlds: &[(WorldInstanceId, WorldMap, WorldManifest)],
     saved_world_instances: &HashSet<WorldInstanceId>,
     store: &mut PlayerStore,
@@ -198,6 +338,9 @@ fn parse_player_record(
         return Err(invalid_world_snapshot("snapshot has too many players"));
     }
     let mut fields = line.split('\t');
+    if fields.next() != Some("PLAYER") {
+        return Err(invalid_world_snapshot("invalid player record"));
+    }
     let id = PlayerId::new(parse_saved_id(fields.next())?);
     let profile_id = PlayerProfileId::from_hex(
         fields
@@ -210,15 +353,16 @@ fn parse_player_record(
         .ok_or_else(|| invalid_world_snapshot("missing player name"))?;
     let name =
         StoredName::new(name).ok_or_else(|| invalid_world_snapshot("invalid saved player name"))?;
-    let (location, return_location, health) =
-        parse_player_locations(&mut fields, source_version, legacy_world)?;
-    validate_player_world_references(
-        source_version,
-        location,
-        return_location,
-        worlds,
-        saved_world_instances,
-    )?;
+    let location = parse_location(&mut fields)?;
+    let health = parse_saved_health(fields.next())?;
+    let return_location = parse_location(&mut fields)?;
+    if !saved_world_instances.contains(&location.instance())
+        || !saved_world_instances.contains(&return_location.instance())
+    {
+        return Err(invalid_world_snapshot(
+            "player location references an unrecorded world instance",
+        ));
+    }
     if fields.next().is_some() {
         return Err(invalid_world_snapshot("player record has extra fields"));
     }
@@ -240,6 +384,8 @@ fn parse_player_record(
         ));
     }
 
+    store.reserve_profile_record(profile_id)?;
+
     let shard = usize::from(profile_id.as_bytes()[0]);
     let duplicate_profile = Arc::make_mut(&mut store.players[shard])
         .insert(
@@ -257,76 +403,6 @@ fn parse_player_record(
     let duplicate_player = store.profile_by_player.insert(id, profile_id).is_some();
     if duplicate_profile || duplicate_player {
         return Err(invalid_world_snapshot("duplicate saved player identity"));
-    }
-    Ok(())
-}
-
-fn parse_player_locations(
-    fields: &mut std::str::Split<'_, char>,
-    source_version: u8,
-    legacy_world: WorldInstanceId,
-) -> io::Result<(WorldLocation, WorldLocation, u16)> {
-    if source_version >= 4 {
-        parse_current_player_locations(fields)
-    } else {
-        parse_legacy_player_location(fields, source_version, legacy_world)
-    }
-}
-
-fn parse_current_player_locations(
-    fields: &mut std::str::Split<'_, char>,
-) -> io::Result<(WorldLocation, WorldLocation, u16)> {
-    let location = parse_location(fields)?;
-    let health = parse_saved_health(fields.next())?;
-    let return_location = parse_location(fields)?;
-    Ok((location, return_location, health))
-}
-
-fn parse_legacy_player_location(
-    fields: &mut std::str::Split<'_, char>,
-    source_version: u8,
-    legacy_world: WorldInstanceId,
-) -> io::Result<(WorldLocation, WorldLocation, u16)> {
-    let position = [
-        parse_saved_coordinate(fields.next())?,
-        parse_saved_coordinate(fields.next())?,
-        parse_saved_coordinate(fields.next())?,
-    ];
-    let health = if source_version == 3 {
-        parse_saved_health(fields.next())?
-    } else {
-        PLAYER_MAX_HEALTH
-    };
-    let location = legacy_location(legacy_world, position);
-    Ok((location, location, health))
-}
-
-fn validate_player_world_references(
-    source_version: u8,
-    location: WorldLocation,
-    return_location: WorldLocation,
-    worlds: &[(WorldInstanceId, WorldMap, WorldManifest)],
-    saved_world_instances: &HashSet<WorldInstanceId>,
-) -> io::Result<()> {
-    if source_version == 4 {
-        let primary_instance = worlds
-            .first()
-            .map(|(instance, _, _)| *instance)
-            .ok_or_else(|| invalid_world_snapshot("no primary world is loaded"))?;
-        if location.instance() != primary_instance || return_location.instance() != primary_instance
-        {
-            return Err(invalid_world_snapshot(
-                "snapshot version 4 does not pin target world manifests",
-            ));
-        }
-    }
-    if source_version >= 5
-        && (!saved_world_instances.contains(&location.instance())
-            || !saved_world_instances.contains(&return_location.instance()))
-    {
-        return Err(invalid_world_snapshot(
-            "player location references an unrecorded world instance",
-        ));
     }
     Ok(())
 }
@@ -366,17 +442,6 @@ fn parse_saved_id(value: Option<&str>) -> io::Result<u64> {
         .ok()
         .filter(|id| *id > 0)
         .ok_or_else(|| invalid_world_snapshot("invalid player id"))
-}
-
-fn parse_saved_coordinate(value: Option<&str>) -> io::Result<f32> {
-    let coordinate = value
-        .ok_or_else(|| invalid_world_snapshot("missing player coordinate"))?
-        .parse::<f32>()
-        .map_err(|_| invalid_world_snapshot("invalid player coordinate"))?;
-    if !coordinate.is_finite() || coordinate.abs() > MAX_SAVED_COORDINATE {
-        return Err(invalid_world_snapshot("player coordinate is out of range"));
-    }
-    Ok(coordinate)
 }
 
 fn parse_saved_health(value: Option<&str>) -> io::Result<u16> {

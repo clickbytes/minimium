@@ -4,7 +4,7 @@ use minimium_environment::time::{
 };
 use std::{io, io::Write};
 
-pub(super) fn parse_saved_clock(line: &str, source_version: u8) -> io::Result<SavedClockState> {
+pub(super) fn parse_saved_clock(line: &str) -> io::Result<SavedClockState> {
     let mut fields = line.split('\t');
     if fields.next() != Some("CLOCK") {
         return Err(invalid_world_snapshot("invalid CLOCK record"));
@@ -45,9 +45,6 @@ pub(super) fn parse_saved_clock(line: &str, source_version: u8) -> io::Result<Sa
         "invalid clock rate",
     )?)
     .map_err(|_| invalid_world_snapshot("clock rate is out of range"))?;
-    if source_version == 8 && rate.get() > 1_440_000_000 {
-        return Err(invalid_world_snapshot("v8 clock rate is out of range"));
-    }
     let offline_policy = OfflinePolicy::try_from(parse_decimal::<u8>(
         fields.next(),
         "missing offline policy",

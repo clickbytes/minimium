@@ -12,6 +12,22 @@ mod prepared_upload;
 
 type CatalogKey = (WorldInstanceId, SectorKey, u8);
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GeometryPublicationStamp {
+    pub instance: WorldInstanceId,
+    pub generation: GenerationRevision,
+    pub content_revision: WorldContentRevision,
+    pub world_fingerprint: u64,
+    pub geometry_revision: u64,
+    pub origin_generation: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct GeometryPublication {
+    pub stamp: GeometryPublicationStamp,
+    pub keys: Vec<(SectorKey, u8)>,
+}
+
 /// Owns per-world sector vertex buffers and geometry bounds used by shadow selection.
 #[derive(Default)]
 pub struct WorldGeometryGpu {
@@ -19,10 +35,14 @@ pub struct WorldGeometryGpu {
     budget: UploadBudget,
     terrain: HashMap<CatalogKey, TerrainBuffers>,
     catalog: HashMap<CatalogKey, (wgpu::Buffer, u32)>,
+    catalog_origin_generation: HashMap<CatalogKey, u64>,
     versions: HashMap<WorldInstanceId, (GenerationRevision, WorldContentRevision)>,
     bounds: HashMap<CatalogKey, ShadowBounds>,
     sources: HashMap<CatalogKey, Arc<SectorGeometry>>,
     pending: HashMap<CatalogKey, prepared_upload::PendingGeometry>,
+    publication: Option<GeometryPublication>,
+    next_geometry_revision: u64,
+    origin_generation: u64,
 }
 
 struct UploadBudget {
@@ -60,6 +80,68 @@ pub struct GeometryCacheResult {
 }
 
 impl WorldGeometryGpu {
+    pub fn publication(&self) -> Option<&GeometryPublication> {
+        self.publication.as_ref()
+    }
+
+    pub fn origin_generation(&self) -> u64 {
+        self.origin_generation
+    }
+
+    pub fn invalidate_publication(&mut self) {
+        self.publication = None;
+    }
+
+    pub fn publish_scene(
+        &mut self,
+        instance: WorldInstanceId,
+        fingerprint: u64,
+        keys: &[(SectorKey, u8)],
+    ) -> bool {
+        let Some((generation, content_revision)) = self.versions.get(&instance).copied() else {
+            return false;
+        };
+        let complete = !keys.is_empty()
+            && keys.iter().all(|(key, lod)| {
+                let catalog_key = (instance, *key, *lod);
+                self.catalog.contains_key(&catalog_key)
+                    && self.catalog_origin_generation.get(&catalog_key)
+                        == Some(&self.origin_generation)
+                    && !self.pending.contains_key(&catalog_key)
+            });
+        if !complete {
+            self.publication = None;
+            return false;
+        }
+        if self.publication.as_ref().is_some_and(|publication| {
+            publication.stamp.instance == instance
+                && publication.stamp.generation == generation
+                && publication.stamp.content_revision == content_revision
+                && publication.stamp.world_fingerprint == fingerprint
+                && publication.stamp.origin_generation == self.origin_generation
+                && publication.keys == keys
+        }) {
+            return true;
+        }
+        let Some(revision) = self.next_geometry_revision.checked_add(1) else {
+            self.publication = None;
+            return false;
+        };
+        self.next_geometry_revision = revision;
+        self.publication = Some(GeometryPublication {
+            stamp: GeometryPublicationStamp {
+                instance,
+                generation,
+                content_revision,
+                world_fingerprint: fingerprint,
+                geometry_revision: revision,
+                origin_generation: self.origin_generation,
+            },
+            keys: keys.to_vec(),
+        });
+        true
+    }
+
     pub fn begin_frame(&mut self) {
         self.budget = UploadBudget::default();
     }
@@ -69,8 +151,14 @@ impl WorldGeometryGpu {
             ..Self::default()
         }
     }
-    pub fn rebase(&self, device: &wgpu::Device, queue: &wgpu::Queue, delta: [f32; 3]) -> bool {
+    pub fn rebase(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, delta: [f32; 3]) -> bool {
+        let Some(origin_generation) = self.origin_generation.checked_add(1) else {
+            self.publication = None;
+            return false;
+        };
         let Some(rebase) = &self.rebase else {
+            self.origin_generation = origin_generation;
+            self.publication = None;
             return false;
         };
         let flat = self.catalog.values().map(|(b, _)| (b, 9));
@@ -92,6 +180,22 @@ impl WorldGeometryGpu {
                 .chain(pending_flat)
                 .chain(pending_terrain),
         );
+        self.origin_generation = origin_generation;
+        self.catalog_origin_generation
+            .values_mut()
+            .for_each(|generation| *generation = origin_generation);
+        for pending in self.pending.values_mut() {
+            pending.origin_generation = origin_generation;
+        }
+        if let Some(mut publication) = self.publication.take() {
+            let Some(revision) = self.next_geometry_revision.checked_add(1) else {
+                return false;
+            };
+            self.next_geometry_revision = revision;
+            publication.stamp.geometry_revision = revision;
+            publication.stamp.origin_generation = origin_generation;
+            self.publication = Some(publication);
+        }
         true
     }
     fn usage(&self) -> wgpu::BufferUsages {
@@ -127,7 +231,10 @@ impl WorldGeometryGpu {
             })
             .fold(f64::INFINITY, f64::min);
         if distance.is_finite() {
-            (distance * 0.01).clamp(0.05, 10.0) as f32
+            // Keep precision proportional to actual clearance in orbital
+            // flight. A fixed 10 m ceiling quantizes distant land and ocean
+            // into the same depth values and produces striped intersections.
+            (distance * 0.01).max(0.05) as f32
         } else {
             0.05
         }
@@ -162,12 +269,20 @@ impl WorldGeometryGpu {
         sectors: &[(SectorKey, u8, Arc<SectorGeometry>)],
         render_origin: [f32; 3],
         terrain: Option<&minimium_procgen::PlanetTerrain>,
+        origin_generation: u64,
     ) -> GeometryCacheResult {
         let mut edges = crate::terrain_edges::EdgeConformance::default();
         let conformed = terrain.map(|t| edges.prepare(sectors.to_vec(), t));
         let sectors = conformed.as_deref().unwrap_or(sectors);
         let mut released_bytes = 0_u64;
         let version = (generation, content_revision);
+        if self
+            .publication
+            .as_ref()
+            .is_some_and(|publication| publication.stamp.instance == instance)
+        {
+            self.publication = None;
+        }
         if self
             .versions
             .get(&instance)
@@ -230,6 +345,8 @@ impl WorldGeometryGpu {
             allocated_bytes = allocated_bytes.saturating_add(buffer.size());
             self.catalog
                 .insert(catalog_key, (buffer, vertices.len() as u32));
+            self.catalog_origin_generation
+                .insert(catalog_key, origin_generation);
             if let Some(bounds) = crate::shadow_geometry::geometry_bounds(geometry) {
                 self.bounds.insert(catalog_key, bounds);
             }
@@ -242,6 +359,8 @@ impl WorldGeometryGpu {
                 false
             }
         });
+        self.catalog_origin_generation
+            .retain(|key, _| self.catalog.contains_key(key));
         self.bounds
             .retain(|(owner, key, lod), _| *owner != instance || required.contains(&(*key, *lod)));
         self.terrain.retain(|(owner, key, lod), buffers| {
@@ -262,6 +381,13 @@ impl WorldGeometryGpu {
     }
 
     pub fn release_world(&mut self, instance: WorldInstanceId) -> u64 {
+        if self
+            .publication
+            .as_ref()
+            .is_some_and(|publication| publication.stamp.instance == instance)
+        {
+            self.publication = None;
+        }
         let mut released_bytes = 0_u64;
         self.catalog.retain(|(owner, _, _), (buffer, _)| {
             if *owner != instance {
@@ -280,6 +406,8 @@ impl WorldGeometryGpu {
             }
         });
         self.versions.remove(&instance);
+        self.catalog_origin_generation
+            .retain(|(owner, _, _), _| *owner != instance);
         self.sources.retain(|(owner, _, _), _| *owner != instance);
         self.bounds.retain(|(owner, _, _), _| *owner != instance);
         self.terrain.retain(|(owner, _, _), buffers| {
@@ -294,6 +422,7 @@ impl WorldGeometryGpu {
     }
 
     pub fn clear(&mut self) -> u64 {
+        self.publication = None;
         let released_bytes = self
             .catalog
             .values()
@@ -309,6 +438,7 @@ impl WorldGeometryGpu {
         self.sources.clear();
         self.terrain.clear();
         self.catalog.clear();
+        self.catalog_origin_generation.clear();
         self.versions.clear();
         self.bounds.clear();
         released_bytes

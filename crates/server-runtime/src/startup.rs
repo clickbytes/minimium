@@ -12,12 +12,9 @@ use minimium_platform::{
     endpoint::{new_admin_token, ServerEndpoint},
     server_lock::ServerDataLock,
 };
-use minimium_world::world::{
-    WorldContentRevision, WorldDefinitionId, WorldInstanceId, WorldManifest, WorldMap,
-    WorldTopology,
-};
+use minimium_world::world::{WorldInstanceId, WorldMap};
 use std::{
-    env, io,
+    io,
     net::{TcpListener, ToSocketAddrs},
     path::{Path, PathBuf},
     sync::Arc,
@@ -27,6 +24,9 @@ pub(crate) struct Startup {
     pub(crate) map: WorldMap,
     pub(crate) worlds: Option<Vec<WorldDefinition>>,
     pub(crate) player_store: PlayerStore,
+    pub(crate) entity_counters: Vec<(WorldInstanceId, u64)>,
+    pub(crate) world_initialization: Vec<(WorldInstanceId, bool)>,
+    pub(crate) entities: Vec<minimium_storage::PersistedEntity>,
     pub(crate) persistence: PersistenceWorker,
     pub(crate) next_player: u64,
     pub(crate) game_listener: TcpListener,
@@ -43,6 +43,9 @@ pub(crate) struct Startup {
 pub(crate) fn initialize(
     config: &ServerConfig,
     world_composer: WorldComposer,
+    component_registry: &minimium_world::entity::ComponentRegistry,
+    storage_logger: minimium_diagnostics::DomainLogger,
+    server_logger: minimium_diagnostics::DomainLogger,
 ) -> Result<Startup, Box<dyn std::error::Error>> {
     let data_dir = &config.data_dir;
     let requested_seed = config.seed;
@@ -94,7 +97,6 @@ pub(crate) fn initialize(
     let seed = composition.seed;
     let map = composition.primary_map;
     let generated_worlds = composition.worlds;
-    let migration_worlds = composition.migration_worlds;
     let planet_definition = composition.planet_definition;
     let prepared_geography = composition.prepared_geography;
 
@@ -109,19 +111,18 @@ pub(crate) fn initialize(
                 .map(|world| (world.instance, world.map.clone(), world.manifest))
                 .collect::<Vec<_>>()
         })
-        .unwrap_or_else(|| vec![(primary, map.clone(), legacy_manifest(1, map.fingerprint()))]);
-    if let Some(migration_worlds) = &migration_worlds {
-        migrate_legacy_demo(
-            data_dir,
-            generated_worlds.as_ref().expect("generated worlds exist"),
-            migration_worlds,
-        )?;
-    }
-    let loaded_state = PlayerStore::load(data_dir, &world_maps)?;
-    if let Some(version) = loaded_state.source_version.filter(|version| *version < 8) {
-        println!("legacy world snapshot v{version}: initializing world clock as real_time");
-    }
+        .unwrap_or_else(|| {
+            vec![(
+                primary,
+                map.clone(),
+                authored_manifest(1, map.fingerprint()),
+            )]
+        });
+    let loaded_state = PlayerStore::load(data_dir, &world_maps, component_registry)?;
     let saved_clock = loaded_state.saved_clock;
+    let entity_counters = loaded_state.entity_counters;
+    let world_initialization = loaded_state.world_initialization;
+    let entities = loaded_state.entities;
     let mut player_store = loaded_state.player_store;
     if let Some(definition) = planet_definition {
         let resolved_path = data_dir.join("world.planet.ron");
@@ -141,7 +142,7 @@ pub(crate) fn initialize(
         )?;
     }
     player_store.reserve_active(max_players);
-    let persistence = PersistenceWorker::spawn(data_dir.to_path_buf())?;
+    let persistence = PersistenceWorker::spawn(data_dir.to_path_buf(), storage_logger.clone())?;
     let next_player = player_store.next_player_id()?;
     let game_listener = TcpListener::bind(bind_addresses.as_slice())?;
     let game_address = game_listener.local_addr()?;
@@ -151,21 +152,27 @@ pub(crate) fn initialize(
     let endpoint = ServerEndpoint {
         game_port: game_address.port(),
         admin_port: admin_listener.local_addr()?.port(),
-        token: match env::var("MINIMIUM_ADMIN_TOKEN") {
-            Ok(token)
+        token: match config.admin_token.as_deref() {
+            Some(token)
                 if token.len() == 64 && token.bytes().all(|byte| byte.is_ascii_hexdigit()) =>
             {
-                token
+                token.to_owned()
             }
-            Ok(_) => return Err("invalid inherited admin token".into()),
-            Err(env::VarError::NotPresent) => new_admin_token()?,
-            Err(_) => return Err("invalid inherited admin token".into()),
+            Some(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "invalid inherited admin token",
+                )
+                .into())
+            }
+            None => new_admin_token()?,
         },
     };
     ServerEndpoint::write(data_dir, &endpoint)?;
     let endpoint_guard = EndpointGuard {
         data_dir: PathBuf::from(data_dir),
         endpoint: endpoint.clone(),
+        logger: server_logger,
     };
     let admin = AdminServer::new(admin_listener, endpoint.token.clone())?;
 
@@ -173,6 +180,9 @@ pub(crate) fn initialize(
         map,
         worlds: generated_worlds,
         player_store,
+        entity_counters,
+        world_initialization,
+        entities,
         persistence,
         next_player,
         game_listener,
@@ -187,62 +197,22 @@ pub(crate) fn initialize(
     })
 }
 
-fn migrate_legacy_demo(
-    data_dir: &Path,
-    generated_worlds: &[WorldDefinition],
-    migration_worlds: &[WorldDefinition],
-) -> io::Result<()> {
-    let old_maps: Vec<_> = migration_worlds
-        .iter()
-        .map(|world| (world.instance, world.map.clone(), world.manifest))
-        .collect();
-    let mut players = PlayerStore::load(data_dir, &old_maps)?.player_store;
-    players.migrate_legacy_planet_positions();
-    let mut registry =
-        crate::world_registry::WorldRegistry::try_from_world_definitions(generated_worlds.to_vec())
-            .map_err(|error| {
-                io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    format!("generated world registry is invalid: {error:?}"),
-                )
-            })?;
-    registry
-        .restore_sector_states(players.sector_states())
-        .map_err(|error| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("legacy sector state: {error:?}"),
-            )
-        })?;
-    let saved_clock = environment::initial_saved_clock_state().map_err(|error| {
-        io::Error::new(
-            io::ErrorKind::InvalidData,
-            format!("environment clock: {error}"),
-        )
-    })?;
-    let input = registry.snapshot_for_save(registry.primary().map.fingerprint())?;
-    let snapshot = players.save_snapshot(input, saved_clock)?;
-    let source = data_dir.join("world.snapshot");
-    let backup = data_dir.join("world.snapshot.legacy-v1");
-    if !backup.exists() {
-        std::fs::copy(&source, &backup)?;
-    }
-    snapshot.write(data_dir)
-}
-
-fn legacy_manifest(id: u128, fingerprint: u64) -> WorldManifest {
-    use minimium_world::world::{GenerationRevision, GenerationSpec, GeneratorDigest, WorldSeed};
+fn authored_manifest(id: u128, fingerprint: u64) -> minimium_world::world::WorldManifest {
+    use minimium_world::world::{
+        GenerationRevision, GenerationSpec, GeneratorDigest, WorldContentRevision,
+        WorldDefinitionId, WorldManifest, WorldSeed, WorldTopology,
+    };
     let generation = GenerationSpec::new(
         WorldSeed::new(0),
-        GenerationRevision::new(1).expect("legacy generator revision is nonzero"),
+        GenerationRevision::new(5).expect("current generator revision is nonzero"),
         1,
     )
-    .expect("legacy position quantum is nonzero");
+    .expect("authored position quantum is nonzero");
     WorldManifest::new(
-        WorldDefinitionId::new(id).expect("legacy definition ID is nonzero"),
+        WorldDefinitionId::new(id).expect("authored definition ID is nonzero"),
         WorldTopology::Dungeon,
         generation,
-        WorldContentRevision::new(1).expect("legacy content revision is nonzero"),
-        GeneratorDigest::legacy_map_fingerprint(fingerprint),
+        WorldContentRevision::new(1).expect("authored content revision is nonzero"),
+        GeneratorDigest::authored_map_fingerprint(fingerprint),
     )
 }

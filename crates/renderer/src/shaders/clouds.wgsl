@@ -17,6 +17,7 @@ struct CloudRecord {
 @group(1) @binding(0) var<uniform> cloud_frame: CloudUniform;
 @group(1) @binding(1) var<storage, read> clusters: array<CloudRecord>;
 @group(1) @binding(2) var scene_depth: texture_depth_2d;
+@group(2) @binding(0) var bolid_distance: texture_2d<f32>;
 
 struct CloudVertex {
     @builtin(position) position: vec4<f32>,
@@ -84,6 +85,30 @@ fn edge_fade(direction: vec3<f32>) -> f32 {
     return 1.0 - smoothstep(cloud_frame.eye.w, cloud_frame.observer.w, angle);
 }
 
+// Reduced scattering on the existing voxel boundary, not a volume ray march.
+// Both angular lobes integrate to one: opacity still supplies the intercepted
+// fraction during composition, so do not multiply it into radiance again.
+fn cloud_bolid_radiance(input: CloudVertex, normal: vec3<f32>) -> vec3<f32> {
+    if environment.bolid_position_intensity.w <= 0.0 { return vec3<f32>(0.0); }
+    let scene_local = input.local + cloud_frame.origin_radius.xyz
+        - environment.render_origin.xyz;
+    let delta = environment.bolid_position_intensity.xyz
+        - (input.local + cloud_frame.origin_radius.xyz);
+    let light = delta / max(length(delta), 0.000001);
+    let view_delta = cloud_frame.eye.xyz - input.local;
+    let view = view_delta / max(length(view_delta), 0.000001);
+    // light points toward the emitter; incoming photons travel along -light.
+    let cosine = clamp(dot(-light, view), -1.0, 1.0);
+    let g = 0.65;
+    let hg = (1.0-g*g) / (12.5663706144 * pow(1.0+g*g-2.0*g*cosine, 1.5));
+    let tau = max(input.parameters.y, 0.0);
+    let phase = mix(hg, 0.0795774715, 1.0-exp(-tau));
+    // Approximate entry-to-face extinction using the existing optical depth.
+    // The unlit boundary transmits less as a cloud thickens; no constant fill.
+    let entry_depth = tau * (0.5-0.5*clamp(dot(normal,light),-1.0,1.0));
+    return bolid_incident(scene_local) * (0.85 * phase * exp(-entry_depth));
+}
+
 fn cloud_color(input: CloudVertex) -> vec4<f32> {
     if hidden(input.local) { discard; }
     let up = normalize(input.local + cloud_frame.origin_radius.xyz);
@@ -104,7 +129,8 @@ fn cloud_color(input: CloudVertex) -> vec4<f32> {
         lunar=physical_moon(input.local)*(0.3+0.7*max(dot(n,surface_moon_direction()),0.0));
         ambient=physical_ambient(input.local);
     }
-    var color = ambient * (0.55 + 0.45 * max(dot(n, up), 0.0)) + direct + lunar;
+    var color = ambient * (0.55 + 0.45 * max(dot(n, up), 0.0)) + direct + lunar
+        + cloud_bolid_radiance(input, n);
     if cloud_frame.config.x == 2u {
         let colors = array<vec3<f32>,3>(vec3(0.3,0.8,1.0), vec3(1.0,0.65,0.2), vec3(0.8,0.4,1.0));
         color = colors[u32(input.parameters.z)];
@@ -139,6 +165,22 @@ struct WeightedOutput {
     return WeightedOutput(vec4(c.rgb * c.a, c.a) * weight, c.a);
 }
 @fragment fn fs_alpha(input: CloudVertex) -> @location(0) vec4<f32> { return cloud_color(input); }
+
+// Reuse face opacity, but only faces before the emissive layer attenuate it.
+struct BolidCloudOutput {
+    @location(0) opacity: vec4<f32>,
+    @location(1) foreground: vec4<f32>,
+};
+@fragment fn fs_bolid_mask(input: CloudVertex) -> BolidCloudOutput {
+    let stored=textureLoad(bolid_distance,vec2<i32>(input.position.xy),0).rg;
+    if stored.y<=0.000001 {discard;}
+    let distance=length(input.local-cloud_frame.eye.xyz)/1000000.0;
+    if distance>=stored.x/stored.y {discard;}
+    let c=cloud_color(input);
+    let relative_distance=length(input.local-cloud_frame.eye.xyz)/max(cloud_frame.origin_radius.w*0.06,1.0);
+    let weight=clamp((0.2+c.a*3.0)/(0.2+relative_distance*relative_distance),0.05,12.0);
+    return BolidCloudOutput(vec4(c.a),vec4(c.rgb*c.a,c.a)*weight);
+}
 
 struct DebugVertex {
     @builtin(position) position: vec4<f32>,

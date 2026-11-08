@@ -38,14 +38,6 @@ impl TerrainView {
         view
     }
 
-    pub fn legacy(position: [f32; 3]) -> Self {
-        Self {
-            position,
-            projected_scale: 8.0 / 0.012,
-            overview_planes: None,
-        }
-    }
-
     pub fn cell_error_limit(self) -> f64 {
         8.0 / f64::from(self.projected_scale.max(1.0))
     }

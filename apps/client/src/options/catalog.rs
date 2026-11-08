@@ -20,6 +20,22 @@ const fn option(
 
 pub(super) const OPTIONS: &[CliOptionSpec] = &[
     option(
+        "--dev",
+        None,
+        None,
+        "Grant developer actions on an owned local server.",
+        false,
+        false,
+    ),
+    option(
+        "--dev-stdin",
+        None,
+        None,
+        "Read desktop developer commands from standard input (requires --dev).",
+        false,
+        false,
+    ),
+    option(
         "--connect",
         None,
         Some("HOST:PORT"),
@@ -48,6 +64,22 @@ pub(super) const OPTIONS: &[CliOptionSpec] = &[
         None,
         Some("PATH"),
         "Select the durable local player profile directory.",
+        false,
+        false,
+    ),
+    option(
+        "--log-dir",
+        None,
+        Some("PATH"),
+        "Select the process log directory (default: ./logs).",
+        false,
+        false,
+    ),
+    option(
+        "--cache-limit-bytes",
+        None,
+        Some("BYTES"),
+        "Set the downloaded content cache limit (default: 8589934592).",
         false,
         false,
     ),

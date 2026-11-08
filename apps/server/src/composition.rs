@@ -1,30 +1,89 @@
 use minimium_game_sample::{
-    generate_legacy_demo_worlds, generate_worlds,
-    generate_worlds_with_planet_revision_and_geography, load_planet_preset, GeneratedWorld,
-    PlanetMode, ResolvedPlanetConfig, DEFAULT_COMBAT_CONFIG, DEFAULT_SEED, SAMPLE_MAP,
+    generate_worlds, generate_worlds_with_planet_and_geography, load_planet_preset, GeneratedWorld,
+    PlanetMode, ResolvedPlanetConfig, DEFAULT_COMBAT_CONFIG,
 };
 use minimium_procgen::PreparedGeography;
 use minimium_server_runtime::composition::{
-    ServerCombatConfig, ServerComposition, WorldComposition, WorldCompositionRequest,
-    WorldDefinition, WorldPortal,
+    InitialComponent, InitialEntity, ServerCombatConfig, ServerComposition, ShutdownRequest,
+    WorldComposition, WorldCompositionRequest, WorldDefinition,
 };
-use minimium_world::world::{
-    GenerationRevision, GenerationSpec, GeneratorDigest, WorldContentRevision, WorldDefinitionId,
-    WorldInstanceId, WorldManifest, WorldMap, WorldSeed, WorldTopology,
+use minimium_world::world::WorldInstanceId;
+use std::{
+    error::Error,
+    io,
+    path::{Path, PathBuf},
+    sync::Arc,
 };
-use std::{env, error::Error, io, path::PathBuf, sync::Arc};
 
-pub(super) fn server_composition() -> ServerComposition {
+pub(super) fn server_composition(
+    dev_mode: bool,
+    earth_package_dir: Option<PathBuf>,
+    server_logger: minimium_diagnostics::DomainLogger,
+    storage_logger: minimium_diagnostics::DomainLogger,
+    transport_logger: minimium_diagnostics::DomainLogger,
+    game_sample_logger: minimium_diagnostics::DomainLogger,
+    environment_logger: minimium_diagnostics::DomainLogger,
+    protocol_logger: minimium_diagnostics::DomainLogger,
+    world_logger: minimium_diagnostics::DomainLogger,
+    sectors_logger: minimium_diagnostics::DomainLogger,
+    simulation_logger: minimium_diagnostics::DomainLogger,
+    asset_io_logger: minimium_diagnostics::DomainLogger,
+    procgen_logger: minimium_diagnostics::DomainLogger,
+    shutdown_request: ShutdownRequest,
+) -> ServerComposition {
+    let world_composer_logger = game_sample_logger.clone();
+    let world_asset_logger = asset_io_logger.clone();
+    let world_procgen_logger = procgen_logger.clone();
     ServerComposition {
-        world_composer: compose_world,
+        shutdown_request,
+        modules: vec![Arc::new(minimium_game_sample::SampleGameplayModule)],
+        world_composer: Arc::new(move |request| {
+            match compose_world(
+                request,
+                earth_package_dir.as_deref(),
+                &world_asset_logger,
+                &world_procgen_logger,
+            ) {
+                Ok(composition) => Ok(composition),
+                Err(error) => {
+                    if let Ok(code) =
+                        minimium_diagnostics::EventCode::new("game_sample.world_compose_failed")
+                    {
+                        world_composer_logger.emit(
+                            world_composer_logger
+                                .event(minimium_diagnostics::Level::Error, code)
+                                .field("reason", &error.to_string()),
+                        );
+                    }
+                    Err(error)
+                }
+            }
+        }),
         combat: ServerCombatConfig {
             hitscan: DEFAULT_COMBAT_CONFIG.hitscan,
             fire_cooldown_ms: DEFAULT_COMBAT_CONFIG.fire_cooldown_ms,
         },
+        server_logger,
+        storage_logger,
+        transport_logger,
+        environment_logger,
+        protocol_logger,
+        world_logger,
+        sectors_logger,
+        simulation_logger,
+        asset_io_logger,
+        authentication_provider: Arc::new(
+            super::developer_auth::DeveloperAuthenticationProvider::new(dev_mode),
+        ),
     }
 }
 
-fn compose_world(request: WorldCompositionRequest) -> Result<WorldComposition, Box<dyn Error>> {
+fn compose_world(
+    request: WorldCompositionRequest,
+    earth_package_dir: Option<&Path>,
+    asset_io_logger: &minimium_diagnostics::DomainLogger,
+    procgen_logger: &minimium_diagnostics::DomainLogger,
+) -> Result<WorldComposition, Box<dyn Error>> {
     let WorldCompositionRequest {
         data_dir,
         requested_seed,
@@ -51,61 +110,17 @@ fn compose_world(request: WorldCompositionRequest) -> Result<WorldComposition, B
             return Err("world.seed differs from the saved planet definition".into());
         }
     }
-    // Recover if the migrated snapshot was committed before world.seed.
-    let snapshot_seed =
-        if existing_seed.is_none() && map_path.is_none() && world_definition_path.is_none() {
-            match minimium_platform::files::read_bounded_file(
-                &data_dir.join("world.snapshot"),
-                16 * 1024 * 1024,
-            ) {
-                Ok(snapshot) => {
-                    let source = std::str::from_utf8(&snapshot).map_err(|_| {
-                        io::Error::new(io::ErrorKind::InvalidData, "snapshot is not UTF-8")
-                    })?;
-                    let fields: Vec<_> = source.lines().next().unwrap_or("").split('\t').collect();
-                    let recognized_planet = fields.first() == Some(&"MINIMIUM_WORLD")
-                        && matches!(fields.get(1).copied(), Some("6" | "7" | "8"))
-                        && fields.get(3) == Some(&"1")
-                        && fields.get(4) == Some(&"0")
-                        && fields
-                            .get(6)
-                            .and_then(|value| value.parse::<u32>().ok())
-                            .is_some_and(|revision| revision >= 2);
-                    if recognized_planet {
-                        fields.get(5).and_then(|value| value.parse::<u128>().ok())
-                    } else {
-                        None
-                    }
-                }
-                Err(error) if error.kind() == io::ErrorKind::NotFound => None,
-                Err(error) => return Err(error.into()),
-            }
-        } else {
-            None
-        };
-    let legacy_snapshot = existing_seed.is_none()
-        && snapshot_seed.is_none()
-        && data_dir.join("world.snapshot").exists()
-        && map_path.is_none()
-        && world_definition_path.is_none();
     if let (Some(expected), Some(requested)) = (
-        existing_seed
-            .or(snapshot_seed)
-            .or(saved_planet.as_ref().map(|planet| planet.seed)),
+        existing_seed.or(saved_planet.as_ref().map(|planet| planet.seed)),
         requested_seed,
     ) {
         if expected != requested {
             return Err("--seed differs from the seed stored in this data directory".into());
         }
     }
-    if legacy_snapshot && requested_seed.is_some_and(|requested| requested != DEFAULT_SEED) {
-        return Err("existing demo snapshot requires its original seed during migration".into());
-    }
     let seed = match existing_seed
-        .or(snapshot_seed)
         .or(saved_planet.as_ref().map(|planet| planet.seed))
         .or(requested_seed)
-        .or(legacy_snapshot.then_some(DEFAULT_SEED))
     {
         Some(seed) => seed,
         None => {
@@ -114,12 +129,7 @@ fn compose_world(request: WorldCompositionRequest) -> Result<WorldComposition, B
                 .expect("an admin token contains hexadecimal digits")
         }
     };
-    let legacy_generated = (existing_seed.is_some() || data_dir.join("world.snapshot").exists())
-        && saved_planet.is_none();
-    if legacy_generated && planet_config_path.is_some() {
-        return Err("existing generated world has a legacy definition; use a new data directory for a planet preset".into());
-    }
-    let mut planet = if map_path.is_none() && world_definition_path.is_none() && !legacy_generated {
+    let mut planet = if map_path.is_none() && world_definition_path.is_none() {
         let requested = planet_config_path
             .as_deref()
             .map(|path| load_planet_preset(path, seed))
@@ -127,7 +137,6 @@ fn compose_world(request: WorldCompositionRequest) -> Result<WorldComposition, B
         let resolved = match (saved_planet, requested) {
             (Some(saved), Some(mut requested)) => {
                 requested.package_digest = saved.package_digest;
-                requested.generator_revision = saved.generator_revision;
                 if saved != requested {
                     return Err("planet preset differs from the immutable definition in this data directory".into());
                 }
@@ -146,33 +155,39 @@ fn compose_world(request: WorldCompositionRequest) -> Result<WorldComposition, B
     let mut prepared_geography = None;
     let (primary_map, worlds) = if let Some(path) = world_definition_path.as_deref() {
         let definition = minimium_asset_io::load_world_definition(path).map_err(|error| {
-            io::Error::new(
-                error.kind(),
-                format!(
-                    "could not load world definition {}: {error}",
-                    path.display()
-                ),
-            )
+            emit_failure(asset_io_logger, error.code(), &error.to_string());
+            error
         })?;
-        minimium_procgen::validate_world_manifest(definition.manifest())
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-        let map = minimium_procgen::materialize_dungeon_map(definition.dungeon())
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        minimium_procgen::validate_world_manifest(definition.manifest()).map_err(|error| {
+            emit_failure(procgen_logger, error.code(), &error.to_string());
+            io::Error::new(io::ErrorKind::InvalidData, error)
+        })?;
+        let map =
+            minimium_procgen::materialize_dungeon_map(definition.dungeon()).map_err(|error| {
+                emit_failure(procgen_logger, error.code(), &error.to_string());
+                io::Error::new(io::ErrorKind::InvalidData, error)
+            })?;
+        if definition.manifest().generator_digest()
+            != minimium_world::world::GeneratorDigest::authored_map_fingerprint(map.fingerprint())
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "authored world definition digest does not match its materialized map",
+            )
+            .into());
+        }
         let instance = WorldInstanceId::new(4).expect("manual world instance ID is nonzero");
         let generated = WorldDefinition {
             instance,
             manifest: definition.manifest(),
             map: map.clone(),
-            portal: None,
+            initial_entities: Vec::new(),
         };
-        let legacy_map = parse_legacy_map()?;
-        (map, Some(vec![generated, legacy_world(legacy_map)]))
+        (map, Some(vec![generated]))
     } else if let Some(path) = map_path.as_deref() {
         let map = minimium_asset_io::load_map(path).map_err(|error| {
-            io::Error::new(
-                error.kind(),
-                format!("could not load map {}: {error}", path.display()),
-            )
+            emit_failure(asset_io_logger, error.code(), &error.to_string());
+            error
         })?;
         (map, None)
     } else {
@@ -181,7 +196,7 @@ fn compose_world(request: WorldCompositionRequest) -> Result<WorldComposition, B
                 let package = planet
                     .earth_package
                     .clone()
-                    .or_else(|| env::var_os("MINIMIUM_EARTH_PACKAGE").map(PathBuf::from))
+                    .or_else(|| earth_package_dir.map(Path::to_path_buf))
                     .unwrap_or_else(|| data_dir.join("gebco-2026"));
                 if !package.join("index.ron").is_file() {
                     return Err(format!(
@@ -193,7 +208,10 @@ fn compose_world(request: WorldCompositionRequest) -> Result<WorldComposition, B
                     &package,
                     (planet.package_digest != [0; 32]).then_some(planet.package_digest),
                 )
-                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+                .map_err(|error| {
+                    emit_failure(asset_io_logger, error.code(), &error.to_string());
+                    io::Error::new(io::ErrorKind::InvalidData, error)
+                })?;
                 let digest = prepared.package_digest();
                 if planet.package_digest != [0; 32] && planet.package_digest != digest {
                     return Err("GEBCO package differs from the immutable world definition".into());
@@ -201,10 +219,9 @@ fn compose_world(request: WorldCompositionRequest) -> Result<WorldComposition, B
                 planet.package_digest = digest;
                 prepared_geography = Some(prepared.clone());
             }
-            generate_worlds_with_planet_revision_and_geography(
+            generate_worlds_with_planet_and_geography(
                 seed,
                 planet.definition(),
-                planet.generator_revision,
                 prepared_geography.as_ref().map(|geography| {
                     geography.clone() as Arc<dyn minimium_procgen::PreparedGeography>
                 }),
@@ -212,29 +229,16 @@ fn compose_world(request: WorldCompositionRequest) -> Result<WorldComposition, B
         } else {
             generate_worlds(seed)
         };
-        let mut worlds = generated
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?
+        let worlds = generated
+            .map_err(|error| {
+                emit_failure(procgen_logger, error.code(), &error.to_string());
+                io::Error::new(io::ErrorKind::InvalidData, error)
+            })?
             .into_iter()
             .map(to_world_definition)
             .collect::<Vec<_>>();
-        worlds.push(legacy_world(parse_legacy_map()?));
         (worlds[0].map.clone(), Some(worlds))
     };
-
-    let migration_worlds = legacy_snapshot
-        .then(|| {
-            generate_legacy_demo_worlds()
-                .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
-                .and_then(|worlds| {
-                    let mut worlds = worlds
-                        .into_iter()
-                        .map(to_world_definition)
-                        .collect::<Vec<_>>();
-                    worlds.push(legacy_world(parse_legacy_map()?));
-                    Ok(worlds)
-                })
-        })
-        .transpose()?;
     let planet_definition = planet
         .map(|planet| ron::to_string(&planet).map(String::into_bytes))
         .transpose()?;
@@ -243,50 +247,53 @@ fn compose_world(request: WorldCompositionRequest) -> Result<WorldComposition, B
         seed,
         primary_map,
         worlds,
-        migration_worlds,
         planet_definition,
         prepared_geography: prepared_geography
             .map(|geography| geography as Arc<dyn minimium_procgen::PreparedGeography>),
     })
 }
 
+fn emit_failure(logger: &minimium_diagnostics::DomainLogger, code: &'static str, reason: &str) {
+    if let Ok(code) = minimium_diagnostics::EventCode::new(code) {
+        logger.emit(
+            logger
+                .event(minimium_diagnostics::Level::Error, code)
+                .field("reason", reason),
+        );
+    }
+}
+
 fn to_world_definition(world: GeneratedWorld) -> WorldDefinition {
+    let initial_entities = world
+        .portal
+        .map(|portal| {
+            let component = minimium_game_sample::PortalComponent {
+                position: portal.position,
+                target_world: portal.target_instance,
+                destination: portal.destination,
+            };
+            let bytes = component
+                .encode()
+                .expect("generated portal coordinates are finite");
+            let sector = minimium_procgen::sector_neighborhood_for(world.manifest, portal.position)
+                .into_iter()
+                .next()
+                .expect("a portal belongs to a materialized world sector");
+            InitialEntity {
+                sector,
+                components: vec![InitialComponent {
+                    kind: minimium_game_sample::PORTAL_COMPONENT,
+                    schema: minimium_game_sample::PORTAL_SCHEMA,
+                    bytes,
+                }],
+            }
+        })
+        .into_iter()
+        .collect();
     WorldDefinition {
         instance: world.instance,
         manifest: world.manifest,
         map: world.map,
-        portal: world.portal.map(|portal| WorldPortal {
-            position: portal.position,
-            target_instance: portal.target_instance,
-            destination: portal.destination,
-        }),
-    }
-}
-
-fn parse_legacy_map() -> io::Result<WorldMap> {
-    minimium_assets::parse_map(SAMPLE_MAP)
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
-}
-
-fn legacy_world(map: WorldMap) -> WorldDefinition {
-    let instance = WorldInstanceId::new(3).expect("legacy instance ID is nonzero");
-    let generation = GenerationSpec::new(
-        WorldSeed::new(0),
-        GenerationRevision::new(1).expect("legacy generator revision is nonzero"),
-        1,
-    )
-    .expect("legacy position quantum is nonzero");
-    let manifest = WorldManifest::new(
-        WorldDefinitionId::new(3).expect("legacy definition ID is nonzero"),
-        WorldTopology::Dungeon,
-        generation,
-        WorldContentRevision::new(1).expect("legacy content revision is nonzero"),
-        GeneratorDigest::legacy_map_fingerprint(map.fingerprint()),
-    );
-    WorldDefinition {
-        instance,
-        manifest,
-        map,
-        portal: None,
+        initial_entities,
     }
 }

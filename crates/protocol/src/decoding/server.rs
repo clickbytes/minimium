@@ -3,10 +3,14 @@ use crate::{
     framing::decode_frame,
     kinds::ServerKind,
     limits::*,
-    models::{ProtocolError, RemotePlayer, RemotePlayerIds, RemotePlayers, ServerMessage},
+    models::{
+        EntityReplicationOperation, ProtocolError, RemotePlayer, RemotePlayerIds, RemotePlayers,
+        ServerMessage,
+    },
     reading::Reader,
 };
 use minimium_core::ids::PlayerId;
+use minimium_world::entity::{ComponentTypeId, EntityId, SchemaVersion};
 
 pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, ProtocolError> {
     let Some((kind, payload, frame_bytes)) = decode_frame(input)? else {
@@ -14,6 +18,105 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
     };
     let mut reader = Reader::new(payload);
     let message = match ServerKind::try_from(kind)? {
+        ServerKind::Bolid => {
+            let context = reader.world_context()?;
+            let event = crate::BolidEvent {
+                id: reader.u64()?,
+                start_monotonic_ms: reader.u64()?,
+                seed: reader.u64()?,
+                start_world_m: reader.vector()?,
+                end_world_m: reader.vector()?,
+                duration_ms: reader.u16()?,
+                kind: reader.byte()?,
+            };
+            if !event.valid() {
+                return Err(ProtocolError::InvalidPayload);
+            }
+            ServerMessage::Bolid { context, event }
+        }
+        ServerKind::MovementPolicy => {
+            let policy = minimium_simulation::MovementPolicy {
+                can_fly: reader.boolean()?,
+                speed: f32::from_le_bytes(reader.fixed()?),
+                accel: f32::from_le_bytes(reader.fixed()?),
+                revision: reader.u64()?,
+            };
+            if !policy.valid() {
+                return Err(ProtocolError::InvalidPayload);
+            }
+            ServerMessage::MovementPolicy(policy)
+        }
+        ServerKind::EntitySyncBegin => {
+            let context = reader.world_context()?;
+            let sync_id = reader.u64()?;
+            let base_revision = reader.u64()?;
+            let target_revision = reader.u64()?;
+            let full = reader.boolean()?;
+            if sync_id == 0 || target_revision < base_revision || (full && base_revision != 0) {
+                return Err(ProtocolError::InvalidPayload);
+            }
+            ServerMessage::EntitySyncBegin {
+                context,
+                sync_id,
+                base_revision,
+                target_revision,
+                full,
+            }
+        }
+        ServerKind::EntitySyncRecord => {
+            let context = reader.world_context()?;
+            let sync_id = reader.u64()?;
+            let revision = reader.u64()?;
+            if sync_id == 0 {
+                return Err(ProtocolError::InvalidPayload);
+            }
+            let operation = match reader.byte()? {
+                1 => EntityReplicationOperation::Spawn {
+                    entity: read_entity(&mut reader)?,
+                },
+                2 => {
+                    let entity = read_entity(&mut reader)?;
+                    let kind =
+                        ComponentTypeId::new(reader.u32()?).ok_or(ProtocolError::InvalidPayload)?;
+                    let schema =
+                        SchemaVersion::new(reader.u32()?).ok_or(ProtocolError::InvalidPayload)?;
+                    let bytes = reader.bounded_bytes(MAX_COMPONENT_BYTES)?;
+                    EntityReplicationOperation::ComponentUpsert {
+                        entity,
+                        kind,
+                        schema,
+                        bytes,
+                    }
+                }
+                3 => EntityReplicationOperation::ComponentRemove {
+                    entity: read_entity(&mut reader)?,
+                    kind: ComponentTypeId::new(reader.u32()?)
+                        .ok_or(ProtocolError::InvalidPayload)?,
+                },
+                4 => EntityReplicationOperation::Despawn {
+                    entity: read_entity(&mut reader)?,
+                },
+                _ => return Err(ProtocolError::InvalidPayload),
+            };
+            ServerMessage::EntitySyncRecord {
+                context,
+                sync_id,
+                revision,
+                operation,
+            }
+        }
+        ServerKind::EntitySyncComplete => {
+            let context = reader.world_context()?;
+            let sync_id = reader.u64()?;
+            if sync_id == 0 {
+                return Err(ProtocolError::InvalidPayload);
+            }
+            ServerMessage::EntitySyncComplete {
+                context,
+                sync_id,
+                target_revision: reader.u64()?,
+            }
+        }
         ServerKind::ContentOffer => ServerMessage::ContentOffer {
             material_hash: reader.fixed()?,
             http_port: reader.u16()?,
@@ -21,6 +124,7 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
         },
         ServerKind::Welcome => {
             let id = PlayerId::new(reader.u64()?);
+            let server_tick = reader.u64()?;
             let map_fingerprint = reader.u64()?;
             let health = reader.u16()?;
             let position_mm = reader.position_mm()?;
@@ -37,6 +141,7 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
             };
             let (clock_sample, environment) = environment_codec::read_pair(&mut reader)?;
             ServerMessage::Welcome {
+                server_tick,
                 id,
                 map_fingerprint,
                 health,
@@ -109,7 +214,10 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
         },
         ServerKind::Snapshot => {
             let server_time_ms = reader.u64()?;
+            let server_tick = reader.u64()?;
+            let resolved_input_seq = reader.u64()?;
             let context = reader.world_context()?;
+            let self_movement = crate::movement_codec::read(&mut reader)?;
             let self_position_mm = reader.position_mm()?;
             let self_position = self_position_mm
                 .0
@@ -153,8 +261,11 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
             }
             ServerMessage::Snapshot {
                 server_time_ms,
+                server_tick,
+                resolved_input_seq,
                 context,
                 full_snapshot,
+                self_movement,
                 self_position,
                 self_position_mm,
                 self_velocity,
@@ -187,6 +298,7 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
         }
         ServerKind::TransitionCommitted => {
             let transition_id = reader.transition_id()?;
+            let server_tick = reader.u64()?;
             let context = reader.world_context()?;
             let map_fingerprint = reader.u64()?;
             let destination_mm = reader.position_mm()?;
@@ -201,6 +313,7 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
             let (clock_sample, environment) = environment_codec::read_pair(&mut reader)?;
             ServerMessage::TransitionCommitted {
                 transition_id,
+                server_tick,
                 context,
                 map_fingerprint,
                 destination,
@@ -243,4 +356,8 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
     };
     reader.finish()?;
     Ok(Some((message, frame_bytes)))
+}
+
+fn read_entity(reader: &mut Reader<'_>) -> Result<EntityId, ProtocolError> {
+    EntityId::new(reader.u64()?).ok_or(ProtocolError::InvalidPayload)
 }

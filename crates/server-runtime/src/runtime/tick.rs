@@ -8,13 +8,18 @@ impl ServerRuntime {
     pub(super) fn tick(&mut self) {
         if Instant::now() >= self.scheduler.next_tick {
             let tick_started = Instant::now();
+            self.scheduler.simulation_tick = self.scheduler.simulation_tick.saturating_add(1);
             self.apply_commands();
+            self.update_bolids();
+            if self.shutdown_request.is_requested() {
+                return;
+            }
             self.apply_world_inputs();
-            self.schedule
-                .run_stage(crate::modules::Stage::FixedUpdate, &self.game.worlds);
+            self.run_tick_system_stage(crate::modules::Stage::FixedUpdate);
             self.simulate_tick();
-            self.schedule
-                .run_stage(crate::modules::Stage::Environment, &self.game.worlds);
+            self.run_tick_system_stage(crate::modules::Stage::Environment);
+            self.run_tick_system_stage(crate::modules::Stage::PostSimulation);
+            self.game.gameplay_events.clear();
             self.metrics.ticks = self.metrics.ticks.saturating_add(1);
             self.metrics.last_tick = tick_started.elapsed();
             self.metrics.tick.record(self.metrics.last_tick);
@@ -28,6 +33,20 @@ impl ServerRuntime {
                     .saturating_add((late_by / TICK.as_nanos()) as u64);
                 self.scheduler.next_tick = now + TICK;
             }
+        }
+    }
+
+    fn run_tick_system_stage(&mut self, stage: crate::modules::Stage) {
+        if let Err(error) = self.run_system_stage(stage) {
+            crate::diagnostics::emit(
+                &self.world_logger,
+                minimium_diagnostics::Level::Error,
+                "gameplay.stage_failed",
+                &[
+                    ("stage", format!("{stage:?}")),
+                    ("error_kind", format!("{:?}", error.kind())),
+                ],
+            );
         }
     }
     fn apply_commands(&mut self) {
@@ -48,6 +67,7 @@ impl ServerRuntime {
                 crate::server_command::ServerCommand::Property(property) => {
                     self.apply_property_command(property)
                 }
+                crate::server_command::ServerCommand::SpawnRandomBolid => self.spawn_bolid(true),
                 _ => match monotonic_ms {
                     Ok(monotonic_ms) => commands::execute(
                         &command,
@@ -62,11 +82,13 @@ impl ServerRuntime {
                             monotonic_ms,
                             schedule_diagnostics,
                         },
+                        &self.module_registry,
                     ),
                     Err(error) => commands::CommandReply {
                         success: false,
                         text: format!("monotonic clock: {error}"),
                         stop: false,
+                        error_code: Some("server.monotonic_clock_failed"),
                     },
                 },
             };
@@ -95,22 +117,62 @@ impl ServerRuntime {
                     }
                 }
             }
+            if !reply.success {
+                crate::diagnostics::emit(
+                    &self.server_logger,
+                    minimium_diagnostics::Level::Warn,
+                    "server.command_execution_failed",
+                    &[(
+                        "error_code",
+                        reply
+                            .error_code
+                            .unwrap_or("server.command.failed")
+                            .to_owned(),
+                    )],
+                );
+            }
             if let Some(id) = request_id {
                 self.operations
                     .admin
-                    .respond(id, reply.success, &reply.text);
+                    .respond(id, reply.success, reply.error_code, &reply.text);
             } else {
+                let prefix = match reply.error_code {
+                    Some(code) => format!("ERR {code}"),
+                    None => String::from("ERR"),
+                };
                 println!(
                     "{} {}",
-                    if reply.success { "OK" } else { "ERR" },
+                    if reply.success {
+                        "OK".to_owned()
+                    } else {
+                        prefix
+                    },
                     reply.text
                 );
             }
             if command.is_save_or_stop() {
-                println!("admin {:?}: {}", command, reply.text);
+                crate::diagnostics::emit(
+                    &self.server_logger,
+                    minimium_diagnostics::Level::Info,
+                    "server.admin_command_completed",
+                    &[
+                        (
+                            "action",
+                            (if matches!(command, crate::server_command::ServerCommand::Stop) {
+                                "stop"
+                            } else {
+                                "save"
+                            })
+                            .to_owned(),
+                        ),
+                        ("success", reply.success.to_string()),
+                    ],
+                );
             }
-            self.stop |= reply.stop;
-            if self.stop {
+            if reply.stop {
+                self.shutdown_request.request();
+            }
+            if self.shutdown_request.is_requested() {
                 break;
             }
         }
@@ -149,11 +211,18 @@ impl ServerRuntime {
             .set_return_location(transfer.player, transfer.source_location);
         self.game.active_inputs.insert(
             transfer.player,
-            minimium_simulation::CharacterInput::default(),
+            minimium_simulation::MovementIntent::default(),
         );
         self.game
             .input_last_received
             .insert(transfer.player, Instant::now());
+        self.game.pending_world_inputs.retain(|(input, _)| {
+            !matches!(input, crate::world_inputs::WorldInput::Move(player, _) if *player == transfer.player)
+        });
+        self.game.pending_movement_inputs.remove(&transfer.player);
+        self.game.pending_input_seqs.remove(&transfer.player);
+        self.game.last_input_seq.insert(transfer.player, 0);
+        self.game.resolved_input_seq.insert(transfer.player, 0);
         let Some(index) = self
             .connections
             .client_indices_by_player
@@ -167,7 +236,15 @@ impl ServerRuntime {
         {
             Ok(state) => state,
             Err(error) => {
-                eprintln!("could not sample committed environment: {error}");
+                crate::diagnostics::emit(
+                    &self.server_logger,
+                    minimium_diagnostics::Level::Error,
+                    "server.transfer_environment_failed",
+                    &[
+                        ("player_id", transfer.player.to_string()),
+                        ("error_code", error.code().to_owned()),
+                    ],
+                );
                 if let Some(client) = self.connections.clients.get_mut(index) {
                     client.disconnect_reason =
                         Some(crate::connection::CloseReason::InvalidSequence);
@@ -181,11 +258,16 @@ impl ServerRuntime {
         };
         client.replicated_players = minimium_protocol::RemotePlayers::default();
         client.replication_initialized = false;
+        client.entity_sync = None;
+        client.entity_revision = 0;
+        client.entity_sync_initialized = false;
+        client.replicated_components.clear();
         let queued = crate::connection::queue_message(
             client,
             &mut self.metrics,
             minimium_protocol::ServerMessage::TransitionCommitted {
                 transition_id: transfer.transition_id,
+                server_tick: self.scheduler.simulation_tick,
                 context: transfer.context,
                 map_fingerprint: transfer.map_fingerprint,
                 destination: transfer.destination,
@@ -205,6 +287,11 @@ impl ServerRuntime {
         }
     }
     fn simulate_tick(&mut self) {
+        for (player, policy) in &self.game.player_movement_policies {
+            self.game
+                .worlds
+                .set_player_movement_policy(*player, *policy);
+        }
         let simulation_phase = allocations::enter(Phase::Simulation);
         let simulation_started = Instant::now();
         let ready_transfers = crate::sector_streaming::update_with_geography(
@@ -212,7 +299,9 @@ impl ServerRuntime {
             &mut self.game.sectors,
             &mut self.game.active_sector_tickets,
             &mut self.game.transfer_sector_tickets,
+            &mut self.sector_workers,
             self.prepared_geography.clone(),
+            &self.sectors_logger,
         );
         let committed_players = self.commit_ready_transfers(&ready_transfers.transfers);
         let mut ready_players = ready_transfers.players;
@@ -221,7 +310,12 @@ impl ServerRuntime {
             self.game
                 .active_inputs
                 .iter()
-                .filter(|(_, input)| input.movement.fly)
+                .filter(|(id, _)| {
+                    self.game
+                        .player_movement_policies
+                        .get(id)
+                        .is_some_and(|policy| policy.can_fly)
+                })
                 .map(|(id, _)| *id),
         );
         let (worlds, active_inputs) = (&mut self.game.worlds, &self.game.active_inputs);
@@ -245,10 +339,12 @@ impl ServerRuntime {
             }
             if let Some(previous) = previous {
                 for player in previous {
-                    if active_inputs
-                        .get(&player.id)
-                        .is_some_and(|input| input.movement.fly)
-                    {
+                    if active_inputs.get(&player.id).is_some_and(|_| {
+                        self.game
+                            .player_movement_policies
+                            .get(&player.id)
+                            .is_some_and(|policy| policy.can_fly)
+                    }) {
                         continue;
                     }
                     if let Some(current) = instance.world.player(player.id) {
@@ -274,7 +370,16 @@ impl ServerRuntime {
             }
         }
         self.metrics.record_collision_queries(collision_stats);
-        self.metrics.simulation.record(simulation_started.elapsed());
+        let simulation_elapsed = simulation_started.elapsed();
+        self.metrics.simulation.record(simulation_elapsed);
+        if simulation_elapsed > TICK {
+            crate::diagnostics::emit(
+                &self.simulation_logger,
+                minimium_diagnostics::Level::Warn,
+                "simulation.tick_budget_exceeded",
+                &[("elapsed_us", simulation_elapsed.as_micros().to_string())],
+            );
+        }
         drop(simulation_phase);
         for input in self.game.active_inputs.values_mut() {
             input.jump = false;
@@ -290,12 +395,22 @@ impl ServerRuntime {
                 .elapsed()
                 .as_millis()
                 .min(u64::MAX as u128) as u64;
+            replication::replicate_entities(
+                &self.game.worlds,
+                &self.component_registry,
+                &self.game.active_sector_tickets,
+                &mut self.connections.clients,
+                &mut self.metrics,
+            );
             replication::replicate_snapshots(
                 &self.game.worlds,
                 &self.executor,
                 &mut self.connections.clients,
                 &mut self.metrics,
                 server_time_ms,
+                self.scheduler.simulation_tick,
+                &self.game.resolved_input_seq,
+                &self.game.active_inputs,
             );
             self.metrics.snapshots = self.metrics.snapshots.saturating_add(1);
             self.metrics

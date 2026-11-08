@@ -1,7 +1,7 @@
 use super::{EnvironmentFrame, StarFrameStamp};
-use crate::renderer::{environment_gpu, GpuResources};
-use minimium_renderer::stars::{StarInstanceGpu, STAR_GPU_RECORD_COUNT};
+use crate::renderer::{GpuResources, environment_gpu};
 use minimium_renderer::RenderFrame;
+use minimium_renderer::stars::{STAR_GPU_RECORD_COUNT, StarInstanceGpu};
 
 /// One immutable CPU result, consumed only after acquiring a surface frame.
 /// A skipped frame drops this bounded batch; the unchanged GPU stamp requests

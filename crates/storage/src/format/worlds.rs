@@ -85,37 +85,33 @@ pub(super) fn write_manifest(file: &mut impl Write, manifest: WorldManifest) -> 
         manifest.content_revision().get(),
         hex_digest(manifest.generator_digest().as_bytes())
     )?;
-    if manifest.generation().revision().get() >= 3 {
-        if let Some(planet) = manifest.planet() {
-            write!(
-                file,
-                "\t1\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
-                planet.mode,
-                planet.radius_mm,
-                planet.height_scale_permille,
-                planet.sea_level_mm,
-                planet.mountain_limit_mm,
-                planet.detail_strength_mm,
-                planet.detail_wavelength_mm,
-                planet.mountain_band_frequency,
-                hex_digest(&planet.package_digest)
-            )?;
-            if manifest.generation().revision().get() >= 5 {
-                let curve = planet.peak_relief;
-                write!(
-                    file,
-                    "\t{}\t{}\t{}\t{}",
-                    curve.start_m, curve.full_m, curve.multiplier_permille, curve.exponent
-                )?;
-            }
-        } else {
-            write!(file, "\t0")?;
-        }
+    if let Some(planet) = manifest.planet() {
+        write!(
+            file,
+            "\t1\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+            planet.mode,
+            planet.radius_mm,
+            planet.height_scale_permille,
+            planet.sea_level_mm,
+            planet.mountain_limit_mm,
+            planet.detail_strength_mm,
+            planet.detail_wavelength_mm,
+            planet.mountain_band_frequency,
+            hex_digest(&planet.package_digest)
+        )?;
+        let curve = planet.peak_relief;
+        write!(
+            file,
+            "\t{}\t{}\t{}\t{}",
+            curve.start_m, curve.full_m, curve.multiplier_permille, curve.exponent
+        )?;
+    } else {
+        write!(file, "\t0")?;
     }
     Ok(())
 }
 
-pub(super) fn parse_manifest(fields: &mut std::str::Split<'_, char>) -> io::Result<WorldManifest> {
+pub(crate) fn parse_manifest(fields: &mut std::str::Split<'_, char>) -> io::Result<WorldManifest> {
     let definition = fields
         .next()
         .ok_or_else(|| invalid_world_snapshot("missing saved world definition"))?

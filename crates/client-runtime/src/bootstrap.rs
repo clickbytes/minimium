@@ -1,5 +1,6 @@
 mod diagnostics;
 mod launch_config;
+mod process;
 use diagnostics::ServerStderr;
 pub use launch_config::LocalServerLaunchConfig;
 use launch_config::ResolvedLaunch;
@@ -8,17 +9,19 @@ use minimium_platform::{
     endpoint::{new_admin_token, ServerEndpoint},
     server_lock,
 };
+use process::{server_executable_path, start_local_server, terminate_and_reap, wait_for_child};
 use std::{
     error::Error,
     io,
     net::TcpStream,
     path::{Path, PathBuf},
-    process::{Child, Command, ExitStatus, Stdio},
+    process::{Child, ExitStatus},
     thread,
     time::{Duration, Instant},
 };
 
-const STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
+// Initial Earth package preparation can exceed five seconds on a cold cache.
+const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const CHILD_EXIT_GRACE: Duration = Duration::from_secs(2);
 const RETRY_INTERVAL: Duration = Duration::from_millis(25);
@@ -36,6 +39,7 @@ pub struct OwnedServer {
     endpoint: Option<ServerEndpoint>,
     data_dir: PathBuf,
     shutdown_attempted: bool,
+    diagnostic_logger: Option<minimium_diagnostics::DomainLogger>,
 }
 
 impl LocalServer {
@@ -62,10 +66,10 @@ impl LocalServer {
     }
 
     /// Gracefully stops an owned server and reaps its child process.
-    pub fn shutdown(&mut self) -> Result<(), Box<dyn Error>> {
+    pub fn shutdown(&mut self) -> io::Result<()> {
         match self {
             Self::Attached => Ok(()),
-            Self::Owned(server) => server.shutdown().map_err(Into::into),
+            Self::Owned(server) => server.shutdown(),
         }
     }
 }
@@ -172,10 +176,20 @@ impl Drop for OwnedServer {
     fn drop(&mut self) {
         if self.child.is_some() {
             if let Err(error) = self.shutdown() {
-                eprintln!("owned local server shutdown failed during drop: {error}");
+                crate::diagnostics::emit(
+                    self.diagnostic_logger.as_ref(),
+                    minimium_diagnostics::Level::Error,
+                    "client_runtime.owned_server_shutdown_failed",
+                    [crate::diagnostics::field("reason", error)],
+                );
                 if let Some(child) = self.child.as_mut() {
                     if let Err(cleanup_error) = terminate_and_reap(child) {
-                        eprintln!("owned local server final cleanup failed: {cleanup_error}");
+                        crate::diagnostics::emit(
+                            self.diagnostic_logger.as_ref(),
+                            minimium_diagnostics::Level::Error,
+                            "client_runtime.owned_server_final_cleanup_failed",
+                            [crate::diagnostics::field("reason", cleanup_error)],
+                        );
                     } else {
                         self.child = None;
                     }
@@ -197,8 +211,13 @@ pub fn connect_or_start_until(
     let resolved = config.resolve(&executable, deadline)?;
     let data_dir = &resolved.data_dir;
 
-    if let Ok(endpoint) = ServerEndpoint::read(data_dir) {
-        if validate_live_endpoint(data_dir, &endpoint, deadline).unwrap_or(false) {
+    let existing_endpoint = match ServerEndpoint::read(data_dir) {
+        Ok(endpoint) => Some(endpoint),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error.into()),
+    };
+    if let Some(endpoint) = existing_endpoint {
+        if endpoint_is_live(data_dir, &endpoint, deadline)? {
             reject_unapplied_settings(config, &resolved)?;
             let stream = connect_game(&endpoint, remaining(deadline)?)?;
             return Ok((stream, LocalServer::Attached));
@@ -207,7 +226,8 @@ pub fn connect_or_start_until(
 
     remaining(deadline)?;
     let expected_token = new_admin_token()?;
-    let child = start_local_server(config, &resolved, &executable, &expected_token)?;
+    let attempt_id = minimium_platform::startup_status::new_attempt_id()?;
+    let child = start_local_server(config, &resolved, &executable, &expected_token, &attempt_id)?;
     // This guard is established immediately after spawn, before any fallible startup work.
     let mut owned = OwnedServer {
         child: Some(child),
@@ -215,6 +235,7 @@ pub fn connect_or_start_until(
         endpoint: None,
         data_dir: data_dir.to_owned(),
         shutdown_attempted: false,
+        diagnostic_logger: config.diagnostic_logger.clone(),
     };
     owned.stderr = Some(ServerStderr::capture(
         owned.child.as_mut().expect("startup child exists"),
@@ -245,9 +266,20 @@ pub fn connect_or_start_until(
             }
         }
 
-        if let Ok(endpoint) = ServerEndpoint::read(data_dir) {
-            if endpoint.token == expected_token && child_exit_status.is_none() {
-                if validate_live_endpoint(data_dir, &endpoint, deadline).unwrap_or(false) {
+        let endpoint = match ServerEndpoint::read(data_dir) {
+            Ok(endpoint) => Some(endpoint),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error.into()),
+        };
+        if let Some(endpoint) = endpoint {
+            let attempt_status = read_attempt_status(data_dir, &attempt_id)?;
+            if endpoint.token == expected_token
+                && child_exit_status.is_none()
+                && attempt_status.as_ref().is_some_and(|status| {
+                    status.state == minimium_platform::startup_status::StartupState::Ready
+                })
+            {
+                if endpoint_is_live(data_dir, &endpoint, deadline)? {
                     let status = match owned.child.as_mut().map(Child::try_wait).transpose() {
                         Ok(status) => status.flatten(),
                         Err(error) => {
@@ -275,7 +307,7 @@ pub fn connect_or_start_until(
                     return Ok((stream, LocalServer::Owned(owned)));
                 }
             } else if endpoint.token != expected_token
-                && validate_live_endpoint(data_dir, &endpoint, deadline).unwrap_or(false)
+                && endpoint_is_live(data_dir, &endpoint, deadline)?
             {
                 // Another process won the lock. Reap only the unsuccessful child we spawned.
                 owned.terminate()?;
@@ -286,7 +318,25 @@ pub fn connect_or_start_until(
         }
         if Instant::now() >= deadline {
             if let Some(status) = child_exit_status {
-                let detail = owned.stderr.as_mut().and_then(ServerStderr::finish);
+                let startup = read_attempt_status(data_dir, &attempt_id)?;
+                if let Some(startup) = startup.as_ref().filter(|startup| {
+                    startup.state == minimium_platform::startup_status::StartupState::Failed
+                }) {
+                    return Err(format!(
+                        "local server startup failed: {}",
+                        startup
+                            .error_code
+                            .as_deref()
+                            .unwrap_or("server.startup_failed")
+                    )
+                    .into());
+                }
+                let allow_stderr_fallback = startup.as_ref().is_none_or(|startup| {
+                    startup.state == minimium_platform::startup_status::StartupState::Starting
+                });
+                let detail = allow_stderr_fallback
+                    .then(|| owned.stderr.as_mut().and_then(ServerStderr::finish))
+                    .flatten();
                 return Err(match detail {
                     Some(detail) => {
                         format!("local server exited during startup ({status}): {detail}")
@@ -321,6 +371,33 @@ fn validate_live_endpoint(
     match ServerEndpoint::read(data_dir) {
         Ok(current) => Ok(same_endpoint(&current, endpoint)),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+fn endpoint_is_live(
+    data_dir: &Path,
+    endpoint: &ServerEndpoint,
+    deadline: Instant,
+) -> io::Result<bool> {
+    match validate_live_endpoint(data_dir, endpoint, deadline) {
+        Ok(is_live) => Ok(is_live),
+        Err(error) if error.kind() == io::ErrorKind::ConnectionRefused => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+fn read_attempt_status(
+    data_dir: &Path,
+    attempt_id: &str,
+) -> io::Result<Option<minimium_platform::startup_status::ServerStartupStatus>> {
+    match minimium_platform::startup_status::read(data_dir, attempt_id) {
+        Ok(status) if status.attempt_id == attempt_id => Ok(Some(status)),
+        Ok(_) => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "startup status attempt identifier does not match the active attempt",
+        )),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error),
     }
 }
@@ -361,69 +438,4 @@ fn remaining(deadline: Instant) -> io::Result<Duration> {
     } else {
         Ok(duration)
     }
-}
-
-fn server_executable_path() -> io::Result<PathBuf> {
-    let current = std::env::current_exe()?;
-    let executable = if cfg!(windows) {
-        "minimium-server.exe"
-    } else {
-        "minimium-server"
-    };
-    let path = current.with_file_name(executable);
-    if !path.exists() {
-        return Err(io::Error::new(
-            io::ErrorKind::NotFound,
-            format!("server executable not found at {}", path.display()),
-        ));
-    }
-    Ok(path)
-}
-
-fn start_local_server(
-    config: &LocalServerLaunchConfig,
-    resolved: &ResolvedLaunch,
-    executable: &Path,
-    token: &str,
-) -> io::Result<Child> {
-    let mut command = Command::new(executable);
-    config.prepare_command(&mut command);
-    config.append_run_arguments(&mut command, resolved);
-    command.env("MINIMIUM_ADMIN_TOKEN", token);
-    command
-        .stdin(Stdio::null())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::piped())
-        .spawn()
-}
-
-fn wait_for_child(child: &mut Child, timeout: Duration) -> io::Result<()> {
-    let deadline = Instant::now() + timeout;
-    loop {
-        if child.try_wait()?.is_some() {
-            return Ok(());
-        }
-        if Instant::now() >= deadline {
-            return Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "local server did not exit after graceful shutdown",
-            ));
-        }
-        thread::sleep(RETRY_INTERVAL);
-    }
-}
-
-fn terminate_and_reap(child: &mut Child) -> io::Result<()> {
-    if let Err(kill_error) = child.kill() {
-        // An already-exited process is still reaped. Do not wait indefinitely
-        // on a live process when the OS refused the termination request.
-        return match child.try_wait() {
-            Ok(Some(_)) => child.wait().map(|_| ()),
-            Ok(None) => Err(kill_error),
-            Err(wait_error) => Err(io::Error::other(format!(
-                "killing child failed ({kill_error}); checking child failed ({wait_error})"
-            ))),
-        };
-    }
-    child.wait().map(|_| ())
 }

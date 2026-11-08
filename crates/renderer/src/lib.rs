@@ -5,6 +5,7 @@
 //! lifecycle, sessions, simulation and frame scheduling remain application concerns.
 
 #[cfg(feature = "gpu")]
+pub mod bolid_light;
 pub mod atmosphere;
 pub mod atmosphere_debug;
 #[cfg(feature = "gpu")]
@@ -57,6 +58,8 @@ pub mod gpu_frame;
 pub mod lighting;
 #[cfg(feature = "gpu")]
 pub mod milky_way_gpu;
+mod bolid_dust;
+mod bolid_layer;
 #[cfg(feature = "gpu")]
 pub mod moon_disk;
 #[cfg(feature = "gpu")]

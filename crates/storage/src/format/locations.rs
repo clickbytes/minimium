@@ -50,15 +50,6 @@ pub(super) fn write_location(file: &mut impl Write, location: WorldLocation) -> 
     Ok(())
 }
 
-pub(super) fn legacy_location(instance: WorldInstanceId, position: [f32; 3]) -> WorldLocation {
-    let millimeters = position.map(|value| (f64::from(value) * 1000.0).round() as i64);
-    WorldLocation::new(
-        instance,
-        Position3Mm(millimeters),
-        WorldOrientationQ30::IDENTITY,
-    )
-}
-
 pub(super) fn position_from_location(location: WorldLocation) -> [f32; 3] {
     location
         .position()

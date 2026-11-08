@@ -4,9 +4,9 @@ This page documents the current parsers and dispatchers. For operational sequenc
 
 | Program | Options and commands | Defaults and parsing |
 | --- | --- | --- |
-| Server | `run`, `--config`, `--set`, `--seed`, `--planet-config`, `--environment-config`, `--threads`, `--max-players`, `--bind`, `--game-port`, `--data-dir`, `--map`, `--world-definition`, `--autosave-seconds`, `--headless`, `--help`/`-h`, `--version` | One lane, 512 players, loopback, port 0, `.minimium`, seeded generated worlds, 300 s autosave. Threads accept `1..=64` or `auto`. `--environment-config` initializes a new world's clock only; it is rejected when world data already exists. |
+| Server | `run`, `--config`, `--set`, `--seed`, `--planet-config`, `--environment-config`, `--threads`, `--max-players`, `--bind`, `--game-port`, `--data-dir`, `--map`, `--world-definition`, `--autosave-seconds`, `--dev`, `--headless`, `--help`/`-h`, `--version` | One lane, 512 players, loopback, port 0, `.minimium`, seeded generated worlds, 300 s autosave. Threads accept `1..=64` or `auto`. `--environment-config` initializes a new world's clock only; it is rejected when world data already exists. |
 | Control | `--data-dir`, `--help`/`-h`, server commands below | `.minimium`; help is handled before command parsing. Only the first `--data-dir` is consumed. |
-| Client | `--connect`, `--map`, `--world-definition`, `--profile-dir`, `--server-data-dir`, `--threads`, `--sky-quality`, `--demo`, `--console`, `--require-earth`, `--help`/`-h` | One local-server lane, standard sky quality, seeded demo worlds and `.minimium-local` paths; repeated options are errors. Demo conflicts with connect and console. `--require-earth` requires the desktop client and conflicts with demo. `--map` and `--world-definition` are mutually exclusive. |
+| Client | `--connect`, `--map`, `--world-definition`, `--profile-dir`, `--server-data-dir`, `--threads`, `--sky-quality`, `--demo`, `--console`, `--require-earth`, `--config`, `--server-set`, `--dev`, `--help`/`-h` | One local-server lane, standard sky quality, seeded demo worlds and `.minimium-local` paths; repeated options are errors. Demo conflicts with connect and console. `--require-earth` requires the desktop client and conflicts with demo. `--map` and `--world-definition` are mutually exclusive. |
 | Load generator | `--address`, `--scenario`, `--clients`, `--seconds`, `--threads`, `--format`, `--scenario-id`, `--cpu-label`, `--cpu-mhz`, `--server-data-dir`, `--help`/`-h` | Address required; 100 clients, 10 s, heartbeat, auto workers and text output. Repeated option names are errors. |
 
 Lane types remain application-owned: the server accepts `1..=64` or `auto`, the client accepts `1`, `2` or `auto` for a locally started server, and the generator accepts `1`, `2` or `auto` with at most two workers. Their different meanings and limits do not justify a shared policy type. Server CLI and help report the accepted `1..=64|auto` range.
@@ -14,13 +14,13 @@ Lane types remain application-owned: the server accepts `1..=64` or `auto`, the 
 ## Server
 
 ~~~text
-minimium-server run [--seed DECIMAL|0xHEX] [--planet-config PATH] [--environment-config PATH] [--threads 1..64|auto] [--max-players N] [--bind IP] [--game-port PORT] [--data-dir PATH] [--map PATH | --world-definition PATH] [--autosave-seconds N] [--headless]
+minimium-server run [--seed DECIMAL|0xHEX] [--planet-config PATH] [--environment-config PATH] [--threads 1..64|auto] [--max-players N] [--bind IP] [--game-port PORT] [--data-dir PATH] [--map PATH | --world-definition PATH] [--autosave-seconds N] [--dev] [--headless]
 minimium-server --version
 ~~~
 
 The defaults are one execution lane, 512 active players, loopback bind (`127.0.0.1`), an OS-selected game port (`0`), data directory `.minimium`, seeded planet/dungeon demo worlds, and autosave every 300 seconds. `--threads` accepts 1 through 64 lanes or `auto`; `--max-players` accepts 1 through 512. `--autosave-seconds` accepts 0 through 604800; zero disables periodic saves. `--headless` leaves the server in the foreground but disables terminal commands. Without it, terminal commands use the same command registry as the admin CLI. Game traffic binds to the selected IP; the administrative listener is loopback-only.
 
-`--environment-config PATH` maps to creation-only `world.time.initial_config`. It reads at most 16 KiB of UTF-8 RON schema 1 with unknown fields rejected. It initializes `mode`, optional `initial_utc`, `scale_ppm`, and `offline_policy` for a new world. `real_time` requires no initial date and exactly 1x; `time_scale` uses the configured date or the current UTC. Examples are [real-time.ron](../presets/environment/real-time.ron) and [time-scale.ron](../presets/environment/time-scale.ron). The option is rejected if `world.seed`, `world.planet.ron`, or `world.snapshot` already exists. Existing v8/v9 snapshots restore their saved clock; v2–v7 snapshots initialize RealTime from current UTC and retain that value in the next completed save.
+`--environment-config PATH` maps to creation-only `world.time.initial_config`. It reads at most 16 KiB of UTF-8 RON schema 1 with unknown fields rejected. It initializes `mode`, optional `initial_utc`, `scale_ppm`, and `offline_policy` for a new world. `real_time` requires no initial date and exactly 1x; `time_scale` uses the configured date or current UTC. Examples are [real-time.ron](../presets/environment/real-time.ron) and [time-scale.ron](../presets/environment/time-scale.ron). The option is rejected if `world.seed`, `world.planet.ron`, or `world.snapshot` already exists. A loaded save must use format v10; older and unknown versions are rejected without migration.
 
 `--seed` accepts a decimal or `0x` hexadecimal 128-bit value for a new generated
 world. If omitted, the server draws one random seed. It records the seed in
@@ -73,14 +73,14 @@ The same commands are available through the server terminal (unless `--headless`
 | `status` | Report running state, active players, configured lanes, ticks, accepted/rejected clock probes, environment-sync messages, save state, player cap, map fingerprint, tick/snapshot intervals, autosave interval, protocol version, and save version. |
 | `players list` | List connected player IDs, names, and positions, or report no players. |
 | `metrics show` | Print runtime, network, queue, collision, memory, process, and optional allocation metrics. Field names are documented in [performance policy](performance.md). |
-| `world save` | Capture players, sectors and the clock together, then queue one v9 snapshot on the persistence worker. A successful reply means queued, not completed; use `status` to inspect `save_pending` and `save_last`. A second save is rejected while one is pending. |
+| `world save` | Capture players, entities, sectors and the clock together, then queue one v10 snapshot on the persistence worker. A successful reply means queued, not completed; use `status` to inspect `save_pending` and `save_last`. A second save is rejected while one is pending. |
 | `stop` | Request controlled shutdown. The server saves a final snapshot, reports the final result, and releases the data-directory lock. |
 | `time status` | Show clock ID, revision, session nonce, mode, UTC milliseconds, rate in ppm and decimal form, offline policy, fault, last UTC correction and pending sync revision. |
 | `time mode real_time` | Anchor to current server UTC at 1x. |
 | `time mode time_scale` | Continue from the current world date, preserving its TimeScale rate or using 1x when switching from RealTime. |
 | `time set RFC3339_UTC` | Set a UTC date and switch to TimeScale; preserve an existing TimeScale rate or use 1x. |
 | `time scale DECIMAL` | Set a nonnegative 0.1–1,000,000x rate and switch to TimeScale; zero pauses only the environment clock. |
-| `time offline pause` / `time offline advance` | Set the restart policy persisted in save v9. `pause` resumes the saved world date; `advance` adds nonnegative wall-clock downtime multiplied by the saved scale. |
+| `time offline pause` / `time offline advance` | Set the restart policy persisted in save v10. `pause` resumes the saved world date; `advance` adds nonnegative wall-clock downtime multiplied by the saved scale. |
 
 Rates accept decimal digits and an optional dot with one to six fractional digits, parsed exactly as ppm. Dates accept RFC3339 UTC with `Z` or `+00:00`, zero to three millisecond digits, and no leap second. Every accepted mutation increments the clock revision; invalid input is rejected without applying a change. Physical simulation, cooldowns, heartbeat and deadlines continue in real time.
 
@@ -131,7 +131,7 @@ position. Close the console to control movement with the keyboard.
 
 
 ~~~text
-minimium-client [--connect HOST:PORT] [--map PATH | --world-definition PATH] [--profile-dir PATH] [--server-data-dir PATH] [--threads 1|2|auto] [--sky-quality low|standard] [--demo] [--console]
+minimium-client [--connect HOST:PORT] [--map PATH | --world-definition PATH] [--profile-dir PATH] [--server-data-dir PATH] [--threads 1|2|auto] [--sky-quality low|standard] [--demo] [--console] [--config PATH] [--server-set KEY=VALUE] [--dev]
 ~~~
 
 Each option may appear once. Unknown options and missing values are errors. `--threads` accepts `1`, `2`, or `auto`; it controls a server started by local play and defaults to `1`. `--sky-quality` accepts `low` or `standard` and defaults to `standard`; `low` disables the local shadow map while keeping the same astronomy and star catalogue. It changes renderer resources without restarting the window, device, server, or connection. The text client accepts this shared option but reports that rendering quality is unavailable there. `--connect` connects to an explicit game address and does not start or own a server. Without `--connect` or `--demo`, the desktop client starts a local server if needed and connects through the normal game protocol. `--demo` renders without a game connection and cannot be combined with `--connect` or `--console`. `--console` selects the text client instead of the desktop renderer.
@@ -153,7 +153,7 @@ Drag to rotate the globe, scroll to zoom (down to 1.08 planet radii), and press 
 Ocean destinations are rejected. The server places the player above the same
 collision triangles used by movement and reports success or failure to the client.
 
-Both frontends use one connection controller. It starts a background connector worker for DNS, sequential remote address attempts, or local server startup. The 10-second attempt timeout bounds when the front end accepts the result; blocking resolver or startup work cannot always be cancelled, so a timed-out/cancelled attempt remains busy until its worker exits. A replaced owned local server is cleaned up on a tracked worker before another attempt is allowed. After the connector returns a socket, the foreground client loop polls a shared nonblocking session; the session itself does not own a thread. The session sends Identify first, requires Welcome with the expected map fingerprint, queues app messages only when connected, and handles heartbeat timers. The initial Identify/Welcome exchange has a five-second client timeout; connected clients send pings every 10 seconds, disconnect after 20 seconds without a pong, and the server drops a client after 30 seconds without a valid game message.
+Both frontends use one connection controller. It starts a background connector worker for DNS, sequential remote address attempts, or local server startup. The 10-second attempt timeout bounds when the front end accepts the result; blocking resolver or startup work cannot always be cancelled, so a timed-out/cancelled attempt remains busy until its worker exits. A replaced owned local server is cleaned up on a tracked worker before another attempt is allowed. After the connector returns a socket, the foreground client loop polls a shared nonblocking session; the session itself does not own a thread. Protocol v19 authentication uses bounded provider credentials and requires a server-issued principal before gameplay; Welcome validates world context and content digests. The session queues app messages only when connected and handles heartbeat timers. connected clients send pings every 10 seconds, disconnect after 20 seconds without a pong, and the server drops a client after 30 seconds without a valid game message.
 
 ### Text-client commands
 
@@ -252,3 +252,9 @@ Legacy command aliases map to the same property handlers: `camera fov` and
 `movement speed` and `movement accel` map to their respective
 `player.movement.*` properties. Time mutations remain `time set`, `time mode`,
 `time scale`, and `time offline` actions through the owned local admin channel.
+
+## Atmospheric bolids
+
+The server admin command `spawn_random_bolid` creates an immediate bright class-2 bolid above an active planet observer, with a random trajectory and seeded material/breakup appearance. It needs no coordinates because the desktop client sends its current view direction. Manual requests have a five-second cooldown. `get server.sky.bolid_interval`, `set server.sky.bolid_interval 120..300`, `set server.sky.bolid_interval off`, and `reset server.sky.bolid_interval` control automatic night-time events. The startup setting also accepts `--set server.sky.bolid_interval=MIN..MAX` or `off` (10..=3600 seconds). Events are temporary visual effects and are not saved.
+
+The desktop F1 console and text client also accept `spawn_random_bolid` with no arguments. It uses the owned local server admin endpoint. If entered while the desktop client awaits Welcome, the command is queued until the world and sky view are ready; the server reply appears in the console. Attached or remote servers require their own administration channel.

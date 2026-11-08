@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+minimium-diagnostics = { path = "../diagnostics" }
 minimium-core = { path = "../core" }
 minimium-environment = { path = "../environment" }
 minimium-platform = { path = "../platform" }

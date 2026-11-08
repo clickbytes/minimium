@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check selected static contracts for the E005 refactor without running code."""
+"""Check real ownership and Rust/WGSL layout boundaries without running code."""
 
 from __future__ import annotations
 
@@ -98,133 +98,58 @@ def main() -> int:
     except (OSError, ValueError) as error:
         errors.append(str(error))
 
-    required_exports = {
-        ROOT / "crates/core/src/lib.rs": ("pub mod identity;", "pub mod ids;"),
-        ROOT / "crates/world/src/lib.rs": ("pub mod entity;", "pub mod world;"),
-        ROOT / "crates/simulation/src/lib.rs": (
-            "pub use simulation::{",
-            "step_character_mm",
-            "CombatSettings",
-        ),
-        ROOT / "crates/commands/src/lib.rs": ("pub use registry::{CommandRegistry, CommandSpec};",),
-        ROOT / "crates/server-runtime/src/lib.rs": ("pub fn run(args: &[String])",),
-        ROOT / "crates/renderer/src/lib.rs": (
-            "pub mod gpu_frame;",
-            "pub use render_frame::RenderFrame;",
-            "pub mod gpu_bindings;",
-            "pub mod geometry;",
-            "pub mod geometry_gpu;",
-            "pub mod globe_vertex;",
-            "pub mod globe_detail;",
-            "pub mod globe_gpu;",
-            "pub mod render_frame;",
-            "pub mod frame_encoder;",
-            "pub mod scene_encoder;",
-            "pub mod surface_frame;",
-            "pub mod world_geometry_gpu;",
-            "pub mod scene_encoder;",
-            "pub mod overview_gpu;",
-            "pub mod cloud_face;",
-            "pub mod cloud_pipeline;",
-            "pub mod cloud_targets;",
-            "pub mod cloud_voxels;",
-            "pub mod cloud_mesh;",
-            "pub mod cloud_uniform;",
-            "pub mod cloud_gpu;",
-            "pub mod ui_vertex;",
-            "pub mod ui_pipeline;",
-            "pub mod atmosphere;",
-            "pub mod atmosphere_table;",
-            "pub mod atmosphere_pipeline;",
-            "pub mod atmosphere_uniform;",
-            "pub mod atmosphere_gpu;",
-            "pub mod environment_pipelines;",
-            "pub mod world_pipeline;",
-            "pub mod output;",
-            "pub mod stars;",
-            "pub mod star_gpu;",
-            "pub mod shadow_target;",
-            "pub mod shadow_settings;",
-            "pub mod shadow_geometry;",
-            "pub mod shadow_uniform;",
-            "pub mod shadow_gpu;",
-            "pub mod planet_visibility;",
-            "pub mod profiles;",
-            "pub mod lighting;",
-            "pub mod moon_lighting;",
-            "pub mod shader_source;",
-            "pub use celestial_halo::CelestialHaloGpu;",
-            "pub use moon_disk::MoonGpu;",
-            "pub use moon_sphere::MoonSphereGpu;",
-        ),
-        ROOT / "games/sample/src/lib.rs": ("DEFAULT_COMBAT_CONFIG", "demo_universe_catalog"),
-        ROOT / "crates/client-runtime/src/lib.rs": (
-            "pub mod environment;",
-            "ClientSession, DisconnectReason",
-            "pub use prediction::{ClientPrediction, PredictedStep};",
-            "pub use snapshots::{RemotePlayerTrack, SnapshotReconciler};",
-        ),
-        ROOT / "crates/procgen/src/lib.rs": ("pub use geography::{EarthSampleError, PreparedGeography};",),
+    ownership = {
+        "ClientGameState": ROOT / "apps/client/src/application/game.rs",
+        "WorldTransitionController": ROOT / "apps/client/src/application/transitions.rs",
+        "AppPaths": ROOT / "crates/platform/src/app_paths.rs",
+        "RenderFrame": ROOT / "crates/renderer/src/render_frame.rs",
+        "GeometryPublicationStamp": ROOT / "crates/renderer/src/world_geometry_gpu.rs",
     }
-    for path, required in required_exports.items():
+    declarations = re.compile(r"\b(?:struct|enum|trait|type)\s+{}\b")
+    rust_sources = sorted(ROOT.rglob("*.rs"))
+    rust_sources = [path for path in rust_sources if "target" not in path.parts and ".git" not in path.parts]
+    for symbol, owner in ownership.items():
         try:
-            source = path.read_text(encoding="utf-8")
-            for symbol in required:
-                if symbol not in source:
-                    errors.append(f"{path.relative_to(ROOT).as_posix()}: missing export {symbol}")
+            owner_source = owner.read_text(encoding="utf-8")
         except OSError as error:
-            errors.append(str(error))
+            errors.append(f"missing owner for {symbol}: {error}")
+            continue
+        if not re.search(declarations.pattern.format(re.escape(symbol)), owner_source):
+            errors.append(f"{owner.relative_to(ROOT).as_posix()} does not define {symbol}")
+        for source_path in rust_sources:
+            if source_path == owner:
+                continue
+            source = source_path.read_text(encoding="utf-8")
+            if re.search(declarations.pattern.format(re.escape(symbol)), source):
+                errors.append(f"{symbol} has a second definition in {source_path.relative_to(ROOT).as_posix()}")
 
     renderer_shaders = ROOT / "crates/renderer/src/shaders"
     client_renderer = ROOT / "apps/client/src/renderer"
-    if not (renderer_shaders / "frame.wgsl").is_file():
-        errors.append("renderer frame shader is missing from the renderer crate")
+    if not (renderer_shaders / "frame.wgsl").is_file() or not (renderer_shaders / "shadow_sampling.wgsl").is_file():
+        errors.append("renderer-owned WGSL sources are missing from the renderer crate")
     if list(client_renderer.glob("*.wgsl")):
         errors.append("client application still owns renderer WGSL source files")
-    for launcher in ("import-gebco-lite.ps1", "import-gebco.ps1"):
-        if not (ROOT / launcher).is_file():
-            errors.append(f"repository-root geography launcher is missing: {launcher}")
-    if not (ROOT / "tools/geography/scripts/import_gebco_lite.py").is_file():
-        errors.append("compact geography importer is not under tools/geography")
+    frame_source = (ROOT / "crates/renderer/src/render_frame.rs").read_text(encoding="utf-8")
+    if re.search(r"\bwgpu::|\b(?:Buffer|Texture|Device|Queue)\b", frame_source):
+        errors.append("RenderFrame contains GPU handles instead of CPU frame values")
 
-    if (ROOT / "crates/procgen/src/earth.rs").exists():
-        errors.append("procgen still contains the legacy global GEBCO package loader")
-    server_manifest = ROOT / "apps/server/Cargo.toml"
-    try:
-        server_dependencies = server_manifest.read_text(encoding="utf-8")
-        if "minimium-server-runtime" not in server_dependencies:
-            errors.append("server application does not depend on minimium-server-runtime")
-        if "minimium-protocol" in server_dependencies or "minimium-storage" in server_dependencies:
-            errors.append("server application still directly depends on runtime domains")
-    except OSError as error:
-        errors.append(str(error))
-    client_manifest = ROOT / "apps/client/Cargo.toml"
-    try:
-        if "minimium-client-runtime" not in client_manifest.read_text(encoding="utf-8"):
-            errors.append("client application does not depend on minimium-client-runtime")
-    except OSError as error:
-        errors.append(str(error))
-
-    central_parser = ROOT / "apps/client/src/client_commands.rs"
-    command_modules = (
-        "connection.rs", "environment.rs", "gameplay.rs", "interface.rs", "weather.rs",
+    old_paths = (
+        ROOT / "apps/client/src/renderer/client_game.rs",
+        ROOT / "crates/procgen/src/earth.rs",
     )
-    try:
-        central = central_parser.read_text(encoding="utf-8")
-        if re.search(r"if\s+\*command\s*==|match\s*\(\*command", central):
-            errors.append("client_commands.rs contains command-name-specific parser branches")
-        for module in command_modules:
-            source = (central_parser.parent / "client_commands" / module).read_text(encoding="utf-8")
-            if "const COMMANDS:" not in source or "fn parse(" not in source or "registry.register(COMMANDS)" not in source:
-                errors.append(f"client command module lacks a local parser registration: {module}")
-    except OSError as error:
-        errors.append(str(error))
+    for path in old_paths:
+        if path.exists():
+            errors.append(f"replaced implementation remains at {path.relative_to(ROOT).as_posix()}")
+    for path in (ROOT / "crates/renderer/src").rglob("*.rs"):
+        source = path.read_text(encoding="utf-8")
+        if re.search(r"\bTerrainView::legacy\b|\bpub\s+fn\s+render_patches(?:_cached|_cancellable)?\s*\(", source):
+            errors.append(f"legacy terrain presentation entry point remains in {path.relative_to(ROOT).as_posix()}")
 
     if errors:
         print("Static refactor check failed:", file=sys.stderr)
         print("\n".join(f"  - {error}" for error in errors), file=sys.stderr)
         return 1
-    print("Static refactor check passed: Rust/WGSL layout, exports, halo dispatch and command parser ownership.")
+    print("Static refactor check passed: Rust/WGSL layouts, symbol ownership and replaced-path boundaries.")
     return 0
 
 

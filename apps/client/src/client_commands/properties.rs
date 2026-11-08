@@ -8,7 +8,10 @@ use minimium_renderer::{
 };
 
 mod catalog;
+mod types;
+pub(crate) use types::{ClientPropertyCommand, ClientPropertyKey, ClientPropertyValue};
 
+#[cfg(feature = "desktop")]
 pub(crate) fn property_specs() -> impl Iterator<Item = &'static minimium_commands::PropertySpec> {
     catalog::registry().specs()
 }
@@ -17,78 +20,41 @@ pub(crate) fn property_spec(key: &str) -> Option<&'static minimium_commands::Pro
     catalog::registry().get(key)
 }
 
-pub(crate) fn format_property_help(spec: &minimium_commands::PropertySpec) -> String {
-    catalog::format_property_help(spec)
+pub(crate) fn format_property_help_localized(
+    spec: &minimium_commands::PropertySpec,
+    localizer: &minimium_localization::Localizer,
+    locale: minimium_localization::Locale,
+) -> String {
+    let description = localizer.format(
+        locale,
+        &minimium_localization::UiMessage::PropertyDescription(spec.key.to_owned()),
+    );
+    catalog::format_property_help_with_description(spec, &description)
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ClientPropertyKey {
-    CameraFov,
-    MouseSensitivity,
-    SkyQuality,
-    SkyNames,
-    CloudDetail,
-    AtmosphereDebug,
-    TerrainDebug,
-    CloudDebug,
-    SkyDemo,
-    MovementFly,
-    MovementSpeed,
-    MovementAccel,
-    WorldTimeMode,
-    WorldTimeScale,
-    WorldTimeOfflinePolicy,
-    WorldTimeUtc,
-    WorldTimeRevision,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum ClientPropertyValue {
-    CameraFov(f32),
-    MouseSensitivity(f32),
-    SkyQuality(SkyQuality),
-    SkyNames(bool),
-    CloudDetail(u8),
-    AtmosphereDebug(AtmosphereDebug),
-    TerrainDebug(TerrainDebug),
-    CloudDebug(CloudDebug),
-    SkyDemo(bool),
-    MovementFly(bool),
-    MovementSpeed(f32),
-    MovementAccel(f32),
-    WorldTimeMode(ClockMode),
-    WorldTimeScale(String),
-    WorldTimeOfflinePolicy(OfflinePolicy),
-}
-
-impl ClientPropertyValue {
-    pub(crate) fn key(&self) -> ClientPropertyKey {
-        match self {
-            Self::CameraFov(_) => ClientPropertyKey::CameraFov,
-            Self::MouseSensitivity(_) => ClientPropertyKey::MouseSensitivity,
-            Self::SkyQuality(_) => ClientPropertyKey::SkyQuality,
-            Self::SkyNames(_) => ClientPropertyKey::SkyNames,
-            Self::CloudDetail(_) => ClientPropertyKey::CloudDetail,
-            Self::AtmosphereDebug(_) => ClientPropertyKey::AtmosphereDebug,
-            Self::TerrainDebug(_) => ClientPropertyKey::TerrainDebug,
-            Self::CloudDebug(_) => ClientPropertyKey::CloudDebug,
-            Self::SkyDemo(_) => ClientPropertyKey::SkyDemo,
-            Self::MovementFly(_) => ClientPropertyKey::MovementFly,
-            Self::MovementSpeed(_) => ClientPropertyKey::MovementSpeed,
-            Self::MovementAccel(_) => ClientPropertyKey::MovementAccel,
-            Self::WorldTimeMode(_) => ClientPropertyKey::WorldTimeMode,
-            Self::WorldTimeScale(_) => ClientPropertyKey::WorldTimeScale,
-            Self::WorldTimeOfflinePolicy(_) => ClientPropertyKey::WorldTimeOfflinePolicy,
-        }
+pub(crate) fn format_property_list_localized(
+    prefix: Option<&str>,
+    localizer: &minimium_localization::Localizer,
+    locale: minimium_localization::Locale,
+) -> String {
+    let items = registry().list(prefix).collect::<Vec<_>>();
+    if items.is_empty() {
+        return localizer.format(
+            locale,
+            &minimium_localization::UiMessage::NoPropertyMatches(prefix.unwrap_or("*").to_owned()),
+        );
     }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum ClientPropertyCommand {
-    Get(ClientPropertyKey),
-    Set(ClientPropertyValue),
-    Reset(ClientPropertyKey),
-    Print(String),
+    items
+        .into_iter()
+        .map(|spec| {
+            let description = localizer.format(
+                locale,
+                &minimium_localization::UiMessage::PropertyDescription(spec.key.to_owned()),
+            );
+            format!("{} — {}", spec.key, description)
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 pub(crate) fn format_time_value(
@@ -150,54 +116,6 @@ pub(crate) fn format_time_value(
     ))
 }
 
-impl ClientPropertyKey {
-    pub(crate) fn key(self) -> &'static str {
-        match self {
-            Self::CameraFov => "client.camera.fov",
-            Self::MouseSensitivity => "client.input.mouse_sensitivity",
-            Self::SkyQuality => "client.graphics.sky_quality",
-            Self::SkyNames => "client.sky.names",
-            Self::CloudDetail => "client.weather.cloud_detail",
-            Self::AtmosphereDebug => "client.debug.atmosphere",
-            Self::TerrainDebug => "client.debug.terrain",
-            Self::CloudDebug => "client.debug.clouds",
-            Self::SkyDemo => "client.sky.demo",
-            Self::MovementFly => "player.movement.fly",
-            Self::MovementSpeed => "player.movement.speed",
-            Self::MovementAccel => "player.movement.accel",
-            Self::WorldTimeMode => "world.time.mode",
-            Self::WorldTimeScale => "world.time.scale",
-            Self::WorldTimeOfflinePolicy => "world.time.offline_policy",
-            Self::WorldTimeUtc => "world.time.utc",
-            Self::WorldTimeRevision => "world.time.revision",
-        }
-    }
-
-    fn parse(key: &str) -> Option<Self> {
-        registry().get(key)?;
-        Some(match key {
-            "client.camera.fov" => Self::CameraFov,
-            "client.input.mouse_sensitivity" => Self::MouseSensitivity,
-            "client.graphics.sky_quality" => Self::SkyQuality,
-            "client.sky.names" => Self::SkyNames,
-            "client.weather.cloud_detail" => Self::CloudDetail,
-            "client.debug.atmosphere" => Self::AtmosphereDebug,
-            "client.debug.terrain" => Self::TerrainDebug,
-            "client.debug.clouds" => Self::CloudDebug,
-            "client.sky.demo" => Self::SkyDemo,
-            "player.movement.fly" => Self::MovementFly,
-            "player.movement.speed" => Self::MovementSpeed,
-            "player.movement.accel" => Self::MovementAccel,
-            "world.time.mode" => Self::WorldTimeMode,
-            "world.time.scale" => Self::WorldTimeScale,
-            "world.time.offline_policy" => Self::WorldTimeOfflinePolicy,
-            "world.time.utc" => Self::WorldTimeUtc,
-            "world.time.revision" => Self::WorldTimeRevision,
-            _ => return None,
-        })
-    }
-}
-
 pub(crate) fn parse_setting_value(
     key: &str,
     value: &str,
@@ -238,36 +156,22 @@ fn parse_request(request: PropertyRequest) -> Result<Option<ClientPropertyComman
             }
             Ok(Some(ClientPropertyCommand::Reset(key)))
         }
-        PropertyRequest::List { prefix } => {
-            let items = registry().list(prefix.as_deref()).collect::<Vec<_>>();
-            if items.is_empty() {
-                return Ok(Some(ClientPropertyCommand::Print(format!(
-                    "no client properties match {}",
-                    prefix.as_deref().unwrap_or("the requested prefix")
-                ))));
-            }
-            Ok(Some(ClientPropertyCommand::Print(
-                items
-                    .into_iter()
-                    .map(|spec| format!("{} — {}", spec.key, spec.description))
-                    .collect::<Vec<_>>()
-                    .join("\n"),
-            )))
-        }
+        PropertyRequest::List { prefix } => Ok(Some(ClientPropertyCommand::List(prefix))),
         PropertyRequest::Help { target: None } => Ok(None),
         PropertyRequest::Help {
             target: Some(target),
         } => {
-            if let Some(spec) = registry().get(&target) {
-                return Ok(Some(ClientPropertyCommand::Print(format_property_help(
-                    spec,
-                ))));
+            if registry().get(&target).is_some() {
+                let key = require_key(&target)?;
+                return Ok(Some(ClientPropertyCommand::Help(key)));
             }
             if let Some(spec) = command_specs()
                 .iter()
                 .find(|spec| spec.name == target || spec.alias == Some(target.as_str()))
             {
-                return Ok(Some(ClientPropertyCommand::Print(spec.usage.to_owned())));
+                return Ok(Some(ClientPropertyCommand::CommandHelp(
+                    spec.name.to_owned(),
+                )));
             }
             let grouped = command_specs()
                 .iter()
@@ -277,10 +181,10 @@ fn parse_request(request: PropertyRequest) -> Result<Option<ClientPropertyComman
                             .alias
                             .is_some_and(|alias| alias.starts_with(&format!("{target} ")))
                 })
-                .map(|spec| spec.usage)
+                .map(|spec| spec.name)
                 .collect::<Vec<_>>();
             if !grouped.is_empty() {
-                return Ok(Some(ClientPropertyCommand::Print(grouped.join("\n"))));
+                return Ok(Some(ClientPropertyCommand::CommandHelpGroup(target)));
             }
             Err(CommandError::new(
                 CommandErrorCode::HelpQuery,
@@ -313,6 +217,15 @@ fn parse_value(key: ClientPropertyKey, value: &str) -> Result<ClientPropertyValu
         )
     };
     match key {
+        ClientPropertyKey::Locale => match value {
+            "en" => Ok(ClientPropertyValue::Locale(
+                minimium_localization::Locale::English,
+            )),
+            "pl" => Ok(ClientPropertyValue::Locale(
+                minimium_localization::Locale::Polish,
+            )),
+            _ => Err(invalid("locale must be en or pl".into())),
+        },
         ClientPropertyKey::CameraFov => super::parse_fov_degrees(value)
             .map(ClientPropertyValue::CameraFov)
             .map_err(|error| invalid(error.to_owned())),
@@ -326,6 +239,10 @@ fn parse_value(key: ClientPropertyKey, value: &str) -> Result<ClientPropertyValu
                 ));
             }
             Ok(ClientPropertyValue::MouseSensitivity(number))
+        }
+        ClientPropertyKey::InputBindings => {
+            crate::input::InputMapper::from_setting(value).map_err(invalid)?;
+            Ok(ClientPropertyValue::InputBindings(value.to_owned()))
         }
         ClientPropertyKey::SkyQuality => SkyQuality::parse(value)
             .map(ClientPropertyValue::SkyQuality)

@@ -1,6 +1,6 @@
 use minimium_core::ids::PlayerId;
 use minimium_protocol::WorldContext;
-use minimium_simulation::{CharacterInput, ShotOutcome};
+use minimium_simulation::ShotOutcome;
 use minimium_world::world::{Position3Mm, WorldInstanceId};
 
 pub(crate) enum WorldInput {
@@ -13,13 +13,13 @@ pub(crate) enum WorldInput {
         health: u16,
     },
     Leave(PlayerId),
-    Move(PlayerId, CharacterInput),
+    Move(PlayerId, minimium_protocol::MovementSample),
     Fire(PlayerId, [f32; 3]),
     MapTeleport(PlayerId, WorldContext, [f32; 3]),
     SetAltitude(PlayerId, WorldContext, f32),
     Chat(PlayerId, String),
     Rename(PlayerId, String),
-    UsePortal(PlayerId, WorldContext),
+    InteractEntity(PlayerId, WorldContext, minimium_world::entity::EntityId),
 }
 
 pub(crate) enum WorldEvent {

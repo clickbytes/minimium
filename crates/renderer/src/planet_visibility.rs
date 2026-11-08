@@ -7,48 +7,6 @@ use std::sync::Arc;
 
 const MAX_VISIBLE_SECTORS: usize = 512;
 
-pub fn render_patches(
-    manifest: WorldManifest,
-    position: [f32; 3],
-    collision: &[(SectorKey, Arc<SectorGeometry>)],
-    geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
-) -> Vec<(SectorKey, u8, Arc<SectorGeometry>)> {
-    render_patches_cached(
-        manifest,
-        position,
-        collision,
-        geography,
-        &mut crate::render_patch_cache::RenderPatchCache::default(),
-    )
-}
-
-pub fn render_patches_cached(
-    manifest: WorldManifest,
-    position: [f32; 3],
-    collision: &[(SectorKey, Arc<SectorGeometry>)],
-    geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
-    cache: &mut crate::render_patch_cache::RenderPatchCache,
-) -> Vec<(SectorKey, u8, Arc<SectorGeometry>)> {
-    render_patches_cancellable(manifest, position, collision, geography, cache, &|| false)
-}
-pub fn render_patches_cancellable(
-    manifest: WorldManifest,
-    position: [f32; 3],
-    collision: &[(SectorKey, Arc<SectorGeometry>)],
-    geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
-    cache: &mut crate::render_patch_cache::RenderPatchCache,
-    cancelled: &dyn Fn() -> bool,
-) -> Vec<(SectorKey, u8, Arc<SectorGeometry>)> {
-    render_patches_for_view(
-        manifest,
-        crate::terrain_view::TerrainView::legacy(position),
-        collision,
-        geography,
-        cache,
-        cancelled,
-    )
-}
-
 pub fn render_patches_for_view(
     manifest: WorldManifest,
     view: crate::terrain_view::TerrainView,
@@ -240,12 +198,20 @@ fn dense_render_patches(
         };
         let (face, u, v, span, _) = leaves.swap_remove(index);
         let half = span / 2;
+        let mut children = Vec::with_capacity(4);
         for dy in [0, half] {
             for dx in [0, half] {
                 if let Some(child) = candidate(face, u + dx, v + dy, half) {
-                    leaves.push(child);
+                    children.push(child);
                 }
             }
+        }
+        if children.len() == 4 {
+            leaves.extend(children);
+        } else {
+            // Culling only some children would expose a square hole where the
+            // parent used to cover the globe edge.
+            leaves.push((face, u, v, span, 0.0));
         }
     }
     let selected: Vec<_> = leaves

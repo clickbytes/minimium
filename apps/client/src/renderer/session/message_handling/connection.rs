@@ -15,11 +15,13 @@ impl Renderer {
         else {
             return;
         };
-        if self.settings.require_earth && manifest.planet().is_none_or(|planet| planet.mode != 1) {
+        if self.application.settings.require_earth
+            && manifest.planet().is_none_or(|planet| planet.mode != 1)
+        {
             self.fail_connection("serwer nie udostępnia manifestu Earth");
             return;
         }
-        if !self.load_generated_catalog(context.instance(), manifest) {
+        if !self.load_resolved_catalog(context.instance(), manifest) {
             self.fail_connection("server generation manifest is not supported");
             return;
         }
@@ -32,19 +34,24 @@ impl Renderer {
             self.fail_connection("saved world instance is not available on this client");
             return;
         }
-        self.game.session_context = Some(context);
-        self.game.gameplay.health = health;
-        self.gpu.scene_visible = !self.teleport_loading;
-        self.connection_status = if self.settings.require_earth {
-            "Earth: połączono".into()
-        } else {
-            "Połączono".into()
-        };
-        self.game.gameplay.prediction.position_mm = manifest.planet().map(|_| position_mm);
-        if self.ui.console.open {
-            self.ui
-                .console
-                .push_line(Text::Connected { id, health }.to_string());
+        self.application.game.set_session_context(Some(context));
+        self.application.game.gameplay.health = health;
+        self.gpu.scene_visible = !self.application.is_loading();
+        self.application.status =
+            crate::application::ClientStatus::Status(if self.application.settings.require_earth {
+                minimium_localization::UiStatus::EarthConnected
+            } else {
+                minimium_localization::UiStatus::Connected
+            });
+        self.application.game.gameplay.prediction.position_mm =
+            manifest.planet().map(|_| position_mm);
+        if self.application.ui.console.open {
+            self.application.ui.console.push_client_text(
+                Text::Connected { id, health },
+                false,
+                &self.localizer,
+                self.application.settings.locale,
+            );
         }
     }
 }

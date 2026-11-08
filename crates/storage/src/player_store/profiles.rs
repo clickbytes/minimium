@@ -62,9 +62,15 @@ impl PlayerStore {
                 ));
             }
             let id = *next_id;
-            *next_id = id
+            let following_id = id
                 .checked_add(1)
                 .ok_or_else(|| io::Error::other("player id space is exhausted"))?;
+            if self.active_players.contains(&PlayerId::new(id)) {
+                return Err(io::Error::new(
+                    io::ErrorKind::AlreadyExists,
+                    "player id is already active",
+                ));
+            }
             let default_name = format!("Player{id}");
             let name = StoredName::new(&default_name)
                 .or_else(|| StoredName::new(&format!("P{id}")))
@@ -82,8 +88,10 @@ impl PlayerStore {
                 location: spawn_location,
                 return_location: spawn_location,
             };
+            self.reserve_profile_record(profile_id)?;
             Arc::make_mut(&mut self.players[shard]).insert(profile_id, player);
             self.profile_by_player.insert(PlayerId::new(id), profile_id);
+            *next_id = following_id;
         }
         let player = self.players[shard]
             .get(&profile_id)

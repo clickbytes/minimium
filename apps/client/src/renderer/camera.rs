@@ -3,8 +3,11 @@ use crate::messages::ClientText as Text;
 
 impl Renderer {
     pub(super) fn update(&mut self) -> environment::PreparedEnvironmentFrame {
-        if self.overview_open && self.overview_instance != Some(self.game.current_instance) {
-            self.overview_open = false;
+        if self.application.overview().is_open()
+            && self.application.overview().instance()
+                != Some(self.application.game.current_instance)
+        {
+            self.application.overview_close();
             self.gpu.overview_active = false;
         }
         self.gpu.world_geometry.begin_frame();
@@ -14,85 +17,108 @@ impl Renderer {
             .as_secs_f32()
             .min(minimium_simulation::SIMULATION_STEP_SECONDS);
         self.metrics.last_frame = now;
-        let direction = if (self.game.gameplay.sectors_ready || self.connection.movement.fly)
-            && !self.overview_open
+        let direction = if (self.application.game.gameplay.sectors_ready
+            || self.application.connection.movement.can_fly)
+            && !self.application.overview().is_open()
         {
             self.input.movement(
-                self.ui.console.open,
-                self.game.gameplay.prediction.character,
+                &self.application.input,
+                self.application.ui.console.open,
+                self.application.game.gameplay.prediction.character,
                 self.is_earth_world(),
             )
         } else {
             [0.0; 2]
         };
-        self.game.accumulate_prediction_time(dt);
+        self.application.game.accumulate_prediction_time(dt);
         let manifest = self
+            .application
             .game
             .world_manifests
-            .get(&self.game.current_instance)
+            .get(&self.application.game.current_instance)
             .copied();
-        while let Some(predicted) = self.game.predict_next(
+        while let Some(predicted) = self.application.game.predict_next(
             direction,
-            if self.ui.console.open || self.overview_open {
+            if self.application.ui.console.open
+                || self.application.overview().is_open()
+                || !self.application.connection.flight_enabled
+            {
                 0.0
             } else {
-                u8::from(self.input.keys.contains(&KeyCode::Space)) as f32
+                u8::from(
+                    self.application
+                        .input
+                        .is_active(crate::input::InputAction::MoveUp)
+                        || self
+                            .application
+                            .input
+                            .is_active(crate::input::InputAction::Jump),
+                ) as f32
                     - u8::from(
-                        self.input.keys.contains(&KeyCode::ControlLeft)
-                            || self.input.keys.contains(&KeyCode::ControlRight),
+                        self.application
+                            .input
+                            .is_active(crate::input::InputAction::MoveDown),
                     ) as f32
             },
-            self.connection.movement,
+            self.application.connection.movement,
             self.input.jump_pending,
-            (self.game.gameplay.sectors_ready || self.connection.movement.fly)
-                && !self.overview_open,
+            (self.application.game.gameplay.sectors_ready
+                || self.application.connection.movement.can_fly)
+                && !self.application.overview().is_open(),
             manifest,
-            self.connection
+            self.application
+                .connection
                 .session()
                 .and_then(|session| session.prepared_geography()),
         ) {
             let mut input = predicted.input;
             self.input.jump_pending = false;
-            if !self.refresh_active_sector_scene() && !self.connection.movement.fly {
-                self.game.gameplay.prediction.character = predicted.previous_state;
-                self.game.gameplay.prediction.position_mm = predicted.previous_mm;
-                input = CharacterInput::default();
+            if !self.refresh_active_sector_scene() && !self.application.connection.movement.can_fly
+            {
+                self.application.game.gameplay.prediction.character = predicted.previous_state;
+                self.application.game.gameplay.prediction.position_mm = predicted.previous_mm;
+                input = MovementIntent::default();
             }
-            self.input.input_keepalive += minimium_simulation::SIMULATION_STEP_SECONDS;
-            let moving = input.direction != [0.0, 0.0];
-            let input_changed = input.direction != self.input.last_sent_direction;
             if self
+                .application
                 .connection
                 .session()
                 .is_some_and(|session| session.state() == SessionState::Connected)
-                && (self.input.input_keepalive
-                    >= 2.0 * minimium_simulation::SIMULATION_STEP_SECONDS
-                    || input.jump
-                    || input_changed
-                    || (moving
-                        && self.input.input_keepalive
-                            >= 2.0 * minimium_simulation::SIMULATION_STEP_SECONDS))
             {
-                if let Some(session) = self.connection.session_mut() {
-                    let result = session.queue(&ClientMessage::Motion(input));
-                    if let Err(error) = result {
-                        self.fail_connection(Text::CouldNotQueueMovement(error.into()).to_string());
-                    } else {
-                        self.input.last_sent_direction = input.direction;
-                        self.input.input_keepalive = 0.0;
+                let policy = self.application.connection.movement;
+                let collision_revision = self.application.game.gameplay.collision_revision;
+                if let Some(session) = self.application.connection.session_mut() {
+                    let result =
+                        session.queue_world_input(minimium_protocol::ClientWorldInput::Motion(
+                            minimium_protocol::MovementSample::new(input),
+                        ));
+                    match result {
+                        Err(error) => self.fail_connection(
+                            Text::CouldNotQueueMovement(error.into())
+                                .localized(&self.localizer, self.application.settings.locale),
+                        ),
+                        Ok(Some(sample)) => {
+                            self.application.game.gameplay.prediction.record_input(
+                                sample,
+                                policy,
+                                collision_revision,
+                            );
+                        }
+                        Ok(None) => {}
                     }
                 }
             }
         }
-        let origin = if self.overview_open {
+        let origin = if self.application.overview().is_open() {
             self.gpu.render_origin
         } else if self
+            .application
             .game
             .world_manifests
-            .get(&self.game.current_instance)
+            .get(&self.application.game.current_instance)
             .is_some_and(|manifest| manifest.planet().is_some())
         {
-            let position = self.game.gameplay.prediction.character.position;
+            let position = self.application.game.gameplay.prediction.character.position;
             if position
                 .iter()
                 .zip(self.gpu.render_origin)
@@ -106,24 +132,36 @@ impl Renderer {
             [0.0; 3]
         };
         if self.gpu.set_render_origin(origin) {
+            self.shadow_state
+                .invalidate(shadows::ShadowInvalidReason::StaleContext);
             self.last_render_position = [f32::INFINITY; 3];
-            self.game.gameplay.remote_geometry_dirty = true;
+            self.gameplay_presentation.remote_geometry_dirty = true;
         }
         self.poll_connector();
         self.poll_session();
         if self.refresh_active_sector_scene()
-            && self.teleport_loading
+            && self.application.is_loading()
             && self.last_render_position.iter().all(|p| p.is_finite())
         {
-            self.teleport_loading = false;
+            self.application.set_loading(false);
             self.gpu.scene_visible = true;
-            self.connection_status = "Earth: przeniesiono".into();
+            self.application.status = crate::application::ClientStatus::Status(
+                minimium_localization::UiStatus::EarthMoved,
+            );
         }
         self.advance_pending_transitions();
         self.update_environment_frame();
+        self.send_sky_view(now);
+        self.flush_pending_bolid(now);
         self.update_remote_player_rendering(Instant::now());
 
-        let (view, far) = if self.overview_open {
+        let visual_offset = self
+            .application
+            .game
+            .gameplay
+            .prediction
+            .take_visual_offset(dt);
+        let (view, far) = if self.application.overview().is_open() {
             let (view, far) = self.overview_camera();
             (
                 view * glam::Mat4::from_translation(glam::Vec3::from_array(self.gpu.render_origin)),
@@ -131,30 +169,34 @@ impl Renderer {
             )
         } else {
             let direction = camera_direction(
-                self.game.gameplay.prediction.character,
+                self.application.game.gameplay.prediction.character,
                 self.input.yaw,
                 self.input.pitch,
             )
             .normalize();
             let up = glam::Vec3::from_array(
                 character_frame(
-                    self.game.gameplay.prediction.character.gravity,
-                    self.game.gameplay.prediction.character.position,
+                    self.application.game.gameplay.prediction.character.gravity,
+                    self.application.game.gameplay.prediction.character.position,
                 )
                 .0,
             );
-            let camera_position =
-                glam::Vec3::from_array(self.game.gameplay.prediction.character.position) + up * 1.7;
+            let camera_position = glam::Vec3::from_array(
+                self.application.game.gameplay.prediction.character.position,
+            ) + glam::Vec3::from_array(visual_offset)
+                + up * 1.7;
             let far = if self
+                .application
                 .game
                 .world_manifests
-                .get(&self.game.current_instance)
+                .get(&self.application.game.current_instance)
                 .is_some_and(|manifest| manifest.topology() == WorldTopology::Planet)
             {
                 let radius = self
+                    .application
                     .game
                     .world_manifests
-                    .get(&self.game.current_instance)
+                    .get(&self.application.game.current_instance)
                     .map(|manifest| {
                         minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0
                     })
@@ -167,12 +209,14 @@ impl Renderer {
             } else {
                 200.0
             };
-            let local_camera = if let Some(position_mm) = self.game.gameplay.prediction.position_mm
+            let local_camera = if let Some(position_mm) =
+                self.application.game.gameplay.prediction.position_mm
             {
                 glam::Vec3::from_array(std::array::from_fn(|axis| {
                     (position_mm.0[axis] as f64 / 1000.0 - f64::from(self.gpu.render_origin[axis]))
                         as f32
-                })) + up * 1.7
+                })) + glam::Vec3::from_array(visual_offset)
+                    + up * 1.7
             } else {
                 camera_position - glam::Vec3::from_array(self.gpu.render_origin)
             };
@@ -183,29 +227,36 @@ impl Renderer {
         let camera_eye_world = (camera_eye_local + render_origin).as_dvec3().to_array();
         // The overview camera is millions of metres from the globe. A 5 cm
         // near plane rounds its depth to 1.0 in f32 and hides the surface.
-        let near = if self.overview_open
+        let near = if self.application.overview().is_open()
             && self
+                .application
                 .game
                 .world_manifests
-                .get(&self.game.current_instance)
+                .get(&self.application.game.current_instance)
                 .is_some_and(|manifest| manifest.topology() == WorldTopology::Planet)
         {
             let radius = self
+                .application
                 .game
                 .world_manifests
-                .get(&self.game.current_instance)
+                .get(&self.application.game.current_instance)
                 .map(|manifest| {
                     minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0
                 })
                 .unwrap_or(10_000.0);
-            radius * ((self.overview_zoom - 1.0) * 0.08).max(0.001)
+            radius * ((self.application.overview().zoom() - 1.0) * 0.08).max(0.001)
         } else {
             let terrain_near = self.gpu.world_geometry.surface_near(
-                self.game.current_instance,
-                &self.gpu.active_sector_keys,
+                self.application.game.current_instance,
+                &self
+                    .gpu
+                    .world_geometry
+                    .publication()
+                    .map_or_else(Vec::new, |publication| publication.keys.clone()),
                 camera_eye_world,
             );
-            self.game
+            self.application
+                .game
                 .gameplay
                 .reconciliation
                 .tracks()
@@ -236,9 +287,10 @@ impl Renderer {
             far,
         );
         let game_planet_radius_m = self
+            .application
             .game
             .world_manifests
-            .get(&self.game.current_instance)
+            .get(&self.application.game.current_instance)
             .filter(|manifest| manifest.topology() == WorldTopology::Planet)
             .map(|manifest| {
                 manifest
@@ -257,7 +309,7 @@ impl Renderer {
             render_origin_m,
             camera_eye_world_m: camera_eye_world,
             game_planet_radius_m,
-            kind: if self.overview_open {
+            kind: if self.application.overview().is_open() {
                 environment::EnvironmentViewKind::Overview
             } else {
                 environment::EnvironmentViewKind::Surface
@@ -280,6 +332,14 @@ impl Renderer {
         };
 
         self.update_weather(&prepared_environment.frame);
+        let player_position = self
+            .application
+            .game
+            .gameplay
+            .prediction
+            .character
+            .position
+            .map(f64::from);
         let earth = prepared_environment
             .frame
             .descriptor
@@ -293,17 +353,19 @@ impl Renderer {
             if earth {
                 game_planet_radius_m
                     + self
+                        .application
                         .game
                         .world_manifests
-                        .get(&self.game.current_instance)
+                        .get(&self.application.game.current_instance)
                         .and_then(|m| m.planet())
                         .map_or(0.0, |p| p.sea_level_mm as f64 / 1000.0)
             } else {
                 0.0
             },
-            self.game
+            self.application
+                .game
                 .world_manifests
-                .get(&self.game.current_instance)
+                .get(&self.application.game.current_instance)
                 .and_then(|m| m.planet())
                 .filter(|p| p.mode == 1)
                 .map_or(1.0, |p| p.height_scale_permille as f64 / 1000.0),
@@ -313,30 +375,41 @@ impl Renderer {
                 .map_or(0.0, |t| t as f64 / 1000.0),
         );
 
+        let shadow_prepare_started = Instant::now();
+        self.prepared_bolids = self.prepare_bolids();
+        self.prepare_shadow_frame(&prepared_environment.frame, player_position);
+        self.gpu.last_shadow_prepare_cpu = Some(shadow_prepare_started.elapsed());
+
         let celestial_labels = if self.show_celestial_names {
             celestial_labels::prepare(&prepared_environment.frame, self.sky_catalogue.as_ref())
         } else {
             Vec::new()
         };
-        self.ui.console.build_vertices(
+        let connection_status = self
+            .application
+            .status
+            .format(&self.localizer, self.application.settings.locale);
+        self.application.ui.console.build_vertices(
             self.gpu.size.width,
             self.gpu.size.height,
-            self.game.gameplay.health,
-            self.input.cursor_locked && !self.ui.console.open,
-            self.game
-                .gameplay
+            self.application.game.gameplay.health,
+            self.input.cursor_locked && !self.application.ui.console.open,
+            self.gameplay_presentation
                 .hit_confirmation_until
                 .is_some_and(|until| Instant::now() < until),
             crate::console::Overlay {
                 status: self
+                    .application
                     .settings
                     .require_earth
-                    .then_some(self.connection_status.as_str()),
-                overview_zoom: self.overview_uses_zoom().then_some(self.overview_zoom),
+                    .then_some(connection_status.as_str()),
+                overview_zoom: self
+                    .overview_uses_zoom()
+                    .then_some(self.application.overview().zoom()),
                 celestial_labels: &celestial_labels,
             },
         );
-        let ui_vertices = self.ui.console.take_vertices();
+        let ui_vertices = self.application.ui.console.take_vertices();
         prepared_environment.with_ui_vertices(ui_vertices)
     }
 }
@@ -344,6 +417,7 @@ impl Renderer {
 impl InputState {
     fn movement(
         &self,
+        mapper: &crate::input::InputMapper,
         console_open: bool,
         character: CharacterState,
         mirror_earth: bool,
@@ -357,16 +431,16 @@ impl InputState {
             * if mirror_earth { -1.0 } else { 1.0 };
         let mut movement = glam::Vec3::ZERO;
         if !console_open {
-            if self.keys.contains(&KeyCode::KeyW) {
+            if mapper.is_active(crate::input::InputAction::MoveForward) {
                 movement += forward;
             }
-            if self.keys.contains(&KeyCode::KeyS) {
+            if mapper.is_active(crate::input::InputAction::MoveBackward) {
                 movement -= forward;
             }
-            if self.keys.contains(&KeyCode::KeyD) {
+            if mapper.is_active(crate::input::InputAction::MoveRight) {
                 movement += right;
             }
-            if self.keys.contains(&KeyCode::KeyA) {
+            if mapper.is_active(crate::input::InputAction::MoveLeft) {
                 movement -= right;
             }
         }

@@ -30,6 +30,7 @@ fn macro_climate(direction: vec3<f32>, elevation: f32) -> vec2<f32> {
     let dry_belt = exp(-pow((abs(latitude)-0.5)/0.18, 2.0));
     return vec2<f32>(temperature, clamp(0.55-0.38*dry_belt+terrain.climate.z, 0.02, 0.99));
 }
+
 @vertex fn vs_terrain(input: TerrainInput) -> TerrainOutput {
     return TerrainOutput(camera.view_projection * vec4<f32>(input.position, 1.0),
         input.position, input.normal, input.high, input.low, input.coverage_a, input.coverage_b, input.surface,
@@ -119,9 +120,33 @@ fn macro_climate(direction: vec3<f32>, elevation: f32) -> vec2<f32> {
         if physical_atmosphere() {irradiance=physical_moon(input.position);}
         direct += surface_light(normal, view, light, albedo, roughness, packed.a) * irradiance * moon_visibility;
     }
+    if environment.bolid_position_intensity.w > 0.0 {
+        let bolt = environment.bolid_position_intensity.xyz
+            - (input.position + environment.render_origin.xyz);
+        let light = normalize(bolt);
+        let irradiance = bolid_incident(input.position);
+        var bolt_visibility = 1.0;
+        if shadow.flags.y == 3u {
+            bolt_visibility = shadow_visibility(input.position, input.geometric_normal, light);
+            visibility = bolt_visibility;
+        }
+        direct += surface_light(normal, view, light, albedo, roughness, packed.a)
+            * irradiance * bolt_visibility;
+    }
     if terrain.debug.x == 2u { return vec4<f32>(normal*0.5+0.5, 1.0); }
     if terrain.debug.x == 3u { return vec4<f32>(vec3<f32>(input.clip.z), 1.0); }
-    if terrain.debug.x == 4u { return vec4<f32>(vec3<f32>(visibility), 1.0); }
+    if terrain.debug.x == 4u {
+        // Red identifies facets facing away from the point source. These are
+        // geometric self-occlusion, distinct from acne on a front-facing plane.
+        if shadow.flags.y == 3u {
+            let delta = environment.bolid_position_intensity.xyz
+                - (input.position + environment.render_origin.xyz);
+            if dot(input.geometric_normal, delta) <= 0.0 {
+                return vec4<f32>(1.0, 0.0, 0.0, 1.0);
+            }
+        }
+        return vec4<f32>(vec3<f32>(visibility), 1.0);
+    }
     // Cached landform concavity supplies a restrained cavity approximation.
     // It attenuates only indirect light; directional shadows remain geometric.
     let shelter=smoothstep(0.45,0.85,input.habitat.x)*(1.0-smoothstep(0.15,0.5,input.habitat.y));

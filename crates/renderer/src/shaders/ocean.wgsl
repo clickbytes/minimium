@@ -34,6 +34,15 @@ struct OceanOutput {
         if physical_atmosphere() { irradiance = physical_moon(input.position); }
         direct += surface_light(n,v,l,albedo,roughness,0.02)*irradiance*moon_visibility;
     }
+    if environment.bolid_position_intensity.w > 0.0 {
+        let bolt = environment.bolid_position_intensity.xyz
+            - (input.position + environment.render_origin.xyz);
+        let irradiance = bolid_incident(input.position);
+        var bolt_visibility = 1.0;
+        if shadow.flags.y == 3u { bolt_visibility = shadow_visibility(input.position, n, bolt); }
+        direct += surface_light(n, v, normalize(bolt), albedo, roughness, 0.02)
+            * irradiance * bolt_visibility;
+    }
     if terrain.debug.x == 2u { return vec4<f32>(n*0.5+0.5,1.0); }
     if terrain.debug.x == 3u { return vec4<f32>(vec3<f32>(input.clip.z),1.0); }
     if terrain.debug.x == 4u { return vec4<f32>(vec3<f32>(visibility),1.0); }

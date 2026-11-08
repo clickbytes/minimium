@@ -1,5 +1,6 @@
 //! Latest-request worker with bounded geometry/prepared caches; never owns GPU handles.
-use minimium_procgen::{planet_surface_for, PlanetTerrain, PreparedGeography, SectorGeometry};
+use super::sector_scene::SectorWorkerError;
+use minimium_procgen::{PlanetTerrain, PreparedGeography, SectorGeometry, planet_surface_for};
 use minimium_renderer::{prepared_sector::PreparedSector, render_patch_cache::RenderPatchCache};
 use minimium_world::world::{SectorKey, WorldInstanceId, WorldManifest};
 use std::{
@@ -12,6 +13,7 @@ struct Key {
     world: WorldInstanceId,
     manifest: WorldManifest,
     origin: [f32; 3],
+    origin_generation: u64,
     view: minimium_renderer::terrain_view::TerrainView,
 }
 struct Request {
@@ -30,9 +32,15 @@ impl PreparedScene {
         &self,
         world: WorldInstanceId,
         manifest: WorldManifest,
+        view: minimium_renderer::terrain_view::TerrainView,
         origin: [f32; 3],
+        origin_generation: u64,
     ) -> bool {
-        self.key.world == world && self.key.manifest == manifest && self.key.origin == origin
+        self.key.world == world
+            && self.key.manifest == manifest
+            && self.key.view == view
+            && self.key.origin == origin
+            && self.key.origin_generation == origin_generation
     }
     pub fn position(&self) -> [f32; 3] {
         self.key.view.position
@@ -50,7 +58,25 @@ pub(super) struct SectorWorker {
     thread: Option<JoinHandle<()>>,
 }
 impl SectorWorker {
-    pub fn new() -> Self {
+    pub(super) fn shutdown_until(&mut self, deadline: std::time::Instant) -> bool {
+        self.state.0.lock().unwrap().stop = true;
+        self.state.1.notify_one();
+        while self
+            .thread
+            .as_ref()
+            .is_some_and(|thread| !thread.is_finished())
+            && std::time::Instant::now() < deadline
+        {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        match self.thread.take() {
+            Some(thread) if thread.is_finished() => thread.join().is_ok(),
+            Some(_) => false,
+            None => true,
+        }
+    }
+
+    pub fn new() -> Result<Self, SectorWorkerError> {
         let state = Arc::new((Mutex::new(State::default()), Condvar::new()));
         let shared = state.clone();
         let thread = std::thread::Builder::new()
@@ -102,30 +128,27 @@ impl SectorWorker {
                             t
                         });
                     }
-                    let meshes =
-                        if manifest.topology() == minimium_world::world::WorldTopology::Planet {
-                            minimium_renderer::planet_visibility::render_patches_for_view(
-                                manifest,
-                                request.key.view,
-                                &request.collision,
-                                request.geography.clone(),
-                                &mut geometry,
-                                &|| {
-                                    let s = shared.0.lock().unwrap();
-                                    s.stop
-                                        || s.pending.as_ref().is_some_and(|r| {
-                                            r.key.manifest != manifest
-                                                || r.key.origin != request.key.origin
-                                        })
-                                },
-                            )
-                        } else {
-                            request
-                                .collision
-                                .iter()
-                                .map(|(k, g)| (*k, 0, g.clone()))
-                                .collect()
-                        };
+                    let meshes = if manifest.topology()
+                        == minimium_world::world::WorldTopology::Planet
+                    {
+                        minimium_renderer::planet_visibility::render_patches_for_view(
+                            manifest,
+                            request.key.view,
+                            &request.collision,
+                            request.geography.clone(),
+                            &mut geometry,
+                            &|| {
+                                let s = shared.0.lock().unwrap();
+                                s.stop || s.pending.as_ref().is_some_and(|r| r.key != request.key)
+                            },
+                        )
+                    } else {
+                        request
+                            .collision
+                            .iter()
+                            .map(|(k, g)| (*k, 0, g.clone()))
+                            .collect()
+                    };
                     let meshes = if let Some(terrain) = terrain.as_ref() {
                         edges.prepare(meshes, terrain)
                     } else {
@@ -139,13 +162,7 @@ impl SectorWorker {
                     for (key, lod, mesh) in meshes {
                         {
                             let s = shared.0.lock().unwrap();
-                            if s.stop
-                                || s.pending.as_ref().is_some_and(|r| {
-                                    r.key.world != request.key.world
-                                        || r.key.manifest != manifest
-                                        || r.key.origin != request.key.origin
-                                })
-                            {
+                            if s.stop || s.pending.as_ref().is_some_and(|r| r.key != request.key) {
                                 cancelled = true;
                                 break;
                             }
@@ -178,13 +195,7 @@ impl SectorWorker {
                         continue;
                     }
                     let mut s = shared.0.lock().unwrap();
-                    if !s.stop
-                        && s.pending.as_ref().is_none_or(|r| {
-                            r.key.world == request.key.world
-                                && r.key.manifest == manifest
-                                && r.key.origin == request.key.origin
-                        })
-                    {
+                    if !s.stop && s.pending.as_ref().is_none_or(|r| r.key == request.key) {
                         s.completed = Some(Arc::new(PreparedScene {
                             key: request.key,
                             patches,
@@ -194,11 +205,11 @@ impl SectorWorker {
                     }
                 }
             })
-            .expect("terrain presentation worker");
-        Self {
+            .map_err(SectorWorkerError::ThreadSpawn)?;
+        Ok(Self {
             state,
             thread: Some(thread),
-        }
+        })
     }
     pub fn poll(
         &self,
@@ -206,19 +217,22 @@ impl SectorWorker {
         manifest: WorldManifest,
         view: minimium_renderer::terrain_view::TerrainView,
         origin: [f32; 3],
+        origin_generation: u64,
         collision: &[(SectorKey, Arc<SectorGeometry>)],
         geography: Option<Arc<dyn PreparedGeography>>,
-    ) -> Option<Arc<PreparedScene>> {
+    ) -> Result<Option<Arc<PreparedScene>>, SectorWorkerError> {
         let key = Key {
             world,
             manifest,
             view,
             origin,
+            origin_generation,
         };
         let mut s = self.state.0.lock().unwrap();
-        let completed = s.completed.take().filter(|r| {
-            r.key.world == world && r.key.manifest == manifest && r.key.origin == origin
-        });
+        if s.stop || self.thread.as_ref().is_none_or(JoinHandle::is_finished) {
+            return Err(SectorWorkerError::WorkerStopped(Vec::new()));
+        }
+        let completed = s.completed.take().filter(|r| r.key == key);
         if s.requested != Some(key) {
             s.pending = Some(Request {
                 key,
@@ -228,7 +242,7 @@ impl SectorWorker {
             s.requested = Some(key);
             self.state.1.notify_one();
         }
-        completed
+        Ok(completed)
     }
 }
 impl Drop for SectorWorker {
@@ -237,8 +251,6 @@ impl Drop for SectorWorker {
             self.state.0.lock().unwrap().stop = true;
             self.state.1.notify_one();
         }
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
+        self.thread.take();
     }
 }

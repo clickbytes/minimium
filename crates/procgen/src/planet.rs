@@ -272,7 +272,7 @@ impl PlanetTerrain {
     /// approach points. The relief bound keeps the route traversable.
     pub fn landmarks(&self) -> PlanetLandmarks {
         let scale = PLANET_SAMPLE_COORDINATE_SCALE;
-        let (u, start, step) = if self.is_earth() && self.generation.revision().get() >= 4 {
+        let (u, start, step) = if self.is_earth() {
             // Near Bergen: 60.4 N, 5.3 E. This cube coordinate samples the
             // same GEBCO surface used by collision and sector rendering.
             let step = scale / 8192;
@@ -293,10 +293,8 @@ impl PlanetTerrain {
                 scale / 1000 * 217 - 4 * step + jitter,
                 step,
             )
-        } else if self.generation.revision().get() >= 2 {
-            (0, -(scale / 512), scale / 2048)
         } else {
-            (0, -(scale / 8), scale / 32)
+            (0, -(scale / 512), scale / 2048)
         };
         let approach = std::array::from_fn(|index| {
             let sample = PlanetFace::PositiveY

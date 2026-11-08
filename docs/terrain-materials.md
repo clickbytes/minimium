@@ -760,7 +760,8 @@ collision terrain at the same horizontal location; oceans use the water surface.
 The server validates fly, current membership, transfer state, numeric bounds and
 world-coordinate bounds, applies Earth relief compression, preserves movement
 settings and resets velocity. Fractional kilometres work; 0..10000 is the command
-range. Protocol v16 adds contextual WorldInput subtype 8 and AltitudeResult 0x91.
+range. Protocol v18 carries contextual WorldInput subtype 8 and AltitudeResult
+0x91 alongside the current gameplay contract.
 Both executables must be updated; worlds/saves do not need regeneration.
 
 Acceptance is still pending: compare frame-time spikes during long fast flights,
@@ -869,9 +870,10 @@ it has been removed. Snow now comes from replayed weather or mapped permanent
 snow/ice, with a temperature-dependent melt mask. This is a code-level finding,
 not a measurement of how much of the planet will be snowy after the change.
 
-Protocol v17 transports all four curve parameters and the climate influence.
-Both client and server must be rebuilt. Snapshot format remains v9: generation
-v5 planet records append the four curve fields; earlier records remain unchanged.
+Protocol v18 transports all four curve parameters, the climate influence and context-bound gameplay actions.
+Both client and server must be rebuilt. Save format v10 and generator revision 5
+carry the curve fields in resolved planet definitions; other generator revisions
+are rejected rather than reinterpreted.
 `terrain status` reports the saved curve and the renderer's climate influence.
 
 Implementation verification: release client/server compilation under

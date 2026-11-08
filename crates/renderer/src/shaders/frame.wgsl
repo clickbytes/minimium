@@ -36,5 +36,8 @@ struct EnvironmentUniform {
     moon_orbit_world: vec4<f32>,
     halo_count: vec4<u32>,
     halo_sources: array<HaloSource, 8>,
+    bolid_position_intensity: vec4<f32>,
+    bolid_rgb: vec4<f32>, // RGB tint, w analytic-output exposure compensation
+    render_origin: vec4<f32>,
 };
 @group(0) @binding(1) var<uniform> environment: EnvironmentUniform;

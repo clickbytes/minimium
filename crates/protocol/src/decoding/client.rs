@@ -5,6 +5,7 @@ use crate::{
     reading::Reader,
     validation::is_unit_direction,
 };
+use minimium_world::entity::EntityId;
 
 pub fn decode_client(input: &[u8]) -> Result<Option<(ClientMessage, usize)>, ProtocolError> {
     let Some((kind, payload, frame_bytes)) = decode_frame(input)? else {
@@ -19,29 +20,27 @@ pub fn decode_client(input: &[u8]) -> Result<Option<(ClientMessage, usize)>, Pro
             _ => return Err(ProtocolError::InvalidPayload),
         }),
         ClientKind::ContentReady => ClientMessage::ContentReady(reader.fixed()?),
-        ClientKind::Identify => ClientMessage::Identify(reader.profile_id()?),
-        ClientKind::Ping => ClientMessage::Ping,
-        ClientKind::SetName => ClientMessage::SetName(reader.name()?),
-        ClientKind::Move => ClientMessage::Move {
-            direction: reader.direction()?,
-            jump: reader.boolean()?,
+        ClientKind::Authenticate => ClientMessage::Authenticate {
+            provider_id: reader.auth_provider()?,
+            credentials: reader.auth_credentials()?,
         },
-        ClientKind::Fire => {
+        ClientKind::Ping => ClientMessage::Ping,
+        ClientKind::SkyView => {
+            let context = reader.world_context()?;
             let direction = reader.vector()?;
             if !is_unit_direction(direction) {
                 return Err(ProtocolError::InvalidPayload);
             }
-            ClientMessage::Fire { direction }
+            ClientMessage::SkyView {
+                context,
+                direction,
+                night: reader.boolean()?,
+            }
         }
-        ClientKind::Chat => ClientMessage::Chat(reader.chat_text()?.to_owned()),
         ClientKind::WorldInput => {
             let context = reader.world_context()?;
             let input = match reader.byte()? {
                 1 => ClientWorldInput::SetName(reader.name()?),
-                2 => ClientWorldInput::Move {
-                    direction: reader.direction()?,
-                    jump: reader.boolean()?,
-                },
                 3 => {
                     let direction = reader.vector()?;
                     if !is_unit_direction(direction) {
@@ -50,7 +49,9 @@ pub fn decode_client(input: &[u8]) -> Result<Option<(ClientMessage, usize)>, Pro
                     ClientWorldInput::Fire { direction }
                 }
                 4 => ClientWorldInput::Chat(reader.chat_text()?.to_owned()),
-                5 => ClientWorldInput::UsePortal,
+                11 => ClientWorldInput::InteractEntity {
+                    entity: EntityId::new(reader.u64()?).ok_or(ProtocolError::InvalidPayload)?,
+                },
                 6 => {
                     let direction = reader.vector()?;
                     if !is_unit_direction(direction) {
@@ -65,7 +66,32 @@ pub fn decode_client(input: &[u8]) -> Result<Option<(ClientMessage, usize)>, Pro
                     }
                     ClientWorldInput::SetAltitude { km }
                 }
-                7 => ClientWorldInput::Motion(crate::movement_codec::read(&mut reader)?),
+                9 => {
+                    let speed = f32::from_le_bytes(reader.fixed()?);
+                    let accel = f32::from_le_bytes(reader.fixed()?);
+                    let policy = minimium_simulation::MovementPolicy {
+                        speed,
+                        accel,
+                        ..Default::default()
+                    };
+                    if !policy.valid() {
+                        return Err(ProtocolError::InvalidPayload);
+                    }
+                    ClientWorldInput::SetMovementPolicy { speed, accel }
+                }
+                10 => ClientWorldInput::SetFlightEnabled(reader.boolean()?),
+                7 => {
+                    let input_seq = reader.u64()?;
+                    let target_tick = reader.u64()?;
+                    if input_seq == 0 || target_tick == 0 {
+                        return Err(ProtocolError::InvalidPayload);
+                    }
+                    ClientWorldInput::Motion(crate::models::MovementSample {
+                        input_seq,
+                        target_tick,
+                        intent: crate::movement_codec::read(&mut reader)?,
+                    })
+                }
                 _ => return Err(ProtocolError::InvalidPayload),
             };
             ClientMessage::WorldInput { context, input }
@@ -74,12 +100,24 @@ pub fn decode_client(input: &[u8]) -> Result<Option<(ClientMessage, usize)>, Pro
             transition_id: reader.transition_id()?,
             target_context: reader.world_context()?,
         },
-        ClientKind::UsePortal => ClientMessage::UsePortal,
         ClientKind::CancelTransition => ClientMessage::CancelTransition(reader.transition_id()?),
         ClientKind::TimeProbe => ClientMessage::TimeProbe {
             seq: reader.u32()?,
             client_send_monotonic_ms: reader.u64()?,
         },
+        ClientKind::ReplicationAck => {
+            let context = reader.world_context()?;
+            let sync_id = reader.u64()?;
+            if sync_id == 0 {
+                return Err(ProtocolError::InvalidPayload);
+            }
+            ClientMessage::ReplicationAck {
+                context,
+                sync_id,
+                revision: reader.u64()?,
+                accepted: reader.boolean()?,
+            }
+        }
         ClientKind::Quit => ClientMessage::Quit,
     };
     reader.finish()?;

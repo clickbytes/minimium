@@ -1,4 +1,4 @@
-use super::{scene_bridge::RenderSceneSnapshot, GpuResources};
+use super::{GpuResources, scene_bridge::RenderSceneSnapshot};
 
 impl GpuResources {
     /// Keeps every GPU pass on the one immutable snapshot prepared for this frame.
@@ -7,7 +7,6 @@ impl GpuResources {
         snapshot: &RenderSceneSnapshot<'_>,
     ) -> Result<u32, wgpu::CurrentSurfaceTexture> {
         self.environment_draw_calls = super::sky::EnvironmentDrawCalls::default();
-        self.last_shadow_prepare_cpu = None;
         self.last_environment_upload_cpu = None;
         let frame = match minimium_renderer::surface_frame::acquire(
             &self.surface,
@@ -22,10 +21,88 @@ impl GpuResources {
         let prepared = snapshot.environment;
         let environment = &prepared.frame;
         let render_frame = &prepared.render_frame;
-        self.atmosphere_gpu.mark_environment(
-            &render_frame
-                .presentation_environment(self.hdr_enabled, self.atmosphere_gpu.is_active()),
-        );
+        let publication = snapshot.publication.as_ref();
+        let publication_stamp = publication.map(|publication| publication.stamp);
+        let publication_keys =
+            publication.map_or(&[][..], |publication| publication.keys.as_slice());
+        self.shadow_upload_status = if snapshot.shadow.valid
+            && snapshot.shadow.context == environment.context
+            && snapshot.shadow.geometry_stamp == publication_stamp
+            && snapshot.shadow.instance
+                == render_frame.client.as_ref().map(|view| view.world_instance)
+        {
+            snapshot.shadow.map_casters.as_ref().map_or(
+                super::shadow_gpu::ShadowUploadStatus::Failed,
+                |map| {
+                    if Some(map.key.stamp) != snapshot.shadow.geometry_stamp
+                        || Some(map.key.generation) != snapshot.shadow.generation
+                        || Some(map.key.content_revision) != snapshot.shadow.content_revision
+                    {
+                        super::shadow_gpu::ShadowUploadStatus::Failed
+                    } else {
+                        self.upload_prepared_shadow_map(map)
+                    }
+                },
+            )
+        } else {
+            if snapshot.shadow.valid
+                && (snapshot.shadow.geometry_stamp != publication_stamp
+                    || snapshot.shadow.context != environment.context
+                    || snapshot.shadow.instance
+                        != render_frame.client.as_ref().map(|view| view.world_instance))
+            {
+                super::shadow_gpu::ShadowUploadStatus::StaleContext
+            } else {
+                super::shadow_gpu::ShadowUploadStatus::Pending
+            }
+        };
+        self.shadow_publish_ready =
+            self.shadow_upload_status == super::shadow_gpu::ShadowUploadStatus::Ready;
+        if self.shadow_publish_ready {
+            self.shadow_gpu
+                .write_uniform(&self.queue, &snapshot.shadow.uniform);
+        }
+        let mut environment_upload = render_frame
+            .presentation_environment(self.hdr_enabled, self.atmosphere_gpu.is_active());
+        environment_upload.render_origin = [
+            self.render_origin[0],
+            self.render_origin[1],
+            self.render_origin[2],
+            0.0,
+        ];
+        if let Some((position, color)) = super::bolids::strongest_bolid_light(
+            &snapshot.bolids,
+            render_frame.view.camera_eye_world_m,
+            self.atmosphere_gpu.optical_uniform(),
+        ) {
+            environment_upload.bolid_position_intensity = position;
+            environment_upload.bolid_rgb = color;
+            // Analytic/fallback surfaces retain authored ambient exposure.
+            // Match the point flash to HDR night metering without changing it.
+            environment_upload.bolid_rgb[3] = if self.hdr_enabled && self.atmosphere_gpu.is_active()
+            {
+                1.0
+            } else {
+                minimium_renderer::lighting::view_exposure(
+                    render_frame.view,
+                    environment_upload.global_sun_direction,
+                    1.0,
+                )
+            };
+            let incident = minimium_renderer::bolid_light::incident_luminance(
+                position,
+                color,
+                render_frame.view.camera_eye_world_m,
+                self.atmosphere_gpu.optical_uniform(),
+            );
+            // Preserve physical point-source power. Meter the receiving scene
+            // instead of letting fixed night gain clip a nearby flash to white.
+            let exposed_gain =
+                environment_upload.ambient_rgb_exposure[3] * environment_upload.bolid_rgb[3];
+            environment_upload.ambient_rgb_exposure[3] *=
+                minimium_renderer::bolid_light::exposure_scale(incident, exposed_gain);
+        }
+        self.atmosphere_gpu.mark_environment(&environment_upload);
         self.terrain_gpu.uniform.eye_relative = std::array::from_fn(|i| {
             if i < 3 {
                 (render_frame.view.camera_eye_world_m[i] - render_frame.view.render_origin_m[i])
@@ -39,24 +116,32 @@ impl GpuResources {
             .client
             .expect("application attaches ClientView before rendering");
         let upload_started = std::time::Instant::now();
+        self.milky_way.upload_bolids(&self.queue, &snapshot.bolids);
         prepared.upload_stars(self);
-        let ui_vertex_count = render_frame.upload(
-            &self.queue,
+        self.queue.write_buffer(
             &self.camera_buffer,
-            &self.environment_buffer,
-            &self.ui.vertex_buffer,
-            self.hdr_enabled,
-            self.atmosphere_gpu.is_active(),
-            self.output_encoder.as_ref(),
+            0,
+            bytemuck::bytes_of(&render_frame.camera),
         );
+        self.queue.write_buffer(
+            &self.environment_buffer,
+            0,
+            bytemuck::bytes_of(&environment_upload),
+        );
+        if let Some(output) = &self.output_encoder {
+            output.update_exposure(&self.queue, 1.0);
+        }
+        let ui_vertices = render_frame.ui_vertices();
+        if !ui_vertices.is_empty() {
+            self.queue.write_buffer(
+                self.ui.vertex_buffer(),
+                0,
+                bytemuck::cast_slice(ui_vertices),
+            );
+        }
+        let ui_vertex_count = ui_vertices.len() as u32;
         self.ui.set_vertex_count(ui_vertex_count);
         self.last_environment_upload_cpu = Some(upload_started.elapsed());
-        // Includes local map caster selection/build/allocation/upload and shadow
-        // uniform upload. Remote-player preparation occurs earlier in update().
-        // This scope is disjoint from environment preparation and upload.
-        let shadow_started = std::time::Instant::now();
-        self.prepare_shadow_frame(environment, snapshot.map, client.player_position_m);
-        self.last_shadow_prepare_cpu = Some(shadow_started.elapsed());
         let scene_view = self
             .output_encoder
             .as_ref()
@@ -102,9 +187,11 @@ impl GpuResources {
             remote_vertices: self.remote_vertices.buffer(),
             remote_vertex_count: self.remote_vertices.vertex_count(),
             world_vertex_catalog: self.world_geometry.catalog(),
-            instance: client.world_instance,
-            sector_hints: &snapshot.sector_hints,
-            scene_visible: self.scene_visible && self.terrain_gpu.valid,
+            instance: publication_stamp.map_or(client.world_instance, |stamp| stamp.instance),
+            sector_hints: publication_keys,
+            scene_visible: self.scene_visible
+                && self.terrain_gpu.valid
+                && publication_stamp.is_some_and(|stamp| stamp.instance == client.world_instance),
             overview_active: self.overview_active,
             overview_planet: self.overview_planet,
             uploaded_stars_match: self.uploaded_star_stamp == environment.diagnostics.star_frame,
@@ -116,9 +203,11 @@ impl GpuResources {
             minimium_renderer::frame_encoder::FramePasses {
                 shadow: minimium_renderer::frame_encoder::ShadowPass {
                     gpu: &self.shadow_gpu,
-                    enabled: self.shadow_state.valid,
+                    enabled: self.shadow_publish_ready
+                        && publication_stamp.is_some()
+                        && snapshot.shadow.geometry_stamp == publication_stamp,
                     instance: client.world_instance,
-                    keys: &self.shadow_state.caster_keys,
+                    keys: &snapshot.shadow.caster_keys,
                     world_vertices: self.world_geometry.catalog(),
                     map: self.shadow_gpu.map_casters(),
                     player: self.shadow_gpu.player_casters(),
@@ -128,10 +217,10 @@ impl GpuResources {
                 final_passes: minimium_renderer::frame_encoder::FinalPasses {
                     scene_view,
                     surface_view,
-                    ui_pipeline: &self.ui.pipeline,
-                    ui_output_pipeline: self.ui.output_pipeline.as_ref(),
-                    ui_bind_group: &self.ui.bind_group,
-                    ui_vertex_buffer: &self.ui.vertex_buffer,
+                    ui_pipeline: self.ui.pipeline(),
+                    ui_output_pipeline: self.ui.output_pipeline(),
+                    ui_bind_group: self.ui.bind_group(),
+                    ui_vertex_buffer: self.ui.vertex_buffer(),
                     ui_vertex_count: self.ui.vertex_count(),
                     output: self.output_encoder.as_ref(),
                 },

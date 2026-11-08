@@ -67,7 +67,7 @@ pub fn encode_frame(encoder: &mut wgpu::CommandEncoder, frame: FramePasses<'_>) 
     if frame.scene.scene_visible {
         frame.scene.atmosphere.prepare(encoder, frame.scene.camera);
     }
-    let scene = scene_encoder::encode_main_scene_pass(encoder, frame.scene);
+    let mut scene = scene_encoder::encode_main_scene_pass(encoder, frame.scene);
     let atmosphere = frame.scene.atmosphere.encode(
         encoder,
         frame.scene.color_view,
@@ -75,6 +75,7 @@ pub fn encode_frame(encoder: &mut wgpu::CommandEncoder, frame: FramePasses<'_>) 
         frame.final_passes.output.map(|o| o.texture()),
         frame.scene.scene_visible && frame.scene.terrain_gpu.uniform.debug[0] == 0,
     );
+    scene.draws += crate::bolid_dust::encode(encoder, frame.scene);
     let clouds = frame.clouds.encode(
         encoder,
         frame.scene.color_view,
@@ -83,6 +84,7 @@ pub fn encode_frame(encoder: &mut wgpu::CommandEncoder, frame: FramePasses<'_>) 
             && frame.scene.terrain_gpu.uniform.debug[0] == 0
             && frame.scene.atmosphere.debug == 0,
     );
+    scene.draws += crate::bolid_dust::resolve(encoder, frame.scene, frame.clouds);
     let final_passes = encode_final_passes(encoder, frame.final_passes);
     FrameDrawStats {
         shadow: shadow_draws,

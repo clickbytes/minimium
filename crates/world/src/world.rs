@@ -28,9 +28,10 @@ pub use model::{
     GenerationRevision, GenerationSpec, GeneratorDigest, MembershipEpoch, ObjectOriginId,
     PlanetDefinition, PlanetKind, Position3Mm, SectorRevision, TransitionId, WorldContentRevision,
     WorldDefinitionId, WorldInstanceId, WorldLocation, WorldManifest, WorldObjectState,
-    WorldOrientationQ30, WorldSectorState, WorldSeed, WorldTopology, MAX_OBJECT_STATE_BYTES,
-    MAX_PERSISTED_WORLD_OBJECT_STATES, MAX_PERSISTED_WORLD_OBJECT_STATE_BYTES,
-    MAX_PERSISTED_WORLD_SECTORS, MAX_SECTOR_OBJECT_STATES, MAX_SECTOR_OBJECT_STATE_BYTES,
+    WorldOrientationQ30, WorldSectorState, WorldSeed, WorldSource, WorldTopology,
+    MAX_OBJECT_STATE_BYTES, MAX_PERSISTED_WORLD_OBJECT_STATES,
+    MAX_PERSISTED_WORLD_OBJECT_STATE_BYTES, MAX_PERSISTED_WORLD_SECTORS, MAX_SECTOR_OBJECT_STATES,
+    MAX_SECTOR_OBJECT_STATE_BYTES,
 };
 pub use peak_relief::PeakRelief;
 pub use spatial::{cell_for, Cell};

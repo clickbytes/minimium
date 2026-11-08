@@ -1,20 +1,18 @@
+use crate::application::PendingSectorTransition;
 use crate::{
     client_commands::{self, CommandContext, CommandResult, FrontendAction},
     console::Console,
     environment::{EnvironmentFrameInput, LocalDemoEnvironment},
     session::{ClientSession, DisconnectReason, SessionEvent, SessionState},
 };
-use minimium_client_runtime::{connector::StartError, ConnectionController, ConnectionEvent};
+use minimium_client_runtime::{ConnectionEvent, connector::StartError};
 use minimium_core::identity::PlayerProfileId;
-use minimium_protocol::{ClientMessage, ServerMessage, MAX_VISIBLE_PLAYERS};
-use minimium_simulation::{
-    CharacterInput, CharacterState, CollisionIndex, CollisionQuery, PLAYER_MAX_HEALTH,
-};
+use minimium_protocol::{MAX_VISIBLE_PLAYERS, ServerMessage};
+use minimium_simulation::{CharacterState, CollisionQuery, MovementIntent, PLAYER_MAX_HEALTH};
 use minimium_world::world::{
-    character_frame, CharacterGravity, SectorKey, WorldManifest, WorldMap, WorldTopology,
+    CharacterGravity, WorldManifest, WorldMap, WorldTopology, character_frame,
 };
 use std::{
-    collections::HashSet,
     error::Error,
     path::PathBuf,
     sync::Arc,
@@ -30,15 +28,17 @@ use winit::{
 };
 
 mod atmosphere_gpu;
+mod bolids;
 mod camera;
 mod celestial_labels;
-mod client_game;
 mod clouds;
 mod console_events;
 mod controller;
+mod dev_input;
 mod diagnostics;
 mod environment;
 mod environment_gpu;
+mod gameplay_presentation;
 mod gpu;
 mod gpu_surface;
 mod init;
@@ -53,6 +53,7 @@ mod session;
 mod settings;
 mod shadow_gpu;
 mod shadow_map_cache;
+mod shadow_prepare;
 mod shadows;
 mod sky;
 mod terrain_status;
@@ -62,38 +63,12 @@ mod window_metrics;
 mod window_mode;
 
 use environment::{EnvironmentFrame, RenderViewFrame, RenderViewInput};
-use minimium_renderer::geometry::{cube, sector_geometry, Vertex};
+pub(crate) use minimium_renderer::geometry::Vertex;
+use minimium_renderer::geometry::{cube, sector_geometry};
 
 const UI_VERTEX_CAPACITY: usize = 8192;
-const REMOTE_INTERPOLATION_DELAY: Duration = Duration::from_millis(100);
+pub(crate) const REMOTE_INTERPOLATION_DELAY: Duration = Duration::from_millis(100);
 const SHOT_LOCAL_COOLDOWN: Duration = Duration::from_millis(300);
-
-pub(super) fn validate_world_manifest(
-    manifest: minimium_world::world::WorldManifest,
-) -> Result<(), std::io::Error> {
-    minimium_procgen::validate_world_manifest(manifest)
-        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
-}
-
-fn legacy_manifest(id: u128, map: &WorldMap) -> minimium_world::world::WorldManifest {
-    use minimium_world::world::{
-        GenerationRevision, GenerationSpec, GeneratorDigest, WorldContentRevision,
-        WorldDefinitionId, WorldManifest, WorldSeed, WorldTopology,
-    };
-    let generation = GenerationSpec::new(
-        WorldSeed::new(0),
-        GenerationRevision::new(1).expect("legacy generator revision is nonzero"),
-        1,
-    )
-    .expect("legacy position quantum is nonzero");
-    WorldManifest::new(
-        WorldDefinitionId::new(id).expect("legacy definition ID is nonzero"),
-        WorldTopology::Dungeon,
-        generation,
-        WorldContentRevision::new(1).expect("legacy content revision is nonzero"),
-        GeneratorDigest::legacy_map_fingerprint(map.fingerprint()),
-    )
-}
 
 struct GpuResources {
     surface: wgpu::Surface<'static>,
@@ -106,7 +81,6 @@ struct GpuResources {
     terrain_gpu: minimium_renderer::terrain_gpu::TerrainGpu,
     frame_layout: wgpu::BindGroupLayout,
     shadow_gpu: minimium_renderer::ShadowGpu,
-    shadow_state: shadows::ShadowState,
     environment_pipelines: minimium_renderer::EnvironmentPipelines,
     milky_way: minimium_renderer::MilkyWayGpu,
     celestial_halo: minimium_renderer::CelestialHaloGpu,
@@ -120,7 +94,10 @@ struct GpuResources {
     initial_world: minimium_renderer::geometry_gpu::StaticVertexBuffer,
     remote_vertices: minimium_renderer::geometry_gpu::DynamicVertexBuffer,
     shadow_remote_complete: bool,
+    shadow_remote_stamp: Option<minimium_renderer::world_geometry_gpu::GeometryPublicationStamp>,
     shadow_remote_dirty: bool,
+    shadow_publish_ready: bool,
+    shadow_upload_status: shadow_gpu::ShadowUploadStatus,
     camera_buffer: wgpu::Buffer,
     environment_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
@@ -128,13 +105,8 @@ struct GpuResources {
     size: PhysicalSize<u32>,
     fixed_gpu_bytes: u64,
     world_geometry: minimium_renderer::world_geometry_gpu::WorldGeometryGpu,
-    active_sector_keys: Vec<(SectorKey, u8)>,
-    active_world_instance: minimium_world::world::WorldInstanceId,
     render_origin: [f32; 3],
-    shadow_map_instance: Option<minimium_world::world::WorldInstanceId>,
-    shadow_map_fingerprint: Option<u64>,
-    shadow_map_center: Option<[f64; 3]>,
-    shadow_map_radius: Option<f32>,
+    shadow_map_key: Option<shadow_map_cache::ShadowMapCacheKey>,
     overview_buffers: minimium_renderer::overview_gpu::OverviewGpuBuffers,
     environment_draw_calls: sky::EnvironmentDrawCalls,
     last_shadow_prepare_cpu: Option<Duration>,
@@ -145,35 +117,20 @@ struct GpuResources {
     output_encoder: Option<minimium_renderer::OutputEncoder>,
 }
 
-struct GameplayView {
-    remote_vertices: Vec<Vertex>,
-    remote_shadow_vertices: Vec<Vertex>,
-    reconciliation: minimium_client_runtime::SnapshotReconciler,
-    remote_positions_mm: Vec<[i64; 3]>,
-    remote_geometry_dirty: bool,
-    prediction: minimium_client_runtime::ClientPrediction,
-    health: u16,
-    collision_index: CollisionIndex,
-    collision_query: CollisionQuery,
-    last_shot_sent_at: Option<Instant>,
-    hit_confirmation_until: Option<Instant>,
-    sectors_ready: bool,
+struct GameplayPresentation {
+    pub(crate) remote_vertices: Vec<Vertex>,
+    pub(crate) remote_shadow_vertices: Vec<Vertex>,
+    pub(crate) remote_geometry_dirty: bool,
+    pub(crate) last_shot_sent_at: Option<Instant>,
+    pub(crate) hit_confirmation_until: Option<Instant>,
 }
 
 struct InputState {
     yaw: f32,
     pitch: f32,
-    keys: HashSet<KeyCode>,
     last_cursor: Option<(f64, f64)>,
     cursor_locked: bool,
     jump_pending: bool,
-    input_keepalive: f32,
-    last_sent_direction: [f32; 2],
-}
-
-struct UiState {
-    console: Console,
-    session_events: Vec<SessionEvent>,
 }
 
 struct FrameMetrics {
@@ -186,47 +143,31 @@ struct FrameMetrics {
     previous_bytes_received: u64,
 }
 
-struct ClientSettings {
-    local_server_config: minimium_client_runtime::LocalServerLaunchConfig,
-    require_earth: bool,
-    demo: bool,
-    config_file_settings: std::collections::BTreeMap<String, String>,
-    preference_sources: std::collections::BTreeMap<String, minimium_commands::PropertySource>,
-}
-
 struct Renderer {
+    prepared_bolids: minimium_renderer::milky_way_gpu::BolidGpuFrame,
+    diagnostic_bolid_age: Option<(minimium_protocol::WorldContext, u64, f32)>,
+    bolids: Vec<(
+        minimium_protocol::WorldContext,
+        minimium_protocol::BolidEvent,
+        Instant,
+        Option<minimium_renderer::milky_way_gpu::BolidEvolution>,
+    )>,
+    last_sky_view_at: Option<Instant>,
+    pending_bolid_request: bool,
+    localizer: minimium_localization::Localizer,
     gpu: GpuResources,
-    game: client_game::ClientGameState,
+    shadow_state: shadows::ShadowState,
+    prepared_shadow: shadow_prepare::PreparedShadowFrame,
+    shadow_map_preparation: shadow_map_cache::ShadowMapPreparationCache,
     input: InputState,
-    ui: UiState,
     metrics: FrameMetrics,
-    settings: ClientSettings,
     demo_universe_enabled: bool,
-    fov_base: f32,
     fov_degrees: f32,
-    fov_override: Option<f32>,
-    mouse_sensitivity_base: f32,
     mouse_sensitivity: f32,
-    mouse_sensitivity_override: Option<f32>,
-    sky_names_base: bool,
-    sky_names_override: Option<bool>,
-    cloud_detail_base: u8,
-    cloud_detail_override: Option<u8>,
     show_celestial_names: bool,
-    sky_quality_base: minimium_renderer::quality::SkyQuality,
-    sky_quality_override: Option<minimium_renderer::quality::SkyQuality>,
     atmosphere_debug: minimium_renderer::atmosphere_debug::AtmosphereDebug,
-    atmosphere_debug_base: minimium_renderer::atmosphere_debug::AtmosphereDebug,
-    atmosphere_debug_override: Option<minimium_renderer::atmosphere_debug::AtmosphereDebug>,
     terrain_debug: minimium_renderer::terrain_debug::TerrainDebug,
-    terrain_debug_base: minimium_renderer::terrain_debug::TerrainDebug,
-    terrain_debug_override: Option<minimium_renderer::terrain_debug::TerrainDebug>,
-    cloud_debug_base: minimium_environment::weather::CloudDebug,
-    cloud_debug_override: Option<minimium_environment::weather::CloudDebug>,
-    sky_demo_base: bool,
-    sky_demo_override: Option<bool>,
     sky_quality: minimium_renderer::quality::SkyQualityState,
-    connection: ConnectionController,
     environment_frame: EnvironmentFrameInput,
     render_environment_frame: EnvironmentFrame,
     environment_observer: environment::observer::ObserverAdapter,
@@ -235,34 +176,10 @@ struct Renderer {
     environment_error: Option<String>,
     weather: clouds::WeatherState,
     demo_environment: Option<LocalDemoEnvironment>,
-    world_catalog: std::collections::HashMap<minimium_world::world::WorldInstanceId, WorldMap>,
+    application: crate::application::ClientApplication,
+    gameplay_presentation: GameplayPresentation,
     sector_cache: sector_scene::ClientSectorCache,
-    active_sector_keys: Vec<SectorKey>,
     last_render_position: [f32; 3],
-    pending_sector_transitions:
-        std::collections::HashMap<minimium_world::world::TransitionId, PendingSectorTransition>,
-    overview_open: bool,
-    overview_instance: Option<minimium_world::world::WorldInstanceId>,
-    connection_status: String,
-    overview_yaw: f32,
-    overview_pitch: f32,
-    overview_zoom: f32,
-    overview_dragging: bool,
-    overview_slider_dragging: bool,
-    overview_dragged: bool,
-    overview_drag_distance: f64,
-    map_teleport_armed: bool,
-    map_teleport_pending: bool,
-    teleport_loading: bool,
-}
-
-#[derive(Clone, Copy)]
-struct PendingSectorTransition {
-    source_context: minimium_protocol::WorldContext,
-    context: minimium_protocol::WorldContext,
-    destination: [f32; 3],
-    manifest: WorldManifest,
-    ready_sent: bool,
 }
 
 pub use window::run;

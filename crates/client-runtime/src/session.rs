@@ -6,26 +6,95 @@
 //! event collection on each frame. Events are appended; clear the vector before
 //! polling if it should contain only the latest poll's events.
 
-use minimium_core::identity::PlayerProfileId;
+use crate::world_content::{
+    ContentResolutionTicket, ResolvedWorldContent, WorldContentRequest, WorldContentResolver,
+};
 use minimium_environment::{time::ClockSample, EnvironmentDescriptor};
 use minimium_protocol::{
     decode_server, encode_client, ClientMessage, ProtocolError, ServerMessage, WorldContext,
     MAX_FRAME_BYTES,
 };
+use minimium_world::entity::{ComponentTypeId, SchemaVersion};
 use minimium_world::world::TransitionId;
 use std::{
     collections::HashMap,
+    error::Error,
+    fmt,
     io::{self, Read, Write},
     net::TcpStream,
     sync::Arc,
+    thread::JoinHandle,
     time::{Duration, Instant},
 };
 
+#[derive(Clone, Debug)]
+pub struct SessionFailure {
+    code: &'static str,
+    message: String,
+    source: Option<Arc<dyn Error + Send + Sync>>,
+}
+
+impl SessionFailure {
+    pub fn new(code: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            code,
+            message: message.into(),
+            source: None,
+        }
+    }
+
+    pub fn caused_by<E>(code: &'static str, message: impl Into<String>, source: E) -> Self
+    where
+        E: Error + Send + Sync + 'static,
+    {
+        Self {
+            code,
+            message: message.into(),
+            source: Some(Arc::new(source)),
+        }
+    }
+
+    pub fn from_asset_error(error: minimium_asset_io::AssetIoError) -> Self {
+        let code = error.code();
+        Self::caused_by(code, error.to_string(), error)
+    }
+
+    pub fn code(&self) -> &'static str {
+        self.code
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl fmt::Display for SessionFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl Error for SessionFailure {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        self.source
+            .as_deref()
+            .map(|source| source as &(dyn Error + 'static))
+    }
+}
+
+impl PartialEq for SessionFailure {
+    fn eq(&self, other: &Self) -> bool {
+        self.code == other.code && self.message == other.message
+    }
+}
+
+impl Eq for SessionFailure {}
+
 mod clock;
 mod content;
-mod contextualize;
 mod environment;
 mod receive;
+mod replication;
 
 /// Maximum retained receive or pending send data.
 pub const MAX_SESSION_BUFFER_BYTES: usize = 64 * 1024;
@@ -55,11 +124,13 @@ pub enum DisconnectReason {
     Rejected(minimium_protocol::ServerErrorCode),
     MapMismatch { expected: u64, actual: u64 },
     GeneratorMismatch,
-    EarthPackage(String),
-    Materials(String),
+    WorldContent(SessionFailure),
+    EarthPackage(SessionFailure),
+    Materials(SessionFailure),
     EnvironmentMismatch,
     Io(io::ErrorKind),
     BufferLimit,
+    Replication(crate::ReplicaError),
 }
 
 /// Typed output from a session poll. Every valid server message is delivered
@@ -85,20 +156,36 @@ pub struct SessionMetrics {
 pub enum QueueError {
     Disconnected,
     AwaitingWelcome,
-    IdentifyReserved,
+    AuthenticateReserved,
     StaleWorldContext,
     BufferFull,
+    InputSequenceExhausted,
     Protocol(ProtocolError),
 }
 
 /// A single nonblocking TCP protocol session.
 pub struct ClientSession {
+    diagnostic_logger: Option<minimium_diagnostics::DomainLogger>,
     content: content::ContentPreparation,
     stream: Option<TcpStream>,
     state: SessionState,
-    expected_map_fingerprint: u64,
     world_context: Option<WorldContext>,
-    world_fingerprints: HashMap<minimium_world::world::WorldInstanceId, u64>,
+    server_tick: u64,
+    next_input_seq: u64,
+    next_target_tick: u64,
+    session_id: u64,
+    world_content_resolver: Option<Arc<dyn WorldContentResolver>>,
+    world_content_worker: Option<JoinHandle<Result<ResolvedWorldContent, SessionFailure>>>,
+    world_content_worker_ticket: Option<ContentResolutionTicket>,
+    world_content_request: Option<ContentResolutionTicket>,
+    next_world_content_request_id: u64,
+    world_content_cancel: crate::ContentCancellation,
+    world_content_started: Option<Instant>,
+    deferred_world_message: Option<(ServerMessage, u64)>,
+    resolved_worlds: HashMap<minimium_world::world::WorldInstanceId, Arc<ResolvedWorldContent>>,
+    replica_schemas: HashMap<ComponentTypeId, SchemaVersion>,
+    replica_assembly: Option<crate::replicas::ReplicaAssembly>,
+    replicas: crate::replicas::ReplicatedEntities,
     pending_transition: Option<(TransitionId, WorldContext)>,
     ready_transition: Option<(TransitionId, WorldContext)>,
     clock_sample: Option<ClockSample>,
@@ -119,23 +206,34 @@ pub struct ClientSession {
     send_offset: usize,
     metrics: SessionMetrics,
     prepared_geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
+    content_cache_dir: Option<std::path::PathBuf>,
+    content_cache_limit_bytes: u64,
 }
 
 impl ClientSession {
+    fn log_failure(&self, failure: &SessionFailure) {
+        if let Some(logger) = &self.diagnostic_logger {
+            crate::diagnostics::emit(
+                Some(logger),
+                minimium_diagnostics::Level::Error,
+                failure.code(),
+                [crate::diagnostics::field("reason", failure.to_string())],
+            );
+        }
+    }
+
     /// Starts a fresh session, sets the supplied stream nonblocking, and queues
-    /// the required Identify handshake frame. The first poll writes it.
+    /// the authentication handshake. The first poll writes it.
     pub fn new(
         stream: TcpStream,
-        profile_id: PlayerProfileId,
-        expected_map_fingerprint: u64,
+        authentication: crate::authentication::ClientAuthentication,
     ) -> io::Result<Self> {
-        Self::with_presentation(stream, profile_id, expected_map_fingerprint, None)
+        Self::with_presentation(stream, authentication, None)
     }
 
     pub fn with_presentation(
         stream: TcpStream,
-        profile_id: PlayerProfileId,
-        expected_map_fingerprint: u64,
+        authentication: crate::authentication::ClientAuthentication,
         capability: Option<bool>,
     ) -> io::Result<Self> {
         stream.set_nonblocking(true)?;
@@ -144,22 +242,33 @@ impl ClientSession {
         let mut content = content::ContentPreparation::default();
         content.capability = capability;
         let mut session = Self {
+            diagnostic_logger: None,
             content,
             stream: Some(stream),
             state: SessionState::AwaitingWelcome,
-            expected_map_fingerprint,
             world_context: None,
-            world_fingerprints: HashMap::from([(
-                minimium_world::world::WorldInstanceId::new(1)
-                    .expect("primary world identifier is nonzero"),
-                expected_map_fingerprint,
-            )]),
+            server_tick: 0,
+            next_input_seq: 1,
+            next_target_tick: 2,
+            session_id: 0,
+            world_content_resolver: None,
+            world_content_worker: None,
+            world_content_worker_ticket: None,
+            world_content_request: None,
+            next_world_content_request_id: 1,
+            world_content_cancel: crate::ContentCancellation::default(),
+            world_content_started: None,
+            deferred_world_message: None,
+            resolved_worlds: HashMap::new(),
+            replica_schemas: HashMap::new(),
+            replica_assembly: None,
+            replicas: crate::replicas::ReplicatedEntities::default(),
             pending_transition: None,
             ready_transition: None,
             clock_sample: None,
             environment_descriptor: None,
             pending_environment: None,
-            clock: clock::ClientClock::new(now),
+            clock: clock::ClientClock::new(now, None),
             state_since: now,
             last_heartbeat_at: now,
             pending_ping_at: None,
@@ -169,14 +278,35 @@ impl ClientSession {
             send_offset: 0,
             metrics: SessionMetrics::default(),
             prepared_geography: None,
+            content_cache_dir: None,
+            content_cache_limit_bytes: minimium_asset_io::DEFAULT_CACHE_LIMIT_BYTES,
         };
         session
             .append_encoded(&ClientMessage::Presentation(capability))
             .expect("presentation frame is bounded");
         session
-            .append_encoded(&ClientMessage::Identify(profile_id))
-            .expect("Identify frame is within protocol limits");
+            .append_encoded(&ClientMessage::Authenticate {
+                provider_id: authentication.provider_id().to_owned(),
+                credentials: authentication.credentials().to_vec(),
+            })
+            .expect("developer authentication frame is within protocol limits");
         Ok(session)
+    }
+
+    pub(crate) fn set_content_cache_dir(&mut self, cache_dir: Option<std::path::PathBuf>) {
+        self.content_cache_dir = cache_dir;
+    }
+
+    pub(crate) fn set_content_cache_limit(&mut self, maximum_bytes: u64) {
+        self.content_cache_limit_bytes = maximum_bytes.max(1);
+    }
+
+    pub(crate) fn set_diagnostic_logger(
+        &mut self,
+        logger: Option<minimium_diagnostics::DomainLogger>,
+    ) {
+        self.clock.set_logger(logger.clone());
+        self.diagnostic_logger = logger;
     }
 
     pub fn state(&self) -> SessionState {
@@ -191,12 +321,14 @@ impl ClientSession {
         self.prepared_geography.clone()
     }
 
-    #[allow(dead_code)] // E004-05 consumes the estimate input through this accessor.
     pub fn clock_sample(&self) -> Option<ClockSample> {
         self.clock_sample
     }
 
-    #[allow(dead_code)] // E004-05 consumes this session identity in its clock estimator.
+    pub fn server_monotonic_ms(&self) -> Option<u64> {
+        self.clock.server_monotonic_ms()
+    }
+
     pub fn environment_descriptor(&self) -> Option<EnvironmentDescriptor> {
         self.environment_descriptor
     }
@@ -205,11 +337,20 @@ impl ClientSession {
         self.clock.frame()
     }
 
-    pub fn set_world_fingerprints(
+    pub(crate) fn set_world_content_resolver(
         &mut self,
-        fingerprints: HashMap<minimium_world::world::WorldInstanceId, u64>,
+        session_id: u64,
+        resolver: Option<Arc<dyn WorldContentResolver>>,
     ) {
-        self.world_fingerprints = fingerprints;
+        self.session_id = session_id;
+        self.world_content_resolver = resolver;
+    }
+
+    pub fn resolved_world_content(
+        &self,
+        instance: minimium_world::world::WorldInstanceId,
+    ) -> Option<Arc<ResolvedWorldContent>> {
+        self.resolved_worlds.get(&instance).cloned()
     }
 
     pub fn cancel_pending_transition(&mut self) -> bool {
@@ -248,6 +389,14 @@ impl ClientSession {
         self.pending_ping_at = None;
         self.pending_ping_end = None;
         self.world_context = None;
+        self.resolved_worlds.clear();
+        self.world_content_cancel.cancel();
+        self.world_content_worker = None;
+        self.world_content_worker_ticket = None;
+        self.world_content_request = None;
+        self.world_content_started = None;
+        self.deferred_world_message = None;
+        self.prepared_geography = None;
         self.pending_transition = None;
         self.ready_transition = None;
         self.clock_sample = None;
@@ -259,7 +408,7 @@ impl ClientSession {
         self.send_offset = 0;
     }
 
-    /// Queues an application message. Identify is reserved for construction;
+    /// Queues an application message. Authentication is reserved for construction;
     /// all other messages are accepted only after Welcome. A full bounded send
     /// buffer is reported without disconnecting so the caller can retry.
     pub fn queue(&mut self, message: &ClientMessage) -> Result<(), QueueError> {
@@ -268,12 +417,17 @@ impl ClientSession {
             SessionState::AwaitingWelcome => return Err(QueueError::AwaitingWelcome),
             SessionState::Connected => {}
         }
-        if matches!(message, ClientMessage::Identify(_)) {
-            return Err(QueueError::IdentifyReserved);
+        if matches!(message, ClientMessage::Authenticate { .. }) {
+            return Err(QueueError::AuthenticateReserved);
         }
-        let contextual = contextualize::contextualize(message, self.world_context)?;
-        let frame =
-            encode_client(contextual.as_ref().unwrap_or(message)).map_err(QueueError::Protocol)?;
+        if let ClientMessage::WorldInput { context, .. } | ClientMessage::SkyView { context, .. } =
+            message
+        {
+            if Some(*context) != self.world_context {
+                return Err(QueueError::StaleWorldContext);
+            }
+        }
+        let frame = encode_client(message).map_err(QueueError::Protocol)?;
         self.append_frame(&frame)
             .map_err(|()| QueueError::BufferFull)?;
         if matches!(message, ClientMessage::Ping)
@@ -284,86 +438,42 @@ impl ClientSession {
         }
         Ok(())
     }
+
+    pub fn queue_world_input(
+        &mut self,
+        mut input: minimium_protocol::ClientWorldInput,
+    ) -> Result<Option<minimium_protocol::MovementSample>, QueueError> {
+        let context = self.world_context.ok_or(QueueError::AwaitingWelcome)?;
+        let mut queued_sample = None;
+        let mut motion_counters = None;
+        if let minimium_protocol::ClientWorldInput::Motion(sample) = &mut input {
+            let input_seq = self.next_input_seq;
+            let next_input_seq = input_seq
+                .checked_add(1)
+                .ok_or(QueueError::InputSequenceExhausted)?;
+            sample.input_seq = input_seq;
+            let target_tick = self
+                .next_target_tick
+                .max(self.server_tick.saturating_add(2).max(1));
+            sample.target_tick = target_tick;
+            let next_target_tick = target_tick.saturating_add(1);
+            motion_counters = Some((next_input_seq, next_target_tick));
+            queued_sample = Some(*sample);
+        }
+        self.queue(&ClientMessage::WorldInput { context, input })?;
+        if let Some((next_input_seq, next_target_tick)) = motion_counters {
+            self.next_input_seq = next_input_seq;
+            self.next_target_tick = next_target_tick;
+        }
+        Ok(queued_sample)
+    }
 }
 
 fn manifest_matches_generator(manifest: &minimium_world::world::WorldManifest) -> bool {
-    manifest.generator_digest()
-        == minimium_procgen::generator_digest(manifest.topology(), manifest.generation())
+    manifest.source() == minimium_world::world::WorldSource::Generated
+        && minimium_procgen::validate_world_manifest(*manifest).is_ok()
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use minimium_protocol::ClientWorldInput;
-    use minimium_world::world::{
-        GeneratorDigest, MembershipEpoch, WorldContentRevision, WorldInstanceId,
-    };
-
-    fn context(epoch: u64) -> WorldContext {
-        WorldContext::new(
-            WorldInstanceId::new(1).unwrap(),
-            WorldContentRevision::new(1).unwrap(),
-            MembershipEpoch::new(epoch).unwrap(),
-        )
-    }
-
-    fn connected_session(context: WorldContext) -> ClientSession {
-        let now = Instant::now();
-        ClientSession {
-            content: Default::default(),
-            stream: None,
-            state: SessionState::Connected,
-            expected_map_fingerprint: 1,
-            world_context: Some(context),
-            world_fingerprints: HashMap::new(),
-            pending_transition: None,
-            ready_transition: None,
-            clock_sample: None,
-            environment_descriptor: None,
-            pending_environment: None,
-            clock: clock::ClientClock::new(now),
-            state_since: now,
-            last_heartbeat_at: now,
-            pending_ping_at: None,
-            pending_ping_end: None,
-            receive_buffer: Vec::new(),
-            send_buffer: Vec::new(),
-            send_offset: 0,
-            metrics: SessionMetrics::default(),
-            prepared_geography: None,
-        }
-    }
-
-    #[test]
-    fn world_inputs_from_a_previous_membership_epoch_are_rejected() {
-        let current = context(8);
-        let old = context(7);
-        let mut session = connected_session(current);
-        let input = ClientMessage::WorldInput {
-            context: old,
-            input: ClientWorldInput::UsePortal,
-        };
-        assert_eq!(session.queue(&input), Err(QueueError::StaleWorldContext));
-
-        let current_input = ClientMessage::WorldInput {
-            context: current,
-            input: ClientWorldInput::UsePortal,
-        };
-        assert_eq!(session.queue(&current_input), Ok(()));
-    }
-
-    #[test]
-    fn client_rejects_a_manifest_with_an_unknown_generator_digest() {
-        let generated = minimium_game_sample::generate_demo_worlds().unwrap();
-        let manifest = generated[0].manifest;
-        assert!(manifest_matches_generator(&manifest));
-        let mismatched = minimium_world::world::WorldManifest::new(
-            manifest.definition_id(),
-            manifest.topology(),
-            manifest.generation(),
-            manifest.content_revision(),
-            GeneratorDigest::new([0xff; 32]),
-        );
-        assert!(!manifest_matches_generator(&mismatched));
-    }
-}
+#[path = "session/tests.rs"]
+mod tests;

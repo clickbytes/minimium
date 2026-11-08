@@ -1,11 +1,11 @@
-use crate::composition::{WorldDefinition, WorldPortal};
+use crate::composition::WorldDefinition;
 use crate::world_registry::WorldRegistry;
 use minimium_core::identity::PlayerProfileId;
 use minimium_environment::time::{
     ClockId, ClockMode, ClockRevision, OfflinePolicy, SavedClockState, TimeScalePpm, WorldTimeMs,
 };
-use minimium_simulation::PLAYER_MAX_HEALTH;
-use minimium_storage::{world_location, PlayerStore};
+use minimium_storage::{world_location, PlayerStore, StorageErrorKind};
+use minimium_world::entity::ComponentRegistry;
 use minimium_world::world::{CharacterGravity, Position3Mm, WorldLocation, WorldOrientationQ30};
 use std::{
     fs,
@@ -20,11 +20,7 @@ fn registry_from_sample(worlds: Vec<minimium_game_sample::GeneratedWorld>) -> Wo
                 instance: world.instance,
                 manifest: world.manifest,
                 map: world.map,
-                portal: world.portal.map(|portal| WorldPortal {
-                    position: portal.position,
-                    target_instance: portal.target_instance,
-                    destination: portal.destination,
-                }),
+                initial_entities: Vec::new(),
             })
             .collect(),
     )
@@ -58,7 +54,7 @@ fn saved_clock() -> SavedClockState {
 }
 
 #[test]
-fn v8_save_restores_instance_position_and_portal_return_location() {
+fn v10_save_restores_instance_position_and_portal_return_location() {
     let generated = minimium_game_sample::generate_demo_worlds().unwrap();
     let primary = generated[0].instance;
     let dungeon = generated[1].instance;
@@ -98,7 +94,9 @@ fn v8_save_restores_instance_position_and_portal_return_location() {
     let directory = temporary_directory("v8");
     snapshot.write(&directory).unwrap();
 
-    let mut restored = PlayerStore::load(&directory, &worlds).unwrap().player_store;
+    let mut restored = PlayerStore::load(&directory, &worlds, &ComponentRegistry::default())
+        .unwrap()
+        .player_store;
     let mut next_id = restored.next_player_id().unwrap();
     let player = restored
         .claim(
@@ -119,7 +117,7 @@ fn v8_save_restores_instance_position_and_portal_return_location() {
 }
 
 #[test]
-fn v8_roundtrip_keeps_a_live_planet_position_clear_after_quantization() {
+fn v10_roundtrip_keeps_a_live_planet_position_clear_after_quantization() {
     let generated = minimium_game_sample::generate_demo_worlds().unwrap();
     let primary = generated[0].instance;
     let gravity = CharacterGravity::Radial { center: [0.0; 3] };
@@ -166,7 +164,9 @@ fn v8_roundtrip_keeps_a_live_planet_position_clear_after_quantization() {
     let directory = temporary_directory("radial-contact");
     snapshot.write(&directory).unwrap();
 
-    let mut restored = PlayerStore::load(&directory, &worlds).unwrap().player_store;
+    let mut restored = PlayerStore::load(&directory, &worlds, &ComponentRegistry::default())
+        .unwrap()
+        .player_store;
     let mut next_id = restored.next_player_id().unwrap();
     let player = restored
         .claim(profile, &mut next_id, [0.0; 3], None, primary, gravity)
@@ -188,7 +188,7 @@ fn v8_roundtrip_keeps_a_live_planet_position_clear_after_quantization() {
 }
 
 #[test]
-fn v2_and_v3_snapshots_migrate_only_to_the_matching_legacy_world() {
+fn versions_two_through_nine_are_rejected_without_replacing_the_snapshot() {
     let map = minimium_world::world::WorldMap::from_parts(
         [0.0; 3],
         vec![minimium_world::world::MapBox {
@@ -200,42 +200,20 @@ fn v2_and_v3_snapshots_migrate_only_to_the_matching_legacy_world() {
         Vec::new(),
     )
     .unwrap();
-    let registry = WorldRegistry::legacy_primary(map.clone());
+    let registry = WorldRegistry::authored_primary(map.clone());
     let (instance, owner) = registry.iter().next().unwrap();
     let worlds = vec![(instance, map.clone(), owner.manifest)];
-    let profile = PlayerProfileId::from_bytes([0x71; 16]);
-
-    for version in [2, 3] {
+    for version in 2..=9 {
         let directory = temporary_directory("legacy");
-        let health = if version == 2 { "" } else { "\t73" };
-        let snapshot = format!(
-            "MINIMIUM_WORLD\t{version}\t{:016x}\n17\t{}\tLegacy\t1.25\t2.5\t3.75{health}\n",
-            map.fingerprint(),
-            profile.to_hex()
-        );
-        fs::write(directory.join("world.snapshot"), snapshot).unwrap();
-        let mut restored = PlayerStore::load(&directory, &worlds).unwrap().player_store;
-        let mut next_id = restored.next_player_id().unwrap();
-        let player = restored
-            .claim(
-                profile,
-                &mut next_id,
-                [0.0; 3],
-                None,
-                instance,
-                CharacterGravity::FixedY,
-            )
-            .unwrap();
-        assert_eq!(player.location.instance(), instance);
-        assert_eq!(
-            player.location.position().coordinates(),
-            [1_250, 2_500, 3_750]
-        );
-        assert_eq!(player.return_location, player.location);
-        assert_eq!(
-            player.health,
-            if version == 2 { PLAYER_MAX_HEALTH } else { 73 }
-        );
+        let snapshot = format!("MINIMIUM_WORLD\t{version}\t{:016x}\n", map.fingerprint());
+        let path = directory.join("world.snapshot");
+        fs::write(&path, &snapshot).unwrap();
+        let error = match PlayerStore::load(&directory, &worlds, &ComponentRegistry::default()) {
+            Ok(_) => panic!("unsupported snapshot version {version} was loaded"),
+            Err(error) => error,
+        };
+        assert_eq!(error.kind(), StorageErrorKind::UnsupportedVersion);
+        assert_eq!(fs::read(&path).unwrap(), snapshot.as_bytes());
         fs::remove_dir_all(directory).unwrap();
     }
 }

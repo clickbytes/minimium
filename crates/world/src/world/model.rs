@@ -147,13 +147,18 @@ impl GeneratorDigest {
         &self.0
     }
 
-    pub fn legacy_map_fingerprint(fingerprint: u64) -> Self {
+    pub fn authored_map_fingerprint(fingerprint: u64) -> Self {
         let mut bytes = [0_u8; 32];
-        for (index, chunk) in bytes.as_chunks_mut::<8>().0.iter_mut().enumerate() {
-            let value = fingerprint.rotate_left((index * 13) as u32) ^ index as u64;
-            chunk.copy_from_slice(&value.to_le_bytes());
+        bytes[..4].copy_from_slice(b"AUTH");
+        for (index, chunk) in bytes[4..].as_chunks_mut::<4>().0.iter_mut().enumerate() {
+            let value = fingerprint.rotate_left((index * 11) as u32) ^ index as u64;
+            chunk.copy_from_slice(&(value as u32).to_le_bytes());
         }
         Self::new(bytes)
+    }
+
+    pub fn is_authored(self) -> bool {
+        self.0[0] == b'A' && self.0[1] == b'U' && self.0[2] == b'T' && self.0[3] == b'H'
     }
 }
 
@@ -161,6 +166,12 @@ impl GeneratorDigest {
 pub enum WorldTopology {
     Planet,
     Dungeon,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum WorldSource {
+    Generated,
+    Authored,
 }
 
 /// Parameters that change the generated planet. Present from generator v3.
@@ -261,6 +272,14 @@ impl WorldManifest {
 
     pub const fn generator_digest(self) -> GeneratorDigest {
         self.generator_digest
+    }
+
+    pub fn source(self) -> WorldSource {
+        if self.generator_digest.is_authored() {
+            WorldSource::Authored
+        } else {
+            WorldSource::Generated
+        }
     }
 
     pub const fn with_planet(mut self, planet: PlanetDefinition) -> Self {

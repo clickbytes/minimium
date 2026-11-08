@@ -50,6 +50,14 @@ pub(super) const SERVER_PROPERTIES: &[PropertySpec] = &[
         true,
     ),
     property(
+        "server.sky.bolid_interval",
+        PropertyType::Text,
+        "120..300",
+        "off|MIN..MAX seconds (10..=3600)",
+        PropertyLifecycle::Live,
+        true,
+    ),
+    property(
         "server.headless",
         PropertyType::Boolean,
         "false",

@@ -6,11 +6,12 @@ license.workspace = true
 
 [features]
 default = ["desktop"]
-desktop = ["minimium-renderer/gpu", "dep:minimium-astronomy", "dep:wgpu", "dep:winit", "dep:pollster", "dep:arboard"]
+desktop = ["minimium-renderer/gpu", "dep:minimium-astronomy", "dep:wgpu", "dep:winit", "dep:pollster", "dep:arboard", "dep:fontdue", "dep:unicode-segmentation"]
 
 [dependencies]
 minimium-assets = { path = "../../crates/assets" }
 minimium-client-runtime = { path = "../../crates/client-runtime" }
+minimium-localization = { path = "../../crates/localization" }
 minimium-renderer = { path = "../../crates/renderer", default-features = false }
 minimium-asset-io = { path = "../../crates/asset-io" }
 minimium-astronomy = { path = "../../crates/astronomy", optional = true }
@@ -24,6 +25,7 @@ minimium-protocol = { path = "../../crates/protocol" }
 minimium-procgen = { path = "../../crates/procgen" }
 minimium-sectors = { path = "../../crates/sectors" }
 minimium-telemetry = { path = "../../crates/telemetry" }
+minimium-diagnostics = { path = "../../crates/diagnostics" }
 minimium-game-sample = { path = "../../games/sample" }
 bytemuck = { version = "1.25", features = ["derive"] }
 glam = "0.30"
@@ -32,3 +34,5 @@ pollster = { version = "0.4", optional = true }
 wgpu = { version = "30", optional = true }
 winit = { version = "0.30", optional = true }
 arboard = { version = "3", optional = true }
+fontdue = { version = "0.9.5", optional = true }
+unicode-segmentation = { version = "1.13.3", optional = true }

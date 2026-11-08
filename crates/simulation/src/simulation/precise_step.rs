@@ -1,14 +1,15 @@
 use super::collision_queries::CollisionQueryStats;
 use super::spatial::update_cell_index;
 use super::world_state::{SimulationBatch, World};
-use super::{step_character, CharacterGravity, CharacterInput, CharacterState};
+use super::{step_character, CharacterGravity, CharacterState, MovementIntent};
 use minimium_world::world::{Aabb, MapTriangle, Position3Mm};
 use std::sync::Arc;
 
 pub fn step_character_mm(
     state: &mut CharacterState,
     position_mm: &mut Position3Mm,
-    input: CharacterInput,
+    input: MovementIntent,
+    policy: super::MovementPolicy,
     colliders: &[Aabb],
     surfaces: &[MapTriangle],
     delta_seconds: f32,
@@ -52,6 +53,7 @@ pub fn step_character_mm(
     step_character(
         state,
         input,
+        policy,
         &local_colliders,
         &local_surfaces,
         delta_seconds,

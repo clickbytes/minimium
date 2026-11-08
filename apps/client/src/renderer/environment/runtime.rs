@@ -4,7 +4,7 @@ use super::{
     RenderViewFrame, SkyFrameInput, StarFrameStamp,
 };
 use minimium_astronomy::{SkyInvalidation, SkySampleContext};
-use minimium_environment::sky::{resolve_sky_model, SkyModel, DEFAULT_OBSERVER_EYE_HEIGHT_MM};
+use minimium_environment::sky::{DEFAULT_OBSERVER_EYE_HEIGHT_MM, SkyModel, resolve_sky_model};
 use minimium_environment::{
     time::{ClockRevision, WorldTimeMs},
     {AstronomyModelRevision, CatalogueId},
@@ -73,15 +73,16 @@ impl Renderer {
             return None;
         };
         let Some(manifest) = self
+            .application
             .game
             .world_manifests
-            .get(&self.game.current_instance)
+            .get(&self.application.game.current_instance)
             .copied()
         else {
             self.publish_unavailable(render_view, "world manifest is unavailable");
             return None;
         };
-        if context.instance() != self.game.current_instance
+        if context.instance() != self.application.game.current_instance
             || context.content_revision() != manifest.content_revision()
         {
             self.publish_unavailable(
@@ -110,7 +111,8 @@ impl Renderer {
                 utc_ms,
                 manifest,
                 render_view,
-                self.connection
+                self.application
+                    .connection
                     .session()
                     .and_then(|session| session.prepared_geography()),
             ),
@@ -131,12 +133,22 @@ impl Renderer {
         render_view: RenderViewFrame,
         geography: Option<std::sync::Arc<dyn minimium_procgen::PreparedGeography>>,
     ) -> Option<PreparedStarUpload> {
-        let mut feet_position_mm = self.game.gameplay.prediction.position_mm.or_else(|| {
-            (self.environment_frame.quality
-                == crate::environment::SynchronizationQuality::LocalDemo)
-                .then(|| demo_position_mm(self.game.gameplay.prediction.character.position))
-                .flatten()
-        });
+        let mut feet_position_mm = self
+            .application
+            .game
+            .gameplay
+            .prediction
+            .position_mm
+            .or_else(|| {
+                (self.environment_frame.quality
+                    == crate::environment::SynchronizationQuality::LocalDemo)
+                    .then(|| {
+                        demo_position_mm(
+                            self.application.game.gameplay.prediction.character.position,
+                        )
+                    })
+                    .flatten()
+            });
         let mut eye_height = DEFAULT_OBSERVER_EYE_HEIGHT_MM;
         if manifest.planet().is_some() {
             match super::observer::camera_reference(manifest, render_view, geography.as_deref()) {
@@ -285,9 +297,16 @@ impl Renderer {
     fn publish_unavailable(&mut self, view: RenderViewFrame, reason: impl Into<String>) {
         let reason = reason.into();
         if self.environment_error.as_deref() != Some(reason.as_str()) {
-            self.ui
-                .console
-                .push_error(format!("Environment unavailable: {reason}"));
+            self.application
+                .connection
+                .record_diagnostic_failure("renderer.environment_unavailable", &reason);
+            self.application.ui.console.push_ui_error_message(
+                minimium_localization::UiMessage::Notice(
+                    minimium_localization::UiNotice::EnvironmentUnavailable,
+                ),
+                &self.localizer,
+                self.application.settings.locale,
+            );
         }
         self.environment_error = Some(reason);
         self.render_environment_frame = EnvironmentFrame::unavailable(view);

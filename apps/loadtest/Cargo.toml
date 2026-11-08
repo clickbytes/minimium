@@ -10,3 +10,5 @@ minimium-protocol = { path = "../../crates/protocol" }
 minimium-commands = { path = "../../crates/commands" }
 minimium-core = { path = "../../crates/core" }
 minimium-telemetry = { path = "../../crates/telemetry" }
+minimium-diagnostics = { path = "../../crates/diagnostics" }
+minimium-simulation = { path = "../../crates/simulation" }

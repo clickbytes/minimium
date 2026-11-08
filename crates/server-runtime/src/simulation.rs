@@ -1,12 +1,12 @@
 use crate::executor::Executor;
 use minimium_core::ids::PlayerId;
-use minimium_simulation::{step_batch, CharacterInput, CollisionQueryStats, World};
+use minimium_simulation::{step_batch, CollisionQueryStats, MovementIntent, World};
 use std::collections::{HashMap, HashSet};
 
 #[cfg(test)]
 pub(crate) fn step_players(
     world: &mut World,
-    inputs: &HashMap<PlayerId, CharacterInput>,
+    inputs: &HashMap<PlayerId, MovementIntent>,
     delta_seconds: f32,
     executor: &Executor,
 ) -> CollisionQueryStats {
@@ -22,7 +22,7 @@ pub(crate) fn step_players(
 
 pub(crate) fn step_ready_players(
     world: &mut World,
-    inputs: &HashMap<PlayerId, CharacterInput>,
+    inputs: &HashMap<PlayerId, MovementIntent>,
     ready_players: &HashSet<PlayerId>,
     delta_seconds: f32,
     executor: &Executor,
@@ -50,7 +50,7 @@ mod tests {
             world.join_at(id, format!("Bot{number}"), [number as f32 * 4.0, 0.0, 0.0]);
             inputs.insert(
                 id,
-                CharacterInput {
+                MovementIntent {
                     direction: match number % 4 {
                         0 => [1.0, 0.0],
                         1 => [0.0, 1.0],

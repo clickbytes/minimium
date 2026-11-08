@@ -8,12 +8,20 @@ fn main() {
             "geometry_rebase",
             include_str!("../../../crates/renderer/src/shaders/geometry_rebase.wgsl").to_owned(),
         ),
+        (
+            "shadow",
+            include_str!("../../../crates/renderer/src/shaders/shadow.wgsl").to_owned(),
+        ),
         ("clouds", source::clouds()),
         ("cloud_composite", source::cloud_composite()),
         ("world", source::world()),
         ("terrain", source::terrain()),
         ("ocean", source::ocean()),
         ("sky", source::sky()),
+        (
+            "bolid_composite",
+            include_str!("../../../crates/renderer/src/shaders/bolid_composite.wgsl").to_owned(),
+        ),
         ("sun", source::sun()),
         ("stars", source::stars()),
         ("moon", source::moon()),
@@ -45,7 +53,7 @@ fn main() {
             name,
             "atmosphere" | "atmosphere_sky_lut" | "atmosphere_aerial_lut" | "atmosphere_multi_lut"
         ) {
-            atmosphere_contract(&module, &info, name == "globe");
+            atmosphere_contract(&module, &info);
         }
         if name == "clouds" {
             cloud_contract(&module, &info);
@@ -122,6 +130,9 @@ fn cloud_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
                 (0, 0..=2) | (1, 0..=1) => true,
                 (0, 3..=10) => entry.stage != naga::ShaderStage::Vertex,
                 (1, 2) => entry.stage == naga::ShaderStage::Fragment,
+                (2, 0) => {
+                    entry.name == "fs_bolid_mask" && entry.stage == naga::ShaderStage::Fragment
+                }
                 _ => false,
             };
             assert!(
@@ -133,7 +144,7 @@ fn cloud_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
     }
 }
 
-fn atmosphere_contract(module: &naga::Module, info: &naga::valid::ModuleInfo, globe: bool) {
+fn atmosphere_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
     for (_, ty) in module.types.iter() {
         let expected = match ty.name.as_deref() {
             Some("AtmosphereUniform") => 256,
@@ -159,8 +170,7 @@ fn atmosphere_contract(module: &naga::Module, info: &naga::valid::ModuleInfo, gl
                 (0, 0..=2) => true,
                 (0, 3..=10) => entry.stage != naga::ShaderStage::Vertex,
                 (1, 0..=1) | (2, 0) => entry.stage != naga::ShaderStage::Vertex,
-                (1, 2) if !globe => entry.stage == naga::ShaderStage::Fragment,
-                (2, 1..=2) if globe => entry.stage == naga::ShaderStage::Fragment,
+                (1, 2) => entry.stage == naga::ShaderStage::Fragment,
                 _ => false,
             };
             assert!(

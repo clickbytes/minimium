@@ -2,7 +2,7 @@
 
 ## Purpose / Non-goals
 
-Owns operating-system adapters for durable files, identity, locks, endpoint files and local administrative requests. Command schemas and parsing live in `minimium-commands`; server module registration lives in `minimium-server`.
+Owns operating-system adapters for durable files, advisory shared/exclusive file locks, identity, endpoint files, typed atomic local-server startup status, local administrative requests, and the `AppPaths` value used by applications to pass resolved paths to runtimes. Command schemas and parsing live in `minimium-commands`; server module registration lives in `minimium-server`.
 
 ## Public API
 
@@ -15,6 +15,10 @@ Depends on core identifiers and `minimium-commands` for validation before local 
 ## Data flow
 
 Runtime supplies paths and typed requests; platform code performs bounded OS operations and returns values or errors.
+
+`files::lock_file` and `files::try_lock_file` provide cross-process advisory
+shared/exclusive locks; handles release ownership when dropped. Content cache
+leases use shared locks, while installation and eviction acquire exclusive locks.
 
 ## Ownership and execution
 

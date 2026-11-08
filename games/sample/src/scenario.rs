@@ -1,6 +1,6 @@
 use minimium_procgen::{
-    generate_dungeon, generator_digest, materialize_dungeon_map, materialize_legacy_planet_map,
-    materialize_planet_map, DungeonSpec, PlanetSurfaceSpec, PlanetTerrain,
+    generate_dungeon, generator_digest, materialize_dungeon_map, materialize_planet_map,
+    DungeonSpec, GenerationError, PlanetSurfaceSpec, PlanetTerrain,
 };
 use minimium_world::world::{
     GenerationRevision, GenerationSpec, PlanetDefinition, WorldContentRevision, WorldDefinitionId,
@@ -8,8 +8,8 @@ use minimium_world::world::{
 };
 use std::sync::Arc;
 
-const CONTENT_REVISION: u64 = 1;
-const GENERATION_REVISION: u32 = 2;
+const CONTENT_REVISION: u64 = 2;
+const GENERATION_REVISION: u32 = 5;
 const POSITION_QUANTUM_MM: u32 = 10;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -27,68 +27,101 @@ pub struct GeneratedWorld {
     pub portal: Option<DemoPortal>,
 }
 
+/// Recreates one generated map from its complete manifest without inferring a
+/// world role from its instance ID or transforming its recorded seed.
+pub fn materialize_manifest_map(
+    manifest: WorldManifest,
+    geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
+) -> Result<WorldMap, GenerationError> {
+    minimium_procgen::validate_world_manifest(manifest)?;
+    match manifest.topology() {
+        WorldTopology::Planet => {
+            let definition = manifest.planet().ok_or_else(|| {
+                GenerationError::invalid_manifest(
+                    "generated planet manifest has no planet definition",
+                )
+            })?;
+            let surface = PlanetSurfaceSpec::new(
+                definition.radius_mm,
+                u64::from(definition.mountain_limit_mm),
+            )
+            .ok_or_else(|| {
+                GenerationError::invalid_manifest("invalid planet surface in manifest")
+            })?;
+            let mut terrain = PlanetTerrain::new(manifest.generation(), surface)
+                .ok_or_else(|| {
+                    GenerationError::invalid_manifest(
+                        "invalid planet generation settings in manifest",
+                    )
+                })?
+                .with_definition(definition);
+            if let Some(geography) = geography {
+                terrain = terrain.with_geography(geography);
+            }
+            let landmarks = terrain.landmarks();
+            materialize_planet_map(terrain, landmarks)
+        }
+        WorldTopology::Dungeon => {
+            if manifest.planet().is_some() {
+                return Err(GenerationError::invalid_manifest(
+                    "generated dungeon manifest contains planet settings",
+                ));
+            }
+            let spec = DungeonSpec::new(48, 40, 4, 5, 1).ok_or_else(|| {
+                GenerationError::invalid_blueprint("invalid sample dungeon settings")
+            })?;
+            let blueprint = generate_dungeon(manifest.generation(), spec);
+            materialize_dungeon_map(&blueprint)
+        }
+    }
+}
+
 /// Generates the default seeded planet and connected dungeon.
-pub fn generate_demo_worlds() -> Result<[GeneratedWorld; 2], String> {
+pub fn generate_demo_worlds() -> Result<[GeneratedWorld; 2], GenerationError> {
     generate_worlds(crate::DEFAULT_SEED)
 }
 
 /// A server seed identifies both the planet and its connected dungeon.
-pub fn generate_worlds(seed: u128) -> Result<[GeneratedWorld; 2], String> {
-    generate_worlds_with(
-        seed,
-        GENERATION_REVISION,
-        minimium_procgen::planet_surface(),
-        None,
-        None,
-    )
+pub fn generate_worlds(seed: u128) -> Result<[GeneratedWorld; 2], GenerationError> {
+    let definition = crate::ResolvedPlanetConfig::procedural(seed).definition();
+    generate_worlds_with_planet(seed, definition)
 }
 
 pub fn generate_worlds_with_planet(
     seed: u128,
     definition: PlanetDefinition,
-) -> Result<[GeneratedWorld; 2], String> {
-    generate_worlds_with_planet_revision(seed, definition, 3)
+) -> Result<[GeneratedWorld; 2], GenerationError> {
+    generate_worlds_with_planet_and_geography(seed, definition, None)
 }
 
-pub fn generate_worlds_with_planet_revision(
+pub fn generate_worlds_with_planet_and_geography(
     seed: u128,
     definition: PlanetDefinition,
-    revision: u32,
-) -> Result<[GeneratedWorld; 2], String> {
-    generate_worlds_with_planet_revision_and_geography(seed, definition, revision, None)
-}
-
-pub fn generate_worlds_with_planet_revision_and_geography(
-    seed: u128,
-    definition: PlanetDefinition,
-    revision: u32,
     geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
-) -> Result<[GeneratedWorld; 2], String> {
-    if !matches!(revision, 3 | 4 | 5)
-        || (revision >= 4 && definition.mode != 1)
-        || (definition.peak_relief.enabled() && revision != 5)
-        || !definition.is_valid()
-    {
-        return Err("unsupported planet generator revision".into());
+) -> Result<[GeneratedWorld; 2], GenerationError> {
+    if !definition.is_valid() {
+        return Err(GenerationError::invalid_manifest(
+            "invalid planet definition",
+        ));
     }
     let surface = PlanetSurfaceSpec::new(
         definition.radius_mm,
         u64::from(definition.mountain_limit_mm),
     )
-    .ok_or("invalid planet surface")?;
-    generate_worlds_with(seed, revision, surface, Some(definition), geography)
+    .ok_or_else(|| GenerationError::invalid_manifest("invalid planet surface"))?;
+    generate_worlds_with(seed, surface, Some(definition), geography)
 }
 
 fn generate_worlds_with(
     seed: u128,
-    revision: u32,
     planet_surface: PlanetSurfaceSpec,
     planet_definition: Option<PlanetDefinition>,
     geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
-) -> Result<[GeneratedWorld; 2], String> {
-    let planet_generation = generation(seed, revision)?;
-    let mut terrain = PlanetTerrain::new(planet_generation, planet_surface)
-        .ok_or_else(|| String::from("demo planet generation settings are invalid"))?;
+) -> Result<[GeneratedWorld; 2], GenerationError> {
+    let planet_generation = generation(seed)?;
+    let mut terrain = PlanetTerrain::new(planet_generation, planet_surface).ok_or_else(|| {
+        GenerationError::invalid_manifest("demo planet generation settings are invalid")
+    })?;
     if let Some(geography) = geography {
         terrain = terrain.with_geography(geography);
     }
@@ -96,15 +129,13 @@ fn generate_worlds_with(
         terrain = terrain.with_definition(definition);
     }
     let landmarks = terrain.landmarks();
-    let planet_map = materialize_planet_map(terrain, landmarks)
-        .map_err(|error| format!("demo planet map: {error}"))?;
+    let planet_map = materialize_planet_map(terrain, landmarks)?;
 
-    let dungeon_generation = generation(seed ^ 0x0030_0000_0000_0003, revision)?;
+    let dungeon_generation = generation(seed ^ 0x0030_0000_0000_0003)?;
     let dungeon_spec = DungeonSpec::new(48, 40, 4, 5, 1)
-        .ok_or_else(|| String::from("demo dungeon settings are invalid"))?;
+        .ok_or_else(|| GenerationError::invalid_blueprint("demo dungeon settings are invalid"))?;
     let blueprint = generate_dungeon(dungeon_generation, dungeon_spec);
-    let dungeon_map = materialize_dungeon_map(&blueprint)
-        .map_err(|error| format!("demo dungeon map: {error}"))?;
+    let dungeon_map = materialize_dungeon_map(&blueprint)?;
 
     let planet_instance = id(1);
     let dungeon_instance = id(2);
@@ -143,68 +174,14 @@ fn generate_worlds_with(
     Ok([planet, dungeon])
 }
 
-/// Frozen v1 layout, used only to recognize and migrate existing demo saves.
-pub fn generate_legacy_demo_worlds() -> Result<[GeneratedWorld; 2], String> {
-    let legacy_generation = |seed| {
-        GenerationSpec::new(
-            WorldSeed::new(seed),
-            GenerationRevision::new(1).expect("legacy revision is nonzero"),
-            POSITION_QUANTUM_MM,
-        )
-        .expect("legacy quantum is valid")
-    };
-    let planet_generation = legacy_generation(0x0030_0000_0000_0001);
-    let terrain = PlanetTerrain::new(
-        planet_generation,
-        PlanetSurfaceSpec::new(100_000, 300).expect("legacy surface is valid"),
-    )
-    .expect("legacy terrain is valid");
-    let landmarks = terrain.landmarks();
-    let planet_map = materialize_legacy_planet_map(terrain, landmarks)?;
-    let dungeon_generation = legacy_generation(0x0030_0000_0000_0002);
-    let blueprint = generate_dungeon(
-        dungeon_generation,
-        DungeonSpec::new(48, 40, 4, 5, 1).expect("legacy dungeon spec is valid"),
-    );
-    let dungeon_map = materialize_dungeon_map(&blueprint)?;
-    let entrance = point_to_world(landmarks.entrance.position_mm.coordinates());
-    let old_manifest = |definition, topology, generation| {
-        WorldManifest::new(
-            WorldDefinitionId::new(definition).expect("legacy definition is nonzero"),
-            topology,
-            generation,
-            WorldContentRevision::new(1).expect("legacy content is nonzero"),
-            generator_digest(topology, generation),
-        )
-    };
-    Ok([
-        GeneratedWorld {
-            instance: id(1),
-            manifest: old_manifest(1, WorldTopology::Planet, planet_generation),
-            portal: None,
-            map: planet_map,
-        },
-        GeneratedWorld {
-            instance: id(2),
-            manifest: old_manifest(2, WorldTopology::Dungeon, dungeon_generation),
-            portal: Some(DemoPortal {
-                position: tile_to_world(blueprint.entrance()),
-                target_instance: id(1),
-                destination: entrance,
-            }),
-            map: dungeon_map,
-        },
-    ])
-}
-
-fn generation(seed: u128, revision: u32) -> Result<GenerationSpec, String> {
+fn generation(seed: u128) -> Result<GenerationSpec, GenerationError> {
     GenerationSpec::new(
         WorldSeed::new(seed),
-        GenerationRevision::new(revision)
-            .ok_or_else(|| String::from("generation revision must be nonzero"))?,
+        GenerationRevision::new(GENERATION_REVISION)
+            .expect("current generator revision is nonzero"),
         POSITION_QUANTUM_MM,
     )
-    .ok_or_else(|| String::from("position quantum must be nonzero"))
+    .ok_or_else(|| GenerationError::invalid_manifest("position quantum must be nonzero"))
 }
 
 fn manifest(
@@ -217,19 +194,17 @@ fn manifest(
         WorldDefinitionId::new(definition).expect("static demo definition is nonzero"),
         topology,
         generation,
-        WorldContentRevision::new(if generation.revision().get() >= 3 {
-            2
-        } else {
-            CONTENT_REVISION
-        })
-        .expect("static demo content revision is nonzero"),
+        WorldContentRevision::new(CONTENT_REVISION)
+            .expect("static demo content revision is nonzero"),
         generator_digest(topology, generation),
     );
-    if let Some(definition) = planet_definition {
-        manifest.with_planet(definition)
-    } else {
-        manifest
+    if topology == WorldTopology::Planet {
+        if let Some(definition) = planet_definition {
+            return manifest.with_planet(definition);
+        }
+        panic!("generated planet manifest requires its planet definition");
     }
+    manifest
 }
 
 fn id(value: u128) -> WorldInstanceId {

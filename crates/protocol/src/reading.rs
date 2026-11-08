@@ -1,10 +1,9 @@
 use super::world_context::WorldContext;
 use super::{
-    limits::{MAX_CHAT_BYTES, PLAYER_PROFILE_ID_BYTES},
+    limits::{MAX_AUTH_CREDENTIAL_BYTES, MAX_AUTH_PROVIDER_BYTES, MAX_CHAT_BYTES},
     models::ProtocolError,
     validation::{valid_chat, valid_direction_component, valid_name},
 };
-use minimium_core::identity::PlayerProfileId;
 use minimium_world::world::{
     GenerationRevision, GenerationSpec, GeneratorDigest, MembershipEpoch, Position3Mm,
     TransitionId, WorldContentRevision, WorldDefinitionId, WorldInstanceId, WorldManifest,
@@ -81,6 +80,14 @@ impl<'a> Reader<'a> {
         self.take(N)?
             .try_into()
             .map_err(|_| ProtocolError::InvalidPayload)
+    }
+
+    pub(crate) fn bounded_bytes(&mut self, limit: usize) -> Result<Vec<u8>, ProtocolError> {
+        let length = self.u16()? as usize;
+        if length > limit {
+            return Err(ProtocolError::InvalidPayload);
+        }
+        Ok(self.take(length)?.to_vec())
     }
 
     pub(crate) fn world_context(&mut self) -> Result<WorldContext, ProtocolError> {
@@ -195,11 +202,27 @@ impl<'a> Reader<'a> {
         Ok(direction)
     }
 
-    pub(crate) fn profile_id(&mut self) -> Result<PlayerProfileId, ProtocolError> {
-        self.take(PLAYER_PROFILE_ID_BYTES)?
-            .try_into()
-            .map(PlayerProfileId::from_bytes)
-            .map_err(|_| ProtocolError::InvalidPayload)
+    pub(crate) fn auth_provider(&mut self) -> Result<String, ProtocolError> {
+        let length = self.byte()? as usize;
+        if length == 0 || length > MAX_AUTH_PROVIDER_BYTES {
+            return Err(ProtocolError::InvalidPayload);
+        }
+        let bytes = self.take(length)?;
+        if !bytes
+            .iter()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._-".contains(byte))
+        {
+            return Err(ProtocolError::InvalidPayload);
+        }
+        String::from_utf8(bytes.to_vec()).map_err(|_| ProtocolError::InvalidPayload)
+    }
+
+    pub(crate) fn auth_credentials(&mut self) -> Result<Vec<u8>, ProtocolError> {
+        let length = self.u16()? as usize;
+        if length > MAX_AUTH_CREDENTIAL_BYTES {
+            return Err(ProtocolError::InvalidPayload);
+        }
+        Ok(self.take(length)?.to_vec())
     }
 
     pub(crate) fn name(&mut self) -> Result<String, ProtocolError> {

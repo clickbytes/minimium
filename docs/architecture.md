@@ -16,17 +16,14 @@ Local play launches the server as a child process and connects through the norma
 
 ## Current ownership and target boundaries
 
-Terrain presentation now uses protocol v15 content readiness, separate material
-HTTP transport, validated KTX2 packages, a typed terrain vertex path and shared
-seasonal climate/cover history. `assets` owns manifests/KTX2/fractional coverage;
-`asset-io` owns package access, downloads and cache; `environment` owns scenarios
-and cover; `procgen` owns surface samples; `renderer` owns terrain resources;
-`client-runtime` owns preparation deadlines and readiness. Sample recipes live
-in `games/sample`. Climate configuration is a world sidecar, without snapshot or
-geometry format changes. [Terrain implementation and pending acceptance](terrain-materials.md)
-documents build/packaging, external WorldCover import and current approximations.
-Older protocol references below describe earlier milestones, not the current
-v15 framing. No new runtime/visual acceptance has been performed.
+The current wire contract is protocol v18; save files use format v10 and
+generated worlds use generator revision 5. These are separate version domains.
+Older wire, save and generated-world revisions are rejected without fallback or
+migration. Create a fresh world in a separate data directory when replacing old
+saved data. Terrain and material ownership is split across assets, asset-io,
+environment, procgen, renderer and client-runtime; see
+[terrain implementation and pending acceptance](terrain-materials.md) for the
+current approximation and the visual work that remains unverified.
 
 The client's optional `desktop` feature enables GPU, window, clipboard and
 astronomy adapters. A `--no-default-features` client defaults to the terminal,
@@ -34,77 +31,66 @@ skips material cooking and consumes only CPU camera/quality/debug contracts from
 the renderer with its `gpu` feature disabled. This provides a terminal Cargo
 graph without wgpu/winit in addition to the existing `--console` desktop mode.
 
-`architecture.toml` is the machine-readable declaration of current Cargo package responsibilities and selected forbidden dependencies. The check in `scripts/check_architecture.py` reads this file and evaluates the full resolved Cargo production graph. Planned boundaries below are architectural destinations, not claims that those packages exist today.
+`architecture.toml` is the machine-readable declaration of current Cargo package responsibilities and selected forbidden dependencies. `scripts/check_architecture.py` rejects duplicate, missing and stale package declarations, then checks resolved all-feature normal/build edges including target-specific and activated optional dependencies; dev edges are reported separately. Role rules prohibit sample-game dependencies in domains/runtimes, GPU dependencies in the server and window/transport/storage/platform dependencies in the renderer. A source scan derives each package root from Cargo metadata and scans Rust sources in every declared domain/runtime plus the server application for filesystem/process/network/GPU/FFI effects that Cargo edges cannot express. This regex guardrail is not a Rust parser or proof: macro-generated code, dynamically constructed names and indirect wrappers may escape it, while matching comments or strings can require review. `scripts/check_static_refactor.py` checks Rust/WGSL layouts and symbol owners; Cargo dependency rules live only in the architecture checker.
 
 Current packages and responsibilities:
 
 | Package | Current responsibility |
 | --- | --- |
-| `minimium-core` | Foundational identity and identifier primitives. |
+| `minimium-core` | Foundational identifiers, player profiles, authenticated Principal values and server-granted permission bits. |
 | `minimium-world` | World definitions, topology, addressing, geometry, maps, entities and neutral component data. |
 | `minimium-simulation` | Mutable world state, movement, collision queries, combat, snapshots and fixed-step results. |
-| `minimium-environment` | World clock and environment values, renderer-independent sky and solar-system contracts, and deterministic weather model. |
-| `minimium-procgen` | Seeded world generation, sector geometry and terrain sampling through explicit prepared geography inputs. |
+| `minimium-environment` | World clock and environment values, renderer-independent sky/climate/solar-system contracts, and deterministic weather model. |
+| `minimium-procgen` | Seeded revisioned world generation, typed errors, sector geometry and terrain sampling through explicit prepared geography inputs. |
 | `minimium-sectors` | Bounded ticket, readiness and cache lifecycle. |
-| `minimium-assets` | Map, OBJ, sky catalog and world-definition parsing from supplied data. |
-| `minimium-asset-io` | Bounded authored map, mesh and world-definition file access adapter. |
-| `minimium-platform` | Durable file operations, identity, locks and bounded local administration transport with versioned structured error decoding. |
-| `minimium-storage` | Save snapshot formats, validation, player store and bounded persistence worker. |
+| `minimium-assets` | Map, OBJ, sky catalog, material manifest and world-definition parsing from supplied data. |
+| `minimium-asset-io` | Bounded authored asset/geography access, material HTTP adapters, and leased content cache. |
+| `minimium-platform` | Application-resolved process paths, durable file operations, identity, locks and bounded local administration transport with versioned structured error decoding. |
+| `minimium-storage` | Exact version-10 save format, entity/component validation, snapshot budget, player store and bounded persistence worker. |
 | `minimium-transport` | Bounded socket byte flushing without protocol or game policy. |
 | `minimium-commands` | Generic command registry; domains own command values and validation, while hosts own execution. |
 | `minimium-protocol` | Versioned message models, codecs and validation. |
+| `minimium-diagnostics` | Bounded domain events, stable codes and the nonblocking diagnostic sink contract. |
+| `minimium-gameplay` | Neutral module, command, system and component registration plus bounded world effects. |
+| `minimium-localization` | Typed UI messages, English/Polish Fluent catalogs, fallback and formatting. |
 | `minimium-astronomy` | Client astronomy calculations and FFI adapter consuming environment/world contracts. |
-| `minimium-telemetry` | Metrics and process/allocation instrumentation. |
-| `minimium-server` | Server process entry point, allocator selection and argument forwarding. |
-| `minimium-server-runtime` | Server runtime, transport coordination, persistence lifecycle and authoritative simulation composition. |
-| `minimium-client-runtime` | UI-independent session, connection controller, connector, typed local-server launch settings and bounded offline server-config preview, local-server guard, fixed-step movement prediction, snapshot reconciliation/interpolation, transition validation and environment synchronization state. |
-| `minimium-renderer` | Presentation frame contract including CPU-only `RenderFrame`, camera matrix preparation, render/UI vertex layouts/overlay pipelines/geometry conversion, surface-frame acquire/present operations, ordered shadow/scene/atmosphere/cloud/UI/output pass encoding, globe overview texture/pipeline/LOD mesh, overview and world geometry GPU owners, UI/shadow GPU owners, planet visibility/LOD, visual quality and lighting, WGSL source composition, shared GPU frame bindings, stars, Milky Way and lunar pipelines; frame scheduling, visibility/caster selection and remaining GPU resources stay in the client. |
-| `minimium-client` | Client application shell, renderer integration, console and command presentation. |
+| `minimium-telemetry` | Per-process run directories, bounded asynchronous diagnostics backend, metrics, process sampling and optional allocation instrumentation. |
+| `minimium-server` | Server application, process paths/log lifetime, explicit development identity provider and sample composition. |
+| `minimium-server-runtime` | Authoritative server lifecycle/admission, principal permissions, tick and coordination of transport, persistence and gameplay contracts. |
+| `minimium-client-runtime` | UI/GPU-independent session, resolver contract, connection/child lifecycle, prediction, reconciliation, replication and clock sync. |
+| `minimium-renderer` | CPU frame and geometry publication contracts, camera/visibility/LOD, GPU resources and WGSL pass encoders; client owns preparation workers and frame scheduling. |
+| `minimium-client` | Desktop/text application state, shared world resolver/settings/transitions, input, localization and renderer integration. |
 | `minimiumctl` | Administrative CLI. |
 | `minimium-loadtest` | Headless scenario client. |
-| `minimium-game-sample` | Demo map, stable seed, planet presets, sample planet/dungeon composition, demo celestial catalogue and sample combat balance; depends on reusable procgen, world, simulation, environment and platform APIs. |
+| `minimium-game-sample` | Demo maps/presets, sample world composition, portal component/system and combat defaults; consumed by applications. |
 
-The world, simulation, command and environment packages own public contracts and implementations. `minimium-renderer` owns camera-frame preparation, planet visibility/LOD, visual lighting and WGSL composition, and encodes the main scene, shadow depth, cloud, atmosphere, UI and output passes. It also owns surface image acquisition and queue submission/presentation operations; the client schedules frames, selects visible sectors/casters and composes renderer resource owners at the application boundary. `ClientView` is adapted into the CPU-only `RenderFrame` used for that frame. Server authority and client prediction share the `minimium-simulation` movement integrator. The deterministic weather model lives in environment and receives terrain and lake sampling through a host adapter. Dungeon layout contracts live in world; the asset parser validates structure and the procedural host validates the generator digest before materializing it. `minimium-assets` consumes data and a host-provided mesh reader; `minimium-asset-io` owns bounded map/mesh/world-definition reads and prepared GEBCO packages. Persistence snapshots and the bounded save worker live in `minimium-storage`; bounded socket writes live in `minimium-transport`. `minimium-server-runtime` coordinates server authority, while `minimium-client-runtime` owns session state, connection lifecycle, local server guards, fixed-step prediction, snapshot reconciliation/interpolation and clock synchronization.
+The world, simulation, command and environment packages own their public domain contracts. `minimium-gameplay` defines static extension contracts; the sample game implements them without reaching server infrastructure. `minimium-renderer` owns camera-frame preparation, visibility/LOD, GPU resources and scene/shadow/cloud/atmosphere/UI/output encoders, while the client application owns settings, world/transfer lifecycle, input, preparation workers and frame scheduling. `ClientView` is adapted to CPU-only `RenderFrame` values. Server authority and client prediction share the simulation integrator. `minimium-assets` parses supplied data; `minimium-asset-io` owns bounded file/HTTP/cache access. `minimium-storage` owns v10 snapshots and its persistence worker; `minimium-transport` owns bounded socket byte progress. `minimium-diagnostics` is the domain contract and `minimium-telemetry` owns run directories and the file sink.
 
-## Target future layout
+## Repository package layout
 
 ~~~text
-apps/client/       client executable and platform shell
-apps/server/       headless server executable
-apps/ctl/          admin CLI
-apps/loadtest/     simulated network clients and scenarios
-tools/geography/  offline GEBCO package preparation tools
-crates/core/       shared IDs and small platform-neutral primitives
-crates/procgen/    pure, seeded, versioned world generation
-crates/sectors/    bounded sector tickets, readiness and cache lifecycle
-crates/commands/   generic command registry and argument metadata
-crates/protocol/   versioned messages and validation limits
-crates/transport/  network transport adapters
-crates/world/      manifests, topology, addressing, static geometry and entity contracts
-crates/simulation/ fixed-step movement, collision, combat, AI and events
-crates/storage/    snapshots and durable state operations
-crates/assets/     map, model, catalogue and world-definition formats
-crates/asset-io/   opened packages, geography and runtime asset access
-crates/server-runtime/ authoritative server runtime
-crates/client-runtime/ session and clock synchronization runtime
-crates/renderer/   camera frames, visibility/LOD, visual lighting, WGSL sources and GPU contracts
-crates/telemetry/  logs, counters, traces and profiling
-games/sample/      sample game and map using the public engine API
-docs/              vision, architecture, performance, protocol, commands, ADRs
-tests/integration/ process-level client/server/admin scenarios
+apps/client/          desktop and terminal client application
+apps/server/          headless server application
+apps/ctl/             local administration CLI
+apps/loadtest/        headless network scenario client
+crates/               current workspace engine, adapter, runtime and presentation packages
+games/sample/         demo content and sample module using public engine APIs
+tools/geography/      offline GEBCO package preparation tools
+scripts/              source boundary, file length and WGSL validation tools
+docs/                 architecture, protocol, storage and implementation notes
 ~~~
 
-This is the target ownership map, not a reason to create empty crates. Add a crate when it contains real code and enforces a useful dependency boundary. Keep the binaries thin.
+`architecture.toml` lists every current Cargo package and its role. It is the source for enforced dependency rules; no placeholder crates are planned here.
 
-## Target future dependency rules
+## Enforced dependency boundaries
 
-1. Server depends on world simulation, protocol, transport, storage, commands and telemetry. It has no renderer, audio, or window dependency.
-2. Client depends on protocol, transport, assets, renderer, commands and telemetry.
-3. Simulation owns authoritative rules and does not call network, storage, GPU, or UI APIs. It emits explicit results and events.
-4. Protocol is independent of transport and defines versions, message limits and validation.
-5. Commands defines typed inputs, scope, permissions and results. Terminal, minimiumctl and client console are adapters.
-6. Game-specific rules use a public engine API and data definitions; engine crates do not depend on the sample game.
-7. Procgen depends on world contracts and explicitly supplied asset data. It uses addressed integer randomness and does not perform I/O, networking, parallel dispatch, or GPU work.
+The current Cargo graph and source boundary checks live in `architecture.toml`
+and `scripts/check_architecture.py`. The server/runtime cannot reach GPU/window
+packages; the renderer cannot reach window, transport, storage, platform or
+runtime packages; domains and runtimes cannot depend on sample content;
+simulation and generation remain free of process, filesystem, network and GPU
+effects. The checker also scans Rust sources for explicit effects that package
+edges cannot express.
 
 ## Server tick and ownership
 
@@ -112,15 +98,15 @@ The server uses a fixed simulation step. Network and admin input enter bounded q
 
 ### Modular engine capabilities
 
-`minimium-server-runtime::modules` provides explicit startup registration through `EngineModule` and `ModuleRegistry`. A module declares an ID, version and dependencies, then registers typed commands, systems and component descriptors. This is a static Rust API: it does not load dynamic libraries, define a stable plugin ABI, or add network message kinds. The server currently registers its built-in `world` module. Its `world list`, `world inspect` and `entity list` commands are server-admin commands; its startup system records registry diagnostics. Systems run at named stages, while authoritative world mutation remains on the server lane.
+`minimium-gameplay` provides static startup registration through `EngineModule` and `ModuleRegistry`. A module declares an ID, version and dependencies, then registers typed commands, systems and component descriptors. This Rust API does not load dynamic libraries or define a stable plugin ABI. The server registers its built-in world module and the application-provided `SampleGameplayModule`. Systems run at named stages with a current tick, read-only world views and bounded effects; authoritative mutation remains on the server lane. Stable dependency ordering rejects missing, duplicate or cyclic registration before runtime startup.
 
-`minimium-world::entity` exposes `EntityStore`; component entities are scoped to a `WorldInstanceId`, and the opt-in `MEC1` envelope stores entity ID, component type, schema and payload inside existing opaque world-object data. Legacy objects remain owned by their serializers. Replication policy is explicit and defaults to `ServerOnly`; the server currently offers bounded, read-only changed-component staging and metrics, but does not transmit these components. `minimium-environment::universe` owns the bounded solar-system definition graph with fixed or simplified circular ephemerides, not an N-body solver.
+`minimium-world::entity` exposes world-scoped `EntityStore` and exact component schemas. Spawn, upsert, removal and despawn append revisioned changes to a bounded journal. `minimium-storage` stores current entities/components and validates them against schemas registered before load. Protocol v18 sends full or delta entity images per client; visibility policy filters components and the client stages/validates a sync before atomically publishing its replica and acknowledging. `content_initialized` is persisted per world so New-only Startup effects are not replayed after restore. `minimium-environment::universe` owns the bounded solar-system definition graph with fixed or simplified circular ephemerides, not an N-body solver.
 
 `ServerRuntime` owns `GameState`, `ConnectionState`, `OperationsState`, and `Scheduler`. Each iteration polls persistence completions and autosave, samples memory, polls admin/terminal, then accepts, receives, dispatches, handles EOF/timeouts, sends and captures disconnects. A due tick executes commands, applies inputs, expires stale movement and simulates; a due snapshot follows, then the scheduler sleeps. A stop command still completes the current tick and snapshot check. Admin or accept errors enter the same controlled shutdown path, which reports and attempts the final save while the endpoint guard and data lock remain held. Runtime does not claim a tested failure recovery guarantee.
 
-Admission checks session identity, queue reservation and cooldowns without mutating the world. The single ordered `WorldInput` queue is applied on the authoritative lane; each resulting shot or chat event is delivered before the next input. Leave remains queued after prior accepted inputs, and its pending profile blocks reconnect until application. Output lookup checks that the indexed connection still has the intended player identity. Movement does not allocate an event.
+Admission checks connection phase, current world context, bounded queue capacity and the authenticated `Principal` permission before an action reaches the authoritative lane. `Gameplay` is required for ordinary mutating inputs; movement-policy and developer actions require their dedicated server-granted permission. The owner lane applies queued inputs and scheduled movement, resolves sequence acknowledgements only after an input can no longer execute, then advances simulation and emits snapshots. Leave is ordered after prior accepted inputs and its pending profile blocks reconnect until applied.
 
-Planned phases: drain and validate input; movement; collision; interactions and combat; AI and world events; per-client interest sets; state/event encoding; timing and queue metrics. Each phase has its own duration counter.
+The runtime orders each due tick as command application, admitted input application, scheduled movement, simulation, world effects/transfers, interest/readiness updates, replication and metrics. Work that needs materialization or collision indexing is ticketed to bounded workers and published only after the current world/revision check.
 
 ## Thread budget
 
@@ -142,25 +128,25 @@ Initial server commands: help, status, players list, metrics show, world save, s
 
 ## Current implementation
 
-The following describes implemented paths, not executed gameplay or performance verification. Tests and measurements remain a separate final phase.
+The following describes source-level ownership and contracts. Compilation is deferred to E046-17; runtime behavior and performance are not established here.
 
-The implemented Cargo graph includes `minimium-renderer`, `minimium-server-runtime`, `minimium-client-runtime`, `minimium-world`, `minimium-simulation`, `minimium-environment`, `minimium-commands`, `minimium-procgen`, `minimium-sectors`, `minimium-assets`, `minimium-asset-io`, `minimium-storage`, `minimium-transport`, the client-only astronomy backend and `minimium-game-sample`. Core has no dependencies; world depends on core; simulation depends on core/world; environment depends on core/world and the generic command registry; commands has no project dependencies; procgen and sectors consume core/world contracts; assets parses supplied data and is independent of procgen and filesystem adapters; asset-io owns bounded reads for authored assets; procgen remains independent of assets and sample content. The sample-game package composes the demo scenario using procgen and world APIs. Platform and protocol consume public contracts; telemetry is independent. Server and client compose these domains and sample content. Storage owns snapshots and the persistence worker, while transport currently supplies bounded socket write progress and server retains connection policy. Run `rtk python scripts/check_architecture.py` for Cargo graph restrictions and `rtk python scripts/check_file_lengths.py` for source length. The architecture checker follows the full resolved Cargo graph with all features and targets, including external transitive normal/build edges and excluding dev edges. It prints the dependency path for each violation. Core, protocol, server and ctl cannot reach astronomy, wgpu, wgpu-core, wgpu-hal or winit. This graph check does not prove the absence of I/O.
+The workspace contains the packages listed in `architecture.toml`, including the diagnostics, gameplay and localization contracts. Core owns identity and principal permissions; world owns manifests and component/entity data; simulation owns shared movement/collision rules; gameplay owns registration/effect interfaces; storage owns v10 persistence; protocol owns v18 wire types; procgen accepts only generated revision 5; asset-io and platform own external I/O adapters. Runtime/app packages compose these boundaries. The architecture checker traverses all-feature production normal/build edges, including target-specific dependencies, reports dev edges separately, and source-scans declared domain/runtime roots for explicit effects. This is a guardrail, not proof that indirect effects are absent. The static scripts are scheduled for E046-17 and have not yet been run.
 
 The workspace contains `minimium-core`, `minimium-renderer`, `minimium-server-runtime`, `minimium-client-runtime`, `minimium-world`, `minimium-simulation`, `minimium-environment`, `minimium-commands`, `minimium-astronomy`, `minimium-procgen`, `minimium-sectors`, `minimium-assets`, `minimium-asset-io`, `minimium-platform`, `minimium-protocol`, `minimium-storage`, `minimium-transport`, `minimium-telemetry`, `minimium-server`, `minimium-client`, `minimium-game-sample`, `minimiumctl`, and `minimium-loadtest`. Platform owns bounded persistent-file reads, atomic writes/replacement, profile files, server locks and endpoint/admin helpers; storage owns snapshot parsing and validation. Assets parses maps, OBJ and versioned manual dungeon definitions; asset-io opens bounded map, mesh and world-definition files. The desktop client uses wgpu/winit and can launch a local server or connect remotely. Press F1 for its command console; `--console` selects the text client. Client and server accept `--map PATH` or `--world-definition PATH`; the local client passes the same path to its child server. The default client/server generate matching demo worlds. The server's `--game-port 0` asks the OS for an ephemeral port.
 
-`minimium-environment::time` owns validated UTC, scale, clock anchor/sample and saved-clock types, plus pure clock evaluation, mutation and restore operations. The environment crate root owns profile and versioned astronomy/catalogue identifiers. `minimium-environment::sky` owns observer and sky-model contracts, `universe` owns the solar-system catalogue, and `weather` owns deterministic weather/cloud models behind a `TerrainSampler` host port. These contracts use platform-neutral values; the server supplies UTC and monotonic samples, persistence owns serialization, protocol owns wire encoding, and the client owns astronomy and rendering. Clock state is independent of `WorldManifest`, generator inputs and geometry fingerprints.
+`minimium-environment::time` owns validated UTC, scale, clock anchor/sample and saved-clock types, plus pure clock evaluation, mutation and restore operations. The environment crate root owns profile and versioned astronomy/catalogue identifiers. `minimium-environment::sky` owns observer and sky-model contracts, `universe` owns the solar-system catalogue, and `weather` owns deterministic weather/cloud models behind a `TerrainSampler` host port. These contracts use platform-neutral values; the server supplies UTC and monotonic samples, storage v10 owns serialization, protocol v18 owns wire encoding, and the client owns astronomy and rendering. Clock state is independent of `WorldManifest`, generator inputs and geometry fingerprints.
 
-The server runtime adapts one `EnvironmentClock` to the same `server_started` monotonic epoch used by uptime snapshots. It creates a separate OS-random 16-byte session nonce, checks UTC every five seconds in RealTime mode, and reanchors on corrections of at least 250 ms. Time mutations share the authenticated admin/terminal command path and never scale physics, cooldowns or network deadlines. The bounded `--environment-config` initializes a new world only. Save v9 persists clock state in the same atomic player/sector snapshot; protocol v13 carries samples and environment descriptors.
+The server runtime adapts one `EnvironmentClock` to the same `server_started` monotonic epoch used by uptime snapshots. It creates a separate OS-random 16-byte session nonce, checks UTC every five seconds in RealTime mode, and reanchors on corrections of at least 250 ms. Time mutations share the authenticated local admin/terminal command path and never scale physics, cooldowns or network deadlines. The bounded `--environment-config` initializes a new world only. Save v10 persists clock state in the same atomic player/world snapshot; protocol v18 carries samples and environment descriptors.
 
 Connection establishment and an established session have separate owners. `Connector` runs DNS resolution, sequential address attempts, and local server bootstrap on one worker thread. Its timeout is a common result deadline; cancellation or timeout discards a late result, but cannot interrupt a blocking resolver or startup call, so the connector remains busy until its worker exits. Once a socket is returned, `ClientSession` owns a nonblocking TCP stream, bounded read/write buffers and the per-session clock estimator, but no thread. The desktop redraw loop and text-client loop poll it and handle typed events. The estimator uses one local monotonic epoch, a bounded offset filter and session-local nonce; it publishes the active date/descriptor/context as one immutable `EnvironmentFrameInput`. Portal commits switch descriptors without resetting the shared clock, while reconnect discards every estimator state. The text client prints concise quality/date/rate/revision status on changes. Explicit `--demo` mode has a separate monotonic RealTime adapter and is not a network fallback.
 
 The desktop and text front ends share the startup `client_commands` registry (`command_specs`, `help_lines`) for syntax, help, aliases and completion. Interface, connection, gameplay and environment modules register their commands once. It currently accepts `help`, `host local [--threads 1|2|auto]`, `connect HOST:PORT`, `disconnect`, `fps show`, `net stats`, `time status`, `sky info`, `sky quality low|standard`, `ping`, `move X Z`, `jump`, `portal`, `map_telepo`, `fire`, `say TEXT` (alias `chat`), `name NAME`, `state`, `clear`, and `quit` (alias `exit`). Front ends handle UI or process actions; commands that send game traffic queue typed protocol messages on the active session. Server commands are parsed by `ServerCommand::parse` and share terminal/admin dispatch for `help`, `status`, `players list`, `metrics show`, `world save`, `stop`, and the parameterized `time status|mode|set|scale|offline` family. Client time diagnostics are read-only; clock mutation stays in the administrative channel.
 
-The server is headless, caps players at 512 by default and pending handshakes at 64, tracks players in 32-unit spatial cells and prepares snapshots at 10 Hz. Protocol v13 snapshots and gameplay inputs carry world context; per-instance simulations route events and discard stale membership epochs. The demo's planet uses radial up and tangent movement, while dungeon movement uses fixed Y-up. Server and client share bounded ticketed sector caches and topology-specific neighborhood policies; installed slices provide movement collision and active renderer buffers. Server movement pauses until its full neighborhood is ready, while client prediction waits for its local collision neighborhood. A full immutable map index remains on the server for hitscan blockers; source maps stay in client CPU memory for deterministic slicing. Client/server transfers use prepare/ready/commit and acknowledge only after target data, collision and GPU buffers are ready, then switch scenes without rebuilding the window or TCP session. A new data directory samples and persists one random procedural seed; external map and authored world-definition files are validated before binding.
+The server is headless, caps players at 512 by default and pending handshakes at 64, tracks players in spatial cells and prepares snapshots at 10 Hz. Protocol v18 snapshots and gameplay inputs carry world context; per-instance simulations route events and discard stale membership epochs. The demo's planet uses radial up and tangent movement, while dungeon movement uses fixed Y-up. Server and client share bounded ticketed sector caches and topology-specific neighborhood policies; server movement and client prediction wait for matching collision readiness. Client/server transfers use prepare/ready/commit and switch context only after target validation and readiness. A new data directory samples and persists a procedural seed; external map and authored world-definition files are validated before use.
 
-`--threads 1..64|auto` selects execution lanes. One lane executes work inline; with at least 32 active players, additional workers simulate independent movement batches against shared immutable geometry. `world save`, autosave and shutdown capture player, sector and clock state on the owner thread, then pass one immutable snapshot to the persistence worker. Save v9 records every loaded world's manifest and map fingerprint, player locations and return points, revisioned logical object-state sets per sector, and a single `CLOCK` record. v2/v3 data is associated only with a loaded map matching its legacy fingerprint; v2–v7 snapshots retain their world-pinning rules and initialize a RealTime clock at current UTC. The demo currently has no interaction that changes sector objects; mesh geometry edits are not implemented. The client profile ID is a durable local identifier, not account authentication; public-game authentication and encryption remain future work.
+`--threads 1..64|auto` selects execution lanes. One lane executes work inline; additional workers perform bounded independent tasks against immutable snapshots. `world save`, autosave and shutdown capture player, sector, clock and current entity/component state on the owner thread, then pass one immutable snapshot to the persistence worker. Save v10 accepts only its exact header and validates records against the registered component schemas. It counts and streams the same encoding through a size-limited writer before atomic replacement. Versions 1–9 and unknown versions are rejected; no automatic migration is supported. Use a separate data directory for a new-format world. The client profile ID is a durable local identifier, not account authentication.
 
-Game traffic uses protocol v13 over prototype TCP. A client identifies its local profile before receiving Welcome. Snapshot messages include server monotonic time, world context and bounded player deltas; Fire requests use server-side spatial hitscan and cooldown validation. Portal transfer carries transition IDs and target manifests. Bounded UTF-8 chat uses capped output queues. Authenticated accounts, encryption, congestion handling and a production transport remain future work. The 512 connection limit and load generator are scaffolding; no result yet demonstrates the Pentium 500 MHz / 500-player goal. Textures, sector geometry edits, production security, audio and multi-zone hosting remain future work.
+Game traffic uses protocol v18 over TCP. A bounded provider credential is mapped by the configured authentication provider to a server-side `Principal`; the example `dev.profile` provider is an insecure development identity claim, not an account system. Snapshot messages include the server tick, world context, safe resolved input prefix and bounded player deltas. Fire requests use server-side spatial hitscan and cooldown validation. Entity/component replication uses per-client acknowledged revisions. Portal interaction carries an entity ID; transfer carries transition IDs and target manifests. Bounded UTF-8 chat uses capped output queues. Public accounts and TLS are outside the current implementation. No performance result is claimed.
 
 ## Current module contracts
 
@@ -169,25 +155,25 @@ Game traffic uses protocol v13 over prototype TCP. A client identifies its local
 | assets::parse_map / load_map | Bounded text or file to validated map, or an error | Both client and server use the same canonical fingerprint; maps and OBJ source are the current data extension surface. |
 | World::step_players_with | Player input map, fixed delta and dispatch function to collision query counters and updated world | Main lane owns mutations; jobs read immutable collision geometry and return results merged in input order. |
 | World::network_snapshot / visit_nearby | Immutable snapshot and recipient to bounded nearest player records | No socket/GPU dependency; server builds full/delta output only for recipients. |
-| protocol codecs | Typed messages to byte buffers; byte slice to complete decoded frame + consumed length, incomplete, or error | v13 framing, world context and transition messages are independent of TCP. Transport adapters own partial buffers. |
+| protocol codecs | Typed messages to byte buffers; byte slice to complete decoded frame + consumed length, incomplete, or error | v18 framing, world context, input sequencing and entity sync are independent of TCP. Transport adapters own partial buffers. |
 | ServerCommand::parse / server commands::execute | Text to typed base/time commands; context to success/text/stop reply | Terminal and authenticated IPC enqueue; one dispatcher executes up to 8 commands before simulation. |
 | admin_client::request / stop_and_wait | Captured endpoint + typed-command text to payload/error; data directory + endpoint to final stop result | 2s connect, 3s response, 64 KiB reply cap; stop waits up to 120s; no game-protocol authority. |
 | Connector / ClientSession | Connection request to worker result; connected socket to bounded nonblocking protocol events | Connector worker does resolver/connect/bootstrap work; host loop polls session and owns UI events. |
 | minimium-commands::CommandRegistry | Typed specs to longest-name/alias parsing and usage metadata | Client command groups and server admin syntax share the parser; each host owns execution. |
-| renderer WGSL | Shared `frame.wgsl` plus world/globe fragments, a linear-output encode shader when needed, and separate `ui.wgsl` | Small compile-time sources are composed once per pipeline; no runtime shader loader. |
+| renderer WGSL | Renderer-owned frame, world, terrain, ocean, shadow, atmosphere, cloud, UI and output shader sources | Compile-time shader composition; no runtime shader loader. |
 | Executor::map | Owned items + immutable operation to ordered results | Inline one lane, bounded worker queue for other lanes; phase context inherited by jobs. |
 | PlayerStore / PersistenceWorker | Validated player records to immutable snapshot view and asynchronous result | Storage owns serialization/disk I/O; final shutdown joins storage before releasing the data lock. |
-| telemetry | Durations and process samples to fixed histograms/optional fields | Independent of core/world/protocol/UI. Allocation wrapper is optional, thread-local by phase. |
+| diagnostics / telemetry | Bounded domain events to process-scoped JSONL run files; metrics and process samples to bounded stores | Domains use `minimium-diagnostics`; application owns sink/run lifetime and telemetry owns files, rotation and retention. |
 
 ServerDataLock is acquired before loading player data or changing endpoint/shutdown files. EndpointGuard removes only the current instance endpoint. LocalServer distinguishes an attached server from an owned child; only the latter is stopped/reaped. The child receives a private per-start nonce through MINIMIUM_ADMIN_TOKEN and publishes it as the existing admin token, proving ownership without adding a game message. server.shutdown keeps its legacy body; the private server.shutdown.owner sidecar binds the result to that instance. Neither token is logged or included in load reports. Client options separate profile identity from local server storage; `ClientSession` becomes Connected only after Welcome and map-fingerprint validation. The profile ID remains a public reconnect identifier, not authenticated account identity.
 
 Both interactive frontends use `ConnectionController`, which owns the connector, session and local-server guard. DNS/connect/bootstrap work runs in the connector worker; a cancelled or late local result returns to that worker for disposal. A replaced owned guard is cleaned up by a tracked worker, and a new attempt waits for that cleanup. Session polling remains on the frontend loop. Explicit remote connections never create a local guard; an attached guard does not stop a server.
 
-The client application composes the window, GPU resources, renderer-local presentation state, input/UI and settings with the `minimium-client-runtime` connection controller. GPU construction and drawing are split across renderer-owned encoders/resources and app-owned surface/state; movement prediction, snapshot reconciliation and remote-player interpolation are implemented in client-runtime and adapted to renderer-local geometry. After session polling and portal installation, the renderer publishes one `EnvironmentFrameInput` clock/context snapshot, then builds one `EnvironmentFrame` from that snapshot, the physical player observer, the active manifest and the renderer camera. The frame contains local and geocentric Sun/Moon data, horizon/view matrices and the fixed 224-byte camera plus 352-byte environment GPU uniforms; the separate shadow uniform is 128 bytes. The extra environment vector carries monotonic display time for independent star scintillation and does not change world time. The 1000-star batch is shared by surface and globe views; the globe and Moon cover background stars. In globe view the Moon is an analytic world-space sphere whose geocentric orbital position and radius use the same Earth-to-game scale; Sun illumination is evaluated from its surface normal, with real depth against the globe. A separate bounded halo pass adds warm solar glow and phase/orientation-dependent lunar glow. World and globe pipelines share group 0; the globe keeps its texture at group 1, and UI keeps its own layout. sRGB surfaces render directly; other surfaces use a linear `Rgba8Unorm` target followed by one encode pass, keeping UI blending linear. Invalid clock/context/observer input writes an explicit invalid uniform so the previous world's sky data cannot persist. The window title shows the clock quality/date indicator. The explicit demo adapter is selected only by `--demo`. Remote geometry and console buffers are reused; rendered behavior remains subject to the deferred visual scenarios.
+The client application owns `ClientApplication`, typed settings, connection and world-transition lifecycle, localized UI models, input mapping, world content catalog and frame scheduling. `minimium-client-runtime` owns session/prediction/reconciliation and publishes GPU-independent views. The application adapts those views into CPU-only `RenderFrame` values; the renderer owns GPU resources and ordered pass encoding, while the client owns surface/window state and bounded preparation workers. Shadow CPU selection is prepared outside `GpuResources`; a frame encodes the shadow pass only when map and receiver geometry share a complete `GeometryPublicationStamp`. The application owns the locale and formats typed messages through `minimium-localization`; desktop and terminal share settings, content resolution and runtime contracts. Rendered behavior remains subject to deferred visual review.
 
 Startup acquires the data lock, loads the map and player snapshot with the optional saved clock, starts the persistence worker, binds listeners and publishes the endpoint. ServerRuntime::new then restores the clock before entering the loop that accepts clients; a restore failure does not admit players. Shutdown drains admin replies, closes clients, captures a final immutable player/sector/clock snapshot, joins the worker, removes the owned endpoint and writes the owner-bound result before releasing the lock. A runtime error remains primary if final save or cleanup also fails; secondary errors are reported. This describes ordering, not a verified crash recovery guarantee.
 
-The current extension API is Rust source, map data and validated world definitions, not a dynamic plugin ABI. Keep matching map/world-definition files on clients and server. New simulation rules belong in `minimium-simulation` behind `minimium-world` contracts, never in the renderer or transport. New protocol messages require a separately planned version decision; gameplay remains protocol v13 while world snapshots are save v9. Sample combat mechanics live in simulation; game-specific defaults and scenario setup belong to `minimium-game-sample`. Historical E002/E003 test records cover procedural generation, sector lifecycle, movement, isolated instances, transfer, save migration and profile restoration. A historical wire-level v9 demonstration covered planet → dungeon → planet and restart reconnect. These are not E004 acceptance evidence: protocol v13, save v9 and rendered time/sky scenarios remain RUNTIME NOT RUN after the user-directed closeout without E004-16 verification.
+The extension API is Rust source through `minimium-gameplay`, map data and validated world definitions; it is not a dynamic plugin ABI. Keep generated manifests and verified authored content available to both clients and server. New protocol messages require a separately planned version decision. The active contracts are wire v18, save format v10 and generated revision 5; each rejects unsupported revisions without migration or fallback. Sample systems/components live in `minimium-game-sample`; engine domains do not depend on that package. The example `dev.profile` provider is a local development claim, not public account authentication. TLS is not implemented. Source review, compilation and runtime acceptance are tracked separately in `docs/architecture-execution.md`.
 
 Atmosphere presentation now has one camera-relative renderer path from the ground
 to orbit. Renderer owns bounded optical/sky/aerial LUTs, regional fog presentation,
@@ -206,7 +192,7 @@ Terrain presentation preparation now runs on client-owned latest-request workers
 independently for active and prepared target worlds. Renderer owns bounded mesh
 selection/cache, pure CPU vertex preparation, frame-wide upload budgets and GPU
 rebasing. Sector collision generation/lifecycle remains with the existing
-procgen/sectors/application path. Protocol v16 adds a context-bound altitude
+procgen/sectors/application path. Protocol v18 carries context-bound altitude
 request; server runtime composes authoritative collision sampling and relocation.
 The headless client runtime and protocol retain no GPU dependencies.
 
@@ -240,8 +226,8 @@ This introduces no filesystem, transport or GPU effects into domain sampling.
 Peak relief and climate policy (2026-11-06): world owns the pure bounded curve;
 sample content owns the preset adapter; procgen applies it identically to
 authoritative and presented Earth height. Generator v5 opts in, preserving v3/v4.
-Storage gates four extra manifest fields on v5 while retaining snapshot header v9.
-Protocol v17 carries curve settings and climate influence to all consumers.
+Storage v10 gates four extra manifest fields on generator revision 5.
+Protocol v18 carries curve settings, climate influence and context-bound gameplay actions to all consumers.
 Environment owns the separately persisted climate-relief influence, with source
 height defaulting to Earth. Renderer carries both elevations (112-byte vertices)
 and uses the same influence for temperature/snow correction. Fog/cloud clearance

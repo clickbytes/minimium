@@ -2,6 +2,9 @@
 resolver = "2"
 members = [
     "crates/core",
+    "crates/diagnostics",
+    "crates/gameplay",
+"crates/localization",
     "crates/astronomy",
     "crates/procgen",
     "crates/sectors",

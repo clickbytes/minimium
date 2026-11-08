@@ -2,11 +2,13 @@ use super::environment::{EnvironmentFrame, EnvironmentFrameStatus, LocalBodyFram
 pub(crate) use minimium_renderer::shadow_uniform::ShadowUniform;
 const SHADOW_SOURCE_SUN: u32 = 1;
 const SHADOW_SOURCE_MOON: u32 = 2;
+const SHADOW_SOURCE_BOLID: u32 = 3;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ShadowSource {
     Sun,
     Moon,
+    Bolid,
 }
 
 impl ShadowSource {
@@ -14,6 +16,7 @@ impl ShadowSource {
         match self {
             Self::Sun => "sun",
             Self::Moon => "moon",
+            Self::Bolid => "bolid",
         }
     }
 
@@ -21,6 +24,7 @@ impl ShadowSource {
         match self {
             Self::Sun => SHADOW_SOURCE_SUN,
             Self::Moon => SHADOW_SOURCE_MOON,
+            Self::Bolid => SHADOW_SOURCE_BOLID,
         }
     }
 
@@ -33,6 +37,7 @@ impl ShadowSource {
             }),
             Self::Sun => frame.local_sun?.geometric_direction_world,
             Self::Moon => frame.local_moon?.geometric_direction_world,
+            Self::Bolid => return None,
         };
         let length = direction
             .iter()
@@ -137,12 +142,14 @@ pub(super) fn select_source(
     let strongest_value = match strongest {
         ShadowSource::Sun => sun,
         ShadowSource::Moon => moon,
+        ShadowSource::Bolid => 0.0,
     };
     previous
         .filter(|source| {
             let value = match source {
                 ShadowSource::Sun => sun,
                 ShadowSource::Moon => moon,
+                ShadowSource::Bolid => 0.0,
             };
             value > 0.0 && value >= strongest_value * 0.95
         })

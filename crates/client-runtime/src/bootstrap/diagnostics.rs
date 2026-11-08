@@ -1,7 +1,7 @@
 //! Drain child stderr continuously, preserving a bounded diagnostic tail for UI errors.
 use std::{
     collections::VecDeque,
-    io::{self, Read, Write},
+    io::{self, Read},
     process::Child,
     sync::{Arc, Mutex},
     thread::JoinHandle,
@@ -40,8 +40,6 @@ impl ServerStderr {
                         tail.drain(..discard);
                         tail.extend(&buffer[..count]);
                     }
-                    // Preserve terminal diagnostics as well as the in-game error.
-                    let _ = io::stderr().write_all(&buffer[..count]);
                 }
             })?;
         Ok(Self {
@@ -57,15 +55,7 @@ impl ServerStderr {
         }
         let bytes: Vec<u8> = self.tail.lock().ok()?.iter().copied().collect();
         let text = String::from_utf8_lossy(&bytes);
-        let lines: Vec<_> = text
-            .lines()
-            .filter(|line| !line.trim().is_empty())
-            .collect();
-        let detail = lines
-            .iter()
-            .rev()
-            .find(|line| line.starts_with("server error:"))
-            .or_else(|| lines.last())?;
+        let detail = text.lines().rev().find(|line| !line.trim().is_empty())?;
         let detail: String = detail
             .chars()
             .filter(|c| !c.is_control())

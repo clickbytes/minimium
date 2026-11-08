@@ -19,6 +19,8 @@ minimium-protocol = { path = "../protocol" }
 minimium-procgen = { path = "../procgen" }
 minimium-sectors = { path = "../sectors" }
 minimium-telemetry = { path = "../telemetry" }
+minimium-diagnostics = { path = "../diagnostics" }
+minimium-gameplay = { path = "../gameplay" }
 ron = "0.12.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

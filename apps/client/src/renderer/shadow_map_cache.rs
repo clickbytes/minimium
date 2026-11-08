@@ -1,70 +1,90 @@
-use super::{shadows::ShadowInvalidReason, GpuResources};
-use minimium_renderer::geometry::Vertex;
-const MAX_MAP_VERTEX_BYTES: u64 = 2 * 1024 * 1024;
+use super::Vertex;
+use minimium_renderer::world_geometry_gpu::GeometryPublicationStamp;
+use minimium_world::world::{GenerationRevision, WorldContentRevision, WorldInstanceId, WorldMap};
+use std::sync::Arc;
 
-impl GpuResources {
-    pub(super) fn update_shadow_map_vertices(
+pub(super) const MAX_MAP_VERTEX_BYTES: u64 = 2 * 1024 * 1024;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct ShadowMapCacheKey {
+    pub(super) stamp: GeometryPublicationStamp,
+    pub(super) instance: WorldInstanceId,
+    pub(super) generation: GenerationRevision,
+    pub(super) content_revision: WorldContentRevision,
+    pub(super) fingerprint: u64,
+    pub(super) center: [f64; 3],
+    pub(super) radius: f32,
+    pub(super) render_origin: [f32; 3],
+}
+
+#[derive(Clone)]
+pub(super) struct PreparedMapCasters {
+    pub(super) key: ShadowMapCacheKey,
+    pub(super) vertices: Arc<[Vertex]>,
+}
+
+pub(super) struct ShadowMapPreparationCache {
+    key: Option<ShadowMapCacheKey>,
+    vertices: Arc<[Vertex]>,
+}
+
+impl Default for ShadowMapPreparationCache {
+    fn default() -> Self {
+        Self {
+            key: None,
+            vertices: Vec::new().into(),
+        }
+    }
+}
+
+impl ShadowMapPreparationCache {
+    pub(super) fn prepare(
         &mut self,
-        map: &minimium_world::world::WorldMap,
+        stamp: GeometryPublicationStamp,
+        instance: WorldInstanceId,
+        generation: GenerationRevision,
+        content_revision: WorldContentRevision,
+        map: &WorldMap,
         center: [f64; 3],
         radius: f32,
-    ) {
-        // Cache on coarse world cells with enough padding to keep coverage
-        // complete between refreshes; avoid rebuilding authored geometry each frame.
+        render_origin: [f32; 3],
+    ) -> Result<PreparedMapCasters, ()> {
         let step = (f64::from(radius) * 0.0625).max(16.0);
-        let center = center.map(|v| (v / step).round() * step);
-        let fingerprint = map.fingerprint();
-        if self.shadow_map_instance == Some(self.active_world_instance)
-            && self.shadow_map_fingerprint == Some(fingerprint)
-            && self.shadow_map_center == Some(center)
-            && self.shadow_map_radius == Some(radius)
-        {
-            return;
-        }
-        let geometry = minimium_renderer::shadow_geometry::local_map_geometry(
-            map,
+        let center = center.map(|value| (value / step).round() * step);
+        let key = ShadowMapCacheKey {
+            stamp,
+            instance,
+            generation,
+            content_revision,
+            fingerprint: map.fingerprint(),
             center,
-            f64::from(radius) + step,
-        );
-        let vertices =
-            minimium_renderer::geometry::sector_geometry_relative(&geometry, self.render_origin);
-        let bytes = vertices.len() as u64 * std::mem::size_of::<Vertex>() as u64;
-        if bytes > MAX_MAP_VERTEX_BYTES {
-            self.shadow_state
-                .invalidate(ShadowInvalidReason::BudgetExceeded);
-            self.shadow_map_center = None;
-            self.shadow_gpu.clear_map_casters();
-            return;
-        }
-        match self.shadow_gpu.upload_map_casters(
-            &self.device,
-            &self.queue,
-            &vertices,
-            MAX_MAP_VERTEX_BYTES,
-        ) {
-            Ok(allocated_bytes) => {
-                self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_add(allocated_bytes);
+            radius,
+            render_origin,
+        };
+        if self.key != Some(key) {
+            let geometry = minimium_renderer::shadow_geometry::local_map_geometry(
+                map,
+                center,
+                f64::from(radius) + step,
+            );
+            let vertices =
+                minimium_renderer::geometry::sector_geometry_relative(&geometry, render_origin);
+            if std::mem::size_of_val(vertices.as_slice()) as u64 > MAX_MAP_VERTEX_BYTES {
+                return Err(());
             }
-            Err(()) => {
-                self.shadow_state
-                    .invalidate(ShadowInvalidReason::BudgetExceeded);
-                self.shadow_map_center = None;
-                return;
-            }
+            self.vertices = vertices.into();
+            self.key = Some(key);
         }
-        self.shadow_map_instance = Some(self.active_world_instance);
-        self.shadow_map_fingerprint = Some(fingerprint);
-        self.shadow_map_center = Some(center);
-        self.shadow_map_radius = Some(radius);
+        Ok(PreparedMapCasters {
+            key,
+            vertices: Arc::clone(&self.vertices),
+        })
     }
 
-    pub(super) fn release_shadow_map_casters(&mut self) {
-        self.fixed_gpu_bytes = self
-            .fixed_gpu_bytes
-            .saturating_sub(self.shadow_gpu.release_map_casters());
-        self.shadow_map_instance = None;
-        self.shadow_map_fingerprint = None;
-        self.shadow_map_radius = None;
-        self.shadow_map_center = None;
+    pub(super) fn release_world(&mut self, instance: WorldInstanceId) {
+        if self.key.is_some_and(|key| key.instance == instance) {
+            self.key = None;
+            self.vertices = Vec::new().into();
+        }
     }
 }

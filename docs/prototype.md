@@ -62,9 +62,23 @@ cargo run -p minimiumctl -- --data-dir .minimium-epic001/server stop
 
 ## Current behavior and limits
 
-Game protocol v13 currently runs over prototype TCP. The server is authoritative for movement, collision, hitscan damage, chat validation, nearby-player snapshots, world membership and portal transfers. A client profile ID is a durable local identifier, not an account credential. Public game traffic is not authenticated or encrypted. The local admin endpoint is loopback-only and separately authenticated.
+Game protocol v18 runs over TCP. The server is authoritative for movement,
+collision, hitscan damage, chat validation, nearby-player snapshots, world
+membership and portal transfers. The sample server's explicit developer
+authentication treats a local profile ID as a claim and grants configured
+development permissions; it is not public account authentication. Public game
+traffic is not encrypted. The local admin endpoint is loopback-only and
+separately authenticated.
 
-World snapshot format v6 stores every loaded world manifest and map fingerprint, the durable player profile, instance, quantized position/orientation, health and return location, and revisioned logical object-state sets per sector. It reads v2 through v5; v2/v3 data remains on a loaded legacy map selected by fingerprint. The server autosaves every 300 seconds by default; `--autosave-seconds 0` disables periodic saves, while controlled shutdown still requests a final snapshot. These behaviors do not establish crash-proof recovery. The demo has no object mutation interaction; geometry edits, accounts, TLS, inventory, NPCs, zones, audio, browser clients, and production hosting remain future work.
+World snapshot format v10 stores loaded world manifests and fingerprints,
+player and persistent entity state, sector state, and world-clock state. It
+rejects older and unknown formats without migration. Generated worlds use
+generator revision 5; other revisions are rejected rather than reinterpreted.
+The server autosaves every 300 seconds by default; `--autosave-seconds 0`
+disables periodic saves, while controlled shutdown still requests a final
+snapshot. These behaviors do not establish crash-proof recovery. Geometry edits,
+public accounts, TLS, inventory, NPCs, zones, audio, browser clients, and
+production hosting remain future work.
 
 ## Runtime verification coverage
 

@@ -64,10 +64,17 @@ pub fn create(
     format: wgpu::TextureFormat,
     oit: bool,
     debug: bool,
+    bolid_mask: bool,
 ) -> wgpu::RenderPipeline {
+    let distance_layout = crate::bolid_layer::texture_layout(device, 1);
+    let groups = if bolid_mask {
+        vec![Some(frame), Some(cloud), Some(&distance_layout)]
+    } else {
+        vec![Some(frame), Some(cloud)]
+    };
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("cloud pipeline layout"),
-        bind_group_layouts: &[Some(frame), Some(cloud)],
+        bind_group_layouts: &groups,
         immediate_size: 0,
     });
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -91,7 +98,24 @@ pub fn create(
             write_mask: wgpu::ColorWrites::ALL,
         })
     };
-    let targets = if oit {
+    let targets = if bolid_mask {
+        vec![
+            target(
+                wgpu::TextureFormat::R16Float,
+                wgpu::BlendState {
+                    color: reveal,
+                    alpha: reveal,
+                },
+            ),
+            target(
+                wgpu::TextureFormat::Rgba16Float,
+                wgpu::BlendState {
+                    color: additive,
+                    alpha: additive,
+                },
+            ),
+        ]
+    } else if oit {
         vec![
             target(
                 wgpu::TextureFormat::Rgba16Float,
@@ -127,7 +151,9 @@ pub fn create(
         },
         fragment: Some(wgpu::FragmentState {
             module: &shader,
-            entry_point: Some(if debug {
+            entry_point: Some(if bolid_mask {
+                "fs_bolid_mask"
+            } else if debug {
                 "fs_debug"
             } else if oit {
                 "fs_oit"

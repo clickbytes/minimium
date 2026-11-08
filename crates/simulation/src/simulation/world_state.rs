@@ -1,8 +1,10 @@
+mod movement;
+
 use super::collision_index::CollisionIndex;
 use super::collision_queries::{CollisionQuery, CollisionQueryStats};
 use super::precise_step;
 use super::raycast::{MapRayQuery, PlayerRayQuery};
-use super::rules::{CharacterInput, CharacterState, Player};
+use super::rules::{CharacterState, MovementIntent, Player};
 use super::snapshot::WorldSnapshot;
 use super::spatial::update_cell_index;
 use super::step_character;
@@ -23,7 +25,8 @@ pub(super) struct PlayerStepInput {
     pub(super) id: PlayerId,
     pub(super) state: CharacterState,
     pub(super) position_mm: Option<Position3Mm>,
-    pub(super) input: CharacterInput,
+    pub(super) input: MovementIntent,
+    pub(super) movement_policy: super::MovementPolicy,
 }
 
 #[derive(Clone, Copy)]
@@ -57,10 +60,37 @@ pub struct World {
     pub(super) spawn_mm: Option<Position3Mm>,
     pub(super) gravity: CharacterGravity,
     pub(super) precise_positions: bool,
+    pub(super) movement_policy: super::MovementPolicy,
+    pub(super) player_movement_policies: Arc<HashMap<PlayerId, super::MovementPolicy>>,
     last_precise_batch_count: Option<usize>,
 }
 
 impl World {
+    pub fn movement_policy(&self) -> super::MovementPolicy {
+        self.movement_policy
+    }
+
+    pub fn set_movement_policy(&mut self, policy: super::MovementPolicy) {
+        if policy.valid() {
+            self.movement_policy = policy;
+        }
+    }
+
+    pub fn player_movement_policy(&self, player: PlayerId) -> super::MovementPolicy {
+        self.player_movement_policies
+            .get(&player)
+            .copied()
+            .unwrap_or(self.movement_policy)
+    }
+
+    pub fn set_player_movement_policy(&mut self, player: PlayerId, policy: super::MovementPolicy) {
+        if policy.valid()
+            && self.players.contains_key(&player)
+            && self.player_movement_policy(player) != policy
+        {
+            Arc::make_mut(&mut self.player_movement_policies).insert(player, policy);
+        }
+    }
     pub fn join(&mut self, name: String) -> PlayerId {
         self.next_id += 1;
         let id = PlayerId::new(self.next_id);
@@ -135,6 +165,7 @@ impl World {
 
     pub fn leave(&mut self, id: PlayerId) {
         Arc::make_mut(&mut self.players).remove(&id);
+        Arc::make_mut(&mut self.player_movement_policies).remove(&id);
         if let Some(cell) = Arc::make_mut(&mut self.player_cells).remove(&id) {
             let cells = Arc::make_mut(&mut self.cells);
             let empty = if let Some(players) = cells.get_mut(&cell) {
@@ -151,7 +182,7 @@ impl World {
 
     pub fn step_players(
         &mut self,
-        inputs: &HashMap<PlayerId, CharacterInput>,
+        inputs: &HashMap<PlayerId, MovementIntent>,
         delta_seconds: f32,
     ) -> CollisionQueryStats {
         self.step_players_selected(inputs, None, delta_seconds)
@@ -161,7 +192,7 @@ impl World {
     /// Other players retain position and velocity until their geometry is ready.
     pub fn step_players_selected(
         &mut self,
-        inputs: &HashMap<PlayerId, CharacterInput>,
+        inputs: &HashMap<PlayerId, MovementIntent>,
         selected: Option<&HashSet<PlayerId>>,
         delta_seconds: f32,
     ) -> CollisionQueryStats {
@@ -172,6 +203,8 @@ impl World {
             collision_index,
             collision_query,
             gravity,
+            movement_policy,
+            player_movement_policies,
             ..
         } = self;
         let players = Arc::make_mut(players);
@@ -189,17 +222,22 @@ impl World {
                 gravity: *gravity,
             };
             let input = inputs.get(id).copied().unwrap_or_default();
+            let policy = player_movement_policies
+                .get(id)
+                .copied()
+                .unwrap_or(*movement_policy);
             collision_stats.accumulate(collision_query.fill_for_speed(
                 collision_index,
                 state,
                 delta_seconds,
-                input.movement.speed,
+                policy.speed,
             ));
             if let Some(position_mm) = &mut player.position_mm {
                 precise_step::step_character_mm(
                     &mut state,
                     position_mm,
                     input,
+                    policy,
                     collision_query.candidates(),
                     collision_query.surface_candidates(),
                     delta_seconds,
@@ -208,6 +246,7 @@ impl World {
                 step_character(
                     &mut state,
                     input,
+                    policy,
                     collision_query.candidates(),
                     collision_query.surface_candidates(),
                     delta_seconds,
@@ -225,7 +264,7 @@ impl World {
     /// The dispatcher must return every processed batch in input order.
     pub fn step_players_with(
         &mut self,
-        inputs: &HashMap<PlayerId, CharacterInput>,
+        inputs: &HashMap<PlayerId, MovementIntent>,
         delta_seconds: f32,
         lanes: usize,
         dispatch: impl FnOnce(Vec<SimulationBatch>, Arc<CollisionIndex>, f32) -> Vec<SimulationBatch>,
@@ -236,7 +275,7 @@ impl World {
     /// Runs the selected players on the owner lane or in immutable worker batches.
     pub fn step_players_with_selected(
         &mut self,
-        inputs: &HashMap<PlayerId, CharacterInput>,
+        inputs: &HashMap<PlayerId, MovementIntent>,
         selected: Option<&HashSet<PlayerId>>,
         delta_seconds: f32,
         lanes: usize,
@@ -256,68 +295,6 @@ impl World {
     pub fn precise_dispatch_stats(&self) -> Option<(bool, usize)> {
         self.last_precise_batch_count
             .map(|batches| (batches > 0, batches))
-    }
-
-    fn prepare_movement_batches(
-        &mut self,
-        inputs: &HashMap<PlayerId, CharacterInput>,
-        selected: Option<&HashSet<PlayerId>>,
-        lanes: usize,
-    ) -> Option<(Arc<CollisionIndex>, Vec<SimulationBatch>)> {
-        let selected_count = self
-            .players
-            .keys()
-            .filter(|id| selected.is_none_or(|ids| ids.contains(*id)))
-            .count();
-        if lanes <= 1 || selected_count < PARALLEL_SIMULATION_MIN_PLAYERS {
-            return None;
-        }
-        let players = Arc::make_mut(&mut self.players);
-        // Preserve the original copy-on-write timing before worker execution.
-        Arc::make_mut(&mut self.cells);
-        Arc::make_mut(&mut self.player_cells);
-        let simulation_batches = &mut self.simulation_batches;
-        let batch_count = lanes
-            .min(selected_count.div_ceil(PLAYERS_PER_SIMULATION_BATCH))
-            .max(2);
-        simulation_batches.resize_with(batch_count, SimulationBatch::default);
-        let inputs_per_batch = selected_count.div_ceil(batch_count);
-        for batch in simulation_batches.iter_mut() {
-            batch.inputs.clear();
-            batch.results.clear();
-            batch.collision_stats = CollisionQueryStats::default();
-            if batch.inputs.capacity() < inputs_per_batch {
-                batch.inputs.reserve(inputs_per_batch);
-            }
-            if batch.results.capacity() < inputs_per_batch {
-                batch.results.reserve(inputs_per_batch);
-            }
-        }
-        for (index, (id, player)) in players
-            .iter()
-            .filter(|(id, _)| selected.is_none_or(|ids| ids.contains(*id)))
-            .enumerate()
-        {
-            let batch_index = (index / inputs_per_batch).min(batch_count - 1);
-            simulation_batches[batch_index]
-                .inputs
-                .push(PlayerStepInput {
-                    id: *id,
-                    state: CharacterState {
-                        position: player.position,
-                        velocity: player.velocity,
-                        grounded: player.grounded,
-                        gravity: self.gravity,
-                    },
-                    position_mm: player.position_mm,
-                    input: inputs.get(id).copied().unwrap_or_default(),
-                });
-        }
-
-        Some((
-            Arc::clone(&self.collision_index),
-            std::mem::take(simulation_batches),
-        ))
     }
 
     pub fn set_position(&mut self, id: PlayerId, position: [f32; 3]) -> bool {
@@ -445,6 +422,16 @@ impl World {
 
     pub fn replace_streamed_collision(&mut self, colliders: Vec<Aabb>, surfaces: Vec<MapTriangle>) {
         self.collision_index = Arc::new(CollisionIndex::from_geometry(colliders, surfaces));
+        self.reset_streamed_collision_queries();
+    }
+
+    /// Atomically swaps a complete, externally prepared streamed collision index.
+    pub fn install_streamed_collision_index(&mut self, index: Arc<CollisionIndex>) {
+        self.collision_index = index;
+        self.reset_streamed_collision_queries();
+    }
+
+    fn reset_streamed_collision_queries(&mut self) {
         self.collision_query = CollisionQuery::default();
         self.simulation_batches.clear();
     }

@@ -4,7 +4,9 @@ The former weather implementation was removed on 2026-11-01. Its replacement is
 the client-side [regional weather and cube cloud model](weather.md). Rain/snow,
 fog volumes, lightning, thunder, weather surface effects and forecast requests
 remain outside that first stage. The server has no weather worker, and the
-workspace no longer includes `minimium-weather`. Protocol v13 and save v9 are unchanged.
+workspace no longer includes `minimium-weather`. The current game protocol is
+v18 and the current world snapshot format is v10; this renderer change does not
+alter either contract.
 
 World UTC, clock synchronization, day/night lighting, the Sun, Moon, stars,
 celestial labels, object shadows and geographic terrain remain independent.

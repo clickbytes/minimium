@@ -17,6 +17,7 @@ use std::{
 pub(super) fn resolve(
     path: Option<&Path>,
     overrides: BTreeMap<String, String>,
+    process_environment: &BTreeMap<String, String>,
 ) -> Result<BTreeMap<String, ResolvedConfigValue>, CommandError> {
     let document = path.map(read_document).transpose()?;
     if let Some(document) = &document {
@@ -25,7 +26,7 @@ pub(super) fn resolve(
             .map_err(map_config_error)?;
     }
     let defaults = defaults();
-    let environment = environment_values();
+    let environment = environment_values(process_environment);
     let resolution =
         ConfigResolution::resolve(&defaults, document.as_ref(), &environment, &overrides);
     let resolved = resolution
@@ -55,6 +56,11 @@ pub(super) fn config_from(
             get("server.threads"),
         )?)
     };
+    let sector_workers = if get("server.sector_workers") == "auto" {
+        crate::config::default_sector_workers()
+    } else {
+        parse_value::<usize>("server.sector_workers", get("server.sector_workers"))?
+    };
     let path = |key: &str| (!get(key).is_empty()).then(|| PathBuf::from(get(key)));
     let config = ServerConfig {
         material_package_path: path("server.material_package"),
@@ -66,7 +72,12 @@ pub(super) fn config_from(
         climate_relief_influence: optional_float(get("world.climate.relief_influence")),
         seed,
         lanes,
+        sector_workers,
         data_dir: PathBuf::from(get("server.data_dir")),
+        log_dir: PathBuf::from("logs"),
+        admin_token: None,
+        startup_attempt_id: None,
+        diagnostics_run_id: None,
         map_path: path("world.map"),
         world_definition_path: path("world.definition"),
         planet_config_path: path("world.planet_config"),
@@ -75,7 +86,10 @@ pub(super) fn config_from(
         game_port: parse_value("server.game_port", get("server.game_port"))?,
         max_players: parse_value("server.max_players", get("server.max_players"))?,
         autosave_seconds: parse_value("server.autosave_interval", get("server.autosave_interval"))?,
+        bolid_interval: crate::config::parse_bolid_interval(get("server.sky.bolid_interval"))
+            .expect("validated bolid interval"),
         console_enabled: get("server.headless") == "false",
+        dev_mode: get("server.dev-mode") == "true",
         resolved_settings,
     };
     if config.map_path.is_some() && config.world_definition_path.is_some() {
@@ -112,6 +126,7 @@ pub(super) fn config_from(
 pub(super) const LEGACY_OPTIONS: &[(&str, &str)] = &[
     ("--seed", "world.seed"),
     ("--threads", "server.threads"),
+    ("--sector-workers", "server.sector_workers"),
     ("--data-dir", "server.data_dir"),
     ("--map", "world.map"),
     ("--world-definition", "world.definition"),
@@ -133,6 +148,7 @@ pub(super) const LEGACY_OPTIONS: &[(&str, &str)] = &[
 fn defaults() -> BTreeMap<String, String> {
     let mut defaults = [
         ("server.threads", "1"),
+        ("server.sector_workers", "auto"),
         (
             "server.data_dir",
             minimium_platform::files::DEFAULT_SERVER_DATA_DIR,
@@ -141,6 +157,7 @@ fn defaults() -> BTreeMap<String, String> {
         ("server.game_port", "0"),
         ("server.max_players", "512"),
         ("server.headless", "false"),
+        ("server.dev-mode", "false"),
         ("server.material_package", ""),
         ("server.material_http_port", "0"),
         ("world.seed", "auto"),
@@ -158,12 +175,17 @@ fn defaults() -> BTreeMap<String, String> {
         "server.autosave_interval".to_owned(),
         DEFAULT_AUTOSAVE_SECONDS.to_string(),
     );
+    defaults.insert(
+        "server.sky.bolid_interval".to_owned(),
+        "120..300".to_owned(),
+    );
     defaults
 }
 
-fn environment_values() -> BTreeMap<String, String> {
+fn environment_values(process_environment: &BTreeMap<String, String>) -> BTreeMap<String, String> {
     [
         ("MINIMIUM_SERVER_THREADS", "server.threads"),
+        ("MINIMIUM_SERVER_SECTOR_WORKERS", "server.sector_workers"),
         ("MINIMIUM_SERVER_DATA_DIR", "server.data_dir"),
         ("MINIMIUM_SERVER_BIND", "server.bind"),
         ("MINIMIUM_SERVER_GAME_PORT", "server.game_port"),
@@ -171,6 +193,10 @@ fn environment_values() -> BTreeMap<String, String> {
         (
             "MINIMIUM_SERVER_AUTOSAVE_INTERVAL",
             "server.autosave_interval",
+        ),
+        (
+            "MINIMIUM_SERVER_SKY_BOLID_INTERVAL",
+            "server.sky.bolid_interval",
         ),
         ("MINIMIUM_SERVER_HEADLESS", "server.headless"),
         ("MINIMIUM_SERVER_SEED", "world.seed"),
@@ -182,9 +208,9 @@ fn environment_values() -> BTreeMap<String, String> {
     ]
     .into_iter()
     .filter_map(|(name, key)| {
-        std::env::var(name)
-            .ok()
-            .map(|value| (key.to_owned(), value))
+        process_environment
+            .get(name)
+            .map(|value| (key.to_owned(), value.clone()))
     })
     .collect()
 }
@@ -200,11 +226,18 @@ fn validate_value(key: &str, value: &str) -> Result<(), CommandError> {
     };
     match key {
         "server.threads" if value == "auto" => Ok(()),
+        "server.sector_workers" if value == "auto" => Ok(()),
         "server.threads" => parse_value::<usize>(key, value).and_then(|n| {
             (1..=64)
                 .contains(&n)
                 .then_some(())
                 .ok_or_else(|| invalid("threads must be 1..64 or auto".into()))
+        }),
+        "server.sector_workers" => parse_value::<usize>(key, value).and_then(|n| {
+            (1..=16)
+                .contains(&n)
+                .then_some(())
+                .ok_or_else(|| invalid("sector workers must be 1..16 or auto".into()))
         }),
         "server.data_dir" => nonempty(key, value, &invalid),
         "server.bind" => value
@@ -225,7 +258,11 @@ fn validate_value(key: &str, value: &str) -> Result<(), CommandError> {
                 .then_some(())
                 .ok_or_else(|| invalid("autosave interval must be 0..604800 seconds".into()))
         }),
+        "server.sky.bolid_interval" => crate::config::parse_bolid_interval(value)
+            .map(|_| ())
+            .ok_or_else(|| invalid("expected off or MIN..MAX seconds within 10..=3600".into())),
         "server.headless" => bool_value(key, value),
+        "server.dev-mode" => bool_value(key, value),
         "server.material_package"
         | "world.map"
         | "world.definition"
@@ -373,6 +410,9 @@ pub(super) struct JsonSetting {
 }
 
 pub(super) fn effective_value(key: &str, requested: &str) -> String {
+    if key == "server.sector_workers" && requested == "auto" {
+        return crate::config::default_sector_workers().to_string();
+    }
     if key == "server.threads" && requested == "auto" {
         thread::available_parallelism()
             .map(usize::from)
@@ -385,6 +425,10 @@ pub(super) fn effective_value(key: &str, requested: &str) -> String {
 }
 
 pub(super) fn effective_reason(key: &str, requested: &str) -> Option<&'static str> {
-    (key == "server.threads" && requested == "auto")
-        .then_some("auto resolved to the available worker lane count")
+    if key == "server.sector_workers" && requested == "auto" {
+        Some("auto resolved to min(max(available_parallelism - 1, 1), 4)")
+    } else {
+        (key == "server.threads" && requested == "auto")
+            .then_some("auto resolved to the available worker lane count")
+    }
 }

@@ -15,7 +15,8 @@ param(
     [ValidateScript({ -not [double]::IsNaN($_) -and -not [double]::IsInfinity($_) -and $_ -ge 0 -and $_ -le 1 })]
     [double]$ClimateReliefInfluence = 0,
     [switch]$ResetWorld,
-    [switch]$Windowed
+    [switch]$Windowed,
+    [switch]$DevStdin
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,6 +45,16 @@ if (-not (Test-Path (Join-Path $package 'index.ron'))) {
     throw "GEBCO 2026 package is missing at $package. Run $PSScriptRoot/import-gebco-lite.ps1 -PackageDir $package for the compact 1-arcminute package, or import the full-resolution netCDF with import-gebco.ps1."
 }
 $projectRoot = $PSScriptRoot
+$target = if ($env:CARGO_TARGET_DIR) {
+    if ([IO.Path]::IsPathRooted($env:CARGO_TARGET_DIR)) { $env:CARGO_TARGET_DIR }
+    else { Join-Path (Get-Location) $env:CARGO_TARGET_DIR }
+} else { Join-Path $projectRoot 'target' }
+$client = [IO.Path]::GetFullPath((Join-Path $target 'release/minimium-client.exe'))
+$activeClient = Get-Process minimium-client -ErrorAction SilentlyContinue |
+    Where-Object { $_.Path -eq $client }
+if ($activeClient) {
+    throw "Close the running Minimium client (PID $($activeClient.Id -join ', ')) before rebuilding $client."
+}
 & rtk cargo build --release -p minimium-server -p minimium-client --manifest-path (Join-Path $projectRoot 'Cargo.toml')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($ResetWorld -and (Test-Path -LiteralPath $DataDir)) {
@@ -70,14 +81,10 @@ if ($ResetWorld -and (Test-Path -LiteralPath $DataDir)) {
     }
     Write-Host "Previous world preserved at $backupDirectory"
 }
-$target = if ($env:CARGO_TARGET_DIR) {
-    if ([IO.Path]::IsPathRooted($env:CARGO_TARGET_DIR)) { $env:CARGO_TARGET_DIR }
-    else { Join-Path (Get-Location) $env:CARGO_TARGET_DIR }
-} else { Join-Path $projectRoot 'target' }
-$client = Join-Path $target 'release/minimium-client.exe'
 $profile = if ($ProfileDir) { $ProfileDir } else { "${DataDir}-profile" }
-$arguments = @('--server-data-dir', $DataDir, '--profile-dir', $profile, '--require-earth')
+$arguments = @('--server-data-dir', $DataDir, '--profile-dir', $profile, '--require-earth', '--dev')
 if ($Windowed) { $arguments += '--windowed' }
+if ($DevStdin) { $arguments += '--dev-stdin' }
 $previousPackage = [Environment]::GetEnvironmentVariable('MINIMIUM_EARTH_PACKAGE', 'Process')
 $previousConfig = [Environment]::GetEnvironmentVariable('MINIMIUM_LOCAL_PLANET_CONFIG', 'Process')
 $previousSeed = [Environment]::GetEnvironmentVariable('MINIMIUM_LOCAL_SEED', 'Process')

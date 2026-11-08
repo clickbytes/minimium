@@ -42,7 +42,7 @@ struct Client {
 }
 
 pub struct AdminServer {
-    listener: TcpListener,
+    listener: Option<TcpListener>,
     token: String,
     clients: Vec<Client>,
     next_request_id: Option<RequestId>,
@@ -52,7 +52,7 @@ impl AdminServer {
     pub fn new(listener: TcpListener, token: String) -> io::Result<Self> {
         listener.set_nonblocking(true)?;
         Ok(Self {
-            listener,
+            listener: Some(listener),
             token,
             clients: Vec::with_capacity(MAX_ACTIVE_CLIENTS),
             next_request_id: Some(1),
@@ -61,8 +61,13 @@ impl AdminServer {
 
     pub fn poll(&mut self, now: Instant) -> io::Result<Vec<AdminRequest>> {
         let mut accepted = 0;
-        while accepted < MAX_ACCEPTS_PER_POLL {
-            match self.listener.accept() {
+        while self.listener.is_some() && accepted < MAX_ACCEPTS_PER_POLL {
+            match self
+                .listener
+                .as_ref()
+                .expect("listener checked above")
+                .accept()
+            {
                 Ok((stream, _)) => {
                     accepted += 1;
                     stream.set_nonblocking(true)?;
@@ -247,7 +252,7 @@ impl AdminServer {
         Ok(requests)
     }
 
-    pub fn respond(&mut self, id: RequestId, success: bool, text: &str) {
+    pub fn respond(&mut self, id: RequestId, success: bool, error_code: Option<&str>, text: &str) {
         let Some(client) = self.clients.iter_mut().find(|client| {
             client.id == Some(id) && matches!(client.phase, ClientPhase::AwaitingResponse)
         }) else {
@@ -256,7 +261,12 @@ impl AdminServer {
         let response = if success {
             format!("OK {text}")
         } else {
-            encode_error_envelope("domain_error", None, text, None)
+            encode_error_envelope(
+                error_code.unwrap_or("server.command.failed"),
+                None,
+                text,
+                None,
+            )
         };
         let reply_len = response.len().saturating_add(1);
         if reply_len > MAX_REPLY_BYTES {
@@ -287,8 +297,13 @@ impl AdminServer {
             .filter_map(|client| client.id)
             .collect();
         for id in ids {
-            self.respond(id, false, text);
+            self.respond(id, false, Some("server.stopping"), text);
         }
+    }
+
+    /// Closes admin admission while leaving existing clients available for bounded replies.
+    pub fn stop_admission(&mut self) {
+        self.listener.take();
     }
 
     pub fn has_pending_output(&self) -> bool {

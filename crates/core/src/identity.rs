@@ -3,6 +3,76 @@ use std::io;
 pub const PLAYER_PROFILE_ID_BYTES: usize = 16;
 pub const MAX_PLAYER_NAME_BYTES: usize = 24;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub struct PrincipalId([u8; PLAYER_PROFILE_ID_BYTES]);
+
+impl PrincipalId {
+    pub const fn from_bytes(bytes: [u8; PLAYER_PROFILE_ID_BYTES]) -> Self {
+        Self(bytes)
+    }
+    pub const fn as_bytes(&self) -> &[u8; PLAYER_PROFILE_ID_BYTES] {
+        &self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub struct PermissionSet(u16);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[repr(u8)]
+pub enum ServerPermission {
+    Gameplay = 0,
+    DeveloperFly = 1,
+    DeveloperMovementPolicy = 2,
+    DeveloperTeleport = 3,
+}
+
+impl PermissionSet {
+    pub const GAMEPLAY: Self = Self(1);
+    pub const fn new(bits: u16) -> Self {
+        Self(bits)
+    }
+    pub const fn bits(self) -> u16 {
+        self.0
+    }
+    pub const fn contains(self, permission: ServerPermission) -> bool {
+        self.0 & (1 << permission as u8) != 0
+    }
+    pub const fn with(self, permission: ServerPermission) -> Self {
+        Self(self.0 | (1 << permission as u8))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Principal {
+    subject: PrincipalId,
+    profile: PlayerProfileId,
+    permissions: PermissionSet,
+}
+
+impl Principal {
+    pub const fn new(
+        subject: PrincipalId,
+        profile: PlayerProfileId,
+        permissions: PermissionSet,
+    ) -> Self {
+        Self {
+            subject,
+            profile,
+            permissions,
+        }
+    }
+    pub const fn subject(self) -> PrincipalId {
+        self.subject
+    }
+    pub const fn profile(self) -> PlayerProfileId {
+        self.profile
+    }
+    pub const fn permissions(self) -> PermissionSet {
+        self.permissions
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct PlayerProfileId([u8; PLAYER_PROFILE_ID_BYTES]);
 

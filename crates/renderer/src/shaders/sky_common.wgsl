@@ -8,6 +8,92 @@ const SOLAR_HALO_FACTOR = 0.12;
 const HORIZON_OCCLUSION_RGB = vec3<f32>(0.008, 0.010, 0.014);
 const CLEAR_AIR_EXTINCTION = 0.08;
 
+// Finite emitter-to-receiver clear-air path, in the same optical metres and
+// extinction coefficients as the atmosphere. No LUT is required in fallback.
+fn bolid_air_transmission(receiver: vec3<f32>, emitter: vec3<f32>) -> vec3<f32> {
+    if atmosphere.config.x <= 0.0 || atmosphere.config.y <= 0.0 {
+        return vec3<f32>(1.0);
+    }
+    let scale = atmosphere.config.y;
+    let radius = atmosphere.radii.x;
+    let delta = (emitter-receiver)*scale;
+    let distance = length(delta);
+    if distance < 0.001 { return vec3<f32>(1.0); }
+    let ray = delta/distance;
+    let height = (length(receiver)-atmosphere.config.x)*scale;
+    let start = normalize(receiver)*(radius+height);
+    let b = dot(start, ray);
+    let c = height*(2.0*radius+height);
+    // Spend the bounded samples inside air, not on potentially long orbital
+    // vacuum legs. This also handles two exterior endpoints across the limb.
+    let top = atmosphere.radii.y;
+    let c_top = (height-top)*(2.0*radius+height+top);
+    let discriminant = b*b-c_top;
+    if discriminant <= 0.0 { return vec3<f32>(1.0); }
+    let root = sqrt(discriminant);
+    let begin = max(-b-root,0.0);
+    let end = min(-b+root,distance);
+    if end <= begin { return vec3<f32>(1.0); }
+    let closest = clamp(-b, begin, end);
+    var left_steps = 4u;
+    if closest <= begin { left_steps = 0u; }
+    if closest >= end { left_steps = 8u; }
+    var optical_depth = vec3<f32>(0.0);
+    for (var i=0u; i<8u; i++) {
+        var a = 0.0;
+        var z = 0.0;
+        if i < left_steps {
+            let u = 1.0-f32(i)/f32(left_steps);
+            let v = 1.0-f32(i+1u)/f32(left_steps);
+            a = closest-(closest-begin)*u*u*u;
+            z = closest-(closest-begin)*v*v*v;
+        } else {
+            let count = f32(max(8u-left_steps,1u));
+            let u = f32(i-left_steps)/count;
+            let v = f32(i+1u-left_steps)/count;
+            a = closest+(end-closest)*u*u*u;
+            z = closest+(end-closest)*v*v*v;
+        }
+        let d = (a+z)*0.5;
+        let difference = c+2.0*b*d+d*d;
+        let h = max(difference/(sqrt(max(radius*radius+difference,1.0))+radius),0.0);
+        if h < atmosphere.radii.y {
+            let rayleigh = atmosphere.rayleigh.xyz*exp(-h/max(atmosphere.radii.z,1.0));
+            let aerosol = atmosphere.mie.x*exp(-h/max(atmosphere.radii.w,1.0));
+            let ozone = max(1.0-abs(h-atmosphere.ozone.w)/max(atmosphere.mie.z,1.0),0.0);
+            optical_depth += (rayleigh+vec3<f32>(aerosol)+atmosphere.ozone.xyz*ozone)*(z-a);
+        }
+    }
+    return exp(-optical_depth);
+}
+
+fn bolid_incident(local_position: vec3<f32>) -> vec3<f32> {
+    if environment.bolid_position_intensity.w <= 0.0 { return vec3<f32>(0.0); }
+    let delta = environment.bolid_position_intensity.xyz
+        - (local_position + environment.render_origin.xyz);
+    let distance_squared = max(dot(delta, delta), 10000.0);
+    let point = local_position + environment.render_origin.xyz;
+    let radius = atmosphere.config.x;
+    let ray = delta / sqrt(distance_squared);
+    let b = dot(point, ray);
+    let c = (length(point)-radius)*(length(point)+radius);
+    let discriminant = b*b-c;
+    if radius > 0.0 && discriminant >= 0.0 {
+        let hit = -b-sqrt(discriminant);
+        if hit > 1.0 && hit < sqrt(distance_squared) { return vec3<f32>(0.0); }
+        if b < 0.0 && c <= 0.0 { return vec3<f32>(0.0); }
+    }
+    return environment.bolid_rgb.xyz * environment.bolid_position_intensity.w
+        * environment.bolid_rgb.w * (10000000000.0 / distance_squared)
+        * bolid_air_transmission(point, environment.bolid_position_intensity.xyz);
+}
+
+fn bolid_irradiance(local_position: vec3<f32>, normal: vec3<f32>) -> vec3<f32> {
+    let delta = environment.bolid_position_intensity.xyz
+        - (local_position + environment.render_origin.xyz);
+    return bolid_incident(local_position) * max(dot(normal,normalize(delta)),0.0);
+}
+
 fn tone_map_linear(rgb: vec3<f32>) -> vec3<f32> {
     if environment.flags.w != 0u {
         return min(rgb*scene_exposure(),vec3<f32>(65000.0));

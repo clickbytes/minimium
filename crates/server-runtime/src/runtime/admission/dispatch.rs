@@ -4,7 +4,7 @@ use crate::{
     runtime::ServerRuntime,
 };
 use minimium_core::ids::PlayerId;
-use minimium_protocol::ClientMessage;
+use minimium_protocol::{ClientMessage, ClientWorldInput};
 use std::time::Instant;
 
 pub(super) fn dispatch_message(
@@ -13,9 +13,28 @@ pub(super) fn dispatch_message(
     message: ClientMessage,
     decoded_at: Instant,
 ) {
+    // A poll may decode several frames before Quit or another close request is
+    // dispatched. Do not admit later frames from the same batch while draining.
+    if runtime.connections.clients[index]
+        .close_deadline()
+        .is_some()
+    {
+        return;
+    }
     let player_id = runtime.connections.clients[index].player_id();
+    if player_id.is_some()
+        && !identity::has_permission(
+            runtime,
+            index,
+            minimium_core::identity::ServerPermission::Gameplay,
+            "gameplay",
+        )
+    {
+        return;
+    }
     // Routing preserves wrapper conversion and pre-dispatch effects; only continued messages reach admission below.
-    let message = match identity::negotiate_content(runtime, index, message, player_id) {
+    let message = match identity::negotiate_content(runtime, index, message, player_id, decoded_at)
+    {
         RoutingOutcome::Handled => return,
         RoutingOutcome::ContinueWith(message) => message,
     };
@@ -43,40 +62,32 @@ fn handle_admitted_message(
     player_id: Option<PlayerId>,
 ) {
     match message {
-        ClientMessage::Identify(profile_id) if player_id.is_none() => {
-            identity::activate_profile(runtime, index, profile_id, decoded_at);
-        }
-        ClientMessage::Identify(_) => {
+        ClientMessage::Authenticate { .. } => {
             disconnect_invalid_sequence(runtime, index);
         }
-        ClientMessage::SetName(name) => {
-            if let Some(player) = player_id {
-                actions::movement::admit_name(runtime, index, player, name, decoded_at);
-            } else {
-                disconnect_invalid_sequence(runtime, index);
+        ClientMessage::WorldInput { input, .. } => match (player_id, input) {
+            (Some(player), ClientWorldInput::SetName(name)) => {
+                actions::movement::admit_name(runtime, index, player, name, decoded_at)
             }
-        }
-        ClientMessage::Motion(input) => {
-            if let Some(player) = player_id {
-                actions::movement::admit_motion(runtime, index, player, input, decoded_at);
-            } else {
-                disconnect_invalid_sequence(runtime, index);
+            (Some(player), ClientWorldInput::Motion(input)) => {
+                actions::movement::admit_motion(runtime, index, player, input, decoded_at)
             }
-        }
-        ClientMessage::Fire { direction } => {
-            if let Some(player) = player_id {
-                actions::combat::admit_fire(runtime, index, player, direction, decoded_at);
-            } else {
-                disconnect_invalid_sequence(runtime, index);
+            (Some(player), ClientWorldInput::Fire { direction }) => {
+                actions::combat::admit_fire(runtime, index, player, direction, decoded_at)
             }
-        }
-        ClientMessage::Chat(text) => {
-            if let Some(player) = player_id {
-                actions::chat::admit_chat(runtime, index, player, text, decoded_at);
-            } else {
-                disconnect_invalid_sequence(runtime, index);
+            (Some(player), ClientWorldInput::Chat(text)) => {
+                actions::chat::admit_chat(runtime, index, player, text, decoded_at)
             }
-        }
+            (
+                Some(_),
+                ClientWorldInput::InteractEntity { .. }
+                | ClientWorldInput::SetAltitude { .. }
+                | ClientWorldInput::MapTeleport { .. }
+                | ClientWorldInput::SetMovementPolicy { .. }
+                | ClientWorldInput::SetFlightEnabled(_),
+            ) => disconnect_invalid_sequence(runtime, index),
+            (None, _) => disconnect_invalid_sequence(runtime, index),
+        },
         _ => {
             disconnect_invalid_sequence(runtime, index);
         }

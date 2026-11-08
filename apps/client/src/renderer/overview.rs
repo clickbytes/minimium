@@ -3,32 +3,37 @@ use minimium_procgen::SectorGeometry;
 
 impl Renderer {
     pub(super) fn is_earth_world(&self) -> bool {
-        self.game
+        self.application
+            .game
             .world_manifests
-            .get(&self.game.current_instance)
+            .get(&self.application.game.current_instance)
             .is_some_and(|manifest| manifest.planet().is_some_and(|planet| planet.mode == 1))
     }
 
     pub(super) fn toggle_overview(&mut self) {
-        if self.overview_open {
-            self.overview_open = false;
+        self.application.input.clear_held();
+        if self.application.overview().is_open() {
+            self.application.overview_close();
             self.gpu.overview_active = false;
             self.gpu.overview_planet = false;
             self.last_render_position = [f32::INFINITY; 3];
-            self.overview_dragging = false;
-            self.overview_slider_dragging = false;
-            self.map_teleport_armed = false;
+            self.application.resolve_map_teleport();
             return;
         }
         let Some(manifest) = self
+            .application
             .game
             .world_manifests
-            .get(&self.game.current_instance)
+            .get(&self.application.game.current_instance)
             .copied()
         else {
             return;
         };
-        let Some(map) = self.world_catalog.get(&self.game.current_instance) else {
+        let Some(map) = self
+            .application
+            .world_catalog
+            .get(&self.application.game.current_instance)
+        else {
             return;
         };
         let earth = manifest.planet().is_some_and(|planet| planet.mode == 1);
@@ -52,14 +57,15 @@ impl Renderer {
         cube(
             &mut marker_vertices,
             (glam::Vec3::from_array(if earth {
-                let radial =
-                    glam::Vec3::from_array(self.game.gameplay.prediction.character.position)
-                        .normalize_or_zero();
+                let radial = glam::Vec3::from_array(
+                    self.application.game.gameplay.prediction.character.position,
+                )
+                .normalize_or_zero();
                 let radius =
                     minimium_procgen::planet_surface_for(manifest).radius_mm() as f32 / 1000.0;
                 (radial * radius * (1.0 + self.marker_height())).to_array()
             } else {
-                self.game.gameplay.prediction.character.position
+                self.application.game.gameplay.prediction.character.position
             }) - glam::Vec3::from_array(self.gpu.render_origin))
             .to_array(),
             marker_size,
@@ -73,48 +79,55 @@ impl Renderer {
                     * u64::from(self.gpu.size.height.max(1))
                     * 4,
         );
-        self.overview_instance = Some(self.game.current_instance);
-        self.overview_open = true;
+        let instance = self.application.game.current_instance;
+        self.application.overview_open(instance);
         self.gpu.overview_active = true;
     }
 
     fn marker_scale(&self, earth: bool) -> f32 {
         if earth {
-            ((self.overview_zoom - 1.0) * 0.025).clamp(0.002, 0.035)
+            ((self.application.overview().zoom() - 1.0) * 0.025).clamp(0.002, 0.035)
         } else {
             0.035
         }
     }
 
     pub(super) fn overview_uses_zoom(&self) -> bool {
-        self.overview_open
+        self.application.overview().is_open()
             && self
+                .application
                 .game
                 .world_manifests
-                .get(&self.game.current_instance)
+                .get(&self.application.game.current_instance)
                 .is_some_and(|manifest| manifest.topology() == WorldTopology::Planet)
     }
 
     pub(super) fn set_overview_zoom(&mut self, zoom: f32) {
-        self.overview_zoom = zoom.clamp(crate::console::MIN_ZOOM, crate::console::MAX_ZOOM);
+        self.application.overview_set_zoom(zoom);
         self.refresh_earth_marker();
         self.last_render_position = [f32::INFINITY; 3];
     }
 
     fn marker_height(&self) -> f32 {
-        ((self.overview_zoom - 1.0) * 0.25).min(0.045)
+        ((self.application.overview().zoom() - 1.0) * 0.25).min(0.045)
     }
 
     pub(super) fn refresh_earth_marker(&mut self) {
-        if !self.overview_open || !self.is_earth_world() {
+        if !self.application.overview().is_open() || !self.is_earth_world() {
             return;
         }
-        let Some(manifest) = self.game.world_manifests.get(&self.game.current_instance) else {
+        let Some(manifest) = self
+            .application
+            .game
+            .world_manifests
+            .get(&self.application.game.current_instance)
+        else {
             return;
         };
         let radius = minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0;
-        let radial = glam::Vec3::from_array(self.game.gameplay.prediction.character.position)
-            .normalize_or_zero();
+        let radial =
+            glam::Vec3::from_array(self.application.game.gameplay.prediction.character.position)
+                .normalize_or_zero();
         let mut vertices = Vec::new();
         cube(
             &mut vertices,
@@ -134,39 +147,58 @@ impl Renderer {
     }
 
     pub(super) fn arm_map_teleport(&mut self) {
-        if self.map_teleport_pending {
-            self.ui
-                .console
-                .push_error("map_telepo: wait for the previous destination");
+        if self.application.map_teleport_pending() {
+            self.application.ui.console.push_ui_error_message(
+                minimium_localization::UiMessage::Notice(
+                    minimium_localization::UiNotice::MapTeleportBusy,
+                ),
+                &self.localizer,
+                self.application.settings.locale,
+            );
             return;
         }
         let earth = self
+            .application
             .game
             .world_manifests
-            .get(&self.game.current_instance)
+            .get(&self.application.game.current_instance)
             .is_some_and(|manifest| manifest.planet().is_some_and(|planet| planet.mode == 1));
-        if !earth || self.connection.session().is_none() || !self.gpu.scene_visible {
-            self.ui
-                .console
-                .push_error("map_telepo requires a connected Earth world");
+        if !earth || self.application.connection.session().is_none() || !self.gpu.scene_visible {
+            self.application.ui.console.push_ui_error_message(
+                minimium_localization::UiMessage::Notice(
+                    minimium_localization::UiNotice::MapTeleportRequiresEarth,
+                ),
+                &self.localizer,
+                self.application.settings.locale,
+            );
             return;
         }
-        if !self.overview_open {
+        if !self.application.overview().is_open() {
             self.toggle_overview();
         }
-        self.ui.console.open = false;
-        self.map_teleport_armed = true;
-        self.connection_status = "Earth: kliknij ląd na globie (Esc anuluje)".into();
+        self.application.ui.console.open = false;
+        self.application.input.clear_held();
+        if !self.application.arm_map_teleport() {
+            return;
+        }
+        self.application.status = crate::application::ClientStatus::Status(
+            minimium_localization::UiStatus::EarthClickLand,
+        );
     }
 
     pub(super) fn click_map_teleport(&mut self) {
-        if !self.map_teleport_armed {
+        if !self.application.map_teleport_armed() {
             return;
         }
         let Some((x, y)) = self.input.last_cursor else {
             return;
         };
-        let Some(manifest) = self.game.world_manifests.get(&self.game.current_instance) else {
+        let Some(manifest) = self
+            .application
+            .game
+            .world_manifests
+            .get(&self.application.game.current_instance)
+        else {
             return;
         };
         let radius = minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0;
@@ -176,7 +208,7 @@ impl Renderer {
         if self.is_earth_world() {
             view = glam::Mat4::from_scale(glam::Vec3::new(-1.0, 1.0, 1.0)) * view;
         }
-        let near = radius * ((self.overview_zoom - 1.0) * 0.08).max(0.001);
+        let near = radius * ((self.application.overview().zoom() - 1.0) * 0.08).max(0.001);
         let projection =
             glam::Mat4::perspective_rh(self.fov_degrees.to_radians(), width / height, near, far);
         let inverse = (projection * view).inverse();
@@ -188,7 +220,9 @@ impl Renderer {
         let b = eye.dot(ray);
         let discriminant = b * b - (eye.length_squared() - radius * radius);
         if discriminant < 0.0 {
-            self.connection_status = "Earth: kliknij powierzchnię globu".into();
+            self.application.status = crate::application::ClientStatus::Status(
+                minimium_localization::UiStatus::EarthClickSurface,
+            );
             return;
         }
         let distance = -b - discriminant.sqrt();
@@ -197,20 +231,28 @@ impl Renderer {
         }
         let direction = (eye + ray * distance).normalize().to_array();
         match self
+            .application
             .connection
-            .queue(&ClientMessage::MapTeleport { direction })
+            .queue_world_input(minimium_protocol::ClientWorldInput::MapTeleport { direction })
         {
-            Ok(()) => {
-                self.map_teleport_pending = true;
-                self.connection_status = "Earth: przenoszenie...".into();
+            Ok(_) => {
+                self.application.request_map_teleport();
+                self.application.status = crate::application::ClientStatus::Status(
+                    minimium_localization::UiStatus::EarthMoving,
+                );
                 self.toggle_overview();
             }
-            Err(error) => self.ui.console.push_error(format!("map_telepo: {error:?}")),
+            Err(error) => self.application.ui.console.push_client_text(
+                crate::messages::ClientText::CouldNotQueueCommand(error.into()),
+                true,
+                &self.localizer,
+                self.application.settings.locale,
+            ),
         }
     }
 
     pub(super) fn terrain_view(&self) -> minimium_renderer::terrain_view::TerrainView {
-        if self.overview_open && self.gpu.overview_planet {
+        if self.application.overview().is_open() && self.gpu.overview_planet {
             let position = self
                 .overview_camera()
                 .0
@@ -224,7 +266,7 @@ impl Renderer {
             );
         }
         minimium_renderer::terrain_view::TerrainView::new(
-            self.game.gameplay.prediction.character.position,
+            self.application.game.gameplay.prediction.character.position,
             self.fov_degrees.to_radians(),
             self.gpu.size.height,
         )
@@ -232,13 +274,16 @@ impl Renderer {
 
     pub(super) fn overview_camera(&self) -> (glam::Mat4, f32) {
         let topology = self
+            .application
             .game
             .world_manifests
-            .get(&self.game.current_instance)
+            .get(&self.application.game.current_instance)
             .map(|manifest| manifest.topology());
         if topology == Some(WorldTopology::Planet) {
-            let radial = glam::Vec3::from_array(self.game.gameplay.prediction.character.position)
-                .normalize_or_zero();
+            let radial = glam::Vec3::from_array(
+                self.application.game.gameplay.prediction.character.position,
+            )
+            .normalize_or_zero();
             let radial = if radial.length_squared() > 0.0 {
                 radial
             } else {
@@ -246,15 +291,16 @@ impl Renderer {
             };
             let up = glam::Vec3::Y;
             let radius = self
+                .application
                 .game
                 .world_manifests
-                .get(&self.game.current_instance)
+                .get(&self.application.game.current_instance)
                 .map(|manifest| {
                     minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0
                 })
                 .unwrap_or(10_000.0);
-            let latitude = radial.y.asin() + self.overview_pitch;
-            let longitude = radial.z.atan2(radial.x) + self.overview_yaw;
+            let latitude = radial.y.asin() + self.application.overview().pitch();
+            let longitude = radial.z.atan2(radial.x) + self.application.overview().yaw();
             let latitude = latitude.clamp(-1.48, 1.48);
             let direction = glam::Vec3::new(
                 latitude.cos() * longitude.cos(),
@@ -263,7 +309,7 @@ impl Renderer {
             );
             (
                 glam::Mat4::look_at_rh(
-                    direction * radius * self.overview_zoom,
+                    direction * radius * self.application.overview().zoom(),
                     glam::Vec3::ZERO,
                     up,
                 ),
@@ -271,7 +317,11 @@ impl Renderer {
                 radius * 80.0,
             )
         } else {
-            let Some(map) = self.world_catalog.get(&self.game.current_instance) else {
+            let Some(map) = self
+                .application
+                .world_catalog
+                .get(&self.application.game.current_instance)
+            else {
                 return (glam::Mat4::IDENTITY, 1000.0);
             };
             let mut min = glam::Vec3::splat(f32::INFINITY);

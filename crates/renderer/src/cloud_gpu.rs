@@ -11,6 +11,7 @@ const _: () = assert!(std::mem::size_of::<Face>() == 48);
 pub struct CloudGpu {
     pub pipeline: wgpu::RenderPipeline,
     pub debug_pipeline: wgpu::RenderPipeline,
+    pub(crate) bolid_mask_pipeline: wgpu::RenderPipeline,
     pub composite_pipeline: Option<wgpu::RenderPipeline>,
     pub group: wgpu::BindGroup,
     pub targets: Option<CloudTargets>,
@@ -69,14 +70,18 @@ impl CloudGpu {
         let layout = cloud_pipeline::layout(device);
         let composite_layout = crate::cloud_targets::layout(device);
         let group = cloud_pipeline::group(device, &layout, &uniform, &records, depth);
-        let pipeline = cloud_pipeline::create(device, frame, &layout, format, oit, false);
-        let debug_pipeline = cloud_pipeline::create(device, frame, &layout, format, false, true);
+        let pipeline = cloud_pipeline::create(device, frame, &layout, format, oit, false, false);
+        let debug_pipeline =
+            cloud_pipeline::create(device, frame, &layout, format, false, true, false);
         let composite_pipeline =
             oit.then(|| cloud_pipeline::composite(device, &composite_layout, format));
         let targets = oit.then(|| CloudTargets::new(device, &composite_layout, [size[0], size[1]]));
         Self {
             pipeline,
             debug_pipeline,
+            bolid_mask_pipeline: cloud_pipeline::create(
+                device, frame, &layout, format, false, false, true,
+            ),
             composite_pipeline,
             group,
             targets,

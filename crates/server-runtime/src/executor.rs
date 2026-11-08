@@ -5,6 +5,7 @@ use std::{
         Arc, Mutex,
     },
     thread::{self, JoinHandle},
+    time::{Duration, Instant},
 };
 
 type Job = Box<dyn FnOnce() + Send + 'static>;
@@ -15,6 +16,30 @@ pub struct Executor {
 }
 
 impl Executor {
+    pub(crate) fn shutdown_until(&mut self, deadline: Instant) -> Vec<String> {
+        self.sender.take();
+        let mut unfinished = Vec::new();
+        while !self.workers.is_empty() && Instant::now() < deadline {
+            let mut index = 0;
+            while index < self.workers.len() {
+                if self.workers[index].is_finished() {
+                    let worker = self.workers.swap_remove(index);
+                    if worker.join().is_err() {
+                        unfinished.push("executor-worker-panicked".to_owned());
+                    }
+                } else {
+                    index += 1;
+                }
+            }
+            if !self.workers.is_empty() {
+                thread::sleep(Duration::from_millis(5));
+            }
+        }
+        unfinished.extend((0..self.workers.len()).map(|index| format!("executor-worker-{index}")));
+        self.workers.clear();
+        unfinished
+    }
+
     /// `lanes` counts the main server lane. One lane executes work inline;
     /// additional lanes are persistent worker threads.
     pub fn new(lanes: usize) -> Self {
@@ -141,8 +166,6 @@ impl Executor {
 impl Drop for Executor {
     fn drop(&mut self) {
         self.sender.take();
-        for worker in self.workers.drain(..) {
-            let _ = worker.join();
-        }
+        self.workers.clear();
     }
 }

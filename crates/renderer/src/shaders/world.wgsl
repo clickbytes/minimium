@@ -46,6 +46,12 @@ struct VertexOutput {
     }
     var ambient=environment.ambient_rgb_exposure.xyz;
     if physical_atmosphere() { ambient=physical_ambient(input.world_position); }
+    var bolid_visibility = 1.0;
+    if shadow.flags.y == 3u {
+        bolid_visibility = shadow_visibility(input.world_position, normal,
+            environment.bolid_position_intensity.xyz - (input.world_position + environment.render_origin.xyz));
+    }
+    direct += bolid_irradiance(input.world_position, normal) * bolid_visibility;
     let linear = albedo * (ambient + direct);
     return vec4<f32>(tone_map_linear(linear), 1.0);
 }

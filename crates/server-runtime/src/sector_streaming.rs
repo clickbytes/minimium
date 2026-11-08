@@ -5,10 +5,11 @@ use minimium_world::world::{GenerationRevision, SectorKey, WorldContentRevision,
 use std::{collections::HashSet, sync::Arc};
 
 mod collision;
-mod install;
 mod readiness;
 mod requests;
 mod tickets;
+mod workers;
+pub(crate) use workers::SectorGenerationPool;
 
 pub(crate) type SectorPayload = minimium_procgen::SectorGeometry;
 
@@ -54,8 +55,25 @@ pub(crate) fn update(
     sectors: &mut SectorManager<SectorPayload>,
     active_tickets: &mut std::collections::HashMap<PlayerId, Vec<SectorTicket>>,
     transfer_tickets: &mut std::collections::HashMap<PlayerId, Vec<SectorTicket>>,
+    workers: &mut SectorGenerationPool,
 ) -> SectorReadiness {
-    update_with_geography(worlds, sectors, active_tickets, transfer_tickets, None)
+    struct DiscardDiagnostics;
+    impl minimium_diagnostics::DiagnosticSink for DiscardDiagnostics {
+        fn emit(&self, _event: minimium_diagnostics::DiagnosticEvent) {}
+    }
+    let logger = minimium_diagnostics::DomainLogger::new(
+        minimium_diagnostics::DomainId::Sectors,
+        Arc::new(DiscardDiagnostics),
+    );
+    update_with_geography(
+        worlds,
+        sectors,
+        active_tickets,
+        transfer_tickets,
+        workers,
+        None,
+        &logger,
+    )
 }
 
 pub(crate) fn update_with_geography(
@@ -63,7 +81,9 @@ pub(crate) fn update_with_geography(
     sectors: &mut SectorManager<SectorPayload>,
     active_tickets: &mut std::collections::HashMap<PlayerId, Vec<SectorTicket>>,
     transfer_tickets: &mut std::collections::HashMap<PlayerId, Vec<SectorTicket>>,
+    workers: &mut SectorGenerationPool,
     geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
+    logger: &minimium_diagnostics::DomainLogger,
 ) -> SectorReadiness {
     let previous_active = std::mem::take(active_tickets);
     let previous_transfers = std::mem::take(transfer_tickets);
@@ -75,6 +95,7 @@ pub(crate) fn update_with_geography(
         active_tickets,
         previous_active,
         active_requests,
+        logger,
     );
     let transfer_requests = requests::collect_transfer_requests(worlds);
     let transfer_readiness = tickets::reconcile_transfer_requests(
@@ -83,14 +104,14 @@ pub(crate) fn update_with_geography(
         previous_transfers,
         transfer_requests,
         worlds,
+        logger,
     );
 
-    install::install_pending(worlds, sectors, geography);
-    let players = readiness::collect_ready_players(sectors, active_readiness);
-    let transfers = readiness::collect_ready_transfers(sectors, transfer_readiness);
-
+    workers.update(worlds, sectors, geography, logger);
     let installed_after = collision::installed_tickets(sectors);
     let changed = collision::changed_instances(&installed_before, &installed_after);
-    collision::update_changed_instances(worlds, sectors, changed);
+    workers.update_collision(worlds, sectors, changed, logger);
+    let players = readiness::collect_ready_players(worlds, sectors, active_readiness);
+    let transfers = readiness::collect_ready_transfers(worlds, sectors, transfer_readiness);
     SectorReadiness { players, transfers }
 }

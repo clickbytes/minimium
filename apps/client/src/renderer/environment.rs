@@ -8,7 +8,7 @@ mod runtime;
 
 use minimium_astronomy::{CelestialBodyState, ObservedBody, SkyState};
 use minimium_environment::sky::ObserverFrame;
-use minimium_environment::{time::ClockRevision, EnvironmentDescriptor};
+use minimium_environment::{EnvironmentDescriptor, time::ClockRevision};
 use minimium_protocol::WorldContext;
 use minimium_renderer::gpu_frame::{CameraUniform, EnvironmentUniform};
 pub(crate) use minimium_renderer::{EnvironmentViewKind, RenderViewFrame, RenderViewInput};

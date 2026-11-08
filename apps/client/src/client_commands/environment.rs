@@ -124,6 +124,13 @@ const COMMANDS: &[CommandSpec] = &[
         parser: parse,
     },
     CommandSpec {
+        name: "spawn_random_bolid",
+        alias: None,
+        usage: "spawn_random_bolid (owned local server)",
+        arguments: &[],
+        parser: parse,
+    },
+    CommandSpec {
         name: "time scale",
         alias: Some("timescale"),
         usage: "time scale DECIMAL (alias timescale; owned local server; 0.1-1000000x or 0)",
@@ -175,6 +182,7 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
         }
         ("set_time" | "set_time_local", _) => Err(ParseError::SetTimeUsage),
         ("time status", []) => Ok(ClientCommand::TimeStatus),
+        ("spawn_random_bolid", []) => Ok(ClientCommand::SpawnRandomBolid),
         ("time scale", [value]) => {
             parse_scale_ppm(value).map_err(|_| ParseError::TimeScaleUsage)?;
             Ok(ClientCommand::TimeScale((*value).to_owned()))

@@ -2,6 +2,7 @@
 
 mod dungeon;
 mod earth_observer;
+mod error;
 mod generator_contract;
 mod geography;
 mod materialize;
@@ -22,9 +23,9 @@ mod tests;
 
 pub use dungeon::{generate_dungeon, materialize_dungeon_sector, DungeonSector, DungeonSpec};
 pub use earth_observer::earth_height_reference;
+pub use error::{GenerationError, GenerationErrorKind};
 pub use generator_contract::{generator_digest, validate_world_manifest};
 pub use geography::{EarthSampleError, PreparedGeography};
-pub use materialize::materialize_legacy_planet_map;
 pub use materialize::{
     materialize_dungeon_map, materialize_planet_map, materialize_planet_overview,
 };

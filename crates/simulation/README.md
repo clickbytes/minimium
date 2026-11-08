@@ -6,7 +6,7 @@ Owns mutable player state, movement integration, collision indexing and queries,
 
 ## Public API
 
-`World` owns mutable simulation state; `CharacterInput`, `MovementSettings` and `step_character` provide the shared server/prediction movement path. `step_batch` processes immutable batches, while `CollisionQueryStats` reports bounded query work.
+`World` owns mutable simulation state; `MovementIntent`, `MovementPolicy` and `step_character` provide the shared server/prediction movement path. Intents contain direction, jump and vertical control only. The server owns movement limits and flight policy, which are copied into worker batches before parallel stepping. `step_batch` processes immutable batches, while `CollisionQueryStats` reports bounded query work.
 
 ## Dependencies
 

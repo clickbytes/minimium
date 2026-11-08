@@ -1,16 +1,16 @@
 version = 1
 
-# Current package ownership. `planned` entries are remaining targets, not Cargo members.
+# Current Cargo package ownership; no placeholder package declarations.
 [[package]]
 name = "minimium-core"
 role = "engine-domain"
-responsibility = "Foundational identity and identifier primitives with no project dependencies."
+responsibility = "Foundational identifiers, player profiles, authenticated principal values and server-granted permission bits with no project dependencies."
 forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-platform", "minimium-assets", "minimium-procgen", "minimium-sectors", "minimium-telemetry", "minimium-commands", "minimium-world", "minimium-environment", "minimium-renderer", "minimium-game-sample"]
 
 [[package]]
 name = "minimium-world"
 role = "engine-domain"
-responsibility = "World definitions, topologies, addressing, static geometry, maps, bounded monotone peak-relief definitions and component definitions."
+responsibility = "World definitions, topologies, addressing, static geometry, maps, bounded monotone peak-relief definitions, and world-scoped entity/component contracts with exact schemas and bounded change tracking."
 forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-platform", "minimium-assets", "minimium-procgen", "minimium-sectors", "minimium-telemetry", "minimium-commands", "minimium-environment", "minimium-simulation", "minimium-renderer", "minimium-game-sample"]
 
 [[package]]
@@ -33,7 +33,7 @@ responsibility = "Client-side astronomy backend and FFI adapter."
 [[package]]
 name = "minimium-procgen"
 role = "engine-domain"
-responsibility = "Seeded procedural generation, sector geometry, terrain sampling through the shared Earth relief curve, separate presentation ground/sea-level sampling and typed surface/normal/coverage and landform sampling through prepared geography ports, with validated presentation recipes independent of generator identity."
+responsibility = "Seeded procedural generation, typed generation errors, sector geometry, terrain sampling through the shared Earth relief curve, separate presentation ground/sea-level sampling and typed surface/normal/coverage and landform sampling through prepared geography ports, with validated presentation recipes independent of generator identity."
 forbidden_dependencies = ["minimium-asset-io", "minimium-renderer", "minimium-game-sample"]
 
 [[package]]
@@ -51,7 +51,7 @@ forbidden_dependencies = ["minimium-astronomy", "minimium-procgen", "minimium-as
 [[package]]
 name = "minimium-asset-io"
 role = "adapter"
-responsibility = "Bounded authored asset access, prepared GEBCO/WorldCover geography, HTTP material fetching and transactional hash-addressed package installation."
+responsibility = "Bounded authored asset access, typed asset errors, prepared GEBCO/WorldCover geography, bounded material HTTP client/server adapters, and an 8-GiB-default leased content cache with cross-process reservation and digest locking."
 forbidden_dependencies = ["minimium-server", "minimium-client", "minimium-renderer", "wgpu", "winit"]
 
 [[package]]
@@ -63,13 +63,13 @@ forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-p
 [[package]]
 name = "minimium-platform"
 role = "adapter"
-responsibility = "Durable files, process identity, locking and bounded local administration transport with versioned structured error decoding."
+responsibility = "Resolved process path values, durable files, process identity, locking and bounded local administration transport with versioned structured error decoding."
 forbidden_dependencies = ["minimium-world", "minimium-environment", "minimium-procgen", "minimium-sectors", "minimium-assets", "minimium-protocol", "minimium-telemetry"]
 
 [[package]]
 name = "minimium-storage"
 role = "adapter"
-responsibility = "Save snapshot formats, validation, PlayerStore and bounded persistence worker."
+responsibility = "Version-10 save format, exact streaming/counting encoders, bounded aggregate component payloads and world metadata, keyed snapshot reservations, immutable revisioned SaveSnapshot values, PlayerStore and bounded persistence worker, emitting storage-domain diagnostics through the neutral contract."
 forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-procgen", "minimium-sectors", "minimium-server", "minimium-client"]
 
 [[package]]
@@ -85,37 +85,55 @@ responsibility = "Versioned message models, codecs, validation and wire limits."
 forbidden_dependencies = ["minimium-renderer", "minimium-game-sample"]
 
 [[package]]
+name = "minimium-diagnostics"
+role = "engine-domain"
+responsibility = "Bounded domain diagnostic event contract, controlled domain registry, stable event codes and nonblocking sink/logger API."
+forbidden_dependencies = ["minimium-telemetry", "minimium-platform", "minimium-storage", "minimium-transport", "wgpu", "winit"]
+
+[[package]]
+name = "minimium-gameplay"
+role = "engine-domain"
+responsibility = "Neutral static module, command, system and component-registration contracts, owner-lane simulation ticks, per-world startup lifecycle views, bounded world-effect buffers, deterministic dependency ordering and typed uniqueness/cycle validation."
+forbidden_dependencies = ["minimium-server-runtime", "minimium-storage", "minimium-transport", "minimium-telemetry", "minimium-platform", "minimium-game-sample", "wgpu", "winit"]
+
+[[package]]
+name = "minimium-localization"
+role = "engine-domain"
+responsibility = "Typed UI message identifiers and arguments, Fluent catalogs, locale fallback and formatting independent of window, GPU and transport."
+forbidden_dependencies = ["minimium-server-runtime", "minimium-storage", "minimium-transport", "minimium-game-sample", "wgpu", "winit"]
+
+[[package]]
 name = "minimium-telemetry"
 role = "infrastructure"
-responsibility = "Metrics, process sampling and optional allocation instrumentation."
+responsibility = "Per-process run directories, bounded asynchronous JSONL diagnostics writer and retention/rotation policy, metrics, process sampling and optional allocation instrumentation."
 
 [[package]]
 name = "minimium-server"
 role = "application"
-responsibility = "Server process entry point, allocator selection, sample world/combat composition and argument forwarding."
+responsibility = "Server process entry point, application path resolution, diagnostic sink lifetime, allocator selection, sample world/combat composition, explicit developer authentication policy and argument forwarding."
 forbidden_dependencies = ["minimium-astronomy", "wgpu", "wgpu-core", "wgpu-hal", "winit"]
 
 [[package]]
 name = "minimium-server-runtime"
 role = "runtime"
-responsibility = "Authoritative server lifecycle, simulation, transport and persistence, consuming neutral world and combat inputs from the application."
+responsibility = "Authoritative server lifecycle, nonblocking pluggable authentication admission, server-enforced principal permissions, simulation, transport and persistence, consuming neutral world/combat inputs and fixed-domain diagnostics from the application."
 forbidden_dependencies = ["minimium-game-sample", "minimium-astronomy", "wgpu", "wgpu-core", "wgpu-hal", "winit"]
 
 [[package]]
 name = "minimium-client"
 role = "application"
-responsibility = "Client shell, bounded planet materialization and presentation workers, console and local server composition; consumes client runtime contracts."
+responsibility = "Desktop and terminal client application state (typed settings, world catalog, overview and transfer lifecycle), client shell, input and console; renderer presentation and bounded materialization workers; local server composition; consumes client runtime contracts without placing GPU handles in application state."
 
 [[package]]
 name = "minimium-client-runtime"
 role = "runtime"
-responsibility = "Nonblocking protocol session, content download worker/deadline and GPU readiness coordination, connection controller, connector, typed local-server launch settings with bounded offline server-config preview and captured environment, local-server ownership and stderr diagnostics, fixed-step prediction, reconciliation/interpolation and environment synchronization."
+responsibility = "Nonblocking protocol session with typed failures, application-supplied world-content resolver contract, content download worker/deadline and GPU readiness coordination, connection controller, connector, typed local-server launch settings with bounded offline server-config preview and captured environment, local-server ownership and stderr diagnostics, fixed-step prediction, reconciliation/interpolation and environment synchronization."
 forbidden_dependencies = ["minimium-astronomy", "wgpu", "wgpu-core", "wgpu-hal", "winit", "minimium-client", "minimium-server"]
 
 [[package]]
 name = "minimium-game-sample"
 role = "game-content"
-responsibility = "Shared demo map, stable seed, planet presets and relief-curve configuration adapters, deterministic periodic material recipes and physical relief scales, climate scenario presets, sample planet/dungeon scenario, demo celestial catalogue and sample combat balance consumed by applications."
+responsibility = "Shared demo map, stable seed, planet presets and relief-curve configuration adapters, deterministic periodic material recipes and physical relief scales, climate scenario presets, sample planet/dungeon scenario, demo celestial catalogue, sample gameplay module/component schemas and sample combat balance consumed by applications."
 forbidden_dependencies = ["minimium-server", "minimium-client", "wgpu", "winit"]
 
 [[package]]
@@ -129,8 +147,8 @@ role = "presentation"
 # radial curtains from presentation copies; global/local history uses UTC endpoints.
 # Renderer owns shared camera-relative optical profiles, bounded atmosphere LUT
 # compute/composition, regional fog presentation and optional GPU timestamp readback.
-responsibility = "Presentation frame contracts including CPU-only RenderFrame, camera matrix preparation, render/UI vertex layouts, overlay pipelines and geometry conversion, window-independent surface-frame acquire/present operations, ordered frame encoding for shadow, main scene, atmosphere, clouds, UI and output, sky/Sun/marker, world and cloud pipelines, shared overview/FPP terrain and sea-level sphere selection, guarded overview frustum and cached coast-priority LOD, paired edge conformance and ocean shading, bounded UTC surface-atlas GPU ownership, atomic staged geometry upload and overview marker ownership, world geometry GPU catalog, planet visibility/LOD, visual quality and camera-fitted single-source shadows with world-space stabilization, pre-exposed HDR night lighting, depth target allocation, shadow GPU owner, caster geometry and uniform preparation, UI GPU resources, star catalogue instance preparation and GPU pipeline, linear scene output target/encode pipeline, visual lighting, lunar illumination, WGSL sources, shared GPU frame buffers/bind group, Milky Way texture, celestial halo pipeline and Moon disk/sphere pipelines consumed by the client renderer."
-forbidden_dependencies = ["minimium-client", "minimium-client-runtime", "minimium-server-runtime", "minimium-protocol", "minimium-storage", "minimium-transport", "minimium-game-sample", "winit"]
+responsibility = "Presentation frame contracts including CPU-only RenderFrame, camera matrix preparation, render/UI vertex layouts, overlay pipelines and geometry conversion, window-independent surface-frame acquire/present operations, ordered frame encoding for shadow, main scene, atmosphere, clouds, UI and output, sky/Sun/marker, world and cloud pipelines, shared overview/FPP terrain and sea-level sphere selection, guarded overview frustum and cached coast-priority LOD, paired edge conformance and ocean shading, bounded UTC surface-atlas GPU ownership, atomic staged geometry upload and overview marker ownership, world geometry GPU catalog, planet visibility/LOD, visual quality and camera-fitted single-source shadows with world-space stabilization, pre-exposed HDR night lighting, depth target allocation, shadow GPU owner, caster geometry and uniform preparation, UI GPU resources, star catalogue instance preparation and GPU pipeline, linear scene output target/encode pipeline, visual lighting, deterministic bolid ablation presentation and point-source lighting, lunar illumination, WGSL sources, shared GPU frame buffers/bind group, Milky Way texture, celestial halo pipeline and Moon disk/sphere pipelines consumed by the client renderer."
+forbidden_dependencies = ["minimium-client", "minimium-client-runtime", "minimium-server-runtime", "minimium-protocol", "minimium-storage", "minimium-transport", "minimium-platform", "minimium-game-sample", "winit"]
 
 [[package]]
 name = "minimiumctl"
@@ -142,10 +160,3 @@ forbidden_dependencies = ["minimium-astronomy", "wgpu", "wgpu-core", "wgpu-hal",
 name = "minimium-loadtest"
 role = "application"
 responsibility = "Headless network load scenario client."
-
-[planned]
-domains = []
-adapters = []
-runtimes = []
-renderer = []
-sample_game = []

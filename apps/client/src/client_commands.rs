@@ -10,24 +10,29 @@ use minimium_commands::{
     lex_command_line_with_spans, CommandError, CommandErrorCode, CommandOutcome,
     CommandRegistry as SharedCommandRegistry, CommandSpec as SharedCommandSpec,
 };
-use minimium_protocol::ClientMessage;
+use minimium_protocol::{ClientMessage, ClientWorldInput};
 use minimium_renderer::quality::SkyQuality;
 use std::sync::OnceLock;
 
 mod connection;
 mod environment;
 mod gameplay;
+mod help;
 mod interface;
 mod movement;
 mod properties;
 mod weather;
 
+pub(crate) use help::{command_error, command_help, command_help_group, help_lines};
 pub(crate) use minimium_commands::{
     CommandArgumentSpec as ArgumentSpec, CommandArgumentType as ArgumentType,
 };
+#[cfg(feature = "desktop")]
+pub(crate) use properties::property_specs;
 pub(crate) use properties::{
-    format_property_help, format_time_value, parse_setting_value, property_spec, property_specs,
-    ClientPropertyCommand, ClientPropertyKey, ClientPropertyValue,
+    format_property_help_localized, format_property_list_localized, format_time_value,
+    parse_setting_value, property_spec, ClientPropertyCommand, ClientPropertyKey,
+    ClientPropertyValue,
 };
 
 #[derive(Clone, Debug, PartialEq)]
@@ -49,7 +54,7 @@ pub(crate) enum ClientCommand {
     Ping,
     Move([f32; 2]),
     Jump,
-    UsePortal,
+    InteractPortal,
     MapTeleport,
     Fire,
     Chat(String),
@@ -65,6 +70,7 @@ pub(crate) enum ClientCommand {
     ShowCelestialNames(bool),
     TimeStatus,
     TimeScale(String),
+    SpawnRandomBolid,
     SetTime { minute: u16, local: bool },
     WeatherStatus,
     WeatherDebug(minimium_environment::weather::CloudDebug),
@@ -99,17 +105,6 @@ fn registry() -> &'static CommandRegistry {
         weather::register(&mut registry);
         registry
     })
-}
-
-pub(crate) fn help_lines() -> Vec<String> {
-    let mut lines = registry()
-        .commands()
-        .iter()
-        .map(SharedCommandSpec::format_help)
-        .collect::<Vec<_>>();
-    lines.push("get KEY | set KEY VALUE | reset KEY | list [PREFIX] | help [COMMAND|KEY]".into());
-    lines.extend(properties::property_specs().map(properties::format_property_help));
-    lines
 }
 
 pub(crate) fn command_specs() -> &'static [CommandSpec] {
@@ -169,8 +164,8 @@ pub(crate) fn parse_command(input: &str) -> Result<Option<ClientCommand>, ParseE
     {
         CommandOutcome::Matched { usage, result, .. } => result
             .map_err(|error| match error {
-                ParseError::UnknownCommand => ParseError::Usage(usage),
-                error => error,
+                ParseError::Structured(error) => ParseError::Structured(error),
+                _ => ParseError::Usage(usage),
             })
             .map(Some),
         CommandOutcome::Unknown => {
@@ -181,7 +176,11 @@ pub(crate) fn parse_command(input: &str) -> Result<Option<ClientCommand>, ParseE
                 .map(SharedCommandSpec::format_help)
                 .collect();
             let choices = if choices.is_empty() {
-                help_lines().join("\n")
+                command_specs()
+                    .iter()
+                    .map(SharedCommandSpec::format_help)
+                    .collect::<Vec<_>>()
+                    .join("\n")
             } else {
                 choices.join("\n")
             };
@@ -229,10 +228,12 @@ pub(crate) struct CommandContext<'a> {
     pub connection: &'a mut minimium_client_runtime::ConnectionController,
     /// Direction used for `fire`; terminal callers pass [1, 0, 0].
     pub fire_direction: [f32; 3],
+    pub player_position: Option<[f32; 3]>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum FrontendAction {
+    Notice(minimium_localization::UiNotice),
     AtmosphereStatus,
     TerrainStatus,
     Help,
@@ -252,6 +253,7 @@ pub(crate) enum FrontendAction {
     ConfigSave(std::path::PathBuf),
     TimeStatus,
     TimeScale(String),
+    SpawnRandomBolid,
     TimeMode(String),
     TimeOfflinePolicy(String),
     SetTime { minute: u16, local: bool },
@@ -265,6 +267,11 @@ pub(crate) enum CommandResult {
     Action(FrontendAction),
 }
 
+enum OutgoingCommand {
+    Control(ClientMessage),
+    World(ClientWorldInput),
+}
+
 pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) -> CommandResult {
     let message = match command {
         ClientCommand::AtmosphereDebug(mode) => {
@@ -276,12 +283,12 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
             return CommandResult::Action(FrontendAction::AtmosphereStatus)
         }
         ClientCommand::SetAltitude(km) => {
-            if !context.connection.movement.fly {
-                return CommandResult::Action(FrontendAction::Print(
-                    "set_altitude requires fly on".into(),
+            if !context.connection.flight_enabled || !context.connection.movement.can_fly {
+                return CommandResult::Action(FrontendAction::Notice(
+                    minimium_localization::UiNotice::AltitudeRequiresFlight,
                 ));
             }
-            ClientMessage::SetAltitude { km }
+            OutgoingCommand::World(ClientWorldInput::SetAltitude { km })
         }
         ClientCommand::ConfigSave(path) => {
             return CommandResult::Action(FrontendAction::ConfigSave(path))
@@ -308,27 +315,44 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
                 ClientPropertyValue::CloudDetail(level),
             )))
         }
-        ClientCommand::Ping => ClientMessage::Ping,
-        ClientCommand::Move(direction) => {
-            ClientMessage::Motion(minimium_simulation::CharacterInput {
+        ClientCommand::Ping => OutgoingCommand::Control(ClientMessage::Ping),
+        ClientCommand::Move(direction) => OutgoingCommand::World(ClientWorldInput::Motion(
+            minimium_protocol::MovementSample::new(minimium_simulation::MovementIntent {
                 direction,
-                movement: context.connection.movement,
                 ..Default::default()
-            })
+            }),
+        )),
+        ClientCommand::Jump => OutgoingCommand::World(ClientWorldInput::Motion(
+            minimium_protocol::MovementSample::new(minimium_simulation::MovementIntent {
+                jump: true,
+                vertical: 1.0,
+                ..Default::default()
+            }),
+        )),
+        ClientCommand::InteractPortal => {
+            let Some(position) = context.player_position else {
+                return CommandResult::Action(FrontendAction::Notice(
+                    minimium_localization::UiNotice::PortalSnapshotUnavailable,
+                ));
+            };
+            let entity = context
+                .connection
+                .session()
+                .and_then(|session| session.replicated_entities())
+                .and_then(|replicas| nearest_portal_entity(replicas, position));
+            let Some(entity) = entity else {
+                return CommandResult::Action(FrontendAction::Notice(
+                    minimium_localization::UiNotice::PortalUnavailable,
+                ));
+            };
+            OutgoingCommand::World(ClientWorldInput::InteractEntity { entity })
         }
-        ClientCommand::Jump => ClientMessage::Motion(minimium_simulation::CharacterInput {
-            jump: true,
-            vertical: 1.0,
-            movement: context.connection.movement,
-            ..Default::default()
-        }),
-        ClientCommand::UsePortal => ClientMessage::UsePortal,
         ClientCommand::MapTeleport => return CommandResult::Action(FrontendAction::MapTeleport),
-        ClientCommand::Fire => ClientMessage::Fire {
+        ClientCommand::Fire => OutgoingCommand::World(ClientWorldInput::Fire {
             direction: context.fire_direction,
-        },
-        ClientCommand::Chat(text) => ClientMessage::Chat(text),
-        ClientCommand::SetName(name) => ClientMessage::SetName(name),
+        }),
+        ClientCommand::Chat(text) => OutgoingCommand::World(ClientWorldInput::Chat(text)),
+        ClientCommand::SetName(name) => OutgoingCommand::World(ClientWorldInput::SetName(name)),
         ClientCommand::Help => return CommandResult::Action(FrontendAction::Help),
         ClientCommand::Connect(address) => {
             return CommandResult::Action(FrontendAction::Connect(address))
@@ -408,36 +432,50 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
         ClientCommand::TimeScale(value) => {
             return CommandResult::Action(FrontendAction::TimeScale(value))
         }
+        ClientCommand::SpawnRandomBolid => {
+            return CommandResult::Action(FrontendAction::SpawnRandomBolid)
+        }
     };
-    match context.connection.queue(&message) {
+    let result = match message {
+        OutgoingCommand::Control(message) => context.connection.queue(&message),
+        OutgoingCommand::World(input) => context.connection.queue_world_input(input),
+    };
+    match result {
         Ok(()) => CommandResult::Sent,
         Err(error) => CommandResult::QueueError(error),
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{command_specs, parse_command, ClientCommand, ParseError};
-
-    #[test]
-    fn portal_is_available_to_the_text_console_and_completion() {
-        assert_eq!(parse_command("portal"), Ok(Some(ClientCommand::UsePortal)));
-        assert!(command_specs().iter().any(|spec| spec.name == "portal"));
-    }
-
-    #[test]
-    fn aliases_resolve_through_registered_parsers_and_admin_mutation_is_not_a_client_command() {
-        assert_eq!(
-            parse_command("chat hello"),
-            Ok(Some(ClientCommand::Chat("hello".into())))
-        );
-        assert_eq!(
-            parse_command("timescale 1"),
-            Ok(Some(ClientCommand::TimeScale("1".into())))
-        );
-        assert_eq!(
-            parse_command("time mode real_time"),
-            Err(ParseError::UnknownCommand)
-        );
-    }
+pub(crate) fn nearest_portal_entity(
+    replicas: &minimium_client_runtime::ReplicatedEntities,
+    position: [f32; 3],
+) -> Option<minimium_world::entity::EntityId> {
+    replicas
+        .entities
+        .iter()
+        .filter_map(|(entity, replica)| {
+            let component = replica
+                .components
+                .get(&minimium_game_sample::PORTAL_COMPONENT)?;
+            if component.schema != minimium_game_sample::PORTAL_SCHEMA {
+                return None;
+            }
+            let portal = minimium_game_sample::PortalComponent::decode(&component.bytes)?;
+            let distance_squared = portal
+                .position
+                .iter()
+                .zip(position)
+                .map(|(portal, player)| (*portal - player).powi(2))
+                .sum::<f32>();
+            (distance_squared <= 9.0).then_some((*entity, distance_squared))
+        })
+        .min_by(|(left_id, left_distance), (right_id, right_distance)| {
+            left_distance
+                .total_cmp(right_distance)
+                .then_with(|| left_id.cmp(right_id))
+        })
+        .map(|(entity, _)| entity)
 }
+
+#[cfg(test)]
+mod tests;

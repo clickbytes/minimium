@@ -3,6 +3,7 @@ use super::*;
 impl Renderer {
     pub(super) fn prepare_session_materials(&mut self) {
         let Some(session) = self
+            .application
             .connection
             .session_mut()
             .filter(|s| s.content_awaiting_gpu())
@@ -10,7 +11,9 @@ impl Renderer {
             return;
         };
         self.gpu.scene_visible = false;
-        self.connection_status = "Preparing terrain materials".into();
+        self.application.status = crate::application::ClientStatus::Status(
+            minimium_localization::UiStatus::TerrainMaterials,
+        );
         let compressed = self
             .gpu
             .device
@@ -25,6 +28,7 @@ impl Renderer {
                 .filter(|p| p.exists())
                 .unwrap_or_else(|| PathBuf::from(env!("MINIMIUM_BUILT_MATERIALS")));
             minimium_asset_io::materials::MaterialPackage::open(&path, compressed)
+                .map_err(|error| error.to_string())
         });
         let result = package.and_then(|package| {
             self.gpu.terrain_gpu.release_materials();

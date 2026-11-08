@@ -12,6 +12,12 @@ use std::time::Instant;
 pub(super) struct ConsoleLine {
     pub(super) text: String,
     pub(super) color: [f32; 3],
+    localized: Option<LocalizedLine>,
+}
+
+enum LocalizedLine {
+    Ui(minimium_localization::UiMessage),
+    Client(crate::messages::ClientText),
 }
 
 pub(super) struct ChatLine {
@@ -42,6 +48,7 @@ pub struct Console {
     scroll_offset: usize,
     pub(super) chat_lines: VecDeque<ChatLine>,
     vertices: Vec<UiVertex>,
+    dpi_scale: f32,
 }
 
 impl Console {
@@ -57,26 +64,85 @@ impl Console {
             scroll_offset: 0,
             chat_lines: VecDeque::with_capacity(MAX_CHAT_LINES),
             vertices: Vec::with_capacity(MAX_VERTICES),
+            dpi_scale: 1.0,
         }
     }
 
     pub fn push_line(&mut self, text: impl AsRef<str>) {
-        self.push_colored(text.as_ref(), CONSOLE_TEXT);
+        for line in text.as_ref().lines() {
+            self.push_colored(line, CONSOLE_TEXT);
+        }
     }
 
-    pub fn push_error(&mut self, text: impl AsRef<str>) {
-        self.push_colored(text.as_ref(), ERROR_TEXT);
+    pub fn push_ui_message(
+        &mut self,
+        message: minimium_localization::UiMessage,
+        localizer: &minimium_localization::Localizer,
+        locale: minimium_localization::Locale,
+    ) {
+        let text = localizer.format(locale, &message);
+        self.push_localized(text, CONSOLE_TEXT, LocalizedLine::Ui(message));
+    }
+
+    pub fn push_ui_error_message(
+        &mut self,
+        message: minimium_localization::UiMessage,
+        localizer: &minimium_localization::Localizer,
+        locale: minimium_localization::Locale,
+    ) {
+        let text = localizer.format(locale, &message);
+        self.push_localized(text, ERROR_TEXT, LocalizedLine::Ui(message));
+    }
+
+    pub fn push_client_text(
+        &mut self,
+        message: crate::messages::ClientText,
+        error: bool,
+        localizer: &minimium_localization::Localizer,
+        locale: minimium_localization::Locale,
+    ) {
+        let text = message.localized(localizer, locale);
+        self.push_localized(
+            text,
+            if error { ERROR_TEXT } else { CONSOLE_TEXT },
+            LocalizedLine::Client(message),
+        );
+    }
+
+    pub fn relocalize(
+        &mut self,
+        localizer: &minimium_localization::Localizer,
+        locale: minimium_localization::Locale,
+    ) {
+        for line in &mut self.lines {
+            let Some(message) = &line.localized else {
+                continue;
+            };
+            let text = match message {
+                LocalizedLine::Ui(message) => localizer.format(locale, message),
+                LocalizedLine::Client(message) => message.localized(localizer, locale),
+            };
+            line.text = clean_line(&text);
+        }
     }
 
     pub(super) fn push_colored(&mut self, text: &str, color: [f32; 3]) {
-        self.push_cleaned(clean_line(text), color);
+        self.push_cleaned(clean_line(text), color, None);
     }
 
-    fn push_cleaned(&mut self, text: String, color: [f32; 3]) {
+    fn push_localized(&mut self, text: String, color: [f32; 3], localized: LocalizedLine) {
+        self.push_cleaned(clean_line(&text), color, Some(localized));
+    }
+
+    fn push_cleaned(&mut self, text: String, color: [f32; 3], localized: Option<LocalizedLine>) {
         if self.lines.len() == MAX_LINES {
             self.lines.pop_front();
         }
-        self.lines.push_back(ConsoleLine { text, color });
+        self.lines.push_back(ConsoleLine {
+            text,
+            color,
+            localized,
+        });
         if self.scroll_offset > 0 {
             self.scroll_offset = (self.scroll_offset + 1).min(self.lines.len());
         }
@@ -84,7 +150,7 @@ impl Console {
 
     pub fn push_chat_line(&mut self, text: &str) {
         let clean = clean_line(text);
-        self.push_cleaned(clean.clone(), CHAT_TEXT);
+        self.push_cleaned(clean.clone(), CHAT_TEXT, None);
         if self.chat_lines.len() == MAX_CHAT_LINES {
             self.chat_lines.pop_front();
         }
@@ -94,54 +160,139 @@ impl Console {
         });
     }
 
-    pub fn append_text(&mut self, text: &str) {
+    pub fn append_text(
+        &mut self,
+        text: &str,
+        localizer: &minimium_localization::Localizer,
+        locale: minimium_localization::Locale,
+    ) {
         self.editor.replace_selection(text);
         self.history_cursor = None;
-        self.suggestions.edited(&self.editor);
+        self.suggestions.edited(&self.editor, localizer, locale);
     }
 
-    pub fn backspace(&mut self) {
+    pub fn set_preedit(&mut self, text: &str) {
+        self.editor.set_preedit(text);
+    }
+
+    pub fn clear_preedit(&mut self) {
+        self.editor.clear_preedit();
+    }
+
+    pub fn commit_preedit(
+        &mut self,
+        text: &str,
+        localizer: &minimium_localization::Localizer,
+        locale: minimium_localization::Locale,
+    ) {
+        self.editor.clear_preedit();
+        self.append_text(text, localizer, locale);
+    }
+
+    pub fn backspace(
+        &mut self,
+        localizer: &minimium_localization::Localizer,
+        locale: minimium_localization::Locale,
+    ) {
         self.editor.delete(true, false);
+        self.edit_changed(localizer, locale);
+    }
+
+    pub fn take_input(
+        &mut self,
+        localizer: &minimium_localization::Localizer,
+        locale: minimium_localization::Locale,
+    ) -> String {
+        history::take_input(self, localizer, locale)
+    }
+
+    pub fn history_up(
+        &mut self,
+        localizer: &minimium_localization::Localizer,
+        locale: minimium_localization::Locale,
+    ) {
+        history::history_up(self, localizer, locale);
+    }
+
+    pub fn history_down(
+        &mut self,
+        localizer: &minimium_localization::Localizer,
+        locale: minimium_localization::Locale,
+    ) {
+        history::history_down(self, localizer, locale);
+    }
+
+    pub fn complete_input(
+        &mut self,
+        reverse: bool,
+        localizer: &minimium_localization::Localizer,
+        locale: minimium_localization::Locale,
+    ) {
+        self.suggestions
+            .cycle(&mut self.editor, reverse, localizer, locale);
+    }
+
+    pub fn edit_changed(
+        &mut self,
+        localizer: &minimium_localization::Localizer,
+        locale: minimium_localization::Locale,
+    ) {
         self.history_cursor = None;
-        self.suggestions.edited(&self.editor);
+        self.suggestions.edited(&self.editor, localizer, locale);
     }
 
-    pub fn take_input(&mut self) -> String {
-        history::take_input(self)
+    pub fn refresh_suggestions(
+        &mut self,
+        localizer: &minimium_localization::Localizer,
+        locale: minimium_localization::Locale,
+    ) {
+        self.suggestions.edited(&self.editor, localizer, locale);
     }
 
-    pub fn history_up(&mut self) {
-        history::history_up(self);
-    }
-
-    pub fn history_down(&mut self) {
-        history::history_down(self);
-    }
-
-    pub fn complete_input(&mut self, reverse: bool) {
-        self.suggestions.cycle(&mut self.editor, reverse);
-    }
-
-    pub fn edit_changed(&mut self) {
-        self.history_cursor = None;
-        self.suggestions.edited(&self.editor);
-    }
-
-    pub fn refresh_suggestions(&mut self) {
-        self.suggestions.edited(&self.editor);
-    }
-
-    pub fn input_hit(&mut self, width: u32, height: u32, x: f64, y: f64, select: bool) -> bool {
-        let hit = input_draw::hit(&mut self.editor, width, height, x, y, select);
+    pub fn input_hit(
+        &mut self,
+        width: u32,
+        height: u32,
+        x: f64,
+        y: f64,
+        select: bool,
+        localizer: &minimium_localization::Localizer,
+        locale: minimium_localization::Locale,
+    ) -> bool {
+        let scale = f64::from(self.dpi_scale);
+        let hit = input_draw::hit(
+            &mut self.editor,
+            (f64::from(width) / scale).round() as u32,
+            (f64::from(height) / scale).round() as u32,
+            x / scale,
+            y / scale,
+            select,
+        );
         if hit {
-            self.refresh_suggestions();
+            self.refresh_suggestions(localizer, locale);
         }
         hit
+    }
+
+    pub fn set_dpi_scale(&mut self, scale: f64) {
+        self.dpi_scale = if scale.is_finite() { scale as f32 } else { 1.0 }.clamp(0.5, 4.0);
     }
 
     pub fn clear_lines(&mut self) {
         self.lines.clear();
         self.scroll_offset = 0;
+    }
+
+    pub(crate) fn diagnostic_lines_since(&self, index: usize) -> Vec<String> {
+        self.lines
+            .iter()
+            .skip(index)
+            .map(|line| line.text.clone())
+            .collect()
+    }
+
+    pub(crate) fn diagnostic_line_count(&self) -> usize {
+        self.lines.len()
     }
 
     pub fn scroll_lines(&mut self, delta: isize) {
@@ -163,19 +314,24 @@ impl Console {
         overlay: Overlay<'_>,
     ) -> &[UiVertex] {
         self.vertices.clear();
-        if width < 120 || height < 100 {
+        let scale = self.dpi_scale.max(0.5);
+        let width = width as f32 / scale;
+        let height = height as f32 / scale;
+        if width < 120.0 || height < 100.0 {
             return &self.vertices;
         }
-        let context = DrawContext::new(width as f32, height as f32);
-        hud::append_hud(
-            &mut self.vertices,
-            context,
-            HudState {
-                health,
-                show_crosshair,
-                hit_feedback,
-            },
-        );
+        let context = DrawContext::new(width, height);
+        if !self.open {
+            hud::append_hud(
+                &mut self.vertices,
+                context,
+                HudState {
+                    health,
+                    show_crosshair,
+                    hit_feedback,
+                },
+            );
+        }
         if let Some(status) = overlay.status {
             hud::append_status(&mut self.vertices, context, status);
         }
@@ -188,8 +344,8 @@ impl Console {
                     &mut self.vertices,
                     context,
                     TextDraw {
-                        x: label.x,
-                        y: label.y,
+                        x: label.x / scale,
+                        y: label.y / scale,
                         text: &label.text,
                         color: [0.92, 0.93, 0.82],
                         max_chars: 30,
@@ -225,7 +381,7 @@ impl Console {
         }
         let visible_lines = self.chat_lines.len().min(4);
         let first_line = self.chat_lines.len().saturating_sub(visible_lines);
-        let max_chars = ((context.width - 32.0) / GLYPH_ADVANCE) as usize;
+        let max_chars = ((context.width - 32.0) / text::glyph_advance()) as usize;
         for (row, line) in self.chat_lines.iter().skip(first_line).enumerate() {
             text::append_text(
                 &mut self.vertices,
@@ -253,9 +409,22 @@ impl Console {
                 panel_top,
                 context.width - 20.0,
                 panel_height,
-                [0.025, 0.035, 0.050],
+                [0.12, 0.14, 0.17],
             ),
         );
+        let border = [0.43, 0.50, 0.58];
+        for (x, y, width, height) in [
+            (10.0, panel_top, context.width - 20.0, 2.0),
+            (10.0, context.height - 12.0, context.width - 20.0, 2.0),
+            (10.0, panel_top, 2.0, panel_height),
+            (context.width - 12.0, panel_top, 2.0, panel_height),
+        ] {
+            text::append_quad(
+                &mut self.vertices,
+                context,
+                text::QuadDraw::solid(x, y, width, height, border),
+            );
+        }
         text::append_quad(
             &mut self.vertices,
             context,
@@ -269,9 +438,12 @@ impl Console {
         );
         let scale = 1.0;
         let line_height = 22.0;
-        let max_chars = ((context.width - 44.0) / GLYPH_ADVANCE) as usize;
+        let max_chars = ((context.width - 44.0) / text::glyph_advance()) as usize;
         let hint_space = self.suggestions.lines().len() as f32 * 20.0;
         let visible_lines = ((panel_height - 70.0 - hint_space) / line_height).max(0.0) as usize;
+        self.scroll_offset = self
+            .scroll_offset
+            .min(self.lines.len().saturating_sub(visible_lines));
         let first_line = self
             .lines
             .len()

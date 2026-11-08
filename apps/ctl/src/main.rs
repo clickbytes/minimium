@@ -15,6 +15,14 @@ const OPTIONS: &[CliOptionSpec] = &[
         help: false,
     },
     CliOptionSpec {
+        name: "--log-dir",
+        alias: None,
+        value_name: Some("PATH"),
+        description: "Select the process log directory (default: ./logs).",
+        repeatable: false,
+        help: false,
+    },
+    CliOptionSpec {
         name: "--help",
         alias: Some("-h"),
         value_name: None,
@@ -86,6 +94,22 @@ fn run() -> Result<(), CtlError> {
         .get("--data-dir")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from(minimium_platform::files::DEFAULT_SERVER_DATA_DIR));
+    let paths = minimium_platform::app_paths::AppPaths::resolve(
+        &data_dir,
+        &data_dir,
+        &data_dir,
+        &data_dir,
+        parsed.get("--log-dir").map(std::path::Path::new),
+    )
+    .map_err(CtlError::runtime)?;
+    let mut diagnostics = minimium_telemetry::logging::DiagnosticsRuntime::start(&paths.log_dir)
+        .map_err(CtlError::runtime)?;
+    let logger = diagnostics.logger(minimium_diagnostics::DomainId::Platform);
+    logger.emit(logger.event(
+        minimium_diagnostics::Level::Info,
+        minimium_diagnostics::EventCode::new("ctl.starting").map_err(CtlError::runtime)?,
+    ));
+    let data_dir = paths.data_dir;
 
     // Endpoint state is read only after every local option and command boundary is parsed.
     let endpoint = ServerEndpoint::read(&data_dir).map_err(CtlError::runtime)?;
@@ -96,5 +120,9 @@ fn run() -> Result<(), CtlError> {
         let response = admin_client::request(&endpoint, &command).map_err(CtlError::runtime)?;
         println!("{}", if response.is_empty() { "ok" } else { &response });
     }
+    drop(logger);
+    diagnostics
+        .shutdown_until(std::time::Instant::now() + std::time::Duration::from_secs(2))
+        .map_err(CtlError::runtime)?;
     Ok(())
 }

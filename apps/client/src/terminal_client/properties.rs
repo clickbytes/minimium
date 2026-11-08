@@ -1,26 +1,54 @@
 use crate::{
+    application::SettingsStore,
     client_commands::{
         format_time_value, property_spec, ClientPropertyCommand, ClientPropertyKey as Key,
     },
     options::ClientOptions,
 };
 use minimium_client_runtime::ConnectionController;
-use minimium_commands::{CommandError, CommandErrorCode, PropertySource};
-use std::collections::BTreeMap;
+use minimium_commands::{CommandError, CommandErrorCode};
 
 pub(super) struct TextProperties {
-    persistent_session: BTreeMap<String, String>,
+    settings: SettingsStore,
 }
 
 impl TextProperties {
-    pub fn new() -> Self {
-        Self {
-            persistent_session: BTreeMap::new(),
+    pub fn new(options: &ClientOptions) -> Self {
+        let startup = [
+            Key::Locale,
+            Key::CameraFov,
+            Key::MouseSensitivity,
+            Key::InputBindings,
+            Key::SkyQuality,
+            Key::SkyNames,
+            Key::CloudDetail,
+            Key::AtmosphereDebug,
+            Key::TerrainDebug,
+            Key::CloudDebug,
+            Key::SkyDemo,
+        ]
+        .into_iter()
+        .map(|key| (key.key().to_owned(), current_value(key, options)))
+        .collect();
+        let mut settings = SettingsStore::new(startup, options.preference_sources.clone());
+        for key in [
+            Key::CameraFov,
+            Key::MouseSensitivity,
+            Key::SkyQuality,
+            Key::SkyNames,
+            Key::CloudDetail,
+            Key::AtmosphereDebug,
+            Key::TerrainDebug,
+            Key::CloudDebug,
+            Key::SkyDemo,
+        ] {
+            settings.set_unavailable(key.key(), "text frontend has no renderer".to_owned());
         }
+        Self { settings }
     }
 
-    pub fn session_settings(&self) -> &BTreeMap<String, String> {
-        &self.persistent_session
+    pub fn session_settings(&self) -> std::collections::BTreeMap<String, String> {
+        self.settings.session_values()
     }
 
     pub fn execute(
@@ -28,42 +56,140 @@ impl TextProperties {
         command: ClientPropertyCommand,
         options: &mut ClientOptions,
         connection: &ConnectionController,
+        localizer: &minimium_localization::Localizer,
     ) -> Result<String, CommandError> {
         match command {
             ClientPropertyCommand::Get(key) => {
-                let frame = connection
-                    .session()
-                    .map(|session| session.environment_frame())
-                    .unwrap_or_else(crate::environment::EnvironmentFrameInput::unavailable);
-                Ok(format_time_value(key, frame).unwrap_or(self.get(key, options)))
+                match key {
+                    Key::WorldTimeMode
+                    | Key::WorldTimeScale
+                    | Key::WorldTimeOfflinePolicy
+                    | Key::WorldTimeUtc
+                    | Key::WorldTimeRevision => {
+                        let frame = connection
+                            .session()
+                            .map(|session| session.environment_frame())
+                            .unwrap_or_else(crate::environment::EnvironmentFrameInput::unavailable);
+                        Ok(format_time_value(key, frame).unwrap_or_else(|| {
+                            format!(
+                                "{} requested=unavailable effective=unavailable default=n/a source=unavailable reason=time property data unavailable",
+                                key.key()
+                            )
+                        }))
+                    }
+                    Key::MovementFly | Key::MovementSpeed | Key::MovementAccel => {
+                        let policy = connection.movement;
+                        let value = match key {
+                            Key::MovementFly => connection.flight_enabled.to_string(),
+                            Key::MovementSpeed => policy.speed.to_string(),
+                            Key::MovementAccel => policy.accel.to_string(),
+                            _ => unreachable!("movement property key was matched"),
+                        };
+                        Ok(format!(
+                            "{} requested={} effective={} default=n/a source=server_policy revision={}",
+                            key.key(), value, value, policy.revision
+                        ))
+                    }
+                    Key::Locale
+                    | Key::InputBindings
+                    | Key::CameraFov
+                    | Key::MouseSensitivity
+                    | Key::SkyQuality
+                    | Key::SkyNames
+                    | Key::CloudDetail
+                    | Key::AtmosphereDebug
+                    | Key::TerrainDebug
+                    | Key::CloudDebug
+                    | Key::SkyDemo => Ok(self.get(key, options)),
+                }
             }
-            ClientPropertyCommand::Set(value) => Err(unsupported_context(value.key().key())),
-            ClientPropertyCommand::Reset(key) => Err(unsupported_context(key.key())),
-            ClientPropertyCommand::Print(text) => Ok(text),
+            ClientPropertyCommand::Set(value) => match value {
+                crate::client_commands::ClientPropertyValue::Locale(locale) => {
+                    options.locale = locale;
+                    self.settings
+                        .set(Key::Locale.key(), current_locale(locale).to_owned());
+                    Ok(self.get(Key::Locale, options))
+                }
+                crate::client_commands::ClientPropertyValue::InputBindings(bindings) => {
+                    options.input_bindings = bindings.clone();
+                    self.settings.set(Key::InputBindings.key(), bindings);
+                    Ok(self.get(Key::InputBindings, options))
+                }
+                other => Err(unsupported_context(other.key().key())),
+            },
+            ClientPropertyCommand::Reset(key) => {
+                if key == Key::Locale {
+                    options.locale = options.startup_locale;
+                    self.settings.reset(Key::Locale.key());
+                    Ok(self.get(Key::Locale, options))
+                } else if key == Key::InputBindings {
+                    options.input_bindings = options.startup_input_bindings.clone();
+                    self.settings.reset(Key::InputBindings.key());
+                    Ok(self.get(Key::InputBindings, options))
+                } else {
+                    Err(unsupported_context(key.key()))
+                }
+            }
+            ClientPropertyCommand::Help(key) => {
+                Ok(crate::client_commands::format_property_help_localized(
+                    property_spec(key.key()).expect("parsed property key exists"),
+                    localizer,
+                    options.locale,
+                ))
+            }
+            ClientPropertyCommand::List(prefix) => {
+                Ok(crate::client_commands::format_property_list_localized(
+                    prefix.as_deref(),
+                    localizer,
+                    options.locale,
+                ))
+            }
+            ClientPropertyCommand::CommandHelp(name) => Ok(crate::client_commands::command_help(
+                &name,
+                localizer,
+                options.locale,
+            )),
+            ClientPropertyCommand::CommandHelpGroup(prefix) => Ok(
+                crate::client_commands::command_help_group(&prefix, localizer, options.locale),
+            ),
         }
     }
 
-    pub fn get(&self, key: Key, options: &ClientOptions) -> String {
-        let requested = current_value(key, options);
-        let source = options
-            .preference_sources
-            .get(key.key())
-            .copied()
-            .unwrap_or(PropertySource::Default);
+    fn get(&self, key: Key, options: &ClientOptions) -> String {
+        let requested = self
+            .settings
+            .requested(key.key())
+            .map(str::to_owned)
+            .unwrap_or_else(|| current_value(key, options));
+        let source = self.settings.source(key.key());
+        let effective = self.settings.effective(key.key()).unwrap_or("unavailable");
+        let reason = self.settings.difference_reason(key.key()).unwrap_or("none");
         let default = property_spec(key.key())
             .and_then(|spec| spec.default)
             .unwrap_or("n/a");
         format!(
-            "{} requested={} effective=unavailable default={} source={} reason=text frontend has no renderer",
-            key.key(), requested, default, source.as_str()
+            "{} requested={} effective={} default={} source={} reason={}",
+            key.key(),
+            requested,
+            effective,
+            default,
+            source.as_str(),
+            reason
         )
     }
 }
 
-pub(super) fn print_result(result: Result<String, CommandError>) {
+pub(super) fn print_result(
+    result: Result<String, CommandError>,
+    localizer: &minimium_localization::Localizer,
+    locale: minimium_localization::Locale,
+) {
     match result {
         Ok(result) => println!("{result}"),
-        Err(error) => println!("{}: {error}", error.code.as_str()),
+        Err(error) => println!(
+            "{}",
+            crate::client_commands::command_error(&error, localizer, locale)
+        ),
     }
 }
 
@@ -78,8 +204,10 @@ fn unsupported_context(key: &str) -> CommandError {
 
 fn current_value(key: Key, options: &ClientOptions) -> String {
     match key {
+        Key::Locale => current_locale(options.locale).to_owned(),
         Key::CameraFov => options.startup_fov.to_string(),
         Key::MouseSensitivity => options.startup_mouse_sensitivity.to_string(),
+        Key::InputBindings => options.input_bindings.clone(),
         Key::SkyQuality => options.sky_quality.label().to_owned(),
         Key::SkyNames => options.startup_sky_names.to_string(),
         Key::CloudDetail => options.startup_cloud_detail.to_string(),
@@ -94,7 +222,14 @@ fn current_value(key: Key, options: &ClientOptions) -> String {
         | Key::WorldTimeScale
         | Key::WorldTimeOfflinePolicy
         | Key::WorldTimeUtc
-        | Key::WorldTimeRevision => unreachable!("owned by a runtime property handler"),
+        | Key::WorldTimeRevision => "unavailable".to_owned(),
+    }
+}
+
+fn current_locale(locale: minimium_localization::Locale) -> &'static str {
+    match locale {
+        minimium_localization::Locale::English => "en",
+        minimium_localization::Locale::Polish => "pl",
     }
 }
 

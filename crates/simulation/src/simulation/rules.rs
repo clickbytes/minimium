@@ -30,11 +30,10 @@ pub struct ShotOutcome {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct CharacterInput {
+pub struct MovementIntent {
     pub direction: [f32; 2],
     pub jump: bool,
     pub vertical: f32,
-    pub movement: super::MovementSettings,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -63,7 +62,8 @@ impl CharacterState {
 
 pub(super) fn step_character_once(
     state: &mut CharacterState,
-    input: CharacterInput,
+    input: MovementIntent,
+    policy: super::MovementPolicy,
     colliders: &[Aabb],
     surfaces: &[MapTriangle],
     delta_seconds: f32,
@@ -71,21 +71,21 @@ pub(super) fn step_character_once(
     if !delta_seconds.is_finite() || delta_seconds <= 0.0 {
         return;
     }
-    if !input.movement.valid() || !input.vertical.is_finite() {
+    if !policy.valid() || !input.vertical.is_finite() {
         return;
     }
-    if input.movement.fly {
-        state.velocity = super::movement::velocity(*state, input, delta_seconds);
+    if policy.can_fly {
+        state.velocity = super::movement::velocity(*state, input, policy, delta_seconds);
         state.position = add(state.position, scale(state.velocity, delta_seconds));
         state.grounded = false;
         return;
     }
     if matches!(state.gravity, CharacterGravity::Radial { .. }) {
-        step_radial_character(state, input, colliders, surfaces, delta_seconds);
+        step_radial_character(state, input, policy, colliders, surfaces, delta_seconds);
         return;
     }
 
-    let velocity = super::movement::velocity(*state, input, delta_seconds);
+    let velocity = super::movement::velocity(*state, input, policy, delta_seconds);
     state.velocity[0] = velocity[0];
     state.velocity[2] = velocity[2];
 
@@ -236,7 +236,8 @@ pub(super) fn step_character_once(
 
 fn step_radial_character(
     state: &mut CharacterState,
-    input: CharacterInput,
+    input: MovementIntent,
+    policy: super::MovementPolicy,
     colliders: &[Aabb],
     surfaces: &[MapTriangle],
     delta_seconds: f32,
@@ -250,7 +251,7 @@ fn step_radial_character(
     if should_jump {
         vertical_speed = PLAYER_JUMP_SPEED;
     }
-    let steps = (input.movement.speed * delta_seconds / (PLAYER_RADIUS * 0.5))
+    let steps = (policy.speed * delta_seconds / (PLAYER_RADIUS * 0.5))
         .ceil()
         .clamp(1.0, 8.0) as u32;
     let step_seconds = delta_seconds / steps as f32;
@@ -260,7 +261,7 @@ fn step_radial_character(
         vertical_speed = (vertical_speed - GRAVITY * step_seconds).max(-MAX_FALL_SPEED);
         let (up, right, forward) = character_frame(state.gravity, state.position);
         let _ = (right, forward);
-        tangent_velocity = super::movement::velocity(*state, input, delta_seconds);
+        tangent_velocity = super::movement::velocity(*state, input, policy, delta_seconds);
         let old_position = state.position;
         let mut candidate = add(
             add(old_position, scale(tangent_velocity, step_seconds)),
@@ -268,8 +269,7 @@ fn step_radial_character(
         );
         if vertical_speed <= 0.0 {
             if let Some(distance) = nearest_surface_distance(candidate, up, surfaces) {
-                if distance >= -MAX_STEP_UP
-                    && distance <= input.movement.speed * step_seconds + MAX_STEP_UP
+                if distance >= -MAX_STEP_UP && distance <= policy.speed * step_seconds + MAX_STEP_UP
                 {
                     candidate = add(candidate, scale(up, distance));
                     vertical_speed = 0.0;

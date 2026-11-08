@@ -1,8 +1,13 @@
+mod manifest;
+mod time_probe;
 use super::*;
+use manifest::manifest_matches_content;
+use time_probe::handle_time_probe_reply;
 
 pub(super) enum DispatchResult {
     Emit,
     Skip,
+    Pending,
     Stop,
 }
 
@@ -20,6 +25,7 @@ struct TransitionPreparation<'a> {
 #[derive(Clone, Copy)]
 struct TransitionCommit<'a> {
     id: TransitionId,
+    server_tick: u64,
     context: WorldContext,
     map_fingerprint: u64,
     manifest: &'a minimium_world::world::WorldManifest,
@@ -33,16 +39,135 @@ pub(super) fn dispatch_message(
     decoded_at_ms: u64,
     events: &mut Vec<SessionEvent>,
 ) -> DispatchResult {
-    if !prepare_manifest_geography(session, message, events) {
-        return DispatchResult::Stop;
+    match message {
+        ServerMessage::Welcome {
+            context,
+            manifest,
+            map_fingerprint,
+            ..
+        } => {
+            if session.state != SessionState::AwaitingWelcome {
+                session.disconnect(DisconnectReason::UnexpectedMessage, events);
+                return DispatchResult::Stop;
+            }
+            if manifest.content_revision() != context.content_revision() {
+                session.disconnect(DisconnectReason::GeneratorMismatch, events);
+                return DispatchResult::Stop;
+            }
+            if !manifest_matches_content(manifest, *map_fingerprint) {
+                session.disconnect(DisconnectReason::GeneratorMismatch, events);
+                return DispatchResult::Stop;
+            }
+        }
+        ServerMessage::TransitionPrepare {
+            source_context,
+            target_context,
+            manifest,
+            map_fingerprint,
+            ..
+        } => {
+            if session.state != SessionState::Connected {
+                session.disconnect(DisconnectReason::UnexpectedMessage, events);
+                return DispatchResult::Stop;
+            }
+            if Some(*source_context) != session.world_context {
+                return DispatchResult::Skip;
+            }
+            if manifest.content_revision() != target_context.content_revision()
+                || !manifest_matches_content(manifest, *map_fingerprint)
+            {
+                session.disconnect(DisconnectReason::GeneratorMismatch, events);
+                return DispatchResult::Stop;
+            }
+        }
+        ServerMessage::TransitionCommitted {
+            transition_id,
+            context,
+            manifest,
+            map_fingerprint,
+            ..
+        } => {
+            if session.pending_transition != Some((*transition_id, *context)) {
+                return DispatchResult::Skip;
+            }
+            if manifest.content_revision() != context.content_revision()
+                || !manifest_matches_content(manifest, *map_fingerprint)
+            {
+                session.disconnect(DisconnectReason::GeneratorMismatch, events);
+                return DispatchResult::Stop;
+            }
+        }
+        _ => {}
+    }
+    let world_content = match message {
+        ServerMessage::Welcome {
+            context,
+            manifest,
+            map_fingerprint,
+            ..
+        }
+        | ServerMessage::TransitionPrepare {
+            target_context: context,
+            manifest,
+            map_fingerprint,
+            ..
+        } => Some((context.instance(), *manifest, *map_fingerprint)),
+        ServerMessage::TransitionCommitted {
+            context,
+            manifest,
+            map_fingerprint,
+            ..
+        } => Some((context.instance(), *manifest, *map_fingerprint)),
+        _ => None,
+    };
+    if let Some((instance, manifest, fingerprint)) = world_content {
+        match session.prepare_world_content(instance, manifest, fingerprint) {
+            Ok(super::super::WorldContentProgress::Ready) => {}
+            Ok(super::super::WorldContentProgress::Pending) => return DispatchResult::Pending,
+            Err(error) => {
+                session.log_failure(&error);
+                session.disconnect(DisconnectReason::WorldContent(error), events);
+                return DispatchResult::Stop;
+            }
+        }
     }
     match message {
+        ServerMessage::Bolid { context, .. } => {
+            if session.state == SessionState::Connected
+                && session.world_context == Some(*context)
+                && session.pending_transition.is_none()
+            {
+                DispatchResult::Emit
+            } else {
+                DispatchResult::Skip
+            }
+        }
+        ServerMessage::EntitySyncBegin { .. }
+        | ServerMessage::EntitySyncRecord { .. }
+        | ServerMessage::EntitySyncComplete { .. } => {
+            match session.apply_replication_message(message) {
+                Ok(_) => DispatchResult::Skip,
+                Err(error) => {
+                    if let Some(logger) = &session.diagnostic_logger {
+                        crate::diagnostics::emit(
+                            Some(logger),
+                            minimium_diagnostics::Level::Error,
+                            "client.replication_rejected",
+                            [crate::diagnostics::field("reason", format!("{error:?}"))],
+                        );
+                    }
+                    session.disconnect(DisconnectReason::Replication(error), events);
+                    DispatchResult::Stop
+                }
+            }
+        }
         ServerMessage::ContentOffer {
             material_hash,
             http_port,
             climate,
         } => {
             if let Err(error) = session.begin_content(*material_hash, *http_port, climate.clone()) {
+                session.log_failure(&error);
                 session.disconnect(DisconnectReason::Materials(error), events);
                 DispatchResult::Stop
             } else {
@@ -89,6 +214,7 @@ pub(super) fn dispatch_message(
         ),
         ServerMessage::TransitionCommitted {
             transition_id,
+            server_tick,
             context,
             map_fingerprint,
             manifest,
@@ -99,6 +225,7 @@ pub(super) fn dispatch_message(
             session,
             TransitionCommit {
                 id: *transition_id,
+                server_tick: *server_tick,
                 context: *context,
                 map_fingerprint: *map_fingerprint,
                 manifest,
@@ -135,44 +262,6 @@ pub(super) fn dispatch_message(
     }
 }
 
-fn prepare_manifest_geography(
-    session: &mut ClientSession,
-    message: &ServerMessage,
-    events: &mut Vec<SessionEvent>,
-) -> bool {
-    let planet = match message {
-        ServerMessage::Welcome { manifest, .. }
-        | ServerMessage::TransitionPrepare { manifest, .. }
-        | ServerMessage::TransitionCommitted { manifest, .. } => {
-            manifest.planet().filter(|planet| planet.mode == 1)
-        }
-        _ => None,
-    };
-    let Some(definition) = planet else {
-        return true;
-    };
-    let package = std::env::var_os("MINIMIUM_EARTH_PACKAGE")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::path::PathBuf::from("third_party/gebco-2026"));
-    let already_loaded = session
-        .prepared_geography
-        .as_ref()
-        .is_some_and(|geography| geography.package_digest() == definition.package_digest);
-    if already_loaded {
-        return true;
-    }
-    match minimium_asset_io::open_earth_package(&package, Some(definition.package_digest)) {
-        Ok(prepared) => {
-            session.prepared_geography = Some(prepared);
-            true
-        }
-        Err(error) => {
-            session.disconnect(DisconnectReason::EarthPackage(error), events);
-            false
-        }
-    }
-}
-
 fn handle_welcome(
     session: &mut ClientSession,
     map_fingerprint: u64,
@@ -186,7 +275,9 @@ fn handle_welcome(
         session.disconnect(DisconnectReason::UnexpectedMessage, events);
         return DispatchResult::Stop;
     }
-    let expected_fingerprint = session.expected_fingerprint(context.instance(), manifest);
+    let expected_fingerprint = session
+        .resolved_world_content(context.instance())
+        .map_or(0, |content| content.map.fingerprint());
     if map_fingerprint != expected_fingerprint {
         session.disconnect(
             DisconnectReason::MapMismatch {
@@ -201,11 +292,7 @@ fn handle_welcome(
         session.disconnect(DisconnectReason::GeneratorMismatch, events);
         return DispatchResult::Stop;
     }
-    if manifest.generator_digest()
-        != minimium_world::world::GeneratorDigest::legacy_map_fingerprint(expected_fingerprint)
-        && manifest.generator_digest()
-            != minimium_procgen::generator_digest(manifest.topology(), manifest.generation())
-    {
+    if !manifest_matches_content(manifest, expected_fingerprint) {
         session.disconnect(DisconnectReason::GeneratorMismatch, events);
         return DispatchResult::Stop;
     }
@@ -214,6 +301,9 @@ fn handle_welcome(
         return DispatchResult::Stop;
     }
     session.world_context = Some(context);
+    session.clear_replicas();
+    session.next_input_seq = 1;
+    session.next_target_tick = session.server_tick.saturating_add(2).max(1);
     session.pending_transition = None;
     session.ready_transition = None;
     session.state = SessionState::Connected;
@@ -243,7 +333,9 @@ fn handle_transition_prepare(
     if Some(source_context) != session.world_context {
         return DispatchResult::Skip;
     }
-    let expected_fingerprint = session.expected_fingerprint(target_context.instance(), manifest);
+    let expected_fingerprint = session
+        .resolved_world_content(target_context.instance())
+        .map_or(0, |content| content.map.fingerprint());
     if map_fingerprint != expected_fingerprint {
         session.disconnect(
             DisconnectReason::MapMismatch {
@@ -255,7 +347,7 @@ fn handle_transition_prepare(
         return DispatchResult::Stop;
     }
     if manifest.content_revision() != target_context.content_revision()
-        || !manifest_matches_generator(manifest)
+        || !manifest_matches_content(manifest, map_fingerprint)
     {
         session.disconnect(DisconnectReason::GeneratorMismatch, events);
         return DispatchResult::Stop;
@@ -290,13 +382,16 @@ fn handle_transition_committed(
 ) -> DispatchResult {
     let TransitionCommit {
         id: transition_id,
+        server_tick,
         context,
         map_fingerprint,
         manifest,
         clock_sample,
         environment,
     } = commit;
-    let expected_fingerprint = session.expected_fingerprint(context.instance(), manifest);
+    let expected_fingerprint = session
+        .resolved_world_content(context.instance())
+        .map_or(0, |content| content.map.fingerprint());
     if map_fingerprint != expected_fingerprint {
         session.disconnect(
             DisconnectReason::MapMismatch {
@@ -308,7 +403,7 @@ fn handle_transition_committed(
         return DispatchResult::Stop;
     }
     if manifest.content_revision() != context.content_revision()
-        || !manifest_matches_generator(manifest)
+        || !manifest_matches_content(manifest, map_fingerprint)
     {
         session.disconnect(DisconnectReason::GeneratorMismatch, events);
         return DispatchResult::Stop;
@@ -323,6 +418,10 @@ fn handle_transition_committed(
         return DispatchResult::Stop;
     }
     session.world_context = Some(context);
+    session.clear_replicas();
+    session.server_tick = server_tick;
+    session.next_input_seq = 1;
+    session.next_target_tick = session.server_tick.saturating_add(2).max(1);
     session.pending_transition = None;
     session.ready_transition = None;
     // Keep queued bytes: a partially sent frame must be completed. The server
@@ -367,34 +466,4 @@ fn handle_environment_sync(
             DispatchResult::Stop
         }
     }
-}
-
-fn handle_time_probe_reply(
-    session: &mut ClientSession,
-    message: &ServerMessage,
-    decoded_at_ms: u64,
-    events: &mut Vec<SessionEvent>,
-) -> DispatchResult {
-    let ServerMessage::TimeProbeReply {
-        seq,
-        echoed_client_send_monotonic_ms,
-        server_receive_monotonic_ms,
-        server_send_monotonic_ms,
-        session_nonce,
-    } = message
-    else {
-        return DispatchResult::Stop;
-    };
-    if let Err(reason) = session.validate_probe_nonce(*session_nonce) {
-        session.disconnect(reason, events);
-        return DispatchResult::Stop;
-    }
-    session.clock.accept_probe_reply(
-        *seq,
-        *echoed_client_send_monotonic_ms,
-        *server_receive_monotonic_ms,
-        *server_send_monotonic_ms,
-        decoded_at_ms,
-    );
-    DispatchResult::Emit
 }

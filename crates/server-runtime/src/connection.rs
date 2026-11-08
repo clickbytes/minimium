@@ -1,13 +1,21 @@
 use crate::metrics::RuntimeMetrics;
-use minimium_core::identity::PlayerProfileId;
+use minimium_core::identity::Principal;
 use minimium_core::ids::PlayerId;
 use minimium_environment::time::ClockRevision;
 use minimium_protocol::WorldContext;
 use minimium_protocol::{encode_server_into, RemotePlayers, ServerMessage, MAX_SERVER_FRAME_BYTES};
 use minimium_transport as network;
+mod output;
+use output::account_output;
+pub(crate) use output::{
+    mark_disconnected, queue_close_response, queue_encoded_frame, queue_encoded_frame_with_reserve,
+    queue_message,
+};
+
 use std::{
-    collections::VecDeque,
+    collections::{BTreeSet, VecDeque},
     net::TcpStream,
+    sync::atomic::{AtomicU64, Ordering},
     time::{Duration, Instant},
 };
 
@@ -15,6 +23,7 @@ pub(crate) const MAX_QUEUED_OUTPUT_BYTES: usize = 64 * 1024;
 pub(crate) const MAX_QUEUED_OUTPUT_FRAMES: usize = 256;
 pub(crate) const CLIENT_CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
 const TIME_PROBE_WINDOW: Duration = Duration::from_secs(1);
+static NEXT_CONNECTION_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum CloseReason {
@@ -33,24 +42,38 @@ pub(crate) enum CloseReason {
 #[derive(Clone, Copy)]
 pub(crate) struct Identity {
     pub(crate) player: PlayerId,
-    pub(crate) profile: PlayerProfileId,
+    pub(crate) principal: Principal,
 }
 
 #[derive(Clone, Copy)]
 pub(crate) enum ConnectionPhase {
-    AwaitIdentify,
+    AwaitPresentation {
+        deadline: Instant,
+    },
+    AwaitAuthentication {
+        deadline: Instant,
+    },
+    Authenticating {
+        attempt: crate::authentication::AuthenticationAttemptId,
+        deadline: Instant,
+    },
+    PreparingContent {
+        principal: Principal,
+        deadline: Instant,
+    },
     Active(Identity),
     Draining {
         identity: Option<Identity>,
+        authentication_attempt: Option<crate::authentication::AuthenticationAttemptId>,
         deadline: Instant,
         reason: CloseReason,
     },
 }
 
 pub(crate) struct Client {
-    pub(crate) presentation: bool,
-    pub(crate) content_ready: bool,
-    pub(crate) pending_profile: Option<PlayerProfileId>,
+    connection_id: u64,
+    pub(crate) protocol_logger: Option<minimium_diagnostics::DomainLogger>,
+    presentation: Option<bool>,
     phase: ConnectionPhase,
     pub(crate) disconnect_reason: Option<CloseReason>,
     pub(crate) stream: TcpStream,
@@ -65,6 +88,14 @@ pub(crate) struct Client {
     pub(crate) encoding_us: u64,
     pub(crate) replicated_players: RemotePlayers,
     pub(crate) replication_initialized: bool,
+    pub(crate) replicated_components: std::collections::BTreeMap<
+        minimium_world::entity::EntityId,
+        BTreeSet<minimium_world::entity::ComponentTypeId>,
+    >,
+    pub(crate) entity_revision: u64,
+    pub(crate) entity_sync_initialized: bool,
+    pub(crate) entity_sync: Option<PendingEntitySync>,
+    pub(crate) next_entity_sync_id: u64,
     pub(crate) connected_at: Instant,
     pub(crate) last_message_at: Instant,
     pub(crate) peer_eof: bool,
@@ -78,13 +109,35 @@ pub(crate) struct Client {
     pub(crate) last_time_probe_rejection_at: Option<Instant>,
 }
 
+pub(crate) struct PendingEntitySync {
+    pub(crate) context: WorldContext,
+    pub(crate) sync_id: u64,
+    pub(crate) base_revision: u64,
+    pub(crate) target_revision: u64,
+    pub(crate) full: bool,
+    pub(crate) started: Instant,
+    pub(crate) begin_pending: bool,
+    pub(crate) operations: VecDeque<minimium_protocol::EntityReplicationOperation>,
+    pub(crate) visible_components: std::collections::BTreeMap<
+        minimium_world::entity::EntityId,
+        BTreeSet<minimium_world::entity::ComponentTypeId>,
+    >,
+    pub(crate) complete_sent: bool,
+}
+
 impl Client {
-    pub(crate) fn new(stream: TcpStream, connected_at: Instant) -> Self {
+    pub(crate) fn new(
+        stream: TcpStream,
+        connected_at: Instant,
+        logger: Option<minimium_diagnostics::DomainLogger>,
+    ) -> Self {
         Self {
-            phase: ConnectionPhase::AwaitIdentify,
-            presentation: false,
-            content_ready: false,
-            pending_profile: None,
+            connection_id: NEXT_CONNECTION_ID.fetch_add(1, Ordering::Relaxed),
+            protocol_logger: logger,
+            phase: ConnectionPhase::AwaitPresentation {
+                deadline: connected_at + crate::CLIENT_HANDSHAKE_TIMEOUT,
+            },
+            presentation: None,
             disconnect_reason: None,
             stream,
             input: Vec::with_capacity(512),
@@ -98,6 +151,11 @@ impl Client {
             encoding_us: 0,
             replicated_players: RemotePlayers::default(),
             replication_initialized: false,
+            replicated_components: std::collections::BTreeMap::new(),
+            entity_revision: 0,
+            entity_sync_initialized: false,
+            entity_sync: None,
+            next_entity_sync_id: 0,
             connected_at,
             last_message_at: connected_at,
             peer_eof: false,
@@ -112,6 +170,10 @@ impl Client {
         }
     }
 
+    pub(crate) const fn connection_id(&self) -> u64 {
+        self.connection_id
+    }
+
     pub(crate) fn pending_output_bytes(&self) -> usize {
         self.output.len().saturating_sub(self.output_offset)
     }
@@ -121,7 +183,10 @@ impl Client {
     }
     pub(crate) fn identity(&self) -> Option<Identity> {
         match self.phase {
-            ConnectionPhase::AwaitIdentify => None,
+            ConnectionPhase::AwaitPresentation { .. }
+            | ConnectionPhase::AwaitAuthentication { .. }
+            | ConnectionPhase::Authenticating { .. }
+            | ConnectionPhase::PreparingContent { .. } => None,
             ConnectionPhase::Active(identity) => Some(identity),
             ConnectionPhase::Draining { identity, .. } => identity,
         }
@@ -131,9 +196,95 @@ impl Client {
         self.identity().map(|identity| identity.player)
     }
 
-    pub(crate) fn activate(&mut self, player: PlayerId, profile: PlayerProfileId) {
-        debug_assert!(matches!(self.phase, ConnectionPhase::AwaitIdentify));
-        self.phase = ConnectionPhase::Active(Identity { player, profile });
+    pub(crate) fn set_presentation(&mut self, capability: Option<bool>, deadline: Instant) -> bool {
+        if !matches!(self.phase, ConnectionPhase::AwaitPresentation { .. }) {
+            return false;
+        }
+        self.presentation = capability;
+        self.phase = ConnectionPhase::AwaitAuthentication { deadline };
+        true
+    }
+
+    pub(crate) fn awaits_authentication(&self) -> bool {
+        matches!(self.phase, ConnectionPhase::AwaitAuthentication { .. })
+    }
+
+    pub(crate) fn presentation_capability(&self) -> Option<bool> {
+        self.presentation
+    }
+
+    pub(crate) fn begin_authentication(
+        &mut self,
+        attempt: crate::authentication::AuthenticationAttemptId,
+        deadline: Instant,
+    ) {
+        debug_assert!(matches!(
+            self.phase,
+            ConnectionPhase::AwaitAuthentication { .. }
+        ));
+        self.phase = ConnectionPhase::Authenticating { attempt, deadline };
+    }
+
+    pub(crate) fn authentication_attempt(
+        &self,
+    ) -> Option<(crate::authentication::AuthenticationAttemptId, Instant)> {
+        match self.phase {
+            ConnectionPhase::Authenticating { attempt, deadline } => Some((attempt, deadline)),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn authentication_attempt_for_cancel(
+        &self,
+    ) -> Option<crate::authentication::AuthenticationAttemptId> {
+        match self.phase {
+            ConnectionPhase::Authenticating { attempt, .. } => Some(attempt),
+            ConnectionPhase::Draining {
+                authentication_attempt,
+                ..
+            } => authentication_attempt,
+            _ => None,
+        }
+    }
+
+    pub(crate) fn authentication_complete(
+        &mut self,
+        principal: Principal,
+        deadline: Instant,
+    ) -> bool {
+        if !matches!(self.phase, ConnectionPhase::Authenticating { .. }) {
+            return false;
+        }
+        self.phase = ConnectionPhase::PreparingContent {
+            principal,
+            deadline,
+        };
+        true
+    }
+
+    pub(crate) fn pending_principal(&self) -> Option<Principal> {
+        match self.phase {
+            ConnectionPhase::PreparingContent { principal, .. } => Some(principal),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn activate(&mut self, player: PlayerId, principal: Principal) {
+        debug_assert!(matches!(
+            self.phase,
+            ConnectionPhase::PreparingContent { .. }
+        ));
+        self.phase = ConnectionPhase::Active(Identity { player, principal });
+    }
+
+    pub(crate) fn admission_deadline(&self) -> Option<Instant> {
+        match self.phase {
+            ConnectionPhase::AwaitPresentation { deadline }
+            | ConnectionPhase::AwaitAuthentication { deadline }
+            | ConnectionPhase::Authenticating { deadline, .. }
+            | ConnectionPhase::PreparingContent { deadline, .. } => Some(deadline),
+            ConnectionPhase::Active(_) | ConnectionPhase::Draining { .. } => None,
+        }
     }
 
     pub(crate) fn accept_time_probe(&mut self, now: Instant) -> bool {
@@ -175,8 +326,10 @@ impl Client {
 
     pub(crate) fn begin_close(&mut self, now: Instant, reason: CloseReason) {
         if self.close_deadline().is_none() {
+            let authentication_attempt = self.authentication_attempt_for_cancel();
             self.phase = ConnectionPhase::Draining {
                 identity: self.identity(),
+                authentication_attempt,
                 deadline: now + CLIENT_CLOSE_TIMEOUT,
                 reason,
             };
@@ -202,181 +355,5 @@ impl Client {
     }
 }
 
-pub(crate) fn queue_close_response(
-    client: &mut Client,
-    metrics: &mut RuntimeMetrics,
-    message: ServerMessage,
-    now: Instant,
-) -> bool {
-    let reason = if matches!(message, ServerMessage::Bye) {
-        CloseReason::Quit
-    } else {
-        CloseReason::Rejected
-    };
-    if !queue_message(client, metrics, message) {
-        metrics.dropped_messages = metrics.dropped_messages.saturating_add(1);
-        client.disconnect_reason = Some(CloseReason::Backpressure);
-        return false;
-    }
-    client.begin_close(now, reason);
-    true
-}
-
-pub(crate) fn mark_disconnected(
-    index: usize,
-    client: &mut Client,
-    disconnected: &mut Vec<usize>,
-    reason: Option<CloseReason>,
-) {
-    if let Some(reason) = reason {
-        client.disconnect_reason = Some(reason);
-    }
-    disconnected.push(index);
-}
-
-pub(crate) fn queue_message(
-    client: &mut Client,
-    metrics: &mut RuntimeMetrics,
-    message: ServerMessage,
-) -> bool {
-    if client.close_deadline().is_some() {
-        return false;
-    }
-    if client.output_frames.len() >= MAX_QUEUED_OUTPUT_FRAMES {
-        return false;
-    }
-    prepare_output(client);
-    if client.output.len() + MAX_SERVER_FRAME_BYTES > MAX_QUEUED_OUTPUT_BYTES {
-        return false;
-    }
-    client.output.reserve_exact(MAX_SERVER_FRAME_BYTES);
-    let frame_start = client.output.len();
-    let encoding_started = Instant::now();
-    let result = encode_server_into(&mut client.output, &message);
-    let encoding_time = encoding_started.elapsed();
-    metrics.encoding.record(encoding_time);
-    client.encoding_us = client
-        .encoding_us
-        .saturating_add(encoding_time.as_micros().min(u64::MAX as u128) as u64);
-    match result {
-        Ok(()) if client.output.len() <= MAX_QUEUED_OUTPUT_BYTES => {
-            client
-                .output_frames
-                .push_back((client.output.len() - frame_start, Instant::now()));
-            client.frames_out += 1;
-            metrics.frames_out += 1;
-            true
-        }
-        Ok(()) => {
-            client.output.truncate(frame_start);
-            false
-        }
-        Err(error) => {
-            client.output.truncate(frame_start);
-            eprintln!("could not encode game message: {error}");
-            false
-        }
-    }
-}
-
-pub(crate) fn queue_encoded_frame(
-    client: &mut Client,
-    frame: &[u8],
-    metrics: &mut RuntimeMetrics,
-) -> bool {
-    if client.close_deadline().is_some() {
-        return false;
-    }
-    if client.output_frames.len() >= MAX_QUEUED_OUTPUT_FRAMES {
-        return false;
-    }
-    prepare_output(client);
-    if client.output.len().saturating_add(frame.len()) > MAX_QUEUED_OUTPUT_BYTES {
-        return false;
-    }
-    client.output.reserve(frame.len());
-    client.output.extend_from_slice(frame);
-    client
-        .output_frames
-        .push_back((frame.len(), Instant::now()));
-    client.frames_out += 1;
-    metrics.frames_out += 1;
-    true
-}
-
-fn prepare_output(client: &mut Client) {
-    if client.output_offset > 0 {
-        let pending = client.output.len() - client.output_offset;
-        client.output.copy_within(client.output_offset.., 0);
-        client.output.truncate(pending);
-        client.output_offset = 0;
-    }
-}
-
-fn account_output(client: &mut Client, mut written: usize) {
-    while written > 0 {
-        let Some((remaining, _)) = client.output_frames.front_mut() else {
-            break;
-        };
-        let consumed = written.min(*remaining);
-        *remaining -= consumed;
-        written -= consumed;
-        if *remaining == 0 {
-            client.output_frames.pop_front();
-        }
-    }
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::net::{TcpListener, TcpStream};
-
-    fn client_without_io() -> Client {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let peer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
-        let (server, _) = listener.accept().unwrap();
-        drop(peer);
-        Client::new(server, Instant::now())
-    }
-
-    #[test]
-    fn byte_budget_rejects_before_frame_count_limit() {
-        let mut client = client_without_io();
-        let mut metrics = RuntimeMetrics::default();
-        let frame = [0; 1024];
-
-        for _ in 0..MAX_QUEUED_OUTPUT_BYTES / frame.len() {
-            assert!(queue_encoded_frame(&mut client, &frame, &mut metrics));
-        }
-
-        assert_eq!(client.output_frames.len(), 64);
-        assert_eq!(client.pending_output_bytes(), MAX_QUEUED_OUTPUT_BYTES);
-        assert!(!queue_encoded_frame(&mut client, &[0], &mut metrics));
-        assert!(!queue_message(
-            &mut client,
-            &mut metrics,
-            ServerMessage::Bye
-        ));
-        assert_eq!(client.output_frames.len(), 64);
-    }
-
-    #[test]
-    fn frame_count_limit_rejects_before_byte_budget() {
-        let mut client = client_without_io();
-        let mut metrics = RuntimeMetrics::default();
-
-        for _ in 0..MAX_QUEUED_OUTPUT_FRAMES {
-            assert!(queue_encoded_frame(&mut client, &[0], &mut metrics));
-        }
-
-        assert_eq!(client.pending_output_bytes(), MAX_QUEUED_OUTPUT_FRAMES);
-        assert!(!queue_encoded_frame(&mut client, &[0], &mut metrics));
-        assert!(!queue_message(
-            &mut client,
-            &mut metrics,
-            ServerMessage::Bye
-        ));
-        assert_eq!(client.output_frames.len(), MAX_QUEUED_OUTPUT_FRAMES);
-    }
-}
+mod tests;

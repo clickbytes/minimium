@@ -1,11 +1,10 @@
 //! Shared English display messages for the terminal and rendered clients.
 use crate::session::{DisconnectReason, QueueError};
+use minimium_localization::UiMessage;
 use minimium_protocol::{ProtocolError, ServerErrorCode};
-use std::fmt;
 
 /// A display message with typed values supplied by the client event.
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(not(feature = "desktop"), allow(dead_code))]
 pub enum ClientText {
     ConnectingTo(String),
     StartingLocalServer,
@@ -23,8 +22,10 @@ pub enum ClientText {
     Disconnected,
     NotConnected,
     NoServerResponse,
+    #[cfg(feature = "desktop")]
     CommandQueued,
     CouldNotQueueCommand(QueueProblem),
+    #[cfg(feature = "desktop")]
     CouldNotFire(QueueProblem),
     TerminalIntro,
     InputPrompt,
@@ -34,24 +35,27 @@ pub enum ClientText {
         detail: String,
     },
     BundledMapInvalid(String),
-    ConsoleInputQueueFull,
-    ConsoleInputReadFailed(String),
-    ConsoleInputTooLong {
-        max_bytes: usize,
-    },
+    #[cfg(feature = "desktop")]
     WindowCreationFailed(String),
+    #[cfg(feature = "desktop")]
     GraphicsInitializationFailed(String),
+    #[cfg(feature = "desktop")]
     RendererAlreadyInitialized,
-    RenderFailed(String),
+    #[cfg(feature = "desktop")]
     WindowTitle,
+    #[cfg(feature = "desktop")]
     WindowTitleStatus {
         fps: f64,
         health: u16,
     },
+    #[cfg(feature = "desktop")]
     CouldNotQueueMovement(QueueProblem),
     FpsUnavailable,
+    #[cfg(feature = "desktop")]
     ConsoleHistoryHelp,
+    #[cfg(feature = "desktop")]
     ShotFired,
+    #[cfg(feature = "desktop")]
     VisiblePlayerLimitExceeded,
     TerminalSnapshot {
         server_time_ms: u64,
@@ -62,6 +66,7 @@ pub enum ClientText {
         player_updates: usize,
         player_removals: usize,
     },
+    #[cfg(feature = "desktop")]
     PlayerState {
         position: [f32; 3],
         health: u16,
@@ -121,9 +126,10 @@ pub enum ClientText {
 pub enum QueueProblem {
     Disconnected,
     AwaitingWelcome,
-    IdentifyReserved,
+    AuthenticationReserved,
     StaleWorldContext,
     BufferFull,
+    InputSequenceExhausted,
     Protocol(ProtocolError),
 }
 
@@ -132,9 +138,10 @@ impl From<QueueError> for QueueProblem {
         match error {
             QueueError::Disconnected => Self::Disconnected,
             QueueError::AwaitingWelcome => Self::AwaitingWelcome,
-            QueueError::IdentifyReserved => Self::IdentifyReserved,
+            QueueError::AuthenticateReserved => Self::AuthenticationReserved,
             QueueError::StaleWorldContext => Self::StaleWorldContext,
             QueueError::BufferFull => Self::BufferFull,
+            QueueError::InputSequenceExhausted => Self::InputSequenceExhausted,
             QueueError::Protocol(error) => Self::Protocol(error),
         }
     }
@@ -154,171 +161,135 @@ impl From<DisconnectReason> for ClientText {
             ),
             DisconnectReason::PeerClosed => Self::PeerDisconnected,
             DisconnectReason::ServerClosed => Self::ServerClosed,
-            DisconnectReason::EarthPackage(error) | DisconnectReason::Materials(error) => {
-                Self::ConnectionLost(error)
-            }
+            DisconnectReason::WorldContent(error)
+            | DisconnectReason::EarthPackage(error)
+            | DisconnectReason::Materials(error) => Self::ConnectionLost(error.to_string()),
             other => Self::ConnectionLost(format!("{other:?}")),
         }
     }
 }
 
-fn server_error_text(code: ServerErrorCode) -> &'static str {
-    match code {
-        ServerErrorCode::Protocol => "server rejected the protocol handshake",
-        ServerErrorCode::Busy => "server is busy; this can include a duplicate active profile",
-        ServerErrorCode::ServerFull => "server is full",
-        ServerErrorCode::RateLimit => "request was rate-limited",
-        _ => "server rejected the request",
-    }
-}
-
-impl fmt::Display for QueueProblem {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Disconnected => "not connected",
-            Self::AwaitingWelcome => "waiting for server welcome",
-            Self::IdentifyReserved => "identify is reserved for connection setup",
-            Self::StaleWorldContext => "world changed; reconnect or retry the command",
-            Self::BufferFull => "outgoing queue is full",
-            Self::Protocol(error) => return write!(f, "message could not be encoded: {error}"),
-        })
-    }
-}
-
-impl fmt::Display for ClientText {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl ClientText {
+    pub fn localized(
+        &self,
+        localizer: &minimium_localization::Localizer,
+        locale: minimium_localization::Locale,
+    ) -> String {
         match self {
-            Self::ConnectingTo(address) => write!(f, "connecting to {address}..."),
-            Self::StartingLocalServer => f.write_str("starting or attaching to local server..."),
-            Self::BusyAttempt { attempt_id } => write!(
-                f,
-                "connection attempt {attempt_id} is still finishing; retry shortly"
+            Self::ConnectingTo(address) => localizer.format(
+                locale,
+                &minimium_localization::UiMessage::ConnectingTo(address.clone()),
             ),
-            Self::AttemptIdsExhausted => {
-                f.write_str("could not start connection: attempt identifiers exhausted")
+            Self::Disconnected => localizer.format(
+                locale,
+                &minimium_localization::UiMessage::ServerDisconnected,
+            ),
+            Self::StartingLocalServer => localizer.format(
+                locale,
+                &minimium_localization::UiMessage::StartingLocalServer,
+            ),
+            Self::AwaitingWelcome => {
+                localizer.format(locale, &minimium_localization::UiMessage::AwaitingWelcome)
             }
-            Self::WorkerStartFailed(error) => {
-                write!(f, "could not start connection worker: {error}")
+            Self::NotConnected => {
+                localizer.format(locale, &minimium_localization::UiMessage::NotConnected)
             }
-            Self::AttemptTimedOut => {
-                f.write_str("connection attempt timed out; waiting for cleanup before reconnecting")
-            }
-            Self::WaitingForCancelledCleanup => {
-                f.write_str("waiting for cancelled connection cleanup")
-            }
-            Self::AwaitingWelcome => f.write_str("awaiting server welcome"),
-            Self::ConnectionSetupFailed(error) => {
-                write!(f, "connection setup failed: {error}; you can reconnect")
-            }
-            Self::ConnectFailed(error) => write!(f, "connect failed: {error}; you can retry"),
-            Self::DisconnectOrWait => {
-                f.write_str("disconnect or wait for the current connection attempt first")
-            }
-            Self::Disconnected => f.write_str("disconnected"),
-            Self::NotConnected => f.write_str("not connected"),
-            Self::NoServerResponse => f.write_str("no server response yet"),
-            Self::CommandQueued => f.write_str("command queued"),
-            Self::CouldNotQueueCommand(problem) => {
-                write!(f, "could not queue command: {problem}")
-            }
-            Self::CouldNotFire(problem) => write!(f, "could not fire: {problem}"),
-            Self::CouldNotQueueMovement(problem) => {
-                write!(f, "could not queue movement: {problem}")
+            Self::NoServerResponse => {
+                localizer.format(locale, &minimium_localization::UiMessage::NoServerResponse)
             }
             Self::TerminalIntro => {
-                f.write_str("Minimium client console. Type `help` for commands.")
+                localizer.format(locale, &minimium_localization::UiMessage::TerminalIntro)
             }
-            Self::InputPrompt => f.write_str("> "),
-            Self::ClientError(error) => write!(f, "client error: {error}"),
-            Self::MapLoadFailed { path, detail } => {
-                write!(f, "could not load map {path}: {detail}")
+            Self::InputPrompt => {
+                localizer.format(locale, &minimium_localization::UiMessage::InputPrompt)
             }
-            Self::BundledMapInvalid(detail) => write!(f, "invalid bundled map: {detail}"),
-            Self::ConsoleInputQueueFull => f.write_str("console input queue full; dropping line"),
-            Self::ConsoleInputReadFailed(error) => {
-                write!(f, "console input read failed: {error}")
+            #[cfg(feature = "desktop")]
+            Self::WindowTitle => {
+                localizer.format(locale, &minimium_localization::UiMessage::WindowTitle)
             }
-            Self::ConsoleInputTooLong { max_bytes } => {
-                write!(f, "console input line exceeds {max_bytes} bytes; discarded")
+            #[cfg(feature = "desktop")]
+            Self::WindowCreationFailed(detail) => localizer.format(
+                locale,
+                &minimium_localization::UiMessage::WindowCreationFailed(detail.clone()),
+            ),
+            Self::BusyAttempt { attempt_id } => {
+                localizer.format(locale, &UiMessage::BusyAttempt(*attempt_id))
             }
-            Self::WindowCreationFailed(error) => write!(f, "window creation failed: {error}"),
-            Self::GraphicsInitializationFailed(error) => {
-                write!(f, "graphics initialization failed: {error}")
+            Self::AttemptIdsExhausted => localizer.format(locale, &UiMessage::AttemptIdsExhausted),
+            Self::WorkerStartFailed(value) => {
+                localizer.format(locale, &UiMessage::WorkerStartFailed(value.clone()))
             }
+            Self::AttemptTimedOut => localizer.format(locale, &UiMessage::AttemptTimedOut),
+            Self::WaitingForCancelledCleanup => {
+                localizer.format(locale, &UiMessage::WaitingForCleanup)
+            }
+            Self::ConnectionSetupFailed(value) => {
+                localizer.format(locale, &UiMessage::ConnectionSetupFailed(value.clone()))
+            }
+            Self::ConnectFailed(value) => {
+                localizer.format(locale, &UiMessage::ConnectFailed(value.clone()))
+            }
+            Self::DisconnectOrWait => localizer.format(locale, &UiMessage::DisconnectOrWait),
+            #[cfg(feature = "desktop")]
+            Self::CommandQueued => localizer.format(locale, &UiMessage::CommandQueued),
+            Self::CouldNotQueueCommand(value) => localize_queue(
+                localizer,
+                locale,
+                minimium_localization::QueueAction::Command,
+                value,
+            ),
+            #[cfg(feature = "desktop")]
+            Self::CouldNotFire(value) => localize_queue(
+                localizer,
+                locale,
+                minimium_localization::QueueAction::Fire,
+                value,
+            ),
+            #[cfg(feature = "desktop")]
+            Self::CouldNotQueueMovement(value) => localize_queue(
+                localizer,
+                locale,
+                minimium_localization::QueueAction::Movement,
+                value,
+            ),
+            Self::ClientError(value) => {
+                localizer.format(locale, &UiMessage::ClientError(value.clone()))
+            }
+            Self::MapLoadFailed { path, detail } => localizer.format(
+                locale,
+                &UiMessage::MapLoadFailed {
+                    path: path.clone(),
+                    detail: detail.clone(),
+                },
+            ),
+            Self::BundledMapInvalid(value) => {
+                localizer.format(locale, &UiMessage::BundledMapInvalid(value.clone()))
+            }
+            #[cfg(feature = "desktop")]
+            Self::GraphicsInitializationFailed(value) => localizer.format(
+                locale,
+                &UiMessage::GraphicsInitializationFailed(value.clone()),
+            ),
+            #[cfg(feature = "desktop")]
             Self::RendererAlreadyInitialized => {
-                f.write_str("renderer can only initialize once")
+                localizer.format(locale, &UiMessage::RendererAlreadyInitialized)
             }
-            Self::RenderFailed(error) => write!(f, "render error: {error}"),
-            Self::WindowTitle => f.write_str("Minimium 3D client"),
-            Self::WindowTitleStatus { fps, health } => write!(
-                f,
-                "Minimium | {fps:.1} FPS | {health} HP | WASD move, Space jump, left click fire, Esc release"
+            #[cfg(feature = "desktop")]
+            Self::WindowTitleStatus { fps, health } => localizer.format(
+                locale,
+                &UiMessage::WindowTitleStatus {
+                    fps: format!("{fps:.1}"),
+                    health: *health,
+                },
             ),
-            Self::FpsUnavailable => {
-                f.write_str("FPS display is unavailable in the terminal client")
-            }
-            Self::ConsoleHistoryHelp => {
-                f.write_str("F1 closes the console. Arrow keys browse command history.")
-            }
-            Self::ShotFired => f.write_str("shot fired"),
+            Self::FpsUnavailable => localizer.format(locale, &UiMessage::FpsUnavailable),
+            #[cfg(feature = "desktop")]
+            Self::ConsoleHistoryHelp => localizer.format(locale, &UiMessage::ConsoleHistoryHelp),
+            #[cfg(feature = "desktop")]
+            Self::ShotFired => localizer.format(locale, &UiMessage::ShotFired),
+            #[cfg(feature = "desktop")]
             Self::VisiblePlayerLimitExceeded => {
-                f.write_str("server exceeded the visible-player snapshot limit")
-            }
-            Self::WelcomeTimeout => f.write_str("server welcome timed out; you can reconnect"),
-            Self::HeartbeatTimeout => f.write_str("server heartbeat timed out; you can reconnect"),
-            Self::PeerDisconnected => f.write_str("server disconnected; you can reconnect"),
-            Self::ServerClosed => f.write_str("server closed the session; you can reconnect"),
-            Self::Rejected { code } => write!(
-                f,
-                "server rejected connection: {}",
-                server_error_text(*code)
-            ),
-            Self::ServerError { code } => {
-                write!(f, "server error: {}", server_error_text(*code))
-            }
-            Self::MapMismatch { expected, actual } => write!(
-                f,
-                "map mismatch: client={expected:016x} server={actual:016x}"
-            ),
-            Self::ConnectionLost(reason) => {
-                write!(f, "connection lost ({reason}); you can reconnect")
-            }
-            Self::Connected { id, health } => {
-                write!(f, "connected as player {id} with {health} HP")
-            }
-            Self::Ping { milliseconds } => write!(f, "ping: {milliseconds} ms"),
-            Self::NetworkStats {
-                bytes_sent,
-                bytes_received,
-                ping_milliseconds,
-                nearby_players,
-            } => {
-                write!(f, "tx={bytes_sent} bytes rx={bytes_received} bytes rtt=")?;
-                match ping_milliseconds {
-                    Some(milliseconds) => write!(f, "{milliseconds} ms")?,
-                    None => f.write_str("n/a")?,
-                }
-                if let Some(count) = nearby_players {
-                    write!(f, " nearby_players={count}")?;
-                }
-                Ok(())
-            }
-            Self::Pong => f.write_str("PONG"),
-            Self::Accepted => f.write_str("server accepted command"),
-            Self::Health { health } => write!(f, "health: {health} HP"),
-            Self::ShotMissed => f.write_str("shot missed"),
-            Self::Hit { target_id, health } => {
-                write!(f, "hit player {target_id} ({health} HP)")
-            }
-            Self::TargetRespawned { target_id, health } => {
-                write!(f, "hit player {target_id}; target respawned ({health} HP)")
-            }
-            Self::Chat {
-                sender_name,
-                sender_id,
-                text,
-            } => {
-                write!(f, "[{sender_name}#{sender_id}] {text}")
+                localizer.format(locale, &UiMessage::VisiblePlayerLimitExceeded)
             }
             Self::TerminalSnapshot {
                 server_time_ms,
@@ -328,27 +299,144 @@ impl fmt::Display for ClientText {
                 grounded,
                 player_updates,
                 player_removals,
-            } => write!(
-                f,
-                "server_time={server_time_ms}ms full={full_snapshot} \
-                 self=({:.2},{:.2},{:.2}) velocity=({:.2},{:.2},{:.2}) \
-                 grounded={grounded} player_updates={player_updates} player_removals={player_removals}",
-                self_position[0],
-                self_position[1],
-                self_position[2],
-                self_velocity[0],
-                self_velocity[1],
-                self_velocity[2]
+            } => localizer.format(
+                locale,
+                &UiMessage::TerminalSnapshot {
+                    time: *server_time_ms,
+                    full: *full_snapshot,
+                    position: format!(
+                        "{:.2},{:.2},{:.2}",
+                        self_position[0], self_position[1], self_position[2]
+                    ),
+                    velocity: format!(
+                        "{:.2},{:.2},{:.2}",
+                        self_velocity[0], self_velocity[1], self_velocity[2]
+                    ),
+                    grounded: *grounded,
+                    updates: *player_updates,
+                    removals: *player_removals,
+                },
             ),
+            #[cfg(feature = "desktop")]
             Self::PlayerState {
                 position,
                 health,
                 nearby_players,
-            } => write!(
-                f,
-                "position=({:.2},{:.2},{:.2}) health={health} HP nearby_players={nearby_players}",
-                position[0], position[1], position[2]
+            } => localizer.format(
+                locale,
+                &UiMessage::PlayerState {
+                    position: format!("{:.2},{:.2},{:.2}", position[0], position[1], position[2]),
+                    health: *health,
+                    nearby: *nearby_players,
+                },
+            ),
+            Self::WelcomeTimeout => localizer.format(locale, &UiMessage::WelcomeTimeout),
+            Self::HeartbeatTimeout => localizer.format(locale, &UiMessage::HeartbeatTimeout),
+            Self::PeerDisconnected => localizer.format(locale, &UiMessage::PeerDisconnected),
+            Self::ServerClosed => localizer.format(locale, &UiMessage::ServerClosed),
+            Self::Rejected { code } => {
+                localizer.format(locale, &UiMessage::Rejected(localized_server_error(*code)))
+            }
+            Self::ServerError { code } => localizer.format(
+                locale,
+                &UiMessage::ServerError(localized_server_error(*code)),
+            ),
+            Self::MapMismatch { expected, actual } => localizer.format(
+                locale,
+                &UiMessage::MapMismatch {
+                    expected: format!("{expected:016x}"),
+                    actual: format!("{actual:016x}"),
+                },
+            ),
+            Self::ConnectionLost(value) => {
+                localizer.format(locale, &UiMessage::ConnectionLost(value.clone()))
+            }
+            Self::Connected { id, health } => localizer.format(
+                locale,
+                &UiMessage::Connected {
+                    id: id.to_string(),
+                    health: *health,
+                },
+            ),
+            Self::Ping { milliseconds } => {
+                localizer.format(locale, &UiMessage::Ping(*milliseconds))
+            }
+            Self::NetworkStats {
+                bytes_sent,
+                bytes_received,
+                ping_milliseconds,
+                nearby_players,
+            } => localizer.format(
+                locale,
+                &UiMessage::NetworkStats {
+                    sent: *bytes_sent,
+                    received: *bytes_received,
+                    ping: ping_milliseconds
+                        .map_or_else(|| "n/a".to_owned(), |value| format!("{value} ms")),
+                    nearby: nearby_players.map_or_else(String::new, |value| value.to_string()),
+                    nearby_active: nearby_players.is_some(),
+                },
+            ),
+            Self::Pong => localizer.format(locale, &UiMessage::Pong),
+            Self::Accepted => localizer.format(locale, &UiMessage::Accepted),
+            Self::Health { health } => localizer.format(locale, &UiMessage::Health(*health)),
+            Self::ShotMissed => localizer.format(locale, &UiMessage::ShotMissed),
+            Self::Hit { target_id, health } => localizer.format(
+                locale,
+                &UiMessage::Hit {
+                    target: target_id.to_string(),
+                    health: *health,
+                },
+            ),
+            Self::TargetRespawned { target_id, health } => localizer.format(
+                locale,
+                &UiMessage::TargetRespawned {
+                    target: target_id.to_string(),
+                    health: *health,
+                },
+            ),
+            Self::Chat {
+                sender_name,
+                sender_id,
+                text,
+            } => localizer.format(
+                locale,
+                &UiMessage::Chat {
+                    name: sender_name.clone(),
+                    id: sender_id.to_string(),
+                    text: text.clone(),
+                },
             ),
         }
     }
+}
+
+fn localized_server_error(code: ServerErrorCode) -> minimium_localization::ServerErrorReason {
+    use minimium_localization::ServerErrorReason as Reason;
+    match code {
+        ServerErrorCode::Protocol => Reason::Protocol,
+        ServerErrorCode::Busy => Reason::Busy,
+        ServerErrorCode::ServerFull => Reason::Full,
+        ServerErrorCode::RateLimit => Reason::RateLimit,
+        ServerErrorCode::Unknown(_) => Reason::Other,
+    }
+}
+
+fn localize_queue(
+    localizer: &minimium_localization::Localizer,
+    locale: minimium_localization::Locale,
+    action: minimium_localization::QueueAction,
+    problem: &QueueProblem,
+) -> String {
+    use minimium_localization::QueueCause as Cause;
+    let cause = match problem {
+        QueueProblem::Disconnected => Cause::Disconnected,
+        QueueProblem::AwaitingWelcome => Cause::AwaitingWelcome,
+        QueueProblem::AuthenticationReserved => Cause::Authentication,
+        QueueProblem::StaleWorldContext => Cause::StaleWorld,
+        QueueProblem::BufferFull => Cause::Full,
+        QueueProblem::InputSequenceExhausted => Cause::Sequence,
+        QueueProblem::Protocol(_) => Cause::Protocol,
+    };
+    localizer.format(locale, &UiMessage::QueueFailure { action, cause })
 }

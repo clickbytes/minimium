@@ -56,35 +56,6 @@ impl EnvironmentFrameInput {
         (self.quality, self.revision, self.rate_ppm)
     }
 
-    pub fn status_line(self) -> String {
-        let date = self
-            .render_world_utc_ms
-            .filter(|_| self.estimated_world_utc_ms.is_some() && self.descriptor.is_some())
-            .map(format_utc)
-            .unwrap_or_else(|| "UTC unavailable".to_owned());
-        let rate = self
-            .rate_ppm
-            .map(|ppm| format!("{:.3}x", ppm as f64 / 1_000_000.0))
-            .unwrap_or_else(|| "rate unavailable".to_owned());
-        let revision = self
-            .revision
-            .map(|value| format!("rev {value}"))
-            .unwrap_or_else(|| "rev unavailable".to_owned());
-        format!(
-            "environment {} | {date} | {rate} | {revision}",
-            self.quality.label()
-        )
-    }
-
-    pub fn title_suffix(self) -> String {
-        let date = self
-            .render_world_utc_ms
-            .filter(|_| self.estimated_world_utc_ms.is_some() && self.descriptor.is_some())
-            .map(format_utc)
-            .unwrap_or_else(|| "UTC --".to_owned());
-        format!("{} | {date}", self.quality.label())
-    }
-
     pub fn time_status_line(self) -> String {
         diagnostics::clock_status_line(
             self.clock_diagnostics,

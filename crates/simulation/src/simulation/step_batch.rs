@@ -14,7 +14,7 @@ pub fn step_batch(
                 collision_index,
                 state,
                 delta_seconds,
-                step.input.movement.speed,
+                step.movement_policy.speed,
             ));
         let mut position_mm = step.position_mm;
         if let Some(position_mm) = &mut position_mm {
@@ -22,6 +22,7 @@ pub fn step_batch(
                 &mut state,
                 position_mm,
                 step.input,
+                step.movement_policy,
                 batch.collision_query.candidates(),
                 batch.collision_query.surface_candidates(),
                 delta_seconds,
@@ -30,6 +31,7 @@ pub fn step_batch(
             step_character(
                 &mut state,
                 step.input,
+                step.movement_policy,
                 batch.collision_query.candidates(),
                 batch.collision_query.surface_candidates(),
                 delta_seconds,

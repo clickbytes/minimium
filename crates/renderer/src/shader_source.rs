@@ -45,6 +45,7 @@ pub fn sky() -> String {
     combine(&[
         include_str!("shaders/frame.wgsl"),
         include_str!("shaders/atmosphere_frame.wgsl"),
+        include_str!("shaders/atmosphere_common.wgsl"),
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
         include_str!("shaders/sky.wgsl"),
@@ -183,5 +184,12 @@ pub fn atmosphere_compute(kind: &str) -> String {
         include_str!("shaders/atmosphere_frame.wgsl"),
         include_str!("shaders/atmosphere_common.wgsl"),
         &body,
+    ])
+}
+
+pub fn bolid_composite() -> String {
+    combine(&[
+        include_str!("shaders/output_color.wgsl"),
+        include_str!("shaders/bolid_composite.wgsl"),
     ])
 }

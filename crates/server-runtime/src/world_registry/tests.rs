@@ -1,14 +1,24 @@
 use super::*;
 use minimium_game_sample::generate_demo_worlds;
 use minimium_procgen::{generate_dungeon, DungeonSpec, DungeonTile};
-use minimium_simulation::CharacterInput;
+use minimium_protocol::WorldContext;
+use minimium_simulation::MovementIntent;
 use minimium_world::entity::{
     ComponentDescriptor, ComponentRegistry, ReplicationPolicy, SchemaVersion,
 };
 use minimium_world::world::{
-    GenerationRevision, GenerationSpec, PlanetFace, SectorKey, SectorRevision, WorldObjectState,
-    WorldSeed,
+    GenerationRevision, GenerationSpec, PlanetFace, SectorKey, SectorRevision, WorldSeed,
 };
+use std::collections::HashSet;
+
+fn near_portal(position: [f32; 3], portal: [f32; 3]) -> bool {
+    position
+        .iter()
+        .zip(portal)
+        .map(|(player, target)| (*player - target).powi(2))
+        .sum::<f32>()
+        <= 9.0
+}
 
 fn registry_from_sample(worlds: Vec<minimium_game_sample::GeneratedWorld>) -> WorldRegistry {
     WorldRegistry::from_world_definitions(
@@ -18,11 +28,7 @@ fn registry_from_sample(worlds: Vec<minimium_game_sample::GeneratedWorld>) -> Wo
                 instance: world.instance,
                 manifest: world.manifest,
                 map: world.map,
-                portal: world.portal.map(|portal| WorldPortal {
-                    position: portal.position,
-                    target_instance: portal.target_instance,
-                    destination: portal.destination,
-                }),
+                initial_entities: Vec::new(),
             })
             .collect(),
     )
@@ -102,7 +108,7 @@ fn planet_spawn_can_walk_the_generated_approach_to_the_portal() {
         .unwrap();
     let input = HashMap::from([(
         player,
-        CharacterInput {
+        MovementIntent {
             direction: [1.0, 0.0],
             jump: false,
             ..Default::default()
@@ -111,6 +117,7 @@ fn planet_spawn_can_walk_the_generated_approach_to_the_portal() {
     let mut sectors = minimium_sectors::SectorManager::new(128, 128).unwrap();
     let mut active_tickets = HashMap::new();
     let mut transfer_tickets = HashMap::new();
+    let mut sector_workers = crate::sector_streaming::SectorGenerationPool::new(1).unwrap();
 
     for _ in 0..180 {
         let readiness = crate::sector_streaming::update(
@@ -118,6 +125,7 @@ fn planet_spawn_can_walk_the_generated_approach_to_the_portal() {
             &mut sectors,
             &mut active_tickets,
             &mut transfer_tickets,
+            &mut sector_workers,
         );
         registry
             .get_mut(planet_id)
@@ -172,7 +180,7 @@ fn portal_transfer_waits_for_readiness_and_round_trips_to_saved_location() {
     let planet_context = registry.context_for_player(player).unwrap();
     let input = HashMap::from([(
         player,
-        CharacterInput {
+        MovementIntent {
             direction: [1.0, 0.0],
             jump: false,
             ..Default::default()
@@ -181,12 +189,14 @@ fn portal_transfer_waits_for_readiness_and_round_trips_to_saved_location() {
     let mut sectors = minimium_sectors::SectorManager::new(128, 128).unwrap();
     let mut active_tickets = HashMap::new();
     let mut transfer_tickets = HashMap::new();
+    let mut sector_workers = crate::sector_streaming::SectorGenerationPool::new(1).unwrap();
     for _ in 0..180 {
         let readiness = crate::sector_streaming::update(
             &mut registry,
             &mut sectors,
             &mut active_tickets,
             &mut transfer_tickets,
+            &mut sector_workers,
         );
         registry
             .get_mut(planet_id)
@@ -218,7 +228,13 @@ fn portal_transfer_waits_for_readiness_and_round_trips_to_saved_location() {
     ));
 
     let cancelled = registry
-        .prepare_portal_transfer(player, planet_context, None)
+        .prepare_entity_transfer(
+            player,
+            planet_context,
+            dungeon_id,
+            dungeon_portal.destination,
+            None,
+        )
         .unwrap();
     assert!(!registry.mark_transfer_ready(
         player,
@@ -234,7 +250,13 @@ fn portal_transfer_waits_for_readiness_and_round_trips_to_saved_location() {
     assert!(!registry.cancel_transfer(player, cancelled.transition_id));
 
     let offer = registry
-        .prepare_portal_transfer(player, planet_context, None)
+        .prepare_entity_transfer(
+            player,
+            planet_context,
+            dungeon_id,
+            dungeon_portal.destination,
+            None,
+        )
         .unwrap();
     assert!(registry.mark_transfer_ready(player, offer.transition_id, offer.target_context));
     assert!(registry.commit_ready_transfers(&HashSet::new()).is_empty());
@@ -271,7 +293,7 @@ fn portal_transfer_waits_for_readiness_and_round_trips_to_saved_location() {
         ];
         let input = HashMap::from([(
             player,
-            CharacterInput {
+            MovementIntent {
                 direction,
                 jump: false,
                 ..Default::default()
@@ -283,6 +305,7 @@ fn portal_transfer_waits_for_readiness_and_round_trips_to_saved_location() {
                 &mut dungeon_sectors,
                 &mut dungeon_tickets,
                 &mut dungeon_transfers,
+                &mut sector_workers,
             );
             registry
                 .get_mut(dungeon_id)
@@ -304,7 +327,13 @@ fn portal_transfer_waits_for_readiness_and_round_trips_to_saved_location() {
     );
     let dungeon_context = registry.context_for_player(player).unwrap();
     let return_offer = registry
-        .prepare_portal_transfer(player, dungeon_context, Some(return_location))
+        .prepare_entity_transfer(
+            player,
+            dungeon_context,
+            planet_id,
+            planet_portal.destination,
+            Some(return_location),
+        )
         .unwrap();
     let expected_return = return_location
         .position()
@@ -326,7 +355,7 @@ fn portal_transfer_waits_for_readiness_and_round_trips_to_saved_location() {
 
 fn demo_dungeon_room_route() -> Vec<[u16; 2]> {
     let generation =
-        GenerationSpec::new(WorldSeed::new(2), GenerationRevision::new(2).unwrap(), 10).unwrap();
+        GenerationSpec::new(WorldSeed::new(2), GenerationRevision::new(5).unwrap(), 10).unwrap();
     let blueprint = generate_dungeon(generation, DungeonSpec::new(48, 40, 4, 5, 1).unwrap());
     let mut route = vec![blueprint.spawn()];
     for room in blueprint.rooms().iter().skip(1) {
@@ -390,16 +419,23 @@ fn sector_state_revisions_are_monotonic_and_topology_bound() {
     let worlds = generate_demo_worlds().unwrap();
     let planet_id = worlds[0].instance;
     let mut registry = registry_from_sample(worlds.to_vec());
+    let mut budget = crate::storage::SnapshotBudget::default();
     let key = SectorKey::planet(PlanetFace::PositiveY, 3, 4).unwrap();
     let first = WorldSectorState::new(key, SectorRevision::new(1).unwrap(), Vec::new()).unwrap();
     let stale = WorldSectorState::new(key, SectorRevision::new(1).unwrap(), Vec::new()).unwrap();
     let next = WorldSectorState::new(key, SectorRevision::new(2).unwrap(), Vec::new()).unwrap();
-    assert_eq!(registry.commit_sector_state(planet_id, first), Ok(()));
     assert_eq!(
-        registry.commit_sector_state(planet_id, stale),
+        registry.commit_sector_state(planet_id, first, &mut budget),
+        Ok(())
+    );
+    assert_eq!(
+        registry.commit_sector_state(planet_id, stale, &mut budget),
         Err(RegistryError::StaleSectorRevision)
     );
-    assert_eq!(registry.commit_sector_state(planet_id, next), Ok(()));
+    assert_eq!(
+        registry.commit_sector_state(planet_id, next, &mut budget),
+        Ok(())
+    );
 
     let dungeon_key = WorldSectorState::new(
         SectorKey::dungeon(0, 0, 0),
@@ -408,16 +444,17 @@ fn sector_state_revisions_are_monotonic_and_topology_bound() {
     )
     .unwrap();
     assert_eq!(
-        registry.commit_sector_state(planet_id, dungeon_key),
+        registry.commit_sector_state(planet_id, dungeon_key, &mut budget),
         Err(RegistryError::InvalidSectorState)
     );
 }
 
 #[test]
-fn component_sector_state_rehydrates_without_claiming_legacy_objects() {
+fn spawned_component_entity_uses_the_budgeted_entity_effect_path() {
     let worlds = generate_demo_worlds().unwrap();
     let instance = worlds[0].instance;
     let mut owner = registry_from_sample(worlds.to_vec());
+    let mut budget = crate::storage::SnapshotBudget::default();
     let mut components = ComponentRegistry::default();
     let kind = ComponentTypeId::new(1).unwrap();
     let schema = SchemaVersion::new(1).unwrap();
@@ -427,33 +464,28 @@ fn component_sector_state_rehydrates_without_claiming_legacy_objects() {
             name: "demo.marker",
             schema,
             replication: ReplicationPolicy::ServerOnly,
-            migrate: None,
+            visibility: minimium_world::entity::ReplicationVisibility::Global,
         })
         .unwrap();
     let sector = SectorKey::planet(PlanetFace::PositiveY, 3, 4).unwrap();
-    let entity = owner
-        .spawn_component_entity(
-            instance,
-            sector,
-            ObjectOriginId::new(7).unwrap(),
+    owner
+        .apply_entity_effect_batch(
+            &[crate::modules::WorldEffect::SpawnEntity {
+                world: instance,
+                sector,
+                components: vec![crate::modules::ComponentValue {
+                    kind,
+                    schema,
+                    bytes: vec![1, 2, 3],
+                }],
+            }],
+            &mut budget,
             &components,
-            kind,
-            &minimium_world::entity::ComponentBlob::new(schema, vec![1, 2, 3]).unwrap(),
         )
         .unwrap();
-    let saved = owner.sector_states();
-    assert_eq!(saved.len(), 1);
-    let legacy = WorldObjectState::new(ObjectOriginId::new(8).unwrap(), vec![4, 5]).unwrap();
-    assert!(
-        minimium_world::entity::EntityStore::decode_world_object(&components, &legacy)
-            .unwrap()
-            .is_none()
-    );
-    let mut restored = registry_from_sample(worlds.to_vec());
-    restored.restore_sector_states(saved).unwrap();
-    restored.rehydrate_component_objects(&components).unwrap();
+    let entity = owner.get(instance).unwrap().entities.iter().next().unwrap();
     assert_eq!(
-        restored
+        owner
             .get(instance)
             .unwrap()
             .entities
@@ -462,4 +494,5 @@ fn component_sector_state_rehydrates_without_claiming_legacy_objects() {
             .bytes,
         vec![1, 2, 3]
     );
+    assert!(owner.sector_states().is_empty());
 }

@@ -1,12 +1,10 @@
-// Protocol E004-04/05 will provide the server descriptor and context to this adapter.
-use minimium_environment::sky::{
-    resolve_sky_model, try_observer_frame, ObserverError, ObserverFrame, ObserverInput, SkyModel,
-};
 use minimium_environment::EnvironmentDescriptor;
+use minimium_environment::sky::{
+    ObserverError, ObserverFrame, ObserverInput, SkyModel, resolve_sky_model, try_observer_frame,
+};
 use minimium_protocol::WorldContext;
 use minimium_world::world::{Position3Mm, WorldManifest, WorldTopology};
 
-#[allow(dead_code)]
 #[derive(Default)]
 pub struct ObserverAdapter {
     scope: Option<ObserverScope>,
@@ -47,14 +45,12 @@ pub(super) fn camera_reference(
     ))
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ObserverScope {
     context: WorldContext,
     manifest: WorldManifest,
 }
 
-#[allow(dead_code)]
 impl ObserverAdapter {
     /// Builds an observer from a precise supplied position. Render callers may
     /// supply a camera reference; authoritative player observations stay separate.
@@ -93,10 +89,6 @@ impl ObserverAdapter {
                 Err(error)
             }
         }
-    }
-
-    pub fn frame(&self) -> Option<ObserverFrame> {
-        self.frame
     }
 
     pub fn clear(&mut self) {

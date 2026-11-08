@@ -1,4 +1,4 @@
-# Game protocol v17
+# Game protocol v19
 
 `minimium-protocol` defines typed messages and binary encoding without depending
 on TCP, UDP, sockets or a runtime. The current server adapter carries frames over
@@ -10,15 +10,15 @@ Every frame begins with a four-byte header:
 
 | Offset | Size | Meaning |
 | --- | ---: | --- |
-| 0 | 1 byte | Protocol version (`17`) |
+| 0 | 1 byte | Protocol version (`19`) |
 | 1 | 1 byte | Message type |
 | 2 | 2 bytes | Payload length, unsigned little-endian |
 
 The payload follows immediately. Maximum payload is 4096 bytes. Receivers may
 provide partial or concatenated frames; decoders report incomplete input
 without consuming it. Unknown versions, message types, malformed fields and
-oversized payloads are rejected. v16 and v17 are intentionally incompatible;
-there is no fallback parser. The server returns the existing Protocol error for
+oversized payloads are rejected. Every version other than v19 is rejected;
+there is no fallback parser or version migration. The server returns the existing Protocol error for
 an unsupported client version; clients surface the unsupported version header
 when they receive a frame from an older server. Integers and `f32` values are little-endian.
 Movement and position values must be finite; names are 1–24 ASCII letters,
@@ -31,6 +31,23 @@ and 8-byte membership epoch. Gameplay input records and snapshots carry this
 context. The server accepts an input only when all three values match the
 player's current membership. The client discards snapshots from an old context.
 
+Current v19 `WorldInput` movement subtype 7 starts with a nonzero `input_seq`
+and `target_tick` (`u64` each), followed by the movement intent. The client
+starts two ticks ahead and advances target ticks for successive samples. The
+server accepts no more than eight ticks ahead, executes one sample per player
+and tick, retains the newest valid sample for a tick, and acknowledges the
+highest resolved sequence. Late samples are resolved without replaying prior
+physics. Welcome, Snapshot and TransitionCommitted carry the authoritative tick;
+Snapshot carries the server's active movement intent and a safe resolved input
+prefix. The server cannot acknowledge beyond an earlier accepted sample that is
+still executable. A world-context change clears the pending client/server queue
+and begins a new input sequence.
+
+Movement subtype 9 carries the requested speed and acceleration; subtype 10
+carries the flight toggle. Both remain contextual actions and are checked
+against server-granted permissions. The server returns the resulting
+`MovementPolicy` (type `0x92`) with its revision to the requesting connection.
+
 A `WorldManifest` encodes a 16-byte definition ID, one-byte topology, 16-byte
 seed, 4-byte generation revision, 4-byte position quantum, 8-byte content
 revision and 32-byte generator digest, followed by a one-byte planet-definition
@@ -42,22 +59,15 @@ and generator digest in Welcome and transfer preparation before joining a world.
 
 ## Message types
 
-The client sends Presentation then Identify with its 16-byte persistent profile
-ID. Desktop clients receive ContentOffer and complete content preparation before
+The client sends Presentation then Authenticate with a provider ID (1..32 ASCII
+identifier bytes) and credential payload (at most 2048 bytes). The server returns
+a Principal before profile activation. The sample server's `dev.profile` provider
+uses the profile ID only as an insecure development claim. Desktop clients receive ContentOffer and complete content preparation before
 ContentReady allows admission and Welcome. Text/load clients declare no
-presentation and proceed directly to admission. Legacy Identify without a
-Presentation record is treated as headless. The manifest hash and climate are
+presentation and proceed directly to admission. The manifest hash and climate are
 session-wide; world transitions retain the prepared materials and use the
 existing prepare/ready gate for geometry. Content has a 300-second preparation
 deadline separate from the five-second Welcome deadline.
-
-The v15 additions (the earlier message records below remain in use):
-
-| Direction | Type | Payload |
-| --- | --- | --- |
-| Client to server | `0x0d` Presentation | one byte: 0 headless, 1 BC textures, 2 RGBA fallback |
-| Client to server | `0x0e` ContentReady | 32-byte manifest SHA-256; zero denotes base |
-| Server to client | `0x90` ContentOffer | 32-byte manifest SHA-256, HTTP port (`u16`), climate scenario |
 
 The binary climate record contains start/end UTC and global temperature/moisture
 as four little-endian `f64` values, a region count (`u8`, at most 32), then six
@@ -68,17 +78,16 @@ game peer's IP with the offered port; files never traverse the game stream.
 | Direction | Type | Payload |
 | --- | ---: | --- |
 | Client → server | `1` Ping | empty |
-| Client → server | `2` SetName | one-byte name length, then name |
-| Client → server | `3` Move | horizontal input (`f32 x`, `f32 z`), jump flag |
 | Client → server | `4` Quit | empty |
-| Client → server | `5` Identify | 16-byte persistent profile ID; first message only |
-| Client → server | `6` Fire | normalized world direction (`f32 x/y/z`) |
-| Client → server | `7` Chat | one-byte UTF-8 byte length, then 1–128 text bytes |
-| Client → server | `8` WorldInput | context, subtype, then SetName/Move/Fire/Chat/UsePortal/MapTeleport payload |
+| Client → server | `5` Authenticate | provider ID and bounded credential payload |
+| Client → server | `8` WorldInput | context, subtype, then one contextual input payload |
 | Client → server | `9` TransitionReady | 16-byte transition ID and target context |
-| Client → server | `10` UsePortal | empty; legacy unwrapped form is rejected by server admission |
 | Client → server | `11` CancelTransition | 16-byte transition ID |
 | Client → server | `0x0c` TimeProbe | sequence (`u32`) and client monotonic send time (`u64` ms) |
+| Client → server | `0x0d` Presentation | headless or material capability |
+| Client → server | `0x0e` ContentReady | 32-byte manifest SHA-256; zero denotes base |
+| Client → server | `0x0f` ReplicationAck | context, sync ID, revision and accepted flag |
+| Client → server | `0x10` SkyView | current context, unit world-space viewing direction, night flag |
 | Server → client | `0x81` Welcome | player ID, map fingerprint, health, restored position (`i64` millimeters x/y/z), context, manifest, optional transition ID, then 107-byte environment suffix |
 | Server → client | `0x82` Pong | empty |
 | Server → client | `0x83` Accepted | empty |
@@ -91,10 +100,43 @@ game peer's IP with the offered port; files never traverse the game stream.
 | Server → client | `0x8a` TransitionPrepare | transition ID, source/target contexts, fingerprint, destination, target manifest, then 107-byte environment suffix |
 | Server → client | `0x8b` TransitionCommitted | transition ID, target context, fingerprint, destination, health, target manifest, then 107-byte environment suffix |
 | Server → client | `0x8c` TransitionCancelled | transition ID and source context |
-| Server → client | `0x91` AltitudeResult | context; success flag; optional destination (three i64 millimeters) |
 | Server → client | `0x8d` MapTeleportResult | success flag; on success, destination (`i64` millimeters x/y/z) |
 | Server → client | `0x8e` EnvironmentSync | current `WorldContext` (32 bytes), `ClockSample` (58 bytes), and environment descriptor (49 bytes), total 139 bytes |
 | Server → client | `0x8f` TimeProbeReply | sequence, echoed client time, server receive/send monotonic ms and 16-byte session nonce, total 44 bytes |
+| Server → client | `0x90` ContentOffer | 32-byte manifest SHA-256, HTTP port (`u16`), climate scenario |
+| Server → client | `0x91` AltitudeResult | context, success flag, optional destination |
+| Server → client | `0x92` MovementPolicy | server-owned policy and revision |
+| Server → client | `0x93` EntitySyncBegin | context, sync ID, base/target revision and full/delta flag |
+| Server → client | `0x94` EntitySyncRecord | context, sync ID, target revision and entity operation |
+| Server → client | `0x95` EntitySyncComplete | context, sync ID and target revision |
+| Server → client | `0x96` Bolid | context, event ID, server monotonic start ms, appearance seed, start/end world positions in metres, duration ms and size class |
+
+`SkyView` is a bounded presentation hint sent by the desktop client once per
+second. Its context is checked against current membership. The server chooses
+an atmospheric trajectory and sends the same event ID, seed, path and start
+time to nearby clients, with each recipient's current context. Clients discard
+events for an old context or while transferring. Events never enter world save
+or terrain generation. Up to eight short-lived effects are retained for drawing.
+
+Entity synchronization is independent for each client. A full sync uses base
+revision zero and stages an image at one target revision. A delta requires the
+client's acknowledged base revision and stages changes on a copy of that image.
+The server sends component visibility changes plus journal changes after that
+client's revision; journal overrun, a revision gap or a 30-second pending sync
+restarts from a full image. Begin, records and completion all carry the context
+and sync ID; records carry the same target revision. Operations represent
+spawn, component upsert/removal and despawn. Component payloads are
+capped at the shared 2048-byte world limit before allocation and fit within the
+4096-byte frame cap. A sync ID must be nonzero; revision zero is valid for an
+initial full image before any live mutation. Every record carries its sync
+target revision. Client type `0x0f` acknowledges only after the replica commits.
+The client validates registered component types/schemas and entity, component
+and byte budgets while staging. A malformed record, mismatched completion or
+schema failure discards staging without publishing a partial replica. The server
+advances only the acknowledging client's revision after acceptance for the
+active sync. Per-client output is bounded to 64 KiB per replication tick and
+reserves one maximum server frame for control.
+WorldInput subtype `11` is `InteractEntity` and carries a nonzero entity ID.
 
 The Welcome and transition suffix contains a `ClockSample` in this exact order:
 `clock_id:u64`, `revision:u64`, `session_nonce:[u8;16]`,
@@ -138,9 +180,11 @@ restart bootstrap without catch-up probes. Status becomes Stale after fifteen
 seconds without a fresh sample/probe and Unavailable after sixty seconds; there
 is no client-wall-clock fallback for network sessions.
 
-For `WorldInput`, subtypes are `1` SetName, `2` Move, `3` Fire, `4` Chat and
-`5` UsePortal, `6` MapTeleport (unit direction, three `f32` values), `7` Motion
-and `8` SetAltitude (finite `f32` kilometres, 0..10000). SetAltitude requires fly
+For current v19 `WorldInput`, subtype `11` is `InteractEntity` with a nonzero
+world-scoped entity ID. The previous no-target `UsePortal` subtype is removed.
+Current movement uses subtype `7` with numbered input and target tick;
+`MapTeleport` uses a unit direction (three `f32` values), and `SetAltitude`
+uses finite `f32` kilometres in 0..10000. SetAltitude requires fly
 mode and a planet; the server also checks transfer state and coordinate bounds.
 Earth relief scaling applies to the requested height above local collision terrain.
 AltitudeResult carries the request context so clients can discard stale results. The client session wraps ordinary gameplay messages in this record
@@ -149,14 +193,15 @@ validates the target manifest. The server commits ready transfers at a tick
 boundary and forces a full snapshot in the new context. A cancellation succeeds
 only before that commit.
 
-Snapshots begin with monotonic server time (`u64`), the 32-byte context, local
-position (three `i64` millimeters) and velocity (three `f32` values), a grounded flag, full/delta
-flag, and one-byte update/removal counts. Each update contains player ID, name
+Snapshots begin with monotonic server time (`u64`), the server tick and resolved
+input sequence (`u64` each), the 32-byte context, the active movement intent,
+local position (three `i64` millimeters) and velocity (three `f32` values), a
+grounded flag, full/delta flag, and one-byte update/removal counts. Each update contains player ID, name
 and position (`i64` millimeters per axis); each removal contains a player ID. Both lists are bounded to 16.
 The server advances a per-client baseline only after queuing a snapshot
-successfully. The maximum legal snapshot is 1120 payload bytes (1124 including
+successfully. The maximum legal snapshot is 1133 payload bytes (1137 including
 the header), with 16 updates and 16 removals; server output reservations cover
-that bound and every v13 message.
+that bound and every current v19 message.
 Portal transition destinations also use three `i64` millimeter coordinates.
 
 ## Runtime policy and persistence
@@ -170,32 +215,20 @@ server accepts at most two probes per active connection in each sliding second.
 serialization/queue time, not the network card's transmit time. These are
 runtime policies, not frame requirements.
 
-Save format v9 records every loaded world's manifest and map fingerprint, each
-player's instance, quantized position, orientation, health and return location,
-revisioned sector object state, and one `CLOCK` record. The record stores clock
-ID, revision, mode, saved world UTC, capture wall UTC, rate in ppm and offline
-policy. It appears after `WORLD` records and before any `SECTOR` or player
-record. It is part of the same bounded snapshot and atomic replacement; process
-nonce and monotonic timestamps are not persisted. The loader requires exactly
-one valid clock in v8/v9 and rejects the record in older versions. v2–v7 retain
-their migration rules and initialize a RealTime clock at current UTC; v8/v9
-RealTime also resumes at current UTC, while TimeScale follows its saved
-`pause` or nonnegative `advance` policy. v2/v3 snapshots are migrated only to a
-loaded legacy map whose fingerprint matches the saved header. The intermediate
-v4 format is accepted only when player and return locations use the primary
-instance because it did not pin target manifests. This prevents old coordinates
-from being assigned to a new procedural planet. Snapshots are limited to 16 MiB;
-an oversized write is rejected before replacing the previous snapshot.
-A v8 rate remains capped at 1440x when read; new v9 snapshots can store up to 1,000,000x.
+Save persistence is format v10 and its record and budget contract is documented
+in `crates/storage/README.md`. Earlier snapshot versions are rejected; the
+loader does not migrate or replace them. Use a separate data directory to
+create a v10 world. Snapshot writes count and stream the same encoding through
+a bounded temporary file before atomic replacement; a rejected or failed write
+before replacement preserves the prior complete snapshot. World generator
+revision 5 is the current generated-content contract. Other revisions are
+rejected rather than reinterpreted. Generator, save and protocol revisions are
+independent.
 
-The current TCP adapter has no public-game authentication or encryption. The
-profile ID is a reconnect identifier, not proof of account ownership. Gameplay,
-transfer, migration and reconnect have workspace coverage. A wire-level v9
-demonstration also completed planet → dungeon → planet and restored the profile
-after a graceful server restart. These results do not verify the rendered GPU
-scene; that transfer still needs visual review.
+The development authentication provider is a local identity claim, not an
+account system. The current TCP game adapter does not provide public account
+authentication or TLS. This source contract does not establish performance,
+network resilience or rendered-scene acceptance.
 
-Version 17 also adds ClimateScenario.relief_influence (f64, finite 0..1) after
-global moisture and before the region count in ContentOffer. Missing values are
-not accepted on the wire; old saved RON scenarios default to 0 before encoding.
-Headless peers consume the same definitions without renderer dependencies.
+Every gameplay input uses `WorldInput` and a full `WorldContext`; the movement
+form is `Motion`. The decoder rejects every wire version other than v19.

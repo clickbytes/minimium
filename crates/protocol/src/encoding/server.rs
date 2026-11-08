@@ -3,7 +3,7 @@ use crate::{
     content_codec, environment_codec,
     kinds::ServerKind,
     limits::*,
-    models::{ProtocolError, ServerMessage},
+    models::{EntityReplicationOperation, ProtocolError, ServerMessage},
 };
 
 pub fn encode_server(message: &ServerMessage) -> Result<Vec<u8>, ProtocolError> {
@@ -21,6 +21,108 @@ pub fn encode_server_into(
     let payload_start = frame.len();
     let encoded = (|| {
         let kind = match message {
+            ServerMessage::Bolid { context, event } => {
+                if !event.valid() {
+                    return Err(ProtocolError::InvalidPayload);
+                }
+                write_world_context(*context, frame);
+                frame.extend_from_slice(&event.id.to_le_bytes());
+                frame.extend_from_slice(&event.start_monotonic_ms.to_le_bytes());
+                frame.extend_from_slice(&event.seed.to_le_bytes());
+                write_vector(event.start_world_m, frame)?;
+                write_vector(event.end_world_m, frame)?;
+                frame.extend_from_slice(&event.duration_ms.to_le_bytes());
+                frame.push(event.kind);
+                ServerKind::Bolid
+            }
+            ServerMessage::MovementPolicy(policy) => {
+                if !policy.valid() {
+                    return Err(ProtocolError::InvalidPayload);
+                }
+                frame.push(u8::from(policy.can_fly));
+                frame.extend_from_slice(&policy.speed.to_le_bytes());
+                frame.extend_from_slice(&policy.accel.to_le_bytes());
+                frame.extend_from_slice(&policy.revision.to_le_bytes());
+                ServerKind::MovementPolicy
+            }
+            ServerMessage::EntitySyncBegin {
+                context,
+                sync_id,
+                base_revision,
+                target_revision,
+                full,
+            } => {
+                if *sync_id == 0
+                    || target_revision < base_revision
+                    || (*full && *base_revision != 0)
+                {
+                    return Err(ProtocolError::InvalidPayload);
+                }
+                write_world_context(*context, frame);
+                frame.extend_from_slice(&sync_id.to_le_bytes());
+                frame.extend_from_slice(&base_revision.to_le_bytes());
+                frame.extend_from_slice(&target_revision.to_le_bytes());
+                frame.push(u8::from(*full));
+                ServerKind::EntitySyncBegin
+            }
+            ServerMessage::EntitySyncRecord {
+                context,
+                sync_id,
+                revision,
+                operation,
+            } => {
+                if *sync_id == 0 {
+                    return Err(ProtocolError::InvalidPayload);
+                }
+                write_world_context(*context, frame);
+                frame.extend_from_slice(&sync_id.to_le_bytes());
+                frame.extend_from_slice(&revision.to_le_bytes());
+                match operation {
+                    EntityReplicationOperation::Spawn { entity } => {
+                        frame.push(1);
+                        frame.extend_from_slice(&entity.get().to_le_bytes());
+                    }
+                    EntityReplicationOperation::ComponentUpsert {
+                        entity,
+                        kind,
+                        schema,
+                        bytes,
+                    } => {
+                        if bytes.len() > MAX_COMPONENT_BYTES {
+                            return Err(ProtocolError::InvalidPayload);
+                        }
+                        frame.push(2);
+                        frame.extend_from_slice(&entity.get().to_le_bytes());
+                        frame.extend_from_slice(&kind.get().to_le_bytes());
+                        frame.extend_from_slice(&schema.get().to_le_bytes());
+                        frame.extend_from_slice(&(bytes.len() as u16).to_le_bytes());
+                        frame.extend_from_slice(bytes);
+                    }
+                    EntityReplicationOperation::ComponentRemove { entity, kind } => {
+                        frame.push(3);
+                        frame.extend_from_slice(&entity.get().to_le_bytes());
+                        frame.extend_from_slice(&kind.get().to_le_bytes());
+                    }
+                    EntityReplicationOperation::Despawn { entity } => {
+                        frame.push(4);
+                        frame.extend_from_slice(&entity.get().to_le_bytes());
+                    }
+                }
+                ServerKind::EntitySyncRecord
+            }
+            ServerMessage::EntitySyncComplete {
+                context,
+                sync_id,
+                target_revision,
+            } => {
+                if *sync_id == 0 {
+                    return Err(ProtocolError::InvalidPayload);
+                }
+                write_world_context(*context, frame);
+                frame.extend_from_slice(&sync_id.to_le_bytes());
+                frame.extend_from_slice(&target_revision.to_le_bytes());
+                ServerKind::EntitySyncComplete
+            }
             ServerMessage::ContentOffer {
                 material_hash,
                 http_port,
@@ -32,6 +134,7 @@ pub fn encode_server_into(
                 ServerKind::ContentOffer
             }
             ServerMessage::Welcome {
+                server_tick,
                 id,
                 map_fingerprint,
                 health,
@@ -47,6 +150,7 @@ pub fn encode_server_into(
                     return Err(ProtocolError::InvalidPayload);
                 }
                 frame.extend_from_slice(&id.get().to_le_bytes());
+                frame.extend_from_slice(&server_tick.to_le_bytes());
                 frame.extend_from_slice(&map_fingerprint.to_le_bytes());
                 frame.extend_from_slice(&health.to_le_bytes());
                 let _ = position;
@@ -122,8 +226,11 @@ pub fn encode_server_into(
             }
             ServerMessage::Snapshot {
                 server_time_ms,
+                server_tick,
+                resolved_input_seq,
                 context,
                 full_snapshot,
+                self_movement,
                 self_position,
                 self_position_mm,
                 self_velocity,
@@ -139,7 +246,10 @@ pub fn encode_server_into(
                     return Err(ProtocolError::InvalidPayload);
                 }
                 frame.extend_from_slice(&server_time_ms.to_le_bytes());
+                frame.extend_from_slice(&server_tick.to_le_bytes());
+                frame.extend_from_slice(&resolved_input_seq.to_le_bytes());
                 write_world_context(*context, frame);
+                crate::movement_codec::write(*self_movement, frame)?;
                 let _ = self_position;
                 write_position_mm(*self_position_mm, frame);
                 write_vector(*self_velocity, frame)?;
@@ -180,6 +290,7 @@ pub fn encode_server_into(
             }
             ServerMessage::TransitionCommitted {
                 transition_id,
+                server_tick,
                 context,
                 map_fingerprint,
                 destination,
@@ -193,6 +304,7 @@ pub fn encode_server_into(
                     return Err(ProtocolError::InvalidPayload);
                 }
                 frame.extend_from_slice(&transition_id.get().to_le_bytes());
+                frame.extend_from_slice(&server_tick.to_le_bytes());
                 write_world_context(*context, frame);
                 frame.extend_from_slice(&map_fingerprint.to_le_bytes());
                 let _ = destination;

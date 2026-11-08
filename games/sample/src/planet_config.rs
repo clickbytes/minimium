@@ -64,7 +64,6 @@ impl Preset {
 #[serde(deny_unknown_fields)]
 pub struct ResolvedPlanetConfig {
     pub version: u32,
-    #[serde(default = "legacy_generator_revision")]
     pub generator_revision: u32,
     // RON's serializer rejects u128 integers; preserve all 128 bits as decimal text.
     #[serde(with = "seed_string")]
@@ -81,10 +80,6 @@ pub struct ResolvedPlanetConfig {
     pub mountain_band_frequency: u32,
     pub earth_package: Option<PathBuf>,
     pub package_digest: [u8; 32],
-}
-
-const fn legacy_generator_revision() -> u32 {
-    3
 }
 
 mod seed_string {
@@ -112,7 +107,7 @@ impl ResolvedPlanetConfig {
         value ^= value >> 31;
         Self {
             version: 1,
-            generator_revision: 3,
+            generator_revision: 5,
             seed,
             mode: PlanetMode::Procedural,
             radius_mm: 617_500_000 + value % 65_000_001,
@@ -133,18 +128,7 @@ impl ResolvedPlanetConfig {
         resolved.version = preset.version.unwrap_or(1);
         resolved.mode = preset.mode.unwrap_or(PlanetMode::Procedural);
         resolved.peak_relief = preset.peak_relief;
-        resolved.generator_revision =
-            preset
-                .generator_revision
-                .unwrap_or(if resolved.mode == PlanetMode::Earth {
-                    if resolved.peak_relief.is_some() {
-                        5
-                    } else {
-                        4
-                    }
-                } else {
-                    3
-                });
+        resolved.generator_revision = preset.generator_revision.unwrap_or(5);
         if resolved.mode == PlanetMode::Earth {
             resolved.radius_mm = 650_000_000;
             resolved.height_scale_permille = 100;
@@ -172,19 +156,17 @@ impl ResolvedPlanetConfig {
         if self.version != 1 {
             return Err(invalid("unsupported planet preset version"));
         }
-        if !matches!(self.generator_revision, 3 | 4 | 5)
-            || self.generator_revision >= 4 && self.mode != PlanetMode::Earth
-        {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, format!(
-                "unsupported planet generator revision {} for {:?}; supported: 3, or 4/5 for Earth. The saved world is unchanged. For a new Earth world, run start-earth.ps1 -ResetWorld (backs up the previous directory).",
-                self.generator_revision, self.mode
-            )));
+        if self.generator_revision != 5 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "unsupported planet generator revision {}; only revision 5 is supported",
+                    self.generator_revision
+                ),
+            ));
         }
         if let Some(curve) = self.peak_relief {
-            if self.mode != PlanetMode::Earth
-                || self.generator_revision != 5
-                || !curve.definition().is_valid()
-            {
+            if self.mode != PlanetMode::Earth || !curve.definition().is_valid() {
                 return Err(invalid("peak_relief requires Earth v5, 1..3x, exponent 1..8 and 0 <= start_m < full_m <= 12000"));
             }
         }
