@@ -81,5 +81,3 @@ over its total projected geometry area; it does not multiply source power by
 trail length. A deposition-driven persistent train is the next trail stage.
 HDR exposure and output transfer remain shared. Absolute radiometry and visual
 acceptance are not claimed; units here establish a consistent local model.
-
-
