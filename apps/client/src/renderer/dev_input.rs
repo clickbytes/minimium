@@ -57,6 +57,16 @@ pub(super) fn execute(renderer: &mut Renderer, line: &str) -> bool {
                 .filter(|(_, head)| head[3] > 1e-6)
                 .collect();
             heads.sort_by(|a, b| b.1[3].total_cmp(&a.1[3]));
+            let screen = |head: [f32; 4]| {
+                let point = glam::Vec3::new(head[0], head[1], head[2]);
+                let clip = matrix * point.extend(1.0);
+                (clip.w > 0.0 && clip.is_finite()).then(|| {
+                    glam::Vec2::new(clip.x, clip.y) / clip.w
+                        * glam::Vec2::new(view.viewport[0] as f32, view.viewport[1] as f32)
+                        * 0.5
+                })
+            };
+            let brightest = heads.first().and_then(|(_, head)| screen(*head));
             println!(
                 "bolid frame {event_index} age={} emitting={}",
                 event.start_age[3],
@@ -68,8 +78,14 @@ pub(super) fn execute(renderer: &mut Renderer, line: &str) -> bool {
                 let tail = glam::Vec3::new(tail[0], tail[1], tail[2]);
                 let clip = matrix * point.extend(1.0);
                 let ndc = clip.truncate() / clip.w;
+                let separation_px = brightest.zip(screen(head)).map(|(a, b)| a.distance(b));
+                let kind = if event.optics[index][3] >= 1.0 {
+                    "grains"
+                } else {
+                    "solid"
+                };
                 println!(
-                    "  emitter={index} power={} wake_world_m={} ndc={:?}",
+                    "  emitter={index} kind={kind} power={} wake_world_m={} ndc={:?} separation_from_brightest_px={separation_px:?}",
                     head[3],
                     point.distance(tail),
                     ndc.to_array()

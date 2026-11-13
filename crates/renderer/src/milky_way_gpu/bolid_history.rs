@@ -1,5 +1,5 @@
 //! Cached observer-independent emission/deposition history.
-use super::bolid_dynamics::{Body, Dynamics, Material, BODY_COUNT};
+use super::bolid_dynamics::{Body, Dynamics, Material, BODY_COUNT, SOLID_COUNT};
 use glam::DVec3;
 
 pub const FRAME_DT: f64 = 0.04;
@@ -86,6 +86,9 @@ pub struct EvolutionDiagnostics {
     pub deposited_mass_kg: f64,
     pub fractures: u32,
     pub grain_releases: u32,
+    /// Concurrent solid emitters above 100 W and 1% of total light, excluding grains.
+    pub peak_solid_emitters: u32,
+    pub fragment_luminous_s: f32,
     pub luminous_end_s: f32,
     pub emission_episodes: u32,
     pub peak_radiant_power_w: f64,
@@ -188,7 +191,15 @@ pub fn build(
     let peak_frame = frames.iter().position(|f| f.power == peak).unwrap_or(0);
     let mut episodes = 0;
     let mut emitting = false;
+    let mut peak_solid_emitters = 0;
+    let mut fragment_frames = 0;
     for frame in &frames {
+        let solid_emitters = frame.emitters[..SOLID_COUNT]
+            .iter()
+            .filter(|emitter| emitter.power > (frame.power * 0.01).max(1e-6))
+            .count() as u32;
+        peak_solid_emitters = peak_solid_emitters.max(solid_emitters);
+        fragment_frames += u32::from(solid_emitters >= 2);
         if !emitting && frame.power > peak * 0.12 {
             episodes += 1;
             emitting = true;
@@ -203,6 +214,8 @@ pub fn build(
         deposited_mass_kg: dynamics.vaporized + dynamics.unresolved_grains,
         fractures: dynamics.fractures,
         grain_releases: dynamics.grain_releases,
+        peak_solid_emitters,
+        fragment_luminous_s: fragment_frames as f32 * FRAME_DT as f32,
         luminous_end_s: luminous_end as f32,
         emission_episodes: episodes,
         peak_radiant_power_w: f64::from(peak) * 1e8,

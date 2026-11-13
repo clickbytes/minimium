@@ -272,8 +272,8 @@ and terminal fragmentation. Strength/damage, exposed area, velocity and remainin
 mass drive emission. Wire duration sets initial velocity, not a fade deadline.
 Twelve solid-body slots and eight grain packets bound fragmentation and erosion.
 Children inherit momentum and can fail again; seeded transverse breakup
-directions span both axes while the recoil preserves total momentum; unresolved grains remain in mass
-accounting. This is a visual entry model, not plasma chemistry or impact physics.
+directions span both axes. Recoil balances transverse momentum; aerodynamic
+dispersion spends forward kinetic energy. Unresolved grains remain in mass accounting. This is a visual entry model, not plasma chemistry or impact physics.
 Cooling gas contracts after a flare; there is no inward material implosion.
 
 Histories contain at most 1501 snapshots at 40 ms spacing, each advanced by four
@@ -922,3 +922,36 @@ Runtime acceptance remains pending: compare pre/post frame times for 1/8/64
 requested bolids, isolated spawn latency, sky/ground flash synchronization,
 fragment separation, HDR/fallback, cloud cover, horizon/orbit and world transfer.
 No new FPS result or screenshot is claimed. Tests remain deferred by AGENTS.md.
+
+## Breakup readability follow-up (2026-11-13)
+
+The previous Burst family had only one binary split into similar-sized pieces.
+Those pieces had similar deceleration and could remain visually unresolved.
+Bright kind-2 events now allocate nine of twelve seeded family buckets to Burst,
+Cascade or TerminalFlare (three each), retaining Smooth, Eroding and Intermittent.
+This is a selection weighting, not a measured breakup success rate. Weaker
+kind-0/1 family weighting and automatic event frequency are unchanged.
+
+A pressure failure can release up to three daughters for Burst, three in the
+first Cascade generation and five for TerminalFlare, subject to the existing
+twelve-solid pool. Seeded masses span large survivors and small, rapidly braking
+pieces; a single bright blob is no longer the only likely geometric result.
+Burst strength is 0.15 MPa before existing seed/kind scaling; TerminalFlare stays
+at 0.3 MPa, preserving a later failure. A robust transverse basis handles radial
+entry too. All children share the actual breakup point and time. Mass and gas
+power are partitioned exactly; transverse recoil balances, and dispersion spends
+at most 1% of forward kinetic energy rather than adding an unbudgeted flash.
+The reduced model does not represent an inward implosion.
+
+Individual fresh wakes now retain 0.45 s of each emitter history with a smooth
+0.35..0.45 s handoff to the shared cooling train. Primitive bounds include the
+longer expansion. GPU allocations, eight-event/20-emitter limits and 63 emission
+primitives per event are unchanged; this is not a new full-screen particle pass.
+
+EvolutionDiagnostics adds peak_solid_emitters and fragment_luminous_s, counting
+solid emitters above 100 W and 1% of total emission, excluding grain packets.
+The client dev bolid fragments diagnostic reports solid/grain classification
+and projected distance from the brightest emitter in pixels. These are
+diagnostics for subsequent visual acceptance, not evidence that every viewing
+angle resolves all physical fragments. Static compilation/WGSL validation
+passes; runtime acceptance remains pending under the project test policy.

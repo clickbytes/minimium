@@ -495,3 +495,8 @@ stale results. Once ready, a history is sampled at current server age, so it
 does not restart late or desynchronize its sky emission and point light.
 Closing the renderer drops both channel ends; the worker exits after its bounded
 current job. No game/world/protocol effects execute in that worker.
+
+The dev bolid fragments diagnostic also reports solid/grain type and projected
+pixel separation from the brightest emitter. Dev bolid status includes the
+cached number and duration of simultaneously luminous solid fragments; these
+help distinguish missing fragmentation from unresolved distant fragments.

@@ -7,7 +7,8 @@ use super::{
 use glam::{DVec3, Vec3};
 
 // Keep the fresh-wake handoff in sync with bolid.wgsl.
-const FRESH_WAKE_SECONDS: f32 = 0.25;
+const FRESH_WAKE_SECONDS: f32 = 0.45;
+const FRESH_WAKE_HANDOFF: f32 = 0.35;
 const FRESH_WAKE_SHARE: f32 = 0.7;
 
 pub struct BolidEvolution {
@@ -206,7 +207,9 @@ impl BolidEvolution {
                     })
                     .map(|(_, past)| past.power)
                     .sum();
-                let t = ((elapsed - 0.18) / (FRESH_WAKE_SECONDS - 0.18)).clamp(0.0, 1.0);
+                let t = ((elapsed - FRESH_WAKE_HANDOFF)
+                    / (FRESH_WAKE_SECONDS - FRESH_WAKE_HANDOFF))
+                    .clamp(0.0, 1.0);
                 let share = FRESH_WAKE_SHARE * (1.0 - t * t * (3.0 - 2.0 * t));
                 fresh *= 1.0 - share * (represented / deposited_power).clamp(0.0, 1.0);
             }

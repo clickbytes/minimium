@@ -146,9 +146,9 @@ fn bolid_wake(ray: vec3<f32>, index: u32, f: u32) -> vec3<f32> {
     let dilution=min(physical_width/max(width,1e-8),1.0);
     if angle>width*4.0 || !bolid_visible(mix(tail.xyz,head.xyz,t)) { return vec3<f32>(0.0); }
     let grain_nodes=1.0-floor(optics.w)*0.35*(0.5+0.5*sin(t*37.0+f32(f)*2.7));
-    // Same 70%/0.25 s fresh-emission handoff as bolid_model.rs.
+    // Same 70%/0.45 s fresh-emission handoff as bolid_model.rs.
     // Old gas returns smoothly to the common cooling train.
-    let share=0.7*(1.0-smoothstep(0.18,0.25,elapsed));
+    let share=0.7*(1.0-smoothstep(0.35,0.45,elapsed));
     let power=mix(tail.w,head.w,t)*exp(-elapsed/0.45)
         *share*initial_width/wake_width;
     return record_bolid_distance(mix(tail.xyz,head.xyz,t),

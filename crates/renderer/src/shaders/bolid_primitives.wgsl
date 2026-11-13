@@ -29,7 +29,7 @@ fn bolid_quad(vertex: u32, instance: u32, dust: bool) -> BolidVertex {
         support=max(bolids.events[event].optics[slot].x,2.0/scale)*9.0;
         if part>=20u {
             b=bolids.events[event].tails[slot];
-            support=(max(bolids.events[event].optics[slot].x,8.0/scale)+2.0/scale)*4.0;
+            support=(max(bolids.events[event].optics[slot].x,8.0/scale)+4.0/scale)*4.0;
         }
         enabled=enabled && max(a.w,b.w)>0.000001;
     } else {

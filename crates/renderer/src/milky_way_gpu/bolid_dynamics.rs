@@ -1,5 +1,6 @@
 //! Reduced atmospheric-entry dynamics. SI internally; no world/impact effects.
 use glam::DVec3;
+mod breakup;
 
 pub const BODY_COUNT: usize = 20;
 pub const SOLID_COUNT: usize = 12;
@@ -41,11 +42,26 @@ impl Material {
             BolidFamily::Intermittent,
             BolidFamily::TerminalFlare,
         ];
-        let family = families[(variation(seed, 19) * 6.0) as usize % 6];
+        let selection = variation(seed, 19);
+        let family = if kind == 2 {
+            // Bright specimens: 3/4 of seed buckets favor explicit breakups.
+            // Weak automatic meteors retain the original six-family weighting.
+            match (selection * 12.0) as usize {
+                0 => BolidFamily::Smooth,
+                1 => BolidFamily::Eroding,
+                2 => BolidFamily::Intermittent,
+                3..=5 => BolidFamily::Burst,
+                6..=8 => BolidFamily::Cascade,
+                _ => BolidFamily::TerminalFlare,
+            }
+        } else {
+            families[(selection * 6.0) as usize % 6]
+        };
         let strength = match family {
             BolidFamily::Smooth => 8e6,
             BolidFamily::Eroding => 1e5,
-            BolidFamily::Burst | BolidFamily::TerminalFlare => 3e5,
+            BolidFamily::Burst => 1.5e5,
+            BolidFamily::TerminalFlare => 3e5,
             BolidFamily::Cascade => 2e4,
             BolidFamily::Intermittent => 7e4,
         } * (0.6 + variation(seed, 3))
@@ -230,61 +246,6 @@ impl Dynamics {
         range
             .into_iter()
             .find(|&i| self.bodies[i].mass < 1e-10 && self.bodies[i].gas < 10.0)
-    }
-
-    fn fracture(&mut self, index: usize, time: f64) {
-        let Some(slot) = self.vacant(1..SOLID_COUNT) else {
-            return;
-        };
-        let parent = self.bodies[index];
-        let ratio = 0.25 + variation(self.material.seed, self.serial + 30) * 0.3;
-        let axis = parent.velocity.normalize_or_zero();
-        let lateral = axis
-            .cross(parent.position.normalize_or_zero())
-            .normalize_or_zero();
-        // Breakup directions occupy the transverse plane, not a single fixed
-        // axis that collapses all daughter wakes when viewed edge-on.
-        let transverse = axis.cross(lateral).normalize_or_zero();
-        let azimuth = variation(self.material.seed, self.serial + 91) * std::f64::consts::TAU;
-        let spread = (lateral * azimuth.cos() + transverse * azimuth.sin())
-            * (30.0 + variation(self.material.seed, self.serial + 90) * 120.0);
-        let child_mass = parent.mass * ratio;
-        let cascade = matches!(
-            self.material.family,
-            BolidFamily::Cascade | BolidFamily::TerminalFlare
-        );
-        let strength_gain = if cascade { 1.25 } else { 2.8 };
-        self.serial += 1;
-        self.bodies[slot] = Body {
-            mass: child_mass,
-            birth_position: parent.position,
-            initial_mass: child_mass,
-            velocity: parent.velocity + spread,
-            generation: parent.generation + 1,
-            strength: parent.strength * strength_gain,
-            damage: 0.0,
-            age: 0.0,
-            birth: time,
-            last_break: time,
-            shed: 0.0,
-            deposited: 0.0,
-            power: parent.power * ratio,
-            birth_power: parent.power * ratio,
-            gas: parent.gas * ratio,
-            serial: self.serial,
-            ..parent
-        };
-        let remaining = &mut self.bodies[index];
-        remaining.mass -= child_mass;
-        remaining.initial_mass = remaining.mass;
-        remaining.velocity -= spread * ratio / (1.0 - ratio);
-        remaining.gas *= 1.0 - ratio;
-        remaining.power *= 1.0 - ratio;
-        remaining.generation += 1;
-        remaining.strength *= strength_gain;
-        remaining.damage = 0.0;
-        remaining.last_break = time;
-        self.fractures += 1;
     }
 
     fn release_grains(&mut self, index: usize, time: f64) {
