@@ -259,6 +259,11 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
             }
         }
         FrontendAction::SkyMeteorsStatus => {
+            renderer
+                .application
+                .ui
+                .console
+                .push_line(super::meteor_diagnostics::optical_status(renderer));
             for line in renderer.meteors.status_lines() {
                 renderer.application.ui.console.push_line(line);
             }

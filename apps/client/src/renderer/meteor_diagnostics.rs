@@ -30,6 +30,22 @@ pub(super) fn push(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
     );
     let status = renderer.gpu.meteors_status;
     let gpu = &renderer.gpu.milky_way.meteors;
+    snapshot.push(
+        "meteors_optical_heads",
+        if renderer.gpu.transient_enabled {
+            gpu.optical_heads
+        } else {
+            0
+        },
+    );
+    snapshot.push(
+        "meteors_optics",
+        if renderer.gpu.atmosphere_gpu.is_active() {
+            "bounded Mie halo"
+        } else {
+            "analytic narrow halo"
+        },
+    );
     snapshot.push("meteors_segments", gpu.count);
     snapshot.push("meteors_dust_segments", gpu.dust_segments);
     snapshot.push("meteors_emission_segments", gpu.emission_segments);
@@ -50,4 +66,26 @@ pub(super) fn push(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
             "violation"
         },
     );
+}
+
+pub(super) fn optical_status(renderer: &Renderer) -> String {
+    format!(
+        "meteors optics: {}, selected sources {}, halo heads {}, light {}",
+        if renderer.gpu.atmosphere_gpu.is_active() {
+            "bounded atmospheric halo"
+        } else {
+            "analytic narrow fallback"
+        },
+        renderer.gpu.transient_count,
+        if renderer.gpu.transient_enabled {
+            renderer.gpu.milky_way.meteors.optical_heads
+        } else {
+            0
+        },
+        if renderer.gpu.transient_enabled {
+            "on"
+        } else {
+            "off"
+        }
+    )
 }

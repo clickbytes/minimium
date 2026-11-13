@@ -216,7 +216,10 @@ fn transient_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
             );
             assert_eq!(global.space, naga::AddressSpace::Uniform);
             if !info.get_entry_point(index)[handle].is_empty() {
-                assert_eq!(entry.stage, naga::ShaderStage::Fragment);
+                assert!(matches!(
+                    entry.stage,
+                    naga::ShaderStage::Vertex | naga::ShaderStage::Fragment
+                ));
             }
         }
     }

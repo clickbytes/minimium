@@ -451,3 +451,8 @@ E047-11 adds bounded published-cloud light-path proxies to the same frame
 uniform (now 2288 bytes), shared by terrain, world, water, dust and cloud
 scattering. The transmission diagnostic and self-shadow approximation are
 documented in docs/weather.md; no weather remeshing occurs at a flash.
+
+E047-12 adds a bounded atmospheric halo to existing bright meteor head quads,
+with a narrow analytic fallback and no transient LUT invalidation. Shared
+emission storage now reserves additive HDR headroom; status reports optical
+mode/source counts. Energy and pass-order details are in docs/ambient-meteors.md.

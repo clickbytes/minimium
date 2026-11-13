@@ -288,3 +288,50 @@ The existing weather publication supplies real bases, thicknesses and optical
 depth. No generation, mesh cache, worker, Sun/Moon shadow or pass-order change.
 See docs/weather.md for bounded costs, source-level A/B reasoning, approximations
 and the diagnostic sky meteors debug light transmission mode.
+
+
+## E047-12: bounded optical halo and HDR path
+
+The existing meteor instance producer marks heads that correspond to selected
+transient lights. Their quad expands by at most four sigma (sigma <=0.006 rad),
+rather than drawing a fullscreen flash. meteor_optics.wgsl derives a normalized
+angular Gaussian from the same head radiance/radius and physical received flux.
+A smooth brightness gate suppresses weak sources. Mie/molecular balance,
+closest atmospheric altitude, path extinction and observed distance control the
+halo; the scattering budget is at most 8% of the lost head energy, additionally
+attenuated to the observer. The analytic fallback uses a narrower 0.0015-rad
+sigma and 1.5% lost-energy budget. This is a single-scattering approximation,
+not plasma spectroscopy, optical bloom or volumetric multiple scattering.
+
+The 40-ms interpolated physical history and continuous brightness gate supply
+the same time evolution to emission, local lighting and halo; no frame-random
+flash color or global exposure adjustment is added. Faint/no-selected-light
+frames execute the previous core/wake path without the halo. Heads hidden by
+the planet are disabled; halo pixels additionally check the planet at their
+own ray, and terrain depth clips the emitting plane. Shared finite distance
+and cloud transmission apply exactly once to the combined head/halo layer.
+
+Resource/exposure map:
+- Existing Sun/Moon sky/aerial LUTs retain their original invalidation key.
+  Transient lights are not inserted into that key or compute shaders.
+- Main surfaces emit linear HDR through tone_map_linear (pre-exposure only).
+- Atmosphere composes existing LUT scattering/transmission before the meteor
+  layer. The meteor shader applies camera-path transmission and pre-exposure.
+- Cloud OIT and finite-layer resolve precede final encode_output tone mapping;
+  UI retains its existing separate display-space path.
+- Fallback retains the shared finite layer until cloud extinction and tone maps
+  emission once in bolid_composite; it requires no atmosphere compute.
+  The existing finite-emission target still uses rgba16f; this change does not
+  claim support for hardware without that target format.
+
+HDR storage guards reserve <=30000 for the single aggregate server-bolid draw
+and <=30000 across all 144 cosmetic instances, preserving RGB ratios. This
+prevents emission-target additive half-float overflow; it is not tone mapping.
+The final shoulder also bounds its input before the rational curve, avoiding
+Inf/Inf after extreme framebuffer values. These guards affect only extreme
+overbright values and are not a calibrated camera response or exposure model.
+No extra texture/pass or dynamic LUT rebuild is introduced.
+
+sky meteors status and sky info report optical mode, selected sources and
+eligible halo-head count. These are prepared counts, not measured GPU pixels.
+Runtime orbit/horizon, color and HDR/fallback visual acceptance remains E047-17.

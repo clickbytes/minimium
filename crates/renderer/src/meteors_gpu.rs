@@ -29,6 +29,7 @@ pub struct MeteorGpu {
     pub emission_segments: u32,
     pub upload_bytes: u64,
     pub rejected_low: u32,
+    pub optical_heads: u32,
     pub draw_count: std::cell::Cell<u32>,
 }
 
@@ -110,6 +111,7 @@ impl MeteorGpu {
             emission_segments: 0,
             upload_bytes: 0,
             rejected_low: 0,
+            optical_heads: 0,
             draw_count: std::cell::Cell::new(0),
         }
     }
@@ -121,6 +123,7 @@ impl MeteorGpu {
         self.emission_segments = 0;
         self.draw_count.set(0);
         self.rejected_low = 0;
+        self.optical_heads = 0;
         for core in frame.cores() {
             if frame.physical_height(core.position_rel_m) < frame.minimum_height_m() {
                 self.rejected_low += 1;
@@ -143,6 +146,14 @@ impl MeteorGpu {
                 core.position_rel_m[2],
                 core.radius_m,
             ];
+            let optical_source = frame
+                .lights()
+                .iter()
+                .position(|light| light.id == core.id)
+                .map_or(0.0, |index| (index + 1) as f32);
+            if optical_source > 0.0 && frame.head_visible(core) {
+                self.optical_heads += 1;
+            }
             segments[self.count as usize] = Segment {
                 start: head,
                 end: head,
@@ -151,7 +162,7 @@ impl MeteorGpu {
                 } else {
                     [0.0; 4]
                 },
-                optics: [0.0, 1.0, 0.0, 0.0],
+                optics: [0.0, 1.0, optical_source, 0.0],
             };
             self.count += 1;
             let mut previous: Option<&crate::meteors::TrailPoint> = None;

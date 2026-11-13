@@ -29,8 +29,9 @@ struct MeteorVertex {
     // Conservative projection norm, independent of camera orientation.
     let norm=max(length(vec3(camera.view_projection[0].x,camera.view_projection[1].x,camera.view_projection[2].x)),
         length(vec3(camera.view_projection[0].y,camera.view_projection[1].y,camera.view_projection[2].y)));
-    let margin=vec2(max(radius*norm/min(max(ca.w,0.001),max(cb.w,0.001))*4.0,0.0))
+    var margin=vec2(max(radius*norm/min(max(ca.w,0.001),max(cb.w,0.001))*4.0,0.0))
         +32.0/camera.viewport.xy;
+    if meteor_optical_active(optics) {margin+=vec2(norm*METEOR_HALO_SIGMA_MAX*4.0);}
     let corners=array<vec2<f32>,6>(vec2(0,0),vec2(1,0),vec2(1,1),vec2(0,0),vec2(1,1),vec2(0,1));
     var p=mix(min(pa,pb)-margin,max(pa,pb)+margin,corners[index]);
     if start_w<0.01 && end_w<0.01 {p=vec2(2.0);}
@@ -79,7 +80,10 @@ fn shade_meteor(input:MeteorVertex,dust:bool)->MeteorOutput {
         *camera.viewport.y*0.5/max(clip.w,0.001);
     let width=max(projected_radius,0.7*footprint);
     let offset=length(pixel-mix(pa,pb,screen_t))/width;
-    if offset>4.0 {discard;}
+    let angular_offset=length(pixel-mix(pa,pb,screen_t))
+        /max(camera.viewport.y*0.5*length(vec3(camera.view_projection[0].y,camera.view_projection[1].y,camera.view_projection[2].y)),1.0);
+    let optical=meteor_optical_active(input.optics);
+    if offset>4.0 && (!optical || angular_offset>4.0*METEOR_HALO_SIGMA_MAX) {discard;}
     let footprint_gain=min(projected_radius/width,1.0);
     let core=dot(edge,edge)<1e-6;
     let coverage=exp(-offset*offset)*select(footprint_gain,footprint_gain*footprint_gain,core);
@@ -98,10 +102,15 @@ fn shade_meteor(input:MeteorVertex,dust:bool)->MeteorOutput {
     if input.optics.x>0.5 {
         contrast=1.0-smoothstep(-0.18,0.03,environment.sky_zenith_rgb_sun_altitude.w);
     }
-    let power=input.color.rgb*input.color.w*coverage*gradient*contrast;
+    var power=input.color.rgb*input.color.w*coverage*gradient*contrast;
+    if optical {
+        power+=meteor_halo(point,input.a.w,input.color.rgb*input.color.w,angular_offset,
+            transmission,atmosphere_ray(input.uv));
+    }
     var exposure=environment.ambient_rgb_exposure.w;
     if environment.flags.w!=0u {exposure=scene_exposure();}
-    let emitted=min(power*transmission*exposure,vec3(65000.0));
+    // At most 144 additive instances: reserve <=30000 of the shared target.
+    let emitted=bounded_hdr_rgb(power*transmission*exposure,30000.0/144.0);
     let weight=min(dot(emitted,vec3(0.2126,0.7152,0.0722)),100.0);
     return MeteorOutput(vec4(emitted,0.0),vec4(distance/1000000.0*weight,weight,0.0,0.0));
 }

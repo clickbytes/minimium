@@ -71,7 +71,7 @@ fn bolid_transmission(point: vec3<f32>) -> vec3<f32> {
     let emission=bolid_radiance(ray);
     // Keep emission linear until foreground-cloud extinction is known, even
     // when the main scene uses the analytic/display fallback.
-    return BolidOutput(vec4<f32>(min(emission,vec3<f32>(65000.0)),0.0),vec4<f32>(bolid_distance_sum,0.0,0.0));
+    return BolidOutput(vec4<f32>(bounded_hdr_rgb(emission,30000.0),0.0),vec4<f32>(bolid_distance_sum,0.0,0.0));
 }
 
 fn bolid_visible(point: vec3<f32>) -> bool {
