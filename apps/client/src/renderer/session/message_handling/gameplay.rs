@@ -31,6 +31,7 @@ impl Renderer {
     ) {
         self.application.resolve_map_teleport();
         if let Some(position_mm) = position_mm {
+            self.meteors.audio.clear();
             self.application.game.gameplay.prediction.reset();
             self.application.game.gameplay.prediction.position_mm = Some(position_mm);
             self.application.game.gameplay.prediction.character.position =

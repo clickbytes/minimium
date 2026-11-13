@@ -150,6 +150,8 @@ property-description = { $key ->
     [client_input_bindings] Physical key bindings by input context; conflicting controls in one context are rejected.
     [client_graphics_sky_quality] Local shadow and sky rendering quality.
     [client_sky_names] Show celestial labels in the desktop renderer.
+    [client_audio_meteors] Enable optional delayed meteor audio in this session.
+    [client_audio_meteor_volume] Meteor audio volume (0 to 1).
     [client_weather_cloud_detail] Preferred maximum recursive cloud voxel depth.
     [client_debug_atmosphere] Atmosphere diagnostic view.
     [client_debug_terrain] Terrain diagnostic view.

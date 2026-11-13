@@ -256,6 +256,18 @@ fn parse_value(key: ClientPropertyKey, value: &str) -> Result<ClientPropertyValu
                 Ok(ClientPropertyValue::SkyDemo(enabled))
             }
         }
+        ClientPropertyKey::MeteorAudio => parse_bool(value)
+            .map(ClientPropertyValue::MeteorAudio)
+            .ok_or_else(|| invalid("expected true or false".into())),
+        ClientPropertyKey::MeteorVolume => {
+            let volume = value
+                .parse::<f32>()
+                .map_err(|_| invalid("volume must be finite 0..=1".into()))?;
+            if !volume.is_finite() || !(0.0..=1.0).contains(&volume) {
+                return Err(invalid("volume must be finite 0..=1".into()));
+            }
+            Ok(ClientPropertyValue::MeteorVolume(volume))
+        }
         ClientPropertyKey::CloudDetail => {
             let level = value
                 .parse::<u8>()

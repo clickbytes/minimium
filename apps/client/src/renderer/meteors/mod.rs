@@ -18,6 +18,7 @@ use std::time::Instant;
 mod evolution;
 mod presentation;
 mod runtime;
+mod sounds;
 mod spawner;
 mod track;
 mod trains;
@@ -134,6 +135,7 @@ pub(crate) struct ActiveEvent {
     pub(super) automatic: bool,
     evolution: Option<evolution::Evolution>,
     trains: trains::Trains,
+    sound_slots: u8,
 }
 
 impl ActiveEvent {
@@ -157,6 +159,7 @@ impl ActiveEvent {
             basis: None,
             phase: MeteorPhase::Incoming,
             automatic: false,
+            sound_slots: 0,
             evolution: Some(history),
             trains: trains::Trains::new(seed, params.mass_kg >= 20.0, allow_long),
         }
@@ -165,6 +168,7 @@ impl ActiveEvent {
 
 /// Client-local manual meteor lifetime state (ADR 0013 § 2).
 pub(crate) struct MeteorRuntime {
+    pub(in crate::renderer) audio: crate::audio::MeteorAudio,
     /// The single client monotonic datum (ADR 0013 § 5); every age derives
     /// from `epoch.elapsed()`, so no second clock exists.
     epoch: Instant,

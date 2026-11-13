@@ -335,3 +335,56 @@ No extra texture/pass or dynamic LUT rebuild is introduced.
 sky meteors status and sky info report optical mode, selected sources and
 eligible halo-head count. These are prepared counts, not measured GPU pixels.
 Runtime orbit/horizon, color and HDR/fallback visual acceptance remains E047-17.
+
+
+## E047-13: optional delayed audio
+
+Build the desktop client with --features desktop-audio to enable the optional
+Rodio 0.22.2 / CPAL adapter. Default desktop and terminal builds do not require
+audio. Playback is opt-in per session:
+- set client.audio.meteors true
+- set client.audio.meteor_volume 0.25
+- get client.audio.meteors
+- sky meteors status
+
+Properties are typed, local and nonpersistent; reset returns false/0.25. Missing
+backend/device reports unavailable while rendering and event physics continue.
+Device setup runs on one owned worker; the render thread only uses try_send.
+Drop stops and joins the worker and drops all players/stream. Device setup and
+shutdown latency depend on the OS backend; no runtime latency is claimed.
+
+Only Breakup events from >=20-kg initial bodies with >=10-GJ estimated fragment
+kinetic energy can queue an Airburst cue. Each fragment slot submits at most one,
+including when audio was disabled at the event time. Faint/bright presets are
+silent. The source position and breakup monotonic timestamp come from the same
+physical history. Delay uses full 3D physical source-listener distance and
+c=331.3+0.606*15=340.39 m/s (uniform dry air at 15 C). A 50-km path is about147 s;
+100 km about294 s. Listener movement after scheduling is not re-integrated;
+this is not a terrain/refraction/shock-wave propagation solver.
+
+The preallocated queue holds <=16 cues, max600-s acoustic delay and 2-s lateness
+grace. Backend command capacity8 and max4 simultaneous voices are separate hard
+bounds. World/context invalidation, confirmed map teleport, clear, disable, volume0,
+focus loss and >5-km single-frame listener relocation invalidate queued/playing sound via a
+generation stamp. Pending sound may outlive visual head/train lifetime, but not
+its world scope. No replicated event, HP change, collision or save field exists.
+
+Original procedural rumble uses seeded filtered noise and a low sinusoid, with
+40-ms attack and200-ms end fade,3-s duration,24-kHz stereo. Constant-power panning
+and distance attenuation apply; each voice peak<=0.08 before local volume<=1,
+so four voices remain bounded. Maximum generated PCM storage is4*144000*f32
+=2304000 bytes plus library/device buffers. No recordings or codecs are used.
+The adapter is original project code under the workspace license. Dependency
+licenses from Cargo metadata: Rodio MIT OR Apache-2.0, CPAL Apache-2.0,
+dasp_sample MIT OR Apache-2.0. Platform backend dependencies remain optional.
+
+References for the selected API: https://docs.rs/rodio/0.22.2/rodio/
+and https://docs.rs/rodio/0.22.2/rodio/struct.Player.html .
+Only the playback feature is enabled; no codec feature bundles are selected.
+Game/audio device initialization, listening and runtime validation remain gated
+to E047-17; successful builds are not audible acceptance.
+
+Windows x86_64 MSVC release build comparison during E047-13: without audio
+19095040 bytes, with desktop-audio 19253248 bytes, delta 158208 bytes
+(0.15 MiB). Executables were built but not run; sizes depend
+on toolchain/profile/platform and do not measure runtime memory or performance.

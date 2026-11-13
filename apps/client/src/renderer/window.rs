@@ -145,6 +145,7 @@ impl ApplicationHandler for App {
                     .set_dpi_scale(window.scale_factor());
             }
             WindowEvent::Focused(false) => {
+                renderer.meteors.audio.clear();
                 renderer.application.input.clear_held();
                 renderer.input.jump_pending = false;
             }

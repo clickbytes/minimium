@@ -12,6 +12,7 @@ impl MeteorRuntime {
     /// Creates the runtime with its single monotonic datum.
     pub(in crate::renderer) fn new() -> Self {
         Self {
+            audio: crate::audio::MeteorAudio::default(),
             epoch: std::time::Instant::now(),
             next_id: 1,
             active: Vec::with_capacity(super::MAX_ACTIVE_METEOR_EVENTS),
@@ -168,7 +169,9 @@ impl MeteorRuntime {
                 self.spawner.reason = "candidate_admitted_visibility_independent";
             }
         }
+        self.audio.observe(super::sounds::listener(&view, scale));
         self.cycle_events(&mut meteor_frame, &view, scale, now_s);
+        self.audio.tick(now_s);
         self.spawner.peak = self.spawner.peak.max(self.active.len());
         meteor_frame
     }
@@ -189,15 +192,17 @@ impl MeteorRuntime {
                 self.dismiss(index);
                 continue;
             }
-            let Some(history) = event.evolution.as_ref() else {
+            if event.evolution.is_none() {
                 self.dismiss(index);
                 continue;
-            };
+            }
             let age_s = (now_s - event.start_s).max(0.0);
             if age_s >= event.duration_s {
                 self.dismiss(index);
                 continue;
             }
+            super::sounds::capture(event, &mut self.audio, view, scale, now_s);
+            let history = event.evolution.as_ref().expect("initialized above");
             event.trains.advance(history, age_s);
             event.phase = history.phase(age_s, 0);
             self.omitted_cores +=
@@ -215,6 +220,7 @@ impl MeteorRuntime {
     /// Dismisses every active event into the counters (expired, culled or
     /// cleared events all share the single "dismissed" bucket).
     fn reset_active(&mut self) {
+        self.audio.clear();
         self.dismissed_total = self.dismissed_total.wrapping_add(self.active.len() as u64);
         for mut event in self.active.drain(..) {
             if let Some(history) = event.evolution.take() {
@@ -256,6 +262,7 @@ impl MeteorRuntime {
     /// (lifetimes stay bounded; panic-free in every state).
     pub(in crate::renderer) fn status_lines(&self) -> Vec<String> {
         let mut lines = Vec::with_capacity(super::MAX_ACTIVE_METEOR_EVENTS + 4);
+        lines.push(self.audio.status());
         lines.push(format!(
             "meteors: client-local runtime; active {}/{}, spawned {}, dismissed {}",
             self.active.len(),

@@ -114,6 +114,20 @@ impl Renderer {
                 self.show_celestial_names = value;
                 Key::SkyNames
             }
+            Value::MeteorAudio(value) => {
+                self.meteors.audio.set_enabled(value);
+                self.application
+                    .settings
+                    .set(Key::MeteorAudio.key(), value.to_string());
+                Key::MeteorAudio
+            }
+            Value::MeteorVolume(value) => {
+                self.meteors.audio.set_volume(value);
+                self.application
+                    .settings
+                    .set(Key::MeteorVolume.key(), value.to_string());
+                Key::MeteorVolume
+            }
             Value::CloudDetail(value) => {
                 self.application
                     .settings
@@ -252,6 +266,8 @@ impl Renderer {
                     .unwrap_or("false")
                     == "true";
             }
+            Key::MeteorAudio => self.meteors.audio.set_enabled(false),
+            Key::MeteorVolume => self.meteors.audio.set_volume(0.25),
             Key::CloudDetail => {
                 let detail = self
                     .application
@@ -354,6 +370,14 @@ impl Renderer {
             Key::InputBindings => self.stored_property(key, ""),
             Key::SkyQuality => self.stored_property(key, "standard"),
             Key::SkyNames => self.stored_property(key, "false"),
+            Key::MeteorAudio => (
+                self.meteors.audio.enabled.to_string(),
+                (self.meteors.audio.enabled && self.meteors.audio.backend_status() == "ready")
+                    .to_string(),
+                "false".into(),
+                Some(self.meteors.audio.backend_status().into()),
+            ),
+            Key::MeteorVolume => self.stored_property(key, "0.25"),
             Key::CloudDetail => self.stored_property(key, "6"),
             Key::AtmosphereDebug => self.stored_property(key, "off"),
             Key::TerrainDebug => self.stored_property(key, "off"),

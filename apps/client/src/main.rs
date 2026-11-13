@@ -182,6 +182,8 @@ fn main() {
 }
 
 #[cfg(feature = "desktop")]
+mod audio;
+#[cfg(feature = "desktop")]
 mod console;
 #[cfg(feature = "desktop")]
 mod renderer;

@@ -21,6 +21,8 @@ impl TextProperties {
             Key::InputBindings,
             Key::SkyQuality,
             Key::SkyNames,
+            Key::MeteorAudio,
+            Key::MeteorVolume,
             Key::CloudDetail,
             Key::AtmosphereDebug,
             Key::TerrainDebug,
@@ -36,6 +38,8 @@ impl TextProperties {
             Key::MouseSensitivity,
             Key::SkyQuality,
             Key::SkyNames,
+            Key::MeteorAudio,
+            Key::MeteorVolume,
             Key::CloudDetail,
             Key::AtmosphereDebug,
             Key::TerrainDebug,
@@ -96,6 +100,8 @@ impl TextProperties {
                     | Key::MouseSensitivity
                     | Key::SkyQuality
                     | Key::SkyNames
+                    | Key::MeteorAudio
+                    | Key::MeteorVolume
                     | Key::CloudDetail
                     | Key::AtmosphereDebug
                     | Key::TerrainDebug
@@ -210,6 +216,8 @@ fn current_value(key: Key, options: &ClientOptions) -> String {
         Key::InputBindings => options.input_bindings.clone(),
         Key::SkyQuality => options.sky_quality.label().to_owned(),
         Key::SkyNames => options.startup_sky_names.to_string(),
+        Key::MeteorAudio => "false".into(),
+        Key::MeteorVolume => "0.25".into(),
         Key::CloudDetail => options.startup_cloud_detail.to_string(),
         Key::AtmosphereDebug => atmosphere(options.startup_atmosphere_debug).to_owned(),
         Key::TerrainDebug => terrain(options.startup_terrain_debug).to_owned(),

@@ -456,3 +456,11 @@ E047-12 adds a bounded atmospheric halo to existing bright meteor head quads,
 with a narrow analytic fallback and no transient LUT invalidation. Shared
 emission storage now reserves additive HDR headroom; status reports optical
 mode/source counts. Energy and pass-order details are in docs/ambient-meteors.md.
+
+
+E047-13 adds an optional application-owned audio adapter. Build with
+--features desktop-audio, then set client.audio.meteors true (default false).
+Volume is client.audio.meteor_volume (0..1, default0.25). Breakup cues use
+physical-distance delay, bounded queues and world/focus/teleport invalidation.
+No device setup runs on the renderer lane. See docs/ambient-meteors.md for
+Rodio/CPAL licenses, synthesis, budgets and pending runtime verification.
