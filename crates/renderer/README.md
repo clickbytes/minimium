@@ -837,3 +837,8 @@ Per-point intensity/kind produces independent emissive afterglow and daytime
 dust in the existing shared layers; the instance layout adds kind/gradient
 metadata. Wind, TTLs, fixed budgets and approximation limits are documented
 in docs/ambient-meteors.md. No per-line resource allocation is introduced.
+
+E047-08 now selects finite-distance meteor visibility by effective sky quality.
+Standard uses terrain/planet occlusion plus the shared cloud mask, including
+up to 16 containing ellipsoid proxies; low retains the 20-km source floor.
+See docs/ambient-meteors.md for resource order, GPU layouts and OIT limitations.

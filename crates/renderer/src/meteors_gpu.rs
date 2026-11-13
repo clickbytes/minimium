@@ -2,7 +2,6 @@
 use crate::meteors::{MeteorFrame, MAX_METEOR_CORES, MAX_TRAIL_POINTS};
 
 const CAPACITY: usize = MAX_METEOR_CORES + MAX_TRAIL_POINTS;
-const MIN_HEIGHT_M: f64 = 20_000.0;
 const ATTRIBUTES: [wgpu::VertexAttribute; 4] =
     wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4];
 
@@ -123,7 +122,7 @@ impl MeteorGpu {
         self.draw_count.set(0);
         self.rejected_low = 0;
         for core in frame.cores() {
-            if frame.physical_height(core.position_rel_m) < MIN_HEIGHT_M {
+            if frame.physical_height(core.position_rel_m) < frame.minimum_height_m() {
                 self.rejected_low += 1;
                 continue;
             }
@@ -147,13 +146,17 @@ impl MeteorGpu {
             segments[self.count as usize] = Segment {
                 start: head,
                 end: head,
-                color,
+                color: if frame.head_visible(core) {
+                    color
+                } else {
+                    [0.0; 4]
+                },
                 optics: [0.0, 1.0, 0.0, 0.0],
             };
             self.count += 1;
             let mut previous: Option<&crate::meteors::TrailPoint> = None;
             for point in frame.trails().iter().filter(|point| point.id == core.id) {
-                if frame.physical_height(point.position_rel_m) < MIN_HEIGHT_M {
+                if frame.physical_height(point.position_rel_m) < frame.minimum_height_m() {
                     previous = None;
                     continue;
                 }

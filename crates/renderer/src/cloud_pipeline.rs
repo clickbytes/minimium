@@ -14,8 +14,8 @@ pub fn layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("regional cloud resources"),
         entries: &[
-            buffer(0, wgpu::BufferBindingType::Uniform, 256),
-            buffer(1, wgpu::BufferBindingType::Storage { read_only: true }, 80),
+            buffer(0, wgpu::BufferBindingType::Uniform, 320),
+            buffer(1, wgpu::BufferBindingType::Storage { read_only: true }, 96),
             wgpu::BindGroupLayoutEntry {
                 binding: 2,
                 visibility: wgpu::ShaderStages::FRAGMENT,
@@ -64,8 +64,10 @@ pub fn create(
     format: wgpu::TextureFormat,
     oit: bool,
     debug: bool,
-    bolid_mask: bool,
+    mask: Option<bool>,
 ) -> wgpu::RenderPipeline {
+    let bolid_mask = mask.is_some();
+    let inside_mask = mask == Some(true);
     let distance_layout = crate::bolid_layer::texture_layout(device, 1);
     let groups = if bolid_mask {
         vec![Some(frame), Some(cloud), Some(&distance_layout)]
@@ -145,13 +147,19 @@ pub fn create(
         layout: Some(&layout),
         vertex: wgpu::VertexState {
             module: &shader,
-            entry_point: Some(if debug { "vs_debug" } else { "vs_cloud" }),
+            entry_point: Some(if debug || inside_mask {
+                "vs_debug"
+            } else {
+                "vs_cloud"
+            }),
             compilation_options: Default::default(),
-            buffers: if debug { &[] } else { &buffers },
+            buffers: if debug || inside_mask { &[] } else { &buffers },
         },
         fragment: Some(wgpu::FragmentState {
             module: &shader,
-            entry_point: Some(if bolid_mask {
+            entry_point: Some(if inside_mask {
+                "fs_inside_mask"
+            } else if bolid_mask {
                 "fs_bolid_mask"
             } else if debug {
                 "fs_debug"

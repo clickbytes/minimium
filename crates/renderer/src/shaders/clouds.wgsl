@@ -6,6 +6,7 @@ struct CloudUniform {
     eye: vec4<f32>,
     observer: vec4<f32>,
     config: vec4<u32>,
+    inside: array<vec4<u32>, 4>,
 };
 struct CloudRecord {
     center_age: vec4<f32>,
@@ -13,6 +14,7 @@ struct CloudRecord {
     up_layer: vec4<f32>,
     north_region: vec4<f32>,
     morph: vec4<f32>,
+    half_size: vec4<f32>,
 };
 @group(1) @binding(0) var<uniform> cloud_frame: CloudUniform;
 @group(1) @binding(1) var<storage, read> clusters: array<CloudRecord>;
@@ -25,6 +27,7 @@ struct CloudVertex {
     @location(1) normal: vec3<f32>,
     @location(2) @interpolate(flat) parameters: vec4<f32>,
     @location(3) @interpolate(flat) detail: vec2<f32>,
+    @location(4) @interpolate(flat) cluster: u32,
 };
 
 fn basis(c: CloudRecord, p: vec3<f32>) -> vec3<f32> {
@@ -46,6 +49,7 @@ fn vs_cloud(@builtin(vertex_index) index: u32, @location(0) center: vec4<f32>,
     let coverage = max(mix(u.w, v.w, phase), 0.0);
     out.parameters = vec4(c.center_age.w, c.east_opacity.w * coverage, c.up_layer.w, c.north_region.w);
     out.detail = c.morph.zw;
+    out.cluster = u32(center.w);
     return out;
 }
 
@@ -171,12 +175,44 @@ struct BolidCloudOutput {
     @location(0) opacity: vec4<f32>,
     @location(1) foreground: vec4<f32>,
 };
+
+// Bounded ellipsoid approximation in cloud-local metres. No volume texture or
+// per-pixel traversal of the complete cloud snapshot. Negative exit = no hit.
+fn cloud_interval(c: CloudRecord, ray: vec3<f32>) -> vec2<f32> {
+    let half_size = max(c.half_size.xyz, vec3(1.0));
+    let delta = cloud_frame.eye.xyz - c.center_age.xyz - c.up_layer.xyz * half_size.y;
+    let p = vec3(dot(delta,c.east_opacity.xyz),dot(delta,c.up_layer.xyz),
+        dot(delta,c.north_region.xyz)) / half_size;
+    let d = vec3(dot(ray,c.east_opacity.xyz),dot(ray,c.up_layer.xyz),
+        dot(ray,c.north_region.xyz)) / half_size;
+    let a = dot(d,d);
+    let b = dot(p,d);
+    let discriminant = b*b-a*(dot(p,p)-1.0);
+    if discriminant < 0.0 { return vec2(-1.0); }
+    return vec2(-b-sqrt(discriminant),-b+sqrt(discriminant))/max(a,1e-20);
+}
+
 @fragment fn fs_bolid_mask(input: CloudVertex) -> BolidCloudOutput {
     let stored=textureLoad(bolid_distance,vec2<i32>(input.position.xy),0).rg;
     if stored.y<=0.000001 {discard;}
     let distance=length(input.local-cloud_frame.eye.xyz)/1000000.0;
     if distance>=stored.x/stored.y {discard;}
-    let c=cloud_color(input);
+    var c=cloud_color(input);
+    {
+        let source_distance = stored.x/stored.y*1000000.0;
+        let ray = normalize(input.local-cloud_frame.eye.xyz);
+        let interval = cloud_interval(clusters[input.cluster],ray);
+        if interval.y > source_distance {
+            // A containing proxy handles this segment, including holes between
+            // mesh faces. Skip its surface contribution to avoid double dimming.
+            for (var i=0u; i<min(cloud_frame.config.w,16u); i++) {
+                if cloud_frame.inside[i/4u][i%4u] == input.cluster { discard; }
+            }
+            let face_distance = distance*1000000.0;
+            let fraction = clamp((source_distance-face_distance)/max(interval.y-face_distance,1.0),0.0,1.0);
+            c.a = 1.0-pow(max(1.0-c.a,0.000001),fraction);
+        }
+    }
     let relative_distance=length(input.local-cloud_frame.eye.xyz)/max(cloud_frame.origin_radius.w*0.06,1.0);
     let weight=clamp((0.2+c.a*3.0)/(0.2+relative_distance*relative_distance),0.05,12.0);
     return BolidCloudOutput(vec4(c.a),vec4(c.rgb*c.a,c.a)*weight);
@@ -189,6 +225,39 @@ struct DebugVertex {
 @vertex fn vs_debug(@builtin(vertex_index) index: u32) -> DebugVertex {
     let p = array<vec2<f32>,3>(vec2(-1.0,-1.0), vec2(3.0,-1.0), vec2(-1.0,3.0))[index];
     return DebugVertex(vec4(p, 0.0, 1.0), p);
+}
+
+@fragment fn fs_inside_mask(input: DebugVertex) -> BolidCloudOutput {
+    let stored=textureLoad(bolid_distance,vec2<i32>(input.position.xy),0).rg;
+    if stored.y<=0.000001 {discard;}
+    let distance=stored.x/stored.y*1000000.0;
+    let projected=cloud_frame.inverse_projection*vec4(input.ndc,0.5,1.0);
+    let ray=normalize(projected.xyz/projected.w-cloud_frame.eye.xyz);
+    var transmission=1.0;
+    var foreground=vec4(0.0);
+    for (var i=0u; i<min(cloud_frame.config.w,16u); i++) {
+        let index=cloud_frame.inside[i/4u][i%4u];
+        let c=clusters[index];
+        let interval=cloud_interval(c,ray);
+        // Beyond the proxy exit, the existing boundary faces own extinction.
+        if interval.x>=0.0 || interval.y<=distance {continue;}
+        var point: CloudVertex;
+        point.position=input.position;
+        point.local=cloud_frame.eye.xyz+ray*(distance*0.5);
+        point.normal=-ray;
+        point.parameters=vec4(c.center_age.w,c.east_opacity.w*distance/max(interval.y-interval.x,1.0),
+            c.up_layer.w,c.north_region.w);
+        point.detail=c.morph.zw;
+        point.cluster=index;
+        let age_fade=smoothstep(0.0,420.0,c.center_age.w)*(1.0-smoothstep(2800.0,3600.0,c.center_age.w));
+        let alpha=(1.0-exp(-point.parameters.y))*age_fade
+            *edge_fade(normalize(point.local+cloud_frame.origin_radius.xyz));
+        if alpha<0.0001 {continue;}
+        let color=cloud_color(point);
+        transmission*=1.0-color.a;
+        foreground+=vec4(color.rgb*color.a,color.a);
+    }
+    return BolidCloudOutput(vec4(1.0-transmission),foreground);
 }
 @fragment fn fs_debug(input: DebugVertex) -> @location(0) vec4<f32> {
     if cloud_frame.config.x == 2u || cloud_frame.config.x >= 4u { discard; }

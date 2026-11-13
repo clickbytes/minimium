@@ -103,8 +103,8 @@ fn terrain_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
 fn cloud_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
     for (_, ty) in module.types.iter() {
         let (expected_span, offsets): (u32, &[u32]) = match ty.name.as_deref() {
-            Some("CloudUniform") => (256, &[0, 64, 128, 192, 208, 224, 240]),
-            Some("CloudRecord") => (80, &[0, 16, 32, 48, 64]),
+            Some("CloudUniform") => (320, &[0, 64, 128, 192, 208, 224, 240, 256]),
+            Some("CloudRecord") => (96, &[0, 16, 32, 48, 64, 80]),
             _ => continue,
         };
         let naga::TypeInner::Struct { members, span } = &ty.inner else {
@@ -129,7 +129,8 @@ fn cloud_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
                 (0, 3..=10) => entry.stage != naga::ShaderStage::Vertex,
                 (1, 2) => entry.stage == naga::ShaderStage::Fragment,
                 (2, 0) => {
-                    entry.name == "fs_bolid_mask" && entry.stage == naga::ShaderStage::Fragment
+                    matches!(entry.name.as_str(), "fs_bolid_mask" | "fs_inside_mask")
+                        && entry.stage == naga::ShaderStage::Fragment
                 }
                 _ => false,
             };

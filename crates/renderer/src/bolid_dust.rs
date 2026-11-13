@@ -106,6 +106,13 @@ pub(crate) fn resolve(
             pass.set_vertex_buffer(0, clouds.faces.slice(..));
             pass.draw(0..6, 0..clouds.count);
         }
+        if clouds.inside_count > 0 {
+            pass.set_pipeline(&clouds.inside_mask_pipeline);
+            pass.set_bind_group(0, frame.camera, &[]);
+            pass.set_bind_group(1, &clouds.group, &[]);
+            pass.set_bind_group(2, &layer.distance_group, &[]);
+            pass.draw(0..3, 0..1);
+        }
     }
     let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
         label: Some("finite bolid layer resolve"),
@@ -118,7 +125,7 @@ pub(crate) fn resolve(
     pass.set_pipeline(&frame.environment_pipelines.bolid_composite);
     pass.set_bind_group(0, &layer.composite_group, &[]);
     pass.draw(0..3, 0..1);
-    1 + u32::from(clouds.count > 0)
+    1 + u32::from(clouds.count > 0) + u32::from(clouds.inside_count > 0)
 }
 
 fn attachment(

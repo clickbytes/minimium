@@ -12,6 +12,8 @@ pub struct CloudGpu {
     pub pipeline: wgpu::RenderPipeline,
     pub debug_pipeline: wgpu::RenderPipeline,
     pub(crate) bolid_mask_pipeline: wgpu::RenderPipeline,
+    pub(crate) inside_mask_pipeline: wgpu::RenderPipeline,
+    pub inside_count: u32,
     pub composite_pipeline: Option<wgpu::RenderPipeline>,
     pub group: wgpu::BindGroup,
     pub targets: Option<CloudTargets>,
@@ -27,7 +29,7 @@ pub struct CloudGpu {
 }
 
 impl CloudGpu {
-    pub const BUFFER_BYTES: u64 = (MAX_CLOUD_FACES * 48 + MAX_CLOUDS * 80 + 256) as u64;
+    pub const BUFFER_BYTES: u64 = (MAX_CLOUD_FACES * 48 + MAX_CLOUDS * 96 + 320) as u64;
 
     pub fn new(
         device: &wgpu::Device,
@@ -56,10 +58,10 @@ impl CloudGpu {
                 mapped_at_creation: false,
             })
         };
-        let uniform = buffer("cloud uniform", 256, wgpu::BufferUsages::UNIFORM);
+        let uniform = buffer("cloud uniform", 320, wgpu::BufferUsages::UNIFORM);
         let records = buffer(
             "cloud transforms",
-            (MAX_CLOUDS * 80) as u64,
+            (MAX_CLOUDS * 96) as u64,
             wgpu::BufferUsages::STORAGE,
         );
         let faces = buffer(
@@ -70,9 +72,9 @@ impl CloudGpu {
         let layout = cloud_pipeline::layout(device);
         let composite_layout = crate::cloud_targets::layout(device);
         let group = cloud_pipeline::group(device, &layout, &uniform, &records, depth);
-        let pipeline = cloud_pipeline::create(device, frame, &layout, format, oit, false, false);
+        let pipeline = cloud_pipeline::create(device, frame, &layout, format, oit, false, None);
         let debug_pipeline =
-            cloud_pipeline::create(device, frame, &layout, format, false, true, false);
+            cloud_pipeline::create(device, frame, &layout, format, false, true, None);
         let composite_pipeline =
             oit.then(|| cloud_pipeline::composite(device, &composite_layout, format));
         let targets = oit.then(|| CloudTargets::new(device, &composite_layout, [size[0], size[1]]));
@@ -80,8 +82,24 @@ impl CloudGpu {
             pipeline,
             debug_pipeline,
             bolid_mask_pipeline: cloud_pipeline::create(
-                device, frame, &layout, format, false, false, true,
+                device,
+                frame,
+                &layout,
+                format,
+                false,
+                false,
+                Some(false),
             ),
+            inside_mask_pipeline: cloud_pipeline::create(
+                device,
+                frame,
+                &layout,
+                format,
+                false,
+                false,
+                Some(true),
+            ),
+            inside_count: 0,
             composite_pipeline,
             group,
             targets,
@@ -109,11 +127,12 @@ impl CloudGpu {
     }
 
     pub fn upload_frame(
-        &self,
+        &mut self,
         queue: &wgpu::Queue,
         records: &[CloudRecord],
         uniform: &CloudUniform,
     ) {
+        self.inside_count = uniform.config[3];
         if !records.is_empty() {
             queue.write_buffer(&self.records, 0, bytemuck::cast_slice(records));
         }

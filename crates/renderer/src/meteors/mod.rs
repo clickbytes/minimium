@@ -16,6 +16,7 @@ pub mod kinematics;
 pub mod model;
 pub mod photometry;
 pub mod trail;
+pub mod visibility;
 
 mod frame;
 

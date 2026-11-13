@@ -173,3 +173,50 @@ Residual gas contrast falls in daylight. HDR remains linear to final output;
 fallback dust uses the existing scene-space conversion. Counts distinguish
 emissive/dust segments; status reports ring points, overwritten captures, skipped
 capture steps and both TTLs. Static checks do not establish visual acceptance.
+
+## E047-08: finite-distance visibility and resource order
+
+Standard quality admits finite sources down to the surface. Low quality rejects
+head/trail samples below 20 physical km and omits camera-containing cloud proxies.
+CPU head culling uses f64 physical coordinates and conservative sphere/segment
+occlusion; a hidden head does not discard an independently visible trail. The
+meteor shader checks terrain depth and the analytic planet for every fragment,
+including near-plane-clipped tracks and observers above the atmosphere.
+
+MeteorFrame carries effective quality from the client environment adapter.
+CloudSnapshot supplies the existing face publication and per-cloud transforms.
+The client adds half extents and selects at most 16 camera-containing ellipsoids
+in stable snapshot order, once per frame. No per-pixel CPU cloud search occurs.
+The shared GPU mask compares finite emitter distance with cloud-face distance:
+A (camera-cloud-source) attenuates; B (camera-source-cloud) discards the face.
+For a source inside a proxy, the face opacity is shortened to the remaining
+camera-source path. If camera and source are both inside one selected proxy,
+one bounded fullscreen mask draw integrates the partial ellipsoid path instead
+of that cloud boundary contribution. Sources beyond its exit use existing faces.
+The correction uses the cloud age, opacity and window fade; it adds no second
+meteor or dust draw. C (source behind planet) is rejected before composition.
+
+Pass/resource map (frame_encoder::encode_frame, scene_encoder):
+1. Shadow depth and atmosphere LUT preparation precede the main scene.
+2. Main scene writes scene color and opaque terrain/object depth. Sky and stars
+   are included; clouds do not write opaque depth.
+3. Atmosphere composes into scene color. Shared emission/dust producers read
+   opaque depth and write only finite-layer color, dust and weighted distance.
+4. Existing cloud faces write OIT accumulation/revealage, then resolve to scene
+   color (or use the existing alpha fallback). Ordinary stars remain behind it.
+5. bolid_dust::resolve reads the completed finite distance and opaque depth,
+   writes a cleared transmission/foreground pair using cloud faces and the
+   optional containing-proxy draw. It then reads those completed textures,
+   emission and dust, and writes scene color. No attachment is simultaneously
+   sampled; emitter color is added exactly once.
+6. UI/output follows, with the existing single HDR tone map.
+
+Bounds: containing proxies <=16 per emitting pixel, one optional draw, no
+ray-march steps. CloudUniform is 320 bytes; CloudRecord is 96 bytes, with Rust
+offset assertions and Naga layout/binding checks updated together.
+Known approximations: ellipsoids smooth holes and deformation in voxel clouds;
+excess containing overlaps fall back to boundary faces. This is surface OIT plus
+a bounded interior correction, not volumetric radiative transfer. Overlapping
+emitters/dust still share one radiance-weighted distance per pixel: separated
+depths at exactly the same pixel cannot have independent cloud transmission.
+Runtime A/B/C, horizon/orbit and HDR/fallback acceptance remains E047-17.

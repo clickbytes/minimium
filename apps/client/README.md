@@ -431,3 +431,8 @@ Residual deposition rings persist after physical head extinction, using bounded
 monotonic capture, independent gas/dust TTLs and seeded upper-atmosphere drift.
 History pooling now waits for the last train TTL; long afterglows are capped at
 two active events. Status reports capture overwrite/skip counters and TTLs.
+
+E047-08 now selects finite-distance meteor visibility by effective sky quality.
+Standard uses terrain/planet occlusion plus the shared cloud mask, including
+up to 16 containing ellipsoid proxies; low retains the 20-km source floor.
+See docs/ambient-meteors.md for resource order, GPU layouts and OIT limitations.

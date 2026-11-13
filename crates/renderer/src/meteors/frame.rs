@@ -44,6 +44,7 @@ pub struct MeteorFrameContext {
 /// Bounded per-frame meteor input consumed by the renderer pass set.
 #[derive(Clone, Copy, Debug)]
 pub struct MeteorFrame {
+    visibility: super::visibility::VisibilityPolicy,
     state: MeteorFrameState,
     render_origin_m: [f64; 3],
     game_radius_m: f64,
@@ -59,6 +60,21 @@ pub struct MeteorFrame {
 }
 
 impl MeteorFrame {
+    pub fn with_quality(mut self, quality: crate::quality::SkyQuality) -> Self {
+        self.visibility = super::visibility::VisibilityPolicy::from_quality(quality);
+        self
+    }
+
+    pub fn minimum_height_m(&self) -> f64 {
+        self.visibility.minimum_height_m()
+    }
+
+    pub fn head_visible(&self, core: &MeteorCore) -> bool {
+        let eye = std::array::from_fn(|i| self.render_origin_m[i] + self.eye_rel_m[i]);
+        let source =
+            std::array::from_fn(|i| self.render_origin_m[i] + f64::from(core.position_rel_m[i]));
+        super::visibility::head_visible(eye, source, self.game_radius_m, f64::from(core.radius_m))
+    }
     pub fn cores(&self) -> &[MeteorCore] {
         &self.cores[..self.core_count]
     }
@@ -97,6 +113,7 @@ impl MeteorFrame {
             return Self::disabled(MeteorDisabledReason::NoEnvironment);
         }
         Self {
+            visibility: super::visibility::VisibilityPolicy::FiniteDistance,
             state: MeteorFrameState::Ready,
             render_origin_m: context.render_origin_m,
             game_radius_m: context.game_radius_m,
@@ -116,6 +133,7 @@ impl MeteorFrame {
         // The neutral unit scale is only a placeholder carrier for the never
         // read context; nothing past the state leaves a disabled frame.
         Self {
+            visibility: super::visibility::VisibilityPolicy::HighAtmosphereOnly,
             state: MeteorFrameState::Disabled(reason),
             render_origin_m: [0.0; 3],
             game_radius_m: 0.0,

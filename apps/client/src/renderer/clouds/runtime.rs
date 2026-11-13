@@ -1,7 +1,7 @@
-use super::{Publication, Request, Stamp, worker::CloudWorker};
+use super::{worker::CloudWorker, Publication, Request, Stamp};
 use crate::renderer::{
-    Renderer,
     environment::{EnvironmentFrame, EnvironmentViewKind},
+    Renderer,
 };
 use glam::{DVec3, Mat4};
 use minimium_environment::weather::{self, CloudDebug};
@@ -97,6 +97,7 @@ impl Renderer {
             self.weather.last_request = None;
             self.weather.worker.clear();
             self.gpu.cloud_gpu.count = 0;
+            self.gpu.cloud_gpu.inside_count = 0;
             self.gpu.cloud_gpu.debug = false;
             self.gpu.terrain_gpu.clear_cover();
             self.gpu.atmosphere_gpu.clear_weather();
@@ -118,6 +119,7 @@ impl Renderer {
             self.weather.last_request = None;
             self.weather.worker.clear();
             self.gpu.cloud_gpu.count = 0;
+            self.gpu.cloud_gpu.inside_count = 0;
         }
         if let Some((cover_stamp, cover)) = self.weather.worker.take_cover() {
             if cover_stamp == stamp {
@@ -188,6 +190,7 @@ impl Renderer {
                 let east = DVec3::new(-up.z, 0.0, up.x).normalize_or_zero();
                 let center = up * (radius + cloud.base_m) - origin;
                 CloudRecord {
+                    half_size: (cloud.size_m * 0.5).as_vec3().extend(0.0).to_array(),
                     center_age: center
                         .as_vec3()
                         .extend((utc - cloud.birth_utc) as f32)
@@ -217,7 +220,8 @@ impl Renderer {
         }
         let projection = projection * Mat4::from_cols_array_2d(&view.view);
         let target_size = gpu.targets.as_ref().map_or(view.viewport, |t| t.size);
-        let uniform = CloudUniform {
+        let mut uniform = CloudUniform {
+            inside: [[0; 4]; 4],
             projection: projection.to_cols_array_2d(),
             scene_projection: view.view_projection,
             inverse_projection: projection.inverse().to_cols_array_2d(),
@@ -232,6 +236,10 @@ impl Renderer {
                 .to_array(),
             config: [self.weather.debug as u32, target_size[0], target_size[1], 0],
         };
+        uniform.select_inside(
+            &records,
+            self.sky_quality.effective == minimium_renderer::quality::SkyQuality::Standard,
+        );
         gpu.upload_frame(&self.gpu.queue, &records, &uniform);
         gpu.debug = self.weather.debug != CloudDebug::Off;
     }

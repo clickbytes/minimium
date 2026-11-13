@@ -4,7 +4,7 @@ use super::{
     RenderViewFrame, SkyFrameInput, StarFrameStamp,
 };
 use minimium_astronomy::{SkyInvalidation, SkySampleContext};
-use minimium_environment::sky::{DEFAULT_OBSERVER_EYE_HEIGHT_MM, SkyModel, resolve_sky_model};
+use minimium_environment::sky::{resolve_sky_model, SkyModel, DEFAULT_OBSERVER_EYE_HEIGHT_MM};
 use minimium_environment::{
     time::{ClockRevision, WorldTimeMs},
     {AstronomyModelRevision, CatalogueId},
@@ -22,7 +22,10 @@ impl Renderer {
         // The client-local meteor runtime consumes the freshly rebuilt
         // environment frame on the client monotonic clock and produces one
         // bounded, origin-relative `MeteorFrame` per frame (ADR 0013 § 5).
-        let meteors = self.meteors.build_frame(&self.render_environment_frame);
+        let meteors = self
+            .meteors
+            .build_frame(&self.render_environment_frame)
+            .with_quality(self.sky_quality.effective);
         let prepared =
             PreparedEnvironmentFrame::new(self.render_environment_frame.clone(), stars, meteors);
         self.metrics
