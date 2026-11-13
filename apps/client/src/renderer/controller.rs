@@ -270,6 +270,13 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
             };
             renderer.application.ui.console.push_line(message);
         }
+        FrontendAction::SkyMeteorsLight(enabled) => {
+            renderer.gpu.transient_enabled = enabled;
+            renderer.application.ui.console.push_line(format!(
+                "meteors: local light {}",
+                if enabled { "on" } else { "off" }
+            ));
+        }
         FrontendAction::SkyMeteorsClear => {
             let cleared = renderer.meteors.clear();
             renderer

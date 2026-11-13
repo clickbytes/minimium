@@ -87,7 +87,7 @@ fn terrain_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
             };
             let visible = match (binding.group, binding.binding) {
                 (0, 0..=2) => true,
-                (0, 3..=10) => entry.stage != naga::ShaderStage::Vertex,
+                (0, 3..=11) => entry.stage != naga::ShaderStage::Vertex,
                 (1, 4) => true,
                 (1, 0..=3) | (1, 5..=6) | (2, 0..=2) => entry.stage == naga::ShaderStage::Fragment,
                 _ => false,
@@ -127,7 +127,7 @@ fn cloud_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
             };
             let visible = match (binding.group, binding.binding) {
                 (0, 0..=2) | (1, 0..=1) => true,
-                (0, 3..=10) => entry.stage != naga::ShaderStage::Vertex,
+                (0, 3..=11) => entry.stage != naga::ShaderStage::Vertex,
                 (1, 2) => entry.stage == naga::ShaderStage::Fragment,
                 (2, 0) => {
                     matches!(entry.name.as_str(), "fs_bolid_mask" | "fs_inside_mask")
@@ -168,7 +168,7 @@ fn atmosphere_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
             };
             let visible = match (binding.group, binding.binding) {
                 (0, 0..=2) => true,
-                (0, 3..=10) => entry.stage != naga::ShaderStage::Vertex,
+                (0, 3..=11) => entry.stage != naga::ShaderStage::Vertex,
                 (1, 0..=1) | (2, 0) => entry.stage != naga::ShaderStage::Vertex,
                 (1, 2) => entry.stage == naga::ShaderStage::Fragment,
                 _ => false,

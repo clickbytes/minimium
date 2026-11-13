@@ -135,3 +135,34 @@ fn parse_coordinate(value: &str) -> Result<f32, ParseError> {
     }
     Ok(coordinate)
 }
+
+pub(crate) fn nearest_portal_entity(
+    replicas: &minimium_client_runtime::ReplicatedEntities,
+    position: [f32; 3],
+) -> Option<minimium_world::entity::EntityId> {
+    replicas
+        .entities
+        .iter()
+        .filter_map(|(entity, replica)| {
+            let component = replica
+                .components
+                .get(&minimium_game_sample::PORTAL_COMPONENT)?;
+            if component.schema != minimium_game_sample::PORTAL_SCHEMA {
+                return None;
+            }
+            let portal = minimium_game_sample::PortalComponent::decode(&component.bytes)?;
+            let distance_squared = portal
+                .position
+                .iter()
+                .zip(position)
+                .map(|(portal, player)| (*portal - player).powi(2))
+                .sum::<f32>();
+            (distance_squared <= 9.0).then_some((*entity, distance_squared))
+        })
+        .min_by(|(left_id, left_distance), (right_id, right_distance)| {
+            left_distance
+                .total_cmp(right_distance)
+                .then_with(|| left_id.cmp(right_id))
+        })
+        .map(|(entity, _)| entity)
+}

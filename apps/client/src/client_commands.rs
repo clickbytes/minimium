@@ -24,6 +24,7 @@ mod movement;
 mod properties;
 mod weather;
 
+pub(crate) use gameplay::nearest_portal_entity;
 pub(crate) use help::{command_error, command_help, command_help_group, help_lines};
 pub(crate) use meteors::MeteorPreset;
 pub(crate) use minimium_commands::{
@@ -71,6 +72,7 @@ pub(crate) enum ClientCommand {
     SkyMeteorsStatus,
     SkyMeteorsSpawn(MeteorPreset),
     SkyMeteorsClear,
+    SkyMeteorsLight(bool),
     Fov(Option<f32>),
     ShowCelestialNames(bool),
     TimeStatus,
@@ -263,6 +265,7 @@ pub(crate) enum FrontendAction {
     SkyMeteorsStatus,
     SkyMeteorsSpawn(MeteorPreset),
     SkyMeteorsClear,
+    SkyMeteorsLight(bool),
     SpawnRandomBolid,
     TimeMode(String),
     TimeOfflinePolicy(String),
@@ -388,6 +391,9 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
         ClientCommand::SkyMeteorsSpawn(preset) => {
             return CommandResult::Action(FrontendAction::SkyMeteorsSpawn(preset));
         }
+        ClientCommand::SkyMeteorsLight(enabled) => {
+            return CommandResult::Action(FrontendAction::SkyMeteorsLight(enabled));
+        }
         ClientCommand::SkyMeteorsClear => {
             return CommandResult::Action(FrontendAction::SkyMeteorsClear);
         }
@@ -463,37 +469,6 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
         Ok(()) => CommandResult::Sent,
         Err(error) => CommandResult::QueueError(error),
     }
-}
-
-pub(crate) fn nearest_portal_entity(
-    replicas: &minimium_client_runtime::ReplicatedEntities,
-    position: [f32; 3],
-) -> Option<minimium_world::entity::EntityId> {
-    replicas
-        .entities
-        .iter()
-        .filter_map(|(entity, replica)| {
-            let component = replica
-                .components
-                .get(&minimium_game_sample::PORTAL_COMPONENT)?;
-            if component.schema != minimium_game_sample::PORTAL_SCHEMA {
-                return None;
-            }
-            let portal = minimium_game_sample::PortalComponent::decode(&component.bytes)?;
-            let distance_squared = portal
-                .position
-                .iter()
-                .zip(position)
-                .map(|(portal, player)| (*portal - player).powi(2))
-                .sum::<f32>();
-            (distance_squared <= 9.0).then_some((*entity, distance_squared))
-        })
-        .min_by(|(left_id, left_distance), (right_id, right_distance)| {
-            left_distance
-                .total_cmp(right_distance)
-                .then_with(|| left_id.cmp(right_id))
-        })
-        .map(|(entity, _)| entity)
 }
 
 #[cfg(test)]

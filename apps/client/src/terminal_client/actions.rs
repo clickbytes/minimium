@@ -237,6 +237,7 @@ pub(super) fn handle(
         }
         FrontendAction::SkyMeteorsStatus
         | FrontendAction::SkyMeteorsSpawn(_)
+        | FrontendAction::SkyMeteorsLight(_)
         | FrontendAction::SkyMeteorsClear => {
             println!(
                 "{}",

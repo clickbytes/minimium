@@ -441,3 +441,8 @@ E047-09 uploads a shared 240-byte, four-source transient-light uniform at frame
 binding 11. Physical-distance ranking and shader extinction are producer-neutral;
 daylight dust consumes the helper, and sky diagnostics report count/bytes/incident
 estimate. See docs/ambient-meteors.md for exact units and limits.
+
+E047-10 connects shared transient lights to terrain/material BRDF, authored
+objects and ocean before tone mapping. The session-local command
+sky meteors debug light off|on isolates this contribution; source visibility
+remains independent. Cloud-path extinction and runtime acceptance are pending.

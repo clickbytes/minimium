@@ -426,6 +426,7 @@ impl GpuResources {
             shadow_upload_status: super::shadow_gpu::ShadowUploadStatus::Pending,
             transient_buffer: frame_bindings.transient_buffer,
             transient_count: 0,
+            transient_enabled: true,
             transient_incident: 0.0,
             camera_buffer: frame_bindings.camera_buffer,
             environment_buffer: frame_bindings.environment_buffer,

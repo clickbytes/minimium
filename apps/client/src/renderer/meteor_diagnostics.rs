@@ -2,6 +2,7 @@ use super::Renderer;
 use crate::environment::SkyDiagnosticsSnapshot;
 
 pub(super) fn push(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
+    snapshot.push("transient_light_enabled", renderer.gpu.transient_enabled);
     snapshot.push("transient_lights", renderer.gpu.transient_count);
     snapshot.push(
         "transient_observer_irradiance",

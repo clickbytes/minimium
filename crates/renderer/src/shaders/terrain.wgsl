@@ -133,6 +133,13 @@ fn macro_climate(direction: vec3<f32>, elevation: f32) -> vec2<f32> {
         direct += surface_light(normal, view, light, albedo, roughness, packed.a)
             * irradiance * bolt_visibility;
     }
+    for (var i=0u; i<min(transient_lights.count.x,4u); i++) {
+        let light=transient_direction(i,input.position);
+        if dot(input.geometric_normal,light)>0.0 {
+            direct+=surface_light(normal,view,light,albedo,roughness,packed.a)
+                *transient_incident(i,input.position);
+        }
+    }
     if terrain.debug.x == 2u { return vec4<f32>(normal*0.5+0.5, 1.0); }
     if terrain.debug.x == 3u { return vec4<f32>(vec3<f32>(input.clip.z), 1.0); }
     if terrain.debug.x == 4u {

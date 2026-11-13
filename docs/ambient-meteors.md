@@ -251,3 +251,29 @@ stage; ground/ocean/cloud integrations belong to the next issues.
 Diagnostics expose selected count, observer estimate and actual buffer bytes;
 both initial and live GPU allocation totals include the uniform.
 No protocol, save, generation or server lifetime change is involved.
+
+
+## E047-10: local surface lighting
+
+Terrain adds each transient incident term through its existing surface_light
+BRDF (material albedo, filtered roughness, specular F0 and normal); the geometric
+normal additionally rejects back-facing facets. Authored objects use the same
+finite-light irradiance helper with their existing Lambert shading. Ocean adds
+a point-source BRDF highlight using its existing roughness/Fresnel and retains
+the sky-reflection term. All contributions are linear before tone_map_linear;
+no tessellation, extra scene pass or flash-time pipeline compilation occurs.
+Sun/Moon, their shadow map and server-bolid lighting remain independent.
+
+The existing 4-source cap applies across active events. Faint presets emit no
+light; finite physical distance, core radius, range fade, planet occlusion and
+atmospheric attenuation bound bright events. No global ambient term is added.
+At this stage cloud attenuation along source-to-surface paths is unity; E047-11
+owns that integration. Local transient lights do not cast tree/mountain shadow
+maps; geometric normals and planet occlusion are the current self-occlusion.
+
+Use sky meteors debug light off|on for local A/B comparisons. It uploads zero
+active transient lights without changing the meteor head, wake, event clock,
+Sun/Moon, atmosphere debug or server events. Default is on, session-local only;
+sky info reports the switch. Terminal builds parse it and report desktop-only.
+The command dispatcher moved its existing portal lookup unchanged into the
+gameplay command module to keep the owning files below 500 lines.

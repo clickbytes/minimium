@@ -52,6 +52,7 @@ struct VertexOutput {
             environment.bolid_position_intensity.xyz - (input.world_position + environment.render_origin.xyz));
     }
     direct += bolid_irradiance(input.world_position, normal) * bolid_visibility;
+    direct += transient_irradiance(input.world_position, normal);
     let linear = albedo * (ambient + direct);
     return vec4<f32>(tone_map_linear(linear), 1.0);
 }

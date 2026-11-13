@@ -104,13 +104,19 @@ impl GpuResources {
         }
         let meteors = snapshot.meteors();
         // One bounded snapshot feeds the shared finite-distance emission layer.
-        let lights =
+        let mut lights =
             minimium_renderer::transient_lighting::TransientLightUniform::from_frame(&meteors);
+        if !self.transient_enabled {
+            lights.count[0] = 0;
+        }
         self.transient_count = lights.count[0];
         self.transient_incident =
             minimium_renderer::transient_lighting::TransientLightUniform::observer_irradiance(
                 &meteors,
             );
+        if !self.transient_enabled {
+            self.transient_incident = 0.0;
+        }
         self.queue
             .write_buffer(&self.transient_buffer, 0, bytemuck::bytes_of(&lights));
         self.meteors_status = meteors.render_status();
