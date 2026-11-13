@@ -236,7 +236,8 @@ pub(super) fn handle(
             );
         }
         FrontendAction::SkyMeteorsStatus
-        | FrontendAction::SkyMeteorsSpawn(_)
+        | FrontendAction::SkyMeteorsSpawn(_, _)
+        | FrontendAction::SkyMeteorsDebug(_)
         | FrontendAction::SkyMeteorsLight(_)
         | FrontendAction::SkyMeteorsClear => {
             println!(

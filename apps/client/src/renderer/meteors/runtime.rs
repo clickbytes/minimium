@@ -13,6 +13,8 @@ impl MeteorRuntime {
     pub(in crate::renderer) fn new() -> Self {
         Self {
             audio: crate::audio::MeteorAudio::default(),
+            seed_override: None,
+            quality: minimium_renderer::quality::SkyQuality::Standard,
             epoch: std::time::Instant::now(),
             next_id: 1,
             active: Vec::with_capacity(super::MAX_ACTIVE_METEOR_EVENTS),
@@ -38,7 +40,14 @@ impl MeteorRuntime {
     /// built frame admitted meteors; the event initializes from the next valid
     /// environment frame so a spawn that races a teleport never memorizes a
     /// stale view.
-    pub(in crate::renderer) fn spawn(&mut self, preset: MeteorPreset) -> Result<String, String> {
+    pub(in crate::renderer) fn spawn(
+        &mut self,
+        preset: MeteorPreset,
+        seed: Option<u64>,
+    ) -> Result<String, String> {
+        if !self.spawner.enabled {
+            return Err("meteors: disabled by client.sky.meteors.enabled".into());
+        }
         if self.active.len() >= super::MAX_ACTIVE_METEOR_EVENTS {
             return Err(
                 "meteors: active limit (8) reached; run sky meteors clear first".to_owned(),
@@ -58,7 +67,9 @@ impl MeteorRuntime {
         let now_s = self.now_s();
         let id = self.next_id;
         self.next_id = self.next_id % (u64::MAX / super::EVENT_ID_STRIDE) + 1;
-        let seed = self.derive_seed(now_s);
+        let seed = seed
+            .or(self.seed_override)
+            .unwrap_or_else(|| self.derive_seed(now_s));
         let allow_long = self.allow_long_train();
         let history = self
             .history_pool
@@ -262,6 +273,13 @@ impl MeteorRuntime {
     /// (lifetimes stay bounded; panic-free in every state).
     pub(in crate::renderer) fn status_lines(&self) -> Vec<String> {
         let mut lines = Vec::with_capacity(super::MAX_ACTIVE_METEOR_EVENTS + 4);
+        lines.push(format!(
+            "meteor controls: enabled {}, rate {}, seed_override {:?}, requested quality {}",
+            self.spawner.enabled,
+            self.spawner.rate,
+            self.seed_override,
+            self.quality.label()
+        ));
         lines.push(self.audio.status());
         lines.push(format!(
             "meteors: client-local runtime; active {}/{}, spawned {}, dismissed {}",
@@ -285,7 +303,7 @@ impl MeteorRuntime {
         ));
         let now_s = self.now_s();
         lines.push(format!(
-            "meteors auto: enabled {}, seed {}, interval 120..300 real s, next {:?}s, spawned {}, skipped {}, peak {}, gate {}",
+            "meteors auto: enabled {}, seed {}, base interval 120..300 real s, next {:?}s, spawned {}, skipped {}, peak {}, gate {}",
             self.spawner.enabled,
             self.spawner.seed,
             self.spawner.next_in_s(now_s),

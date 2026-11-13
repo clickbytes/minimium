@@ -94,6 +94,7 @@ impl ApplicationHandler for App {
             startup_terrain_debug: self.options.startup_terrain_debug,
             startup_cloud_debug: self.options.startup_cloud_debug,
             startup_sky_demo: self.options.startup_sky_demo,
+            meteor_preferences: self.options.meteor_preferences.clone(),
             preference_sources: self.options.preference_sources.clone(),
             config_file_settings: self.options.config_file_settings.clone(),
             require_earth: self.options.require_earth,

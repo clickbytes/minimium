@@ -27,6 +27,7 @@ pub(super) struct RendererSetup {
     pub(super) startup_terrain_debug: minimium_renderer::terrain_debug::TerrainDebug,
     pub(super) startup_cloud_debug: minimium_environment::weather::CloudDebug,
     pub(super) startup_sky_demo: bool,
+    pub(super) meteor_preferences: std::collections::BTreeMap<String, String>,
     pub(super) preference_sources:
         std::collections::BTreeMap<String, minimium_commands::PropertySource>,
     pub(super) config_file_settings: std::collections::BTreeMap<String, String>,
@@ -61,6 +62,7 @@ impl Renderer {
             startup_terrain_debug,
             startup_cloud_debug,
             startup_sky_demo,
+            meteor_preferences,
             preference_sources,
             config_file_settings,
             require_earth,
@@ -241,6 +243,7 @@ impl Renderer {
                 ("client.sky.demo".to_owned(), startup_sky_demo.to_string()),
             ]
             .into_iter()
+            .chain(meteor_preferences.clone())
             .collect(),
             preference_sources,
         );
@@ -289,7 +292,7 @@ impl Renderer {
             environment_frame: EnvironmentFrameInput::unavailable(),
             render_environment_frame: EnvironmentFrame::unavailable(RenderViewFrame::default()),
             environment_observer: environment::observer::ObserverAdapter::default(),
-            meteors: meteors::MeteorRuntime::new(),
+            meteors: meteors::MeteorRuntime::configured(&meteor_preferences),
             sky_calculator: minimium_astronomy::SkyCalculator::default(),
             sky_catalogue,
             environment_error: None,

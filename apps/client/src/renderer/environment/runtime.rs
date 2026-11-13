@@ -25,7 +25,7 @@ impl Renderer {
         let meteors = self
             .meteors
             .build_frame(&self.render_environment_frame)
-            .with_quality(self.sky_quality.effective);
+            .with_quality(self.meteors.effective_quality(self.sky_quality.effective));
         let prepared =
             PreparedEnvironmentFrame::new(self.render_environment_frame.clone(), stars, meteors);
         self.metrics

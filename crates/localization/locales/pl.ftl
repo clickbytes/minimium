@@ -152,6 +152,11 @@ property-description = { $key ->
     [client_input_bindings] Fizyczne skróty klawiszowe w kontekstach wejścia; konflikty w tym samym kontekście są odrzucane.
     [client_graphics_sky_quality] Lokalna jakość cieni i renderowania nieba.
     [client_sky_names] Pokazuje etykiety ciał niebieskich w kliencie graficznym.
+    [client_sky_meteors_enabled] Włącz lokalne meteory kosmetyczne.
+    [client_sky_meteors_rate] Mnożnik częstości meteorów w tej sesji (0 do 10).
+    [client_sky_meteors_quality] Żądana jakość meteorów, ograniczona efektywną jakością nieba.
+    [client_sky_meteors_seed_override] Ziarno diagnostyczne tej sesji: none lub dziesiętne u64.
+    [client_sky_meteors_sound] Włącz opóźniony huk meteorów (wymaga kompilacji desktop-audio).
     [client_audio_meteors] Włącz opcjonalny opóźniony huk meteorów w tej sesji.
     [client_audio_meteor_volume] Głośność meteorów (od 0 do 1).
     [client_weather_cloud_detail] Maksymalna głębokość rekurencji wokseli chmur.

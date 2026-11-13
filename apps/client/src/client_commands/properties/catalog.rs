@@ -5,6 +5,32 @@ use std::sync::OnceLock;
 
 const CLIENT_PROPERTIES: &[PropertySpec] = &[
     PropertySpec::new(
+        "client.sky.meteors.enabled", PropertyType::Boolean, None,
+        "Local meteor enabled.", Some("true"), Some("true|false"),
+        "apps/client::renderer::meteors", PropertyPermission::Local, PropertyLifecycle::Live, true, true,
+    ),
+    PropertySpec::new(
+        "client.sky.meteors.rate", PropertyType::Decimal, None,
+        "Local meteor rate.", Some("1"), Some("finite 0..=10"),
+        "apps/client::renderer::meteors", PropertyPermission::Local, PropertyLifecycle::Live, false, true,
+    ),
+    PropertySpec::new(
+        "client.sky.meteors.quality", PropertyType::Enumeration, None,
+        "Local meteor quality.", Some("standard"), Some("low|standard"),
+        "apps/client::renderer::meteors", PropertyPermission::Local, PropertyLifecycle::Live, true, true,
+    ),
+    PropertySpec::new(
+        "client.sky.meteors.seed_override", PropertyType::Text, None,
+        "Local meteor seed_override.", Some("none"), Some("none|decimal u64"),
+        "apps/client::renderer::meteors", PropertyPermission::Local, PropertyLifecycle::Live, false, true,
+    ),
+    PropertySpec::new(
+        "client.sky.meteors.sound", PropertyType::Boolean, None,
+        "Local meteor sound.", Some("false"), Some("true|false"),
+        "apps/client::renderer::meteors", PropertyPermission::Local, PropertyLifecycle::Live, true, true,
+    ),
+
+    PropertySpec::new(
         "client.audio.meteors", PropertyType::Boolean, None,
         "Enable optional delayed meteor audio in this session.", Some("false"), Some("true|false"),
         "apps/client::audio", PropertyPermission::Local, PropertyLifecycle::Live, false, true,

@@ -9,6 +9,38 @@ use super::MeteorPreset;
 
 const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
+        name: "sky meteors debug",
+        alias: None,
+        usage: "sky meteors debug off|light|occlusion|paths|budget",
+        arguments: &[Arg::new(
+            "mode",
+            ArgType::Enumeration,
+            false,
+            false,
+            Some(&["off", "light", "occlusion", "paths", "budget"]),
+            None,
+            None,
+            "local diagnostic",
+        )],
+        parser: parse,
+    },
+    CommandSpec {
+        name: "sky meteors seed",
+        alias: None,
+        usage: "sky meteors seed VALUE (decimal u64; session only)",
+        arguments: &[Arg::new(
+            "seed",
+            ArgType::Integer,
+            false,
+            false,
+            None,
+            Some("u64"),
+            None,
+            "session seed override",
+        )],
+        parser: parse,
+    },
+    CommandSpec {
         name: "set_time",
         alias: None,
         usage: "set_time HHMM (UTC; owned local server)",
@@ -96,27 +128,39 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "sky meteors spawn",
         alias: None,
-        usage: "sky meteors spawn faint|bright|fireball|fragmenting (manual diagnostic event)",
-        arguments: &[Arg::new(
-            "preset",
-            ArgType::Enumeration,
-            false,
-            false,
-            Some(&["faint", "bright", "fireball"]),
-            None,
-            None,
-            "manual ambient meteor preset",
-        )],
+        usage: "sky meteors spawn PRESET [seed]",
+        arguments: &[
+            Arg::new(
+                "preset",
+                ArgType::Enumeration,
+                false,
+                false,
+                Some(super::meteors::PRESET_NAMES),
+                None,
+                None,
+                "manual ambient meteor preset",
+            ),
+            Arg::new(
+                "seed",
+                ArgType::Integer,
+                true,
+                false,
+                None,
+                Some("u64"),
+                None,
+                "deterministic seed",
+            ),
+        ],
         parser: parse,
     },
     CommandSpec {
         name: "sky meteors debug light",
         alias: None,
-        usage: "sky meteors debug light on|off|transmission",
+        usage: "sky meteors debug light [on|off|transmission]",
         arguments: &[Arg::new(
             "enabled",
             ArgType::Enumeration,
-            false,
+            true,
             false,
             Some(&["on", "off", "transmission"]),
             None,
@@ -214,11 +258,34 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
         ("sky bodies", []) => Ok(ClientCommand::SkyBodies),
         ("sky demo", ["on"]) => Ok(ClientCommand::SkyDemo(true)),
         ("sky demo", ["off"]) => Ok(ClientCommand::SkyDemo(false)),
+        ("sky meteors seed", [seed]) => {
+            let seed = seed.parse::<u64>().map_err(|_| ParseError::MeteorUsage)?;
+            Ok(ClientCommand::Property(super::ClientPropertyCommand::Set(
+                super::ClientPropertyValue::MeteorSeed(Some(seed)),
+            )))
+        }
+        ("sky meteors seed", _) => Err(ParseError::Usage("sky meteors seed VALUE (decimal u64)")),
+        ("sky meteors debug", [mode]) => Ok(ClientCommand::SkyMeteorsDebug(
+            super::MeteorDebug::parse(mode).ok_or(ParseError::Usage(
+                "sky meteors debug off|light|occlusion|paths|budget",
+            ))?,
+        )),
+        ("sky meteors debug", _) => Err(ParseError::Usage(
+            "sky meteors debug off|light|occlusion|paths|budget",
+        )),
         ("sky meteors status", []) => Ok(ClientCommand::SkyMeteorsStatus),
         ("sky meteors spawn", [value]) => Ok(ClientCommand::SkyMeteorsSpawn(
             MeteorPreset::parse(value).ok_or(ParseError::MeteorUsage)?,
+            None,
+        )),
+        ("sky meteors spawn", [value, seed]) => Ok(ClientCommand::SkyMeteorsSpawn(
+            MeteorPreset::parse(value).ok_or(ParseError::MeteorUsage)?,
+            Some(seed.parse().map_err(|_| ParseError::MeteorUsage)?),
         )),
         ("sky meteors spawn", _) => Err(ParseError::MeteorUsage),
+        ("sky meteors debug light", []) => {
+            Ok(ClientCommand::SkyMeteorsDebug(super::MeteorDebug::Light))
+        }
         ("sky meteors debug light", ["on"]) => {
             Ok(ClientCommand::SkyMeteorsLight(super::MeteorLightDebug::On))
         }

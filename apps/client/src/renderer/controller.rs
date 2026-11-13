@@ -258,7 +258,9 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
                 }
             }
         }
+        FrontendAction::SkyMeteorsDebug(mode) => super::meteor_diagnostics::debug(renderer, mode),
         FrontendAction::SkyMeteorsStatus => {
+            super::meteor_diagnostics::status(renderer);
             renderer
                 .application
                 .ui
@@ -268,8 +270,8 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
                 renderer.application.ui.console.push_line(line);
             }
         }
-        FrontendAction::SkyMeteorsSpawn(preset) => {
-            let message = match renderer.meteors.spawn(preset) {
+        FrontendAction::SkyMeteorsSpawn(preset, seed) => {
+            let message = match renderer.meteors.spawn(preset, seed) {
                 Ok(message) => message,
                 Err(message) => message,
             };

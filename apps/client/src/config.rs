@@ -18,6 +18,11 @@ const CLOUD_DEBUG_KEY: &str = "client.debug.clouds";
 const SKY_DEMO_KEY: &str = "client.sky.demo";
 const LOCALE_KEY: &str = "ui.locale";
 const DEFAULTS: &[(&str, &str)] = &[
+    ("client.sky.meteors.enabled", "true"),
+    ("client.sky.meteors.rate", "1"),
+    ("client.sky.meteors.quality", "standard"),
+    ("client.sky.meteors.seed_override", "none"),
+    ("client.sky.meteors.sound", "false"),
     (FOV_KEY, "70"),
     (SENSITIVITY_KEY, "0.0025"),
     (INPUT_BINDINGS_KEY, ""),
@@ -31,6 +36,9 @@ const DEFAULTS: &[(&str, &str)] = &[
     (LOCALE_KEY, "en"),
 ];
 const PERSISTENT_KEYS: &[&str] = &[
+    "client.sky.meteors.enabled",
+    "client.sky.meteors.quality",
+    "client.sky.meteors.sound",
     FOV_KEY,
     SENSITIVITY_KEY,
     INPUT_BINDINGS_KEY,
@@ -40,6 +48,11 @@ const PERSISTENT_KEYS: &[&str] = &[
     LOCALE_KEY,
 ];
 const KNOWN_KEYS: &[&str] = &[
+    "client.sky.meteors.enabled",
+    "client.sky.meteors.rate",
+    "client.sky.meteors.quality",
+    "client.sky.meteors.seed_override",
+    "client.sky.meteors.sound",
     FOV_KEY,
     SENSITIVITY_KEY,
     INPUT_BINDINGS_KEY,
@@ -227,12 +240,23 @@ fn mapped_environment_values() -> BTreeMap<String, String> {
         ("MINIMIUM_CLIENT_SKY_QUALITY", SKY_QUALITY_KEY),
         ("MINIMIUM_CLIENT_SKY_NAMES", SKY_NAMES_KEY),
         ("MINIMIUM_CLIENT_CLOUD_DETAIL", CLOUD_DETAIL_KEY),
+        ("MINIMIUM_METEOR_SEED", "client.sky.meteors.seed_override"),
+        ("MINIMIUM_METEORS", "client.sky.meteors.enabled"),
     ]
     .into_iter()
     .filter_map(|(environment, key)| {
-        std::env::var(environment)
-            .ok()
-            .map(|value| (key.to_owned(), value))
+        std::env::var(environment).ok().map(|value| {
+            (
+                key.to_owned(),
+                if key == "client.sky.meteors.enabled" && value == "0" {
+                    "false".into()
+                } else if key == "client.sky.meteors.enabled" && value == "1" {
+                    "true".into()
+                } else {
+                    value
+                },
+            )
+        })
     })
     .collect()
 }

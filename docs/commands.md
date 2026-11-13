@@ -258,3 +258,39 @@ Legacy command aliases map to the same property handlers: `camera fov` and
 The server admin command `spawn_random_bolid` creates an immediate bright class-2 bolid above an active planet observer, with a random trajectory and seeded material/breakup appearance. It needs no coordinates because the desktop client sends its current view direction. Manual requests have a five-second cooldown. `get server.sky.bolid_interval`, `set server.sky.bolid_interval 120..300`, `set server.sky.bolid_interval off`, and `reset server.sky.bolid_interval` control automatic night-time events. The startup setting also accepts `--set server.sky.bolid_interval=MIN..MAX` or `off` (10..=3600 seconds). Events are temporary visual effects and are not saved.
 
 The desktop F1 console and text client also accept `spawn_random_bolid` with no arguments. It uses the owned local server admin endpoint. If entered while the desktop client awaits Welcome, the command is queued until the world and sky view are ready; the server reply appears in the console. Attached or remote servers require their own administration channel.
+
+## Local cosmetic meteors (E047)
+
+Commands: sky meteors status; clear; spawn PRESET [seed]; seed VALUE;
+debug off|light|occlusion|paths|budget. Seeds are decimal u64 (0..18446744073709551615).
+Help/completion list the presets; invalid arguments return typed errors.
+Twenty families: ablation, burnout, erosion, droplets, irregular, single_split,
+asymmetric_split, multiple_split, cascade, dustball, hard_core, single_flare,
+multiple_flares, terminal_flare, airburst, remnants, dark_flight, debris,
+low_flare, grazing. Legacy faint/bright/fireball/fragmenting remain.
+Each family selects initial mass, speed, material, altitude and entry angle in
+renderer/meteors/presets.rs; the same CPU solver determines the outcome.
+Names do not guarantee an animation. Droplets use grain packets; dark flight
+retains unlit mass. There is no physical implosion category.
+
+Examples: sky meteors spawn airburst 42; sky meteors debug paths;
+sky meteors debug occlusion; sky meteors debug off. Light/paths/budget print
+console snapshots; occlusion shows selected source cloud transmission until off.
+Legacy debug light on|off|transmission remains. No observatory HUD.
+
+| Property under client.sky.meteors | Default / range | Persistence |
+|---|---|---|
+| enabled | true / boolean | preference |
+| quality | standard / low,standard | preference; capped by effective sky quality |
+| sound | false / boolean | preference; desktop-audio feature required |
+| rate | 1 / finite 0..10 | session only; 0 pauses automatic births |
+| seed_override | none / none or decimal u64 | session only |
+
+Use get/set/reset/list and --set as for other client properties. At rate 1 the
+automatic interval is 120..300 seconds; spawn never changes rate or world time.
+Enabled=false clears active effects/audio and rejects manual spawn. Reset restores
+startup settings without editing the config file; config save persists preferences
+only. MINIMIUM_METEORS=0/1 and MINIMIUM_METEOR_SEED use config precedence.
+client.audio.meteors is a compatibility alias for client.sky.meteors.sound;
+client.audio.meteor_volume remains session-only 0..1. The terminal parser accepts
+these commands and reports graphics unavailable without creating a GPU.

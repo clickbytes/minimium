@@ -17,7 +17,9 @@ use std::time::Instant;
 
 mod evolution;
 mod presentation;
+mod presets;
 mod runtime;
+mod settings;
 mod sounds;
 mod spawner;
 mod track;
@@ -59,43 +61,6 @@ pub(crate) struct SpawnParams {
 pub(crate) struct LightParams {
     /// Actionable maximum lighting distance in physical metres.
     pub(super) range_m: f64,
-}
-
-impl SpawnParams {
-    /// Constant preset table; `faint`/`bright`/`globe` labels match
-    /// `MeteorPreset::parse` in the command layer.
-    pub(super) const fn of(preset: MeteorPreset) -> Self {
-        match preset {
-            MeteorPreset::Faint => Self {
-                speed_m_s: 18.0e3,
-                duration_s: 2.2,
-                mass_kg: 0.002,
-                trail_thickness_m: 0.8,
-                trail_opacity: 0.72,
-                light: None,
-            },
-            MeteorPreset::Bright => Self {
-                speed_m_s: 32.0e3,
-                duration_s: 3.6,
-                mass_kg: 0.5,
-                trail_thickness_m: 1.6,
-                trail_opacity: 0.9,
-                light: Some(LightParams { range_m: 6.0e4 }),
-            },
-            MeteorPreset::Fragmenting => Self {
-                duration_s: 1.0,
-                ..Self::of(MeteorPreset::Fireball)
-            },
-            MeteorPreset::Fireball => Self {
-                speed_m_s: 55.0e3,
-                duration_s: 5.2,
-                mass_kg: 100.0,
-                trail_thickness_m: 3.2,
-                trail_opacity: 1.0,
-                light: Some(LightParams { range_m: 1.5e5 }),
-            },
-        }
-    }
 }
 
 /// Last seen world scope; a change dismisses every pending event instantly.
@@ -168,6 +133,8 @@ impl ActiveEvent {
 
 /// Client-local manual meteor lifetime state (ADR 0013 § 2).
 pub(crate) struct MeteorRuntime {
+    pub(in crate::renderer) seed_override: Option<u64>,
+    pub(in crate::renderer) quality: minimium_renderer::quality::SkyQuality,
     pub(in crate::renderer) audio: crate::audio::MeteorAudio,
     /// The single client monotonic datum (ADR 0013 § 5); every age derives
     /// from `epoch.elapsed()`, so no second clock exists.

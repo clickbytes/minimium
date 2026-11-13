@@ -89,12 +89,16 @@ impl ActiveEvent {
         } else {
             20_000.0 + rng.next_f64() * 15_000.0
         };
-        let speed_m_s = self.params.speed_m_s * (0.9 + rng.next_f64() * 0.2);
+        let speed_m_s =
+            (self.params.speed_m_s * (0.9 + rng.next_f64() * 0.2)).clamp(11_000.0, 72_000.0);
         if !speed_m_s.is_finite() {
             return Err("meteor speed is finite only after clamping");
         }
         let (sin_azimuth, cos_azimuth) = azimuth.sin_cos();
-        let cos_sink = (descent_m / (speed_m_s * self.duration_s)).min(0.85);
+        let cos_sink = super::presets::entry(self.preset)
+            .map_or((descent_m / (speed_m_s * self.duration_s)).min(0.85), |v| {
+                v.1
+            });
         let sin_sink = (1.0 - cos_sink * cos_sink).sqrt();
         let bearing = [
             first[0] * cos_azimuth + second[0] * sin_azimuth,
@@ -106,7 +110,8 @@ impl ActiveEvent {
             speed_m_s * (bearing[1] * sin_sink - up[1] * cos_sink),
             speed_m_s * (bearing[2] * sin_sink - up[2] * cos_sink),
         ];
-        let start_radius_m = radius_m + start_height_m;
+        let start_radius_m =
+            radius_m + super::presets::entry(self.preset).map_or(start_height_m, |v| v.0);
         if !start_radius_m.is_finite() || start_radius_m.abs() > POSITION_ABS_M_MAX {
             return Err("meteor start radius leaves the contract bounds");
         }
@@ -125,7 +130,7 @@ impl ActiveEvent {
             radius_m,
             self.params.mass_kg,
             self.seed,
-            self.preset == crate::client_commands::MeteorPreset::Fragmenting,
+            self.preset,
         ) {
             return Err("invalid physical history");
         }

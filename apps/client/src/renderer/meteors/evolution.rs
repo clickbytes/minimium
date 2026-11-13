@@ -47,7 +47,7 @@ impl Evolution {
         radius_m: f64,
         mass_kg: f64,
         seed: u64,
-        fragmenting: bool,
+        preset: crate::client_commands::MeteorPreset,
     ) -> bool {
         let speed = glam::DVec3::from_array(basis.velocity_m_s).length();
         if !radius_m.is_finite()
@@ -58,7 +58,7 @@ impl Evolution {
         {
             return false;
         }
-        let material = Material::seeded(if fragmenting { 2 } else { seed });
+        let material = super::presets::material(preset, seed);
         let body = Body {
             position_m: basis.start_phys_m.into(),
             velocity_m_s: basis.velocity_m_s.into(),

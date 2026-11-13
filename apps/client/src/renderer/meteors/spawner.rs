@@ -15,8 +15,10 @@ pub(super) struct Candidate {
 
 pub(super) struct Spawner {
     pub enabled: bool,
+    pub rate: f64,
     pub seed: u64,
     session_seed: u64,
+    initial_seed: u64,
     context: Option<WorldContext>,
     start_s: f64,
     next_slot: u64,
@@ -28,20 +30,17 @@ pub(super) struct Spawner {
 
 impl Spawner {
     pub fn new() -> Self {
-        let session_seed = std::env::var("MINIMIUM_METEOR_SEED")
-            .ok()
-            .and_then(|value| value.parse().ok())
-            .unwrap_or_else(|| {
-                let nanos = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_nanos() as u64;
-                nanos ^ u64::from(std::process::id()).rotate_left(32)
-            });
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64;
+        let session_seed = nanos ^ u64::from(std::process::id()).rotate_left(32);
         Self {
-            enabled: std::env::var("MINIMIUM_METEORS").as_deref() != Ok("0"),
+            enabled: true,
+            rate: 1.0,
             seed: session_seed,
             session_seed,
+            initial_seed: session_seed,
             context: None,
             start_s: 0.0,
             next_slot: 0,
@@ -50,6 +49,11 @@ impl Spawner {
             peak: 0,
             reason: "no_environment",
         }
+    }
+
+    pub fn seed_override(&mut self, seed: Option<u64>) {
+        self.session_seed = seed.unwrap_or(self.initial_seed);
+        self.suspend();
     }
 
     pub fn suspend(&mut self) {
@@ -63,15 +67,16 @@ impl Spawner {
 
     fn at(&self, index: u64) -> f64 {
         let jitter = (self.word(index) >> 11) as f64 / (1u64 << 53) as f64;
-        self.start_s + index as f64 * SLOT_S + JITTER_S * jitter
+        self.start_s + (index as f64 * SLOT_S + JITTER_S * jitter) / self.rate.max(0.001)
     }
 
     pub fn next_in_s(&self, now_s: f64) -> Option<f64> {
-        (self.enabled && self.context.is_some()).then(|| (self.at(self.next_slot) - now_s).max(0.0))
+        (self.enabled && self.rate > 0.0 && self.context.is_some())
+            .then(|| (self.at(self.next_slot) - now_s).max(0.0))
     }
 
     pub fn advance(&mut self, context: WorldContext, now_s: f64) -> Option<Candidate> {
-        if !self.enabled {
+        if !self.enabled || self.rate == 0.0 {
             self.suspend();
             self.reason = "disabled";
             return None;
@@ -83,14 +88,16 @@ impl Spawner {
             context.hash(&mut hash);
             self.seed = self.session_seed ^ hash.finish();
             self.context = Some(context);
-            self.start_s = now_s + 120.0;
+            self.start_s = now_s + 120.0 / self.rate;
             self.next_slot = 0;
         }
         self.reason = "waiting_monotonic_deadline";
         if now_s < self.at(self.next_slot) {
             return None;
         }
-        let mut slot = ((now_s - self.start_s) / SLOT_S).max(0.0).floor() as u64;
+        let mut slot = ((now_s - self.start_s) * self.rate / SLOT_S)
+            .max(0.0)
+            .floor() as u64;
         if self.at(slot) > now_s {
             slot = slot.saturating_sub(1);
         }

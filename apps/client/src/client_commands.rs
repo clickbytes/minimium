@@ -26,7 +26,7 @@ mod weather;
 
 pub(crate) use gameplay::nearest_portal_entity;
 pub(crate) use help::{command_error, command_help, command_help_group, help_lines};
-pub(crate) use meteors::{MeteorLightDebug, MeteorPreset};
+pub(crate) use meteors::{MeteorDebug, MeteorLightDebug, MeteorPreset};
 pub(crate) use minimium_commands::{
     CommandArgumentSpec as ArgumentSpec, CommandArgumentType as ArgumentType,
 };
@@ -70,9 +70,10 @@ pub(crate) enum ClientCommand {
     SkyBodies,
     SkyDemo(bool),
     SkyMeteorsStatus,
-    SkyMeteorsSpawn(MeteorPreset),
+    SkyMeteorsSpawn(MeteorPreset, Option<u64>),
     SkyMeteorsClear,
     SkyMeteorsLight(MeteorLightDebug),
+    SkyMeteorsDebug(MeteorDebug),
     Fov(Option<f32>),
     ShowCelestialNames(bool),
     TimeStatus,
@@ -263,9 +264,10 @@ pub(crate) enum FrontendAction {
     TimeStatus,
     TimeScale(String),
     SkyMeteorsStatus,
-    SkyMeteorsSpawn(MeteorPreset),
+    SkyMeteorsSpawn(MeteorPreset, Option<u64>),
     SkyMeteorsClear,
     SkyMeteorsLight(MeteorLightDebug),
+    SkyMeteorsDebug(MeteorDebug),
     SpawnRandomBolid,
     TimeMode(String),
     TimeOfflinePolicy(String),
@@ -388,8 +390,11 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
         ClientCommand::SkyMeteorsStatus => {
             return CommandResult::Action(FrontendAction::SkyMeteorsStatus);
         }
-        ClientCommand::SkyMeteorsSpawn(preset) => {
-            return CommandResult::Action(FrontendAction::SkyMeteorsSpawn(preset));
+        ClientCommand::SkyMeteorsSpawn(preset, seed) => {
+            return CommandResult::Action(FrontendAction::SkyMeteorsSpawn(preset, seed));
+        }
+        ClientCommand::SkyMeteorsDebug(mode) => {
+            return CommandResult::Action(FrontendAction::SkyMeteorsDebug(mode))
         }
         ClientCommand::SkyMeteorsLight(enabled) => {
             return CommandResult::Action(FrontendAction::SkyMeteorsLight(enabled));

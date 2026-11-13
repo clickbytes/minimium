@@ -464,3 +464,10 @@ Volume is client.audio.meteor_volume (0..1, default0.25). Breakup cues use
 physical-distance delay, bounded queues and world/focus/teleport invalidation.
 No device setup runs on the renderer lane. See docs/ambient-meteors.md for
 Rodio/CPAL licenses, synthesis, budgets and pending runtime verification.
+
+E047 controls and twenty physics presets are documented in docs/commands.md.
+Example: `sky meteors spawn cascade 42`. All presets use the same solver; names
+suggest initial conditions, not guaranteed animations. Meteor preferences flow
+through config/options and SettingsStore; runtime settings own scheduling/audio.
+Renderer property formatting lives in renderer/settings/values.rs to respect
+the 500-line limit. No HUD, server or save-format changes are involved.

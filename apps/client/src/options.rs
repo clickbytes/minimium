@@ -50,6 +50,7 @@ pub struct ClientOptions {
     pub startup_terrain_debug: minimium_renderer::terrain_debug::TerrainDebug,
     pub startup_cloud_debug: minimium_environment::weather::CloudDebug,
     pub startup_sky_demo: bool,
+    pub meteor_preferences: BTreeMap<String, String>,
     pub preference_sources: BTreeMap<String, PropertySource>,
     pub config_file_settings: BTreeMap<String, String>,
     working_dir: Option<PathBuf>,
@@ -285,6 +286,12 @@ impl ClientOptions {
         options.startup_terrain_debug = preferences.terrain_debug;
         options.startup_cloud_debug = preferences.cloud_debug;
         options.startup_sky_demo = preferences.sky_demo;
+        options.meteor_preferences = preferences
+            .resolved_values
+            .iter()
+            .filter(|(key, _)| key.starts_with("client.sky.meteors."))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
         options.preference_sources = preferences.sources;
         options.config_file_settings = preferences.file_settings;
 
@@ -384,6 +391,7 @@ impl ClientOptions {
             startup_terrain_debug: minimium_renderer::terrain_debug::TerrainDebug::Off,
             startup_cloud_debug: minimium_environment::weather::CloudDebug::Off,
             startup_sky_demo: false,
+            meteor_preferences: BTreeMap::new(),
             preference_sources: BTreeMap::new(),
             config_file_settings: BTreeMap::new(),
             working_dir: None,

@@ -1,6 +1,44 @@
 use super::Renderer;
 use crate::environment::SkyDiagnosticsSnapshot;
 
+pub(super) fn status(renderer: &mut Renderer) {
+    use crate::client_commands::{ClientPropertyCommand as Command, ClientPropertyKey as Key};
+    for key in [
+        Key::MeteorEnabled,
+        Key::MeteorRate,
+        Key::MeteorQuality,
+        Key::MeteorSeed,
+        Key::MeteorAudio,
+    ] {
+        let line = renderer.apply_property(Command::Get(key));
+        renderer.application.ui.console.push_line(line);
+    }
+    let gpu = &renderer.gpu.milky_way.meteors;
+    renderer.application.ui.console.push_line(format!(
+        "meteor GPU: cores {}, segments {}, dust {}, culled low {}, upload {} bytes, persistent {} bytes, lights {}",
+        renderer.gpu.meteors_status.core_count(), gpu.count, gpu.dust_segments,
+        gpu.rejected_low, gpu.upload_bytes,
+        minimium_renderer::meteors_gpu::MeteorGpu::BYTES + renderer.gpu.transient_buffer.size(),
+        renderer.gpu.transient_count,
+    ));
+}
+
+pub(super) fn debug(renderer: &mut Renderer, mode: crate::client_commands::MeteorDebug) {
+    use crate::client_commands::MeteorDebug;
+    renderer.gpu.transient_enabled = true;
+    renderer.gpu.transient_transmission = mode == MeteorDebug::Occlusion;
+    match mode {
+        MeteorDebug::Paths => {
+            for line in renderer.meteors.path_lines() {
+                renderer.application.ui.console.push_line(line);
+            }
+        }
+        MeteorDebug::Budget | MeteorDebug::Light => status(renderer),
+        _ => {}
+    }
+    renderer.application.ui.console.push_line(format!("meteor diagnostic {mode:?}; paths/budget/light print a snapshot; occlusion persists until debug off"));
+}
+
 pub(super) fn push(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
     snapshot.push("transient_light_enabled", renderer.gpu.transient_enabled);
     snapshot.push("transient_lights", renderer.gpu.transient_count);

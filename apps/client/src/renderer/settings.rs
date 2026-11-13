@@ -1,3 +1,4 @@
+mod values;
 use super::Renderer;
 use crate::client_commands::{
     ClientPropertyCommand, ClientPropertyKey as Key, ClientPropertyValue as Value,
@@ -52,6 +53,11 @@ impl Renderer {
     }
 
     fn set_property(&mut self, value: Value) -> Key {
+        if let Some(raw) = self.meteors.apply_setting(&value) {
+            let key = value.key();
+            self.application.settings.set(key.key(), raw);
+            return key;
+        }
         match value {
             Value::Locale(value) => {
                 self.application.settings.locale = value;
@@ -114,20 +120,12 @@ impl Renderer {
                 self.show_celestial_names = value;
                 Key::SkyNames
             }
-            Value::MeteorAudio(value) => {
-                self.meteors.audio.set_enabled(value);
-                self.application
-                    .settings
-                    .set(Key::MeteorAudio.key(), value.to_string());
-                Key::MeteorAudio
-            }
-            Value::MeteorVolume(value) => {
-                self.meteors.audio.set_volume(value);
-                self.application
-                    .settings
-                    .set(Key::MeteorVolume.key(), value.to_string());
-                Key::MeteorVolume
-            }
+            Value::MeteorEnabled(_)
+            | Value::MeteorRate(_)
+            | Value::MeteorQuality(_)
+            | Value::MeteorSeed(_)
+            | Value::MeteorAudio(_)
+            | Value::MeteorVolume(_) => unreachable!("handled above"),
             Value::CloudDetail(value) => {
                 self.application
                     .settings
@@ -195,6 +193,17 @@ impl Renderer {
 
     fn reset_property(&mut self, key: Key) {
         self.application.settings.reset(key.key());
+        if let Some(default) = super::meteors::MeteorRuntime::setting_default(key) {
+            let raw = self
+                .application
+                .settings
+                .requested(key.key())
+                .unwrap_or(default);
+            let value = crate::client_commands::parse_setting_value(key.key(), raw)
+                .expect("validated meteor startup preference");
+            self.meteors.apply_setting(&value);
+            return;
+        }
         match key {
             Key::Locale => {
                 self.application.settings.locale = minimium_localization::Locale::from_setting(
@@ -266,8 +275,12 @@ impl Renderer {
                     .unwrap_or("false")
                     == "true";
             }
-            Key::MeteorAudio => self.meteors.audio.set_enabled(false),
-            Key::MeteorVolume => self.meteors.audio.set_volume(0.25),
+            Key::MeteorEnabled
+            | Key::MeteorRate
+            | Key::MeteorQuality
+            | Key::MeteorSeed
+            | Key::MeteorAudio
+            | Key::MeteorVolume => unreachable!("handled above"),
             Key::CloudDetail => {
                 let detail = self
                     .application
@@ -357,91 +370,6 @@ impl Renderer {
                 unreachable!("world clock properties are not renderer settings")
             }
         }
-    }
-
-    fn property_line(&self, key: Key, changed: bool) -> String {
-        if let Some(line) = crate::client_commands::format_time_value(key, self.environment_frame) {
-            return line;
-        }
-        let (requested, effective, default, difference_reason) = match key {
-            Key::Locale => self.stored_property(key, "en"),
-            Key::CameraFov => self.stored_property(key, "70"),
-            Key::MouseSensitivity => self.stored_property(key, "0.0025"),
-            Key::InputBindings => self.stored_property(key, ""),
-            Key::SkyQuality => self.stored_property(key, "standard"),
-            Key::SkyNames => self.stored_property(key, "false"),
-            Key::MeteorAudio => (
-                self.meteors.audio.enabled.to_string(),
-                (self.meteors.audio.enabled && self.meteors.audio.backend_status() == "ready")
-                    .to_string(),
-                "false".into(),
-                Some(self.meteors.audio.backend_status().into()),
-            ),
-            Key::MeteorVolume => self.stored_property(key, "0.25"),
-            Key::CloudDetail => self.stored_property(key, "6"),
-            Key::AtmosphereDebug => self.stored_property(key, "off"),
-            Key::TerrainDebug => self.stored_property(key, "off"),
-            Key::CloudDebug => self.stored_property(key, "off"),
-            Key::SkyDemo => self.stored_property(key, "false"),
-            Key::MovementFly => (
-                self.application.connection.flight_enabled.to_string(),
-                self.application.connection.flight_enabled.to_string(),
-                "false".to_owned(),
-                Some("local queued input; server confirmation is unavailable".to_owned()),
-            ),
-            Key::MovementSpeed => (
-                self.application.connection.movement.speed.to_string(),
-                self.application.connection.movement.speed.to_string(),
-                "5".to_owned(),
-                Some("local queued input; server confirmation is unavailable".to_owned()),
-            ),
-            Key::MovementAccel => (
-                self.application.connection.movement.accel.to_string(),
-                self.application.connection.movement.accel.to_string(),
-                "30".to_owned(),
-                Some("local queued input; server confirmation is unavailable".to_owned()),
-            ),
-            Key::WorldTimeMode
-            | Key::WorldTimeScale
-            | Key::WorldTimeOfflinePolicy
-            | Key::WorldTimeUtc
-            | Key::WorldTimeRevision => unreachable!("world clock value formatted above"),
-        };
-        let source = if matches!(
-            key,
-            Key::MovementFly | Key::MovementSpeed | Key::MovementAccel
-        ) {
-            PropertySource::Runtime
-        } else {
-            self.application.settings.source(key.key())
-        };
-        let metadata = PropertyValue {
-            requested: Some(requested.clone()),
-            effective: Some(effective.clone()),
-            default: Some(default.clone()),
-            source,
-            difference_reason: difference_reason.clone(),
-        };
-        format!(
-            "{} {}requested={} effective={} default={} source={} lifecycle=live reason={}",
-            key.key(),
-            if changed { "updated; " } else { "" },
-            metadata.requested.as_deref().unwrap_or("unavailable"),
-            metadata.effective.as_deref().unwrap_or("unavailable"),
-            metadata.default.as_deref().unwrap_or("unavailable"),
-            metadata.source.as_str(),
-            metadata.difference_reason.as_deref().unwrap_or("none"),
-        )
-    }
-
-    fn stored_property(&self, key: Key, default: &str) -> (String, String, String, Option<String>) {
-        let store = &self.application.settings;
-        (
-            store.requested(key.key()).unwrap_or(default).to_owned(),
-            store.effective(key.key()).unwrap_or(default).to_owned(),
-            default.to_owned(),
-            store.difference_reason(key.key()).map(str::to_owned),
-        )
     }
 }
 

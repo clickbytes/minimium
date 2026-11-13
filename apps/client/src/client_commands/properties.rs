@@ -256,6 +256,33 @@ fn parse_value(key: ClientPropertyKey, value: &str) -> Result<ClientPropertyValu
                 Ok(ClientPropertyValue::SkyDemo(enabled))
             }
         }
+        ClientPropertyKey::MeteorEnabled => parse_bool(value)
+            .map(ClientPropertyValue::MeteorEnabled)
+            .ok_or_else(|| invalid("expected true or false".into())),
+        ClientPropertyKey::MeteorQuality => SkyQuality::parse(value)
+            .map(ClientPropertyValue::MeteorQuality)
+            .map_err(|_| invalid("quality must be low or standard".into())),
+        ClientPropertyKey::MeteorSeed => {
+            let seed = if value == "none" {
+                None
+            } else {
+                Some(
+                    value
+                        .parse::<u64>()
+                        .map_err(|_| invalid("expected none or decimal u64".into()))?,
+                )
+            };
+            Ok(ClientPropertyValue::MeteorSeed(seed))
+        }
+        ClientPropertyKey::MeteorRate => {
+            let rate = value
+                .parse::<f64>()
+                .map_err(|_| invalid("expected finite 0..=10".into()))?;
+            if !rate.is_finite() || !(0.0..=10.0).contains(&rate) {
+                return Err(invalid("expected finite 0..=10".into()));
+            }
+            Ok(ClientPropertyValue::MeteorRate(rate))
+        }
         ClientPropertyKey::MeteorAudio => parse_bool(value)
             .map(ClientPropertyValue::MeteorAudio)
             .ok_or_else(|| invalid("expected true or false".into())),
