@@ -30,6 +30,10 @@ pub struct MeteorGpu {
     pub upload_bytes: u64,
     pub rejected_low: u32,
     pub optical_heads: u32,
+    pub culled_segments: u32,
+    pub dropped_cores: u32,
+    pub prepare_us: u64,
+    pub low_quality: bool,
     pub draw_count: std::cell::Cell<u32>,
 }
 
@@ -112,11 +116,26 @@ impl MeteorGpu {
             upload_bytes: 0,
             rejected_low: 0,
             optical_heads: 0,
+            culled_segments: 0,
+            dropped_cores: 0,
+            prepare_us: 0,
+            low_quality: false,
             draw_count: std::cell::Cell::new(0),
         }
     }
 
-    pub fn upload(&mut self, queue: &wgpu::Queue, frame: &MeteorFrame) {
+    pub fn upload(
+        &mut self,
+        queue: &wgpu::Queue,
+        frame: &MeteorFrame,
+        view: &crate::RenderViewFrame,
+    ) {
+        let started = std::time::Instant::now();
+        let low = frame.minimum_height_m() > 0.0;
+        self.low_quality = low;
+        let core_limit = if low { 8 } else { MAX_METEOR_CORES };
+        self.dropped_cores = frame.cores().len().saturating_sub(core_limit) as u32;
+        self.culled_segments = 0;
         let mut segments = [Segment::default(); CAPACITY];
         self.count = 0;
         self.dust_segments = 0;
@@ -124,7 +143,7 @@ impl MeteorGpu {
         self.draw_count.set(0);
         self.rejected_low = 0;
         self.optical_heads = 0;
-        for core in frame.cores() {
+        for core in frame.cores().iter().take(core_limit) {
             if frame.physical_height(core.position_rel_m) < frame.minimum_height_m() {
                 self.rejected_low += 1;
                 continue;
@@ -146,11 +165,15 @@ impl MeteorGpu {
                 core.position_rel_m[2],
                 core.radius_m,
             ];
-            let optical_source = frame
-                .lights()
-                .iter()
-                .position(|light| light.id == core.id)
-                .map_or(0.0, |index| (index + 1) as f32);
+            let optical_source = if low {
+                0.0
+            } else {
+                frame
+                    .lights()
+                    .iter()
+                    .position(|light| light.id == core.id)
+                    .map_or(0.0, |index| (index + 1) as f32)
+            };
             if optical_source > 0.0 && frame.head_visible(core) {
                 self.optical_heads += 1;
             }
@@ -165,8 +188,19 @@ impl MeteorGpu {
                 optics: [0.0, 1.0, optical_source, 0.0],
             };
             self.count += 1;
+            let trail_count = frame
+                .trails()
+                .iter()
+                .filter(|point| point.id == core.id)
+                .count();
             let mut previous: Option<&crate::meteors::TrailPoint> = None;
-            for point in frame.trails().iter().filter(|point| point.id == core.id) {
+            for (_, point) in frame
+                .trails()
+                .iter()
+                .filter(|point| point.id == core.id)
+                .enumerate()
+                .filter(|(i, _)| !low || i % 2 == 0 || *i + 1 == trail_count)
+            {
                 if frame.physical_height(point.position_rel_m) < frame.minimum_height_m() {
                     previous = None;
                     continue;
@@ -247,6 +281,29 @@ impl MeteorGpu {
                 }
             }
         }
+        let mut kept = 0;
+        self.dust_segments = 0;
+        self.optical_heads = 0;
+        for i in 0..self.count as usize {
+            let segment = segments[i];
+            if segment.color[3] <= 0.0
+                || !crate::meteors_culling::visible(
+                    segment.start,
+                    segment.end,
+                    segment.optics[2] > 0.0,
+                    frame,
+                    view,
+                )
+            {
+                self.culled_segments += 1;
+                continue;
+            }
+            self.dust_segments += u32::from(segment.optics[0] > 1.5);
+            self.optical_heads += u32::from(segment.optics[2] > 0.0);
+            segments[kept] = segment;
+            kept += 1;
+        }
+        self.count = kept as u32;
         self.emission_segments = segments[..self.count as usize]
             .iter()
             .filter(|segment| segment.optics[0] < 1.5 && segment.color[3] > 0.0)
@@ -256,6 +313,7 @@ impl MeteorGpu {
         if !bytes.is_empty() {
             queue.write_buffer(&self.buffer, 0, bytes);
         }
+        self.prepare_us = started.elapsed().as_micros().min(u64::MAX as u128) as u64;
     }
 
     pub(crate) fn draw<'a>(

@@ -109,13 +109,20 @@ impl GpuResources {
         if !self.transient_enabled {
             lights.count[0] = 0;
         }
-        lights.attach_clouds(
+        self.cloud_gpu.light_cache.attach(
+            &mut lights,
             &self.cloud_gpu.light_records,
-            std::array::from_fn(|i| {
-                (render_frame.view.camera_eye_world_m[i] - render_frame.view.render_origin_m[i])
-                    as f32
-            }),
-            self.cloud_gpu.standard_lighting,
+            minimium_renderer::transient_cloud_cache::CloudLightQuery {
+                ids: std::array::from_fn(|i| meteors.lights().get(i).map_or(0, |light| light.id)),
+                origin: render_frame.view.render_origin_m,
+                revision: self.cloud_gpu.revision,
+                now: std::time::Instant::now(),
+                eye: std::array::from_fn(|i| {
+                    (render_frame.view.camera_eye_world_m[i] - render_frame.view.render_origin_m[i])
+                        as f32
+                }),
+                standard: self.cloud_gpu.standard_lighting && meteors.minimum_height_m() == 0.0,
+            },
         );
         lights.count[1] = u32::from(self.transient_transmission);
         self.transient_count = lights.count[0];
@@ -129,7 +136,9 @@ impl GpuResources {
         self.queue
             .write_buffer(&self.transient_buffer, 0, bytemuck::bytes_of(&lights));
         self.meteors_status = meteors.render_status();
-        self.milky_way.meteors.upload(&self.queue, &meteors);
+        self.milky_way
+            .meteors
+            .upload(&self.queue, &meteors, &render_frame.view);
         self.atmosphere_gpu.mark_environment(&environment_upload);
         self.terrain_gpu.uniform.eye_relative = std::array::from_fn(|i| {
             if i < 3 {

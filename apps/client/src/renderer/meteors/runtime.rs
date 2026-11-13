@@ -28,6 +28,7 @@ impl MeteorRuntime {
                 .map(|_| super::evolution::Evolution::empty())
                 .collect(),
             omitted_cores: 0,
+            prepare_us: 0,
         }
     }
 
@@ -98,6 +99,8 @@ impl MeteorRuntime {
     /// scope changes, reconnects and teleports dismiss pending events
     /// instantly (ADR 0013 § 5); the origin rebase happens inside the frame.
     pub(in crate::renderer) fn build_frame(&mut self, frame: &EnvironmentFrame) -> MeteorFrame {
+        let started = std::time::Instant::now();
+        self.prepare_us = 0;
         if !matches!(frame.status, EnvironmentFrameStatus::Available) || frame.context.is_none() {
             self.spawner.suspend();
         }
@@ -184,6 +187,7 @@ impl MeteorRuntime {
         self.cycle_events(&mut meteor_frame, &view, scale, now_s);
         self.audio.tick(now_s);
         self.spawner.peak = self.spawner.peak.max(self.active.len());
+        self.prepare_us = started.elapsed().as_micros().min(u64::MAX as u128) as u64;
         meteor_frame
     }
 
@@ -196,12 +200,20 @@ impl MeteorRuntime {
         scale: PlanetSurfaceScale,
         now_s: f64,
     ) {
+        let mut initialized = false;
         let mut index = 0;
         while index < self.active.len() {
             let event = &mut self.active[index];
-            if event.basis.is_none() && event.init_basis(view, scale).is_err() {
-                self.dismiss(index);
-                continue;
+            if event.basis.is_none() {
+                if initialized {
+                    index += 1;
+                    continue;
+                }
+                initialized = true;
+                if event.init_basis(view, scale).is_err() {
+                    self.dismiss(index);
+                    continue;
+                }
             }
             if event.evolution.is_none() {
                 self.dismiss(index);
@@ -220,7 +232,7 @@ impl MeteorRuntime {
                 super::presentation::push_event(meteor_frame, event, age_s, false);
             index += 1;
         }
-        for event in &self.active {
+        for event in self.active.iter().filter(|event| event.basis.is_some()) {
             let age_s = (now_s - event.start_s).max(0.0);
             self.omitted_cores += super::presentation::push_event(meteor_frame, event, age_s, true);
             self.omitted_cores +=
@@ -281,6 +293,7 @@ impl MeteorRuntime {
             self.quality.label()
         ));
         lines.push(self.audio.status());
+        lines.extend(self.budget_lines());
         lines.push(format!(
             "meteors: client-local runtime; active {}/{}, spawned {}, dismissed {}",
             self.active.len(),

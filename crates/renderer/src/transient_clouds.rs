@@ -49,19 +49,28 @@ impl TransientLightUniform {
                     self.clouds[base + i] = self.clouds[base + i - 1];
                 }
                 scores[slot] = score;
-                self.clouds[base + slot] = CloudLightOccluder {
-                    center_extinction: center.extend(tau / (2.0 * half.y)).to_array(),
-                    east_inverse: (Vec3::from_slice(&cloud.east_opacity) / half.x)
-                        .extend((cloud_index + 1) as f32)
-                        .to_array(),
-                    up_inverse: (up / half.y).extend(0.0).to_array(),
-                    north_inverse: (Vec3::from_slice(&cloud.north_region) / half.z)
-                        .extend(0.0)
-                        .to_array(),
-                };
+                self.clouds[base + slot] = proxy(cloud, cloud_index);
             }
             source.range_lifetime[2] =
                 scores[..limit].iter().filter(|score| **score > 0.0).count() as f32;
         }
+    }
+}
+
+pub(crate) fn proxy(cloud: &CloudRecord, index: usize) -> CloudLightOccluder {
+    let half = Vec3::from_slice(&cloud.half_size).max(Vec3::ONE);
+    let up = Vec3::from_slice(&cloud.up_layer);
+    let center = Vec3::from_slice(&cloud.center_age) + up * half.y;
+    let age = cloud.center_age[3];
+    let tau = cloud.east_opacity[3] * smooth(0.0, 420.0, age) * (1.0 - smooth(2800.0, 3600.0, age));
+    CloudLightOccluder {
+        center_extinction: center.extend(tau / (2.0 * half.y)).to_array(),
+        east_inverse: (Vec3::from_slice(&cloud.east_opacity) / half.x)
+            .extend((index + 1) as f32)
+            .to_array(),
+        up_inverse: (up / half.y).extend(0.0).to_array(),
+        north_inverse: (Vec3::from_slice(&cloud.north_region) / half.z)
+            .extend(0.0)
+            .to_array(),
     }
 }

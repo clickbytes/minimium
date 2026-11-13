@@ -3,6 +3,44 @@ use crate::client_commands::{ClientPropertyKey as Key, ClientPropertyValue as Va
 use minimium_renderer::quality::SkyQuality;
 
 impl MeteorRuntime {
+    pub(in crate::renderer) fn budget_lines(&self) -> Vec<String> {
+        use minimium_renderer::meteors::{
+            fragmentation::{BODY_SLOTS, SOLID_SLOTS},
+            kinematics::Body,
+            MAX_METEOR_HISTORY_SAMPLES,
+        };
+        let age = self.epoch.elapsed().as_secs_f64();
+        let mut solids = 0;
+        let mut grains = 0;
+        for event in self.active.iter().filter(|event| event.basis.is_some()) {
+            if let Some(history) = &event.evolution {
+                let elapsed = age - event.start_s;
+                if elapsed >= history.duration_s() {
+                    continue;
+                }
+                for slot in 0..BODY_SLOTS {
+                    if elapsed >= history.births[slot]
+                        && history.sample_body(elapsed, slot).gas_power_w > 0.01
+                    {
+                        if slot < SOLID_SLOTS {
+                            solids += 1;
+                        } else {
+                            grains += 1;
+                        }
+                    }
+                }
+            }
+        }
+        let history_bytes = super::MAX_ACTIVE_METEOR_EVENTS
+            * MAX_METEOR_HISTORY_SAMPLES
+            * BODY_SLOTS
+            * std::mem::size_of::<Body>();
+        let metadata_bytes = super::MAX_ACTIVE_METEOR_EVENTS
+            * (std::mem::size_of::<super::ActiveEvent>()
+                + std::mem::size_of::<super::evolution::Evolution>());
+        vec![format!("meteor CPU: prepare {} us (last valid frame), emitting solid fragments {}, grain packets {}, histories {} bytes, pooled metadata/trains {} bytes, frame {} bytes; GPU meteor timestamp n/a (not instrumented)",
+            self.prepare_us, solids, grains, history_bytes, metadata_bytes, std::mem::size_of::<minimium_renderer::meteors::MeteorFrame>())]
+    }
     pub(in crate::renderer) fn enabled_status(&self) -> (bool, Option<String>) {
         if !self.spawner.enabled {
             return (false, Some("disabled by local preference".into()));

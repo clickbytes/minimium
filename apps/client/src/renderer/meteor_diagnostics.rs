@@ -14,6 +14,7 @@ pub(super) fn status(renderer: &mut Renderer) {
         renderer.application.ui.console.push_line(line);
     }
     let gpu = &renderer.gpu.milky_way.meteors;
+    renderer.application.ui.console.push_line(format!("meteor upload CPU {} us; culled segments {}; quality-dropped cores {}; cloud scans {} / reused {}; proxy cache {} bytes", gpu.prepare_us, gpu.culled_segments, gpu.dropped_cores, renderer.gpu.cloud_gpu.light_cache.scans, renderer.gpu.cloud_gpu.light_cache.reused, std::mem::size_of::<minimium_renderer::transient_cloud_cache::CloudLightCache>()));
     renderer.application.ui.console.push_line(format!(
         "meteor GPU: cores {}, segments {}, dust {}, culled low {}, upload {} bytes, persistent {} bytes, lights {}",
         renderer.gpu.meteors_status.core_count(), gpu.count, gpu.dust_segments,
@@ -60,10 +61,10 @@ pub(super) fn push(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
     );
     snapshot.push(
         "transient_cloud_proxy_limit",
-        if renderer.gpu.cloud_gpu.standard_lighting {
+        if renderer.gpu.cloud_gpu.standard_lighting && !renderer.gpu.milky_way.meteors.low_quality {
             8
         } else {
-            4
+            0
         },
     );
     let status = renderer.gpu.meteors_status;
@@ -85,6 +86,21 @@ pub(super) fn push(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
         },
     );
     snapshot.push("meteors_segments", gpu.count);
+    snapshot.push("meteors_culled_segments", gpu.culled_segments);
+    snapshot.push("meteors_quality_dropped_cores", gpu.dropped_cores);
+    snapshot.push("meteors_upload_cpu_us", gpu.prepare_us);
+    snapshot.push(
+        "meteor_cloud_scans",
+        renderer.gpu.cloud_gpu.light_cache.scans,
+    );
+    snapshot.push(
+        "meteor_cloud_cache_reuse",
+        renderer.gpu.cloud_gpu.light_cache.reused,
+    );
+    snapshot.push(
+        "meteors_gpu_time",
+        "n/a: not instrumented; draw count is not timing",
+    );
     snapshot.push("meteors_dust_segments", gpu.dust_segments);
     snapshot.push("meteors_emission_segments", gpu.emission_segments);
     snapshot.push("meteors_draw_count", gpu.draw_count.get());

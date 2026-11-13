@@ -862,3 +862,8 @@ E047-12 adds a bounded atmospheric halo to existing bright meteor head quads,
 with a narrow analytic fallback and no transient LUT invalidation. Shared
 emission storage now reserves additive HDR headroom; status reports optical
 mode/source counts. Energy and pass-order details are in docs/ambient-meteors.md.
+
+Meteor GPU preparation uses conservative CPU screen/capsule rejection and a
+smaller low-quality segment budget. `transient_cloud_cache` owns bounded temporal
+proxy selection; current selected transforms refresh without scanning all clouds
+every frame. Resource bounds and approximation limits are in docs/performance.md.

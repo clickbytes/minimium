@@ -471,3 +471,8 @@ suggest initial conditions, not guaranteed animations. Meteor preferences flow
 through config/options and SettingsStore; runtime settings own scheduling/audio.
 Renderer property formatting lives in renderer/settings/values.rs to respect
 the 500-line limit. No HUD, server or save-format changes are involved.
+
+Meteor diagnostics expose history/frame bytes, emitting fragments, CPU prepare
+time and GPU submission/culling counters on demand. At most one pooled physical
+history initializes per frame. GPU duration is explicitly n/a until instrumented;
+no draw-count-to-performance inference is made. See docs/performance.md.

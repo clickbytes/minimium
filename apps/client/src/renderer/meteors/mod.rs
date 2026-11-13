@@ -150,6 +150,7 @@ pub(crate) struct MeteorRuntime {
     spawner: spawner::Spawner,
     history_pool: Vec<evolution::Evolution>,
     omitted_cores: u64,
+    prepare_us: u64,
 }
 
 impl Default for MeteorRuntime {
