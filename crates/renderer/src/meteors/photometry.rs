@@ -8,7 +8,6 @@ pub struct Emission {
     pub intensity: f64,
     /// Effective luminous radius, distinct from the solid material radius.
     pub radius_m: f64,
-    pub radiance: f64,
 }
 
 pub fn emission(body: Body, material: Material, age_s: f64, seed: u64) -> Emission {
@@ -32,8 +31,5 @@ pub fn emission(body: Body, material: Material, age_s: f64, seed: u64) -> Emissi
         rgb,
         intensity,
         radius_m: radius,
-        // Projected area supplies the inverse-square angular dilution for
-        // unresolved cores; do not divide by camera distance a second time.
-        radiance: (intensity / (std::f64::consts::PI * radius * radius)).min(1e12),
     }
 }

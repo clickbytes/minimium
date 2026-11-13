@@ -73,7 +73,7 @@ material or atmospheric exit, with a 20-second hard presentation cap. A lower
 emission and is discarded only as local presentation state. Runtime diagnostics
 report material, remaining mass, speed, solid radius and gas emission power.
 
-The same emission supplies source intensity (`power / 4π`) and visible-core
+The same emission supplies source intensity (`power / 4π`) and, in the GPU adapter, visible-core
 radiance (`intensity / projected luminous area`). Angular filtering supplies
 inverse-square dilution for unresolved sources, without an additional distance
 division in the shader. The current wake receives 15% of source emission spread

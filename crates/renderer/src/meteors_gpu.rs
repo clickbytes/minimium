@@ -112,7 +112,7 @@ impl MeteorGpu {
                 core.linear_rgb[0],
                 core.linear_rgb[1],
                 core.linear_rgb[2],
-                core.intensity,
+                core.intensity / (std::f32::consts::PI * core.radius_m.powi(2)).max(1e-8),
             ];
             let first_segment = self.count as usize;
             let head = [

@@ -217,7 +217,7 @@ impl MeteorRuntime {
                 position,
                 body.velocity_m_s.to_array(),
                 emission.rgb,
-                emission.radiance,
+                emission.intensity,
                 emission.radius_m,
                 phase,
             );

@@ -814,3 +814,8 @@ owns a fixed `Evolution` history and supplies interpolated samples through the
 unchanged `MeteorSample`/`TransientLightSample` boundary. Six material profiles,
 numerical caps and non-scientific calibration limits are documented in
 `docs/ambient-meteors.md`. No server/tracked producer is changed.
+
+MeteorSample.intensity carries source intensity through CPU importance selection.
+MeteorGpu alone converts it to radiance using luminous projected area; angular
+filtering supplies distance dilution. The CPU contract is never repurposed as
+radiance, so different-size fragments rank by received source power.
