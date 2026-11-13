@@ -309,9 +309,8 @@ impl EventBasis {
     }
 }
 
-/// Pushes each deterministic trail slot exactly once; failed pushes are
-/// dropped rather than retried so the diagnostic stream stays bounded. A free
-/// function on purpose: it borrows the event while the frame is filled.
+/// Reconstructs elapsed trail samples in each fresh frame. Capture times and
+/// positions remain deterministic, including after skipped frames or rebases.
 fn push_trail_slots(
     meteor_frame: &mut MeteorFrame,
     event: &mut ActiveEvent,
@@ -319,8 +318,8 @@ fn push_trail_slots(
     radius_m: f64,
     now_s: f64,
 ) {
-    for slot in event.trail_slots.iter_mut() {
-        if slot.pushed || slot.at_s > now_s {
+    for slot in &event.trail_slots {
+        if slot.at_s > now_s {
             continue;
         }
         let position = basis.position_at(slot.at_s - event.start_s);
@@ -338,11 +337,6 @@ fn push_trail_slots(
                 let _ = meteor_frame.push_trail(trail);
             }
         }
-        *slot = TrailSlot {
-            at_s: slot.at_s,
-            serial: slot.serial,
-            pushed: true,
-        };
     }
 }
 
@@ -404,9 +398,9 @@ impl ActiveEvent {
             first[2] * cos_azimuth + second[2] * sin_azimuth,
         ];
         let velocity_m_s = [
-            bearing[0] * sin_sink - up[0] * cos_sink,
-            bearing[1] * sin_sink - up[1] * cos_sink,
-            bearing[2] * sin_sink - up[2] * cos_sink,
+            speed_m_s * (bearing[0] * sin_sink - up[0] * cos_sink),
+            speed_m_s * (bearing[1] * sin_sink - up[1] * cos_sink),
+            speed_m_s * (bearing[2] * sin_sink - up[2] * cos_sink),
         ];
         let start_radius_m =
             radius_m + altitude_phys_m + speed_m_s * self.duration_s * height_factor;
@@ -423,7 +417,6 @@ impl ActiveEvent {
             *slot = TrailSlot {
                 at_s: self.start_s + slot_spacing_s * (slot_index + 1) as f64,
                 serial: slot_index as u32,
-                pushed: false,
             };
         }
         self.basis = Some(EventBasis {

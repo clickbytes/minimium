@@ -23,7 +23,7 @@ mod runtime;
 pub(crate) const MAX_ACTIVE_METEOR_EVENTS: usize = 8;
 
 /// Per-event trail slots, equal to the contract's 8-per-core budget; each slot
-/// is sampled once at a deterministic flight time and never re-pushed.
+/// has a deterministic capture time and is reconstructed in every fresh frame.
 pub(crate) const TRAIL_SLOTS_PER_EVENT: usize =
     minimium_renderer::meteors::MAX_TRAIL_POINTS_PER_CORE;
 
@@ -124,15 +124,13 @@ pub(super) struct EventBasis {
     pub(super) velocity_m_s: [f64; 3],
 }
 
-/// One trail slot: a deterministic capture time plus its push bookkeeping.
+/// One trail slot with a deterministic capture time.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct TrailSlot {
     /// Client-monotonic capture time; positions are derived, never stored.
     pub(super) at_s: f64,
     /// Strictly monotonic serial inside the owning core.
     pub(super) serial: u32,
-    /// Pushed marks are never undone; failed pushes are dropped, not retried.
-    pub(super) pushed: bool,
 }
 
 /// One active manual meteor event (lifecycle data, no geometry storage).
@@ -168,7 +166,6 @@ impl ActiveEvent {
             trail_slots: [TrailSlot {
                 at_s: 0.0,
                 serial: 0,
-                pushed: false,
             }; TRAIL_SLOTS_PER_EVENT],
             phase: MeteorPhase::Incoming,
         }
