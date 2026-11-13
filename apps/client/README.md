@@ -299,6 +299,12 @@ published weather snapshot, ranked by optical depth times angular extent. Each
 line includes a `dev look` direction toward the cloud's bounding-box center.
 These are aiming hints for manual occlusion checks, not measured line-of-sight
 opacity: the voxel mesh may contain gaps. The command does not change weather.
+`dev bolid transmission on|off` replaces the active bolid composite with its
+foreground-cloud transmission: black means opaque and white unobstructed.
+Only pixels covered by a retained luminous/dust layer have a cloud mask;
+white elsewhere does not establish clear weather. HDR output still tone maps
+the diagnostic, so screenshot RGB is not a numerical transmission readback.
+It defaults off and resets when the layer is recreated (including resize).
 
 Bolid appearance is prepared once per frame from server time and the v19 seed,
 then shared by sky rendering, point lighting and shadow selection. World-context
@@ -393,15 +399,23 @@ command saved in target/bolid-shadow-repro.txt. Prepared shadow weight 0.6839.
 Compilation, release build, architecture and file-length checks passed.
 No automated tests were run.
 
-## Planned ambient cosmetic meteors (E047 baseline; ADR 0013)
+## Ambient cosmetic meteors (E047-01..03; ADR 0013)
 
-Ambient cosmetic meteors will keep their local lifecycle in this application
-(`docs/adr/0013-ambient-meteors.md`, implemented by later E047 issues): a
-`renderer/meteors` adapter owns spawn rate, seed, lifetime and expiry on the
-client monotonic clock, consumes existing `EnvironmentFrame` conditions, and
-submits the CPU-only `MeteorFrame` contract to the renderer; `sky meteors ...`
-developer commands and properties will register in the shared console registry
-(E047-14). Server-timed `spawn_random_bolid` and the automatic bolid scheduler
-are not touched by that work, and meteors stay local presentation effects with
-no protocol, save or world-entity change. This baseline contains no meteor
-runtime; the contract, units and limits are frozen in the ADR.
+`renderer/meteors` owns local monotonic lifetimes, seeded manual tracks and
+world-scope invalidation. `sky meteors spawn faint|bright|fireball`, status and
+clear feed a complete bounded `MeteorFrame` into the renderer each frame.
+Tracks start at 80..110 physical km and stay above the temporary 20 km cloud
+render gate. The seeded velocity has the preset speed; elapsed trail samples
+are reconstructed after frame skips and origin changes. Track placement uses
+the camera heading without following subsequent camera movement.
+
+`GpuResources::render` uploads only active instances. The shared finite-distance
+layer combines cosmetic meteors and existing server bolids, applies terrain,
+planet and foreground-cloud occlusion, then resolves before final output/UI.
+`sky info` exposes meteor instance/draw counts, upload bytes, low-altitude
+rejections and the 6912-byte fixed instance buffer. This is a logical allocation
+estimate, not driver VRAM. The automatic generator and physical evolution are
+later E047 stages; no local meteor light is consumed by surfaces yet.
+Server-timed `spawn_random_bolid`, protocol, saves and world entities are unchanged.
+Static compilation and WGSL validation do not establish visual acceptance;
+that remains in the explicitly gated final-verification stage.

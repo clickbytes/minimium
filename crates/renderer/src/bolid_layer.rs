@@ -2,6 +2,7 @@
 pub const BYTES_PER_PIXEL: u64 = 34;
 
 pub struct BolidLayer {
+    pub diagnostic: wgpu::Buffer,
     pub color: wgpu::TextureView,
     pub dust: wgpu::TextureView,
     pub distance: wgpu::TextureView,
@@ -10,6 +11,35 @@ pub struct BolidLayer {
     pub distance_group: wgpu::BindGroup,
     pub composite_group: wgpu::BindGroup,
     pub size: [u32; 2],
+}
+
+fn composite_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    let mut entries: Vec<_> = (0..4)
+        .map(|binding| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        })
+        .collect();
+    entries.push(wgpu::BindGroupLayoutEntry {
+        binding: 4,
+        visibility: wgpu::ShaderStages::FRAGMENT,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: std::num::NonZeroU64::new(16),
+        },
+        count: None,
+    });
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("bolid composite diagnostics"),
+        entries: &entries,
+    })
 }
 
 pub fn texture_layout(device: &wgpu::Device, count: u32) -> wgpu::BindGroupLayout {
@@ -85,11 +115,31 @@ impl BolidLayer {
             })
         };
         let distance_group = group(&texture_layout(device, 1), &[&distance]);
-        let composite_group = group(
-            &texture_layout(device, 4),
-            &[&color, &transmission, &foreground, &dust],
-        );
+        let diagnostic = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("bolid transmission diagnostic"),
+            size: 16,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut entries: Vec<_> = [&color, &transmission, &foreground, &dust]
+            .into_iter()
+            .enumerate()
+            .map(|(binding, view)| wgpu::BindGroupEntry {
+                binding: binding as u32,
+                resource: wgpu::BindingResource::TextureView(view),
+            })
+            .collect();
+        entries.push(wgpu::BindGroupEntry {
+            binding: 4,
+            resource: diagnostic.as_entire_binding(),
+        });
+        let composite_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("bolid composite"),
+            layout: &composite_layout(device),
+            entries: &entries,
+        });
         Self {
+            diagnostic,
             color,
             dust,
             distance,
@@ -106,7 +156,7 @@ pub fn composite_pipeline(
     device: &wgpu::Device,
     format: wgpu::TextureFormat,
 ) -> wgpu::RenderPipeline {
-    let textures = texture_layout(device, 4);
+    let textures = composite_layout(device);
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("bolid layer resolve"),
         bind_group_layouts: &[Some(&textures)],

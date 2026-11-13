@@ -1,5 +1,6 @@
-use super::{GpuResources, Renderer, sector_scene::ClientSectorScene};
-use minimium_diagnostics::{DomainLogger, EventCode, Level};
+use super::gpu_surface::emit_gpu_event;
+use super::{sector_scene::ClientSectorScene, GpuResources, Renderer};
+use minimium_diagnostics::DomainLogger;
 use minimium_renderer::geometry::Vertex;
 use std::{error::Error, sync::Arc};
 use winit::{dpi::PhysicalSize, window::Window};
@@ -227,7 +228,8 @@ impl GpuResources {
             &device,
             &atmosphere_resources,
         );
-        let mut milky_way = minimium_renderer::MilkyWayGpu::new(&device, &queue);
+        let mut milky_way =
+            minimium_renderer::MilkyWayGpu::new(&device, &queue, &frame_bindings.layout);
         let environment_pipelines = minimium_renderer::EnvironmentPipelines::new(
             &device,
             &frame_bindings.layout,
@@ -384,6 +386,7 @@ impl GpuResources {
             + minimium_renderer::MilkyWayGpu::BYTES
             + minimium_renderer::MilkyWayGpu::BOLID_BYTES
             + milky_way.layer_bytes()
+            + minimium_renderer::meteors_gpu::MeteorGpu::BYTES
             + atmosphere_gpu.bytes()
             + cloud_gpu.bytes()
             + output_encoder
@@ -485,15 +488,4 @@ impl Renderer {
         self.shadow_map_preparation.release_world(instance);
         self.gpu.release_world_sectors(instance);
     }
-}
-
-fn emit_gpu_event(logger: &DomainLogger, code: &'static str, fields: &[(&str, String)]) {
-    let Ok(code) = EventCode::new(code) else {
-        return;
-    };
-    let mut event = logger.event(Level::Info, code);
-    for (key, value) in fields {
-        event = event.field(key, value);
-    }
-    logger.emit(event);
 }

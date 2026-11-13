@@ -776,3 +776,30 @@ into the `frame_encoder::encode_frame` order described in the ADR, and
 `TransientLightUniform` (E047-09) extends the shared frame bind group. The
 frame implementation got its own `meteors/frame.rs` so every hand-maintained
 file stays within the 500-line policy.
+
+
+### Ambient emission producer (E047-03)
+
+`MeteorGpu` consumes `MeteorFrame::cores/trails` through the client snapshot.
+It owns one 6912-byte instance buffer (144 segments, 48 bytes each) and one
+pipeline. Upload uses a stack array and only the active slice; empty frames
+write no GPU data and issue no meteor draw. Instance attributes have explicit
+size/offset assertions. All presets use the same FPP/overview path.
+
+`bolid_dust::encode` clears the shared color/distance attachments once, draws
+tracked bolids and the cosmetic batch, then clears/draws separate dust.
+`MilkyWayGpu::any_emission` gates both encoding and resolve. Clouds read the
+shared distance attachment in their existing transmission pass; final resolve
+attenuates emission before the HDR output or fallback tone mapping. No second
+meteor framebuffer, cloud composite or tone mapping pass is introduced.
+The shader projects bounded quads, clips crossing segments, rejects terrain
+and planet occlusion, and filters narrow cores/trails with derivative-based
+pixel footprints. Emission below 20 physical km is temporarily rejected until
+the cloud-depth stage. Geometry is origin-relative; finite air extinction uses
+the existing atmosphere path. The shader is assembled by `shader_source` and
+validated by the standalone Naga tool. A diagnostic transmission toggle is
+available for the shared layer; it is disabled by default.
+
+Current limits: linear diagnostic trajectories/photometry, no cosmetic surface
+lighting, no persistent trains, and no runtime/visual acceptance yet. These
+belong to later sequential E047 stages. Static validation is not GPU execution.

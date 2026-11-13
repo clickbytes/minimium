@@ -2,6 +2,7 @@
 @group(0) @binding(1) var transmission: texture_2d<f32>;
 @group(0) @binding(2) var foreground: texture_2d<f32>;
 @group(0) @binding(3) var dust: texture_2d<f32>;
+@group(0) @binding(4) var<uniform> debug_mode: vec4<u32>;
 struct Vertex { @builtin(position) position: vec4<f32>, @location(0) uv: vec2<f32> };
 @vertex fn vs_main(@builtin(vertex_index) index:u32) -> Vertex {
     let p=array<vec2<f32>,3>(vec2(-1.0,-1.0),vec2(3.0,-1.0),vec2(-1.0,3.0))[index];
@@ -13,6 +14,9 @@ fn resolve(input:Vertex, hdr:bool)->vec4<f32> {
     let layer=textureLoad(emission,pixel,0);
     let scattered=textureLoad(dust,pixel,0);
     let t=textureLoad(transmission,pixel,0).r;
+    // Raw linear transmission: black is opaque, white is unobstructed.
+    // This replaces the scene only in an explicitly enabled local diagnostic.
+    if debug_mode.x != 0u { return vec4(vec3(clamp(t,0.0,1.0)),1.0); }
     let cloud=textureLoad(foreground,pixel,0);
     let front=cloud.rgb/max(cloud.a,0.00001)*(1.0-t);
     // B=front+t*background. Dust affects background, leaving front intact:

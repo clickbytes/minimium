@@ -58,6 +58,7 @@ impl Default for BolidGpuFrame {
 }
 
 pub struct MilkyWayGpu {
+    pub meteors: crate::meteors_gpu::MeteorGpu,
     _texture: wgpu::Texture,
     pub layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
@@ -73,7 +74,7 @@ impl MilkyWayGpu {
     pub const BYTES: u64 = (WIDTH as u64) * (HEIGHT as u64) * 4;
     pub const BOLID_BYTES: u64 = std::mem::size_of::<BolidGpuFrame>() as u64;
 
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, camera: &wgpu::BindGroupLayout) -> Self {
         assert_eq!(PIXELS.len() as u64, Self::BYTES);
         let texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("NASA SVS Milky Way background"),
@@ -186,6 +187,7 @@ impl MilkyWayGpu {
             }],
         });
         Self {
+            meteors: crate::meteors_gpu::MeteorGpu::new(device, camera, &occlusion_layout),
             _texture: texture,
             layout,
             bind_group,
@@ -206,12 +208,29 @@ impl MilkyWayGpu {
         self.active
     }
 
+    pub fn any_emission(&self) -> bool {
+        self.active || self.meteors.count > 0
+    }
+
     pub fn layer_bytes(&self) -> u64 {
         self.layer.as_ref().map_or(0, |layer| {
             u64::from(layer.size[0])
                 * u64::from(layer.size[1])
                 * crate::bolid_layer::BYTES_PER_PIXEL
+                + 16
         })
+    }
+
+    pub fn set_transmission_diagnostic(&self, queue: &wgpu::Queue, enabled: bool) -> bool {
+        let Some(layer) = &self.layer else {
+            return false;
+        };
+        queue.write_buffer(
+            &layer.diagnostic,
+            0,
+            bytemuck::cast_slice(&[u32::from(enabled), 0, 0, 0]),
+        );
+        true
     }
 
     pub fn set_depth(&mut self, device: &wgpu::Device, depth: &wgpu::TextureView, size: [u32; 2]) {

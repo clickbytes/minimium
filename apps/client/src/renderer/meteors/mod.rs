@@ -16,6 +16,7 @@ use minimium_renderer::meteors::model::{MeteorId, MeteorPhase};
 use std::time::Instant;
 
 mod runtime;
+mod track;
 
 /// Manual diagnostic events stay far below the 16-core contract cap so the
 /// automatic generator (E047-04) keeps headroom; `8 × 8` trail slots still fit

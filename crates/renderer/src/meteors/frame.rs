@@ -59,6 +59,20 @@ pub struct MeteorFrame {
 }
 
 impl MeteorFrame {
+    pub fn cores(&self) -> &[MeteorCore] {
+        &self.cores[..self.core_count]
+    }
+
+    pub fn trails(&self) -> &[TrailPoint] {
+        &self.trails[..self.trail_count]
+    }
+
+    /// Inverse of the producer adapter, used by the high-atmosphere GPU gate.
+    pub fn physical_height(&self, relative: [f32; 3]) -> f64 {
+        let world = std::array::from_fn(|i| self.render_origin_m[i] + f64::from(relative[i]));
+        self.surface_scale
+            .physical_altitude_m(magnitude(world).unwrap_or(0.0) - self.game_radius_m)
+    }
     /// Ready frame scoped to one prepared view; contains no meteors yet.
     /// A non-finite context degrades to the explicit disabled state instead of
     /// panicking or storing NaN.

@@ -9,6 +9,28 @@ pub(super) fn execute(renderer: &mut Renderer, line: &str) -> bool {
         return false;
     }
     println!("dev> {line}");
+    if let Some(mode) = line.strip_prefix("dev bolid transmission ") {
+        let enabled = match mode {
+            "on" => 1_u32,
+            "off" => 0_u32,
+            _ => {
+                println!("dev: usage: dev bolid transmission on|off");
+                return false;
+            }
+        };
+        if renderer
+            .gpu
+            .milky_way
+            .set_transmission_diagnostic(&renderer.gpu.queue, enabled != 0)
+        {
+            println!(
+                "dev: transmission diagnostic={mode}; requires an active bolid; black=opaque, white=clear; resize resets it"
+            );
+        } else {
+            println!("dev: bolid layer unavailable");
+        }
+        return false;
+    }
     if line == "dev clouds" {
         for cloud in renderer.cloud_targets() {
             println!("{cloud}");

@@ -1,19 +1,13 @@
 //! Manual meteor lifecycle mechanics: frame building, spawn/clear and status.
 
-use super::{
-    ActiveEvent, ContextState, EventBasis, MeteorRuntime, TrailSlot, TRAIL_SLOTS_PER_EVENT,
-};
+use super::{ActiveEvent, ContextState, EventBasis, MeteorRuntime};
 use crate::client_commands::MeteorPreset;
 use crate::renderer::environment::{EnvironmentFrame, EnvironmentFrameStatus, RenderViewFrame};
 use minimium_renderer::meteors::{
     coords::PlanetSurfaceScale,
-    model::{
-        MeteorPhase, MeteorSample, MeteorSource, MeteorTrailSample, TransientLightSample,
-        POSITION_ABS_M_MAX,
-    },
+    model::{MeteorPhase, MeteorSample, MeteorSource, MeteorTrailSample, TransientLightSample},
     MeteorDisabledReason, MeteorFrame, MeteorFrameContext, MeteorFrameState,
 };
-use std::f64::consts::TAU;
 
 impl MeteorRuntime {
     /// Creates the runtime with its single monotonic datum.
@@ -246,7 +240,7 @@ impl MeteorRuntime {
             0
         };
         let mut state = now_us ^ self.spawned_total.rotate_left(32);
-        splitmix64(&mut state)
+        super::track::splitmix64(&mut state)
     }
 
     /// Console status: counters, explicit context reason, seed and event ages
@@ -340,93 +334,6 @@ fn push_trail_slots(
     }
 }
 
-impl ActiveEvent {
-    /// Derives the deterministic flight basis from the current view and seed.
-    /// The start sits above the observer column; the track descends through
-    /// the seeded sky column with a bounded lateral tilt, ending at the planet
-    /// datum or the planned lifetime, whichever comes first.
-    fn init_basis(
-        &mut self,
-        view: &RenderViewFrame,
-        scale: PlanetSurfaceScale,
-    ) -> Result<(), &'static str> {
-        let eye = view.camera_eye_world_m;
-        if !eye.iter().all(|value| value.is_finite()) {
-            return Err("camera eye is non-finite");
-        }
-        let Some(eye_radial_m) = magnitude(eye) else {
-            return Err("camera eye is unusable for meteor placement");
-        };
-        let radius_m = view.game_planet_radius_m;
-        if !radius_m.is_finite() || radius_m <= 0.0 {
-            return Err("planet radius is unusable for meteor placement");
-        }
-        let altitude_phys_m = scale.physical_altitude_m(eye_radial_m - radius_m);
-        if !altitude_phys_m.is_finite() {
-            return Err("surface scale is unusable for meteor placement");
-        }
-        let up = [
-            eye[0] / eye_radial_m,
-            eye[1] / eye_radial_m,
-            eye[2] / eye_radial_m,
-        ];
-        let axis = if up[2].abs() < 0.9 {
-            [0.0, 0.0, 1.0]
-        } else {
-            [1.0, 0.0, 0.0]
-        };
-        let Some(first) = normalized(cross(up, axis)) else {
-            return Err("meteor basis is degenerate");
-        };
-        let Some(second) = normalized(cross(up, first)) else {
-            return Err("meteor basis is degenerate");
-        };
-        let mut rng = Rng { state: self.seed };
-        let azimuth = rng.next_f64() * TAU;
-        // 12°..30° off the vertical: near-vertical fall with lateral drift.
-        let sink = 0.21 + rng.next_f64() * 0.31;
-        let height_factor = 0.45 + rng.next_f64() * 0.2;
-        let speed_m_s = self.params.speed_m_s * (0.9 + rng.next_f64() * 0.2);
-        if !speed_m_s.is_finite() {
-            return Err("meteor speed is finite only after clamping");
-        }
-        let (sin_azimuth, cos_azimuth) = azimuth.sin_cos();
-        let (sin_sink, cos_sink) = sink.sin_cos();
-        let bearing = [
-            first[0] * cos_azimuth + second[0] * sin_azimuth,
-            first[1] * cos_azimuth + second[1] * sin_azimuth,
-            first[2] * cos_azimuth + second[2] * sin_azimuth,
-        ];
-        let velocity_m_s = [
-            speed_m_s * (bearing[0] * sin_sink - up[0] * cos_sink),
-            speed_m_s * (bearing[1] * sin_sink - up[1] * cos_sink),
-            speed_m_s * (bearing[2] * sin_sink - up[2] * cos_sink),
-        ];
-        let start_radius_m =
-            radius_m + altitude_phys_m + speed_m_s * self.duration_s * height_factor;
-        if !start_radius_m.is_finite() || start_radius_m.abs() > POSITION_ABS_M_MAX {
-            return Err("meteor start radius leaves the contract bounds");
-        }
-        let start_phys_m = [
-            up[0] * start_radius_m,
-            up[1] * start_radius_m,
-            up[2] * start_radius_m,
-        ];
-        let slot_spacing_s = self.duration_s / (TRAIL_SLOTS_PER_EVENT + 1) as f64;
-        for (slot_index, slot) in self.trail_slots.iter_mut().enumerate() {
-            *slot = TrailSlot {
-                at_s: self.start_s + slot_spacing_s * (slot_index + 1) as f64,
-                serial: slot_index as u32,
-            };
-        }
-        self.basis = Some(EventBasis {
-            start_phys_m,
-            velocity_m_s,
-        });
-        Ok(())
-    }
-}
-
 /// Producer-declared phase from the fraction of planned lifetime consumed.
 fn phase_of(fraction: f64) -> MeteorPhase {
     if fraction < 0.35 {
@@ -445,44 +352,8 @@ fn intensity_envelope(fraction: f64) -> f64 {
 }
 
 /// `None` for zero vectors and non-finite components.
-fn magnitude(vector: [f64; 3]) -> Option<f64> {
+pub(super) fn magnitude(vector: [f64; 3]) -> Option<f64> {
     let squared = vector[0] * vector[0] + vector[1] * vector[1] + vector[2] * vector[2];
     let value = squared.sqrt();
     (value.is_finite() && value > 0.0).then_some(value)
-}
-
-/// `None` for zero vectors and non-finite components.
-fn normalized(vector: [f64; 3]) -> Option<[f64; 3]> {
-    magnitude(vector).map(|value| [vector[0] / value, vector[1] / value, vector[2] / value])
-}
-
-/// World-right-handed exterior product of two vectors.
-fn cross(first: [f64; 3], second: [f64; 3]) -> [f64; 3] {
-    [
-        first[1] * second[2] - first[2] * second[1],
-        first[2] * second[0] - first[0] * second[2],
-        first[0] * second[1] - first[1] * second[0],
-    ]
-}
-
-/// Deterministic splitmix64 step; the only randomness source of this runtime.
-fn splitmix64(state: &mut u64) -> u64 {
-    *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
-    let mut z = *state;
-    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_8CE4_E5B9);
-    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-    z ^ (z >> 31)
-}
-
-/// Fixed-width deterministic stream over one event seed.
-struct Rng {
-    state: u64,
-}
-
-impl Rng {
-    /// Uniform value in `[0, 1)`; 53 mantissa bits are consumed per call.
-    fn next_f64(&mut self) -> f64 {
-        let raw = splitmix64(&mut self.state) >> 11;
-        raw as f64 / (1u64 << 53) as f64
-    }
 }

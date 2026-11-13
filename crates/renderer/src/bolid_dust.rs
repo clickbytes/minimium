@@ -3,7 +3,7 @@ use crate::scene_encoder::MainScenePass;
 
 pub(crate) fn encode(encoder: &mut wgpu::CommandEncoder, frame: MainScenePass<'_>) -> u32 {
     if !frame.scene_visible
-        || !frame.milky_way.active()
+        || !frame.milky_way.any_emission()
         || frame.terrain_gpu.uniform.debug[0] != 0
         || frame.atmosphere.debug != 0
     {
@@ -29,11 +29,16 @@ pub(crate) fn encode(encoder: &mut wgpu::CommandEncoder, frame: MainScenePass<'_
         occlusion_query_set: None,
         multiview_mask: None,
     });
-    pass.set_pipeline(&frame.environment_pipelines.bolid_emission);
-    pass.set_bind_group(0, frame.camera, &[]);
-    pass.set_bind_group(1, &frame.milky_way.bind_group, &[]);
-    pass.set_bind_group(2, depth, &[]);
-    pass.draw(0..3, 0..1);
+    let mut draws = 0;
+    if frame.milky_way.active() {
+        pass.set_pipeline(&frame.environment_pipelines.bolid_emission);
+        pass.set_bind_group(0, frame.camera, &[]);
+        pass.set_bind_group(1, &frame.milky_way.bind_group, &[]);
+        pass.set_bind_group(2, depth, &[]);
+        pass.draw(0..3, 0..1);
+        draws += 1;
+    }
+    draws += frame.milky_way.meteors.draw(&mut pass, frame.camera, depth);
     drop(pass);
     // Dust uses premultiplied scene/display color; emission must stay linear
     // until cloud transmission is applied. Clear dust even without a train.
@@ -54,9 +59,9 @@ pub(crate) fn encode(encoder: &mut wgpu::CommandEncoder, frame: MainScenePass<'_
         pass.set_bind_group(1, &frame.milky_way.bind_group, &[]);
         pass.set_bind_group(2, depth, &[]);
         pass.draw(0..3, 0..1);
-        2
+        draws + 1
     } else {
-        1
+        draws
     }
 }
 
@@ -66,7 +71,7 @@ pub(crate) fn resolve(
     clouds: &crate::CloudGpu,
 ) -> u32 {
     if !frame.scene_visible
-        || !frame.milky_way.active()
+        || !frame.milky_way.any_emission()
         || frame.terrain_gpu.uniform.debug[0] != 0
         || frame.atmosphere.debug != 0
     {

@@ -1,0 +1,139 @@
+//! Deterministic high-atmosphere diagnostic tracks.
+use super::runtime::magnitude;
+use super::{ActiveEvent, EventBasis, TrailSlot, TRAIL_SLOTS_PER_EVENT};
+use crate::renderer::environment::RenderViewFrame;
+use minimium_renderer::meteors::{coords::PlanetSurfaceScale, model::POSITION_ABS_M_MAX};
+use std::f64::consts::TAU;
+
+impl ActiveEvent {
+    /// Derives the deterministic flight basis from the current view and seed.
+    /// Places the diagnostic track ahead of the camera above the cloud gate.
+    /// Physical speed and duration determine its length; its descent is bounded
+    /// to keep every preset within the high-atmosphere rendering stage.
+    pub(super) fn init_basis(
+        &mut self,
+        view: &RenderViewFrame,
+        scale: PlanetSurfaceScale,
+    ) -> Result<(), &'static str> {
+        let eye = view.camera_eye_world_m;
+        if !eye.iter().all(|value| value.is_finite()) {
+            return Err("camera eye is non-finite");
+        }
+        let Some(eye_radial_m) = magnitude(eye) else {
+            return Err("camera eye is unusable for meteor placement");
+        };
+        let radius_m = view.game_planet_radius_m;
+        if !radius_m.is_finite() || radius_m <= 0.0 {
+            return Err("planet radius is unusable for meteor placement");
+        }
+        let altitude_phys_m = scale.physical_altitude_m(eye_radial_m - radius_m);
+        if !altitude_phys_m.is_finite() {
+            return Err("surface scale is unusable for meteor placement");
+        }
+        let eye_up = [
+            eye[0] / eye_radial_m,
+            eye[1] / eye_radial_m,
+            eye[2] / eye_radial_m,
+        ];
+        let forward = [
+            -f64::from(view.view[0][2]),
+            -f64::from(view.view[1][2]),
+            -f64::from(view.view[2][2]),
+        ];
+        let radial = forward.iter().zip(eye_up).map(|(a, b)| a * b).sum::<f64>();
+        let horizontal = std::array::from_fn(|i| forward[i] - radial * eye_up[i]);
+        let heading = normalized(horizontal).unwrap_or([0.0; 3]);
+        let offset = (scale.radial_offset_m(90_000.0) - (eye_radial_m - radius_m)).abs() * 2.0;
+        let up = normalized(std::array::from_fn(|i| eye[i] + heading[i] * offset))
+            .ok_or("meteor placement is degenerate")?;
+        let axis = if up[2].abs() < 0.9 {
+            [0.0, 0.0, 1.0]
+        } else {
+            [1.0, 0.0, 0.0]
+        };
+        let Some(first) = normalized(cross(up, axis)) else {
+            return Err("meteor basis is degenerate");
+        };
+        let Some(second) = normalized(cross(up, first)) else {
+            return Err("meteor basis is degenerate");
+        };
+        let mut rng = Rng { state: self.seed };
+        let azimuth = rng.next_f64() * TAU;
+        let start_height_m = 80_000.0 + rng.next_f64() * 30_000.0;
+        let descent_m = 20_000.0 + rng.next_f64() * 15_000.0;
+        let speed_m_s = self.params.speed_m_s * (0.9 + rng.next_f64() * 0.2);
+        if !speed_m_s.is_finite() {
+            return Err("meteor speed is finite only after clamping");
+        }
+        let (sin_azimuth, cos_azimuth) = azimuth.sin_cos();
+        let cos_sink = (descent_m / (speed_m_s * self.duration_s)).min(0.85);
+        let sin_sink = (1.0 - cos_sink * cos_sink).sqrt();
+        let bearing = [
+            first[0] * cos_azimuth + second[0] * sin_azimuth,
+            first[1] * cos_azimuth + second[1] * sin_azimuth,
+            first[2] * cos_azimuth + second[2] * sin_azimuth,
+        ];
+        let velocity_m_s = [
+            speed_m_s * (bearing[0] * sin_sink - up[0] * cos_sink),
+            speed_m_s * (bearing[1] * sin_sink - up[1] * cos_sink),
+            speed_m_s * (bearing[2] * sin_sink - up[2] * cos_sink),
+        ];
+        let start_radius_m = radius_m + start_height_m;
+        if !start_radius_m.is_finite() || start_radius_m.abs() > POSITION_ABS_M_MAX {
+            return Err("meteor start radius leaves the contract bounds");
+        }
+        let start_phys_m = [
+            up[0] * start_radius_m,
+            up[1] * start_radius_m,
+            up[2] * start_radius_m,
+        ];
+        let slot_spacing_s = self.duration_s / (TRAIL_SLOTS_PER_EVENT + 1) as f64;
+        for (slot_index, slot) in self.trail_slots.iter_mut().enumerate() {
+            *slot = TrailSlot {
+                at_s: self.start_s + slot_spacing_s * slot_index as f64,
+                serial: slot_index as u32,
+            };
+        }
+        self.basis = Some(EventBasis {
+            start_phys_m,
+            velocity_m_s,
+        });
+        Ok(())
+    }
+}
+
+/// `None` for zero vectors and non-finite components.
+fn normalized(vector: [f64; 3]) -> Option<[f64; 3]> {
+    magnitude(vector).map(|value| [vector[0] / value, vector[1] / value, vector[2] / value])
+}
+
+/// World-right-handed exterior product of two vectors.
+fn cross(first: [f64; 3], second: [f64; 3]) -> [f64; 3] {
+    [
+        first[1] * second[2] - first[2] * second[1],
+        first[2] * second[0] - first[0] * second[2],
+        first[0] * second[1] - first[1] * second[0],
+    ]
+}
+
+/// Deterministic splitmix64 step; the only randomness source of this runtime.
+pub(super) fn splitmix64(state: &mut u64) -> u64 {
+    *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    let mut z = *state;
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_8CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
+/// Fixed-width deterministic stream over one event seed.
+struct Rng {
+    state: u64,
+}
+
+impl Rng {
+    /// Uniform value in `[0, 1)`; 53 mantissa bits are consumed per call.
+    fn next_f64(&mut self) -> f64 {
+        let raw = splitmix64(&mut self.state) >> 11;
+        raw as f64 / (1u64 << 53) as f64
+    }
+}

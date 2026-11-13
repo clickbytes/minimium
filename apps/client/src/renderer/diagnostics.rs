@@ -1,5 +1,5 @@
 use super::Renderer;
-use crate::environment::{SkyDiagnosticsSnapshot, diagnostics::format_utc_millis};
+use crate::environment::{diagnostics::format_utc_millis, SkyDiagnosticsSnapshot};
 
 impl Renderer {
     pub(super) fn sky_info_lines(&self) -> Vec<String> {
@@ -92,6 +92,15 @@ fn push_milky_way_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Rende
 
 fn push_meteor_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
     let status = renderer.gpu.meteors_status;
+    let gpu = &renderer.gpu.milky_way.meteors;
+    snapshot.push("meteors_segments", gpu.count);
+    snapshot.push("meteors_draw_count", gpu.draw_count.get());
+    snapshot.push("meteors_upload_bytes", gpu.upload_bytes);
+    snapshot.push("meteors_rejected_below_cloud_gate", gpu.rejected_low);
+    snapshot.push(
+        "meteors_GPU_buffer_bytes",
+        minimium_renderer::meteors_gpu::MeteorGpu::BYTES,
+    );
     snapshot.push("meteors_state", status.label());
     snapshot.push("meteors_cores", status.core_count());
     snapshot.push(

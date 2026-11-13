@@ -62,6 +62,8 @@ pub mod gpu_frame;
 pub mod lighting;
 pub mod meteors;
 #[cfg(feature = "gpu")]
+pub mod meteors_gpu;
+#[cfg(feature = "gpu")]
 pub mod milky_way_gpu;
 #[cfg(feature = "gpu")]
 pub mod moon_disk;

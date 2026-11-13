@@ -9,6 +9,17 @@ pub fn clouds() -> String {
     ])
 }
 
+pub fn meteors() -> String {
+    combine(&[
+        include_str!("shaders/frame.wgsl"),
+        include_str!("shaders/atmosphere_frame.wgsl"),
+        include_str!("shaders/atmosphere_common.wgsl"),
+        include_str!("shaders/output_color.wgsl"),
+        include_str!("shaders/sky_common.wgsl"),
+        include_str!("shaders/meteors.wgsl"),
+    ])
+}
+
 pub fn cloud_composite() -> String {
     include_str!("shaders/cloud_composite.wgsl").into()
 }
