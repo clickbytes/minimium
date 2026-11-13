@@ -89,18 +89,8 @@ impl GpuResources {
                     1.0,
                 )
             };
-            let incident = minimium_renderer::bolid_light::incident_luminance(
-                position,
-                color,
-                render_frame.view.camera_eye_world_m,
-                self.atmosphere_gpu.optical_uniform(),
-            );
-            // Preserve physical point-source power. Meter the receiving scene
-            // instead of letting fixed night gain clip a nearby flash to white.
-            let exposed_gain =
-                environment_upload.ambient_rgb_exposure[3] * environment_upload.bolid_rgb[3];
-            environment_upload.ambient_rgb_exposure[3] *=
-                minimium_renderer::bolid_light::exposure_scale(incident, exposed_gain);
+            // A flash adds incident light; it must not turn down terrain, sky
+            // and the atmosphere LUTs globally. The output shoulder handles HDR.
         }
         let meteors = snapshot.meteors();
         // One bounded snapshot feeds the shared finite-distance emission layer.

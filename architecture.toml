@@ -122,7 +122,7 @@ forbidden_dependencies = ["minimium-game-sample", "minimium-astronomy", "wgpu", 
 [[package]]
 name = "minimium-client"
 role = "application"
-responsibility = "Desktop and terminal client application state (typed settings, world catalog, overview and transfer lifecycle), client shell, input, console and optional bounded audio adapter; renderer presentation and bounded materialization workers; local server composition; consumes client runtime contracts without placing GPU handles in application state."
+responsibility = "Desktop and terminal client application state (typed settings, world catalog, overview and transfer lifecycle), client shell, input, console and optional bounded audio adapter; renderer presentation and bounded materialization/bolid-history workers; local server composition; consumes client runtime contracts without placing GPU handles in application state."
 
 [[package]]
 name = "minimium-client-runtime"

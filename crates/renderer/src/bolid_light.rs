@@ -2,19 +2,10 @@
 use crate::AtmosphereUniform;
 use glam::DVec3;
 
-/// Analytic flash metering in the same scene units as incident_luminance.
-/// Weak sources leave exposure unchanged. Strong flashes limit the exposed
-/// reference illumination smoothly, without modifying source energy or range.
-/// This is deterministic frame metering, not temporal eye adaptation.
-pub fn exposure_scale(incident: f64, exposure: f32) -> f32 {
-    let exposed = incident * f64::from(exposure);
-    if !exposed.is_finite() || exposed <= 1.0 {
-        return 1.0;
-    }
-    let excess = exposed - 1.0;
-    let shoulder = excess * (excess / (1.0 + excess));
-    (1.0 / (1.0 + 0.36 * shoulder)) as f32
-}
+/// Approximate visible irradiance represented by the renderer's unit daylight.
+/// Keep watts from the entry model separate from the normalized solar lighting.
+/// This is a scene calibration, not an additional luminous-efficiency factor.
+pub const VISIBLE_WATTS_PER_SCENE_UNIT: f64 = 500.0;
 
 /// Unexposed luminance at a receiver, before its surface cosine/BRDF.
 /// Keep the eight-sample quadrature in sync with bolid_air_transmission WGSL.

@@ -290,9 +290,9 @@ Persistent emission favors higher atmospheric deposition and loses contrast in
 daylight. Deterministic height-dependent wind deforms the train; expansion lowers
 line brightness. Its slower emission reservoir is calibrated separately from
 fresh plasma so expansion does not prematurely erase the persistent branch.
-Physical bounds cover the corrugated train and expanded dust. The shader adds
-the minimum angular/pixel support, preventing distant filtered halos from being
-culled by a smaller physical sphere.
+Each core and segment projects its own conservative support, including the
+minimum pixel footprint, corrugated train and expanded dust. Offscreen and empty
+primitives are discarded in the vertex stage.
 Dust derives from deposited matter, expands, dilutes and fades;
 it scatters daylight rather than glowing on a black night sky. HDR and fallback
 use solar irradiance at the dust position, including the elevated horizon and
@@ -479,11 +479,11 @@ acceptance. A nearby bright flash also saturates much of the terrain under
 fixed night exposure; exposure calibration remains to be reviewed. Release,
 architecture, all 23 shader variants and file-length checks passed.
 
-Flash exposure audit: a nearby Burst at Bergen produced incoming luminance
+Historical flash exposure audit (superseded by the 2026-11-13 correction below): a nearby Burst at Bergen produced incoming luminance
 0.000281 with base exposure 1.25 and night gain 32768 (exposed incident 11.51).
 A logarithmic output-shoulder experiment did not restore terrain readability
 and was discarded; the original shared tone mapper remains. The new pure
-bolid_light::exposure_scale meters received flash luminance instead. Exposed
+The former bolid_light::exposure_scale metered received flash luminance instead. Exposed
 incident <=1 leaves exposure unchanged; a continuous-derivative shoulder
 reduces scene exposure for stronger flashes, asymptotically bounding the
 reference illumination near 2.78. Source energy, inverse-square attenuation,
@@ -867,3 +867,58 @@ Meteor GPU preparation uses conservative CPU screen/capsule rejection and a
 smaller low-quality segment budget. `transient_cloud_cache` owns bounded temporal
 proxy selection; current selected transforms refresh without scanning all clouds
 every frame. Resource bounds and approximation limits are in docs/performance.md.
+
+## Server bolid regression correction (2026-11-13)
+
+This concerns spawn_random_bolid [N], including its irregular shower, rather
+than only the separate client-local sky meteors producer. The findings below
+come from source inspection; they are not GPU timing measurements.
+
+- The former full-screen fragment invocation copied an entire event and walked
+  up to eight events, twenty emitters/wakes and twenty-three train segments.
+  Its whole-event sphere included a large part of the sky. The new path draws
+  at most 63 small instanced quads per event (20 cores, 20 wakes, 23 train
+  segments), and 23 separate dust segments. Each fragment evaluates one
+  primitive and loads only its fields. Empty/behind-eye/offscreen primitives
+  produce no fragments; crossing segments retain their visible half.
+- Per-flash global exposure reduction also changed the atmosphere light cache
+  key on every brightness change. This dimmed otherwise unlit terrain and
+  forced LUT invalidation. The flash now adds point irradiance without changing
+  scene exposure. The existing output shoulder remains the only tone map.
+- Visible watts are explicitly converted to normalized daylight scene units
+  with VISIBLE_WATTS_PER_SCENE_UNIT = 500, then divided by 4 pi and squared
+  distance. This replaces an unexplained 0.015 factor; the source is not simply
+  boosted by its reciprocal. The value is an approximate rendering calibration,
+  not absolute spectral photometry. Source/color, surface orientation,
+  planet occlusion and finite incoming atmospheric extinction still apply.
+- Intrinsic ablation is now 0.003..0.007 kg/MJ, since this model already handles
+  fragmentation and erosion separately. The former apparent 0.01..0.03 range
+  could consume the mass before pressure failure. This distinction is also
+  used in observed-fireball fragmentation models:
+  https://doi.org/10.3847/PSJ/ad8b22 and
+  https://doi.org/10.1111/maps.13977. The six families remain; smooth ablation
+  does not promise a breakup, and cooling is not an implosion.
+- Smaller luminous envelopes, a narrower hot core and colored sheaths keep
+  daughter fragments from merging into a large white disc. Seeded continuous
+  6% and 2.5% fluctuations modulate the mass-derived light curve used by both
+  the sky and point source. Gaps, cascades and terminal flares still come from
+  material loss and pressure failure, not independent decorative flashes.
+- Histories and interpolation retain f64 positions and velocities. Only after
+  subtracting the current render origin are cores/wakes/trains cast to f32.
+  This preserves small fragment separations on a scaled planetary surface.
+  Light selection/shadows retain absolute positions; protocol v19 is unchanged.
+
+The client owns a single bounded preparation worker; deterministic history
+construction no longer blocks the render thread. See its README for stale
+result rejection. GPU uniforms retain the 14608-byte/eight-event contract.
+The obsolete event sphere is reserved zero; WGSL validation checks struct
+offsets and vertex/fragment binding visibility. Additive primitives reserve
+30000 half-float units in total, leaving room for the other meteor producer.
+
+Verification for this revision: client/server release build, workspace and
+terminal compilation, formatting, architecture, static contracts, 500-line limits
+and all 24 WGSL modules. Clippy completed without errors; existing warnings remain.
+Runtime acceptance remains pending: compare pre/post frame times for 1/8/64
+requested bolids, isolated spawn latency, sky/ground flash synchronization,
+fragment separation, HDR/fallback, cloud cover, horizon/orbit and world transfer.
+No new FPS result or screenshot is claimed. Tests remain deferred by AGENTS.md.

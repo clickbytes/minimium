@@ -6,7 +6,7 @@ use super::{
 };
 use glam::{DVec3, Vec3};
 
-// Keep the fresh-wake handoff in sync with sky.wgsl.
+// Keep the fresh-wake handoff in sync with bolid.wgsl.
 const FRESH_WAKE_SECONDS: f32 = 0.25;
 const FRESH_WAKE_SHARE: f32 = 0.7;
 
@@ -92,34 +92,45 @@ impl BolidEvolution {
             }
         }
         for emitter in &mut emitters {
-            emitter.position *= self.length_scale;
-            emitter.birth_position *= self.length_scale;
-            emitter.velocity *= self.length_scale;
+            emitter.position *= f64::from(self.length_scale);
+            emitter.birth_position *= f64::from(self.length_scale);
+            emitter.velocity *= f64::from(self.length_scale);
             emitter.width *= self.length_scale;
         }
         emitters
     }
 
-    pub fn sample(&self, event: &mut BolidGpuEvent) {
+    pub fn sample(&self, event: &mut BolidGpuEvent, render_origin: [f64; 3]) {
+        let origin = DVec3::from_array(render_origin);
         let age = event.start_age[3];
         let seed = event.style[1];
         let emitters = self.sample_emitters(age);
         let power: f64 = emitters.iter().map(|e| f64::from(e.power)).sum();
         let centroid = if power > 0.0 {
-            emitters.iter().fold(DVec3::ZERO, |sum, e| {
-                sum + e.position.as_dvec3() * f64::from(e.power)
-            }) / power
+            emitters
+                .iter()
+                .fold(DVec3::ZERO, |sum, e| sum + e.position * f64::from(e.power))
+                / power
         } else {
-            emitters[0].position.as_dvec3()
+            emitters[0].position
         };
         event.light_position_power = centroid
             .as_vec3()
             .extend(
-                (power * 1e8 / (4.0 * std::f64::consts::PI * 1e10) * 0.015) as f32
+                // Efficiency is already in power. Convert visible watts into
+                // the same scene units as daylight, then isotropic intensity.
+                (power * 1e8
+                    / (crate::bolid_light::VISIBLE_WATTS_PER_SCENE_UNIT
+                        * 4.0
+                        * std::f64::consts::PI
+                        * 1e10)) as f32
                     * self.length_scale.powi(2),
             )
             .to_array();
-        event.head_power = emitters[0].position.extend(emitters[0].power).to_array();
+        event.head_power = (emitters[0].position - origin)
+            .as_vec3()
+            .extend(emitters[0].power)
+            .to_array();
         let color = if seed < 0.28 {
             Vec3::new(1.0, 0.92, 0.78)
         } else if seed < 0.52 {
@@ -134,7 +145,10 @@ impl BolidEvolution {
             .extend(emitters[0].power)
             .to_array();
         for (out, emitter) in event.fragments.iter_mut().zip(&emitters[1..]) {
-            *out = emitter.position.extend(emitter.power).to_array();
+            *out = (emitter.position - origin)
+                .as_vec3()
+                .extend(emitter.power)
+                .to_array();
         }
         let previous = self.sample_emitters(age - FRESH_WAKE_SECONDS);
         for (i, emitter) in emitters.iter().enumerate() {
@@ -148,7 +162,7 @@ impl BolidEvolution {
             } else {
                 (emitter.position, emitter.power)
             };
-            event.tails[i] = tail.extend(tail_power).to_array();
+            event.tails[i] = (tail - origin).as_vec3().extend(tail_power).to_array();
             event.optics[i] = [
                 emitter.width,
                 emitter.temperature,
@@ -166,14 +180,14 @@ impl BolidEvolution {
             let snapshot = &self.frames[frame];
             let next = &self.frames[(frame + 1).min(self.frames.len() - 1)];
             let t = frame_position.fract() as f32;
-            let position = snapshot.position.lerp(next.position, t);
+            let position = snapshot.position.lerp(next.position, f64::from(t));
             let deposited_power = snapshot.power + (next.power - snapshot.power) * t;
             let deposited_mass = snapshot.deposited + (next.deposited - snapshot.deposited) * t;
             let elapsed = (age - deposited).max(0.0);
             let lifetime_fade = ((event.style[2] - elapsed)
                 / (event.style[2] * 0.3).clamp(0.5, 5.0))
             .clamp(0.0, 1.0);
-            let height = position.length();
+            let height = position.length() as f32;
             let shear = (height * 0.00015 + seed * 6.0).sin();
             let wind = self.side * (18.0 + seed * 45.0 + shear * 28.0)
                 + self.up * ((height * 0.00009 + seed * 3.0).sin() * 16.0);
@@ -210,7 +224,10 @@ impl BolidEvolution {
             };
             // Expansion conserves approximate integrated line emission.
             let expansion = 1.0 + elapsed * 8.0 / snapshot.width.max(8.0);
-            event.trail[i] = ((position + wind * elapsed) * self.length_scale)
+            event.trail[i] = ((position + (wind * elapsed).as_dvec3())
+                * f64::from(self.length_scale)
+                - origin)
+                .as_vec3()
                 .extend(deposited_power * (fresh + cooling + chemical) / expansion * lifetime_fade)
                 .to_array();
             event.trail_meta[i] = [
@@ -220,39 +237,8 @@ impl BolidEvolution {
                 chemical / (fresh + cooling + chemical).max(1e-8),
             ];
         }
-        let mut minimum = Vec3::splat(f32::INFINITY);
-        let mut maximum = Vec3::splat(f32::NEG_INFINITY);
-        for point in event
-            .trail
-            .iter()
-            .chain(event.fragments.iter())
-            .chain(event.tails.iter())
-            .chain(std::iter::once(&event.head_power))
-        {
-            let p = Vec3::new(point[0], point[1], point[2]);
-            if p.length_squared() < 1.0 {
-                continue;
-            }
-            minimum = minimum.min(p);
-            maximum = maximum.max(p);
-        }
-        let center = (minimum + maximum) * 0.5;
-        let padding = event
-            .trail_meta
-            .iter()
-            .map(|m| {
-                let dust_width = if event.style[3] > 0.0 {
-                    (80.0 + (age - m[0]).max(0.0) * 18.0) * self.length_scale
-                } else {
-                    0.0
-                };
-                m[2].max(dust_width)
-            })
-            .fold(1000.0 * self.length_scale, f32::max)
-            // The train shader keeps five widths with 14% corrugation.
-            * 6.0;
-        event.bounds = center
-            .extend((maximum - minimum).length() * 0.5 + padding)
-            .to_array();
+        // Retained in the 1824-byte layout; each primitive now projects its own
+        // support instead of using a loose sphere around the complete event.
+        event.bounds = [0.0; 4];
     }
 }

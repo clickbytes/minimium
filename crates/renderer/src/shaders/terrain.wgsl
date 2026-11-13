@@ -124,7 +124,8 @@ fn macro_climate(direction: vec3<f32>, elevation: f32) -> vec2<f32> {
         let bolt = environment.bolid_position_intensity.xyz
             - (input.position + environment.render_origin.xyz);
         let light = normalize(bolt);
-        let irradiance = bolid_incident(input.position);
+        var irradiance = vec3<f32>(0.0);
+        if dot(normal,light)>0.0 {irradiance=bolid_incident(input.position);}
         var bolt_visibility = 1.0;
         if shadow.flags.y == 3u {
             bolt_visibility = shadow_visibility(input.position, input.geometric_normal, light);

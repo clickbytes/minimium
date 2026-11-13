@@ -44,7 +44,6 @@ pub(super) fn execute(renderer: &mut Renderer, line: &str) -> bool {
     if line == "dev bolid fragments" {
         let view = renderer.render_environment_frame.render_view;
         let matrix = glam::Mat4::from_cols_array_2d(&view.view_projection);
-        let origin = glam::DVec3::from_array(view.render_origin_m).as_vec3();
         for (event_index, event) in renderer
             .prepared_bolids
             .events
@@ -67,7 +66,7 @@ pub(super) fn execute(renderer: &mut Renderer, line: &str) -> bool {
                 let point = glam::Vec3::new(head[0], head[1], head[2]);
                 let tail = event.tails[index];
                 let tail = glam::Vec3::new(tail[0], tail[1], tail[2]);
-                let clip = matrix * (point - origin).extend(1.0);
+                let clip = matrix * point.extend(1.0);
                 let ndc = clip.truncate() / clip.w;
                 println!(
                     "  emitter={index} power={} wake_world_m={} ndc={:?}",
@@ -144,16 +143,15 @@ pub(super) fn execute(renderer: &mut Renderer, line: &str) -> bool {
                 let view = renderer.render_environment_frame.render_view;
                 let emitters = model.sample_emitters(model.luminous_end() * 0.5);
                 if let Some(emitter) = emitters.iter().max_by(|a, b| a.power.total_cmp(&b.power)) {
-                    let origin = glam::DVec3::from_array(view.render_origin_m).as_vec3();
+                    let origin = glam::DVec3::from_array(view.render_origin_m);
                     let clip = glam::Mat4::from_cols_array_2d(&view.view_projection)
-                        * (emitter.position - origin).extend(1.0);
+                        * (emitter.position - origin).as_vec3().extend(1.0);
                     println!(
                         "  mid-flight ndc={:?} altitude={}m distance={}m",
                         (clip.truncate() / clip.w).to_array(),
-                        emitter.position.as_dvec3().length() - view.game_planet_radius_m,
-                        (emitter.position.as_dvec3()
-                            - glam::DVec3::from_array(view.camera_eye_world_m))
-                        .length()
+                        emitter.position.length() - view.game_planet_radius_m,
+                        (emitter.position - glam::DVec3::from_array(view.camera_eye_world_m))
+                            .length()
                     );
                 }
             }

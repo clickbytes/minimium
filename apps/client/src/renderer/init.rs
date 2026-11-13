@@ -255,6 +255,7 @@ impl Renderer {
         let input_mapper = crate::input::InputMapper::from_setting(&startup_input_bindings)?;
         Ok(Self {
             bolids: Vec::with_capacity(minimium_renderer::milky_way_gpu::MAX_BOLIDS),
+            bolid_worker: bolids::BolidWorker::new()?,
             prepared_bolids: Default::default(),
             diagnostic_bolid_age: None,
             last_sky_view_at: None,

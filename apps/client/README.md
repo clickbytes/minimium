@@ -482,3 +482,16 @@ no draw-count-to-performance inference is made. See docs/performance.md.
 retains the count until the current sky view is published; terminal/admin paths
 use the same count validation. See docs/commands.md for cadence, framing and
 cancellation limits. This is separate from local E047 presets.
+
+## Server bolid preparation
+
+spawn_random_bolid [N] keeps the server-timed v19 event and its eight retained
+effect slots. One application-owned bolid-history worker builds the pure
+renderer evolution outside the drawing thread. Requests, results and outstanding
+keys are bounded to eight; rendering uses nonblocking request/poll operations.
+Completed histories must match world context, the entire event, radius and scale.
+Removed events, world transfers and replaced diagnostic paths cannot receive
+stale results. Once ready, a history is sampled at current server age, so it
+does not restart late or desynchronize its sky emission and point light.
+Closing the renderer drops both channel ends; the worker exits after its bounded
+current job. No game/world/protocol effects execute in that worker.

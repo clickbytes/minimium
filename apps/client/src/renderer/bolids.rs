@@ -1,5 +1,7 @@
 use super::*;
 use minimium_renderer::milky_way_gpu::{BolidGpuEvent, BolidGpuFrame, MAX_BOLIDS};
+mod preparation;
+pub(super) use preparation::BolidWorker;
 
 impl Renderer {
     pub(super) fn bolid_notice(&mut self, notice: minimium_localization::UiNotice) {
@@ -90,6 +92,23 @@ impl Renderer {
             .and_then(|m| m.planet())
             .filter(|p| p.mode == 1)
             .map_or(1.0, |p| f64::from(p.height_scale_permille) / 1000.0);
+        let radius = self
+            .render_environment_frame
+            .render_view
+            .game_planet_radius_m;
+        while let Some((key, model)) = self.bolid_worker.poll() {
+            // A late worker result cannot resurrect a removed/transferred event
+            // or overwrite a diagnostic replay with a different path or seed.
+            if Some(key.context) == context && key.radius == radius && key.scale == length_scale {
+                if let Some((_, _, _, cached)) = self
+                    .bolids
+                    .iter_mut()
+                    .find(|(c, e, _, _)| *c == key.context && *e == key.event)
+                {
+                    *cached = Some(model);
+                }
+            }
+        }
         let server_now = self
             .application
             .connection
@@ -147,19 +166,25 @@ impl Renderer {
                 ],
                 ..Default::default()
             };
-            let evolution = cached.get_or_insert_with(|| {
-                minimium_renderer::milky_way_gpu::BolidEvolution::new(
-                    &frame.events[frame.count[0] as usize],
-                    self.render_environment_frame
-                        .render_view
-                        .game_planet_radius_m,
-                    length_scale,
-                )
-            });
+            let Some(evolution) = cached.as_ref() else {
+                self.bolid_worker.request(
+                    preparation::Key {
+                        context: *event_context,
+                        event: *event,
+                        radius,
+                        scale: length_scale,
+                    },
+                    frame.events[frame.count[0] as usize],
+                );
+                continue;
+            };
             if age > evolution.luminous_end() + lifetime {
                 continue;
             }
-            evolution.sample(&mut frame.events[frame.count[0] as usize]);
+            evolution.sample(
+                &mut frame.events[frame.count[0] as usize],
+                self.render_environment_frame.render_view.render_origin_m,
+            );
             frame.count[0] += 1;
         }
         frame

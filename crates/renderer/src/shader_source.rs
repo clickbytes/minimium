@@ -64,6 +64,8 @@ pub fn sky() -> String {
         include_str!("shaders/atmosphere_common.wgsl"),
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
+        include_str!("shaders/bolid.wgsl"),
+        include_str!("shaders/bolid_primitives.wgsl"),
         include_str!("shaders/sky.wgsl"),
     ])
 }

@@ -1,16 +1,16 @@
 //! Cached observer-independent emission/deposition history.
 use super::bolid_dynamics::{Body, Dynamics, Material, BODY_COUNT};
-use glam::{DVec3, Vec3};
+use glam::DVec3;
 
 pub const FRAME_DT: f64 = 0.04;
 pub const MAX_FRAMES: usize = 1501;
 
 #[derive(Clone, Copy, Default)]
 pub struct Emitter {
-    pub position: Vec3,
-    pub birth_position: Vec3,
+    pub position: DVec3,
+    pub birth_position: DVec3,
     pub birth_power: f32,
-    pub velocity: Vec3,
+    pub velocity: DVec3,
     pub power: f32,
     pub temperature: f32,
     pub width: f32,
@@ -24,14 +24,14 @@ impl Emitter {
     fn from_body(body: Body) -> Self {
         let vapor_extent = (body.gas / 1e8).max(0.0).sqrt();
         Self {
-            position: body.position.as_vec3(),
-            birth_position: body.birth_position.as_vec3(),
+            position: body.position,
+            birth_position: body.birth_position,
             birth_power: (body.birth_power / 1e8) as f32,
-            velocity: body.velocity.as_vec3(),
+            velocity: body.velocity,
             power: (body.power / 1e8) as f32,
             temperature: body.temperature as f32,
             // Cooling gas contracts as emission falls. It is not an implosion.
-            width: (4.0 + 20.0 * vapor_extent.min(3.0)) as f32,
+            width: (2.0 + 5.0 * vapor_extent.min(3.0)) as f32,
             burst_age: (body.age - (body.last_break - body.birth)).max(0.0) as f32,
             serial: body.serial,
             born: body.birth as f32,
@@ -45,22 +45,22 @@ impl Emitter {
             // release, not at the old occupant or the next 40 ms snapshot.
             if age < b.born {
                 return Self {
-                    position: a.position + a.velocity * (t * FRAME_DT as f32),
+                    position: a.position + a.velocity * (f64::from(t) * FRAME_DT),
                     ..a
                 };
             }
             let since_birth = (age - b.born).max(0.0);
             let fraction = (since_birth / (end_age - b.born).max(1e-6)).clamp(0.0, 1.0);
             return Self {
-                position: b.birth_position.lerp(b.position, fraction),
+                position: b.birth_position.lerp(b.position, f64::from(fraction)),
                 power: b.birth_power + (b.power - b.birth_power) * fraction,
                 burst_age: since_birth,
                 ..b
             };
         }
         Self {
-            position: a.position.lerp(b.position, t),
-            velocity: a.velocity.lerp(b.velocity, t),
+            position: a.position.lerp(b.position, f64::from(t)),
+            velocity: a.velocity.lerp(b.velocity, f64::from(t)),
             power: a.power + (b.power - a.power) * t,
             temperature: a.temperature + (b.temperature - a.temperature) * t,
             width: a.width + (b.width - a.width) * t,
@@ -73,7 +73,7 @@ impl Emitter {
 #[derive(Clone)]
 pub struct Snapshot {
     pub emitters: [Emitter; BODY_COUNT],
-    pub position: Vec3,
+    pub position: DVec3,
     pub power: f32,
     pub deposited: f32,
     pub width: f32,
@@ -111,9 +111,9 @@ pub fn trail_knots(frames: &[Snapshot], count: usize) -> Vec<usize> {
             for i in a + 1..b {
                 let t = (i - a) as f32 / (b - a) as f32;
                 let expected_power = frames[a].power + (frames[b].power - frames[a].power) * t;
-                let expected_position = frames[a].position.lerp(frames[b].position, t);
+                let expected_position = frames[a].position.lerp(frames[b].position, f64::from(t));
                 let score = (frames[i].power - expected_power).abs() / peak
-                    + (frames[i].position - expected_position).length() / 20000.0;
+                    + (frames[i].position - expected_position).length() as f32 / 20000.0;
                 if score > best.0 {
                     best = (score, i);
                 }
@@ -140,7 +140,7 @@ pub fn build(
     let mut frames = Vec::with_capacity(256);
     let mut quiet = 0.0;
     let mut luminous_end = 0.0;
-    let mut position = start.as_vec3();
+    let mut position = start;
     for frame in 0..MAX_FRAMES {
         let time = frame as f64 * FRAME_DT;
         let mut deposited = 0.0;
@@ -156,12 +156,11 @@ pub fn build(
         }
         let power: f64 = dynamics.bodies.iter().map(|body| body.power).sum();
         if power > 1.0 {
-            position = (dynamics
+            position = dynamics
                 .bodies
                 .iter()
                 .fold(DVec3::ZERO, |sum, body| sum + body.position * body.power)
-                / power)
-                .as_vec3();
+                / power;
         }
         let emitters = dynamics.bodies.map(Emitter::from_body);
         let width = emitters.iter().map(|e| e.width).fold(0.0, f32::max);

@@ -18,10 +18,14 @@ pub struct BolidGpuEvent {
     pub start_age: [f32; 4],
     pub end_duration: [f32; 4],
     pub style: [f32; 4],
+    /// Render-origin-relative emitter position and normalized visible power.
     pub head_power: [f32; 4],
+    /// Absolute position for CPU light/shadow selection; normalized intensity.
     pub light_position_power: [f32; 4],
     pub emission: [f32; 4],
+    /// Reserved former whole-event sphere; primitive bounds are projected on GPU.
     pub bounds: [f32; 4],
+    /// Render-origin-relative positions, like tails and train.
     pub fragments: [[f32; 4]; 19],
     /// Historical wake endpoint xyz and radiant power at that endpoint.
     pub tails: [[f32; 4]; 20],
@@ -65,6 +69,7 @@ pub struct MilkyWayGpu {
     bolids: wgpu::Buffer,
     has_dust: bool,
     active: bool,
+    pub(crate) event_count: u32,
     pub(crate) layer: Option<crate::bolid_layer::BolidLayer>,
     pub occlusion_layout: wgpu::BindGroupLayout,
     pub occlusion: Option<wgpu::BindGroup>,
@@ -145,7 +150,7 @@ impl MilkyWayGpu {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 2,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -194,6 +199,7 @@ impl MilkyWayGpu {
             bolids,
             has_dust: false,
             active: false,
+            event_count: 0,
             layer: None,
             occlusion_layout,
             occlusion: None,
@@ -246,7 +252,8 @@ impl MilkyWayGpu {
     }
 
     pub fn upload_bolids(&mut self, queue: &wgpu::Queue, frame: &BolidGpuFrame) {
-        self.active = frame.count[0] > 0;
+        self.event_count = frame.count[0].min(MAX_BOLIDS as u32);
+        self.active = self.event_count > 0;
         self.has_dust = frame
             .events
             .iter()

@@ -56,11 +56,57 @@ fn main() {
         if name == "clouds" {
             cloud_contract(&module, &info);
         }
+        if name == "sky" {
+            bolid_contract(&module, &info);
+        }
         if matches!(name, "terrain" | "ocean") {
             terrain_contract(&module, &info);
         }
         transient_contract(&module, &info);
         println!("{name}: valid");
+    }
+}
+
+fn bolid_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
+    for (_, ty) in module.types.iter() {
+        let expected = match ty.name.as_deref() {
+            Some("BolidGpuEvent") => Some((
+                1824,
+                vec![0, 16, 32, 48, 64, 80, 96, 112, 416, 736, 1056, 1440],
+            )),
+            Some("BolidGpuFrame") => Some((14608, vec![0, 14592])),
+            _ => None,
+        };
+        if let Some((size, offsets)) = expected {
+            let naga::TypeInner::Struct { members, span } = &ty.inner else {
+                panic!("expected bolid uniform struct");
+            };
+            assert_eq!(*span, size);
+            assert_eq!(
+                members.iter().map(|m| m.offset).collect::<Vec<_>>(),
+                offsets
+            );
+        }
+    }
+    for (index, entry) in module.entry_points.iter().enumerate() {
+        for (handle, global) in module.global_variables.iter() {
+            if info.get_entry_point(index)[handle].is_empty() {
+                continue;
+            }
+            let Some(binding) = global.binding else {
+                continue;
+            };
+            let visible = match (binding.group, binding.binding) {
+                (0, 0..=2) | (1, 2) => true,
+                (0, 3..=10) | (1, 0..=1) | (2, 0) => entry.stage == naga::ShaderStage::Fragment,
+                _ => false,
+            };
+            assert!(
+                visible,
+                "sky binding {binding:?} unavailable in {:?}",
+                entry.stage
+            );
+        }
     }
 }
 

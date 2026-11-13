@@ -152,6 +152,7 @@ struct FrameMetrics {
 }
 
 struct Renderer {
+    bolid_worker: bolids::BolidWorker,
     prepared_bolids: minimium_renderer::milky_way_gpu::BolidGpuFrame,
     diagnostic_bolid_age: Option<(minimium_protocol::WorldContext, u64, f32)>,
     bolids: Vec<(

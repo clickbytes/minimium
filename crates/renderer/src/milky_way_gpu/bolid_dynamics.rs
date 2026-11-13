@@ -55,7 +55,10 @@ impl Material {
             seed,
             strength,
             density: 900.0 + variation(seed, 2) * 2600.0,
-            ablation: 1e-8 + variation(seed, 4) * 2e-8,
+            // Intrinsic ablation, with fragmentation/erosion handled separately.
+            // The old apparent 0.01..0.03 coefficient removed most material
+            // before pressure failures. SI: 0.003..0.007 kg/MJ -> kg/J.
+            ablation: 3e-9 + variation(seed, 4) * 4e-9,
             erosion: match family {
                 BolidFamily::Eroding => 1.8,
                 BolidFamily::Cascade => 0.6,
@@ -93,6 +96,9 @@ pub struct Body {
 impl Body {
     pub fn advance(&mut self, dt: f64, radius: f64, material: Material) {
         self.deposited = 0.0;
+        if self.serial == 0 {
+            return;
+        }
         self.age += dt;
         let old_gas = self.gas;
         self.gas *= (-dt / 0.055).exp();
@@ -139,7 +145,14 @@ impl Body {
         // Shed grains retain kinetic energy; do not count it twice as radiation.
         let remaining_energy = 0.5 * (self.mass + grains) * self.velocity.length_squared();
         let efficiency = 0.003 + 0.032 * activation;
-        let emission = ((energy - remaining_energy) / dt).max(0.0) * efficiency * activation;
+        // Smooth seeded fluctuations are shared by the sky and point source.
+        // Their small amplitude preserves the mass-driven flare/gap envelope.
+        let phase = material.seed * std::f64::consts::TAU;
+        let time = self.age + self.birth;
+        let modulation =
+            1.0 + 0.06 * (time * 43.0 + phase).sin() + 0.025 * (time * 97.0 + phase * 1.7).sin();
+        let emission =
+            ((energy - remaining_energy) / dt).max(0.0) * efficiency * activation * modulation;
         self.gas = old_gas + (emission - old_gas) * (1.0 - (-dt / 0.018).exp());
         self.power = self.gas;
         self.damage += (pressure / self.strength.max(1.0) - 1.0).max(0.0) * dt;

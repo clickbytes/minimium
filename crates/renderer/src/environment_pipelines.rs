@@ -157,7 +157,11 @@ fn create_pipeline(
         layout: Some(layout),
         vertex: wgpu::VertexState {
             module: &shader,
-            entry_point: Some("vs_main"),
+            entry_point: Some(match config.fragment {
+                "fs_bolid" => "vs_bolid",
+                "fs_dust" => "vs_bolid_dust",
+                _ => "vs_main",
+            }),
             compilation_options: Default::default(),
             buffers: &[config.vertex_layout],
         },

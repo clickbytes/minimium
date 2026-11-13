@@ -91,7 +91,9 @@ fn bolid_incident(local_position: vec3<f32>) -> vec3<f32> {
 fn bolid_irradiance(local_position: vec3<f32>, normal: vec3<f32>) -> vec3<f32> {
     let delta = environment.bolid_position_intensity.xyz
         - (local_position + environment.render_origin.xyz);
-    return bolid_incident(local_position) * max(dot(normal,normalize(delta)),0.0);
+    let cosine=dot(normal,normalize(delta));
+    if cosine<=0.0 {return vec3<f32>(0.0);}
+    return bolid_incident(local_position) * cosine;
 }
 
 fn tone_map_linear(rgb: vec3<f32>) -> vec3<f32> {

@@ -35,7 +35,7 @@ pub(crate) fn encode(encoder: &mut wgpu::CommandEncoder, frame: MainScenePass<'_
         pass.set_bind_group(0, frame.camera, &[]);
         pass.set_bind_group(1, &frame.milky_way.bind_group, &[]);
         pass.set_bind_group(2, depth, &[]);
-        pass.draw(0..3, 0..1);
+        pass.draw(0..6, 0..frame.milky_way.event_count * 63);
         draws += 1;
     }
     draws += frame.milky_way.meteors.draw(&mut pass, frame.camera, depth);
@@ -58,7 +58,7 @@ pub(crate) fn encode(encoder: &mut wgpu::CommandEncoder, frame: MainScenePass<'_
         pass.set_bind_group(0, frame.camera, &[]);
         pass.set_bind_group(1, &frame.milky_way.bind_group, &[]);
         pass.set_bind_group(2, depth, &[]);
-        pass.draw(0..3, 0..1);
+        pass.draw(0..6, 0..frame.milky_way.event_count * 23);
         draws += 1;
     }
     draws
