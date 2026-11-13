@@ -5,6 +5,7 @@ pub fn clouds() -> String {
         include_str!("shaders/atmosphere_common.wgsl"),
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
+        include_str!("shaders/transient_lighting.wgsl"),
         include_str!("shaders/clouds.wgsl"),
     ])
 }

@@ -48,6 +48,7 @@ struct OceanOutput {
         direct+=surface_light(n,v,light,albedo,roughness,0.02)
             *transient_incident(i,input.position);
     }
+    if transient_lights.count.y!=0u {return transient_debug_transmission(input.position);}
     if terrain.debug.x == 2u { return vec4<f32>(n*0.5+0.5,1.0); }
     if terrain.debug.x == 3u { return vec4<f32>(vec3<f32>(input.clip.z),1.0); }
     if terrain.debug.x == 4u { return vec4<f32>(vec3<f32>(visibility),1.0); }

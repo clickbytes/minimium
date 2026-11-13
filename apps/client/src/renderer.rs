@@ -105,6 +105,7 @@ struct GpuResources {
     transient_buffer: wgpu::Buffer,
     transient_count: u32,
     transient_enabled: bool,
+    transient_transmission: bool,
     transient_incident: f64,
     camera_bind_group: wgpu::BindGroup,
     depth_view: wgpu::TextureView,

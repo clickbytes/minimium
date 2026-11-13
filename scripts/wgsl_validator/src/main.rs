@@ -186,7 +186,8 @@ fn transient_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
     for (_, ty) in module.types.iter() {
         let (size, offsets): (u32, &[u32]) = match ty.name.as_deref() {
             Some("TransientLight") => (48, &[0, 16, 32]),
-            Some("TransientLightUniform") => (240, &[0, 16, 32, 48]),
+            Some("TransientLightUniform") => (2288, &[0, 16, 32, 48, 240]),
+            Some("CloudLightOccluder") => (64, &[0, 16, 32, 48]),
             _ => continue,
         };
         let naga::TypeInner::Struct { members, span } = &ty.inner else {

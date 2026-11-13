@@ -446,3 +446,8 @@ E047-10 connects shared transient lights to terrain/material BRDF, authored
 objects and ocean before tone mapping. The session-local command
 sky meteors debug light off|on isolates this contribution; source visibility
 remains independent. Cloud-path extinction and runtime acceptance are pending.
+
+E047-11 adds bounded published-cloud light-path proxies to the same frame
+uniform (now 2288 bytes), shared by terrain, world, water, dust and cloud
+scattering. The transmission diagnostic and self-shadow approximation are
+documented in docs/weather.md; no weather remeshing occurs at a flash.

@@ -140,6 +140,7 @@ fn macro_climate(direction: vec3<f32>, elevation: f32) -> vec2<f32> {
                 *transient_incident(i,input.position);
         }
     }
+    if transient_lights.count.y!=0u {return transient_debug_transmission(input.position);}
     if terrain.debug.x == 2u { return vec4<f32>(normal*0.5+0.5, 1.0); }
     if terrain.debug.x == 3u { return vec4<f32>(vec3<f32>(input.clip.z), 1.0); }
     if terrain.debug.x == 4u {

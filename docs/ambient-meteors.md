@@ -277,3 +277,14 @@ Sun/Moon, atmosphere debug or server events. Default is on, session-local only;
 sky info reports the switch. Terminal builds parse it and report desktop-only.
 The command dispatcher moved its existing portal lookup unchanged into the
 gameplay command module to keep the owning files below 500 lines.
+
+
+## E047-11: cloud light paths
+
+The shared uniform now includes up to eight selected cloud ellipsoids per light
+(four on low), 2288 bytes total. All transient-incident consumers use segment
+extinction; clouds add directional scattering and independent self-extinction.
+The existing weather publication supplies real bases, thicknesses and optical
+depth. No generation, mesh cache, worker, Sun/Moon shadow or pass-order change.
+See docs/weather.md for bounded costs, source-level A/B reasoning, approximations
+and the diagnostic sky meteors debug light transmission mode.

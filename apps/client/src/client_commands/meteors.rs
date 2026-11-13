@@ -51,3 +51,11 @@ pub(crate) fn command_error() -> CommandError {
         Some("sky meteors spawn faint|bright|fireball|fragmenting"),
     )
 }
+
+/// Session-only rendering diagnostic; never changes the event clock.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MeteorLightDebug {
+    On,
+    Off,
+    Transmission,
+}

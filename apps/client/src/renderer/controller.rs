@@ -270,12 +270,15 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
             };
             renderer.application.ui.console.push_line(message);
         }
-        FrontendAction::SkyMeteorsLight(enabled) => {
-            renderer.gpu.transient_enabled = enabled;
-            renderer.application.ui.console.push_line(format!(
-                "meteors: local light {}",
-                if enabled { "on" } else { "off" }
-            ));
+        FrontendAction::SkyMeteorsLight(mode) => {
+            renderer.gpu.transient_enabled = mode != crate::client_commands::MeteorLightDebug::Off;
+            renderer.gpu.transient_transmission =
+                mode == crate::client_commands::MeteorLightDebug::Transmission;
+            renderer
+                .application
+                .ui
+                .console
+                .push_line(format!("meteors: local light {mode:?}"));
         }
         FrontendAction::SkyMeteorsClear => {
             let cleared = renderer.meteors.clear();

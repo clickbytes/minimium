@@ -112,13 +112,13 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "sky meteors debug light",
         alias: None,
-        usage: "sky meteors debug light on|off",
+        usage: "sky meteors debug light on|off|transmission",
         arguments: &[Arg::new(
             "enabled",
             ArgType::Enumeration,
             false,
             false,
-            Some(&["on", "off"]),
+            Some(&["on", "off", "transmission"]),
             None,
             None,
             "local meteor lighting diagnostic",
@@ -219,9 +219,18 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
             MeteorPreset::parse(value).ok_or(ParseError::MeteorUsage)?,
         )),
         ("sky meteors spawn", _) => Err(ParseError::MeteorUsage),
-        ("sky meteors debug light", ["on"]) => Ok(ClientCommand::SkyMeteorsLight(true)),
-        ("sky meteors debug light", ["off"]) => Ok(ClientCommand::SkyMeteorsLight(false)),
-        ("sky meteors debug light", _) => Err(ParseError::Usage("sky meteors debug light on|off")),
+        ("sky meteors debug light", ["on"]) => {
+            Ok(ClientCommand::SkyMeteorsLight(super::MeteorLightDebug::On))
+        }
+        ("sky meteors debug light", ["off"]) => {
+            Ok(ClientCommand::SkyMeteorsLight(super::MeteorLightDebug::Off))
+        }
+        ("sky meteors debug light", ["transmission"]) => Ok(ClientCommand::SkyMeteorsLight(
+            super::MeteorLightDebug::Transmission,
+        )),
+        ("sky meteors debug light", _) => Err(ParseError::Usage(
+            "sky meteors debug light on|off|transmission",
+        )),
         ("sky meteors clear", []) => Ok(ClientCommand::SkyMeteorsClear),
         ("camera fov", []) => Ok(ClientCommand::Fov(None)),
         ("camera fov", [value]) => Ok(ClientCommand::Fov(Some(parse_fov_value(value)?))),

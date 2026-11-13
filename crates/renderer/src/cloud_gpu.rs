@@ -14,6 +14,8 @@ pub struct CloudGpu {
     pub(crate) bolid_mask_pipeline: wgpu::RenderPipeline,
     pub(crate) inside_mask_pipeline: wgpu::RenderPipeline,
     pub inside_count: u32,
+    pub light_records: Vec<CloudRecord>,
+    pub standard_lighting: bool,
     pub composite_pipeline: Option<wgpu::RenderPipeline>,
     pub group: wgpu::BindGroup,
     pub targets: Option<CloudTargets>,
@@ -100,6 +102,8 @@ impl CloudGpu {
                 Some(true),
             ),
             inside_count: 0,
+            light_records: Vec::with_capacity(MAX_CLOUDS),
+            standard_lighting: false,
             composite_pipeline,
             group,
             targets,
@@ -133,6 +137,8 @@ impl CloudGpu {
         uniform: &CloudUniform,
     ) {
         self.inside_count = uniform.config[3];
+        self.light_records.clear();
+        self.light_records.extend_from_slice(records);
         if !records.is_empty() {
             queue.write_buffer(&self.records, 0, bytemuck::cast_slice(records));
         }

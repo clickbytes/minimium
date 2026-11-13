@@ -193,3 +193,56 @@ multiscale coherent deformation by
 Sparse blocks are inspired by the storage principles in
 [Museth, VDB](https://museth.org/Ken/Publications_files/Museth_TOG13.pdf), without
 adding an OpenVDB dependency. No cited renderer or fluid solver is imported.
+
+
+## Meteor light-path extinction (E047-11)
+
+Local transient lights consume the existing published cloud transforms. Cloud
+generation, seeds, voxel morphs, mesh cache and worker are unchanged. The family
+review uses weather/families.rs: low Cumulus/Stratus/Stratocumulus retain their
+actual bases; mid Altocumulus/Altostratus/Lenticularis and high
+Cirrus/Cirrocumulus/Cirrostratus keep separate envelopes. Congestus can reach
+10 km, Cumulonimbus 12 km, and Nimbostratus 7 km reference height, scaled by the
+existing weather model. Their actual snapped sizes and opacity feed proxies;
+there are no substitute fixed cloud planes. Family optical factors range from
+0.22 (Cirrostratus) to 3.2 (Cumulonimbus), further modulated by coverage and age.
+
+CloudGpu retains one preallocated CPU copy of its published CloudRecords
+(max8192, 786432 bytes); invalidation clears it alongside faces. Per active light,
+a bounded scan selects the strongest eight relevant ellipsoids (four on low),
+with stable publication-order ties, within a 10-km receiver corridor around the
+camera-to-source segment. Selection is rebuilt from current transforms during
+the existing frame upload: no worker, mesh job or texture upload is triggered.
+The shared light uniform grows to 2288 bytes including 32 64-byte proxies.
+It is still one buffer and one binding, under the 16-KiB downlevel uniform limit.
+
+Each proxy stores its real center, inverse oriented half axes and extinction per
+game metre, defined by vertical optical depth divided by actual thickness.
+Analytic ray/ellipsoid intersections clip to the source-receiver segment; partial
+inside paths contribute, behind-source clouds do not. T=exp(-sum(tau)) supplies
+the same attenuation to terrain, objects, water, dust and cloud incident light.
+Cloud faces add normalized anisotropic/isotropic single-scattering lobes driven
+by their local optical depth. Each visible cloud also evaluates its own proxy
+if omitted by selection; stable record IDs prevent double self-extinction.
+Maximum intersections: 8 per light on surfaces, 9 on cloud faces (low: 4/5).
+At count0 the loops do no work; no dynamic shadow maps are allocated.
+
+Source review: adding a positive-depth intervening layer increases tau and
+reduces transmitted light; removing it increases ground light. With a source
+between layers, each direction intersects only the appropriate part of the
+segment. Cloud self-path length changes with entry side. The irradiance and
+scattering phase also depend on distance and source/view directions, so layers
+are not assigned one identical flash value. Runtime A/B acceptance is deferred.
+
+Use sky meteors debug light transmission to view selected-source cloud T on
+surfaces/clouds (black=opaque, white=clear); on restores normal shading, off
+removes transient lighting. No-light diagnostic is white. This is a deliberate
+display override and never a production ambient boost. Sun/Moon are untouched.
+
+Limits: surface WBOIT is retained, not full volumetric multiple scattering.
+Ellipsoids fill holes, smooth voxel deformation and use mean density; selected
+proxy overflow and receivers outside the 10-km corridor can miss intervening
+clouds. Own-cloud extinction is always included, but mutual shadowing is limited
+to the selected set. Qualitative errors can be too much extinction in holes or
+too little where omitted clouds overlap. GPU timing and visual bounds remain
+unmeasured until the explicitly authorized final-verification stage.

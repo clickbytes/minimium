@@ -113,6 +113,42 @@ fn cloud_bolid_radiance(input: CloudVertex, normal: vec3<f32>) -> vec3<f32> {
     return bolid_incident(scene_local) * (0.85 * phase * exp(-entry_depth));
 }
 
+// A visible cloud always gets its own interior extinction, even when outside
+// the selected receiver corridor. Already selected proxies must not count twice.
+fn cloud_self_transmission(index: u32, input: CloudVertex, point: vec3<f32>) -> f32 {
+    let source=transient_lights.sources[index];
+    for (var i=0u; i<min(u32(source.range_lifetime.z),8u); i++) {
+        if u32(transient_lights.clouds[index*8u+i].east_inverse.w)==input.cluster+1u {return 1.0;}
+    }
+    let c=clusters[input.cluster];
+    let half_size=max(c.half_size.xyz,vec3(1.0));
+    let center=c.center_age.xyz+c.up_layer.xyz*half_size.y
+        +cloud_frame.origin_radius.xyz-environment.render_origin.xyz;
+    let fade=smoothstep(0.0,420.0,c.center_age.w)*(1.0-smoothstep(2800.0,3600.0,c.center_age.w));
+    let cloud=CloudLightOccluder(vec4(center,c.east_opacity.w*fade/(2.0*half_size.y)),
+        vec4(c.east_opacity.xyz/half_size.x,0.0),vec4(c.up_layer.xyz/half_size.y,0.0),
+        vec4(c.north_region.xyz/half_size.z,0.0));
+    return exp(-min(transient_proxy_tau(cloud,point,source.position_radius.xyz),80.0));
+}
+
+// Approximate single scattering on the existing surface voxel publication.
+fn cloud_transient_radiance(input: CloudVertex) -> vec3<f32> {
+    let point=input.local+cloud_frame.origin_radius.xyz-environment.render_origin.xyz;
+    let view_delta=cloud_frame.eye.xyz-input.local;
+    let view=view_delta/max(length(view_delta),0.001);
+    let g=0.65;
+    let multiple=1.0-exp(-max(input.parameters.y,0.0));
+    var total=vec3(0.0);
+    for (var i=0u; i<min(transient_lights.count.x,4u); i++) {
+        let light=transient_direction(i,point);
+        let cosine=clamp(dot(-light,view),-1.0,1.0);
+        let hg=(1.0-g*g)/(12.5663706144*pow(1.0+g*g-2.0*g*cosine,1.5));
+        let phase=mix(hg,0.0795774715,multiple);
+        total+=transient_incident(i,point)*(0.85*phase*cloud_self_transmission(i,input,point));
+    }
+    return total;
+}
+
 fn cloud_color(input: CloudVertex) -> vec4<f32> {
     if hidden(input.local) { discard; }
     let up = normalize(input.local + cloud_frame.origin_radius.xyz);
@@ -134,7 +170,11 @@ fn cloud_color(input: CloudVertex) -> vec4<f32> {
         ambient=physical_ambient(input.local);
     }
     var color = ambient * (0.55 + 0.45 * max(dot(n, up), 0.0)) + direct + lunar
-        + cloud_bolid_radiance(input, n);
+        + cloud_bolid_radiance(input, n)+cloud_transient_radiance(input);
+    if transient_lights.count.y!=0u {
+        let point=input.local+cloud_frame.origin_radius.xyz-environment.render_origin.xyz;
+        return vec4(transient_debug_transmission(point).rgb,alpha);
+    }
     if cloud_frame.config.x == 2u {
         let colors = array<vec3<f32>,3>(vec3(0.3,0.8,1.0), vec3(1.0,0.65,0.2), vec3(0.8,0.4,1.0));
         color = colors[u32(input.parameters.z)];

@@ -12,6 +12,22 @@ pub(super) fn push(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
         "transient_buffer_bytes",
         renderer.gpu.transient_buffer.size(),
     );
+    snapshot.push(
+        "transient_transmission_debug",
+        renderer.gpu.transient_transmission,
+    );
+    snapshot.push(
+        "transient_cloud_records",
+        renderer.gpu.cloud_gpu.light_records.len(),
+    );
+    snapshot.push(
+        "transient_cloud_proxy_limit",
+        if renderer.gpu.cloud_gpu.standard_lighting {
+            8
+        } else {
+            4
+        },
+    );
     let status = renderer.gpu.meteors_status;
     let gpu = &renderer.gpu.milky_way.meteors;
     snapshot.push("meteors_segments", gpu.count);

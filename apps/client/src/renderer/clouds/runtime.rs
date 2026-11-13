@@ -98,6 +98,7 @@ impl Renderer {
             self.weather.worker.clear();
             self.gpu.cloud_gpu.count = 0;
             self.gpu.cloud_gpu.inside_count = 0;
+            self.gpu.cloud_gpu.light_records.clear();
             self.gpu.cloud_gpu.debug = false;
             self.gpu.terrain_gpu.clear_cover();
             self.gpu.atmosphere_gpu.clear_weather();
@@ -120,6 +121,7 @@ impl Renderer {
             self.weather.worker.clear();
             self.gpu.cloud_gpu.count = 0;
             self.gpu.cloud_gpu.inside_count = 0;
+            self.gpu.cloud_gpu.light_records.clear();
         }
         if let Some((cover_stamp, cover)) = self.weather.worker.take_cover() {
             if cover_stamp == stamp {
@@ -236,6 +238,8 @@ impl Renderer {
                 .to_array(),
             config: [self.weather.debug as u32, target_size[0], target_size[1], 0],
         };
+        gpu.standard_lighting =
+            self.sky_quality.effective == minimium_renderer::quality::SkyQuality::Standard;
         uniform.select_inside(
             &records,
             self.sky_quality.effective == minimium_renderer::quality::SkyQuality::Standard,

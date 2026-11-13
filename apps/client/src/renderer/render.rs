@@ -109,6 +109,15 @@ impl GpuResources {
         if !self.transient_enabled {
             lights.count[0] = 0;
         }
+        lights.attach_clouds(
+            &self.cloud_gpu.light_records,
+            std::array::from_fn(|i| {
+                (render_frame.view.camera_eye_world_m[i] - render_frame.view.render_origin_m[i])
+                    as f32
+            }),
+            self.cloud_gpu.standard_lighting,
+        );
+        lights.count[1] = u32::from(self.transient_transmission);
         self.transient_count = lights.count[0];
         self.transient_incident =
             minimium_renderer::transient_lighting::TransientLightUniform::observer_irradiance(

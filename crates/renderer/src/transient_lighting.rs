@@ -4,13 +4,23 @@ use bytemuck::{Pod, Zeroable};
 use glam::DVec3;
 
 pub const CAPACITY: usize = 4;
+pub const OCCLUDERS_PER_LIGHT: usize = 8;
+#[repr(C, align(16))]
+#[derive(Clone, Copy, Debug, Default, Pod, Zeroable)]
+pub struct CloudLightOccluder {
+    pub center_extinction: [f32; 4],
+    pub east_inverse: [f32; 4],
+    pub up_inverse: [f32; 4],
+    pub north_inverse: [f32; 4],
+}
+
 /// Scene-linear RGB radiant intensity already contains the isotropic 1/(4 pi).
 #[repr(C, align(16))]
 #[derive(Clone, Copy, Debug, Default, Pod, Zeroable)]
 pub struct TransientLight {
     pub position_radius: [f32; 4],
     pub rgb_intensity: [f32; 4],
-    /// Physical range, remaining seconds; reserved components are zero.
+    /// Physical range, remaining seconds, selected cloud count, reserved zero.
     pub range_lifetime: [f32; 4],
 }
 
@@ -23,6 +33,7 @@ pub struct TransientLightUniform {
     /// Physical altitude at game sea level, physical metres per radial game metre.
     pub mapping: [f32; 4],
     pub sources: [TransientLight; CAPACITY],
+    pub clouds: [CloudLightOccluder; CAPACITY * OCCLUDERS_PER_LIGHT],
 }
 
 fn physical(world: DVec3, context: MeteorFrameContext) -> DVec3 {
@@ -134,10 +145,12 @@ impl TransientLightUniform {
 }
 
 const _: () = {
+    assert!(std::mem::size_of::<CloudLightOccluder>() == 64);
+    assert!(std::mem::offset_of!(TransientLightUniform, clouds) == 240);
     assert!(std::mem::size_of::<TransientLight>() == 48);
     assert!(std::mem::offset_of!(TransientLight, rgb_intensity) == 16);
     assert!(std::mem::offset_of!(TransientLight, range_lifetime) == 32);
-    assert!(std::mem::size_of::<TransientLightUniform>() == 240);
+    assert!(std::mem::size_of::<TransientLightUniform>() == 2288);
     assert!(std::mem::align_of::<TransientLightUniform>() == 16);
     assert!(std::mem::offset_of!(TransientLightUniform, planet) == 16);
     assert!(std::mem::offset_of!(TransientLightUniform, mapping) == 32);

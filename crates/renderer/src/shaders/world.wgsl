@@ -53,6 +53,7 @@ struct VertexOutput {
     }
     direct += bolid_irradiance(input.world_position, normal) * bolid_visibility;
     direct += transient_irradiance(input.world_position, normal);
+    if transient_lights.count.y!=0u {return transient_debug_transmission(input.world_position);}
     let linear = albedo * (ambient + direct);
     return vec4<f32>(tone_map_linear(linear), 1.0);
 }

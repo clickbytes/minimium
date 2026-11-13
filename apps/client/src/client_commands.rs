@@ -26,7 +26,7 @@ mod weather;
 
 pub(crate) use gameplay::nearest_portal_entity;
 pub(crate) use help::{command_error, command_help, command_help_group, help_lines};
-pub(crate) use meteors::MeteorPreset;
+pub(crate) use meteors::{MeteorLightDebug, MeteorPreset};
 pub(crate) use minimium_commands::{
     CommandArgumentSpec as ArgumentSpec, CommandArgumentType as ArgumentType,
 };
@@ -72,7 +72,7 @@ pub(crate) enum ClientCommand {
     SkyMeteorsStatus,
     SkyMeteorsSpawn(MeteorPreset),
     SkyMeteorsClear,
-    SkyMeteorsLight(bool),
+    SkyMeteorsLight(MeteorLightDebug),
     Fov(Option<f32>),
     ShowCelestialNames(bool),
     TimeStatus,
@@ -265,7 +265,7 @@ pub(crate) enum FrontendAction {
     SkyMeteorsStatus,
     SkyMeteorsSpawn(MeteorPreset),
     SkyMeteorsClear,
-    SkyMeteorsLight(bool),
+    SkyMeteorsLight(MeteorLightDebug),
     SpawnRandomBolid,
     TimeMode(String),
     TimeOfflinePolicy(String),
