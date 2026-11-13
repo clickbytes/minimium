@@ -271,6 +271,15 @@ impl MeteorFrame {
             if !keep_new {
                 return false;
             }
+            let removed_id = lowest.id;
+            let mut kept = 0;
+            for index in 0..self.trail_count {
+                if self.trails[index].id != removed_id {
+                    self.trails[kept] = self.trails[index];
+                    kept += 1;
+                }
+            }
+            self.trail_count = kept;
             self.core_count -= 1;
         }
         let mut insert_at = self.core_count;
