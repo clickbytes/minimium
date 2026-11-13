@@ -3,8 +3,8 @@ use crate::meteors::{MeteorFrame, MAX_METEOR_CORES, MAX_TRAIL_POINTS};
 
 const CAPACITY: usize = MAX_METEOR_CORES + MAX_TRAIL_POINTS;
 const MIN_HEIGHT_M: f64 = 20_000.0;
-const ATTRIBUTES: [wgpu::VertexAttribute; 3] =
-    wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4];
+const ATTRIBUTES: [wgpu::VertexAttribute; 4] =
+    wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x4, 2 => Float32x4, 3 => Float32x4];
 
 #[repr(C)]
 #[derive(Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
@@ -12,17 +12,22 @@ struct Segment {
     start: [f32; 4],
     end: [f32; 4],
     color: [f32; 4],
+    optics: [f32; 4],
 }
 
-const _: () = assert!(std::mem::size_of::<Segment>() == 48);
+const _: () = assert!(std::mem::size_of::<Segment>() == 64);
 const _: () = assert!(std::mem::offset_of!(Segment, start) == 0);
 const _: () = assert!(std::mem::offset_of!(Segment, end) == 16);
 const _: () = assert!(std::mem::offset_of!(Segment, color) == 32);
+const _: () = assert!(std::mem::offset_of!(Segment, optics) == 48);
 
 pub struct MeteorGpu {
     pipeline: wgpu::RenderPipeline,
+    dust_pipeline: wgpu::RenderPipeline,
     buffer: wgpu::Buffer,
     pub count: u32,
+    pub dust_segments: u32,
+    pub emission_segments: u32,
     pub upload_bytes: u64,
     pub rejected_low: u32,
     pub draw_count: std::cell::Cell<u32>,
@@ -63,35 +68,47 @@ impl MeteorGpu {
             }),
             write_mask: wgpu::ColorWrites::ALL,
         });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("cosmetic meteor emission"),
-            layout: Some(&layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                compilation_options: Default::default(),
-                buffers: &[Some(wgpu::VertexBufferLayout {
-                    array_stride: 48,
-                    step_mode: wgpu::VertexStepMode::Instance,
-                    attributes: &ATTRIBUTES,
-                })],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                compilation_options: Default::default(),
-                targets: &[target.clone(), target],
-            }),
-            primitive: Default::default(),
-            depth_stencil: None,
-            multisample: Default::default(),
-            multiview_mask: None,
-            cache: None,
-        });
+        let make_pipeline = |dust: bool| {
+            let mut color_target = target.clone();
+            if dust {
+                color_target.as_mut().unwrap().blend =
+                    Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING);
+            }
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("cosmetic meteor emission"),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: Some("vs_main"),
+                    compilation_options: Default::default(),
+                    buffers: &[Some(wgpu::VertexBufferLayout {
+                        array_stride: 64,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &ATTRIBUTES,
+                    })],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: Some(if dust { "fs_dust" } else { "fs_main" }),
+                    compilation_options: Default::default(),
+                    targets: &[color_target, target.clone()],
+                }),
+                primitive: Default::default(),
+                depth_stencil: None,
+                multisample: Default::default(),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let pipeline = make_pipeline(false);
+        let dust_pipeline = make_pipeline(true);
         Self {
             pipeline,
+            dust_pipeline,
             buffer,
             count: 0,
+            dust_segments: 0,
+            emission_segments: 0,
             upload_bytes: 0,
             rejected_low: 0,
             draw_count: std::cell::Cell::new(0),
@@ -101,6 +118,8 @@ impl MeteorGpu {
     pub fn upload(&mut self, queue: &wgpu::Queue, frame: &MeteorFrame) {
         let mut segments = [Segment::default(); CAPACITY];
         self.count = 0;
+        self.dust_segments = 0;
+        self.emission_segments = 0;
         self.draw_count.set(0);
         self.rejected_low = 0;
         for core in frame.cores() {
@@ -112,7 +131,11 @@ impl MeteorGpu {
                 core.linear_rgb[0],
                 core.linear_rgb[1],
                 core.linear_rgb[2],
-                core.intensity / (std::f32::consts::PI * core.radius_m.powi(2)).max(1e-8),
+                if core.radius_m > 0.0 {
+                    core.intensity / (std::f32::consts::PI * core.radius_m.powi(2)).max(1e-8)
+                } else {
+                    0.0
+                },
             ];
             let first_segment = self.count as usize;
             let head = [
@@ -125,6 +148,7 @@ impl MeteorGpu {
                 start: head,
                 end: head,
                 color,
+                optics: [0.0, 1.0, 0.0, 0.0],
             };
             self.count += 1;
             let mut previous: Option<&crate::meteors::TrailPoint> = None;
@@ -135,7 +159,25 @@ impl MeteorGpu {
                 }
                 if let Some(a) = previous {
                     let mut emission = color;
+                    let mut optics = [0.0, 1.0, 0.0, 0.0];
                     emission[3] *= a.opacity.min(point.opacity);
+                    if point.kind != crate::meteors::trail::TrailKind::Wake {
+                        let delta = glam::Vec3::from_array(a.position_rel_m)
+                            - glam::Vec3::from_array(point.position_rel_m);
+                        let area = delta.length()
+                            * (a.thickness_m + point.thickness_m)
+                            * 0.5
+                            * std::f32::consts::PI.sqrt();
+                        emission[3] = (a.intensity + point.intensity) * 0.5 / area.max(1e-6);
+                        optics[0] = 1.0;
+                        optics[1] =
+                            2.0 * point.intensity / (a.intensity + point.intensity).max(1e-20);
+                        if point.kind == crate::meteors::trail::TrailKind::Dust {
+                            emission = [0.60, 0.57, 0.52, a.opacity.min(point.opacity)];
+                            optics = [2.0, 1.0, 0.0, 0.0];
+                            self.dust_segments += 1;
+                        }
+                    }
                     segments[self.count as usize] = Segment {
                         start: [
                             a.position_rel_m[0],
@@ -150,12 +192,13 @@ impl MeteorGpu {
                             point.thickness_m,
                         ],
                         color: emission,
+                        optics,
                     };
                     self.count += 1;
                 }
                 previous = Some(point);
             }
-            if let Some(a) = previous {
+            if let Some(a) = previous.filter(|_| core.radius_m > 0.0) {
                 let mut emission = color;
                 emission[3] *= a.opacity;
                 segments[self.count as usize] = Segment {
@@ -167,6 +210,7 @@ impl MeteorGpu {
                     ],
                     end: [head[0], head[1], head[2], a.thickness_m],
                     color: emission,
+                    optics: [0.0, 1.0, 0.0, 0.0],
                 };
                 self.count += 1;
             }
@@ -179,7 +223,7 @@ impl MeteorGpu {
                     a.distance(b) * (s.start[3] + s.end[3]) * 0.5 * std::f32::consts::PI.sqrt()
                 })
                 .sum();
-            if trail_area > 1e-6 {
+            if trail_area > 1e-6 && core.radius_m > 0.0 {
                 // Share the finite source power with its wake. A longer line
                 // spreads that allocation instead of manufacturing more light.
                 segments[first_segment].color[3] *= 0.85;
@@ -189,6 +233,10 @@ impl MeteorGpu {
                 }
             }
         }
+        self.emission_segments = segments[..self.count as usize]
+            .iter()
+            .filter(|segment| segment.optics[0] < 1.5 && segment.color[3] > 0.0)
+            .count() as u32;
         let bytes = bytemuck::cast_slice(&segments[..self.count as usize]);
         self.upload_bytes = bytes.len() as u64;
         if !bytes.is_empty() {
@@ -202,7 +250,7 @@ impl MeteorGpu {
         camera: &'a wgpu::BindGroup,
         depth: &'a wgpu::BindGroup,
     ) -> u32 {
-        if self.count == 0 {
+        if self.emission_segments == 0 {
             return 0;
         }
         pass.set_pipeline(&self.pipeline);
@@ -211,6 +259,24 @@ impl MeteorGpu {
         pass.set_vertex_buffer(0, self.buffer.slice(..));
         pass.draw(0..6, 0..self.count);
         self.draw_count.set(1);
+        1
+    }
+
+    pub(crate) fn draw_dust<'a>(
+        &'a self,
+        pass: &mut wgpu::RenderPass<'a>,
+        camera: &'a wgpu::BindGroup,
+        depth: &'a wgpu::BindGroup,
+    ) -> u32 {
+        if self.dust_segments == 0 {
+            return 0;
+        }
+        pass.set_pipeline(&self.dust_pipeline);
+        pass.set_bind_group(0, camera, &[]);
+        pass.set_bind_group(1, depth, &[]);
+        pass.set_vertex_buffer(0, self.buffer.slice(..));
+        pass.draw(0..6, 0..self.count);
+        self.draw_count.set(self.draw_count.get() + 1);
         1
     }
 }

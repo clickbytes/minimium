@@ -94,6 +94,8 @@ fn push_meteor_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer
     let status = renderer.gpu.meteors_status;
     let gpu = &renderer.gpu.milky_way.meteors;
     snapshot.push("meteors_segments", gpu.count);
+    snapshot.push("meteors_dust_segments", gpu.dust_segments);
+    snapshot.push("meteors_emission_segments", gpu.emission_segments);
     snapshot.push("meteors_draw_count", gpu.draw_count.get());
     snapshot.push("meteors_upload_bytes", gpu.upload_bytes);
     snapshot.push("meteors_rejected_below_cloud_gate", gpu.rejected_low);

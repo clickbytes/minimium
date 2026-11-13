@@ -129,7 +129,7 @@ impl ActiveEvent {
         ) {
             return Err("invalid physical history");
         }
-        self.duration_s = history.duration_s();
+        self.duration_s = history.duration_s() + self.trains.profile.ttl_s();
         Ok(())
     }
 }

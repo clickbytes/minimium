@@ -132,3 +132,44 @@ their trails. Rendering uses the same instanced pipeline and cloud resolve.
 `fireball` retains the seeded material distribution. These presets do not
 bypass pressure thresholds. Visual separation and temporal acceptance remain
 part of the explicitly gated final verification.
+
+
+## Residual trains (E047-07)
+
+Fresh fragment wakes cover 0.6 real seconds. Separate f64 deposition rings keep
+64 points per solid branch (256 per event), sampled on a 200 ms monotonic grid.
+A bounded catch-up fills only the latest ring window after a frame gap. Each
+point stores time, physical position, direction, deposited optical energy and
+an approximate dust-density sample. Origin changes adapt the same world points;
+camera orientation never enters capture or drift. Eight representative points
+per retained trail owner fit the existing 128-point frame cap.
+
+Ordinary residual emission expires after three seconds. A seeded subset of
+large events has 20..60-second afterglow, exceptionally 90 seconds; at most two
+active events may reserve long afterglows. Rare large dust traces have a separate
+45-second TTL. Event/history cleanup waits for the last configured train TTL.
+The head stops at the physical history end, independently of those timers.
+The optical reservoir receives 2% of deposited visible energy, removed from
+current emission; each sample decays with cooling and a smooth terminal fade.
+Longer/wider lines spread their sampled energy instead of multiplying it.
+
+Available cloud winds describe lower atmospheric decks, not 80 km circulation.
+The train therefore uses an explicit bounded upper-atmosphere approximation:
+20..60 m/s eastward flow with up to 10 m/s meridional shear, varying with physical
+height and seed. Width expands independently for gas and dust. This is neither
+a wind solver nor validated atmospheric chemistry.
+
+Trail-only logical owners use zero head radius and independent ids in the same
+bounded MeteorFrame. Per-point intensity and kind survive the CPU adapter;
+GPU instances carry kind and an endpoint power gradient. Emission and dust share
+the same fixed 144-instance, now 9216-byte buffer (64-byte asserted layout).
+The shared emission and dust passes each skip their draw when their own count
+is zero. No texture or buffer is allocated for a new line. Foreground clouds,
+terrain depth and planet occlusion use the existing finite-distance layer.
+
+Dust is premultiplied scattering from physical_sun at its position, including
+planetary shadow and finite air transmission; it is suppressed at night.
+Residual gas contrast falls in daylight. HDR remains linear to final output;
+fallback dust uses the existing scene-space conversion. Counts distinguish
+emissive/dust segments; status reports ring points, overwritten captures, skipped
+capture steps and both TTLs. Static checks do not establish visual acceptance.

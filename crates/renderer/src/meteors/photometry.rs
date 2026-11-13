@@ -15,7 +15,8 @@ pub fn emission(body: Body, material: Material, age_s: f64, seed: u64) -> Emissi
     // Continuous deterministic variation, independent of frame sampling.
     let modulation =
         1.0 + 0.06 * (age_s * 43.0 + phase).sin() + 0.025 * (age_s * 97.0 + phase * 1.7).sin();
-    let power = (body.gas_power_w * modulation).clamp(0.0, 1e12);
+    // Two percent of deposited visible energy is reserved for residual trains.
+    let power = (body.gas_power_w * modulation * 0.98).clamp(0.0, 1e12);
     let radius = (body.radius_m(material) * 8.0 + power.sqrt() * 0.0005).clamp(0.005, 30.0);
     let intensity = power / (4.0 * std::f64::consts::PI);
     let palette = [

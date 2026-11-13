@@ -15,6 +15,7 @@ pub mod fragmentation;
 pub mod kinematics;
 pub mod model;
 pub mod photometry;
+pub mod trail;
 
 mod frame;
 
@@ -162,6 +163,8 @@ pub struct TrailPoint {
     pub thickness_m: f32,
     /// Opacity in `[0, 1]`.
     pub opacity: f32,
+    pub kind: trail::TrailKind,
+    pub intensity: f32,
 }
 
 impl TrailPoint {
@@ -175,6 +178,8 @@ impl TrailPoint {
             && self.opacity.is_finite()
             && self.opacity >= 0.0
             && self.opacity <= 1.0
+            && self.intensity.is_finite()
+            && self.intensity >= 0.0
     }
 }
 

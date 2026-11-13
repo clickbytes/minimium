@@ -413,7 +413,7 @@ the camera heading without following subsequent camera movement.
 layer combines cosmetic meteors and existing server bolids, applies terrain,
 planet and foreground-cloud occlusion, then resolves before final output/UI.
 `sky info` exposes meteor instance/draw counts, upload bytes, low-altitude
-rejections and the 6912-byte fixed instance buffer. This is a logical allocation
+rejections and the 9216-byte fixed instance buffer. This is a logical allocation
 estimate, not driver VRAM. The automatic generator now schedules bounded
 120..300-second monotonic intervals independently of visibility and manual
 requests; see `docs/ambient-meteors.md` for seeds, startup controls and limits.
@@ -426,3 +426,8 @@ that remains in the explicitly gated final-verification stage.
 Cosmetic fragmentation uses pooled fixed histories with independent solid/grain
 tracks and short wakes. Status exposes process events, mass conservation and
 omission counters; see docs/ambient-meteors.md. Runtime acceptance is pending.
+
+Residual deposition rings persist after physical head extinction, using bounded
+monotonic capture, independent gas/dust TTLs and seeded upper-atmosphere drift.
+History pooling now waits for the last train TTL; long afterglows are capped at
+two active events. Status reports capture overwrite/skip counters and TTLs.

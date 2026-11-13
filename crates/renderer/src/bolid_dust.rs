@@ -59,10 +59,13 @@ pub(crate) fn encode(encoder: &mut wgpu::CommandEncoder, frame: MainScenePass<'_
         pass.set_bind_group(1, &frame.milky_way.bind_group, &[]);
         pass.set_bind_group(2, depth, &[]);
         pass.draw(0..3, 0..1);
-        draws + 1
-    } else {
-        draws
+        draws += 1;
     }
+    draws
+        + frame
+            .milky_way
+            .meteors
+            .draw_dust(&mut pass, frame.camera, depth)
 }
 
 pub(crate) fn resolve(

@@ -20,6 +20,9 @@ mod presentation;
 mod runtime;
 mod spawner;
 mod track;
+mod trains;
+
+const EVENT_ID_STRIDE: u64 = 32;
 
 /// Manual diagnostic events stay far below the 16-core contract cap so the
 /// automatic generator (E047-04) keeps headroom; `8 × 8` trail slots still fit
@@ -130,6 +133,7 @@ pub(crate) struct ActiveEvent {
     pub(super) phase: MeteorPhase,
     pub(super) automatic: bool,
     evolution: Option<evolution::Evolution>,
+    trains: trains::Trains,
 }
 
 impl ActiveEvent {
@@ -140,6 +144,7 @@ impl ActiveEvent {
         seed: u64,
         now_s: f64,
         history: evolution::Evolution,
+        allow_long: bool,
     ) -> Self {
         let params = SpawnParams::of(preset);
         Self {
@@ -153,6 +158,7 @@ impl ActiveEvent {
             phase: MeteorPhase::Incoming,
             automatic: false,
             evolution: Some(history),
+            trains: trains::Trains::new(seed, params.mass_kg >= 20.0, allow_long),
         }
     }
 }

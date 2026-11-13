@@ -212,6 +212,8 @@ impl MeteorFrame {
             position_rel_m,
             thickness_m: sample.thickness_phys_m.max(0.0) as f32,
             opacity: sample.opacity as f32,
+            kind: sample.kind,
+            intensity: sample.intensity as f32,
         };
         if !candidate.is_finite_contract()
             || !self.core_exists(candidate.id)
@@ -430,6 +432,8 @@ const EMPTY_TRAIL: TrailPoint = TrailPoint {
     position_rel_m: [0.0; 3],
     thickness_m: 0.0,
     opacity: 0.0,
+    kind: crate::meteors::trail::TrailKind::Wake,
+    intensity: 0.0,
 };
 
 const EMPTY_LIGHT: TransientLightMoment = TransientLightMoment {

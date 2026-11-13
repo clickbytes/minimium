@@ -31,3 +31,8 @@ wake positions sample each body independently; the process log is diagnostic
 data and never creates world entities. `fragmenting` is a manual brittle-entry
 preset; `fireball` retains material variability. The pure renderer model owns
 mass transfers and pressure thresholds, while the client owns pool lifetime.
+
+trains::Trains captures fixed-time f64 deposits into four 64-point rings;
+trains::push selects at most eight points per retained trail owner and adapts
+world coordinates afresh. Head presentation ends with Evolution; lifecycle
+expiry waits for the last gas/dust TTL, then returns the pooled history.

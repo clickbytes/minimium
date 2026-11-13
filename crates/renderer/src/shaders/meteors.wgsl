@@ -5,10 +5,11 @@ struct MeteorVertex {
     @location(1) @interpolate(flat) a: vec4<f32>,
     @location(2) @interpolate(flat) b: vec4<f32>,
     @location(3) @interpolate(flat) color: vec4<f32>,
+    @location(4) @interpolate(flat) optics: vec4<f32>,
 };
 @vertex fn vs_main(@builtin(vertex_index) index:u32,
     @location(0) start:vec4<f32>, @location(1) end:vec4<f32>,
-    @location(2) color:vec4<f32>)->MeteorVertex {
+    @location(2) color:vec4<f32>, @location(3) optics:vec4<f32>)->MeteorVertex {
     var a=start;
     var b=end;
     let start_w=(camera.view_projection*vec4(start.xyz,1.0)).w;
@@ -33,19 +34,26 @@ struct MeteorVertex {
     let corners=array<vec2<f32>,6>(vec2(0,0),vec2(1,0),vec2(1,1),vec2(0,0),vec2(1,1),vec2(0,1));
     var p=mix(min(pa,pb)-margin,max(pa,pb)+margin,corners[index]);
     if start_w<0.01 && end_w<0.01 {p=vec2(2.0);}
-    return MeteorVertex(vec4(p,0.0,1.0),p*vec2(0.5,-0.5)+0.5,a,b,color);
+    return MeteorVertex(vec4(p,0.0,1.0),p*vec2(0.5,-0.5)+0.5,a,b,color,optics);
 }
 struct MeteorOutput {
     @location(0) emission:vec4<f32>,
     @location(1) distance:vec4<f32>,
 };
 @fragment fn fs_main(input:MeteorVertex)->MeteorOutput {
+    return shade_meteor(input,false);
+}
+@fragment fn fs_dust(input:MeteorVertex)->MeteorOutput {
+    return shade_meteor(input,true);
+}
+fn shade_meteor(input:MeteorVertex,dust:bool)->MeteorOutput {
     let ca=camera.view_projection*vec4(input.a.xyz,1.0);
     let cb=camera.view_projection*vec4(input.b.xyz,1.0);
     let pa=(ca.xy/ca.w*vec2(0.5,-0.5)+0.5)*camera.viewport.xy;
     let pb=(cb.xy/cb.w*vec2(0.5,-0.5)+0.5)*camera.viewport.xy;
     let pixel=input.uv*camera.viewport.xy;
     let footprint=max(length(dpdx(pixel)),length(dpdy(pixel)));
+    if (input.optics.x>1.5)!=dust || input.color.w==0.0 {discard;}
     let edge=pb-pa;
     let screen_t=clamp(dot(pixel-pa,edge)/max(dot(edge,edge),1e-6),0.0,1.0);
     let t=(screen_t/cb.w)/max((1.0-screen_t)/ca.w+screen_t/cb.w,1e-8);
@@ -77,7 +85,20 @@ struct MeteorOutput {
     let coverage=exp(-offset*offset)*select(footprint_gain,footprint_gain*footprint_gain,core);
     var transmission=bolid_air_transmission(eye,point+environment.render_origin.xyz);
     if physical_atmosphere() {transmission=sample_aerial(point).transmission;}
-    let power=input.color.rgb*input.color.w*coverage;
+    if dust {
+        let daylight=smoothstep(-0.18,0.03,environment.sky_zenith_rgb_sun_altitude.w);
+        let opacity=clamp(input.color.w*coverage*daylight,0.0,0.12);
+        if opacity<0.00001 {discard;}
+        let scattered=tone_map_linear(physical_sun(point)*input.color.rgb*transmission/3.14159265);
+        let weight=opacity;
+        return MeteorOutput(vec4(scattered*opacity,opacity),vec4(distance/1000000.0*weight,weight,0.0,0.0));
+    }
+    let gradient=mix(2.0-input.optics.y,input.optics.y,t);
+    var contrast=1.0;
+    if input.optics.x>0.5 {
+        contrast=1.0-smoothstep(-0.18,0.03,environment.sky_zenith_rgb_sun_altitude.w);
+    }
+    let power=input.color.rgb*input.color.w*coverage*gradient*contrast;
     var exposure=environment.ambient_rgb_exposure.w;
     if environment.flags.w!=0u {exposure=scene_exposure();}
     let emitted=min(power*transmission*exposure,vec3(65000.0));

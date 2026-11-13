@@ -1,5 +1,5 @@
 //! Adapts bounded fragment histories to the existing producer-neutral frame.
-use super::{ActiveEvent, TRAIL_SLOTS_PER_EVENT};
+use super::{ActiveEvent, EVENT_ID_STRIDE, TRAIL_SLOTS_PER_EVENT};
 use minimium_renderer::meteors::{
     fragmentation::{material_for_slot, BODY_SLOTS, SOLID_SLOTS},
     model::{MeteorSample, MeteorSource, MeteorTrailSample, TransientLightSample},
@@ -15,6 +15,9 @@ pub(super) fn push_event(
     let Some(history) = &event.evolution else {
         return 0;
     };
+    if age_s >= history.duration_s() {
+        return 0;
+    }
     let range = if grains {
         SOLID_SLOTS..BODY_SLOTS
     } else {
@@ -39,7 +42,7 @@ pub(super) fn push_event(
             age_s,
             event.seed,
         );
-        let id = event.id * BODY_SLOTS as u64 + slot as u64;
+        let id = event.id * EVENT_ID_STRIDE + slot as u64;
         let sample = MeteorSample::new(
             id,
             MeteorSource::Cosmetic,

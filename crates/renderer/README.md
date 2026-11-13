@@ -781,7 +781,7 @@ file stays within the 500-line policy.
 ### Ambient emission producer (E047-03)
 
 `MeteorGpu` consumes `MeteorFrame::cores/trails` through the client snapshot.
-It owns one 6912-byte instance buffer (144 segments, 48 bytes each) and one
+It owns one 9216-byte instance buffer (144 segments, 64 bytes each) and one
 pipeline. Upload uses a stack array and only the active slice; empty frames
 write no GPU data and issue no meteor draw. Instance attributes have explicit
 size/offset assertions. All presets use the same FPP/overview path.
@@ -831,3 +831,9 @@ the strongest solid sources; grain packets degrade first. The existing GPU
 batch handles their separate short wakes without new passes or features.
 `docs/ambient-meteors.md` documents mass/energy accounting, caps, optical-only
 flare semantics and the absence of physical implosion or persistent impacts.
+
+Residual meteors::trail deposition rings feed trail-only zero-radius owners.
+Per-point intensity/kind produces independent emissive afterglow and daytime
+dust in the existing shared layers; the instance layout adds kind/gradient
+metadata. Wind, TTLs, fixed budgets and approximation limits are documented
+in docs/ambient-meteors.md. No per-line resource allocation is introduced.

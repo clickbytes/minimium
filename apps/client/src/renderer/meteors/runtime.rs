@@ -56,14 +56,16 @@ impl MeteorRuntime {
         }
         let now_s = self.now_s();
         let id = self.next_id;
-        self.next_id = self.next_id % (u64::MAX / 8) + 1;
+        self.next_id = self.next_id % (u64::MAX / super::EVENT_ID_STRIDE) + 1;
         let seed = self.derive_seed(now_s);
+        let allow_long = self.allow_long_train();
         let history = self
             .history_pool
             .pop()
             .ok_or("meteors: history pool exhausted")?;
-        self.active
-            .push(ActiveEvent::new(id, preset, seed, now_s, history));
+        self.active.push(ActiveEvent::new(
+            id, preset, seed, now_s, history, allow_long,
+        ));
         self.spawned_total = self.spawned_total.wrapping_add(1);
         self.last_seed = seed;
         Ok(format!(
@@ -147,6 +149,7 @@ impl MeteorRuntime {
                 self.spawner.skipped = self.spawner.skipped.saturating_add(1);
                 self.spawner.reason = "active_cap";
             } else {
+                let allow_long = self.allow_long_train();
                 let mut event = ActiveEvent::new(
                     self.next_id,
                     candidate.preset,
@@ -155,9 +158,10 @@ impl MeteorRuntime {
                     self.history_pool
                         .pop()
                         .expect("active cap reserves a history"),
+                    allow_long,
                 );
                 event.automatic = true;
-                self.next_id = self.next_id % (u64::MAX / 8) + 1;
+                self.next_id = self.next_id % (u64::MAX / super::EVENT_ID_STRIDE) + 1;
                 self.active.push(event);
                 self.spawner.spawned = self.spawner.spawned.saturating_add(1);
                 self.spawned_total = self.spawned_total.wrapping_add(1);
@@ -194,6 +198,7 @@ impl MeteorRuntime {
                 self.dismiss(index);
                 continue;
             }
+            event.trains.advance(history, age_s);
             event.phase = history.phase(age_s, 0);
             self.omitted_cores +=
                 super::presentation::push_event(meteor_frame, event, age_s, false);
@@ -202,6 +207,8 @@ impl MeteorRuntime {
         for event in &self.active {
             let age_s = (now_s - event.start_s).max(0.0);
             self.omitted_cores += super::presentation::push_event(meteor_frame, event, age_s, true);
+            self.omitted_cores +=
+                super::trains::push(meteor_frame, event, age_s, view.game_planet_radius_m);
         }
     }
 
@@ -214,6 +221,14 @@ impl MeteorRuntime {
                 self.history_pool.push(history);
             }
         }
+    }
+
+    fn allow_long_train(&self) -> bool {
+        self.active
+            .iter()
+            .filter(|event| event.trains.profile.glow_ttl_s > 3.0)
+            .count()
+            < 2
     }
 
     fn dismiss(&mut self, index: usize) {
@@ -297,6 +312,11 @@ impl MeteorRuntime {
             ));
             if let Some(history) = event.evolution.as_ref().filter(|_| event.basis.is_some()) {
                 let body = history.sample(age_s);
+                lines.push(format!(
+                    "  train points {}, overwritten {}, skipped captures {}, glow TTL {:.1}s, dust TTL {:.1}s",
+                    event.trains.point_count(), event.trains.overwritten(), event.trains.skipped_samples,
+                    event.trains.profile.glow_ttl_s, event.trains.profile.dust_ttl_s,
+                ));
                 lines.push(format!(
                     "  material {:?}, mass {:.6} kg, speed {:.1} m/s, solid radius {:.5} m, emission {:.2} W",
                     history.material.kind, body.mass_kg, body.velocity_m_s.length(),

@@ -163,6 +163,8 @@ pub struct MeteorTrailSample {
     pub thickness_phys_m: f64,
     /// Opacity in `[0, 1]`.
     pub opacity: f64,
+    pub kind: super::trail::TrailKind,
+    pub intensity: f64,
 }
 
 impl MeteorTrailSample {
@@ -182,6 +184,8 @@ impl MeteorTrailSample {
             position_phys_m,
             thickness_phys_m,
             opacity,
+            kind: super::trail::TrailKind::Wake,
+            intensity: 0.0,
         };
         sample.validate()?;
         Ok(sample)
@@ -198,6 +202,7 @@ impl MeteorTrailSample {
             RADIUS_PHYS_M_MAX,
         )?;
         check_between("opacity", self.opacity, 0.0, 1.0)?;
+        check_between("trail intensity", self.intensity, 0.0, INTENSITY_MAX)?;
         Ok(())
     }
 }
