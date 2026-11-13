@@ -3,15 +3,15 @@ use super::{
     EnvironmentSettings, GlobalSunFrame, RenderViewFrame, SkyFrameInput,
 };
 use bytemuck::Zeroable;
-use minimium_astronomy::{ASTRONOMY_MODEL_REVISION, SkyState};
+use minimium_astronomy::{SkyState, ASTRONOMY_MODEL_REVISION};
 use minimium_environment::sky::SkyModel;
 use minimium_environment::{
     time::{ClockId, ClockRevision},
     {EnvironmentDescriptor, EnvironmentProfile},
 };
 use minimium_protocol::WorldContext;
-use minimium_renderer::gpu_frame::EnvironmentUniform;
 use minimium_renderer::gpu_frame::camera_uniform;
+use minimium_renderer::gpu_frame::EnvironmentUniform;
 use std::f64::consts::PI;
 
 // Presentation scale for sky disks; physical angular radii still drive lighting and visibility.

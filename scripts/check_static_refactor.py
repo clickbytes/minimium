@@ -12,6 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def struct_fields(source: str, name: str) -> list[tuple[str, str]]:
+    # Documentation may contain commas and braces; neither is a layout field.
+    source = re.sub(r"//[^\n]*", "", source)
     match = re.search(rf"\bstruct\s+{re.escape(name)}\s*\{{(.*?)\}}\s*;?", source, re.S)
     if not match:
         raise ValueError(f"missing struct {name}")
@@ -49,6 +51,9 @@ def normalize_gpu_type(type_name: str) -> str:
         "[f32;4]": "vec4<f32>",
         "[u32;4]": "vec4<u32>",
         "[[f32;4];4]": "mat4x4<f32>",
+        "[[u32;4];4]": "array<vec4<u32>,4>",
+        "[TransientLight;CAPACITY]": "array<TransientLight,4>",
+        "[CloudLightOccluder;CAPACITY*OCCLUDERS_PER_LIGHT]": "array<CloudLightOccluder,32>",
         "[HaloSource;MAX_HALO_BODIES]": "array<HaloSource,8>",
     }
     return rust_types.get(compact, compact)
@@ -92,6 +97,12 @@ def main() -> int:
         for name in ("CloudUniform", "CloudRecord"):
             cpu = [(field, normalize_gpu_type(typ)) for field, typ in struct_fields(clouds, name)]
             if cpu != struct_fields(cloud_shader, name):
+                errors.append(f"{name} layout differs between Rust and WGSL")
+        transient = (ROOT / "crates/renderer/src/transient_lighting.rs").read_text(encoding="utf-8")
+        transient_shader = (ROOT / "crates/renderer/src/shaders/transient_lighting.wgsl").read_text(encoding="utf-8")
+        for name in ("TransientLight", "CloudLightOccluder", "TransientLightUniform"):
+            cpu = [(field, normalize_gpu_type(typ)) for field, typ in struct_fields(transient, name)]
+            if cpu != struct_fields(transient_shader, name):
                 errors.append(f"{name} layout differs between Rust and WGSL")
         if re.search(r"\bbody\s*==\s*[01]\b", halo_shader):
             errors.append("celestial_halo.wgsl contains a body==0/1 special case")

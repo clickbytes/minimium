@@ -1,8 +1,8 @@
 use super::{
+    shadow_map_cache::{PreparedMapCasters, MAX_MAP_VERTEX_BYTES},
     GpuResources,
-    shadow_map_cache::{MAX_MAP_VERTEX_BYTES, PreparedMapCasters},
 };
-use minimium_renderer::{ShadowSettings, geometry::Vertex};
+use minimium_renderer::{geometry::Vertex, ShadowSettings};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ShadowUploadStatus {

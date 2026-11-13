@@ -13,7 +13,7 @@ scope becomes valid. Same seed, context, monotonic epoch and observer inputs
 reproduce the candidate sequence within this build. The context hash is not a
 persisted or cross-version contract. No per-frame entropy is consumed.
 
-Candidate n occurs at `epoch + 120 + 210*n + jitter(n)` real seconds, where
+At rate=1, candidate n occurs at `epoch + 120 + 210*n + jitter(n)` real seconds, where
 seeded jitter is in `[0,90)`. Thus successive intervals are within 120..300
 seconds. A counter-based hash chooses 94.9% faint, 5% bright, 0.1% fireball.
 These are presentation choices, not measured astronomical occurrence rates.
@@ -33,9 +33,9 @@ independently of camera heading, FOV, daylight or cloud coverage. Rendering
 determines visibility separately. The manual diagnostic placement still uses
 camera heading. Track starts are 80..110 physical km; the seeded entry basis is advanced by the physical model described below.
 
-`MINIMIUM_METEORS=0` disables automatic births at startup; the enabled flag is
-runtime-local and will join the typed property registry in E047-14. Manual
-commands remain available. `sky meteors status` reports enabled state, seed,
+`MINIMIUM_METEORS=0` disables births and manual spawns via the typed enabled
+preference and clears active events/audio. CLI --set takes precedence.
+Enabled/quality/sound persist; rate and seed_override are session-only. `sky meteors status` reports enabled state, seed,
 interval, next deadline, spawned/skipped totals, active peak and current gate.
 `sky info` reports actual rendering counts and the altitude gate separately.
 
@@ -50,9 +50,9 @@ The CPU renderer model supplies six seeded presentation materials: stony, iron,
 brittle, porous, heterogeneous and cracked. Densities span 800..7800 kg/m³;
 effective ablation heat is 3..8 MJ/kg, heat transfer 0.04..0.16, erosion
 multiplier 0..1.2 and visible efficiency 0.015..0.035. These are approximate
-profiles, not measured composition inference. Material strength is reserved
-for the next fragmentation stage. Preset initial masses are 0.002, 0.5 and
-100 kg; seeded entry speeds remain within 11..72 km/s.
+profiles, not measured composition inference. Material strength drives
+fragmentation. Legacy masses are 0.002, 0.5 and 100 kg; twenty diagnostic families
+span up to 10,000 kg. Seeded entry speeds remain within 11..72 km/s.
 
 The solver uses f64 SI coordinates, exponential atmosphere density with a
 7200 m scale height, sphere cross section from current mass/density,
@@ -78,7 +78,7 @@ radiance (`intensity / projected luminous area`). Angular filtering supplies
 inverse-square dilution for unresolved sources, without an additional distance
 division in the shader. The current wake receives 15% of source emission spread
 over its total projected geometry area; it does not multiply source power by
-trail length. A deposition-driven persistent train is the next trail stage.
+trail length. Deposition-driven persistent trains are described below.
 HDR exposure and output transfer remain shared. Absolute radiometry and visual
 acceptance are not claimed; units here establish a consistent local model.
 
@@ -225,7 +225,7 @@ Runtime A/B/C, horizon/orbit and HDR/fallback acceptance remains E047-17.
 ## E047-09: shared finite-light contract
 
 Binding 11 was free after camera/environment 0..1 and atmosphere 2..10.
-EnvironmentGpuBindings now owns one 240-byte uniform, initialized with count=0
+EnvironmentGpuBindings now owns one 2288-byte uniform, initialized with count=0
 and uploaded from each immutable MeteorFrame, including empty/disabled frames.
 No event allocates buffers, layouts or bind groups. Four 48-byte sources follow
 a 48-byte count/planet/mapping header; Rust and Naga assert size and offsets.
@@ -245,9 +245,8 @@ unexposed scene values, with analytic planet and bounded atmospheric extinction,
 and never modifies global ambient. The observer irradiance diagnostic is a
 pre-atmosphere estimate; it is not a GPU measurement.
 
-The first shader consumer is daylight dust scattering in the existing meteor
-producer. Count=0 adds exactly zero. The helper is composed only there at this
-stage; ground/ocean/cloud integrations belong to the next issues.
+Consumers are dust, terrain, authored objects, ocean and clouds. Count=0 adds
+exactly zero; all consumers use the shared finite-light helpers.
 Diagnostics expose selected count, observer estimate and actual buffer bytes;
 both initial and live GPU allocation totals include the uniform.
 No protocol, save, generation or server lifetime change is involved.
@@ -267,8 +266,7 @@ Sun/Moon, their shadow map and server-bolid lighting remain independent.
 The existing 4-source cap applies across active events. Faint presets emit no
 light; finite physical distance, core radius, range fade, planet occlusion and
 atmospheric attenuation bound bright events. No global ambient term is added.
-At this stage cloud attenuation along source-to-surface paths is unity; E047-11
-owns that integration. Local transient lights do not cast tree/mountain shadow
+Cloud attenuation uses E047-11 ellipsoids with E047-15 temporal caching. Local transient lights do not cast tree/mountain shadow
 maps; geometric normals and planet occlusion are the current self-occlusion.
 
 Use sky meteors debug light off|on for local A/B comparisons. It uploads zero
@@ -282,7 +280,7 @@ gameplay command module to keep the owning files below 500 lines.
 ## E047-11: cloud light paths
 
 The shared uniform now includes up to eight selected cloud ellipsoids per light
-(four on low), 2288 bytes total. All transient-incident consumers use segment
+(none on low after E047-15), 2288 bytes total. All transient-incident consumers use segment
 extinction; clouds add directional scattering and independent self-extinction.
 The existing weather publication supplies real bases, thicknesses and optical
 depth. No generation, mesh cache, worker, Sun/Moon shadow or pass-order change.
@@ -347,7 +345,8 @@ audio. Playback is opt-in per session:
 - get client.audio.meteors
 - sky meteors status
 
-Properties are typed, local and nonpersistent; reset returns false/0.25. Missing
+Properties are typed and local. Sound is now a persistable preference; volume
+is session-only. Reset restores startup sound/default volume. Missing
 backend/device reports unavailable while rendering and event physics continue.
 Device setup runs on one owned worker; the render thread only uses try_send.
 Drop stops and joins the worker and drops all players/stream. Device setup and
@@ -388,3 +387,15 @@ Windows x86_64 MSVC release build comparison during E047-13: without audio
 19095040 bytes, with desktop-audio 19253248 bytes, delta 158208 bytes
 (0.15 MiB). Executables were built but not run; sizes depend
 on toolchain/profile/platform and do not measure runtime memory or performance.
+
+## Integrated controls and budgets (E047-14..16)
+
+See docs/commands.md for twenty initial-condition families and reproducible
+spawn seeds; docs/performance.md covers low/standard budgets and cache costs.
+One history initializes per prepared frame. Low limits geometry to eight ranked
+cores and <=48 segments, disables halos and cross-cloud proxy selection. Standard
+allows 16 cores / 144 segment slots. CPU conservative bounds precede shader
+depth/planet masking. Cloud selection refreshes every 500 ms or key invalidation;
+selected transforms/ages remain current. GPU time is n/a until instrumented.
+This is source acceptance, not visual or physical validation. Runtime remains
+gated by E047-17; the acceptance matrix is in ambient-meteors-acceptance.md.

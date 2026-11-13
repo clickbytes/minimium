@@ -1,8 +1,8 @@
 //! Cached mass-driven bolid presentation; no authoritative collision effects.
 use super::{
+    bolid_dynamics::{self, variation, BolidFamily, Material},
+    bolid_history::{self, Emitter, EvolutionDiagnostics, Snapshot, FRAME_DT},
     BolidGpuEvent,
-    bolid_dynamics::{self, BolidFamily, Material, variation},
-    bolid_history::{self, Emitter, EvolutionDiagnostics, FRAME_DT, Snapshot},
 };
 use glam::{DVec3, Vec3};
 

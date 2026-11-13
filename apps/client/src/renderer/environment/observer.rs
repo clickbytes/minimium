@@ -1,7 +1,7 @@
-use minimium_environment::EnvironmentDescriptor;
 use minimium_environment::sky::{
-    ObserverError, ObserverFrame, ObserverInput, SkyModel, resolve_sky_model, try_observer_frame,
+    resolve_sky_model, try_observer_frame, ObserverError, ObserverFrame, ObserverInput, SkyModel,
 };
+use minimium_environment::EnvironmentDescriptor;
 use minimium_protocol::WorldContext;
 use minimium_world::world::{Position3Mm, WorldManifest, WorldTopology};
 

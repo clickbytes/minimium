@@ -1,6 +1,6 @@
 //! Latest-request worker with bounded geometry/prepared caches; never owns GPU handles.
 use super::sector_scene::SectorWorkerError;
-use minimium_procgen::{PlanetTerrain, PreparedGeography, SectorGeometry, planet_surface_for};
+use minimium_procgen::{planet_surface_for, PlanetTerrain, PreparedGeography, SectorGeometry};
 use minimium_renderer::{prepared_sector::PreparedSector, render_patch_cache::RenderPatchCache};
 use minimium_world::world::{SectorKey, WorldInstanceId, WorldManifest};
 use std::{

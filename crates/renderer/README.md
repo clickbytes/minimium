@@ -794,15 +794,15 @@ attenuates emission before the HDR output or fallback tone mapping. No second
 meteor framebuffer, cloud composite or tone mapping pass is introduced.
 The shader projects bounded quads, clips crossing segments, rejects terrain
 and planet occlusion, and filters narrow cores/trails with derivative-based
-pixel footprints. Emission below 20 physical km is temporarily rejected until
-the cloud-depth stage. Geometry is origin-relative; finite air extinction uses
+pixel footprints. Low quality rejects emission below 20 physical km; standard
+uses finite-distance cloud masking. Geometry is origin-relative; finite air extinction uses
 the existing atmosphere path. The shader is assembled by `shader_source` and
 validated by the standalone Naga tool. A diagnostic transmission toggle is
 available for the shared layer; it is disabled by default.
 
-Current limits: linear diagnostic trajectories/photometry, no cosmetic surface
-lighting, no persistent trains, and no runtime/visual acceptance yet. These
-belong to later sequential E047 stages. Static validation is not GPU execution.
+Current implementation includes physical entry, fragmentation, residual trains
+and local surface/cloud lighting as described below. Runtime/visual acceptance
+is still pending. Static validation is not GPU execution.
 
 
 ### Cosmetic entry model (E047-05)
@@ -843,7 +843,7 @@ Standard uses terrain/planet occlusion plus the shared cloud mask, including
 up to 16 containing ellipsoid proxies; low retains the 20-km source floor.
 See docs/ambient-meteors.md for resource order, GPU layouts and OIT limitations.
 
-E047-09 uploads a shared 240-byte, four-source transient-light uniform at frame
+E047-09 uploads a shared 2288-byte, four-source transient-light uniform at frame
 binding 11. Physical-distance ranking and shader extinction are producer-neutral;
 daylight dust consumes the helper, and sky diagnostics report count/bytes/incident
 estimate. See docs/ambient-meteors.md for exact units and limits.
@@ -851,7 +851,7 @@ estimate. See docs/ambient-meteors.md for exact units and limits.
 E047-10 connects shared transient lights to terrain/material BRDF, authored
 objects and ocean before tone mapping. The session-local command
 sky meteors debug light off|on isolates this contribution; source visibility
-remains independent. Cloud-path extinction and runtime acceptance are pending.
+remains independent. Cloud-path extinction is integrated below; runtime acceptance is pending.
 
 E047-11 adds bounded published-cloud light-path proxies to the same frame
 uniform (now 2288 bytes), shared by terrain, world, water, dust and cloud

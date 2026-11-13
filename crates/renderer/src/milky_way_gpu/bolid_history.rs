@@ -1,5 +1,5 @@
 //! Cached observer-independent emission/deposition history.
-use super::bolid_dynamics::{BODY_COUNT, Body, Dynamics, Material};
+use super::bolid_dynamics::{Body, Dynamics, Material, BODY_COUNT};
 use glam::{DVec3, Vec3};
 
 pub const FRAME_DT: f64 = 0.04;

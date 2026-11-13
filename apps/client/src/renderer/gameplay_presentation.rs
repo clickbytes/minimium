@@ -1,4 +1,4 @@
-use super::{GameplayPresentation, REMOTE_INTERPOLATION_DELAY, Vertex, cube};
+use super::{cube, GameplayPresentation, Vertex, REMOTE_INTERPOLATION_DELAY};
 use crate::application::GameplayState;
 use std::time::Instant;
 

@@ -16,7 +16,7 @@ Local play launches the server as a child process and connects through the norma
 
 ## Current ownership and target boundaries
 
-The current wire contract is protocol v18; save files use format v10 and
+The current wire contract is protocol v19; save files use format v10 and
 generated worlds use generator revision 5. These are separate version domains.
 Older wire, save and generated-world revisions are rejected without fallback or
 migration. Create a fresh world in a separate data directory when replacing old
@@ -134,9 +134,9 @@ The workspace contains the packages listed in `architecture.toml`, including the
 
 The workspace contains `minimium-core`, `minimium-renderer`, `minimium-server-runtime`, `minimium-client-runtime`, `minimium-world`, `minimium-simulation`, `minimium-environment`, `minimium-commands`, `minimium-astronomy`, `minimium-procgen`, `minimium-sectors`, `minimium-assets`, `minimium-asset-io`, `minimium-platform`, `minimium-protocol`, `minimium-storage`, `minimium-transport`, `minimium-telemetry`, `minimium-server`, `minimium-client`, `minimium-game-sample`, `minimiumctl`, and `minimium-loadtest`. Platform owns bounded persistent-file reads, atomic writes/replacement, profile files, server locks and endpoint/admin helpers; storage owns snapshot parsing and validation. Assets parses maps, OBJ and versioned manual dungeon definitions; asset-io opens bounded map, mesh and world-definition files. The desktop client uses wgpu/winit and can launch a local server or connect remotely. Press F1 for its command console; `--console` selects the text client. Client and server accept `--map PATH` or `--world-definition PATH`; the local client passes the same path to its child server. The default client/server generate matching demo worlds. The server's `--game-port 0` asks the OS for an ephemeral port.
 
-`minimium-environment::time` owns validated UTC, scale, clock anchor/sample and saved-clock types, plus pure clock evaluation, mutation and restore operations. The environment crate root owns profile and versioned astronomy/catalogue identifiers. `minimium-environment::sky` owns observer and sky-model contracts, `universe` owns the solar-system catalogue, and `weather` owns deterministic weather/cloud models behind a `TerrainSampler` host port. These contracts use platform-neutral values; the server supplies UTC and monotonic samples, storage v10 owns serialization, protocol v18 owns wire encoding, and the client owns astronomy and rendering. Clock state is independent of `WorldManifest`, generator inputs and geometry fingerprints.
+`minimium-environment::time` owns validated UTC, scale, clock anchor/sample and saved-clock types, plus pure clock evaluation, mutation and restore operations. The environment crate root owns profile and versioned astronomy/catalogue identifiers. `minimium-environment::sky` owns observer and sky-model contracts, `universe` owns the solar-system catalogue, and `weather` owns deterministic weather/cloud models behind a `TerrainSampler` host port. These contracts use platform-neutral values; the server supplies UTC and monotonic samples, storage v10 owns serialization, protocol v19 owns wire encoding, and the client owns astronomy and rendering. Clock state is independent of `WorldManifest`, generator inputs and geometry fingerprints.
 
-The server runtime adapts one `EnvironmentClock` to the same `server_started` monotonic epoch used by uptime snapshots. It creates a separate OS-random 16-byte session nonce, checks UTC every five seconds in RealTime mode, and reanchors on corrections of at least 250 ms. Time mutations share the authenticated local admin/terminal command path and never scale physics, cooldowns or network deadlines. The bounded `--environment-config` initializes a new world only. Save v10 persists clock state in the same atomic player/world snapshot; protocol v18 carries samples and environment descriptors.
+The server runtime adapts one `EnvironmentClock` to the same `server_started` monotonic epoch used by uptime snapshots. It creates a separate OS-random 16-byte session nonce, checks UTC every five seconds in RealTime mode, and reanchors on corrections of at least 250 ms. Time mutations share the authenticated local admin/terminal command path and never scale physics, cooldowns or network deadlines. The bounded `--environment-config` initializes a new world only. Save v10 persists clock state in the same atomic player/world snapshot; protocol v19 carries samples and environment descriptors.
 
 Connection establishment and an established session have separate owners. `Connector` runs DNS resolution, sequential address attempts, and local server bootstrap on one worker thread. Its timeout is a common result deadline; cancellation or timeout discards a late result, but cannot interrupt a blocking resolver or startup call, so the connector remains busy until its worker exits. Once a socket is returned, `ClientSession` owns a nonblocking TCP stream, bounded read/write buffers and the per-session clock estimator, but no thread. The desktop redraw loop and text-client loop poll it and handle typed events. The estimator uses one local monotonic epoch, a bounded offset filter and session-local nonce; it publishes the active date/descriptor/context as one immutable `EnvironmentFrameInput`. Portal commits switch descriptors without resetting the shared clock, while reconnect discards every estimator state. The text client prints concise quality/date/rate/revision status on changes. Explicit `--demo` mode has a separate monotonic RealTime adapter and is not a network fallback.
 
@@ -146,7 +146,7 @@ The server is headless, caps players at 512 by default and pending handshakes at
 
 `--threads 1..64|auto` selects execution lanes. One lane executes work inline; additional workers perform bounded independent tasks against immutable snapshots. `world save`, autosave and shutdown capture player, sector, clock and current entity/component state on the owner thread, then pass one immutable snapshot to the persistence worker. Save v10 accepts only its exact header and validates records against the registered component schemas. It counts and streams the same encoding through a size-limited writer before atomic replacement. Versions 1–9 and unknown versions are rejected; no automatic migration is supported. Use a separate data directory for a new-format world. The client profile ID is a durable local identifier, not account authentication.
 
-Game traffic uses protocol v18 over TCP. A bounded provider credential is mapped by the configured authentication provider to a server-side `Principal`; the example `dev.profile` provider is an insecure development identity claim, not an account system. Snapshot messages include the server tick, world context, safe resolved input prefix and bounded player deltas. Fire requests use server-side spatial hitscan and cooldown validation. Entity/component replication uses per-client acknowledged revisions. Portal interaction carries an entity ID; transfer carries transition IDs and target manifests. Bounded UTF-8 chat uses capped output queues. Public accounts and TLS are outside the current implementation. No performance result is claimed.
+Game traffic uses protocol v19 over TCP. A bounded provider credential is mapped by the configured authentication provider to a server-side `Principal`; the example `dev.profile` provider is an insecure development identity claim, not an account system. Snapshot messages include the server tick, world context, safe resolved input prefix and bounded player deltas. Fire requests use server-side spatial hitscan and cooldown validation. Entity/component replication uses per-client acknowledged revisions. Portal interaction carries an entity ID; transfer carries transition IDs and target manifests. Bounded UTF-8 chat uses capped output queues. Public accounts and TLS are outside the current implementation. No performance result is claimed.
 
 ## Current module contracts
 
@@ -272,3 +272,16 @@ synchronized world UTC only gates exposure conditions. The existing protocol-v19
 The CPU-only contract has landed (E047-01): the producer seam stays dormant
 until E047-02 and still no GPU pass, server, protocol, save or world entity
 change exists.
+
+## E047 local meteor integration
+
+Client owns monotonic births, pooled histories/deposition and optional bounded
+Rodio/CPAL audio. Renderer owns pure SI physics, MeteorFrame/TransientLightUniform
+and GPU adapters. Config and commands use the existing registry/SettingsStore.
+No world entity, server, protocol v19, save v10 or generator revision 5 changes.
+MeteorSource::Tracked is an input marker only; a future tracked adapter belongs
+to a separate epic and must feed the same frame contract. The existing server
+spawn_random_bolid demo remains a separate producer sharing finite composition.
+It does not synchronize local E047 cosmetic events across players. Optional audio
+is not a server/domain dependency; terminal builds retain CPU contracts only.
+See [static acceptance and final gate](ambient-meteors-acceptance.md).

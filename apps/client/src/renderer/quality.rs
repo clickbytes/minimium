@@ -1,6 +1,6 @@
 use super::Renderer;
-use minimium_renderer::ShadowSettings;
 use minimium_renderer::quality::{SkyQuality, SkyQualityState};
+use minimium_renderer::ShadowSettings;
 
 impl Renderer {
     pub(super) fn set_sky_quality(&mut self, requested: SkyQuality) -> String {

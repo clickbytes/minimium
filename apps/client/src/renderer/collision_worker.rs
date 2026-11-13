@@ -58,31 +58,29 @@ impl SceneCollisionWorker {
         let shared = state.clone();
         let thread = std::thread::Builder::new()
             .name("client-collision-index".into())
-            .spawn(move || {
-                loop {
-                    let job = {
-                        let mut state = shared.0.lock().unwrap();
-                        while state.pending.is_empty() && !state.stop {
-                            state = shared.1.wait(state).unwrap();
-                        }
-                        if state.stop {
-                            return;
-                        }
-                        let key = *state.pending.keys().next().expect("pending collision job");
-                        state.pending.remove(&key).expect("selected collision job")
-                    };
-                    let index = Arc::new(super::sector_scene::collision_from_sectors(
-                        job.sectors.iter().map(AsRef::as_ref),
-                    ));
-                    let result = SceneCollisionResult {
-                        instance: job.instance,
-                        revision: job.revision,
-                        index,
-                    };
+            .spawn(move || loop {
+                let job = {
                     let mut state = shared.0.lock().unwrap();
-                    if !state.stop {
-                        state.completed.insert(result.instance, result);
+                    while state.pending.is_empty() && !state.stop {
+                        state = shared.1.wait(state).unwrap();
                     }
+                    if state.stop {
+                        return;
+                    }
+                    let key = *state.pending.keys().next().expect("pending collision job");
+                    state.pending.remove(&key).expect("selected collision job")
+                };
+                let index = Arc::new(super::sector_scene::collision_from_sectors(
+                    job.sectors.iter().map(AsRef::as_ref),
+                ));
+                let result = SceneCollisionResult {
+                    instance: job.instance,
+                    revision: job.revision,
+                    index,
+                };
+                let mut state = shared.0.lock().unwrap();
+                if !state.stop {
+                    state.completed.insert(result.instance, result);
                 }
             })
             .map_err(SectorWorkerError::ThreadSpawn)?;
@@ -177,34 +175,31 @@ impl CollisionWorker {
         let shared = state.clone();
         let thread = std::thread::Builder::new()
             .name("sector-materialization".into())
-            .spawn(move || {
-                loop {
-                    let job = {
-                        let mut state = shared.0.lock().unwrap();
-                        while state.pending.is_empty() && !state.stop {
-                            state = shared.1.wait(state).unwrap();
-                        }
-                        if state.stop {
-                            break;
-                        }
-                        state.busy = true;
-                        let job = state.pending.pop_front().unwrap();
-                        state.active = Some(job.ticket);
-                        job
-                    };
-                    let geometry =
-                        Arc::new(minimium_procgen::materialize_world_sector_with_geography(
-                            &job.map,
-                            job.manifest,
-                            job.ticket.key(),
-                            job.geography,
-                        ));
+            .spawn(move || loop {
+                let job = {
                     let mut state = shared.0.lock().unwrap();
-                    state.busy = false;
-                    state.active = None;
-                    if !state.stop {
-                        state.completed.push((job.ticket, geometry));
+                    while state.pending.is_empty() && !state.stop {
+                        state = shared.1.wait(state).unwrap();
                     }
+                    if state.stop {
+                        break;
+                    }
+                    state.busy = true;
+                    let job = state.pending.pop_front().unwrap();
+                    state.active = Some(job.ticket);
+                    job
+                };
+                let geometry = Arc::new(minimium_procgen::materialize_world_sector_with_geography(
+                    &job.map,
+                    job.manifest,
+                    job.ticket.key(),
+                    job.geography,
+                ));
+                let mut state = shared.0.lock().unwrap();
+                state.busy = false;
+                state.active = None;
+                if !state.stop {
+                    state.completed.push((job.ticket, geometry));
                 }
             })
             .map_err(SectorWorkerError::ThreadSpawn)?;

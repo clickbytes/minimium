@@ -117,8 +117,8 @@ OIT uses RGBA16Float accumulation and R16Float revealage; unsupported devices
 report `sorted_face_alpha` and sort faces in the worker.
 
 Hard limits remain 8,192 cloud records, 16,384 cached source records and 131,072
-48-byte faces per publication. GPU buffers use approximately 6.63 MiB (80-byte
-cloud records and a 256-byte uniform). Three mesh slots total at most 18 MiB.
+48-byte faces per publication. GPU buffers use approximately 6.75 MiB (96-byte
+cloud records and a 320-byte uniform). Three mesh slots total at most 18 MiB.
 The temporal cache stores at most another 6 MiB of faces plus bounded metadata;
 one sparse voxel scratch volume is at most 512 KiB of cell pairs plus its index.
 The conservative CPU working envelope is 64 MiB, excluding shared geography.
@@ -209,10 +209,12 @@ there are no substitute fixed cloud planes. Family optical factors range from
 
 CloudGpu retains one preallocated CPU copy of its published CloudRecords
 (max8192, 786432 bytes); invalidation clears it alongside faces. Per active light,
-a bounded scan selects the strongest eight relevant ellipsoids (four on low),
+a bounded scan selects the strongest eight relevant ellipsoids (none on low),
 with stable publication-order ties, within a 10-km receiver corridor around the
-camera-to-source segment. Selection is rebuilt from current transforms during
-the existing frame upload: no worker, mesh job or texture upload is triggered.
+camera-to-source segment. Selection is cached for 500 ms with source-set,
+publication, origin and large observer-move invalidation. Selected transforms
+refresh every frame; moving sources can miss new clouds until reselection.
+No worker, mesh job or texture upload is triggered.
 The shared light uniform grows to 2288 bytes including 32 64-byte proxies.
 It is still one buffer and one binding, under the 16-KiB downlevel uniform limit.
 
@@ -224,7 +226,7 @@ the same attenuation to terrain, objects, water, dust and cloud incident light.
 Cloud faces add normalized anisotropic/isotropic single-scattering lobes driven
 by their local optical depth. Each visible cloud also evaluates its own proxy
 if omitted by selection; stable record IDs prevent double self-extinction.
-Maximum intersections: 8 per light on surfaces, 9 on cloud faces (low: 4/5).
+Maximum intersections: 8 per light on surfaces, 9 on cloud faces (low: 0/1).
 At count0 the loops do no work; no dynamic shadow maps are allocated.
 
 Source review: adding a positive-depth intervening layer increases tau and

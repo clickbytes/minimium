@@ -1,4 +1,4 @@
-use super::{EnvironmentSettings, HaloSource, LocalBodyFrame, MAX_HALO_BODIES, RenderViewFrame};
+use super::{EnvironmentSettings, HaloSource, LocalBodyFrame, RenderViewFrame, MAX_HALO_BODIES};
 use bytemuck::Zeroable;
 use minimium_astronomy::{ObservedBody, SKY_MOON_ID, SKY_SUN_ID};
 use std::f64::consts::PI;

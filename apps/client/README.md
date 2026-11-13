@@ -437,7 +437,7 @@ Standard uses terrain/planet occlusion plus the shared cloud mask, including
 up to 16 containing ellipsoid proxies; low retains the 20-km source floor.
 See docs/ambient-meteors.md for resource order, GPU layouts and OIT limitations.
 
-E047-09 uploads a shared 240-byte, four-source transient-light uniform at frame
+E047-09 uploads a shared 2288-byte, four-source transient-light uniform at frame
 binding 11. Physical-distance ranking and shader extinction are producer-neutral;
 daylight dust consumes the helper, and sky diagnostics report count/bytes/incident
 estimate. See docs/ambient-meteors.md for exact units and limits.
@@ -445,7 +445,7 @@ estimate. See docs/ambient-meteors.md for exact units and limits.
 E047-10 connects shared transient lights to terrain/material BRDF, authored
 objects and ocean before tone mapping. The session-local command
 sky meteors debug light off|on isolates this contribution; source visibility
-remains independent. Cloud-path extinction and runtime acceptance are pending.
+remains independent. Cloud-path extinction is integrated below; runtime acceptance is pending.
 
 E047-11 adds bounded published-cloud light-path proxies to the same frame
 uniform (now 2288 bytes), shared by terrain, world, water, dust and cloud
