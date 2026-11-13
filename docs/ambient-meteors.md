@@ -81,3 +81,54 @@ over its total projected geometry area; it does not multiply source power by
 trail length. A deposition-driven persistent train is the next trail stage.
 HDR exposure and output transfer remain shared. Absolute radiometry and visual
 acceptance are not claimed; units here establish a consistent local model.
+
+
+## Fragmentation and erosion (E047-06)
+
+`fragmentation::System` owns up to four solid bodies and four grain packets per
+event. Dynamic pressure `q = 0.5*rho*v²` crossing the seeded material strength
+splits a surviving body; height alone never triggers breakup. At most two
+breakup generations and three daughter slots bound the cascade. Raised
+post-failure thresholds prevent repeated triggering at the same pressure.
+The faint 0.002 kg profile is below the 0.02 kg breakup eligibility floor.
+
+Each split transfers 20..45% of the remaining parent mass to a daughter at the
+same release position, with seeded 5..25 m/s transverse dispersion. A tiny
+forward-speed reduction pays the dispersion kinetic-energy budget. Gas power
+is shared by the same mass fraction, so inherited glow is not duplicated.
+Each body subsequently has independent drag, ablation, phase, position, speed
+and emission; increased surface area can create one or several energy-driven
+flares, including late failure. Strong material can ablate without breakup or
+an energetic flare. There is no imposed explosion pulse or physical implosion.
+
+Ablation and eroded dust are separate mass flows. Eroded mass enters a bounded
+accumulator and may transfer once into a grain packet. Packets represent many
+fine grains using an effective area profile; the packet counter is not a
+meteoroid count or extra mass. Unrepresented dust remains in the mass ledger.
+Its carried kinetic energy is excluded from parent light and may be deposited
+later by a represented packet. Final solid + packet dust + unrepresented dust
++ ablated mass accounts for the initial mass; status prints the residual.
+
+The bounded process log carries Ablation, Erosion, Breakup, Flare, DustRelease,
+Extinction and DarkFlightEnd separately from rendering. Flare records identify
+rapid increases of computed power, not added energy. The last two of 64 entries
+are reserved for extinction/disposal; omitted entries have a counter. DarkFlightEnd
+means local disposal without impact simulation. Diagnostic status shows recent
+process entries, mass ledger, packet count and omitted core submissions.
+
+All eight event histories are preallocated at runtime creation and returned to
+a pool on expiry, clear, failed initialization or world invalidation. Each has
+512 snapshots of eight bodies: at most 3,407,872 bytes of sample storage with
+the current Body layout, plus bounded metadata. Spawn performs no allocation
+for histories. Samples retain release times and positions so new branches
+never interpolate from the planet origin or appear before their birth.
+
+Solid samples compete by received source power for the existing 16-core frame
+cap; grain samples only fill remaining slots. At most 32 grain packets can be
+active in this implementation, below the 64-packet ceiling. Existing eight
+trail points per retained core give separate short wakes; dropped cores reclaim
+their trails. Rendering uses the same instanced pipeline and cloud resolve.
+`sky meteors spawn fragmenting` selects a brittle, steeper diagnostic entry;
+`fireball` retains the seeded material distribution. These presets do not
+bypass pressure thresholds. Visual separation and temporal acceptance remain
+part of the explicitly gated final verification.

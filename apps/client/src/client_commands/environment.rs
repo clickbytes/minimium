@@ -96,7 +96,7 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "sky meteors spawn",
         alias: None,
-        usage: "sky meteors spawn faint|bright|fireball (manual diagnostic event)",
+        usage: "sky meteors spawn faint|bright|fireball|fragmenting (manual diagnostic event)",
         arguments: &[Arg::new(
             "preset",
             ArgType::Enumeration,

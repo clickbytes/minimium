@@ -16,6 +16,7 @@ use minimium_renderer::meteors::model::{MeteorId, MeteorPhase};
 use std::time::Instant;
 
 mod evolution;
+mod presentation;
 mod runtime;
 mod spawner;
 mod track;
@@ -77,6 +78,10 @@ impl SpawnParams {
                 trail_opacity: 0.9,
                 light: Some(LightParams { range_m: 6.0e4 }),
             },
+            MeteorPreset::Fragmenting => Self {
+                duration_s: 1.0,
+                ..Self::of(MeteorPreset::Fireball)
+            },
             MeteorPreset::Fireball => Self {
                 speed_m_s: 55.0e3,
                 duration_s: 5.2,
@@ -108,15 +113,6 @@ pub(super) struct EventBasis {
     pub(super) velocity_m_s: [f64; 3],
 }
 
-/// One trail slot with a deterministic capture time.
-#[derive(Clone, Copy, Debug)]
-pub(super) struct TrailSlot {
-    /// Client-monotonic capture time; positions are derived, never stored.
-    pub(super) at_s: f64,
-    /// Strictly monotonic serial inside the owning core.
-    pub(super) serial: u32,
-}
-
 /// One active manual meteor event (lifecycle data, no geometry storage).
 pub(crate) struct ActiveEvent {
     pub(super) id: MeteorId,
@@ -130,7 +126,6 @@ pub(crate) struct ActiveEvent {
     /// `None` until the first valid environment frame after the spawn; the
     /// basis initialization never memorizes a stale disabled view.
     pub(super) basis: Option<EventBasis>,
-    pub(super) trail_slots: [TrailSlot; TRAIL_SLOTS_PER_EVENT],
     /// Producer-declared phase of the last built frame.
     pub(super) phase: MeteorPhase,
     pub(super) automatic: bool,
@@ -139,7 +134,13 @@ pub(crate) struct ActiveEvent {
 
 impl ActiveEvent {
     /// Constructs one paused event; the flight basis initializes later.
-    pub(super) fn new(id: MeteorId, preset: MeteorPreset, seed: u64, now_s: f64) -> Self {
+    fn new(
+        id: MeteorId,
+        preset: MeteorPreset,
+        seed: u64,
+        now_s: f64,
+        history: evolution::Evolution,
+    ) -> Self {
         let params = SpawnParams::of(preset);
         Self {
             id,
@@ -149,13 +150,9 @@ impl ActiveEvent {
             duration_s: params.duration_s,
             params,
             basis: None,
-            trail_slots: [TrailSlot {
-                at_s: 0.0,
-                serial: 0,
-            }; TRAIL_SLOTS_PER_EVENT],
             phase: MeteorPhase::Incoming,
             automatic: false,
-            evolution: None,
+            evolution: Some(history),
         }
     }
 }
@@ -174,6 +171,8 @@ pub(crate) struct MeteorRuntime {
     context: Option<WorldContext>,
     context_state: ContextState,
     spawner: spawner::Spawner,
+    history_pool: Vec<evolution::Evolution>,
+    omitted_cores: u64,
 }
 
 impl Default for MeteorRuntime {

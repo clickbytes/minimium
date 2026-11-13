@@ -15,6 +15,7 @@ pub(crate) enum MeteorPreset {
     Bright,
     /// Bolide-scale fireball with a strong transient light.
     Fireball,
+    Fragmenting,
 }
 
 impl MeteorPreset {
@@ -25,6 +26,7 @@ impl MeteorPreset {
             Self::Faint => "faint",
             Self::Bright => "bright",
             Self::Fireball => "fireball",
+            Self::Fragmenting => "fragmenting",
         }
     }
 
@@ -34,6 +36,7 @@ impl MeteorPreset {
             "faint" => Some(Self::Faint),
             "bright" => Some(Self::Bright),
             "fireball" => Some(Self::Fireball),
+            "fragmenting" => Some(Self::Fragmenting),
             _ => None,
         }
     }
@@ -44,7 +47,7 @@ pub(crate) fn command_error() -> CommandError {
     CommandError::new(
         CommandErrorCode::InvalidValue,
         Some("preset"),
-        "preset must be faint, bright or fireball",
-        Some("sky meteors spawn faint|bright|fireball"),
+        "preset must be faint, bright, fireball or fragmenting",
+        Some("sky meteors spawn faint|bright|fireball|fragmenting"),
     )
 }

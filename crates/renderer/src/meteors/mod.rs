@@ -11,6 +11,7 @@
 //! only.
 
 pub mod coords;
+pub mod fragmentation;
 pub mod kinematics;
 pub mod model;
 pub mod photometry;

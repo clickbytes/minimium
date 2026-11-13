@@ -1,6 +1,6 @@
 //! Deterministic high-atmosphere diagnostic tracks.
 use super::runtime::magnitude;
-use super::{ActiveEvent, EventBasis, TrailSlot, TRAIL_SLOTS_PER_EVENT};
+use super::{ActiveEvent, EventBasis};
 use crate::renderer::environment::RenderViewFrame;
 use minimium_renderer::meteors::{coords::PlanetSurfaceScale, model::POSITION_ABS_M_MAX};
 use std::f64::consts::TAU;
@@ -81,8 +81,14 @@ impl ActiveEvent {
         };
         let mut rng = Rng { state: self.seed };
         let azimuth = rng.next_f64() * TAU;
-        let start_height_m = 80_000.0 + rng.next_f64() * 30_000.0;
-        let descent_m = 20_000.0 + rng.next_f64() * 15_000.0;
+        let fragmenting = self.preset == crate::client_commands::MeteorPreset::Fragmenting;
+        let start_height_m =
+            80_000.0 + rng.next_f64() * if fragmenting { 5000.0 } else { 30_000.0 };
+        let descent_m = if fragmenting {
+            35_000.0
+        } else {
+            20_000.0 + rng.next_f64() * 15_000.0
+        };
         let speed_m_s = self.params.speed_m_s * (0.9 + rng.next_f64() * 0.2);
         if !speed_m_s.is_finite() {
             return Err("meteor speed is finite only after clamping");
@@ -113,22 +119,17 @@ impl ActiveEvent {
             start_phys_m,
             velocity_m_s,
         });
-        self.evolution = super::evolution::Evolution::new(
+        let history = self.evolution.as_mut().ok_or("missing pooled history")?;
+        if !history.initialize(
             self.basis.ok_or("missing flight basis")?,
             radius_m,
             self.params.mass_kg,
-            20.0,
             self.seed,
-        );
-        let history = self.evolution.as_ref().ok_or("invalid physical history")?;
-        self.duration_s = history.duration_s();
-        let slot_spacing_s = self.duration_s / (TRAIL_SLOTS_PER_EVENT + 1) as f64;
-        for (slot_index, slot) in self.trail_slots.iter_mut().enumerate() {
-            *slot = TrailSlot {
-                at_s: self.start_s + slot_spacing_s * slot_index as f64,
-                serial: slot_index as u32,
-            };
+            self.preset == crate::client_commands::MeteorPreset::Fragmenting,
+        ) {
+            return Err("invalid physical history");
         }
+        self.duration_s = history.duration_s();
         Ok(())
     }
 }

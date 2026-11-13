@@ -21,3 +21,13 @@ monotonic slots, independently of manual requests and visibility. See
 The event vector is allocated once at the shared eight-event capacity.
 
 No protocol, save, server simulation or GPU resource is owned here.
+
+
+Fragmentation histories are pooled at startup (eight bounded Evolution owners)
+and returned on every dismissal/clear path. `presentation::push_event` emits
+solid fragments first, then grain packets into free frame slots. Identities
+combine the event id and a never-reused body slot. Phase, photometry and short
+wake positions sample each body independently; the process log is diagnostic
+data and never creates world entities. `fragmenting` is a manual brittle-entry
+preset; `fireball` retains material variability. The pure renderer model owns
+mass transfers and pressure thresholds, while the client owns pool lifetime.

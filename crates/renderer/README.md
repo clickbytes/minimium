@@ -819,3 +819,15 @@ MeteorSample.intensity carries source intensity through CPU importance selection
 MeteorGpu alone converts it to radiance using luminous projected area; angular
 filtering supplies distance dilution. The CPU contract is never repurposed as
 radiance, so different-size fragments rank by received source power.
+
+
+### Cosmetic fragments (E047-06)
+
+`meteors::fragmentation::System` advances four solid and four grain packet slots
+with pressure-triggered, mass-conserving transfers and a 64-entry process log.
+The client preallocates eight snapshot histories, supplies distinct source ids
+and samples, and returns histories on dismissal. Render frame ranking retains
+the strongest solid sources; grain packets degrade first. The existing GPU
+batch handles their separate short wakes without new passes or features.
+`docs/ambient-meteors.md` documents mass/energy accounting, caps, optical-only
+flare semantics and the absence of physical implosion or persistent impacts.

@@ -61,6 +61,8 @@ pub struct Body {
     pub gas_power_w: f64,
     pub deposited_j: f64,
     pub pressure_pa: f64,
+    pub ablated_kg: f64,
+    pub eroded_kg: f64,
 }
 
 impl Body {
@@ -95,6 +97,8 @@ impl Body {
         }
         self.gas_power_w *= (-dt_s / 0.06).exp();
         self.deposited_j = 0.0;
+        self.ablated_kg = 0.0;
+        self.eroded_kg = 0.0;
         let height_m = self.position_m.length() - planet_radius_m;
         let speed = self.velocity_m_s.length();
         if height_m > 130_000.0
@@ -125,8 +129,11 @@ impl Body {
         let damping = (-drag_n * dt_s / (self.mass_kg * speed).max(1e-12)).exp();
         self.velocity_m_s *= damping;
         self.mass_kg = (self.mass_kg - lost).max(0.0);
+        self.ablated_kg = lost / (1.0 + material.erosion);
+        self.eroded_kg = lost - self.ablated_kg;
         let new_energy = 0.5 * self.mass_kg * self.velocity_m_s.length_squared();
-        self.deposited_j = (old_energy - new_energy).max(0.0);
+        let carried_dust_energy = 0.5 * self.eroded_kg * self.velocity_m_s.length_squared();
+        self.deposited_j = (old_energy - new_energy - carried_dust_energy).max(0.0);
         let power_w = self.deposited_j / dt_s.max(1e-9) * material.efficiency;
         self.gas_power_w += power_w * (1.0 - (-dt_s / 0.06).exp());
         self.position_m += self.velocity_m_s * dt_s;

@@ -402,7 +402,7 @@ No automated tests were run.
 ## Ambient cosmetic meteors (E047-01..03; ADR 0013)
 
 `renderer/meteors` owns local monotonic lifetimes, seeded manual tracks and
-world-scope invalidation. `sky meteors spawn faint|bright|fireball`, status and
+world-scope invalidation. `sky meteors spawn faint|bright|fireball|fragmenting`, status and
 clear feed a complete bounded `MeteorFrame` into the renderer each frame.
 Tracks start at 80..110 physical km and stay above the temporary 20 km cloud
 render gate. The seeded velocity has the preset speed; elapsed trail samples
@@ -422,3 +422,7 @@ photometry; no local meteor light is consumed by surfaces yet.
 Server-timed `spawn_random_bolid`, protocol, saves and world entities are unchanged.
 Static compilation and WGSL validation do not establish visual acceptance;
 that remains in the explicitly gated final-verification stage.
+
+Cosmetic fragmentation uses pooled fixed histories with independent solid/grain
+tracks and short wakes. Status exposes process events, mass conservation and
+omission counters; see docs/ambient-meteors.md. Runtime acceptance is pending.

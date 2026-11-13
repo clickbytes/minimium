@@ -4,9 +4,8 @@ use super::{ActiveEvent, ContextState, MeteorRuntime};
 use crate::client_commands::MeteorPreset;
 use crate::renderer::environment::{EnvironmentFrame, EnvironmentFrameStatus, RenderViewFrame};
 use minimium_renderer::meteors::{
-    coords::PlanetSurfaceScale,
-    model::{MeteorSample, MeteorSource, MeteorTrailSample, TransientLightSample},
-    MeteorDisabledReason, MeteorFrame, MeteorFrameContext, MeteorFrameState,
+    coords::PlanetSurfaceScale, MeteorDisabledReason, MeteorFrame, MeteorFrameContext,
+    MeteorFrameState,
 };
 
 impl MeteorRuntime {
@@ -22,6 +21,10 @@ impl MeteorRuntime {
             context: None,
             context_state: ContextState::Pending,
             spawner: super::spawner::Spawner::new(),
+            history_pool: (0..super::MAX_ACTIVE_METEOR_EVENTS)
+                .map(|_| super::evolution::Evolution::empty())
+                .collect(),
+            omitted_cores: 0,
         }
     }
 
@@ -53,9 +56,14 @@ impl MeteorRuntime {
         }
         let now_s = self.now_s();
         let id = self.next_id;
-        self.next_id = self.next_id.wrapping_add(1).max(1);
+        self.next_id = self.next_id % (u64::MAX / 8) + 1;
         let seed = self.derive_seed(now_s);
-        self.active.push(ActiveEvent::new(id, preset, seed, now_s));
+        let history = self
+            .history_pool
+            .pop()
+            .ok_or("meteors: history pool exhausted")?;
+        self.active
+            .push(ActiveEvent::new(id, preset, seed, now_s, history));
         self.spawned_total = self.spawned_total.wrapping_add(1);
         self.last_seed = seed;
         Ok(format!(
@@ -131,7 +139,6 @@ impl MeteorRuntime {
         }
         self.context_state = ContextState::Available { context };
         let now_s = self.now_s();
-        let radius_m = view.game_planet_radius_m;
         if let Some(candidate) = self.spawner.advance(context, now_s) {
             if now_s - candidate.at_s >= 20.0 {
                 self.spawner.skipped = self.spawner.skipped.saturating_add(1);
@@ -145,16 +152,19 @@ impl MeteorRuntime {
                     candidate.preset,
                     candidate.seed,
                     candidate.at_s,
+                    self.history_pool
+                        .pop()
+                        .expect("active cap reserves a history"),
                 );
                 event.automatic = true;
-                self.next_id = self.next_id.wrapping_add(1).max(1);
+                self.next_id = self.next_id % (u64::MAX / 8) + 1;
                 self.active.push(event);
                 self.spawner.spawned = self.spawner.spawned.saturating_add(1);
                 self.spawned_total = self.spawned_total.wrapping_add(1);
                 self.spawner.reason = "candidate_admitted_visibility_independent";
             }
         }
-        self.cycle_events(&mut meteor_frame, &view, scale, radius_m, now_s);
+        self.cycle_events(&mut meteor_frame, &view, scale, now_s);
         self.spawner.peak = self.spawner.peak.max(self.active.len());
         meteor_frame
     }
@@ -166,94 +176,32 @@ impl MeteorRuntime {
         meteor_frame: &mut MeteorFrame,
         view: &RenderViewFrame,
         scale: PlanetSurfaceScale,
-        radius_m: f64,
         now_s: f64,
     ) {
         let mut index = 0;
         while index < self.active.len() {
             let event = &mut self.active[index];
             if event.basis.is_none() && event.init_basis(view, scale).is_err() {
-                self.active.remove(index);
-                self.dismissed_total = self.dismissed_total.wrapping_add(1);
+                self.dismiss(index);
                 continue;
             }
             let Some(history) = event.evolution.as_ref() else {
-                self.active.remove(index);
-                self.dismissed_total = self.dismissed_total.wrapping_add(1);
+                self.dismiss(index);
                 continue;
             };
             let age_s = (now_s - event.start_s).max(0.0);
             if age_s >= event.duration_s {
-                self.active.remove(index);
-                self.dismissed_total = self.dismissed_total.wrapping_add(1);
+                self.dismiss(index);
                 continue;
             }
-            let body = history.sample(age_s);
-            let emission = minimium_renderer::meteors::photometry::emission(
-                body,
-                history.material,
-                age_s,
-                event.seed,
-            );
-            let position = body.position_m.to_array();
-            let Some(radius_phys_m) = magnitude(position) else {
-                self.active.remove(index);
-                self.dismissed_total = self.dismissed_total.wrapping_add(1);
-                continue;
-            };
-            if radius_phys_m < radius_m {
-                // Below the planet datum the contract forbids every sample;
-                // the deterministic track ends here instead.
-                self.active.remove(index);
-                self.dismissed_total = self.dismissed_total.wrapping_add(1);
-                continue;
-            }
-            let phase = history.phase(age_s);
-            event.phase = phase;
-            let sample = MeteorSample::new(
-                event.id,
-                MeteorSource::Cosmetic,
-                event.start_s,
-                position,
-                body.velocity_m_s.to_array(),
-                emission.rgb,
-                emission.intensity,
-                emission.radius_m,
-                phase,
-            );
-            match sample {
-                Ok(sample) => {
-                    if !meteor_frame.push_core(sample) {
-                        // Duplicate identity, cap or precision rejection: the
-                        // manual stream stays bounded and dismisses the event.
-                        self.active.remove(index);
-                        self.dismissed_total = self.dismissed_total.wrapping_add(1);
-                        continue;
-                    }
-                }
-                // Contract-invalid constant parameters are unreachable by
-                // construction; the event is dropped defensively anyway.
-                Err(_) => {
-                    self.active.remove(index);
-                    self.dismissed_total = self.dismissed_total.wrapping_add(1);
-                    continue;
-                }
-            }
-            push_trail_slots(meteor_frame, event, radius_m, now_s);
-            if let Some(light) = event.params.light {
-                let remaining_s = (event.duration_s - age_s).max(0.0);
-                if let Ok(light_sample) = TransientLightSample::new(
-                    event.id,
-                    position,
-                    emission.rgb,
-                    emission.intensity,
-                    light.range_m,
-                    remaining_s,
-                ) {
-                    let _ = meteor_frame.push_light(light_sample);
-                }
-            }
+            event.phase = history.phase(age_s, 0);
+            self.omitted_cores +=
+                super::presentation::push_event(meteor_frame, event, age_s, false);
             index += 1;
+        }
+        for event in &self.active {
+            let age_s = (now_s - event.start_s).max(0.0);
+            self.omitted_cores += super::presentation::push_event(meteor_frame, event, age_s, true);
         }
     }
 
@@ -261,7 +209,19 @@ impl MeteorRuntime {
     /// cleared events all share the single "dismissed" bucket).
     fn reset_active(&mut self) {
         self.dismissed_total = self.dismissed_total.wrapping_add(self.active.len() as u64);
-        self.active.clear();
+        for mut event in self.active.drain(..) {
+            if let Some(history) = event.evolution.take() {
+                self.history_pool.push(history);
+            }
+        }
+    }
+
+    fn dismiss(&mut self, index: usize) {
+        let mut event = self.active.remove(index);
+        if let Some(history) = event.evolution.take() {
+            self.history_pool.push(history);
+        }
+        self.dismissed_total = self.dismissed_total.wrapping_add(1);
     }
 
     /// Deterministic seed: monotonic birth microseconds mixed with the spawn
@@ -312,6 +272,14 @@ impl MeteorRuntime {
             self.spawner.peak,
             self.spawner.reason,
         ));
+        lines.push(format!(
+            "meteors budgets: rejected core submissions {}, free history slots {}/8, history sample bytes {}",
+            self.omitted_cores,
+            self.history_pool.len(),
+            8 * minimium_renderer::meteors::MAX_METEOR_HISTORY_SAMPLES
+                * minimium_renderer::meteors::fragmentation::BODY_SLOTS
+                * std::mem::size_of::<minimium_renderer::meteors::kinematics::Body>()
+        ));
         for event in &self.active {
             let age_s = (now_s - event.start_s).max(0.0);
             lines.push(format!(
@@ -327,50 +295,33 @@ impl MeteorRuntime {
                     "awaiting environment"
                 }
             ));
-            if let Some(history) = &event.evolution {
+            if let Some(history) = event.evolution.as_ref().filter(|_| event.basis.is_some()) {
                 let body = history.sample(age_s);
                 lines.push(format!(
                     "  material {:?}, mass {:.6} kg, speed {:.1} m/s, solid radius {:.5} m, emission {:.2} W",
                     history.material.kind, body.mass_kg, body.velocity_m_s.length(),
                     body.radius_m(history.material), body.gas_power_w,
                 ));
+                lines.push(format!(
+                    "  final mass ledger solid/dust packets/unrepresented dust/ablated {:?} kg; residual {:.9} kg; grain packets {}; events {}/64 omitted {}",
+                    history.mass_ledger,
+                    event.params.mass_kg - history.mass_ledger.iter().sum::<f64>(),
+                    history.grain_packets, history.event_count, history.omitted_events,
+                ));
+                for process in history.events[..history.event_count]
+                    .iter()
+                    .filter(|process| process.at_s <= age_s)
+                    .rev()
+                    .take(4)
+                {
+                    lines.push(format!(
+                        "  {:?} at {:.3}s slot {} transferred {:.9} kg",
+                        process.kind, process.at_s, process.slot, process.mass_kg
+                    ));
+                }
             }
         }
         lines
-    }
-}
-
-/// Reconstructs elapsed trail samples in each fresh frame. Capture times and
-/// positions remain deterministic, including after skipped frames or rebases.
-fn push_trail_slots(
-    meteor_frame: &mut MeteorFrame,
-    event: &ActiveEvent,
-    radius_m: f64,
-    now_s: f64,
-) {
-    let Some(history) = &event.evolution else {
-        return;
-    };
-    for slot in &event.trail_slots {
-        if slot.at_s > now_s {
-            continue;
-        }
-        let body = history.sample(slot.at_s - event.start_s);
-        let position = body.position_m.to_array();
-        if magnitude(position).is_some_and(|value| value >= radius_m) {
-            // Contract-invalid constant parameters are unreachable by
-            // construction; a contract-invalid sample is dropped in place.
-            if let Ok(trail) = MeteorTrailSample::new(
-                event.id,
-                slot.serial,
-                slot.at_s,
-                position,
-                event.params.trail_thickness_m,
-                event.params.trail_opacity,
-            ) {
-                let _ = meteor_frame.push_trail(trail);
-            }
-        }
     }
 }
 
