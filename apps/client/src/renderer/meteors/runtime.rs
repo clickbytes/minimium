@@ -15,12 +15,13 @@ impl MeteorRuntime {
         Self {
             epoch: std::time::Instant::now(),
             next_id: 1,
-            active: Vec::new(),
+            active: Vec::with_capacity(super::MAX_ACTIVE_METEOR_EVENTS),
             spawned_total: 0,
             dismissed_total: 0,
             last_seed: 0,
             context: None,
             context_state: ContextState::Pending,
+            spawner: super::spawner::Spawner::new(),
         }
     }
 
@@ -75,6 +76,9 @@ impl MeteorRuntime {
     /// scope changes, reconnects and teleports dismiss pending events
     /// instantly (ADR 0013 § 5); the origin rebase happens inside the frame.
     pub(in crate::renderer) fn build_frame(&mut self, frame: &EnvironmentFrame) -> MeteorFrame {
+        if !matches!(frame.status, EnvironmentFrameStatus::Available) || frame.context.is_none() {
+            self.spawner.suspend();
+        }
         match frame.status {
             EnvironmentFrameStatus::Available => {}
             EnvironmentFrameStatus::Interior => {
@@ -118,6 +122,7 @@ impl MeteorRuntime {
             surface_scale: scale,
         });
         if meteor_frame.state() != MeteorFrameState::Ready {
+            self.spawner.suspend();
             self.reset_active();
             self.context_state = ContextState::Unavailable {
                 reason: "environment view is unusable for meteors",
@@ -127,7 +132,31 @@ impl MeteorRuntime {
         self.context_state = ContextState::Available { context };
         let now_s = self.now_s();
         let radius_m = view.game_planet_radius_m;
+        if let Some(candidate) = self.spawner.advance(context, now_s) {
+            let params = super::SpawnParams::of(candidate.preset);
+            if now_s - candidate.at_s >= params.duration_s {
+                self.spawner.skipped = self.spawner.skipped.saturating_add(1);
+                self.spawner.reason = "expired_during_gap";
+            } else if self.active.len() >= super::MAX_ACTIVE_METEOR_EVENTS {
+                self.spawner.skipped = self.spawner.skipped.saturating_add(1);
+                self.spawner.reason = "active_cap";
+            } else {
+                let mut event = ActiveEvent::new(
+                    self.next_id,
+                    candidate.preset,
+                    candidate.seed,
+                    candidate.at_s,
+                );
+                event.automatic = true;
+                self.next_id = self.next_id.wrapping_add(1).max(1);
+                self.active.push(event);
+                self.spawner.spawned = self.spawner.spawned.saturating_add(1);
+                self.spawned_total = self.spawned_total.wrapping_add(1);
+                self.spawner.reason = "candidate_admitted_visibility_independent";
+            }
+        }
         self.cycle_events(&mut meteor_frame, &view, scale, radius_m, now_s);
+        self.spawner.peak = self.spawner.peak.max(self.active.len());
         meteor_frame
     }
 
@@ -248,7 +277,7 @@ impl MeteorRuntime {
     pub(in crate::renderer) fn status_lines(&self) -> Vec<String> {
         let mut lines = Vec::with_capacity(super::MAX_ACTIVE_METEOR_EVENTS + 4);
         lines.push(format!(
-            "meteors: manual client-local runtime; active {}/{}, spawned {}, dismissed {}",
+            "meteors: client-local runtime; active {}/{}, spawned {}, dismissed {}",
             self.active.len(),
             super::MAX_ACTIVE_METEOR_EVENTS,
             self.spawned_total,
@@ -267,11 +296,17 @@ impl MeteorRuntime {
             "meteors: last spawn seed 0x{:016x}",
             self.last_seed
         ));
-        lines.push(
-            "meteors: nearest expected event: manual only (sky meteors spawn); the automatic generator lands with E047-04"
-                .to_owned(),
-        );
         let now_s = self.now_s();
+        lines.push(format!(
+            "meteors auto: enabled {}, seed {}, interval 120..300 real s, next {:?}s, spawned {}, skipped {}, peak {}, gate {}",
+            self.spawner.enabled,
+            self.spawner.seed,
+            self.spawner.next_in_s(now_s),
+            self.spawner.spawned,
+            self.spawner.skipped,
+            self.spawner.peak,
+            self.spawner.reason,
+        ));
         for event in &self.active {
             let age_s = (now_s - event.start_s).max(0.0);
             lines.push(format!(

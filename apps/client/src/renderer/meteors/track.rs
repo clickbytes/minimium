@@ -42,8 +42,30 @@ impl ActiveEvent {
         ];
         let radial = forward.iter().zip(eye_up).map(|(a, b)| a * b).sum::<f64>();
         let horizontal = std::array::from_fn(|i| forward[i] - radial * eye_up[i]);
-        let heading = normalized(horizontal).unwrap_or([0.0; 3]);
-        let offset = (scale.radial_offset_m(90_000.0) - (eye_radial_m - radius_m)).abs() * 2.0;
+        let mut placement = Rng {
+            state: self.seed ^ 0xa1d58b37c4e6920f,
+        };
+        let heading = if self.automatic {
+            // Observer position anchors the local sky, never camera heading,
+            // FOV, daylight, clouds or whether this candidate will be visible.
+            let axis = if eye_up[2].abs() < 0.9 {
+                [0.0, 0.0, 1.0]
+            } else {
+                [1.0, 0.0, 0.0]
+            };
+            let east = normalized(cross(eye_up, axis)).ok_or("invalid sky basis")?;
+            let north = cross(eye_up, east);
+            let (s, c) = (placement.next_f64() * TAU).sin_cos();
+            std::array::from_fn(|i| east[i] * c + north[i] * s)
+        } else {
+            normalized(horizontal).unwrap_or([0.0; 3])
+        };
+        let spread = if self.automatic {
+            0.5 + placement.next_f64() * 7.5
+        } else {
+            2.0
+        };
+        let offset = (scale.radial_offset_m(90_000.0) - (eye_radial_m - radius_m)).abs() * spread;
         let up = normalized(std::array::from_fn(|i| eye[i] + heading[i] * offset))
             .ok_or("meteor placement is degenerate")?;
         let axis = if up[2].abs() < 0.9 {

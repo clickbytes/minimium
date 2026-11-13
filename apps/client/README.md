@@ -414,8 +414,11 @@ layer combines cosmetic meteors and existing server bolids, applies terrain,
 planet and foreground-cloud occlusion, then resolves before final output/UI.
 `sky info` exposes meteor instance/draw counts, upload bytes, low-altitude
 rejections and the 6912-byte fixed instance buffer. This is a logical allocation
-estimate, not driver VRAM. The automatic generator and physical evolution are
-later E047 stages; no local meteor light is consumed by surfaces yet.
+estimate, not driver VRAM. The automatic generator now schedules bounded
+120..300-second monotonic intervals independently of visibility and manual
+requests; see `docs/ambient-meteors.md` for seeds, startup controls and limits.
+Physical evolution is a later E047 stage; no local meteor light is consumed by
+surfaces yet.
 Server-timed `spawn_random_bolid`, protocol, saves and world entities are unchanged.
 Static compilation and WGSL validation do not establish visual acceptance;
 that remains in the explicitly gated final-verification stage.

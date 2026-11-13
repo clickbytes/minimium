@@ -16,6 +16,7 @@ use minimium_renderer::meteors::model::{MeteorId, MeteorPhase};
 use std::time::Instant;
 
 mod runtime;
+mod spawner;
 mod track;
 
 /// Manual diagnostic events stay far below the 16-core contract cap so the
@@ -150,6 +151,7 @@ pub(crate) struct ActiveEvent {
     pub(super) trail_slots: [TrailSlot; TRAIL_SLOTS_PER_EVENT],
     /// Producer-declared phase of the last built frame.
     pub(super) phase: MeteorPhase,
+    pub(super) automatic: bool,
 }
 
 impl ActiveEvent {
@@ -169,6 +171,7 @@ impl ActiveEvent {
                 serial: 0,
             }; TRAIL_SLOTS_PER_EVENT],
             phase: MeteorPhase::Incoming,
+            automatic: false,
         }
     }
 }
@@ -186,6 +189,7 @@ pub(crate) struct MeteorRuntime {
     /// Last world scope seen on a valid frame, for planar change detection.
     context: Option<WorldContext>,
     context_state: ContextState,
+    spawner: spawner::Spawner,
 }
 
 impl Default for MeteorRuntime {
