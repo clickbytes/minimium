@@ -294,3 +294,26 @@ only. MINIMIUM_METEORS=0/1 and MINIMIUM_METEOR_SEED use config precedence.
 client.audio.meteors is a compatibility alias for client.sky.meteors.sound;
 client.audio.meteor_volume remains session-only 0..1. The terminal parser accepts
 these commands and reports graphics unavailable without creating a GPU.
+
+## Irregular server bolid shower
+
+`spawn_random_bolid` emits one bright bolid as before.
+`spawn_random_bolid 20` starts 20 bolids: the first immediately, the remaining
+ones at seeded irregular 0.9..8-second intervals (usually about a minute or two
+for 20). N is an integer 1..64; omitted N means 1. No duration argument is needed.
+Showers scatter paths within a 24-degree cone around the current view instead
+of the single-event 12-degree cone; narrow FOV can clip parts of a shower.
+
+One server shower can run at a time; a new request while it runs returns
+server.bolid.shower_busy. The five-second manual-request cooldown remains;
+scheduled members are not new admin requests. Automatic events are skipped when
+due during a shower and rescheduled normally. The tick emits at most one member
+at a time and never catches up missed members in one burst. No sleeping thread,
+world-time change, protocol change or persistent queue is added. The series is
+pinned to its initial observer/context; loss/transfer of that observer, stale
+sky view, failed atmospheric placement/delivery or a ten-minute expiry cancels
+remaining members. Completed events remain subject to existing renderer caps.
+
+This extends the existing server bolid demonstration, independently of E047
+client-local `sky meteors spawn PRESET [seed]`. It requires an owned local server
+from a client or an existing authorized server admin endpoint/console.

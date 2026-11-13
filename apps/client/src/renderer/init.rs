@@ -258,7 +258,7 @@ impl Renderer {
             prepared_bolids: Default::default(),
             diagnostic_bolid_age: None,
             last_sky_view_at: None,
-            pending_bolid_request: false,
+            pending_bolid_request: None,
             localizer,
             gpu,
             shadow_state: shadows::ShadowState::default(),

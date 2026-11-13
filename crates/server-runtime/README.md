@@ -173,3 +173,13 @@ the complete initial path inside the minimum supported 30-degree vertical FOV
 without changing v19. A view with no valid descending atmospheric chord returns
 an explicit placement error; automatic placement is unchanged. Lengths and
 speeds use the same Earth relief scale, so flight time remains physical seconds.
+
+`spawn_random_bolid [N]` accepts 1..64 (default 1). The owner lane stores at most
+one transient `bolid::shower::Shower`: remaining count, observer/context and two
+monotonic deadlines. One first event is immediate; remaining bright events use
+seeded clustered 0.9..8-second gaps and wider framing. A busy shower rejects a
+second request; the existing five-second manual cooldown applies at admission.
+No tick catch-up burst or separate timer thread is used. Observer/context loss,
+placement/delivery failure or ten-minute expiry cancels remaining members.
+Automatic births due during a series are rescheduled without emission. No wire
+or save-format change. Runtime visual acceptance remains deferred.

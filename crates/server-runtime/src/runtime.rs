@@ -138,6 +138,7 @@ pub(crate) struct ServerRuntime {
     next_bolid_id: u64,
     sky_views: HashMap<PlayerId, (minimium_protocol::WorldContext, [f32; 3], bool, Instant)>,
     last_manual_bolid_at: Option<Instant>,
+    bolid_shower: Option<bolid::shower::Shower>,
     // Endpoint must be removed while the data lock is still held.
     _endpoint_guard: EndpointGuard,
     _data_lock: ServerDataLock,
@@ -339,6 +340,7 @@ impl ServerRuntime {
             next_bolid_id: 1,
             sky_views: HashMap::new(),
             last_manual_bolid_at: None,
+            bolid_shower: None,
             _endpoint_guard: endpoint_guard,
             _data_lock: data_lock,
         };

@@ -161,7 +161,7 @@ struct Renderer {
         Option<minimium_renderer::milky_way_gpu::BolidEvolution>,
     )>,
     last_sky_view_at: Option<Instant>,
-    pending_bolid_request: bool,
+    pending_bolid_request: Option<u16>,
     localizer: minimium_localization::Localizer,
     gpu: GpuResources,
     shadow_state: shadows::ShadowState,

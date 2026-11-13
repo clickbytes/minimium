@@ -323,7 +323,7 @@ pub(super) fn handle(
                 );
             }
         },
-        FrontendAction::SpawnRandomBolid => match connection.request_random_bolid() {
+        FrontendAction::SpawnRandomBolid(count) => match connection.request_random_bolid(count) {
             Ok(()) => println!(
                 "{}",
                 localizer.format(

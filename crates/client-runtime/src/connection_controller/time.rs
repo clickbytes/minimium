@@ -54,8 +54,14 @@ impl ConnectionController {
         self.request_admin_command(format!("time set {date}"))
     }
 
-    pub fn request_random_bolid(&mut self) -> Result<(), ControllerError> {
-        self.request_admin_command("spawn_random_bolid".to_owned())
+    pub fn request_random_bolid(&mut self, count: u16) -> Result<(), ControllerError> {
+        if !(1..=64).contains(&count) {
+            return Err(ControllerError::new(
+                "client_runtime.invalid_bolid_count",
+                "bolid count must be 1..64",
+            ));
+        }
+        self.request_admin_command(format!("spawn_random_bolid {count}"))
     }
 
     fn request_admin_command(&mut self, command: String) -> Result<(), ControllerError> {

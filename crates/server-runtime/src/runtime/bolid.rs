@@ -1,4 +1,5 @@
 mod framing;
+pub(super) mod shower;
 use super::ServerRuntime;
 use crate::{commands::CommandReply, connection::queue_message};
 use minimium_protocol::{BolidEvent, ServerMessage};
@@ -15,8 +16,12 @@ impl ServerRuntime {
 
     pub(super) fn update_bolids(&mut self) {
         let now = Instant::now();
+        let shower_active = self.bolid_shower.is_some();
+        self.update_bolid_shower(now);
         if self.next_bolid_at.is_some_and(|deadline| now >= deadline) {
-            let _ = self.spawn_bolid(false);
+            if !shower_active {
+                let _ = self.spawn_bolid(false, false);
+            }
             self.schedule_next_bolid(now);
         }
         self.sky_views.retain(|player, (context, _, _, at)| {
@@ -25,7 +30,7 @@ impl ServerRuntime {
         });
     }
 
-    pub(super) fn spawn_bolid(&mut self, manual: bool) -> CommandReply {
+    pub(super) fn spawn_bolid(&mut self, manual: bool, scheduled: bool) -> CommandReply {
         let fail = |text: &str, code| CommandReply {
             success: false,
             text: text.to_owned(),
@@ -34,6 +39,7 @@ impl ServerRuntime {
         };
         let now = Instant::now();
         if manual
+            && !scheduled
             && self
                 .last_manual_bolid_at
                 .is_some_and(|at| now.saturating_duration_since(at) < Duration::from_secs(5))
@@ -48,6 +54,15 @@ impl ServerRuntime {
             .iter()
             .filter_map(|(instance, player)| {
                 let (context, gaze, night, at) = *self.sky_views.get(&player.id)?;
+                if manual
+                    && self
+                        .bolid_shower
+                        .as_ref()
+                        .and_then(|shower| shower.observer)
+                        .is_some_and(|anchor| anchor != (player.id, context))
+                {
+                    return None;
+                }
                 let owner = self.game.worlds.iter().find(|(id, _)| id == instance)?.1;
                 if !self.game.worlds.context_matches(player.id, context)
                     || owner.manifest.planet().is_none()
@@ -78,6 +93,14 @@ impl ServerRuntime {
                 "server.bolid.no_observer",
             );
         };
+        if manual {
+            if let Some(shower) = &mut self.bolid_shower {
+                shower.observer = self
+                    .sky_views
+                    .get(&player_id)
+                    .map(|view| (player_id, view.0));
+            }
+        }
         let up = normalize(position);
         let outside = length_squared(position).sqrt() > radius + 110_000.0 * scale_m;
         let direction = if !outside && dot(gaze, up) < 0.12 {
@@ -98,7 +121,15 @@ impl ServerRuntime {
             0
         };
         let (start, end) = if manual {
-            let Some(path) = framing::in_view(position, gaze, radius, scale_m, seed, kind) else {
+            let Some(path) = framing::in_view(
+                position,
+                gaze,
+                radius,
+                scale_m,
+                seed,
+                kind,
+                self.bolid_shower.is_some(),
+            ) else {
                 return fail(
                     "look toward a wider visible part of the atmosphere to place the whole bolid",
                     "server.bolid.no_atmosphere_in_view",
@@ -182,7 +213,7 @@ impl ServerRuntime {
                 recipients += 1;
             }
         }
-        if manual {
+        if manual && !scheduled {
             self.last_manual_bolid_at = Some(now);
         }
         CommandReply {

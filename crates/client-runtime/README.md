@@ -116,3 +116,7 @@ a 35-second local connection attempt. Remote connection attempts retain their
 the client connects or reports failure.
 
 The session accepts Bolid only for its active world context and discards it during transfer; server monotonic time is estimated from the existing probe clock.
+
+`ConnectionController::request_random_bolid(count)` validates 1..64 and forwards
+the bounded count through the existing owned-server admin command channel. It
+does not send N separate requests or change the game protocol.

@@ -218,8 +218,17 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "spawn_random_bolid",
         alias: None,
-        usage: "spawn_random_bolid (owned local server)",
-        arguments: &[],
+        usage: "spawn_random_bolid [N: 1..64] (irregular shower; owned local server)",
+        arguments: &[Arg::new(
+            "count",
+            ArgType::Integer,
+            true,
+            false,
+            None,
+            Some("1..64"),
+            Some("bolids"),
+            "number of bolids, default 1",
+        )],
         parser: parse,
     },
     CommandSpec {
@@ -315,7 +324,16 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
         }
         ("set_time" | "set_time_local", _) => Err(ParseError::SetTimeUsage),
         ("time status", []) => Ok(ClientCommand::TimeStatus),
-        ("spawn_random_bolid", []) => Ok(ClientCommand::SpawnRandomBolid),
+        ("spawn_random_bolid", []) => Ok(ClientCommand::SpawnRandomBolid(1)),
+        ("spawn_random_bolid", [value]) => {
+            let count = value
+                .parse::<u16>()
+                .ok()
+                .filter(|n| (1..=64).contains(n))
+                .ok_or(ParseError::Usage("spawn_random_bolid [N: 1..64]"))?;
+            Ok(ClientCommand::SpawnRandomBolid(count))
+        }
+        ("spawn_random_bolid", _) => Err(ParseError::Usage("spawn_random_bolid [N: 1..64]")),
         ("time scale", [value]) => {
             parse_scale_ppm(value).map_err(|_| ParseError::TimeScaleUsage)?;
             Ok(ClientCommand::TimeScale((*value).to_owned()))

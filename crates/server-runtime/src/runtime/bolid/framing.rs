@@ -8,6 +8,7 @@ pub(super) fn in_view(
     length_scale: f32,
     seed: u64,
     kind: u8,
+    shower: bool,
 ) -> Option<([f32; 3], [f32; 3])> {
     let gaze = normalize(gaze);
     let reference = if gaze[2].abs() < 0.9 {
@@ -18,6 +19,14 @@ pub(super) fn in_view(
     let right = normalize(cross(gaze, reference));
     let up = cross(right, gaze);
     let phase = seed as u32 as f32 / u32::MAX as f32 * std::f32::consts::TAU;
+    let offset = if shower { 14.0_f32.to_radians() } else { 0.0 };
+    let target = normalize(add(
+        scale(gaze, offset.cos()),
+        scale(
+            add(scale(right, phase.cos()), scale(up, phase.sin())),
+            offset.sin(),
+        ),
+    ));
     let mut starts = Vec::with_capacity(49);
     let mut ends = Vec::with_capacity(49);
     let heights = if kind == 2 {
@@ -26,10 +35,11 @@ pub(super) fn in_view(
         [101_000.0, 48_000.0]
     };
     // A 12-degree cone leaves three degrees of margin in the minimum 30-degree
-    // vertical FOV. A straight segment between its points stays in that cone.
+    // vertical FOV. Showers deliberately spread over a wider 24-degree cone.
+    // A straight segment between its points stays in that cone.
     for index in 0..49 {
         let ring = if index == 0 { 0 } else { 1 + (index - 1) / 16 };
-        let angle = (ring as f32 * 4.0).to_radians();
+        let angle = (ring as f32 * if shower { 8.0 } else { 4.0 }).to_radians();
         let azimuth = phase + index as f32 * std::f32::consts::TAU / 16.0;
         let transverse = add(scale(right, azimuth.cos()), scale(up, azimuth.sin()));
         let ray = normalize(add(
@@ -58,7 +68,8 @@ pub(super) fn in_view(
                 continue;
             }
             let score = (dot(start_ray, end_ray) - 16.0_f32.to_radians().cos()).abs() * 10.0
-                + (2.0 - dot(start_ray, gaze) - dot(end_ray, gaze)) * 0.2
+                + (2.0 - dot(start_ray, target) - dot(end_ray, target))
+                    * if shower { 2.0 } else { 0.2 }
                 + physical_length / 1_000_000.0;
             if score < best_score {
                 best_score = score;

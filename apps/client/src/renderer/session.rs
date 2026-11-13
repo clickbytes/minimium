@@ -177,7 +177,7 @@ impl Renderer {
     }
 
     pub(super) fn clear_connection(&mut self) {
-        self.pending_bolid_request = false;
+        self.pending_bolid_request = None;
         self.last_sky_view_at = None;
         self.bolids.clear();
         self.diagnostic_bolid_age = None;

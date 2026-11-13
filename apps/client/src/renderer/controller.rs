@@ -397,10 +397,10 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
                 }
             }
         }
-        FrontendAction::SpawnRandomBolid => {
+        FrontendAction::SpawnRandomBolid(count) => {
             // Publish the current gaze before the separate admin request, also
             // when already connected and the camera just moved.
-            renderer.pending_bolid_request = true;
+            renderer.pending_bolid_request = Some(count);
             renderer.last_sky_view_at = None;
             renderer.bolid_notice(minimium_localization::UiNotice::BolidRequestQueued);
         }

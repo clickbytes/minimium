@@ -78,7 +78,7 @@ pub(crate) enum ClientCommand {
     ShowCelestialNames(bool),
     TimeStatus,
     TimeScale(String),
-    SpawnRandomBolid,
+    SpawnRandomBolid(u16),
     SetTime { minute: u16, local: bool },
     WeatherStatus,
     WeatherDebug(minimium_environment::weather::CloudDebug),
@@ -268,7 +268,7 @@ pub(crate) enum FrontendAction {
     SkyMeteorsClear,
     SkyMeteorsLight(MeteorLightDebug),
     SkyMeteorsDebug(MeteorDebug),
-    SpawnRandomBolid,
+    SpawnRandomBolid(u16),
     TimeMode(String),
     TimeOfflinePolicy(String),
     SetTime { minute: u16, local: bool },
@@ -462,8 +462,8 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
         ClientCommand::TimeScale(value) => {
             return CommandResult::Action(FrontendAction::TimeScale(value))
         }
-        ClientCommand::SpawnRandomBolid => {
-            return CommandResult::Action(FrontendAction::SpawnRandomBolid)
+        ClientCommand::SpawnRandomBolid(count) => {
+            return CommandResult::Action(FrontendAction::SpawnRandomBolid(count))
         }
     };
     let result = match message {

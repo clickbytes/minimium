@@ -67,7 +67,9 @@ impl ServerRuntime {
                 crate::server_command::ServerCommand::Property(property) => {
                     self.apply_property_command(property)
                 }
-                crate::server_command::ServerCommand::SpawnRandomBolid => self.spawn_bolid(true),
+                crate::server_command::ServerCommand::SpawnRandomBolid(count) => {
+                    self.start_bolid_shower(*count)
+                }
                 _ => match monotonic_ms {
                     Ok(monotonic_ms) => commands::execute(
                         &command,

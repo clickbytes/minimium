@@ -11,9 +11,9 @@ impl Renderer {
     }
 
     pub(super) fn flush_pending_bolid(&mut self, now: Instant) {
-        if !self.pending_bolid_request {
+        let Some(count) = self.pending_bolid_request else {
             return;
-        }
+        };
         if self
             .application
             .connection
@@ -23,8 +23,8 @@ impl Renderer {
                 .last_sky_view_at
                 .is_some_and(|at| now.saturating_duration_since(at) >= Duration::from_millis(200))
         {
-            self.pending_bolid_request = false;
-            match self.application.connection.request_random_bolid() {
+            self.pending_bolid_request = None;
+            match self.application.connection.request_random_bolid(count) {
                 Ok(()) => self.bolid_notice(minimium_localization::UiNotice::BolidRequestSent),
                 Err(error) => self
                     .application
@@ -33,7 +33,7 @@ impl Renderer {
                     .push_line(format!("spawn_random_bolid: {error}")),
             }
         } else if self.application.connection.session().is_none() {
-            self.pending_bolid_request = false;
+            self.pending_bolid_request = None;
             self.application
                 .ui
                 .console

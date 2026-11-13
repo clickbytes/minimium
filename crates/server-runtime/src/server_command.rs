@@ -54,8 +54,17 @@ const SERVER_SPECS: &[CommandSpec<ServerCommand, CommandError>] = &[
     CommandSpec {
         name: "spawn_random_bolid",
         alias: None,
-        usage: "spawn_random_bolid",
-        arguments: &[],
+        usage: "spawn_random_bolid [N: 1..64]",
+        arguments: &[CommandArgumentSpec::new(
+            "count",
+            CommandArgumentType::Integer,
+            true,
+            false,
+            None,
+            Some("1..64"),
+            Some("bolids"),
+            "number of bolids, default 1",
+        )],
         parser: parse_server_spec,
     },
     CommandSpec {
@@ -193,6 +202,24 @@ fn parse_server_spec(arguments: &[&str]) -> Result<ServerCommand, CommandError> 
                 )
             });
     }
+    if *command == "spawn_random_bolid" {
+        let count = if tail.is_empty() {
+            Some(1)
+        } else {
+            tail.parse::<u16>().ok()
+        };
+        return count
+            .filter(|n| (1..=64).contains(n))
+            .map(ServerCommand::SpawnRandomBolid)
+            .ok_or_else(|| {
+                parse_error(
+                    CommandErrorCode::InvalidValue,
+                    "count",
+                    "expected an integer from 1 to 64",
+                    "spawn_random_bolid [N: 1..64]",
+                )
+            });
+    }
     if !tail.is_empty() {
         return Err(parse_error(
             CommandErrorCode::InvalidArguments,
@@ -208,7 +235,6 @@ fn parse_server_spec(arguments: &[&str]) -> Result<ServerCommand, CommandError> 
         "metrics show" => Ok(ServerCommand::Metrics),
         "world save" => Ok(ServerCommand::Save),
         "stop" => Ok(ServerCommand::Stop),
-        "spawn_random_bolid" => Ok(ServerCommand::SpawnRandomBolid),
         _ => Err(parse_error(
             CommandErrorCode::UnknownCommand,
             *command,
@@ -226,7 +252,7 @@ pub enum ServerCommand {
     Metrics,
     Save,
     Stop,
-    SpawnRandomBolid,
+    SpawnRandomBolid(u16),
     Time(TimeCommand),
     Property(ServerPropertyCommand),
     /// A validated administrative line owned by its registering server module.

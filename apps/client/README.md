@@ -476,3 +476,9 @@ Meteor diagnostics expose history/frame bytes, emitting fragments, CPU prepare
 time and GPU submission/culling counters on demand. At most one pooled physical
 history initializes per frame. GPU duration is explicitly n/a until instrumented;
 no draw-count-to-performance inference is made. See docs/performance.md.
+
+`spawn_random_bolid [N]` now supports an irregular server-side shower. Example:
+`spawn_random_bolid 20`; default N=1, allowed 1..64. The desktop pending request
+retains the count until the current sky view is published; terminal/admin paths
+use the same count validation. See docs/commands.md for cadence, framing and
+cancellation limits. This is separate from local E047 presets.
