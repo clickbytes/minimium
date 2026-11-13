@@ -109,6 +109,19 @@ impl ActiveEvent {
             up[1] * start_radius_m,
             up[2] * start_radius_m,
         ];
+        self.basis = Some(EventBasis {
+            start_phys_m,
+            velocity_m_s,
+        });
+        self.evolution = super::evolution::Evolution::new(
+            self.basis.ok_or("missing flight basis")?,
+            radius_m,
+            self.params.mass_kg,
+            20.0,
+            self.seed,
+        );
+        let history = self.evolution.as_ref().ok_or("invalid physical history")?;
+        self.duration_s = history.duration_s();
         let slot_spacing_s = self.duration_s / (TRAIL_SLOTS_PER_EVENT + 1) as f64;
         for (slot_index, slot) in self.trail_slots.iter_mut().enumerate() {
             *slot = TrailSlot {
@@ -116,10 +129,6 @@ impl ActiveEvent {
                 serial: slot_index as u32,
             };
         }
-        self.basis = Some(EventBasis {
-            start_phys_m,
-            velocity_m_s,
-        });
         Ok(())
     }
 }

@@ -15,6 +15,7 @@ use minimium_protocol::WorldContext;
 use minimium_renderer::meteors::model::{MeteorId, MeteorPhase};
 use std::time::Instant;
 
+mod evolution;
 mod runtime;
 mod spawner;
 mod track;
@@ -29,22 +30,17 @@ pub(crate) const MAX_ACTIVE_METEOR_EVENTS: usize = 8;
 pub(crate) const TRAIL_SLOTS_PER_EVENT: usize =
     minimium_renderer::meteors::MAX_TRAIL_POINTS_PER_CORE;
 
-/// Manual preset parameters in physical units (ADR 0013 § 3-4). Values are
-/// diagnostic placeholders for E047-02: the shared exposure path and the
-/// photometry pass arrive with E047-05/E047-09. Every value stays inside the
-/// contract caps by construction.
+/// Local presentation profiles in physical units (ADR 0013 § 3-4).
+/// Mass and entry speed initialize the solver; radiance is computed from
+/// deposited kinetic energy, not a preset fade curve.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct SpawnParams {
     /// Absolute track speed in physical m/s (contract cap 100 km/s).
     pub(super) speed_m_s: f64,
     /// Planned client-monotonic lifetime in seconds (contract cap 300 s).
     pub(super) duration_s: f64,
-    /// Peak scalar emission power in linear HDR units.
-    pub(super) intensity: f64,
-    /// Effective emitted radius in physical metres.
-    pub(super) radius_m: f64,
-    /// Emission colour, components in `[0, 1]`.
-    pub(super) linear_rgb: [f64; 3],
+    /// Initial solid mass in kilograms.
+    pub(super) mass_kg: f64,
     /// Trail half-width in physical metres.
     pub(super) trail_thickness_m: f64,
     /// Trail opacity in `[0, 1]`.
@@ -56,8 +52,6 @@ pub(crate) struct SpawnParams {
 /// Transient-light parameters of one preset, validated by the contract push.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct LightParams {
-    /// Scalar luminous intensity in linear HDR units.
-    pub(super) intensity: f64,
     /// Actionable maximum lighting distance in physical metres.
     pub(super) range_m: f64,
 }
@@ -70,9 +64,7 @@ impl SpawnParams {
             MeteorPreset::Faint => Self {
                 speed_m_s: 18.0e3,
                 duration_s: 2.2,
-                intensity: 3.0e4,
-                radius_m: 8.0,
-                linear_rgb: [0.78, 0.86, 1.0],
+                mass_kg: 0.002,
                 trail_thickness_m: 0.8,
                 trail_opacity: 0.72,
                 light: None,
@@ -80,28 +72,18 @@ impl SpawnParams {
             MeteorPreset::Bright => Self {
                 speed_m_s: 32.0e3,
                 duration_s: 3.6,
-                intensity: 1.4e6,
-                radius_m: 26.0,
-                linear_rgb: [1.0, 0.94, 0.78],
+                mass_kg: 0.5,
                 trail_thickness_m: 1.6,
                 trail_opacity: 0.9,
-                light: Some(LightParams {
-                    intensity: 2.5e7,
-                    range_m: 6.0e4,
-                }),
+                light: Some(LightParams { range_m: 6.0e4 }),
             },
             MeteorPreset::Fireball => Self {
                 speed_m_s: 55.0e3,
                 duration_s: 5.2,
-                intensity: 8.0e8,
-                radius_m: 90.0,
-                linear_rgb: [1.0, 0.62, 0.25],
+                mass_kg: 100.0,
                 trail_thickness_m: 3.2,
                 trail_opacity: 1.0,
-                light: Some(LightParams {
-                    intensity: 8.0e9,
-                    range_m: 1.5e5,
-                }),
+                light: Some(LightParams { range_m: 1.5e5 }),
             },
         }
     }
@@ -152,6 +134,7 @@ pub(crate) struct ActiveEvent {
     /// Producer-declared phase of the last built frame.
     pub(super) phase: MeteorPhase,
     pub(super) automatic: bool,
+    evolution: Option<evolution::Evolution>,
 }
 
 impl ActiveEvent {
@@ -172,6 +155,7 @@ impl ActiveEvent {
             }; TRAIL_SLOTS_PER_EVENT],
             phase: MeteorPhase::Incoming,
             automatic: false,
+            evolution: None,
         }
     }
 }

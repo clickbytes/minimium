@@ -417,8 +417,8 @@ rejections and the 6912-byte fixed instance buffer. This is a logical allocation
 estimate, not driver VRAM. The automatic generator now schedules bounded
 120..300-second monotonic intervals independently of visibility and manual
 requests; see `docs/ambient-meteors.md` for seeds, startup controls and limits.
-Physical evolution is a later E047 stage; no local meteor light is consumed by
-surfaces yet.
+Physical evolution now uses a fixed SI ablation history and energy-based
+photometry; no local meteor light is consumed by surfaces yet.
 Server-timed `spawn_random_bolid`, protocol, saves and world entities are unchanged.
 Static compilation and WGSL validation do not establish visual acceptance;
 that remains in the explicitly gated final-verification stage.

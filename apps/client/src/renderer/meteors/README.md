@@ -7,10 +7,13 @@ capture times must therefore be submitted on every frame, including after
 skipped frames and floating-origin changes. The eight deterministic samples per
 event do not accumulate allocations or duplicate entries in a frame.
 
-`ActiveEvent::init_basis` multiplies its unit flight direction by the seeded
-physical speed. `EventBasis::position_at` integrates that velocity in metres per
-second. Parameters are diagnostic placeholders pending the ablation stage;
-this initial linear model terminates at its lifetime or the planet datum.
+`ActiveEvent::init_basis` scales its seeded direction by physical entry speed
+and initializes one bounded `Evolution`. The CPU renderer kinematics model
+advances mass, drag and deposited energy in fixed substeps; frame samples
+interpolate its cached physical history. Photometry supplies core radiance and
+the same source power for the future lighting consumer. Solid and luminous
+radii are distinct. No per-frame integration or history allocation is needed.
+See `docs/ambient-meteors.md` for limits and physical approximations.
 
 `spawner::Spawner` supplies automatic candidates from counter-based, jittered
 monotonic slots, independently of manual requests and visibility. See

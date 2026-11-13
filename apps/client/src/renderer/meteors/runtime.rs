@@ -1,11 +1,11 @@
 //! Manual meteor lifecycle mechanics: frame building, spawn/clear and status.
 
-use super::{ActiveEvent, ContextState, EventBasis, MeteorRuntime};
+use super::{ActiveEvent, ContextState, MeteorRuntime};
 use crate::client_commands::MeteorPreset;
 use crate::renderer::environment::{EnvironmentFrame, EnvironmentFrameStatus, RenderViewFrame};
 use minimium_renderer::meteors::{
     coords::PlanetSurfaceScale,
-    model::{MeteorPhase, MeteorSample, MeteorSource, MeteorTrailSample, TransientLightSample},
+    model::{MeteorSample, MeteorSource, MeteorTrailSample, TransientLightSample},
     MeteorDisabledReason, MeteorFrame, MeteorFrameContext, MeteorFrameState,
 };
 
@@ -133,8 +133,7 @@ impl MeteorRuntime {
         let now_s = self.now_s();
         let radius_m = view.game_planet_radius_m;
         if let Some(candidate) = self.spawner.advance(context, now_s) {
-            let params = super::SpawnParams::of(candidate.preset);
-            if now_s - candidate.at_s >= params.duration_s {
+            if now_s - candidate.at_s >= 20.0 {
                 self.spawner.skipped = self.spawner.skipped.saturating_add(1);
                 self.spawner.reason = "expired_during_gap";
             } else if self.active.len() >= super::MAX_ACTIVE_METEOR_EVENTS {
@@ -178,7 +177,7 @@ impl MeteorRuntime {
                 self.dismissed_total = self.dismissed_total.wrapping_add(1);
                 continue;
             }
-            let Some(basis) = event.basis else {
+            let Some(history) = event.evolution.as_ref() else {
                 self.active.remove(index);
                 self.dismissed_total = self.dismissed_total.wrapping_add(1);
                 continue;
@@ -189,8 +188,14 @@ impl MeteorRuntime {
                 self.dismissed_total = self.dismissed_total.wrapping_add(1);
                 continue;
             }
-            let fraction = (age_s / event.duration_s).clamp(0.0, 1.0);
-            let position = basis.position_at(age_s);
+            let body = history.sample(age_s);
+            let emission = minimium_renderer::meteors::photometry::emission(
+                body,
+                history.material,
+                age_s,
+                event.seed,
+            );
+            let position = body.position_m.to_array();
             let Some(radius_phys_m) = magnitude(position) else {
                 self.active.remove(index);
                 self.dismissed_total = self.dismissed_total.wrapping_add(1);
@@ -203,17 +208,17 @@ impl MeteorRuntime {
                 self.dismissed_total = self.dismissed_total.wrapping_add(1);
                 continue;
             }
-            let phase = phase_of(fraction);
+            let phase = history.phase(age_s);
             event.phase = phase;
             let sample = MeteorSample::new(
                 event.id,
                 MeteorSource::Cosmetic,
                 event.start_s,
                 position,
-                basis.velocity_m_s,
-                event.params.linear_rgb,
-                event.params.intensity * intensity_envelope(fraction),
-                event.params.radius_m,
+                body.velocity_m_s.to_array(),
+                emission.rgb,
+                emission.radiance,
+                emission.radius_m,
                 phase,
             );
             match sample {
@@ -234,14 +239,14 @@ impl MeteorRuntime {
                     continue;
                 }
             }
-            push_trail_slots(meteor_frame, event, basis, radius_m, now_s);
+            push_trail_slots(meteor_frame, event, radius_m, now_s);
             if let Some(light) = event.params.light {
                 let remaining_s = (event.duration_s - age_s).max(0.0);
                 if let Ok(light_sample) = TransientLightSample::new(
                     event.id,
                     position,
-                    event.params.linear_rgb,
-                    light.intensity * intensity_envelope(fraction),
+                    emission.rgb,
+                    emission.intensity,
                     light.range_m,
                     remaining_s,
                 ) {
@@ -322,19 +327,16 @@ impl MeteorRuntime {
                     "awaiting environment"
                 }
             ));
+            if let Some(history) = &event.evolution {
+                let body = history.sample(age_s);
+                lines.push(format!(
+                    "  material {:?}, mass {:.6} kg, speed {:.1} m/s, solid radius {:.5} m, emission {:.2} W",
+                    history.material.kind, body.mass_kg, body.velocity_m_s.length(),
+                    body.radius_m(history.material), body.gas_power_w,
+                ));
+            }
         }
         lines
-    }
-}
-
-impl EventBasis {
-    /// Linear physical integration from the single start datum.
-    pub(super) fn position_at(&self, offset_s: f64) -> [f64; 3] {
-        [
-            self.start_phys_m[0] + self.velocity_m_s[0] * offset_s,
-            self.start_phys_m[1] + self.velocity_m_s[1] * offset_s,
-            self.start_phys_m[2] + self.velocity_m_s[2] * offset_s,
-        ]
     }
 }
 
@@ -342,16 +344,19 @@ impl EventBasis {
 /// positions remain deterministic, including after skipped frames or rebases.
 fn push_trail_slots(
     meteor_frame: &mut MeteorFrame,
-    event: &mut ActiveEvent,
-    basis: EventBasis,
+    event: &ActiveEvent,
     radius_m: f64,
     now_s: f64,
 ) {
+    let Some(history) = &event.evolution else {
+        return;
+    };
     for slot in &event.trail_slots {
         if slot.at_s > now_s {
             continue;
         }
-        let position = basis.position_at(slot.at_s - event.start_s);
+        let body = history.sample(slot.at_s - event.start_s);
+        let position = body.position_m.to_array();
         if magnitude(position).is_some_and(|value| value >= radius_m) {
             // Contract-invalid constant parameters are unreachable by
             // construction; a contract-invalid sample is dropped in place.
@@ -367,23 +372,6 @@ fn push_trail_slots(
             }
         }
     }
-}
-
-/// Producer-declared phase from the fraction of planned lifetime consumed.
-fn phase_of(fraction: f64) -> MeteorPhase {
-    if fraction < 0.35 {
-        MeteorPhase::Incoming
-    } else if fraction < 0.75 {
-        MeteorPhase::Peak
-    } else {
-        MeteorPhase::Fading
-    }
-}
-
-/// Cubic decay keeps the emission inside the contract bounds and fades both
-/// the core and the carried light smoothly before expiry.
-fn intensity_envelope(fraction: f64) -> f64 {
-    (1.0 - fraction).powi(3)
 }
 
 /// `None` for zero vectors and non-finite components.

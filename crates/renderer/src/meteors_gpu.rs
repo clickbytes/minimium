@@ -114,6 +114,7 @@ impl MeteorGpu {
                 core.linear_rgb[2],
                 core.intensity,
             ];
+            let first_segment = self.count as usize;
             let head = [
                 core.position_rel_m[0],
                 core.position_rel_m[1],
@@ -168,6 +169,24 @@ impl MeteorGpu {
                     color: emission,
                 };
                 self.count += 1;
+            }
+            let end = self.count as usize;
+            let trail_area: f32 = segments[first_segment + 1..end]
+                .iter()
+                .map(|s| {
+                    let a = glam::Vec3::from_array([s.start[0], s.start[1], s.start[2]]);
+                    let b = glam::Vec3::from_array([s.end[0], s.end[1], s.end[2]]);
+                    a.distance(b) * (s.start[3] + s.end[3]) * 0.5 * std::f32::consts::PI.sqrt()
+                })
+                .sum();
+            if trail_area > 1e-6 {
+                // Share the finite source power with its wake. A longer line
+                // spreads that allocation instead of manufacturing more light.
+                segments[first_segment].color[3] *= 0.85;
+                let ratio = 0.15 * std::f32::consts::PI * core.radius_m.powi(2) / trail_area;
+                for segment in &mut segments[first_segment + 1..end] {
+                    segment.color[3] *= ratio;
+                }
             }
         }
         let bytes = bytemuck::cast_slice(&segments[..self.count as usize]);

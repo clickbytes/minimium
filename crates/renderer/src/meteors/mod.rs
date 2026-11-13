@@ -11,7 +11,9 @@
 //! only.
 
 pub mod coords;
+pub mod kinematics;
 pub mod model;
+pub mod photometry;
 
 mod frame;
 

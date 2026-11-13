@@ -803,3 +803,14 @@ available for the shared layer; it is disabled by default.
 Current limits: linear diagnostic trajectories/photometry, no cosmetic surface
 lighting, no persistent trains, and no runtime/visual acceptance yet. These
 belong to later sequential E047 stages. Static validation is not GPU execution.
+
+
+### Cosmetic entry model (E047-05)
+
+`meteors::kinematics` owns pure f64 SI body/material calculations;
+`meteors::photometry` converts deposited kinetic energy and cooling gas into
+source intensity, finite luminous radius, stable tint and radiance. The client
+owns a fixed `Evolution` history and supplies interpolated samples through the
+unchanged `MeteorSample`/`TransientLightSample` boundary. Six material profiles,
+numerical caps and non-scientific calibration limits are documented in
+`docs/ambient-meteors.md`. No server/tracked producer is changed.
