@@ -193,9 +193,9 @@ pub struct TransientLightMoment {
     pub position_rel_m: [f32; 3],
     /// Emission colour, linear HDR, components in `[0, 1]`.
     pub linear_rgb: [f32; 3],
-    /// Scalar luminous intensity before the single shared exposure path.
+    /// Scene-linear radiant intensity (visible power / 4 pi), before exposure.
     pub luminous_intensity: f64,
-    /// Actionable maximum lighting distance in render metres.
+    /// Actionable maximum lighting distance in physical metres.
     pub range_m: f32,
     /// Remaining client-monotonic life in seconds.
     pub ttl_s: f32,

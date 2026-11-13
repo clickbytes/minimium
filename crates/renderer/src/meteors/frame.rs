@@ -11,11 +11,6 @@
 //! above the caps or on any contract violation; nothing panics and nothing
 //! stores NaN. With all counts zero the frame costs the renderer no extra work.
 //!
-//! Producer seam (dormant by design until E047-02): the runtime rebuilds the
-//! frame each frame for the current floating origin, so an origin/world/manifest
-//! change or reconnect cannot carry stale absolute values. No server producer
-//! exists; `Tracked` stays an input marker only.
-
 use crate::meteors::coords::{render_relative_m, PlanetSurfaceScale};
 use crate::meteors::model::{MeteorId, MeteorSample, MeteorTrailSample, TransientLightSample};
 use crate::meteors::{
@@ -60,6 +55,19 @@ pub struct MeteorFrame {
 }
 
 impl MeteorFrame {
+    pub fn lights(&self) -> &[TransientLightMoment] {
+        &self.lights[..self.light_count]
+    }
+    pub fn context(&self) -> MeteorFrameContext {
+        MeteorFrameContext {
+            camera_eye_world_m: std::array::from_fn(|i| {
+                self.render_origin_m[i] + self.eye_rel_m[i]
+            }),
+            render_origin_m: self.render_origin_m,
+            game_radius_m: self.game_radius_m,
+            surface_scale: self.surface_scale,
+        }
+    }
     pub fn with_quality(mut self, quality: crate::quality::SkyQuality) -> Self {
         self.visibility = super::visibility::VisibilityPolicy::from_quality(quality);
         self
@@ -325,15 +333,13 @@ impl MeteorFrame {
     /// Inserts a light by `(received luminance desc, id asc)`; a full frame
     /// evicts the lowest-ranked slot first. Duplicates rejected earlier.
     fn insert_light(&mut self, candidate: TransientLightMoment) -> bool {
-        let eye_rel_m = self.eye_rel_m;
-        let slot_rank = |slot: &TransientLightMoment| {
-            received(slot.luminous_intensity, slot.position_rel_m, eye_rel_m)
-        };
-        let candidate_rank = received(
-            candidate.luminous_intensity,
-            candidate.position_rel_m,
-            eye_rel_m,
-        );
+        let context = self.context();
+        let slot_rank =
+            |slot: &TransientLightMoment| crate::transient_lighting::score(slot, context);
+        let candidate_rank = slot_rank(&candidate);
+        if candidate_rank <= 0.0 || self.lights().iter().any(|light| light.id == candidate.id) {
+            return false;
+        }
         if self.light_count == MAX_TRANSIENT_LIGHTS {
             let lowest = &self.lights[MAX_TRANSIENT_LIGHTS - 1];
             let keep_new = candidate_rank > slot_rank(lowest)

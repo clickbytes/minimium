@@ -842,3 +842,8 @@ E047-08 now selects finite-distance meteor visibility by effective sky quality.
 Standard uses terrain/planet occlusion plus the shared cloud mask, including
 up to 16 containing ellipsoid proxies; low retains the 20-km source floor.
 See docs/ambient-meteors.md for resource order, GPU layouts and OIT limitations.
+
+E047-09 uploads a shared 240-byte, four-source transient-light uniform at frame
+binding 11. Physical-distance ranking and shader extinction are producer-neutral;
+daylight dust consumes the helper, and sky diagnostics report count/bytes/incident
+estimate. See docs/ambient-meteors.md for exact units and limits.

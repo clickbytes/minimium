@@ -89,7 +89,7 @@ fn shade_meteor(input:MeteorVertex,dust:bool)->MeteorOutput {
         let daylight=smoothstep(-0.18,0.03,environment.sky_zenith_rgb_sun_altitude.w);
         let opacity=clamp(input.color.w*coverage*daylight,0.0,0.12);
         if opacity<0.00001 {discard;}
-        let scattered=tone_map_linear(physical_sun(point)*input.color.rgb*transmission/3.14159265);
+        let scattered=tone_map_linear((physical_sun(point)+transient_isotropic(point))*input.color.rgb*transmission/3.14159265);
         let weight=opacity;
         return MeteorOutput(vec4(scattered*opacity,opacity),vec4(distance/1000000.0*weight,weight,0.0,0.0));
     }

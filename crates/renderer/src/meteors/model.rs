@@ -207,7 +207,7 @@ impl MeteorTrailSample {
     }
 }
 
-/// One emitting centre feeding the transient-light path (uniform arrives E047-09).
+/// One emitting centre feeding the shared transient-light uniform.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TransientLightSample {
     /// Deterministic identity; received-luminance ties break by ascending id.
@@ -216,7 +216,7 @@ pub struct TransientLightSample {
     pub position_phys_m: [f64; 3],
     /// Emission colour in linear HDR, components in `[0, 1]`.
     pub linear_rgb: [f64; 3],
-    /// Scalar luminous intensity before the single shared exposure path.
+    /// Scene-linear radiant intensity (visible power / 4 pi), before exposure.
     pub luminous_intensity: f64,
     /// Actionable maximum lighting distance in physical metres.
     pub range_m: f64,

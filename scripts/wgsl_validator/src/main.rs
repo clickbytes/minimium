@@ -59,6 +59,7 @@ fn main() {
         if matches!(name, "terrain" | "ocean") {
             terrain_contract(&module, &info);
         }
+        transient_contract(&module, &info);
         println!("{name}: valid");
     }
 }
@@ -177,6 +178,45 @@ fn atmosphere_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
                 "binding {:?} is unavailable in {:?}",
                 binding, entry.stage
             );
+        }
+    }
+}
+
+fn transient_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
+    for (_, ty) in module.types.iter() {
+        let (size, offsets): (u32, &[u32]) = match ty.name.as_deref() {
+            Some("TransientLight") => (48, &[0, 16, 32]),
+            Some("TransientLightUniform") => (240, &[0, 16, 32, 48]),
+            _ => continue,
+        };
+        let naga::TypeInner::Struct { members, span } = &ty.inner else {
+            panic!("expected transient uniform");
+        };
+        assert_eq!(*span, size);
+        assert_eq!(
+            members
+                .iter()
+                .map(|member| member.offset)
+                .collect::<Vec<_>>(),
+            offsets
+        );
+    }
+    for (index, entry) in module.entry_points.iter().enumerate() {
+        for (handle, global) in module.global_variables.iter() {
+            if global.name.as_deref() != Some("transient_lights") {
+                continue;
+            }
+            assert_eq!(
+                global.binding,
+                Some(naga::ResourceBinding {
+                    group: 0,
+                    binding: 11
+                })
+            );
+            assert_eq!(global.space, naga::AddressSpace::Uniform);
+            if !info.get_entry_point(index)[handle].is_empty() {
+                assert_eq!(entry.stage, naga::ShaderStage::Fragment);
+            }
         }
     }
 }

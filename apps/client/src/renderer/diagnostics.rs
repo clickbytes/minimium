@@ -51,7 +51,7 @@ impl Renderer {
         push_shadow_fields(&mut snapshot, self);
         push_gpu_fields(&mut snapshot, self);
         push_milky_way_fields(&mut snapshot, self);
-        push_meteor_fields(&mut snapshot, self);
+        super::meteor_diagnostics::push(&mut snapshot, self);
         snapshot.lines().collect()
     }
 }
@@ -88,31 +88,6 @@ fn push_milky_way_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Rende
         minimium_renderer::MilkyWayGpu::BYTES,
     );
     snapshot.push("scene_linear_HDR", renderer.gpu.hdr_enabled);
-}
-
-fn push_meteor_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
-    let status = renderer.gpu.meteors_status;
-    let gpu = &renderer.gpu.milky_way.meteors;
-    snapshot.push("meteors_segments", gpu.count);
-    snapshot.push("meteors_dust_segments", gpu.dust_segments);
-    snapshot.push("meteors_emission_segments", gpu.emission_segments);
-    snapshot.push("meteors_draw_count", gpu.draw_count.get());
-    snapshot.push("meteors_upload_bytes", gpu.upload_bytes);
-    snapshot.push("meteors_rejected_below_cloud_gate", gpu.rejected_low);
-    snapshot.push(
-        "meteors_GPU_buffer_bytes",
-        minimium_renderer::meteors_gpu::MeteorGpu::BYTES,
-    );
-    snapshot.push("meteors_state", status.label());
-    snapshot.push("meteors_cores", status.core_count());
-    snapshot.push(
-        "meteors_contract",
-        if status.contract_ok() {
-            "ok"
-        } else {
-            "violation"
-        },
-    );
 }
 
 fn push_clock_fields(
@@ -432,6 +407,7 @@ fn push_gpu_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
     let star_bytes = gpu.stars.buffer.size();
     let uniform_bytes = gpu.environment_buffer.size()
         + gpu.camera_buffer.size()
+        + gpu.transient_buffer.size()
         + gpu.shadow_gpu.uniform_buffer.size();
     let shadow_texture_bytes = gpu.shadow_gpu.texture_bytes();
     let map_caster_bytes = gpu.shadow_gpu.map_caster_buffer_bytes();

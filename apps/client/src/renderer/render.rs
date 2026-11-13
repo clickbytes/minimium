@@ -104,6 +104,15 @@ impl GpuResources {
         }
         let meteors = snapshot.meteors();
         // One bounded snapshot feeds the shared finite-distance emission layer.
+        let lights =
+            minimium_renderer::transient_lighting::TransientLightUniform::from_frame(&meteors);
+        self.transient_count = lights.count[0];
+        self.transient_incident =
+            minimium_renderer::transient_lighting::TransientLightUniform::observer_irradiance(
+                &meteors,
+            );
+        self.queue
+            .write_buffer(&self.transient_buffer, 0, bytemuck::bytes_of(&lights));
         self.meteors_status = meteors.render_status();
         self.milky_way.meteors.upload(&self.queue, &meteors);
         self.atmosphere_gpu.mark_environment(&environment_upload);

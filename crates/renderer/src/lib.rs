@@ -127,6 +127,7 @@ pub mod terrain_gpu;
 mod terrain_palette;
 #[cfg(feature = "gpu")]
 pub mod terrain_view;
+pub mod transient_lighting;
 #[cfg(feature = "gpu")]
 pub mod ui_pipeline;
 #[cfg(feature = "gpu")]

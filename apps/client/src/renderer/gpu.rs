@@ -378,6 +378,7 @@ impl GpuResources {
         let fixed_gpu_bytes = terrain_gpu.bytes
             + frame_bindings.camera_buffer.size()
             + frame_bindings.environment_buffer.size()
+            + frame_bindings.transient_buffer.size()
             + initial_world.size_bytes()
             + remote_vertices.size_bytes()
             + shadow_gpu.gpu_bytes()
@@ -423,6 +424,9 @@ impl GpuResources {
             shadow_remote_dirty: false,
             shadow_publish_ready: false,
             shadow_upload_status: super::shadow_gpu::ShadowUploadStatus::Pending,
+            transient_buffer: frame_bindings.transient_buffer,
+            transient_count: 0,
+            transient_incident: 0.0,
             camera_buffer: frame_bindings.camera_buffer,
             environment_buffer: frame_bindings.environment_buffer,
             camera_bind_group: frame_bindings.bind_group,

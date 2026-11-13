@@ -5,12 +5,12 @@ use crate::{
     environment::{EnvironmentFrameInput, LocalDemoEnvironment},
     session::{ClientSession, DisconnectReason, SessionEvent, SessionState},
 };
-use minimium_client_runtime::{ConnectionEvent, connector::StartError};
+use minimium_client_runtime::{connector::StartError, ConnectionEvent};
 use minimium_core::identity::PlayerProfileId;
-use minimium_protocol::{MAX_VISIBLE_PLAYERS, ServerMessage};
+use minimium_protocol::{ServerMessage, MAX_VISIBLE_PLAYERS};
 use minimium_simulation::{CharacterState, CollisionQuery, MovementIntent, PLAYER_MAX_HEALTH};
 use minimium_world::world::{
-    CharacterGravity, WorldManifest, WorldMap, WorldTopology, character_frame,
+    character_frame, CharacterGravity, WorldManifest, WorldMap, WorldTopology,
 };
 use std::{
     error::Error,
@@ -43,6 +43,7 @@ mod gpu;
 mod gpu_surface;
 mod init;
 mod materials;
+mod meteor_diagnostics;
 mod meteors;
 mod overview;
 mod quality;
@@ -101,6 +102,9 @@ struct GpuResources {
     shadow_upload_status: shadow_gpu::ShadowUploadStatus,
     camera_buffer: wgpu::Buffer,
     environment_buffer: wgpu::Buffer,
+    transient_buffer: wgpu::Buffer,
+    transient_count: u32,
+    transient_incident: f64,
     camera_bind_group: wgpu::BindGroup,
     depth_view: wgpu::TextureView,
     size: PhysicalSize<u32>,

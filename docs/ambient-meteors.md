@@ -220,3 +220,34 @@ a bounded interior correction, not volumetric radiative transfer. Overlapping
 emitters/dust still share one radiance-weighted distance per pixel: separated
 depths at exactly the same pixel cannot have independent cloud transmission.
 Runtime A/B/C, horizon/orbit and HDR/fallback acceptance remains E047-17.
+
+
+## E047-09: shared finite-light contract
+
+Binding 11 was free after camera/environment 0..1 and atmosphere 2..10.
+EnvironmentGpuBindings now owns one 240-byte uniform, initialized with count=0
+and uploaded from each immutable MeteorFrame, including empty/disabled frames.
+No event allocates buffers, layouts or bind groups. Four 48-byte sources follow
+a 48-byte count/planet/mapping header; Rust and Naga assert size and offsets.
+The common group has 12 entries and four uniform buffers, within the existing
+downlevel limits; no extra material bind group is needed.
+
+The CPU light insertion scorer rejects expired, out-of-range, planet-hidden,
+below-surface and nonlocal (>1000-km altitude) sources before the four-slot cap.
+Physical received RGB luminance and ascending IDs determine stable priority.
+Cosmetic and Tracked cores use the same input; no celestial input exists.
+Radial physical/game mapping uses the manifest surface anchors and inverse
+height scale on CPU and GPU, rather than assuming game metres are SI metres.
+The finite radius prevents a singularity; a smooth last-20%-of-range fade
+bounds the effect. Intensity is the existing visible power divided by 4*pi:
+the incident helper divides by physical distance squared only. It emits linear,
+unexposed scene values, with analytic planet and bounded atmospheric extinction,
+and never modifies global ambient. The observer irradiance diagnostic is a
+pre-atmosphere estimate; it is not a GPU measurement.
+
+The first shader consumer is daylight dust scattering in the existing meteor
+producer. Count=0 adds exactly zero. The helper is composed only there at this
+stage; ground/ocean/cloud integrations belong to the next issues.
+Diagnostics expose selected count, observer estimate and actual buffer bytes;
+both initial and live GPU allocation totals include the uniform.
+No protocol, save, generation or server lifetime change is involved.
