@@ -357,7 +357,16 @@ impl CommandReply {
         })
     }
     pub fn detail(&self) -> Option<&str> {
-        self.outcome.as_ref().err().map(|e| e.detail.as_str())
+        self.outcome
+            .as_ref()
+            .err()
+            .map(|e| e.detail.as_str())
+            .or_else(|| {
+                self.effects
+                    .as_ref()
+                    .filter(|outcome| outcome.has_rejections())
+                    .map(|_| "one or more command effects were rejected")
+            })
     }
     pub fn should_stop(&self) -> bool {
         self.action == CommandAction::Stop
@@ -374,7 +383,7 @@ impl CommandReply {
     pub(crate) fn set_effect_outcome(&mut self, outcome: crate::modules::EffectBatchOutcome) {
         self.effects = Some(outcome);
     }
-    pub(crate) fn effect_outcome(&self) -> Option<&crate::modules::EffectBatchOutcome> {
+    pub fn effect_outcome(&self) -> Option<&crate::modules::EffectBatchOutcome> {
         self.effects.as_ref()
     }
 }
