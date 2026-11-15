@@ -227,17 +227,25 @@ It accepts one event, with a five-second cooldown and a global eight-flight cap.
 Placement makes up to 32 land attempts near an active planet player, biases manual
 events to recent gaze and checks players, spatial entities, boxes, shore and slope.
 Natural events roll the sample profile once per existing 120..300-second opportunity.
-The owner lane integrates BodyState, reserves entity/snapshot capacity, queues an
-immutable journal transaction and publishes entity plus terrain only after its
-durable acknowledgement. Parent and daughter share one commit. Restored state is
-bound to world ID, seed and radius, before startup systems allocate new entities.
+The private impact owner holds live `BodyState` values; the entity component is
+only the last durable checkpoint projection. The owner lane integrates
+`BodyState`, reserves entity/snapshot capacity, queues an immutable journal
+transaction and publishes the projection plus terrain only after its durable
+acknowledgement. Parent and daughter share one commit. Acknowledgements update
+the projection only when they match the owner's exact pending checkpoint; a
+stale or duplicate acknowledgement requests shutdown before changing the
+projection or pending state. A matching acknowledgement does not rewind a
+newer live state. Generic entity effects
+cannot spawn, replace or remove the impact component, or despawn a protected
+live or checkpointed impact entity. Restored state is bound to world ID, seed
+and radius before startup systems allocate new entities.
 The shared excavation coordinator prepares replacement geometry, collision leaves
 and displaced water before durable commit. Acknowledgement installs the prepared
 parts together and invalidates intersecting nonresident tickets. Movement and
 transfer readiness require the matching installed collision tickets. Unaffected
 sectors retain their indexes. The status command reports active/pending bodies, crater
-count and storage health. An I/O failure stops new impacts but preserves replication
-of the last committed world. The original automatic scheduler remains transient.
+count and storage health. Ordinary impact I/O failure stops new impacts but preserves
+replication of the last committed world. The original automatic scheduler remains transient.
 
 Current terrain preparation uses `TerrainInputs` with separate geography, crater
 and remnant snapshots. Entity batches clone only affected world stores, while

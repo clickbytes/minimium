@@ -27,10 +27,12 @@ impl ServerRuntime {
                 .collect();
 
             if !entity_effects.is_empty() {
-                let result = self
-                    .game
-                    .worlds
-                    .stage_entity_effect_batch(&entity_effects, &self.component_registry);
+                let protected_entities = self.impacts.protected_entities();
+                let result = self.game.worlds.stage_entity_effect_batch(
+                    &entity_effects,
+                    &self.component_registry,
+                    &protected_entities,
+                );
                 let rejection = match result {
                     Ok(staged) => match self
                         .operations

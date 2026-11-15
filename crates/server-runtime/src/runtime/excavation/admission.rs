@@ -75,12 +75,7 @@ impl ServerRuntime {
         if self.excavation.water_jobs.contains_key(&context.instance()) {
             return Err(ActionRejection::Busy);
         }
-        if self
-            .impacts
-            .pending
-            .keys()
-            .any(|(world, _)| *world == context.instance())
-        {
+        if self.impacts.has_pending_in_world(context.instance()) {
             return Err(ActionRejection::Busy);
         }
         let inventory = self.player_inventory(player);

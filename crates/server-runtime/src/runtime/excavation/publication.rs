@@ -53,6 +53,19 @@ impl ServerRuntime {
             };
             match result {
                 Ok(mutation) if mutation.id == pending.prepared.mutation.id => {
+                    if mutation.impact_bodies != pending.prepared.mutation.impact_bodies
+                        || !self
+                            .impacts
+                            .checkpoints_match(&pending.prepared.mutation.impact_bodies)
+                    {
+                        self.excavation.failure =
+                            Some("stale or mismatched impact checkpoint acknowledgement".into());
+                        self.impact_failure(io::Error::other(
+                            "stale or mismatched excavation impact acknowledgement",
+                        ));
+                        self.shutdown_request.request();
+                        break;
+                    }
                     self.excavation
                         .metrics
                         .persistence
@@ -76,10 +89,10 @@ impl ServerRuntime {
                             self.excavation.failure =
                                 Some("excavation acknowledgement identity mismatch".into());
                             if !pending.prepared.mutation.impact_bodies.is_empty() {
-                                self.clear_pending_impacts(&pending.prepared.mutation);
                                 self.impact_failure(io::Error::other(
                                     "impact mutation acknowledgement identity mismatch",
                                 ));
+                                self.shutdown_request.request();
                             }
                             ActionRejection::Storage
                         }
@@ -209,7 +222,7 @@ impl ServerRuntime {
             );
         }
         for body in preparation.impact_bodies {
-            self.impacts.pending.remove(&(body.world, body.id));
+            self.impacts.discard_pending_checkpoint(&body);
             if !matches!(reason, ActionRejection::Busy | ActionRejection::Stale) {
                 self.impact_failure(io::Error::other(format!(
                     "impact geometry refused: {reason:?}"
@@ -220,13 +233,22 @@ impl ServerRuntime {
 
     fn clear_pending_impacts(&mut self, mutation: &WorldMutation) {
         for body in &mutation.impact_bodies {
-            self.impacts.pending.remove(&(body.world, body.id));
+            self.impacts.discard_pending_checkpoint(body);
         }
     }
 
     fn install_excavation(&mut self, pending: Pending) {
         let started = Instant::now();
         let mutation = &pending.prepared.mutation;
+        if !self.impacts.checkpoints_match(&mutation.impact_bodies) {
+            self.excavation.failure =
+                Some("stale impact checkpoint before excavation publication".into());
+            self.impact_failure(io::Error::other(
+                "stale impact checkpoint before excavation publication",
+            ));
+            self.shutdown_request.request();
+            return;
+        }
         let before = self.excavation_inputs(mutation.world).unwrap();
         for body in &mutation.impact_bodies {
             if let Err(error) = self.validate_impact(*body) {
@@ -261,7 +283,7 @@ impl ServerRuntime {
                 return;
             }
             for body in &mutation.impact_bodies {
-                if let Err(error) = self.install_impact_prepared(*body) {
+                if let Err(error) = self.publish_prepared_impact_projection(*body) {
                     self.excavation.failure = Some(error.to_string());
                     self.shutdown_request.request();
                     return;
@@ -327,8 +349,12 @@ impl ServerRuntime {
             self.excavation.inventories.insert(profile, inventory);
         }
         for body in &mutation.impact_bodies {
-            self.impacts.pending.remove(&(body.world, body.id));
-            self.impacts.bodies.insert((body.world, body.id), *body);
+            if let Err(error) = self.impacts.acknowledge_checkpoint(*body) {
+                self.excavation.failure = Some(error.to_string());
+                self.impact_failure(error);
+                self.shutdown_request.request();
+                return;
+            }
         }
         if let Some(water) = pending.prepared.water {
             self.excavation.waters.insert(mutation.world, water);

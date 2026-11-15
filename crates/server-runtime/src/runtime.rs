@@ -9,6 +9,7 @@ mod environment;
 mod excavation;
 mod gameplay_terrain;
 mod impacts;
+pub(crate) use impacts::ProtectedImpactEntities;
 mod inputs;
 mod r#loop;
 mod network;

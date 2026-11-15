@@ -29,25 +29,27 @@ impl Cursor {
 impl ServerRuntime {
     pub(super) fn replicate_impacts(&mut self) {
         let now = self.scheduler.server_started.elapsed().as_millis() as u64;
-        for client in &mut self.connections.clients {
+        let bodies = &self.impacts.bodies;
+        let cursors = &mut self.impacts.clients;
+        let clients = &mut self.connections.clients;
+        let metrics = &mut self.metrics;
+        for client in clients.iter_mut() {
             let Some(player) = client.player_id() else {
                 continue;
             };
             let Some(context) = self.game.worlds.context_for_player(player) else {
                 continue;
             };
-            let cursor = self
-                .impacts
-                .clients
+            let cursor = cursors
                 .entry(player)
-                .or_insert_with(|| Cursor::new(context, &self.impacts.bodies));
+                .or_insert_with(|| Cursor::new(context, bodies));
             if cursor.context != context {
-                *cursor = Cursor::new(context, &self.impacts.bodies);
+                *cursor = Cursor::new(context, bodies);
             }
             if !cursor.begun {
                 if !queue_message(
                     client,
-                    &mut self.metrics,
+                    metrics,
                     ServerMessage::ImpactSync {
                         context,
                         complete: false,
@@ -63,10 +65,13 @@ impl ServerRuntime {
                     if sent == 16 {
                         break;
                     }
-                    let body = self.impacts.bodies[&(context.instance(), id)];
+                    let Some(&body) = bodies.get(&(context.instance(), id)) else {
+                        cursor.initial_ids.pop_front();
+                        continue;
+                    };
                     if !queue_message(
                         client,
-                        &mut self.metrics,
+                        metrics,
                         ServerMessage::ImpactState {
                             context,
                             server_time_ms: now,
@@ -85,12 +90,7 @@ impl ServerRuntime {
                 }
             }
             let mut remaining = false;
-            for body in self
-                .impacts
-                .bodies
-                .values()
-                .filter(|b| b.world == context.instance())
-            {
+            for body in bodies.values().filter(|b| b.world == context.instance()) {
                 // The bounded initial image has a stable list; moving bodies cannot
                 // continually displace old terrain records from its send budget.
                 if cursor.initial {
@@ -105,7 +105,7 @@ impl ServerRuntime {
                 }
                 if !queue_message(
                     client,
-                    &mut self.metrics,
+                    metrics,
                     ServerMessage::ImpactState {
                         context,
                         server_time_ms: now,
@@ -123,7 +123,7 @@ impl ServerRuntime {
                 && !remaining
                 && queue_message(
                     client,
-                    &mut self.metrics,
+                    metrics,
                     ServerMessage::ImpactSync {
                         context,
                         complete: true,
@@ -133,11 +133,6 @@ impl ServerRuntime {
                 cursor.initial = false;
             }
         }
-        self.impacts.clients.retain(|player, _| {
-            self.connections
-                .clients
-                .iter()
-                .any(|c| c.player_id() == Some(*player))
-        });
+        cursors.retain(|player, _| clients.iter().any(|c| c.player_id() == Some(*player)));
     }
 }

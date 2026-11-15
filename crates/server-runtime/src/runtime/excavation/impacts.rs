@@ -20,7 +20,7 @@ impl ServerRuntime {
                     .map_err(io::Error::other)?;
             }
             for body in saved.impact_bodies.values() {
-                self.impacts.bodies.insert((*world, body.id), *body);
+                self.impacts.restore_live_body(*body)?;
             }
         }
         Ok(())
@@ -32,11 +32,7 @@ impl ServerRuntime {
     ) -> io::Result<()> {
         if self.excavation.busy()
             || self.excavation.water_jobs.contains_key(&body.world)
-            || self
-                .impacts
-                .pending
-                .keys()
-                .any(|(world, _)| *world == body.world)
+            || self.impacts.has_pending_in_world(body.world)
         {
             return Err(io::Error::new(
                 io::ErrorKind::WouldBlock,
@@ -96,7 +92,8 @@ impl ServerRuntime {
             .saturating_sub(other_cells)
             .min(self.excavation.config.fluids.max_active_cells);
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
-        self.sector_workers.prepare(Box::new(move || {
+        self.impacts.begin_checkpoints(&[body])?;
+        if let Err(error) = self.sector_workers.prepare(Box::new(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let old_planet =
                     scene::planet(manifest, inputs.clone()).ok_or(ActionRejection::Stale)?;
@@ -210,8 +207,10 @@ impl ServerRuntime {
             }))
             .unwrap_or(Err(ActionRejection::Capacity.into()));
             let _ = sender.send(result);
-        }))?;
-        self.impacts.pending.insert((body.world, body.id), body);
+        })) {
+            self.impacts.discard_pending_checkpoint(&body);
+            return Err(error);
+        }
         self.excavation.preparing = Some(Preparation {
             player: None,
             context: None,
