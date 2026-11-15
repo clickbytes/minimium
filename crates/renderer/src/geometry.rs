@@ -8,6 +8,7 @@ pub struct Vertex {
     pub normal: [f32; 3],
 }
 
+#[cfg(feature = "gpu")]
 impl Vertex {
     const ATTRIBUTES: [wgpu::VertexAttribute; 3] =
         wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3];

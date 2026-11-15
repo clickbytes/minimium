@@ -1,7 +1,9 @@
 //! A separate sea-level sphere using the ground selection's canonical lattice.
 //! Matching tessellation avoids a coarse spherical ocean swallowing coastal land
 //! through the sagitta of differently sized triangle chords.
-use minimium_procgen::{PlanetTerrain, SectorGeometry};
+#[cfg(feature = "gpu")]
+use minimium_procgen::PlanetTerrain;
+use minimium_procgen::SectorGeometry;
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -10,6 +12,7 @@ pub struct OceanVertex {
     pub normal: [f32; 3],
 }
 
+#[cfg(feature = "gpu")]
 impl OceanVertex {
     pub fn layout() -> wgpu::VertexBufferLayout<'static> {
         const ATTRIBUTES: [wgpu::VertexAttribute; 2] =
@@ -22,6 +25,7 @@ impl OceanVertex {
     }
 }
 
+#[cfg(feature = "gpu")]
 pub(crate) fn sphere_patch(source: &SectorGeometry, terrain: &PlanetTerrain) -> SectorGeometry {
     let mut points = std::collections::HashMap::new();
     let triangles = source
