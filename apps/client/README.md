@@ -38,9 +38,11 @@ An origin or publication change rebuilds even stationary player geometry, and
 disconnect/reset invalidates the stamp together with the buffer. Waiting scenes
 cannot draw players retained from a previous world.
 
-The desktop renderer reads the confirmed equipped tool from the active client
-session and passes its neutral `ToolKind` to the first-person viewmodel pass.
-Shovels and pickaxes are presentation-only low-poly meshes; gameplay tool use
+The desktop host reads the confirmed equipped tool from the active client
+session, resolves its sample-owned model index, and passes that index to the
+first-person viewmodel pass. The application adapts the sample's CPU vertices
+to the renderer's bounded neutral model catalog; the renderer owns upload and
+draw only. Shovels and pickaxes remain presentation-only; gameplay tool use
 continues through the existing authoritative session action.
 
 Camera and tool-preview rays use the shared world `CharacterGeometry` eye and
