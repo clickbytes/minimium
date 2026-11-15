@@ -12,13 +12,16 @@ filesystem, network, GPU, worker or game-content dependency.
 `TerrainSnapshot` is the committed crater field, extracted from world. Its
 existing render, collision and runtime consumers remain connected.
 `TerrainStore::prepare` reads affected chunks and their unedited chunk guardband,
-returning resulting images with expected revisions. `commit` validates the
+using a validated `TerrainDeformation` radius and allowed-material set without
+knowing tool kinds. It returns resulting images with expected revisions. `commit` validates the
 complete set before publication. Adapters persist every image before committing
 them. Each sample belongs to one integer lattice address, including negative coordinates;
 neighboring meshes read the same boundary samples. CPU Marching Cubes uses
 canonical edge interpolation and an asymptotic decision on ambiguous faces.
 Stores are cheaply cloned through shared immutable chunk images. `from_chunks`
 reconstructs a committed snapshot for restore without invoking edit generation.
+`TerrainDeformation::new` rejects invalid radii and material masks before the
+store applies the existing configured radius and sparse-work limits.
 
 ## Dependencies
 
@@ -36,9 +39,11 @@ crate has no threads or external effects. It copies only touched chunk samples.
 
 ## Invariants and errors
 
-Edits validate every expected chunk revision and capacity before publishing any
-chunk. IDs are committed in increasing order. Negative coordinates use Euclidean
-division. `TerrainEditError` distinguishes stale, unavailable and capacity errors.
+Edits validate the finite deformation radius, allowed material set, every expected
+chunk revision and capacity before publishing any chunk. The configured maximum
+radius remains the upper work bound. IDs are committed in increasing order.
+Negative coordinates use Euclidean division. `TerrainEditError` distinguishes
+stale, unavailable and capacity errors.
 
 ## Commands
 

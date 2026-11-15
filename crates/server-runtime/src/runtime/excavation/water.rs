@@ -228,15 +228,13 @@ impl WaterWorld {
         request: minimium_terrain::TerrainEditRequest,
         server_cell_limit: usize,
     ) -> Result<PreparedWaterEdit, FluidError> {
-        if !request.radius_m.is_finite()
-            || request.radius_m <= 0.0
-            || request.center_m.iter().any(|v| !v.is_finite())
-        {
+        if request.center_m.iter().any(|v| !v.is_finite()) {
             return Err(FluidError::Invalid);
         }
+        let radius_m = request.deformation.radius_m();
         let old_geometry = TerrainFluidGeometry::new(old_terrain);
         let new_geometry = TerrainFluidGeometry::new(new_terrain);
-        let radius = request.radius_m + CELL_SIZE_M;
+        let radius = radius_m + CELL_SIZE_M;
         let low = request
             .center_m
             .map(|v| ((v - radius) / CELL_SIZE_M).floor() as i32);

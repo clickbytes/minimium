@@ -133,7 +133,14 @@ gameplay settings for a compressed planet, not a prediction of real crater size.
 The final radius depends on surviving kinetic energy. Ordinary cosmetic meteors
 and server atmospheric bolids retain their existing producers.
 
-The excavation module owns the future tool defaults (3 m reach, 0.6 m radius,
+The sample owns the current tool defaults (3 m reach, 0.6 m radius,
 500 ms cooldown). The recognized sample content profile selects the 1.5 m soil
-layer. These domain values do not yet install
-input bindings, developer grants or persistent inventory gameplay.
+layer. These domain values do not install input bindings or persistent inventory
+gameplay; the developer grant is supplied separately as fixed item slots.
+
+`DEFAULT_TOOL_PROFILE` supplies independent Shovel and Pickaxe definitions to
+server composition and client preview; `DEFAULT_TOOL_GRANTS` supplies the
+developer inventory's fixed Shovel and Pickaxe slots. Both retain 3 m reach and 0.6 m radius
+with one shared 500 ms cooldown; Shovel allows Soil and Pickaxe allows Soil and
+Rock. The terrain crate receives only the selected radius and material set, so
+engine terrain code does not infer gameplay policy from `ToolKind`.
