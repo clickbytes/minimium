@@ -16,6 +16,8 @@ fn connected_session(context: WorldContext) -> ClientSession {
     let now = Instant::now();
     ClientSession {
         impacts: Default::default(),
+        excavation: Default::default(),
+        tools: Default::default(),
         diagnostic_logger: None,
         content: Default::default(),
         stream: None,
