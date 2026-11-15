@@ -4,21 +4,11 @@ use crate::messages::ClientText as Text;
 struct App {
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
-    world_map: Option<WorldMap>,
-    world_catalog:
-        Option<std::collections::HashMap<minimium_world::world::WorldInstanceId, WorldMap>>,
-    world_manifests: Option<
-        std::collections::HashMap<
-            minimium_world::world::WorldInstanceId,
-            minimium_world::world::WorldManifest,
-        >,
-    >,
-    profile_id: PlayerProfileId,
+    worlds: Option<crate::bootstrap::InitialWorlds>,
+    connection: Option<crate::bootstrap::ClientConnection>,
     options: crate::options::ClientOptions,
     data_dir: PathBuf,
-    cache_dir: PathBuf,
     log_dir: PathBuf,
-    earth_package_dir: PathBuf,
     parent_run_id: String,
     diagnostic_logger: minimium_diagnostics::DomainLogger,
     renderer_logger: minimium_diagnostics::DomainLogger,
@@ -50,7 +40,7 @@ impl ApplicationHandler for App {
         if self.options.windowed {
             super::window_mode::fit_windowed(&window, event_loop);
         }
-        let world_map = self.world_map.take().unwrap_or_else(|| {
+        let worlds = self.worlds.take().unwrap_or_else(|| {
             panic!(
                 "{}",
                 Text::RendererAlreadyInitialized.localized(&self.localizer, self.options.locale)
@@ -58,21 +48,13 @@ impl ApplicationHandler for App {
         });
         match pollster::block_on(Renderer::new(init::RendererSetup {
             window: Arc::clone(&window),
-            map: world_map,
-            world_catalog: self
-                .world_catalog
+            worlds,
+            connection: self
+                .connection
                 .take()
-                .expect("world catalog is available before renderer startup"),
-            world_manifests: self
-                .world_manifests
-                .take()
-                .expect("world manifests are available before renderer startup"),
-            profile_id: self.profile_id,
+                .expect("idle client connection is available"),
             diagnostic_logger: self.diagnostic_logger.clone(),
             renderer_logger: self.renderer_logger.clone(),
-            content_cache_dir: self.cache_dir.clone(),
-            content_cache_limit_bytes: self.options.cache_limit_bytes,
-            earth_package_dir: self.earth_package_dir.clone(),
             map_path: self.options.map_path.clone(),
             world_definition_path: self.options.world_definition_path.clone(),
             local_server_config: self
@@ -299,93 +281,17 @@ impl ApplicationHandler for App {
 }
 
 pub fn run(options: crate::options::ClientOptions) -> Result<(), Box<dyn Error>> {
-    let initial_log_dir = options.resolved_log_dir()?;
-    let diagnostics = minimium_telemetry::logging::DiagnosticsRuntime::start(&initial_log_dir)?;
-    let diagnostic_logger = diagnostics.logger(minimium_diagnostics::DomainId::ClientRuntime);
-    let localizer = minimium_localization::Localizer::new(Some(diagnostic_logger.clone()))
-        .map_err(std::io::Error::other)?;
-    let asset_io_logger = diagnostics.logger(minimium_diagnostics::DomainId::AssetIo);
-    let procgen_logger = diagnostics.logger(minimium_diagnostics::DomainId::Procgen);
-    let map_path = options.map_path.clone();
-    let world_definition_path = options.world_definition_path.clone();
-    let (map, world_catalog, world_manifests) = if let Some(path) = map_path.as_deref() {
-        let map = minimium_asset_io::load_map(path).map_err(|error| {
-            crate::diagnostics::failure(&asset_io_logger, error.code(), &error.to_string());
-            Text::MapLoadFailed {
-                path: path.display().to_string(),
-                detail: error.to_string(),
-            }
-            .localized(&localizer, options.locale)
-        })?;
-        let mut catalog = std::collections::HashMap::new();
-        let instance = minimium_world::world::WorldInstanceId::new(1)
-            .expect("authored world instance is nonzero");
-        catalog.insert(instance, map.clone());
-        let manifests = std::collections::HashMap::from([(
-            instance,
-            crate::world_content::authored_manifest(1, &map),
-        )]);
-        (map, catalog, manifests)
-    } else if let Some(path) = world_definition_path.as_deref() {
-        let definition = minimium_asset_io::load_world_definition(path).map_err(|error| {
-            crate::diagnostics::failure(&asset_io_logger, error.code(), &error.to_string());
-            Text::MapLoadFailed {
-                path: path.display().to_string(),
-                detail: error.to_string(),
-            }
-            .localized(&localizer, options.locale)
-        })?;
-        minimium_procgen::validate_world_manifest(definition.manifest()).map_err(|error| {
-            crate::diagnostics::failure(&procgen_logger, error.code(), &error.to_string());
-            Text::BundledMapInvalid(error.to_string()).localized(&localizer, options.locale)
-        })?;
-        let map =
-            minimium_procgen::materialize_dungeon_map(definition.dungeon()).map_err(|error| {
-                crate::diagnostics::failure(&procgen_logger, error.code(), &error.to_string());
-                Text::BundledMapInvalid(error.to_string()).localized(&localizer, options.locale)
-            })?;
-        let instance = minimium_world::world::WorldInstanceId::new(4)
-            .expect("manual world instance ID is nonzero");
-        let catalog = std::collections::HashMap::from([(instance, map.clone())]);
-        let manifests = std::collections::HashMap::from([(instance, definition.manifest())]);
-        (map, catalog, manifests)
-    } else {
-        let worlds = minimium_game_sample::generate_demo_worlds().map_err(|error| {
-            procgen_logger.emit(
-                procgen_logger
-                    .event(
-                        minimium_diagnostics::Level::Error,
-                        minimium_diagnostics::EventCode::new(error.code())
-                            .expect("static procgen event code is valid"),
-                    )
-                    .field("reason", &error.to_string()),
-            );
-            Text::BundledMapInvalid(error.to_string()).localized(&localizer, options.locale)
-        })?;
-        let mut catalog = std::collections::HashMap::new();
-        let mut manifests = std::collections::HashMap::new();
-        for world in worlds {
-            manifests.insert(world.instance, world.manifest);
-            catalog.insert(world.instance, world.map);
-        }
-        let map = catalog
-            .get(&minimium_world::world::WorldInstanceId::new(1).expect("planet ID is nonzero"))
-            .expect("demo generator always returns a planet")
-            .clone();
-        (map, catalog, manifests)
-    };
-    let paths = options.paths(map.fingerprint())?;
-    let profile_id = minimium_platform::identity_store::load_or_create(&paths.profile_dir)?;
+    let crate::bootstrap::ClientBootstrap {
+        diagnostics,
+        logger: diagnostic_logger,
+        localizer,
+        paths,
+        worlds,
+        connection,
+    } = crate::bootstrap::ClientBootstrap::new(&options)?;
     let data_dir = paths.data_dir.clone();
-    let cache_dir = paths.cache_dir.clone();
     let log_dir = paths.log_dir.clone();
-    let logger = diagnostic_logger;
-    logger.emit(logger.event(
-        minimium_diagnostics::Level::Info,
-        minimium_diagnostics::EventCode::new("client.starting")?,
-    ));
     let parent_run_id = diagnostics.run_id().to_owned();
-    let diagnostic_logger = logger.clone();
     let dev_input = if options.dev_stdin {
         let (sender, receiver) = std::sync::mpsc::sync_channel(32);
         crate::spawn_console_input_reader(sender, diagnostic_logger.clone());
@@ -394,9 +300,6 @@ pub fn run(options: crate::options::ClientOptions) -> Result<(), Box<dyn Error>>
         None
     };
     let renderer_logger = diagnostics.logger(minimium_diagnostics::DomainId::Renderer);
-    drop(logger);
-    let earth_package_dir =
-        minimium_platform::app_paths::AppPaths::resolve_path(&options.earth_package_dir)?;
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
         Instant::now() + Duration::from_millis(16),
@@ -404,15 +307,11 @@ pub fn run(options: crate::options::ClientOptions) -> Result<(), Box<dyn Error>>
     let mut app = App {
         window: None,
         renderer: None,
-        world_map: Some(map),
-        world_catalog: Some(world_catalog),
-        world_manifests: Some(world_manifests),
-        profile_id,
+        worlds: Some(worlds),
+        connection: Some(connection),
         options,
         data_dir,
-        cache_dir,
         log_dir,
-        earth_package_dir,
         parent_run_id,
         diagnostic_logger,
         renderer_logger,
