@@ -76,6 +76,9 @@ terrain/collision join (`UnsafeGeometry`) so presentation can explain the refusa
 `TerrainMaterialSet` is a validated nonempty mask of solid materials. It carries
 per-action eligibility as data; `ToolKind` remains the stable inventory value and
 does not decide which terrain material an item can remove.
+`Inventory::ensure_items` accepts the fixed item slots supplied by application
+composition, preserves idempotence and revision behavior, and rejects a grant
+that would leave the equipped slot invalid.
 `MapTriangle.surface` optionally carries terrain normals and six material
 fractions for generated ground and excavation surfaces. Static authored geometry
 leaves this field absent.

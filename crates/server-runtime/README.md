@@ -343,5 +343,8 @@ Application composition supplies the validated per-tool profile. The owner
 selects its definition from the confirmed inventory, performs the first-hit
 query with that definition's reach, and passes a validated radius/material set
 to `minimium-terrain`; the durable-before-publication flow is unchanged.
+The developer grant uses the fixed item slots supplied in `ExcavationConfig`;
+configuration checks every granted kind against the tool catalog before server
+startup.
 Unsafe geometry rejections retain their contour failure category in a bounded
 diagnostic with mutation/action IDs, brush center and at most eight chunk keys.

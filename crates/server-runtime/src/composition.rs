@@ -108,6 +108,7 @@ pub struct ServerCombatConfig {
 pub struct ExcavationConfig {
     pub terrain: minimium_terrain::TerrainConfig,
     pub tools: minimium_simulation::tools::ToolProfile,
+    pub tool_grants: [Option<minimium_world::items::ItemRecord>; 2],
     pub fluids: minimium_fluids::FluidConfig,
     pub server_fluid_cells: usize,
 }
@@ -116,6 +117,11 @@ impl ExcavationConfig {
     pub fn valid(self) -> bool {
         self.terrain.valid()
             && self.tools.valid()
+            && self
+                .tool_grants
+                .iter()
+                .flatten()
+                .all(|item| self.tools.definition(item.kind).is_some())
             && (1..=262_144).contains(&self.fluids.max_active_cells)
             && (self.fluids.max_active_cells..=524_288).contains(&self.server_fluid_cells)
     }

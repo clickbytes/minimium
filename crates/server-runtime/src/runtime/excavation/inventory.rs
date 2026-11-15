@@ -26,7 +26,9 @@ impl ServerRuntime {
             .unwrap_or(committed);
         let mut inventory = old;
         let changed = match input {
-            ExcavationInput::GrantTools => inventory.ensure_tools().map(|_| ()),
+            ExcavationInput::GrantTools => inventory
+                .ensure_items(self.excavation.state.config.tool_grants)
+                .map(|_| ()),
             ExcavationInput::Equip { slot } => inventory.equip(slot),
             _ => return,
         };

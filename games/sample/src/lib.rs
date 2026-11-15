@@ -2,7 +2,7 @@
 
 mod combat;
 mod excavation;
-pub use excavation::{DEFAULT_IMPACT_PROFILE, DEFAULT_TOOL_PROFILE};
+pub use excavation::{DEFAULT_IMPACT_PROFILE, DEFAULT_TOOL_GRANTS, DEFAULT_TOOL_PROFILE};
 mod peak_relief;
 mod planet_config;
 mod portal;

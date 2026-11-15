@@ -139,7 +139,8 @@ layer. These domain values do not yet install
 input bindings, developer grants or persistent inventory gameplay.
 
 `DEFAULT_TOOL_PROFILE` supplies independent Shovel and Pickaxe definitions to
-server composition and client preview. Both retain 3 m reach and 0.6 m radius
+server composition and client preview; `DEFAULT_TOOL_GRANTS` supplies the
+developer inventory's fixed Shovel and Pickaxe slots. Both retain 3 m reach and 0.6 m radius
 with one shared 500 ms cooldown; Shovel allows Soil and Pickaxe allows Soil and
 Rock. The terrain crate receives only the selected radius and material set, so
 engine terrain code does not infer gameplay policy from `ToolKind`.

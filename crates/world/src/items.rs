@@ -20,16 +20,18 @@ pub struct Inventory {
 }
 
 impl Inventory {
-    /// Idempotent developer grant. The host checks developer permission first.
-    pub fn ensure_tools(&mut self) -> Result<bool, ActionRejection> {
-        let slots = [
-            Some(ItemRecord {
-                kind: ToolKind::Shovel,
-            }),
-            Some(ItemRecord {
-                kind: ToolKind::Pickaxe,
-            }),
-        ];
+    /// Idempotently installs application-supplied items. The host checks
+    /// developer permission first and validates the grant against its catalog.
+    pub fn ensure_items(
+        &mut self,
+        slots: [Option<ItemRecord>; 2],
+    ) -> Result<bool, ActionRejection> {
+        if self
+            .equipped
+            .is_some_and(|slot| slots.get(usize::from(slot)).is_none_or(Option::is_none))
+        {
+            return Err(ActionRejection::NotEquipped);
+        }
         if self.slots == slots {
             return Ok(false);
         }
