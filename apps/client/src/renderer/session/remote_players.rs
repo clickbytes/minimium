@@ -1,7 +1,7 @@
 use super::*;
 
 impl Renderer {
-    pub(super) fn update_remote_player_rendering(&mut self, now: Instant) {
+    pub(in crate::renderer) fn update_remote_player_rendering(&mut self, now: Instant) {
         if self.application.connection.session().is_none() {
             self.application.action_executor.clear_input_cooldown();
             self.application.game.gameplay.clear_remote_players();
