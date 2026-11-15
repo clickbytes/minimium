@@ -59,6 +59,8 @@ impl ClientSession {
 
     pub(super) fn has_host_readiness_request(&self, ticket: TransferTicket) -> bool {
         self.host_ready_transition == Some((ticket.transition_id(), ticket.context()))
+            || (self.pending_transition == Some((ticket.transition_id(), ticket.context()))
+                && self.cancel_requested_transition == Some(ticket.transition_id()))
     }
 
     pub(super) fn clear_transfer_lifecycle(&mut self) {

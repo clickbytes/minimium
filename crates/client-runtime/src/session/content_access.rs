@@ -131,6 +131,7 @@ impl ClientSession {
         Ok(())
     }
 
+    /// Returns true after host preparation was reported or cancellation closed readiness.
     pub fn host_readiness_requested(&self, ticket: TransferTicket) -> bool {
         self.has_host_readiness_request(ticket)
     }
