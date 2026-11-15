@@ -10,6 +10,12 @@ and the same simulation collision query used by the server; they cannot approve 
 
 ## Public API
 
+Resolved planetary content includes a successfully sampled water catalog before
+CPU readiness can be reported. Construction or sampling failure becomes a typed
+`SessionFailure` retaining `GenerationError` as its source; no pending content
+bundle is published from that failed resolver result. Nonplanet content has no
+planetary catalog. Transfer ticket/context validation still rejects stale results.
+
 Presentation clients negotiate `ContentOffer` before `Welcome` under protocol v20.
 Content preparation has its own 300-second deadline. A bounded worker fetches the
 required package over a separate HTTP endpoint at the game peer's IP and caches

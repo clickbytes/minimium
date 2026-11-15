@@ -137,8 +137,15 @@ impl ClientSession {
                 .name("world-content-prepare".into())
                 .spawn(move || {
                     let content = resolver.resolve(request, cancellation)?;
-                    let catalog =
-                        prepare_water_catalog(manifest, content.geography.clone()).map(Arc::new);
+                    let catalog = prepare_water_catalog(manifest, content.geography.clone())
+                        .map_err(|error| {
+                            SessionFailure::caused_by(
+                                error.code(),
+                                "world water catalog preparation failed",
+                                error,
+                            )
+                        })?
+                        .map(Arc::new);
                     Ok((content, catalog))
                 })
                 .map_err(|error| {
@@ -412,25 +419,19 @@ impl ClientSession {
 fn prepare_water_catalog(
     manifest: minimium_world::world::WorldManifest,
     geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
-) -> Option<minimium_procgen::WaterCatalog> {
+) -> Result<Option<minimium_procgen::WaterCatalog>, minimium_procgen::GenerationError> {
     if manifest.topology() != minimium_world::world::WorldTopology::Planet {
-        return None;
+        return Ok(None);
     }
-    if manifest.planet().is_some_and(|planet| planet.mode == 1) && geography.is_none() {
-        return None;
-    }
-    let mut terrain = minimium_procgen::PlanetTerrain::new(
+    let terrain = minimium_procgen::PlanetTerrain::new(
         manifest.generation(),
         minimium_procgen::planet_surface_for(manifest),
+        manifest.planet(),
+        geography.into(),
     )?;
-    if let Some(definition) = manifest.planet() {
-        terrain = terrain.with_definition(definition);
-    }
-    if let Some(geography) = geography {
-        terrain = terrain.with_geography(geography);
-    }
     minimium_procgen::WaterCatalog::build(
         &terrain,
         minimium_procgen::DEFAULT_WATER_CATALOG_RESOLUTION,
     )
+    .map(Some)
 }

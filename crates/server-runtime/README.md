@@ -26,6 +26,10 @@ Gameplay systems can also borrow `TerrainRead` for a planetary world. The runtim
 builds it from the current manifest, prepared geography, crater snapshot and
 committed volume store; the legacy crater snapshot accessor remains available.
 Nonplanet worlds and failed terrain preparation return no read port.
+Validated planet construction rejects missing or mismatched Earth geography;
+optional spatial-query ports report unavailable on sampling failure. Water
+catalog startup propagates `GenerationError` through its I/O adapter, and sector
+preparation retains the typed generation cause before publication is considered.
 Planet admission and transfer destinations validate the standing capsule against
 that current signed field, retaining a saved tunnel position only while it is clear.
 

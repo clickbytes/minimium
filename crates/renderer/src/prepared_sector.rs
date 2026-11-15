@@ -27,7 +27,7 @@ impl PreparedSector {
         terrain: Option<&PlanetTerrain>,
         ocean: Option<&SectorGeometry>,
         origin: [f32; 3],
-    ) -> Self {
+    ) -> Result<Self, minimium_procgen::GenerationError> {
         Self::new_with_clipped_ocean(key, lod, geometry, terrain, ocean, origin, None)
     }
 
@@ -43,7 +43,7 @@ impl PreparedSector {
             &minimium_fluids::FluidSnapshot,
             &[[[f64; 3]; 2]],
         )>,
-    ) -> Self {
+    ) -> Result<Self, minimium_procgen::GenerationError> {
         // EdgeConformance already partitions land and sea at shared shore edges.
         let visible = &geometry;
         let vertices = geometry::sector_geometry_relative(visible, origin);
@@ -56,9 +56,10 @@ impl PreparedSector {
         } else {
             Vec::new()
         };
-        let surface = terrain.map_or_else(Vec::new, |t| {
-            crate::terrain_geometry::vertices(visible, t, origin)
-        });
+        let surface = match terrain {
+            Some(terrain) => crate::terrain_geometry::vertices(visible, terrain, origin)?,
+            None => Vec::new(),
+        };
         let shadow = if terrain.is_some() {
             let object_vertices =
                 vertices[vertices.len() - visible.object_triangles.len() * 3..].to_vec();
@@ -75,7 +76,7 @@ impl PreparedSector {
                 minimum: std::array::from_fn(|i| a.minimum[i].min(b.minimum[i])),
                 maximum: std::array::from_fn(|i| a.maximum[i].max(b.maximum[i])),
             });
-        Self {
+        Ok(Self {
             key,
             lod,
             geometry,
@@ -87,7 +88,7 @@ impl PreparedSector {
             shadow: Arc::new(shadow),
             bounds,
             terrain: terrain.is_some(),
-        }
+        })
     }
 }
 

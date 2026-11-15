@@ -13,6 +13,12 @@ Owns the desktop and text client application shells, input, console, renderer an
 
 Executable entry point is `src/main.rs`; internal modules provide startup and front-end behavior.
 
+Terrain and weather workers propagate geographic sampling errors to session
+diagnostics. Sector requests publish only complete prepared scenes; a failed
+request retains the previous complete publication. Weather atlas, cover and cloud
+results each publish only after successful preparation and matching context.
+CPU preparation errors neither upload partial geometry nor synthesize heights.
+
 The desktop renderer reads the confirmed equipped tool from the active client
 session and passes its neutral `ToolKind` to the first-person viewmodel pass.
 Shovels and pickaxes are presentation-only low-poly meshes; gameplay tool use

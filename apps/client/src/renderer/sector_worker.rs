@@ -99,6 +99,19 @@ struct State {
     failed: HashMap<SceneInterestOwner, (Key, minimium_procgen::ExcavationGeometryError)>,
     stop: bool,
 }
+impl State {
+    fn fail(
+        &mut self,
+        request: &Request,
+        error: impl Into<minimium_procgen::ExcavationGeometryError>,
+    ) {
+        if !self.stop && self.requested.get(&request.owner) == Some(&request.key) {
+            self.failed
+                .insert(request.owner, (request.key, error.into()));
+            self.pending.remove(&request.owner);
+        }
+    }
+}
 pub(super) struct SectorWorker {
     state: Arc<(Mutex<State>, Condvar)>,
     thread: Option<JoinHandle<()>>,
@@ -142,7 +155,7 @@ impl SectorWorker {
                     [f32; 3],
                     Arc<Vec<minimium_renderer::ocean_geometry::OceanVertex>>,
                 )> = None;
-                loop {
+                'requests: loop {
                     let request = {
                         let mut s = shared.0.lock().unwrap();
                         while s.pending.is_empty() && !s.stop {
@@ -203,19 +216,27 @@ impl SectorWorker {
                         origin = request.key.origin;
                     }
                     let manifest = request.key.manifest;
-                    let mut terrain =
-                        PlanetTerrain::new(manifest.generation(), planet_surface_for(manifest));
-                    if let Some(t) = terrain.take() {
-                        let t = if let Some(d) = manifest.planet() {
-                            t.with_definition(d)
+                    let terrain =
+                        if manifest.topology() == minimium_world::world::WorldTopology::Planet {
+                            match PlanetTerrain::new(
+                                manifest.generation(),
+                                planet_surface_for(manifest),
+                                manifest.planet(),
+                                request.geography.clone(),
+                            ) {
+                                Ok(terrain) => Some(
+                                    terrain
+                                        .with_surface_recipe(minimium_game_sample::SURFACE_RECIPE)
+                                        .expect("validated sample surface recipe"),
+                                ),
+                                Err(error) => {
+                                    shared.0.lock().unwrap().fail(&request, error);
+                                    continue;
+                                }
+                            }
                         } else {
-                            t
+                            None
                         };
-                        let t = t
-                            .with_surface_recipe(minimium_game_sample::SURFACE_RECIPE)
-                            .expect("validated sample surface recipe");
-                        terrain = Some(t.with_inputs(request.geography.clone()));
-                    }
                     let meshes =
                         if manifest.topology() == minimium_world::world::WorldTopology::Planet {
                             minimium_renderer::planet_visibility::render_patches_for_view(
@@ -243,16 +264,18 @@ impl SectorWorker {
                     let meshes = match meshes {
                         Ok(meshes) => meshes,
                         Err(error) => {
-                            let mut state = shared.0.lock().unwrap();
-                            if state.requested.get(&request.owner) == Some(&request.key) {
-                                state.failed.insert(request.owner, (request.key, error));
-                                state.pending.remove(&request.owner);
-                            }
+                            shared.0.lock().unwrap().fail(&request, error);
                             continue;
                         }
                     };
                     let meshes = if let Some(terrain) = terrain.as_ref() {
-                        edges.prepare(meshes, terrain)
+                        match edges.prepare(meshes, terrain) {
+                            Ok(meshes) => meshes,
+                            Err(error) => {
+                                shared.0.lock().unwrap().fail(&request, error);
+                                continue;
+                            }
+                        }
                     } else {
                         meshes
                     };
@@ -280,18 +303,12 @@ impl SectorWorker {
                             prepared.remove(&(key, lod));
                         }
                         let new_patch = !prepared.contains_key(&(key, lod));
-                        let item = prepared.entry((key, lod)).or_insert_with(|| {
-                            Arc::new(PreparedSector::new_with_clipped_ocean(
+                        if new_patch {
+                            let patch = match PreparedSector::new_with_clipped_ocean(
                                 key,
                                 lod,
                                 mesh,
-                                if manifest.topology()
-                                    == minimium_world::world::WorldTopology::Planet
-                                {
-                                    terrain.as_ref()
-                                } else {
-                                    None
-                                },
+                                terrain.as_ref(),
                                 edges.ocean(key, lod),
                                 request.key.origin,
                                 request.water.as_ref().map(|water| {
@@ -301,8 +318,18 @@ impl SectorWorker {
                                         water.interface_boxes.as_slice(),
                                     )
                                 }),
-                            ))
-                        });
+                            ) {
+                                Ok(patch) => patch,
+                                Err(error) => {
+                                    shared.0.lock().unwrap().fail(&request, error);
+                                    continue 'requests;
+                                }
+                            };
+                            prepared.insert((key, lod), Arc::new(patch));
+                        }
+                        let item = prepared
+                            .get_mut(&(key, lod))
+                            .expect("prepared patch inserted");
                         if water_changed || new_patch {
                             if let Some(ocean) = edges.ocean(key, lod) {
                                 Arc::make_mut(item).ocean = Arc::new(

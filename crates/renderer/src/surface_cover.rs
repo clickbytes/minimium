@@ -18,7 +18,11 @@ pub struct CoverGrid {
 }
 
 impl CoverGrid {
-    pub fn build<T: TerrainSampler>(model: &WeatherModel<T>, observer: DVec3, utc: f64) -> Self {
+    pub fn build<T: TerrainSampler>(
+        model: &WeatherModel<T>,
+        observer: DVec3,
+        utc: f64,
+    ) -> Result<Self, T::Error> {
         let center = (observer * 1000.0).round().normalize();
         let east = if center.y.abs() < 0.99 {
             DVec3::Y.cross(center).normalize()
@@ -44,10 +48,10 @@ impl CoverGrid {
                     let u = (f64::from(x) / f64::from(EDGE - 1) * 2.0 - 1.0) * EXTENT;
                     let v = (f64::from(y) / f64::from(EDGE - 1) * 2.0 - 1.0) * EXTENT;
                     let direction = (center + east * u + north * v).normalize();
-                    let sample = model.surface_cover(direction, time);
-                    let conditions = model.sample(direction, time);
+                    let sample = model.surface_cover(direction, time)?;
+                    let conditions = model.sample(direction, time)?;
                     let moisture = conditions.humidity as f32;
-                    let ground = model.atmospheric_ground_height_m(direction) as f32;
+                    let ground = model.atmospheric_ground_height_m(direction)? as f32;
                     let humid = ((moisture - 0.65) / 0.3).clamp(0.0, 1.0);
                     let cool =
                         (1.0 - (conditions.temperature_c as f32 - 4.0) / 18.0).clamp(0.0, 1.0);
@@ -72,14 +76,14 @@ impl CoverGrid {
                         start_lat + f64::from(y) * step,
                         start_lon + f64::from(x) * step,
                     );
-                    let [cover, climate] = crate::surface_atlas::sample(model, site, time);
+                    let [cover, climate] = crate::surface_atlas::sample(model, site, time)?;
                     let index = (y * EDGE + x) as usize;
                     pixels[hour as usize * 2 * cells + index] = cover;
                     pixels[(hour as usize * 2 + 1) * cells + index] = climate;
                 }
             }
         }
-        Self {
+        Ok(Self {
             start_utc,
             region: [
                 start_lon as f32,
@@ -94,6 +98,6 @@ impl CoverGrid {
             pixels,
             atmosphere_weather,
             fog_pixels,
-        }
+        })
     }
 }

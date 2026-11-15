@@ -34,7 +34,7 @@ forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-p
 [[package]]
 name = "minimium-environment"
 role = "engine-domain"
-responsibility = "World clock and environment values, renderer-independent sky observations, solar-system catalogue, seasonal/regional climate scenarios, physical elevation scaling, lightweight climate evaluation, independent relief influence on climate and shared site-based replayable surface state."
+responsibility = "World clock and environment values, renderer-independent sky observations, solar-system catalogue, seasonal/regional climate scenarios, physical elevation scaling, lightweight climate evaluation, independent relief influence on climate and shared site-based replayable surface state. Weather propagates the host terrain port's associated error through climate, cover and cloud preparation."
 forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-platform", "minimium-assets", "minimium-procgen", "minimium-sectors", "minimium-telemetry", "minimium-renderer", "minimium-game-sample"]
 
 [[package]]
@@ -45,7 +45,7 @@ responsibility = "Client-side astronomy backend and FFI adapter."
 [[package]]
 name = "minimium-procgen"
 role = "engine-domain"
-responsibility = "Seeded procedural generation, typed generation errors, sector geometry, terrain sampling through the shared Earth relief curve, separate presentation ground/sea-level sampling and typed surface/normal/coverage and landform sampling through prepared geography ports, with validated presentation recipes independent of generator identity. Consumes explicit current-terrain inputs separately from immutable geography and owns the typed SectorContentVersion contract over monotone edit, remnant and volume revisions. Supplies volumetric base-field sampling, guarded shared render/collision excavation meshes, material cross-sections, connected finite-water catalogs and independent meteorite object meshes."
+responsibility = "Seeded procedural generation, typed generation and sampling errors, validated atomic planet construction requiring matching prepared Earth geography, sector geometry, terrain sampling through the shared Earth relief curve, separate presentation ground/sea-level sampling and typed surface/normal/coverage and landform sampling through prepared geography ports, with validated presentation recipes independent of generator identity. Consumes explicit current-terrain inputs separately from immutable geography and owns the typed SectorContentVersion contract over monotone edit, remnant and volume revisions. Supplies volumetric base-field sampling, guarded shared render/collision excavation meshes, material cross-sections, connected finite-water catalogs and independent meteorite object meshes."
 forbidden_dependencies = ["minimium-asset-io", "minimium-renderer", "minimium-game-sample"]
 
 [[package]]

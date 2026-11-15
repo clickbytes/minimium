@@ -26,7 +26,7 @@ impl ServerRuntime {
                 &terrain,
                 minimium_procgen::DEFAULT_WATER_CATALOG_RESOLUTION,
             )
-            .ok_or_else(|| io::Error::other("water catalog generation failed"))?;
+            .map_err(io::Error::other)?;
             let saved = restored.worlds.get(&world);
             if saved
                 .and_then(|s| s.water_catalog_digest)

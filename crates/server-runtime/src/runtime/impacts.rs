@@ -441,9 +441,10 @@ impl minimium_simulation::impact::BodyEnvironment for Surface {
         let terrain = minimium_procgen::PlanetTerrain::new(
             self.manifest.generation(),
             minimium_procgen::planet_surface_for(self.manifest),
-        )?
-        .with_definition(self.manifest.planet()?)
-        .with_inputs(self.geography.clone());
+            Some(self.manifest.planet()?),
+            self.geography.clone(),
+        )
+        .ok()?;
         // Soil depth affects material identity only; this query reads distance.
         let base = terrain.volume_base(0.0)?;
         if let Some(store) = &self.geography.volumes {

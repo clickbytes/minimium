@@ -44,7 +44,7 @@ pub fn vertices(
     geometry: &SectorGeometry,
     terrain: &PlanetTerrain,
     origin: [f32; 3],
-) -> Vec<TerrainVertex> {
+) -> Result<Vec<TerrainVertex>, minimium_procgen::GenerationError> {
     let mut samples = std::collections::HashMap::new();
     let mut sky_visibility = std::collections::HashMap::<[i64; 3], f32>::new();
     // Occlusion only consumes distance; material layers come from surface metadata.
@@ -77,9 +77,13 @@ pub fn vertices(
             .to_array();
         for (index, point) in points.into_iter().enumerate() {
             let key = point.map(f64::to_bits);
-            let sample = *samples
-                .entry(key)
-                .or_insert_with(|| terrain.surface_sample(point));
+            let sample = if let Some(sample) = samples.get(&key) {
+                *sample
+            } else {
+                let sample = terrain.surface_sample(point)?;
+                samples.insert(key, sample);
+                sample
+            };
             let override_surface = triangle.surface.map(|vertices| vertices[index]);
             let excavation = override_surface.is_some_and(|surface| {
                 matches!(
@@ -145,7 +149,7 @@ pub fn vertices(
             });
         }
     }
-    out
+    Ok(out)
 }
 
 /// LOD curtains have a radial edge: two positions on the same planet ray.
