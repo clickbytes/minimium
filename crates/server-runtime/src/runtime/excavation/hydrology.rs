@@ -36,9 +36,12 @@ impl ServerRuntime {
                     "water catalog integrity mismatch; no migration supported",
                 ));
             }
-            self.excavation.water_catalogs.insert(world, catalog.digest);
+            self.excavation
+                .state
+                .water_catalogs
+                .insert(world, catalog.digest);
             let mut water = if let Some(snapshot) = saved.and_then(|s| s.fluids.clone()) {
-                if snapshot.cells().len() > self.excavation.config.fluids.max_active_cells {
+                if snapshot.cells().len() > self.excavation.state.config.fluids.max_active_cells {
                     return Err(io::Error::other(
                         "saved water exceeds configured world cell budget",
                     ));
@@ -48,46 +51,49 @@ impl ServerRuntime {
                 let level = (terrain.radius_mm() as f64 + terrain.sea_level_mm() as f64) / 1000.0;
                 water::WaterWorld::from_catalog(
                     world,
-                    self.excavation.config.fluids,
+                    self.excavation.state.config.fluids,
                     &catalog,
                     level,
                 )
                 .map_err(|error| io::Error::other(format!("water catalog: {error:?}")))?
             };
             water
-                .reconfigure(self.excavation.config.fluids)
+                .reconfigure(self.excavation.state.config.fluids)
                 .map_err(|error| io::Error::other(format!("water configuration: {error:?}")))?;
             water
                 .reserve_cell_limit(water.snapshot().cells().len())
                 .map_err(|error| io::Error::other(format!("water reservation: {error:?}")))?;
             owner.world.set_water_read(Some(water.water_read()));
-            self.excavation.waters.insert(world, water);
+            self.excavation.state.waters.insert(world, water);
             self.excavation
+                .state
                 .water_checkpoint_due
                 .insert(world, Instant::now() + Duration::from_secs(1));
         }
         let cells: usize = self
             .excavation
+            .state
             .waters
             .values()
             .map(|w| w.snapshot().cells().len())
             .sum();
-        if cells > self.excavation.config.server_fluid_cells {
+        if cells > self.excavation.state.config.server_fluid_cells {
             return Err(io::Error::other(
                 "saved water exceeds configured server cell budget",
             ));
         }
-        let mut remaining = self.excavation.config.server_fluid_cells - cells;
-        let mut worlds: Vec<_> = self.excavation.waters.keys().copied().collect();
+        let mut remaining = self.excavation.state.config.server_fluid_cells - cells;
+        let mut worlds: Vec<_> = self.excavation.state.waters.keys().copied().collect();
         worlds.sort_unstable();
         for world in worlds {
-            let water = self.excavation.waters.get_mut(&world).unwrap();
+            let water = self.excavation.state.waters.get_mut(&world).unwrap();
             let occupied = water.snapshot().cells().len();
             if occupied == 0 {
                 continue;
             }
             let maximum = self
                 .excavation
+                .state
                 .config
                 .fluids
                 .max_active_cells
@@ -102,20 +108,22 @@ impl ServerRuntime {
     }
 
     pub(super) fn update_water(&mut self) {
-        if self.excavation.shutting_down || self.excavation.failure.is_some() {
+        if self.excavation.coordinator.shutting_down()
+            || self.excavation.coordinator.failure().is_some()
+        {
             return;
         }
         self.publish_water_jobs();
-        if self.excavation.failure.is_some() {
+        if self.excavation.coordinator.failure().is_some() {
             return;
         }
         let now = Instant::now();
-        if now >= self.excavation.next_water_step {
-            self.excavation.next_water_step = now + Duration::from_millis(100);
-            let worlds: Vec<_> = self.excavation.waters.keys().copied().collect();
+        if now >= self.excavation.state.next_water_step {
+            self.excavation.state.next_water_step = now + Duration::from_millis(100);
+            let worlds: Vec<_> = self.excavation.state.waters.keys().copied().collect();
             for world in worlds {
                 if !self.excavation_reserves(world)
-                    && !self.excavation.water_jobs.contains_key(&world)
+                    && !self.excavation.state.water_jobs.contains_key(&world)
                 {
                     self.queue_water_step(world);
                 }
@@ -126,10 +134,11 @@ impl ServerRuntime {
             // worlds by resetting a single server-wide checkpoint deadline.
             let due = self
                 .excavation
+                .state
                 .water_checkpoint_due
                 .iter()
                 .filter(|(world, deadline)| {
-                    **deadline <= now && self.excavation.waters[world].dirty()
+                    **deadline <= now && self.excavation.state.waters[world].dirty()
                 })
                 .min_by_key(|(_, deadline)| **deadline)
                 .map(|(world, _)| *world);
@@ -138,6 +147,7 @@ impl ServerRuntime {
                     self.water_failure(format!("water checkpoint refused: {error}"));
                 } else {
                     self.excavation
+                        .state
                         .water_checkpoint_due
                         .insert(world, now + Duration::from_secs(1));
                 }
@@ -146,12 +156,13 @@ impl ServerRuntime {
     }
 
     fn publish_water_jobs(&mut self) {
-        let jobs = std::mem::take(&mut self.excavation.water_jobs);
+        let jobs = std::mem::take(&mut self.excavation.state.water_jobs);
         for (world, job) in jobs {
             match job.receiver.try_recv() {
                 Ok(Ok((water, elapsed))) => {
                     let current = self
                         .excavation
+                        .state
                         .waters
                         .get(&world)
                         .map(|w| w.snapshot().revision());
@@ -166,16 +177,16 @@ impl ServerRuntime {
                             .unwrap()
                             .world
                             .set_water_read(Some(water.water_read()));
-                        self.excavation.waters.insert(world, water);
-                        self.excavation.water_failures.remove(&world);
-                        self.excavation.metrics.solver.record(elapsed);
+                        self.excavation.state.waters.insert(world, water);
+                        self.excavation.state.water_failures.remove(&world);
+                        self.excavation.state.metrics.solver.record(elapsed);
                     }
                 }
                 Ok(Err(error)) => {
                     self.water_step_failure(world, error);
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {
-                    self.excavation.water_jobs.insert(world, job);
+                    self.excavation.state.water_jobs.insert(world, job);
                 }
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     self.water_step_failure(world, minimium_fluids::FluidError::Unavailable);
@@ -187,13 +198,14 @@ impl ServerRuntime {
     fn queue_water_step(&mut self, world: WorldInstanceId) {
         if self
             .excavation
+            .state
             .water_failures
             .get(&world)
             .is_some_and(|failure| Instant::now() < failure.retry_at)
         {
             return;
         }
-        let water = &self.excavation.waters[&world];
+        let water = &self.excavation.state.waters[&world];
         if water.snapshot().cells().is_empty() || water.sleeping() {
             return;
         }
@@ -223,7 +235,7 @@ impl ServerRuntime {
             }))
             .is_ok()
         {
-            self.excavation.water_jobs.insert(
+            self.excavation.state.water_jobs.insert(
                 world,
                 WaterJob {
                     input_revision,
@@ -236,12 +248,13 @@ impl ServerRuntime {
 
     fn water_failure(&mut self, reason: String) {
         emit_system_effect_diagnostic(&self.world_logger, "water", &reason);
-        self.excavation.failure = Some(reason);
+        self.excavation.coordinator.fail(reason);
     }
 
     fn water_step_failure(&mut self, world: WorldInstanceId, error: minimium_fluids::FluidError) {
         if self
             .excavation
+            .state
             .water_failures
             .get(&world)
             .is_none_or(|failure| failure.error != error)
@@ -254,7 +267,7 @@ impl ServerRuntime {
                 ),
             );
         }
-        self.excavation.water_failures.insert(
+        self.excavation.state.water_failures.insert(
             world,
             WaterFailure {
                 error,
@@ -280,18 +293,13 @@ impl ServerRuntime {
             expected_chunk_revisions: Vec::new(),
             resulting_chunks: Vec::new(),
             inventory: None,
-            fluids: Some(self.excavation.waters[&world].snapshot().clone()),
+            fluids: Some(self.excavation.state.waters[&world].snapshot().clone()),
             impact_bodies: Vec::new(),
             craters: Vec::new(),
-            water_catalog_digest: self.excavation.water_catalogs.get(&world).copied(),
+            water_catalog_digest: self.excavation.state.water_catalogs.get(&world).copied(),
         };
-        self.excavation.journal.submit(mutation.clone())?;
-        self.excavation.pending = Some(Pending {
-            player: None,
-            context: None,
-            action_id: None,
-            started: Instant::now(),
-            prepared: Prepared {
+        self.excavation.coordinator.submit(
+            Prepared {
                 mutation,
                 terrain: None,
                 sectors: Default::default(),
@@ -299,7 +307,7 @@ impl ServerRuntime {
                 water: None,
                 craters: None,
             },
-        });
-        Ok(())
+            Origin::default(),
+        )
     }
 }
