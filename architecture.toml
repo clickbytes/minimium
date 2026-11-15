@@ -63,7 +63,7 @@ forbidden_dependencies = ["minimium-astronomy", "minimium-procgen", "minimium-as
 [[package]]
 name = "minimium-asset-io"
 role = "adapter"
-responsibility = "Bounded authored asset access, typed asset errors, prepared GEBCO/WorldCover geography, bounded material HTTP client/server adapters, and an 8-GiB-default leased content cache with cross-process reservation and digest locking."
+responsibility = "Bounded authored asset access, typed asset errors, prepared GEBCO/WorldCover geography, bounded material HTTP client/server adapters with private verified file snapshots retained until their workers exit, and an 8-GiB-default leased content cache with cross-process reservation and digest locking."
 forbidden_dependencies = ["minimium-server", "minimium-client", "minimium-renderer", "wgpu", "winit"]
 
 [[package]]

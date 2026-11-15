@@ -110,7 +110,8 @@ Preserve current protocol/save compatibility, tick cadence, movement behavior, a
 Startup accepts `--material-package PATH`, `--material-http-port PORT` (0 selects
 an available port), and `--climate-scenario PATH`. Both material variants are
 validated before admission. The HTTP endpoint serves only manifest-listed files;
-it owns one bounded I/O worker and joins it at shutdown. Open the selected HTTP
+it owns four bounded I/O workers and a private validated file snapshot, and joins
+the workers before snapshot cleanup at shutdown. Open the selected HTTP
 port alongside the game port for remote clients. Climate initializes and persists
 in `world.climate.ron` under the world data lock, outside snapshots; subsequent
 starts restore it and reject a replacement initialization argument. The required
