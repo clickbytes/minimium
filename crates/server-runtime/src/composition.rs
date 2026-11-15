@@ -38,11 +38,8 @@ pub trait ContentServicePort: Send {
 /// Path-free simulation settings consumed after host bootstrap has completed.
 #[derive(Clone)]
 pub struct RuntimeSettings {
-    pub lanes: crate::LaneSelection,
-    pub sector_workers: usize,
     pub max_players: usize,
     pub autosave_seconds: u64,
-    pub console_enabled: bool,
     pub bolid_interval: Option<(u64, u64)>,
     pub resolved_settings:
         std::collections::BTreeMap<String, minimium_commands::ResolvedConfigValue>,

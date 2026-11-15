@@ -210,7 +210,7 @@ pub(super) fn route_message(
                     player,
                     transition_id,
                     target_context,
-                    Instant::now(),
+                    runtime.now,
                 )
             });
             if !accepted {

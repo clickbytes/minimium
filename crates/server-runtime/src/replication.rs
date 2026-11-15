@@ -33,8 +33,8 @@ pub(crate) fn replicate_entities(
     tickets: &HashMap<PlayerId, Vec<minimium_sectors::SectorTicket>>,
     clients: &mut [Client],
     metrics: &mut RuntimeMetrics,
+    now: Instant,
 ) {
-    let now = Instant::now();
     for client in clients.iter_mut() {
         let Some(player) = client.player_id() else {
             continue;
@@ -336,9 +336,9 @@ pub(crate) fn advance_deadline(
     next: &mut Instant,
     interval: Duration,
     metrics: &mut RuntimeMetrics,
+    now: Instant,
 ) {
     *next += interval;
-    let now = Instant::now();
     if now > *next + interval {
         let late_by = now.duration_since(*next).as_nanos();
         metrics.missed_snapshots = metrics

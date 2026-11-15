@@ -91,6 +91,10 @@ mod budget;
 use budget::checkpoint_size;
 mod validation;
 use validation::validate_mutation;
+mod memory;
+pub(crate) use memory::MemoryExcavation;
+mod restore_validation;
+pub use restore_validation::validate_restore;
 
 fn commit(
     path: &Path,

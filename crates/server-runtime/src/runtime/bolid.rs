@@ -15,7 +15,7 @@ impl ServerRuntime {
     }
 
     pub(super) fn update_bolids(&mut self) {
-        let now = Instant::now();
+        let now = self.now;
         let shower_active = self.bolid_shower.is_some();
         self.update_bolid_shower(now);
         if self.next_bolid_at.is_some_and(|deadline| now >= deadline) {
@@ -40,7 +40,7 @@ impl ServerRuntime {
 
     pub(super) fn spawn_bolid(&mut self, manual: bool, scheduled: bool) -> CommandReply {
         let fail = |text: &str, code| CommandReply::error(code, text);
-        let now = Instant::now();
+        let now = self.now;
         if manual
             && !scheduled
             && self

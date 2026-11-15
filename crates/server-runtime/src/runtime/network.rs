@@ -10,7 +10,7 @@ impl ServerRuntime {
     pub(super) fn poll_network(&mut self) -> std::io::Result<()> {
         let _network_phase = allocations::enter(Phase::Network);
         let network_started = Instant::now();
-        let now = Instant::now();
+        let now = self.now;
         let events = self
             .operations
             .transport
@@ -180,7 +180,7 @@ impl ServerRuntime {
             }
         }
         self.admit_messages();
-        self.mark_timed_out_clients(Instant::now());
+        self.mark_timed_out_clients(self.now);
         self.replicate_environment();
         for client in &mut self.connections.clients {
             if client.close_deadline().is_none() {
@@ -198,7 +198,7 @@ impl ServerRuntime {
                 }
             }
         }
-        for event in self.operations.transport.flush(Instant::now()) {
+        for event in self.operations.transport.flush(self.now) {
             if let TransportEvent::Game(GameTransportEvent::Disconnected {
                 connection_id,
                 reason,

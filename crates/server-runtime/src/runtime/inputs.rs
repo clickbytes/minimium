@@ -40,7 +40,7 @@ impl ServerRuntime {
             if let Some(decoded_at) = decoded_at {
                 self.metrics
                     .input_wait
-                    .record(Instant::now().saturating_duration_since(decoded_at));
+                    .record(self.now.saturating_duration_since(decoded_at));
             }
             if let WorldInput::Move(player, sample) = &input {
                 if teleported.contains(player) {
@@ -54,7 +54,7 @@ impl ServerRuntime {
         }
         self.game.pending_world_inputs = pending;
         self.apply_scheduled_movement_inputs();
-        let now = Instant::now();
+        let now = self.now;
         for (id, last_received) in &self.game.input_last_received {
             if now.duration_since(*last_received) > INPUT_IDLE_TIMEOUT {
                 if let Some(input) = self.game.active_inputs.get_mut(id) {
@@ -96,7 +96,7 @@ impl ServerRuntime {
             }
             if let Some(sample) = current {
                 self.game.active_inputs.insert(player, sample.intent);
-                self.game.input_last_received.insert(player, Instant::now());
+                self.game.input_last_received.insert(player, self.now);
             }
             for seq in due_sequences {
                 self.resolve_movement_input(player, seq);
@@ -141,7 +141,7 @@ impl ServerRuntime {
                 self.game
                     .active_inputs
                     .insert(id, MovementIntent::default());
-                self.game.input_last_received.insert(id, Instant::now());
+                self.game.input_last_received.insert(id, self.now);
             }
             WorldInput::Leave(id) => {
                 if let Some(instance_id) = self.game.worlds.instance_for_player(id) {
@@ -304,7 +304,7 @@ impl ServerRuntime {
             destination,
             return_location,
             &reads,
-            Instant::now(),
+            self.now,
         );
         let offer = match offer {
             Ok(offer) => offer,
@@ -322,25 +322,24 @@ impl ServerRuntime {
             self.game.worlds.cancel_transfer(id, offer.transition_id);
             return TransferOutcome::Rejected(TransferRejection::ClientUnavailable);
         };
-        let (clock_sample, environment) = match self
-            .environment_state_for_instance(offer.target_context.instance(), Instant::now())
-        {
-            Ok(state) => state,
-            Err(error) => {
-                crate::diagnostics::emit(
-                    &self.server_logger,
-                    minimium_diagnostics::Level::Error,
-                    "server.transfer_environment_failed",
-                    &[
-                        ("player_id", id.to_string()),
-                        ("error_code", error.code().to_owned()),
-                        ("reason", error.to_string()),
-                    ],
-                );
-                self.game.worlds.cancel_transfer(id, offer.transition_id);
-                return TransferOutcome::Rejected(TransferRejection::EnvironmentUnavailable);
-            }
-        };
+        let (clock_sample, environment) =
+            match self.environment_state_for_instance(offer.target_context.instance(), self.now) {
+                Ok(state) => state,
+                Err(error) => {
+                    crate::diagnostics::emit(
+                        &self.server_logger,
+                        minimium_diagnostics::Level::Error,
+                        "server.transfer_environment_failed",
+                        &[
+                            ("player_id", id.to_string()),
+                            ("error_code", error.code().to_owned()),
+                            ("reason", error.to_string()),
+                        ],
+                    );
+                    self.game.worlds.cancel_transfer(id, offer.transition_id);
+                    return TransferOutcome::Rejected(TransferRejection::EnvironmentUnavailable);
+                }
+            };
         let Some(client) = self.connections.clients.get_mut(index) else {
             self.game.worlds.cancel_transfer(id, offer.transition_id);
             return TransferOutcome::Rejected(TransferRejection::ClientUnavailable);
@@ -432,8 +431,8 @@ impl ServerRuntime {
         self.game
             .active_inputs
             .insert(id, minimium_simulation::MovementIntent::default());
-        self.game.input_last_received.insert(id, Instant::now());
-        self.scheduler.next_snapshot = Instant::now();
+        self.game.input_last_received.insert(id, self.now);
+        self.scheduler.next_snapshot = self.now;
         Some(position_mm)
     }
 }

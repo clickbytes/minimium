@@ -28,7 +28,10 @@ impl Cursor {
 
 impl ServerRuntime {
     pub(super) fn replicate_impacts(&mut self) {
-        let now = self.scheduler.server_started.elapsed().as_millis() as u64;
+        let now = self
+            .now
+            .saturating_duration_since(self.scheduler.server_started)
+            .as_millis() as u64;
         let bodies = &self.impacts.bodies;
         let cursors = &mut self.impacts.clients;
         let clients = &mut self.connections.clients;

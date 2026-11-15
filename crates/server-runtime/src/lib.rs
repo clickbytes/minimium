@@ -36,7 +36,14 @@ const CLIENT_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const CLIENT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 const CLIENT_AUTHENTICATION_TIMEOUT: Duration = Duration::from_secs(10);
 const CLIENT_CONTENT_TIMEOUT: Duration = Duration::from_secs(300);
+mod hosting;
 mod runtime;
+pub use hosting::{
+    CommandExecution, RuntimeCommand, RuntimeComposition, RuntimeExecution, RuntimeLoggers,
+    RuntimeModules, RuntimeQuery, RuntimeQueryResult, RuntimeStatus, RuntimeTime, RuntimeUtcError,
+    ShutdownOutcome, StepOutcome, SubmissionId, SubmitError,
+};
+pub use runtime::ServerRuntime;
 pub use startup::PreparedRuntime;
 
 pub use commands::CommandReply as ModuleCommandReply;
@@ -113,17 +120,8 @@ pub fn run_with_config(
             std::io::Error::other("invalid impact configuration"),
         ));
     }
-    let module_registry = commands::initialize_modules(&composition.modules).map_err(|error| {
-        ServerProcessError::caused_by(
-            ServerProcessErrorKind::RuntimeSetup,
-            std::io::Error::other(error),
-        )
-    })?;
-    let component_registry = commands::component_registry(&module_registry).map_err(|error| {
-        ServerProcessError::caused_by(
-            ServerProcessErrorKind::RuntimeSetup,
-            std::io::Error::other(format!("component registry is invalid: {error:?}")),
-        )
+    let modules = RuntimeModules::new(&composition.modules).map_err(|error| {
+        ServerProcessError::caused_by(ServerProcessErrorKind::RuntimeSetup, error)
     })?;
     let transport = composition.transport.ok_or_else(|| {
         ServerProcessError::caused_by(
@@ -134,7 +132,7 @@ pub fn run_with_config(
     let startup = startup::initialize(
         &config,
         composition.world_composer,
-        &component_registry,
+        modules.components(),
         composition.storage_logger,
         composition.server_logger.clone(),
         composition.asset_io_logger.clone(),
@@ -145,31 +143,57 @@ pub fn run_with_config(
     let run_id = config.diagnostics_run_id.clone();
     let data_dir = config.data_dir.clone();
     let logger = composition.server_logger.clone();
+    let mut execution = RuntimeExecution::new(config.lanes.count(), config.sector_workers)
+        .map_err(|error| {
+            ServerProcessError::caused_by(ServerProcessErrorKind::RuntimeSetup, error)
+        })?;
+    if config.console_enabled {
+        println!("Type `help` for server commands.");
+        execution.console = Some(terminal::spawn(composition.server_logger.clone()).map_err(
+            |error| ServerProcessError::caused_by(ServerProcessErrorKind::RuntimeSetup, error),
+        )?);
+    }
+    let session_nonce = minimium_platform::endpoint::new_random_bytes::<16>()
+        .map(minimium_environment::time::SessionNonce::new)
+        .map_err(|error| {
+            ServerProcessError::caused_by(
+                ServerProcessErrorKind::RuntimeSetup,
+                environment::EnvironmentClockError::caused_by(
+                    environment::EnvironmentClockErrorKind::RandomSource,
+                    "could not create server session nonce",
+                    error,
+                ),
+            )
+        })?;
+    let time = RuntimeTime::system_now();
     let runtime = runtime::ServerRuntime::new(
         RuntimeSettings {
-            lanes: config.lanes,
-            sector_workers: config.sector_workers,
             max_players: config.max_players,
             autosave_seconds: config.autosave_seconds,
-            console_enabled: config.console_enabled,
             bolid_interval: config.bolid_interval,
             resolved_settings: config.resolved_settings.clone(),
         },
         startup,
-        composition.combat,
-        composition.impact_profile,
-        runtime_excavation,
-        composition.server_logger,
-        composition.transport_logger,
-        composition.environment_logger,
-        composition.protocol_logger,
-        composition.world_logger,
-        composition.sectors_logger,
-        composition.simulation_logger,
-        composition.authentication_provider,
-        composition.shutdown_request,
-        module_registry,
-        component_registry,
+        RuntimeComposition {
+            combat: composition.combat,
+            impacts: composition.impact_profile,
+            excavation: runtime_excavation,
+            modules,
+            loggers: RuntimeLoggers {
+                server: composition.server_logger,
+                transport: composition.transport_logger,
+                environment: composition.environment_logger,
+                protocol: composition.protocol_logger,
+                world: composition.world_logger,
+                sectors: composition.sectors_logger,
+                simulation: composition.simulation_logger,
+            },
+            authentication: composition.authentication_provider,
+            shutdown: composition.shutdown_request,
+            session_nonce,
+        },
+        execution,
+        time,
     )
     .map_err(|error| ServerProcessError::caused_by(ServerProcessErrorKind::RuntimeSetup, error))?;
     if let (Some(attempt_id), Some(run_id)) = (attempt_id, run_id) {

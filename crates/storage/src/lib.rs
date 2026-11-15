@@ -1,4 +1,6 @@
 mod backend;
+mod memory;
+pub use memory::{MemoryStorageBackend, MemoryStorageLimits};
 mod budget;
 mod error;
 pub mod excavation;

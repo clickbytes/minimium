@@ -1,7 +1,7 @@
 use super::super::ServerRuntime;
 use crate::{commands, server_command::ServerPropertyCommand};
 use minimium_commands::{PropertySource, PropertyValue};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 impl ServerRuntime {
     pub(super) fn apply_property_command(
@@ -30,36 +30,30 @@ impl ServerRuntime {
                 self.scheduler.next_autosave = if *seconds == 0 {
                     None
                 } else {
-                    Some(Instant::now() + self.scheduler.autosave_interval)
+                    Some(self.now + self.scheduler.autosave_interval)
                 };
                 self.autosave_session_override = true;
                 report(self.property_report("server.autosave_interval"))
             }
             ServerPropertyCommand::ResetAutosave => {
-                let startup_value = self.resolved_settings["server.autosave_interval"]
-                    .requested
-                    .parse::<u64>()
-                    .expect("startup autosave interval was validated");
+                let startup_value = self.startup_autosave_seconds;
                 self.autosave_seconds = startup_value;
                 self.scheduler.autosave_interval = Duration::from_secs(startup_value);
-                self.scheduler.next_autosave = (startup_value != 0)
-                    .then_some(Instant::now() + self.scheduler.autosave_interval);
+                self.scheduler.next_autosave =
+                    (startup_value != 0).then_some(self.now + self.scheduler.autosave_interval);
                 self.autosave_session_override = false;
                 report(self.property_report("server.autosave_interval"))
             }
             ServerPropertyCommand::SetBolidInterval(interval) => {
                 self.bolid_interval = *interval;
                 self.bolid_session_override = true;
-                self.schedule_next_bolid(Instant::now());
+                self.schedule_next_bolid(self.now);
                 report(self.property_report("server.sky.bolid_interval"))
             }
             ServerPropertyCommand::ResetBolidInterval => {
-                self.bolid_interval = crate::config::parse_bolid_interval(
-                    &self.resolved_settings["server.sky.bolid_interval"].requested,
-                )
-                .expect("startup interval was validated");
+                self.bolid_interval = self.startup_bolid_interval;
                 self.bolid_session_override = false;
-                self.schedule_next_bolid(Instant::now());
+                self.schedule_next_bolid(self.now);
                 report(self.property_report("server.sky.bolid_interval"))
             }
             ServerPropertyCommand::List(prefix) => {
@@ -172,7 +166,7 @@ impl ServerRuntime {
                 )),
             }
         } else if key.starts_with("world.time.") {
-            let clock = match self.monotonic_ms(Instant::now()) {
+            let clock = match self.monotonic_ms(self.now) {
                 Ok(clock) => clock,
                 Err(error) => {
                     return commands::PropertyReportOutcome::Unavailable {

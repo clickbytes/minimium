@@ -12,7 +12,7 @@ pub(in crate::runtime::admission) fn admit_chat(
     text: String,
     decoded_at: Instant,
 ) {
-    let now = Instant::now();
+    let now = runtime.now;
     let reserved_transport_inputs = super::super::queue::reserved_transport_inputs(runtime);
     match runtime.game.admit_actor_action(
         player,

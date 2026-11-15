@@ -6,6 +6,25 @@ Owns snapshot serialization and validation, player persistence records, bounded 
 
 ## Public API
 
+`MemoryStorageBackend::new(MemoryStorageLimits)` implements the same snapshot,
+excavation and impact ports without files or worker threads. Clones retain one
+volatile committed image; a single lease covers all opened services. Loading or
+opening a second service group while the first is alive returns Busy. Drop all
+ports before reopening. Snapshot capture/encoding/loading use the existing codec
+and budget; queued acceptance becomes completion only when the port is polled.
+Memory acknowledgements promise retention in this backend, not survival of the
+process. An explicit shutdown drains pending operations under its deadline.
+
+Limits may lower the existing 128 MiB snapshot, 128 MiB excavation checkpoint,
+32 MiB excavation transaction and 4096-impact maxima. Pending capacity is one
+snapshot, eight excavation mutations and sixteen one/two-body impact batches.
+The previous committed snapshot is retained while a replacement is queued;
+validation/staging copies are bounded by these same caps. Rejection preserves
+the prior committed image. `excavation::validate_restore` applies byte/count and
+identity preflight plus the existing checkpoint decoder to raw injected restores.
+The runtime independently validates schemas/world identities and acquires neutral
+entity-change storage reservations before publishing its constructed owner.
+
 `PlayerStore` loads and updates persistent player state. The server captures immutable `WorldSaveInput` values and `SaveSnapshot` values before handing snapshots to `PersistencePort`; the port's queue acceptance is not a durable acknowledgement. `StorageBackend` exposes preflight, load and open-service operations. `FileStorageBackend` is the explicit path-owning implementation used by the standalone process; a non-file host can implement the same ports without supplying a data directory.
 
 ## Dependencies
@@ -24,7 +43,7 @@ The server owns `PlayerStore` and captures live player and world data on its own
 
 `PersistenceWorker::status` returns a read-only `PersistenceStatus` snapshot containing the pending-save count and typed last-save state. It exposes no worker or filesystem handles; presentation adapters format this immutable data.
 
-`PersistencePort::queue_save` accepts an already captured immutable `SaveSnapshot`; it never receives mutable `PlayerStore` access. A successful enqueue reports acceptance only. Durable completion and shutdown failure remain observable through typed status/completion methods. Journal ports similarly return exact mutation/body acknowledgements only after durable writes. `FileStorageBackend` keeps the current snapshot and journal codecs, locks, bounded worker queues, replay and deadlines behind these contracts.
+`PersistencePort::queue_save` accepts an already captured immutable `SaveSnapshot`; it never receives mutable `PlayerStore` access. A successful enqueue reports acceptance only. Completion and shutdown failure remain observable through typed status/completion methods. Journal ports return exact mutation/body acknowledgements after committing to the selected backend. The file backend acknowledges durable writes; the memory backend acknowledges volatile retention. `FileStorageBackend` keeps the current snapshot and journal codecs, journal lock, bounded worker queues, replay and deadlines behind these contracts. The standalone process separately owns the enclosing world-data lock.
 
 ## Invariants and errors
 

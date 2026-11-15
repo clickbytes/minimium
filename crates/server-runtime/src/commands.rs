@@ -3,6 +3,7 @@ mod time;
 mod world;
 
 pub(crate) use owner_context::OwnerCommandContext;
+pub(crate) use world::RuntimeCommandReadView;
 
 use crate::modules::{CommandScope, ModuleCommandContext, ModuleRegistry, WorldEffectBuffer};
 use crate::runtime::schedule::{ScheduleDiagnostics, ServerSchedule, SystemFn};
