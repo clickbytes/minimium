@@ -41,6 +41,12 @@ Gameplay systems receive the owner-lane simulation tick, read-only component/eve
 
 `sector_streaming.rs` coordinates the per-tick pipeline. `sector_streaming/requests.rs` collects read-only player and transfer requests; `tickets.rs` owns retain/pin/release reconciliation; `workers.rs` dispatches generation to a fixed worker pool with a 64-job bound and installs up to eight completed results per tick; `readiness.rs` evaluates collision-ready players and transfers; and `collision.rs` rebuilds changed instances from installed payloads. Worker count defaults to `min(max(available_parallelism - 1, 1), 4)` and `--sector-workers` or `server.sector_workers` accepts 1..16 or `auto`.
 
+Combat readiness computes closed ray/sector intervals after normalizing the ray
+with the simulation's f32 hitscan rule. It rejects rays exceeding 512 m, more
+than 4,096 intersected sectors, or more than 65,536 conservative candidate
+cells before sector iteration. Those capacity failures return Busy without
+applying the shot; the next attempt can request a new bounded demand.
+
 Persistent sector replacements validate new totals and reserve the exact encoded record size before publication. Startup restores the complete sector set with staged state and budget copies, so a rejected restore leaves both unchanged. Startup also restores component entities against the already-registered exact component schemas using staged per-world stores, entity counters and content-initialization markers; a rejected entity restore leaves the live registry unchanged. All live entity spawn, update, component removal and despawn effects use one staged batch path that reserves encoded record bytes and aggregate raw component payload bytes before publishing the world stores, journal and budget together. A failed batch changes none of those states. The saved entity list is recaptured from the current registry on every autosave and final shutdown capture, including entities with zero components.
 
 Entity replication keeps one immutable pending image or delta per client, bounded to 256 visible entities and the shared 4 MiB component-payload cap. Only components whose own visibility rule is satisfied enter that client's image; persistent entities with no visible replicated components have no client replica, and losing the last visible component despawns that replica. The server retains the 4 MiB change journal and client-specific acknowledged revisions; journal overrun or a 30-second pending sync restarts from a full image. Per-client entity-sync output is charged by exact encoded frame lengths against 64 KiB per replication tick, while `queue_encoded_frame_with_reserve` leaves one maximum server frame for control traffic. Client output, staging entities, components and payload bytes have independent limits; successful end commits atomically before its ack is queued.
@@ -155,6 +161,17 @@ Streamed sector geometry is captured as an immutable per-world snapshot and a
 revisioned collision index is built by a fixed worker. Pending snapshots for a
 world coalesce to the newest revision; stale results are discarded. Movement
 and transfer readiness wait until the matching complete index is installed.
+
+The worker publishes movement collision and exact-sector combat replacements
+together with the full-map combat baseline in one `SpatialGeometryPublication`.
+Excavation swaps the same bundle only after durable acknowledgement; restore
+rebuilds current sector payloads through ordinary bounded streaming. A hitscan
+computes a conservative set of sectors across its full configured ray range.
+Missing sectors create one bounded demand per actor/context, pinned through the
+existing sector manager and worker pool. Combat demand has separate tickets and
+readiness from movement; demand is released on a successful later shot, actor
+removal or context change. Capacity failure returns `Busy` with diagnostics,
+and the original shot is not replayed.
 
 Movement acknowledgements are a safe resolved prefix. Admission tracks every
 accepted sequence while it remains executable in the bounded world-input queue
