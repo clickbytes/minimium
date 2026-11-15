@@ -105,7 +105,7 @@ forbidden_dependencies = ["minimium-telemetry", "minimium-platform", "minimium-s
 [[package]]
 name = "minimium-gameplay"
 role = "engine-domain"
-responsibility = "Neutral static module, command, system and component-registration contracts, owner-lane simulation ticks, per-world startup lifecycle views, bounded world-effect buffers, deterministic dependency ordering and typed uniqueness/cycle validation. Exposes generic entity interactions, compatible crater snapshots and a borrowed read-only current planetary terrain query; domain configuration is passed explicitly by the application."
+responsibility = "Neutral static module, command, system and component-registration contracts, owner-lane simulation ticks, per-world startup lifecycle views, bounded world-effect buffers and aligned effect-batch outcome contracts, deterministic dependency ordering and typed uniqueness/cycle validation. Exposes generic entity interactions, compatible crater snapshots and a borrowed read-only current planetary terrain query; domain configuration is passed explicitly by the application."
 forbidden_dependencies = ["minimium-server-runtime", "minimium-storage", "minimium-transport", "minimium-telemetry", "minimium-platform", "minimium-game-sample", "wgpu", "winit"]
 
 [[package]]
@@ -128,7 +128,7 @@ forbidden_dependencies = ["minimium-astronomy", "wgpu", "wgpu-core", "wgpu-hal",
 [[package]]
 name = "minimium-server-runtime"
 role = "runtime"
-responsibility = "Authoritative server lifecycle, nonblocking pluggable authentication admission, server-enforced principal permissions, simulation, transport and persistence, consuming neutral world/combat inputs and fixed-domain diagnostics from the application. Composes the engine impact component before application module schemas and atomically commits staged world entity stores with prepared storage reservations. Owns authoritative impacts and excavation: shared-pool preparation, profile inventories, fluid stepping and checkpoints, durable atomic terrain/collision publication and spatial replication."
+responsibility = "Authoritative server lifecycle, nonblocking pluggable authentication admission, server-enforced principal permissions, simulation, transport and persistence, consuming neutral world/combat inputs and fixed-domain diagnostics from the application. Composes the engine impact component before application module schemas, atomically commits staged world entity stores with prepared storage reservations, and reports bounded per-effect outcomes with independently started or typed-rejected transfers. Owns authoritative impacts and excavation: shared-pool preparation, profile inventories, fluid stepping and checkpoints, durable atomic terrain/collision publication and spatial replication."
 forbidden_dependencies = ["minimium-game-sample", "minimium-astronomy", "wgpu", "wgpu-core", "wgpu-hal", "winit"]
 
 [[package]]

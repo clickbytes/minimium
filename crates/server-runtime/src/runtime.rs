@@ -395,13 +395,14 @@ impl ServerRuntime {
                     &self.game.gameplay_events,
                     Some((instance, lifecycle)),
                 );
-                if batch.rejected > 0 {
+                let outcome = self.commit_system_batch(batch)?;
+                self.report_system_batch_outcome(stage, &outcome);
+                if outcome.has_rejections() {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
-                        "startup system effect limit exceeded",
+                        "startup system effect batch rejected",
                     ));
                 }
-                self.commit_system_batch(batch)?;
             }
             self.game.worlds.initialize_new_content();
             return Ok(());
@@ -415,14 +416,8 @@ impl ServerRuntime {
             &self.game.gameplay_events,
             None,
         );
-        if batch.rejected > 0 {
-            emit_system_effect_diagnostic(
-                &self.world_logger,
-                "buffer",
-                &format!("{} effects rejected by stage limits", batch.rejected),
-            );
-            return Ok(());
-        }
-        self.commit_system_batch(batch)
+        let outcome = self.commit_system_batch(batch)?;
+        self.report_system_batch_outcome(stage, &outcome);
+        Ok(())
     }
 }

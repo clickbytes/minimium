@@ -75,6 +75,34 @@ pub enum EffectBufferError {
     PayloadLimit,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EntityEffectRejection {
+    Validation,
+    StorageBudget,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TransferRejection {
+    Validation,
+    ClientUnavailable,
+    EnvironmentUnavailable,
+    Backpressure,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TransferOutcome {
+    Started,
+    Rejected(TransferRejection),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum WorldEffectOutcome {
+    EntityApplied,
+    EntityRejected(EntityEffectRejection),
+    Transfer(TransferOutcome),
+    StageRejected,
+}
+
 #[derive(Default)]
 pub struct WorldEffectBuffer {
     effects: Vec<WorldEffect>,
@@ -119,8 +147,64 @@ impl WorldEffectBuffer {
 }
 
 pub struct WorldEffectBatch {
-    pub effects: Vec<WorldEffect>,
-    pub rejected: usize,
+    effects: Vec<WorldEffect>,
+    rejected: usize,
+}
+
+impl WorldEffectBatch {
+    pub fn effects(&self) -> &[WorldEffect] {
+        &self.effects
+    }
+
+    pub const fn rejected_pushes(&self) -> usize {
+        self.rejected
+    }
+
+    pub fn into_outcome(
+        self,
+        results: Vec<WorldEffectOutcome>,
+    ) -> Result<EffectBatchOutcome, EffectOutcomeError> {
+        if self.effects.len() > MAX_WORLD_EFFECTS_PER_STAGE || results.len() != self.effects.len() {
+            return Err(EffectOutcomeError::ResultCountMismatch);
+        }
+        Ok(EffectBatchOutcome {
+            results,
+            rejected_pushes: self.rejected,
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EffectOutcomeError {
+    ResultCountMismatch,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EffectBatchOutcome {
+    results: Vec<WorldEffectOutcome>,
+    rejected_pushes: usize,
+}
+
+impl EffectBatchOutcome {
+    pub fn results(&self) -> &[WorldEffectOutcome] {
+        &self.results
+    }
+
+    pub const fn rejected_pushes(&self) -> usize {
+        self.rejected_pushes
+    }
+
+    pub fn has_rejections(&self) -> bool {
+        self.rejected_pushes > 0
+            || self.results.iter().any(|result| {
+                matches!(
+                    result,
+                    WorldEffectOutcome::EntityRejected(_)
+                        | WorldEffectOutcome::Transfer(TransferOutcome::Rejected(_))
+                        | WorldEffectOutcome::StageRejected
+                )
+            })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
