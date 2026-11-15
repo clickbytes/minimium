@@ -107,8 +107,11 @@ impl WorldGeometryGpu {
             let previous = self
                 .prepared_sources
                 .get(&key)
-                .filter(|_| current_origin && self.versions.get(&instance) == Some(&version));
-            let current = previous.is_some_and(|source| Arc::ptr_eq(source, patch));
+                .filter(|_| current_origin && self.versions.get(&instance) == Some(&version))
+                .cloned();
+            let current = previous
+                .as_ref()
+                .is_some_and(|source| Arc::ptr_eq(source, patch));
             let stage_key = (instance, stage, patch.key, patch.lod);
             let staged = self.pending.get(&stage_key).is_some_and(|pending| {
                 pending.origin_generation == origin_generation
@@ -123,12 +126,18 @@ impl WorldGeometryGpu {
             if !self.stage_can_upload(instance, stage) {
                 break;
             }
-            let shadow_changed = !previous.is_some_and(|p| Arc::ptr_eq(&p.shadow, &patch.shadow));
-            let surface_changed =
-                !previous.is_some_and(|p| Arc::ptr_eq(&p.surface, &patch.surface));
-            let ocean_changed = !previous.is_some_and(|p| Arc::ptr_eq(&p.ocean, &patch.ocean));
-            let objects_changed =
-                !previous.is_some_and(|p| Arc::ptr_eq(&p.objects, &patch.objects));
+            let shadow_changed = !previous
+                .as_ref()
+                .is_some_and(|p| Arc::ptr_eq(&p.shadow, &patch.shadow));
+            let surface_changed = !previous
+                .as_ref()
+                .is_some_and(|p| Arc::ptr_eq(&p.surface, &patch.surface));
+            let ocean_changed = !previous
+                .as_ref()
+                .is_some_and(|p| Arc::ptr_eq(&p.ocean, &patch.ocean));
+            let objects_changed = !previous
+                .as_ref()
+                .is_some_and(|p| Arc::ptr_eq(&p.objects, &patch.objects));
             let make = |label, bytes: &[u8]| {
                 device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some(label),
