@@ -9,19 +9,13 @@ impl ServerRuntime {
         if Instant::now() >= self.scheduler.next_tick {
             let tick_started = Instant::now();
             self.scheduler.simulation_tick = self.scheduler.simulation_tick.saturating_add(1);
-            self.apply_commands();
-            self.update_bolids();
-            self.update_impacts();
-            self.update_excavation();
-            if self.shutdown_request.is_requested() {
-                return;
+            let mut index = 0;
+            while let Some(operation) = self.schedule.tick_operation(index) {
+                if !self.run_tick_operation(operation) {
+                    return;
+                }
+                index += 1;
             }
-            self.apply_world_inputs();
-            self.run_tick_system_stage(crate::modules::Stage::FixedUpdate);
-            self.simulate_tick();
-            self.run_tick_system_stage(crate::modules::Stage::Environment);
-            self.run_tick_system_stage(crate::modules::Stage::PostSimulation);
-            self.game.gameplay_events.clear();
             self.metrics.ticks = self.metrics.ticks.saturating_add(1);
             self.metrics.last_tick = tick_started.elapsed();
             self.metrics.tick.record(self.metrics.last_tick);
@@ -36,6 +30,24 @@ impl ServerRuntime {
                 self.scheduler.next_tick = now + TICK;
             }
         }
+    }
+
+    fn run_tick_operation(&mut self, operation: crate::modules::BuiltinOperation) -> bool {
+        use crate::modules::{BuiltinOperation as Op, Stage};
+        match operation {
+            Op::Commands => self.apply_commands(),
+            Op::Bolids => self.update_bolids(),
+            Op::Impacts => self.update_impacts(),
+            Op::Excavation => self.update_excavation(),
+            Op::ShutdownGate => return !self.shutdown_request.is_requested(),
+            Op::WorldInputs => self.apply_world_inputs(),
+            Op::FixedEffects => self.run_tick_system_stage(Stage::FixedUpdate),
+            Op::Simulation => self.simulate_tick(),
+            Op::EnvironmentEffects => self.run_tick_system_stage(Stage::Environment),
+            Op::PostSimulationEffects => self.run_tick_system_stage(Stage::PostSimulation),
+            Op::ClearEvents => self.game.gameplay_events.clear(),
+        }
+        true
     }
 
     fn run_tick_system_stage(&mut self, stage: crate::modules::Stage) {

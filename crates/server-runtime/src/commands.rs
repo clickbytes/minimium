@@ -25,7 +25,7 @@ pub(crate) fn initialize_modules(
 pub(crate) fn build_schedule(
     registry: &ModuleRegistry<ModuleHandler, SystemFn>,
 ) -> Result<ServerSchedule, crate::modules::ModuleError> {
-    Ok(ServerSchedule::from_systems(&registry.ordered_systems()?))
+    Ok(ServerSchedule::from_plan(&registry.ordered_schedule()?))
 }
 
 pub(crate) fn component_registry(
