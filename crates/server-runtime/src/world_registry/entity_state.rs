@@ -1,4 +1,5 @@
 use super::*;
+use crate::runtime::ProtectedImpactEntities;
 use minimium_world::entity::{
     ComponentBlob, ComponentMutation, ComponentRegistry, EntityStore, WorldEntityChange,
 };
@@ -41,6 +42,7 @@ impl WorldRegistry {
         &'a mut self,
         effects: &[crate::modules::WorldEffect],
         registry: &ComponentRegistry,
+        protected_entities: &ProtectedImpactEntities,
     ) -> Result<StagedEntityBatch<'a>, RegistryError> {
         let mut stores = BTreeMap::new();
         let mut changes = Vec::new();
@@ -73,6 +75,12 @@ impl WorldRegistry {
                     sector,
                     components,
                 } => {
+                    if components
+                        .iter()
+                        .any(|component| component.kind == minimium_world::impact::BODY_COMPONENT)
+                    {
+                        return Err(RegistryError::InvalidEntityState);
+                    }
                     let total =
                         untouched_entities + stores.values().map(EntityStore::len).sum::<usize>();
                     if total >= minimium_world::entity::MAX_PERSISTENT_ENTITIES {
@@ -129,6 +137,13 @@ impl WorldRegistry {
                     let store = stores
                         .get_mut(world)
                         .ok_or(RegistryError::UnknownInstance)?;
+                    if protected_entities.contains(*world, entity.get())
+                        || store
+                            .get(*entity, minimium_world::impact::BODY_COMPONENT)
+                            .is_some()
+                    {
+                        return Err(RegistryError::InvalidEntityState);
+                    }
                     if !store.despawn(*entity).map_err(RegistryError::Component)? {
                         return Err(RegistryError::EntitySectorConflict);
                     }
@@ -142,6 +157,9 @@ impl WorldRegistry {
                     entity,
                     component,
                 } => {
+                    if component.kind == minimium_world::impact::BODY_COMPONENT {
+                        return Err(RegistryError::InvalidEntityState);
+                    }
                     let store = stores
                         .get_mut(world)
                         .ok_or(RegistryError::UnknownInstance)?;
@@ -166,6 +184,9 @@ impl WorldRegistry {
                     entity,
                     kind,
                 } => {
+                    if *kind == minimium_world::impact::BODY_COMPONENT {
+                        return Err(RegistryError::InvalidEntityState);
+                    }
                     let store = stores
                         .get_mut(world)
                         .ok_or(RegistryError::UnknownInstance)?;

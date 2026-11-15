@@ -1,4 +1,6 @@
 //! Owner-lane impact lifecycle. Workers return immutable durable acknowledgements.
+mod owner;
+pub(crate) use owner::ProtectedImpactEntities;
 mod replication;
 mod spawn;
 use super::*;
@@ -13,8 +15,8 @@ use std::collections::BTreeMap;
 pub(super) struct Impacts {
     pub(super) profile: Option<minimium_world::impact::ImpactProfile>,
     journal: minimium_storage::impact_journal::ImpactJournal,
-    pub(super) bodies: BTreeMap<(WorldInstanceId, u64), BodyState>,
-    pub(super) pending: BTreeMap<(WorldInstanceId, u64), BodyState>,
+    bodies: BTreeMap<(WorldInstanceId, u64), BodyState>,
+    pending: BTreeMap<(WorldInstanceId, u64), BodyState>,
     clients: HashMap<PlayerId, replication::Cursor>,
     last_manual: Option<Instant>,
     failure: Option<String>,
@@ -46,12 +48,8 @@ impl ServerRuntime {
         format!(
             " meteorids_active={} impact_craters={} impact_pending={} impact_storage={}",
             self.active_body_count(),
-            self.impacts
-                .bodies
-                .values()
-                .filter(|b| b.phase != 0)
-                .count(),
-            self.impacts.pending.len(),
+            self.impacts.bodies().filter(|b| b.phase != 0).count(),
+            self.impacts.pending_count(),
             if self.impacts.failure.is_some() {
                 "failed"
             } else {
@@ -63,16 +61,16 @@ impl ServerRuntime {
     pub(super) fn restore_impacts(&mut self) -> io::Result<()> {
         for (world, owner) in self.game.worlds.iter() {
             for (id, kind, _) in owner.entities.iter_components() {
-                if kind == BODY_COMPONENT && !self.impacts.bodies.contains_key(&(world, id.get())) {
+                if kind == BODY_COMPONENT && !self.impacts.contains_body(&(world, id.get())) {
                     return Err(io::Error::other(
                         "impact journal missing saved body; restore impacts.v1 with the world save",
                     ));
                 }
             }
         }
-        for body in self.impacts.bodies.values().copied().collect::<Vec<_>>() {
+        for body in self.impacts.bodies().copied().collect::<Vec<_>>() {
             self.reserve_body_budget(body)?;
-            self.install_impact(body, true)?;
+            self.publish_impact_projection(body, true)?;
         }
         Ok(())
     }
@@ -136,22 +134,26 @@ impl ServerRuntime {
         Ok((entities, remnants, changed))
     }
 
-    pub(super) fn install_impact(&mut self, body: BodyState, restoring: bool) -> io::Result<()> {
-        self.install_impact_with_invalidation(body, restoring, true)
+    pub(super) fn publish_impact_projection(
+        &mut self,
+        body: BodyState,
+        restoring: bool,
+    ) -> io::Result<()> {
+        self.publish_impact_projection_with_invalidation(body, restoring, true)
     }
 
     pub(in crate::runtime) fn validate_impact(&self, body: BodyState) -> io::Result<()> {
         self.prepare_impact(body, true).map(|_| ())
     }
 
-    pub(in crate::runtime) fn install_impact_prepared(
+    pub(in crate::runtime) fn publish_prepared_impact_projection(
         &mut self,
         body: BodyState,
     ) -> io::Result<()> {
-        self.install_impact_with_invalidation(body, true, false)
+        self.publish_impact_projection_with_invalidation(body, true, false)
     }
 
-    fn install_impact_with_invalidation(
+    fn publish_impact_projection_with_invalidation(
         &mut self,
         body: BodyState,
         restoring: bool,
@@ -177,13 +179,23 @@ impl ServerRuntime {
         while let Some(result) = self.impacts.journal.poll() {
             match result {
                 Ok(batch) => {
+                    if !self.impacts.checkpoints_match(&batch) {
+                        self.impact_failure(io::Error::other(
+                            "stale impact journal checkpoint batch acknowledgement",
+                        ));
+                        self.shutdown_request.request();
+                        return;
+                    }
                     for body in batch {
-                        self.impacts.pending.remove(&(body.world, body.id));
-                        if let Err(error) = self.install_impact(body, false) {
+                        if let Err(error) = self.publish_impact_projection(body, false) {
                             self.impact_failure(error);
                             return;
                         }
-                        self.impacts.bodies.insert((body.world, body.id), body);
+                        if let Err(error) = self.impacts.acknowledge_checkpoint(body) {
+                            self.impact_failure(error);
+                            self.shutdown_request.request();
+                            return;
+                        }
                     }
                 }
                 Err(error) => {
@@ -198,16 +210,19 @@ impl ServerRuntime {
         }
         let keys: Vec<_> = self
             .impacts
-            .bodies
-            .iter()
-            .filter(|(k, b)| b.phase == 0 && !self.impacts.pending.contains_key(k))
-            .map(|(k, _)| *k)
+            .bodies()
+            .map(|body| ((body.world, body.id), body))
+            .filter(|(k, b)| b.phase == 0 && !self.impacts.contains_pending(k))
+            .map(|(k, _)| k)
             .collect();
         for key in keys {
             if self.excavation_reserves(key.0) {
                 continue;
             }
-            let mut body = self.impacts.bodies[&key];
+            let mut body = *self
+                .impacts
+                .body(&key)
+                .expect("selected body remains owned");
             let Some(owner) = self.game.worlds.get(body.world) else {
                 continue;
             };
@@ -219,7 +234,7 @@ impl ServerRuntime {
             };
             let environment = Surface {
                 can_fragment: self.active_body_count() < minimium_world::impact::MAX_ACTIVE_BODIES
-                    && self.impacts.bodies.len() + self.impacts.pending.len() < 4096,
+                    && self.impacts.body_count() + self.impacts.pending_count() < 4096,
                 manifest: owner.manifest,
                 geography,
             };
@@ -241,13 +256,24 @@ impl ServerRuntime {
                         return;
                     }
                 }
-            } else if (body.age_s / 5.0).floor() > (self.impacts.bodies[&key].age_s / 5.0).floor() {
+            } else if (body.age_s / 5.0).floor()
+                > (self
+                    .impacts
+                    .body(&key)
+                    .expect("selected body remains owned")
+                    .age_s
+                    / 5.0)
+                    .floor()
+            {
                 if let Err(error) = self.queue_body(body) {
                     self.impact_failure(error);
                     return;
                 }
             } else {
-                self.impacts.bodies.insert(key, body);
+                if let Err(reason) = self.impacts.advance_live_body(body) {
+                    self.impact_failure(io::Error::other(reason));
+                    return;
+                }
             }
         }
         self.replicate_impacts();
@@ -258,28 +284,38 @@ impl ServerRuntime {
     }
 
     fn queue_body_batch(&mut self, batch: Vec<BodyState>) -> io::Result<()> {
+        if batch.len() == 1 && self.impact_projection_matches(batch[0]) {
+            return Ok(());
+        }
+        if batch
+            .iter()
+            .any(|body| self.impact_projection_matches(*body))
+        {
+            return Err(io::Error::other(
+                "impact checkpoint batch repeats a durable body state",
+            ));
+        }
         for body in &batch {
             self.prepare_impact(*body, false)?;
             self.reserve_body_budget(*body)?;
         }
-        self.impacts.journal.submit_batch(batch.clone())?;
-        for body in batch {
-            self.impacts.pending.insert((body.world, body.id), body);
+        self.impacts.begin_checkpoints(&batch)?;
+        if let Err(error) = self.impacts.journal.submit_batch(batch.clone()) {
+            for body in &batch {
+                self.impacts.discard_pending_checkpoint(body);
+            }
+            return Err(error);
         }
         Ok(())
     }
 
     fn active_body_count(&self) -> usize {
-        self.impacts
-            .bodies
-            .values()
-            .filter(|b| b.phase == 0)
-            .count()
+        self.impacts.bodies().filter(|b| b.phase == 0).count()
             + self
                 .impacts
                 .pending
                 .keys()
-                .filter(|k| !self.impacts.bodies.contains_key(k))
+                .filter(|k| !self.impacts.contains_body(k))
                 .count()
     }
 
@@ -311,6 +347,18 @@ impl ServerRuntime {
         Ok(())
     }
 
+    fn impact_projection_matches(&self, body: BodyState) -> bool {
+        let Some(entity) = EntityId::new(body.id) else {
+            return false;
+        };
+        self.game
+            .worlds
+            .get(body.world)
+            .and_then(|owner| owner.entities.get(entity, BODY_COMPONENT))
+            .and_then(|blob| BodyState::decode(&blob.bytes))
+            == Some(body)
+    }
+
     fn reserve_body_entity(&mut self, world: WorldInstanceId) -> io::Result<u64> {
         let owner = self
             .game
@@ -338,6 +386,7 @@ impl ServerRuntime {
                     components: Vec::new(),
                 }],
                 &self.component_registry,
+                &self.impacts.protected_entities(),
             )
             .map_err(|e| io::Error::other(format!("impact allocation: {e:?}")))?;
         let reservation = self
@@ -363,13 +412,14 @@ impl ServerRuntime {
     pub(super) fn shutdown_impacts(&mut self, deadline: Instant) -> io::Result<()> {
         for body in self
             .impacts
-            .bodies
-            .values()
+            .bodies()
             .filter(|b| b.phase == 0)
             .copied()
             .collect::<Vec<_>>()
         {
-            if !self.impacts.pending.contains_key(&(body.world, body.id)) {
+            if !self.impacts.contains_pending(&(body.world, body.id))
+                && !self.impact_projection_matches(body)
+            {
                 self.impacts.journal.submit(body)?;
             }
         }
