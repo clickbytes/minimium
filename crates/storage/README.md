@@ -26,6 +26,11 @@ The server owns `PlayerStore` and captures live player and world data on its own
 
 Snapshot loading, capture, writing and persistence-worker operations return `StorageError`, with stable codes for invalid formats, unsupported versions, size limits, busy queues and stopped workers. The original I/O error remains available through `Error::source`; the server may adapt it at its process boundary. Missing snapshots still represent an empty store.
 
+The snapshot adapter maps core `ProfileIdParseError` to `InvalidData` (public
+`StorageErrorKind::InvalidFormat`), preserving the parse detail and actual
+`world.snapshot` path. Profile-ID alphabet, length and snapshot encoding are
+unchanged; a rejected player record never publishes the staged loaded store.
+
 The excavation journal is stored in `excavation.v1` beside `world.snapshot`; back
 up and restore both files with the complete world directory. It fsyncs a result
 record before acknowledging it. Checkpoint compaction runs after that durable

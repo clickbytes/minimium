@@ -1,4 +1,4 @@
-use std::io;
+use std::fmt;
 
 pub const PLAYER_PROFILE_ID_BYTES: usize = 16;
 pub const MAX_PLAYER_NAME_BYTES: usize = 24;
@@ -76,20 +76,49 @@ impl Principal {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct PlayerProfileId([u8; PLAYER_PROFILE_ID_BYTES]);
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProfileIdParseError {
+    InvalidLength,
+    InvalidHexDigit { byte_index: usize },
+}
+
+impl fmt::Display for ProfileIdParseError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidLength => write!(
+                formatter,
+                "player profile ID must contain {} hexadecimal bytes",
+                PLAYER_PROFILE_ID_BYTES * 2
+            ),
+            Self::InvalidHexDigit { byte_index } => write!(
+                formatter,
+                "player profile ID has an invalid hexadecimal digit at byte {byte_index}"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ProfileIdParseError {}
+
 impl PlayerProfileId {
     pub fn from_bytes(bytes: [u8; PLAYER_PROFILE_ID_BYTES]) -> Self {
         Self(bytes)
     }
 
-    pub fn from_hex(value: &str) -> io::Result<Self> {
+    pub fn from_hex(value: &str) -> Result<Self, ProfileIdParseError> {
         if value.len() != PLAYER_PROFILE_ID_BYTES * 2 {
-            return Err(invalid_profile_id());
+            return Err(ProfileIdParseError::InvalidLength);
         }
         let mut bytes = [0u8; PLAYER_PROFILE_ID_BYTES];
         for (index, byte) in bytes.iter_mut().enumerate() {
             let offset = index * 2;
-            let high = hex_digit(value.as_bytes()[offset]).ok_or_else(invalid_profile_id)?;
-            let low = hex_digit(value.as_bytes()[offset + 1]).ok_or_else(invalid_profile_id)?;
+            let high = hex_digit(value.as_bytes()[offset])
+                .ok_or(ProfileIdParseError::InvalidHexDigit { byte_index: offset })?;
+            let low = hex_digit(value.as_bytes()[offset + 1]).ok_or(
+                ProfileIdParseError::InvalidHexDigit {
+                    byte_index: offset + 1,
+                },
+            )?;
             *byte = (high << 4) | low;
         }
         Ok(Self(bytes))
@@ -117,8 +146,4 @@ fn hex_digit(byte: u8) -> Option<u8> {
         b'A'..=b'F' => Some(byte - b'A' + 10),
         _ => None,
     }
-}
-
-fn invalid_profile_id() -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, "invalid player profile file")
 }
