@@ -2,22 +2,18 @@ use crate::compact_error;
 use crate::StorageError;
 use minimium_diagnostics::{DomainLogger, EventCode, Level};
 
-enum SaveStatus {
+#[derive(Clone, Debug)]
+pub enum SaveStatus {
     Never,
     Pending,
     Complete,
     Failed(String),
 }
 
-impl std::fmt::Display for SaveStatus {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Never => f.write_str("never"),
-            Self::Pending => f.write_str("pending"),
-            Self::Complete => f.write_str("ok"),
-            Self::Failed(message) => write!(f, "error_{message}"),
-        }
-    }
+#[derive(Clone, Debug)]
+pub struct PersistenceStatus {
+    pub pending_saves: usize,
+    pub last_save: SaveStatus,
 }
 
 pub(super) struct SaveBookkeeping {
@@ -79,11 +75,11 @@ impl SaveBookkeeping {
         self.pending_saves != 0
     }
 
-    pub(super) fn summary(&self) -> String {
-        format!(
-            "save_pending={} save_last={}",
-            self.pending_saves, self.last_save
-        )
+    pub(super) fn snapshot(&self) -> PersistenceStatus {
+        PersistenceStatus {
+            pending_saves: self.pending_saves,
+            last_save: self.last_save.clone(),
+        }
     }
 
     pub(super) fn emit(&self, code: &'static str, level: Level, result: String) {

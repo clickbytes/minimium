@@ -1,0 +1,289 @@
+use crate::commands::{BoundedText, CommandPayload, PropertyReport, StatusReport};
+use std::fmt::Write as _;
+
+pub(crate) fn render(payload: &CommandPayload) -> BoundedText {
+    let mut out = BoundedText::default();
+    match payload {
+        CommandPayload::ModuleText(text) => out.push_str(text.as_str()),
+        CommandPayload::SaveQueued => {
+            out.push_str("world save queued; use status to check completion")
+        }
+        CommandPayload::Stopping => out.push_str("stopping"),
+        CommandPayload::Property(report) => property(&mut out, report),
+        CommandPayload::UnknownProperty(key) => {
+            let _ = write!(out, "unknown server property `{key}`");
+        }
+        CommandPayload::UnavailableProperty { key, reason } => {
+            let _ = write!(out, "{key} requested=unavailable effective=unavailable default=n/a source=unavailable reason={reason}");
+        }
+        CommandPayload::PropertyHelp(spec) => {
+            let _ = write!(out, "{}: {:?}; default {}; constraints {}; owner {}; permission {:?}; lifecycle {:?}; persistent {}; resettable {}\n{}", spec.key, spec.value_type, spec.default.unwrap_or("n/a"), spec.constraints.unwrap_or("none"), spec.owner, spec.permission, spec.lifecycle, spec.persistent, spec.resettable, spec.description);
+        }
+        CommandPayload::PropertyCommandsHelp { builtins } => {
+            for (i, line) in builtins.iter().enumerate() {
+                if i != 0 {
+                    out.push_str(" | ");
+                }
+                out.push_str(line);
+            }
+            out.push_str("\nget KEY | set KEY VALUE | reset KEY | list [PREFIX]");
+        }
+        CommandPayload::SingleCommandHelp(help) => {
+            let _ = minimium_commands::write_command_help(&mut out, help.usage, help.arguments);
+        }
+        CommandPayload::PropertyList {
+            prefix,
+            rows,
+            truncated,
+        } => {
+            if rows.is_empty() {
+                let _ = write!(
+                    out,
+                    "no server properties match {}",
+                    prefix.as_deref().unwrap_or("the requested prefix")
+                );
+            }
+            for (i, row) in rows.iter().enumerate() {
+                if i != 0 {
+                    out.push_str("\n");
+                }
+                let _ = write!(
+                    out,
+                    "{}: {}",
+                    row.key,
+                    row.constraints.unwrap_or("no constraints")
+                );
+            }
+            if *truncated {
+                out.push_str("\n[truncated]");
+            }
+        }
+        CommandPayload::Status(status) => status_output(&mut out, status),
+        CommandPayload::Players {
+            rows: players,
+            truncated,
+        } => {
+            if players.is_empty() {
+                out.push_str("no players");
+            }
+            for (index, player) in players.iter().enumerate() {
+                if index != 0 {
+                    out.push_str("; ");
+                }
+                let _ = write!(
+                    out,
+                    "{}:{}:world={}@{:.1},{:.1},{:.1}",
+                    player.id,
+                    player.name,
+                    player.world,
+                    player.position[0],
+                    player.position[1],
+                    player.position[2]
+                );
+            }
+            if *truncated {
+                out.push_str("; [truncated]");
+            }
+        }
+        CommandPayload::WorldList { rows, truncated } => {
+            for (i, row) in rows.iter().enumerate() {
+                if i != 0 {
+                    out.push_str("; ");
+                }
+                let _ = write!(
+                    out,
+                    "{}: players={} topology={:?} generation={:?}",
+                    row.id, row.players, row.topology, row.generation
+                );
+            }
+            if *truncated {
+                out.push_str("; [truncated]");
+            }
+        }
+        CommandPayload::WorldInspect(row) => {
+            let _ = write!(
+                out,
+                "{}: players={} manifest={:?}",
+                row.id, row.players, row.manifest
+            );
+        }
+        CommandPayload::EntityList { rows, truncated } => {
+            if rows.is_empty() {
+                out.push_str("no runtime entities or players");
+            }
+            for (i, row) in rows.iter().enumerate() {
+                if i != 0 {
+                    out.push_str("; ");
+                }
+                match &row.kind {
+                    crate::commands::EntityKind::Entity(id) => {
+                        let _ = write!(out, "world={} entity={id}", row.world);
+                    }
+                    crate::commands::EntityKind::Player(id, name) => {
+                        let _ = write!(out, "world={} player={id}:{name}", row.world);
+                    }
+                }
+            }
+            if *truncated {
+                out.push_str("; [truncated]");
+            }
+        }
+        CommandPayload::Bolid {
+            id,
+            kind,
+            recipients,
+            shower,
+        } => {
+            let _ = write!(out, "bolid id={id} kind={kind} recipients={recipients}");
+            if let Some(count) = shower {
+                let _ = write!(
+                    out,
+                    "; shower accepted: {count} bolids total, first now, remaining {} at irregular 0.9..8 s intervals",
+                    count.saturating_sub(1)
+                );
+            }
+        }
+        CommandPayload::ImpactSpawn { id } => {
+            let _ = write!(
+                out,
+                "meteorid {id} accepted; authoritative flight and permanent terrain impact queued"
+            );
+        }
+        CommandPayload::Help {
+            builtins,
+            modules,
+            truncated,
+        } => {
+            for (i, row) in builtins.iter().enumerate() {
+                if i != 0 {
+                    out.push_str(" | ");
+                }
+                out.push_str(row);
+            }
+            for row in modules {
+                if !out.as_str().is_empty() {
+                    out.push_str(" | ");
+                }
+                let _ = minimium_commands::write_command_help(&mut out, row.usage, row.arguments);
+            }
+            if *truncated {
+                out.push_str(" | [truncated]");
+            }
+        }
+        CommandPayload::Metrics {
+            snapshot,
+            clients,
+            clients_truncated,
+        } => {
+            for field in &snapshot.fields {
+                let value = match &field.value {
+                    crate::metrics::MetricValue::Count(v) => v.to_string(),
+                    crate::metrics::MetricValue::Optional(v) => {
+                        (*v).map_or_else(|| "n/a".to_owned(), |v| v.to_string())
+                    }
+                    crate::metrics::MetricValue::Ratio(v) => format!("{v:.2}"),
+                    crate::metrics::MetricValue::Label(v) => (*v).to_owned(),
+                };
+                let _ = write!(
+                    out,
+                    "{}{}={}",
+                    if out.as_str().is_empty() { "" } else { " " },
+                    field.name,
+                    value
+                );
+            }
+            out.push_str(" client_traffic=id:bytes_in:bytes_out:decoded_frames:queued_frames:encoding_us:connected_ms");
+            for row in clients {
+                let _ = write!(
+                    out,
+                    " {}:{}:{}:{}:{}:{}:{}",
+                    row.id,
+                    row.bytes_in,
+                    row.bytes_out,
+                    row.decoded_frames,
+                    row.queued_frames,
+                    row.encoding_us,
+                    row.connected_ms
+                );
+            }
+            if *clients_truncated {
+                out.push_str(" [truncated]");
+            }
+        }
+        CommandPayload::Time(snapshot) => {
+            let nonce: String = snapshot
+                .session_nonce
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
+            let correction = snapshot
+                .correction_ms
+                .map(|value| format!("{value:+}"))
+                .unwrap_or_else(|| "none".to_owned());
+            let dirty = snapshot
+                .dirty_revision
+                .map(|value| value.to_string())
+                .unwrap_or_else(|| "none".to_owned());
+            let _ = write!(out, "clock_id={} revision={} session_nonce={} mode={} world_utc_ms={} rate_ppm={} rate={} offline_policy={} fault={} last_utc_correction_ms={} sync_dirty_revision={}", snapshot.clock_id, snapshot.revision, nonce, snapshot.mode, snapshot.utc_ms, snapshot.rate_ppm, format_clock_scale(snapshot.rate_ppm), snapshot.offline_policy, snapshot.fault, correction, dirty);
+        }
+    }
+    out
+}
+
+pub(crate) fn format_clock_scale(rate: u64) -> String {
+    format!("{}.{:06}x", rate / 1_000_000, rate % 1_000_000)
+}
+
+fn property(out: &mut BoundedText, report: &PropertyReport) {
+    let value = &report.value;
+    let _ = write!(
+        out,
+        "{} requested={} effective={} default={} source={} reason={}",
+        report.key,
+        value.requested.as_deref().unwrap_or("unavailable"),
+        value.effective.as_deref().unwrap_or("unavailable"),
+        value.default.as_deref().unwrap_or("n/a"),
+        value.source.as_str(),
+        value.difference_reason.as_deref().unwrap_or("none")
+    );
+}
+
+fn status_output(out: &mut BoundedText, status: &StatusReport) {
+    let save = match &status.persistence.last_save {
+        minimium_storage::SaveStatus::Never => "never".to_owned(),
+        minimium_storage::SaveStatus::Pending => "pending".to_owned(),
+        minimium_storage::SaveStatus::Complete => "ok".to_owned(),
+        minimium_storage::SaveStatus::Failed(message) => format!("error_{message}"),
+    };
+    let _ = write!(out, "running players={} lanes={} ticks={} clock_probe_requests={} clock_probe_accepted={} clock_probe_rejected={} environment_sync_messages={} scheduled_world_instances={} startup_system_runs={} save_pending={} save_last={}", status.players, status.lanes, status.ticks, status.clock_probe_requests, status.clock_probe_accepted, status.clock_probe_rejected, status.environment_sync_messages, status.scheduled_world_instances, status.startup_system_runs, status.persistence.pending_saves, save);
+    let Some(runtime) = &status.runtime else {
+        return;
+    };
+    let _ = write!(out, " game_address={} max_players={} map_fingerprint={:016x} tick_ms={} snapshot_ms={} autosave_seconds={} protocol_version={} save_version={} environment_profiles=", runtime.game_address, runtime.max_players, runtime.map_fingerprint, runtime.tick_ms, runtime.snapshot_ms, runtime.autosave_seconds, runtime.protocol_version, runtime.save_version);
+    for (i, (id, clock, profile)) in runtime.environment_profiles.iter().enumerate() {
+        if i != 0 {
+            out.push_str(",");
+        }
+        let _ = write!(out, "{id}:{clock}:{profile:?}");
+    }
+    if runtime.environment_profiles_truncated {
+        out.push_str(",[truncated]");
+    }
+    let impact = runtime.impact;
+    let _ = write!(
+        out,
+        " meteorids_active={} impact_craters={} impact_pending={} impact_storage={}",
+        impact.active,
+        impact.craters,
+        impact.pending,
+        if impact.ready { "ready" } else { "failed" }
+    );
+    let excavation = &runtime.excavation;
+    let _ = write!(out, " excavation_chunks={} excavation_pending={} excavation_bytes={} excavation_storage={} fluid_cells={} fluid_jobs={} terrain_payload_bytes={} fluid_payload_bytes={} fluid_reserved={} fluid_failed_worlds={}", excavation.chunks, excavation.pending, excavation.bytes, if excavation.ready {"ready"} else {"failed"}, excavation.fluid_cells, excavation.fluid_jobs, excavation.terrain_payload_bytes, excavation.fluid_payload_bytes, excavation.fluid_reserved, excavation.failed_worlds);
+    for (name, p95, p99) in &excavation.percentiles {
+        let _ = write!(
+            out,
+            " excavation_{name}_p95_us={p95:?} excavation_{name}_p99_us={p99:?}"
+        );
+    }
+}

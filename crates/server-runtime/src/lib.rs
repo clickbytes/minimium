@@ -2,6 +2,7 @@
 mod accept;
 mod admin;
 pub mod authentication;
+mod command_output;
 mod commands;
 pub mod composition;
 mod config;

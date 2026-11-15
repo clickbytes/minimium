@@ -1,5 +1,5 @@
 //! Example extension: owns the registration, validation and execution of its commands.
-use super::{CommandContext, CommandReply, ModuleHandler};
+use super::{CommandContext, CommandPayload, CommandReply, ModuleHandler};
 use crate::modules::{
     CommandDefinition, CommandScope, EngineModule, ModuleDescriptor, ModuleError, ModuleRegistrar,
     Stage, SystemDefinition,
@@ -74,41 +74,30 @@ fn record_instance_count(context: &mut dyn GameplaySystemContext) {
     context.record_startup_run(world_count);
 }
 
-fn success(text: String) -> CommandReply {
-    CommandReply {
-        success: true,
-        text,
-        stop: false,
-        error_code: None,
-    }
-}
-
 fn invalid(usage: &'static str) -> CommandReply {
-    CommandReply {
-        success: false,
-        text: usage.into(),
-        stop: false,
-        error_code: Some("server.command.invalid_arguments"),
-    }
+    CommandReply::error("server.command.invalid_arguments", usage)
 }
 
 fn world_list(context: &mut CommandContext<'_>, args: &[&str]) -> CommandReply {
     if !args.is_empty() {
         return invalid("usage: world list");
     }
+    let total = context.worlds.iter().count();
     let rows = context
         .worlds
         .iter()
-        .map(|(id, instance)| {
-            format!(
-                "{id}: players={} topology={:?} generation={:?}",
-                instance.world.player_count(),
-                instance.manifest.topology(),
-                instance.manifest.generation().revision()
-            )
+        .take(256)
+        .map(|(id, instance)| super::WorldRow {
+            id,
+            players: instance.world.player_count(),
+            topology: instance.manifest.topology(),
+            generation: instance.manifest.generation().revision(),
         })
         .collect::<Vec<_>>();
-    success(rows.join("; "))
+    CommandReply::success(CommandPayload::WorldList {
+        rows,
+        truncated: total > 256,
+    })
 }
 
 fn world_inspect(context: &mut CommandContext<'_>, args: &[&str]) -> CommandReply {
@@ -124,11 +113,11 @@ fn world_inspect(context: &mut CommandContext<'_>, args: &[&str]) -> CommandRepl
     let Some(instance) = context.worlds.get(id) else {
         return invalid("world instance not found");
     };
-    success(format!(
-        "{id}: players={} manifest={:?}",
-        instance.world.player_count(),
-        instance.manifest
-    ))
+    CommandReply::success(CommandPayload::WorldInspect(super::WorldInspect {
+        id,
+        players: instance.world.player_count(),
+        manifest: instance.manifest,
+    }))
 }
 
 fn entity_list(context: &mut CommandContext<'_>, args: &[&str]) -> CommandReply {
@@ -139,23 +128,37 @@ fn entity_list(context: &mut CommandContext<'_>, args: &[&str]) -> CommandReply 
         .worlds
         .iter()
         .flat_map(|(world_id, instance)| {
-            instance
-                .entities
-                .iter()
-                .map(move |id| format!("world={world_id} entity={}", id.get()))
+            instance.entities.iter().map(move |id| super::EntityRow {
+                world: world_id,
+                kind: super::EntityKind::Entity(id.get()),
+            })
         })
+        .take(256)
         .collect();
+    let entity_count: usize = context
+        .worlds
+        .iter()
+        .map(|(_, instance)| instance.entities.iter().count())
+        .sum();
+    let player_count = context.worlds.total_players();
     // Legacy players are not yet EntityIds; display them separately until migrated.
-    rows.extend(context.worlds.iter().flat_map(|(world_id, instance)| {
-        instance
-            .world
-            .snapshot()
-            .into_iter()
-            .map(move |player| format!("world={world_id} player={}:{}", player.id, player.name))
-    }));
-    if rows.is_empty() {
-        success("no runtime entities or players".into())
-    } else {
-        success(rows.join("; "))
-    }
+    let remaining = 256usize.saturating_sub(rows.len());
+    rows.extend(
+        context
+            .worlds
+            .iter()
+            .flat_map(|(world_id, instance)| {
+                instance
+                    .world
+                    .snapshot()
+                    .into_iter()
+                    .map(move |player| super::EntityRow {
+                        world: world_id,
+                        kind: super::EntityKind::Player(player.id, player.name.to_string()),
+                    })
+            })
+            .take(remaining),
+    );
+    let truncated = entity_count.saturating_add(player_count) > rows.len();
+    CommandReply::success(CommandPayload::EntityList { rows, truncated })
 }

@@ -1,6 +1,21 @@
 use super::*;
 use minimium_telemetry::duration::DurationStats;
 
+#[derive(Clone, Debug)]
+pub(crate) struct ExcavationStatus {
+    pub chunks: usize,
+    pub pending: usize,
+    pub bytes: u64,
+    pub ready: bool,
+    pub fluid_cells: usize,
+    pub fluid_jobs: usize,
+    pub terrain_payload_bytes: usize,
+    pub fluid_payload_bytes: usize,
+    pub fluid_reserved: usize,
+    pub failed_worlds: usize,
+    pub percentiles: Vec<(&'static str, Option<u64>, Option<u64>)>,
+}
+
 #[derive(Default)]
 pub(super) struct ExcavationMetrics {
     pub prepare: DurationStats,
@@ -12,7 +27,7 @@ pub(super) struct ExcavationMetrics {
 }
 
 impl ServerRuntime {
-    pub(in crate::runtime) fn excavation_status(&self) -> String {
+    pub(in crate::runtime) fn excavation_status_snapshot(&self) -> ExcavationStatus {
         let chunks: usize = self
             .game
             .worlds
@@ -36,43 +51,40 @@ impl ServerRuntime {
             * std::mem::size_of::<minimium_world::terrain::TerrainSample>();
         let fluid_payload_bytes = fluid_cells
             * (std::mem::size_of::<minimium_fluids::CellWater>() + std::mem::size_of::<[i32; 3]>());
-        let fluid_reserved: usize = self
+        let fluid_reserved = self
             .excavation
             .waters
             .values()
             .map(|water| water.reserved_cell_limit())
             .sum();
-        let mut result = format!(
-            " excavation_chunks={chunks} excavation_pending={} excavation_bytes={} excavation_storage={} fluid_cells={fluid_cells} fluid_jobs={} terrain_payload_bytes={terrain_payload_bytes} fluid_payload_bytes={fluid_payload_bytes}",
-            usize::from(self.excavation.busy()),
-            metrics.bytes,
-            if self.excavation.failure.is_some() {
-                "failed"
-            } else {
-                "ready"
-            },
-            self.excavation.water_jobs.len(),
-        );
-        use std::fmt::Write;
-        let _ = write!(
-            result,
-            " fluid_reserved={fluid_reserved} fluid_failed_worlds={}",
-            self.excavation.water_failures.len()
-        );
-        for (name, stats) in [
-            ("prepare", &metrics.prepare),
-            ("collision", &metrics.collision),
-            ("solver", &metrics.solver),
-            ("persist", &metrics.persistence),
-            ("publish", &metrics.publication),
-        ] {
-            let _ = write!(
-                result,
-                " excavation_{name}_p95_us={:?} excavation_{name}_p99_us={:?}",
-                stats.percentile_microseconds(95),
-                stats.percentile_microseconds(99),
-            );
+        ExcavationStatus {
+            chunks,
+            pending: usize::from(self.excavation.busy()),
+            bytes: metrics.bytes,
+            ready: self.excavation.failure.is_none(),
+            fluid_cells,
+            fluid_jobs: self.excavation.water_jobs.len(),
+            terrain_payload_bytes,
+            fluid_payload_bytes,
+            fluid_reserved,
+            failed_worlds: self.excavation.water_failures.len(),
+            percentiles: [
+                (&metrics.prepare),
+                (&metrics.collision),
+                (&metrics.solver),
+                (&metrics.persistence),
+                (&metrics.publication),
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(i, s)| {
+                (
+                    ["prepare", "collision", "solver", "persist", "publish"][i],
+                    s.percentile_microseconds(95),
+                    s.percentile_microseconds(99),
+                )
+            })
+            .collect(),
         }
-        result
     }
 }

@@ -46,22 +46,15 @@ fn execute_registered(
             let arguments = args.iter().map(String::as_str).collect::<Vec<_>>();
             (command.definition.handler)(context, &arguments)
         }
-        Some(_) => CommandReply {
-            success: false,
-            text: "command not permitted in the server admin console".into(),
-            stop: false,
-            error_code: Some("server.command.permission_denied"),
-        },
-        None => CommandReply {
-            success: false,
-            text: "unknown command; use `help`".into(),
-            stop: false,
-            error_code: Some("server.command.unknown"),
-        },
+        Some(_) => CommandReply::error(
+            "server.command.permission_denied",
+            "command not permitted in the server admin console",
+        ),
+        None => CommandReply::error("server.command.unknown", "unknown command; use `help`"),
     }
 }
 
-use crate::server_command::{server_help, ServerCommand};
+use crate::server_command::ServerCommand;
 use crate::{environment::EnvironmentClock, world_registry::WorldRegistry};
 use crate::{
     metrics::RuntimeMetrics,
@@ -79,6 +72,8 @@ pub struct CommandContext<'a> {
     pub(crate) environment_clock: &'a mut EnvironmentClock,
     pub(crate) monotonic_ms: MonotonicMs,
     pub(crate) schedule_diagnostics: ScheduleDiagnostics,
+    pub(crate) runtime_status: Option<RuntimeStatusSnapshot>,
+    pub(crate) client_traffic: ClientTrafficSnapshot,
 }
 
 impl CommandContext<'_> {
@@ -88,10 +83,268 @@ impl CommandContext<'_> {
 }
 
 pub struct CommandReply {
-    pub success: bool,
-    pub text: String,
-    pub stop: bool,
-    pub error_code: Option<&'static str>,
+    outcome: Result<CommandPayload, CommandFailure>,
+    action: CommandAction,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CommandAction {
+    Continue,
+    Stop,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum CommandPayload {
+    Help {
+        builtins: Vec<&'static str>,
+        modules: Vec<CommandHelp>,
+        truncated: bool,
+    },
+    Status(StatusReport),
+    Players {
+        rows: Vec<PlayerRow>,
+        truncated: bool,
+    },
+    Metrics {
+        snapshot: crate::metrics::RuntimeMetricsSnapshot,
+        clients: Vec<ClientTrafficRow>,
+        clients_truncated: bool,
+    },
+    SaveQueued,
+    Stopping,
+    Time(crate::environment::ClockPropertySnapshot),
+    Property(PropertyReport),
+    UnknownProperty(String),
+    UnavailableProperty {
+        key: String,
+        reason: String,
+    },
+    PropertyHelp(minimium_commands::PropertySpec),
+    PropertyCommandsHelp {
+        builtins: Vec<&'static str>,
+    },
+    SingleCommandHelp(CommandHelp),
+    PropertyList {
+        prefix: Option<String>,
+        rows: Vec<minimium_commands::PropertySpec>,
+        truncated: bool,
+    },
+    WorldList {
+        rows: Vec<WorldRow>,
+        truncated: bool,
+    },
+    WorldInspect(WorldInspect),
+    EntityList {
+        rows: Vec<EntityRow>,
+        truncated: bool,
+    },
+    Bolid {
+        id: u64,
+        kind: u8,
+        recipients: usize,
+        shower: Option<usize>,
+    },
+    ImpactSpawn {
+        id: u64,
+    },
+    ModuleText(BoundedText),
+}
+
+#[derive(Clone, Debug)]
+struct CommandFailure {
+    pub code: &'static str,
+    pub detail: BoundedText,
+}
+
+#[derive(Clone, Debug)]
+/// Text appended through this builder is UTF-8-safe and capped at [`BoundedText::LIMIT`].
+pub struct BoundedText(String, bool);
+impl Default for BoundedText {
+    fn default() -> Self {
+        Self(String::new(), false)
+    }
+}
+impl std::fmt::Write for BoundedText {
+    fn write_str(&mut self, text: &str) -> std::fmt::Result {
+        self.push_str(text);
+        Ok(())
+    }
+}
+impl BoundedText {
+    /// Maximum rendered or extension text bytes, leaving JSON escaping room under the admin cap.
+    pub const LIMIT: usize = 8 * 1024;
+    pub fn new(text: &str) -> Self {
+        let mut value = Self::default();
+        value.push_str(text);
+        value
+    }
+    /// Append as much of `text` as fits, adding a marker on truncation.
+    pub fn push_str(&mut self, text: &str) {
+        if self.1 {
+            return;
+        }
+        const MARKER: &str = " [truncated]";
+        let remaining = Self::LIMIT.saturating_sub(self.0.len());
+        let mut end = text.len().min(remaining);
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        self.0.push_str(&text[..end]);
+        if end < text.len() {
+            let marker_start = Self::LIMIT.saturating_sub(MARKER.len());
+            let mut boundary = marker_start.min(self.0.len());
+            while !self.0.is_char_boundary(boundary) {
+                boundary -= 1;
+            }
+            self.0.truncate(boundary);
+            self.0.push_str(MARKER);
+            self.1 = true;
+        }
+    }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct CommandHelp {
+    pub usage: &'static str,
+    pub arguments: &'static [minimium_commands::CommandArgumentSpec],
+}
+#[derive(Clone, Debug)]
+pub(crate) struct PlayerRow {
+    pub id: minimium_core::ids::PlayerId,
+    pub name: String,
+    pub world: minimium_world::world::WorldInstanceId,
+    pub position: [f32; 3],
+}
+#[derive(Clone, Debug)]
+pub(crate) struct WorldRow {
+    pub id: minimium_world::world::WorldInstanceId,
+    pub players: usize,
+    pub topology: minimium_world::world::WorldTopology,
+    pub generation: minimium_world::world::GenerationRevision,
+}
+#[derive(Clone, Debug)]
+pub(crate) struct WorldInspect {
+    pub id: minimium_world::world::WorldInstanceId,
+    pub players: usize,
+    pub manifest: minimium_world::world::WorldManifest,
+}
+#[derive(Clone, Debug)]
+pub(crate) struct EntityRow {
+    pub world: minimium_world::world::WorldInstanceId,
+    pub kind: EntityKind,
+}
+#[derive(Clone, Debug)]
+pub(crate) enum EntityKind {
+    Entity(u64),
+    Player(minimium_core::ids::PlayerId, String),
+}
+#[derive(Clone, Debug)]
+pub(crate) struct PropertyReport {
+    pub key: String,
+    pub value: minimium_commands::PropertyValue<String>,
+}
+pub(crate) enum PropertyReportOutcome {
+    Value(PropertyReport),
+    Unknown(String),
+    Unavailable { key: String, reason: String },
+}
+#[derive(Clone, Debug)]
+pub(crate) struct ClientTrafficRow {
+    pub id: minimium_core::ids::PlayerId,
+    pub bytes_in: u64,
+    pub bytes_out: u64,
+    pub decoded_frames: u64,
+    pub queued_frames: u64,
+    pub encoding_us: u64,
+    pub connected_ms: u128,
+}
+#[derive(Clone, Debug, Default)]
+pub(crate) struct ClientTrafficSnapshot {
+    pub rows: Vec<ClientTrafficRow>,
+    pub truncated: bool,
+}
+#[derive(Clone, Debug)]
+pub(crate) struct StatusReport {
+    pub players: usize,
+    pub lanes: usize,
+    pub ticks: u64,
+    pub clock_probe_requests: u64,
+    pub clock_probe_accepted: u64,
+    pub clock_probe_rejected: u64,
+    pub environment_sync_messages: u64,
+    pub scheduled_world_instances: usize,
+    pub startup_system_runs: usize,
+    pub persistence: minimium_storage::PersistenceStatus,
+    pub runtime: Option<RuntimeStatusSnapshot>,
+}
+#[derive(Clone, Debug)]
+pub(crate) struct RuntimeStatusSnapshot {
+    pub game_address: String,
+    pub max_players: usize,
+    pub tick_ms: u128,
+    pub snapshot_ms: u128,
+    pub autosave_seconds: u64,
+    pub protocol_version: u32,
+    pub save_version: u32,
+    pub map_fingerprint: u64,
+    pub environment_profiles: Vec<(u128, u64, minimium_environment::EnvironmentProfile)>,
+    pub environment_profiles_truncated: bool,
+    pub impact: crate::runtime::ImpactStatus,
+    pub excavation: crate::runtime::ExcavationStatus,
+}
+
+impl CommandReply {
+    pub(crate) fn success(payload: CommandPayload) -> Self {
+        Self {
+            outcome: Ok(payload),
+            action: CommandAction::Continue,
+        }
+    }
+    pub(crate) fn stopping(payload: CommandPayload) -> Self {
+        Self {
+            outcome: Ok(payload),
+            action: CommandAction::Stop,
+        }
+    }
+    pub fn module_text(text: BoundedText) -> Self {
+        Self::success(CommandPayload::ModuleText(text))
+    }
+    /// Construct a typed failure. Detail and diagnostic code have fixed byte bounds.
+    pub fn error(code: &'static str, detail: &str) -> Self {
+        let code = if code.len() <= 128 {
+            code
+        } else {
+            "server.command.failed"
+        };
+        Self {
+            outcome: Err(CommandFailure {
+                code,
+                detail: BoundedText::new(detail),
+            }),
+            action: CommandAction::Continue,
+        }
+    }
+    pub fn is_success(&self) -> bool {
+        self.outcome.is_ok()
+    }
+    pub fn error_code(&self) -> Option<&'static str> {
+        self.outcome.as_ref().err().map(|e| e.code)
+    }
+    pub fn detail(&self) -> Option<&str> {
+        self.outcome.as_ref().err().map(|e| e.detail.as_str())
+    }
+    pub fn should_stop(&self) -> bool {
+        self.action == CommandAction::Stop
+    }
+    pub(crate) fn payload(&self) -> Option<&CommandPayload> {
+        self.outcome.as_ref().ok()
+    }
+    pub(crate) fn payload_mut(&mut self) -> Option<&mut CommandPayload> {
+        self.outcome.as_mut().ok()
+    }
 }
 
 pub fn execute(
@@ -112,65 +365,58 @@ pub fn execute(
         environment_clock,
         monotonic_ms,
         schedule_diagnostics,
+        runtime_status,
+        client_traffic,
     } = context;
     match command {
-        ServerCommand::Help => CommandReply {
-            success: true,
-            text: format!("{} | {}", server_help(), registry.commands().iter()
-                .map(|command| minimium_commands::format_command_help(command.definition.usage, command.definition.arguments)).collect::<Vec<_>>().join(" | ")),
-            stop: false,
-            error_code: None,
-        },
-        ServerCommand::Status => CommandReply {
-            success: true,
-            text: format!(
-                "running players={} lanes={lanes} ticks={} clock_probe_requests={} clock_probe_accepted={} clock_probe_rejected={} environment_sync_messages={} scheduled_world_instances={} startup_system_runs={} {}",
-                worlds.total_players(),
-                metrics.ticks,
-                metrics.clock_probe_requests,
-                metrics.clock_probe_accepted,
-                metrics.clock_probe_rejected,
-                metrics.environment_sync_messages,
-                schedule_diagnostics.world_instance_count,
-                schedule_diagnostics.startup_system_runs,
-                persistence.summary()
-            ),
-            stop: false,
-            error_code: None,
-        },
+        ServerCommand::Help => CommandReply::success(CommandPayload::Help {
+            builtins: crate::server_command::server_help_usages(),
+            modules: registry
+                .commands()
+                .iter()
+                .take(256)
+                .map(|command| CommandHelp {
+                    usage: command.definition.usage,
+                    arguments: command.definition.arguments,
+                })
+                .collect(),
+            truncated: registry.commands().len() > 256,
+        }),
+        ServerCommand::Status => CommandReply::success(CommandPayload::Status(StatusReport {
+            players: worlds.total_players(),
+            lanes,
+            ticks: metrics.ticks,
+            clock_probe_requests: metrics.clock_probe_requests,
+            clock_probe_accepted: metrics.clock_probe_accepted,
+            clock_probe_rejected: metrics.clock_probe_rejected,
+            environment_sync_messages: metrics.environment_sync_messages,
+            scheduled_world_instances: schedule_diagnostics.world_instance_count,
+            startup_system_runs: schedule_diagnostics.startup_system_runs,
+            persistence: persistence.status(),
+            runtime: runtime_status,
+        })),
         ServerCommand::Players => {
             let players = worlds.player_snapshots();
-            let text = if players.is_empty() {
-                "no players".to_owned()
-            } else {
-                players
-                    .iter()
-                    .map(|(instance_id, player)| {
-                        format!(
-                            "{}:{}:world={instance_id}@{:.1},{:.1},{:.1}",
-                            player.id,
-                            player.name,
-                            player.position[0],
-                            player.position[1],
-                            player.position[2]
-                        )
+            let truncated = players.len() > 512;
+            CommandReply::success(CommandPayload::Players {
+                rows: players
+                    .into_iter()
+                    .take(512)
+                    .map(|(world, player)| PlayerRow {
+                        id: player.id,
+                        name: player.name.to_string(),
+                        world,
+                        position: player.position,
                     })
-                    .collect::<Vec<_>>()
-                    .join("; ")
-            };
-            CommandReply {
-                success: true,
-                text,
-                stop: false,
-                error_code: None,
-            }
+                    .collect(),
+                truncated,
+            })
         }
-        ServerCommand::Metrics => CommandReply {
-            success: true,
-            text: metrics.summary(worlds.total_players()),
-            stop: false,
-            error_code: None,
-        },
+        ServerCommand::Metrics => CommandReply::success(CommandPayload::Metrics {
+            snapshot: metrics.snapshot(worlds.total_players()),
+            clients: client_traffic.rows,
+            clients_truncated: client_traffic.truncated,
+        }),
         ServerCommand::Save => {
             let result = match environment_clock.capture_saved_state(monotonic_ms) {
                 Err(error) => Err((error.code(), error.to_string())),
@@ -182,39 +428,24 @@ pub fn execute(
                 },
             };
             match result {
-                Ok(()) => CommandReply {
-                    success: true,
-                    text: "world save queued; use status to check completion".to_owned(),
-                    stop: false,
-                    error_code: None,
-                },
-                Err((error_code, error)) => CommandReply {
-                    success: false,
-                    text: format!("world save: {error}"),
-                    stop: false,
-                    error_code: Some(error_code),
-                },
+                Ok(()) => CommandReply::success(CommandPayload::SaveQueued),
+                Err((error_code, error)) => {
+                    CommandReply::error(error_code, &format!("world save: {error}"))
+                }
             }
         }
-        ServerCommand::Stop => CommandReply {
-            success: true,
-            text: "stopping".to_owned(),
-            stop: true,
-            error_code: None,
-        },
+        ServerCommand::Stop => CommandReply::stopping(CommandPayload::Stopping),
         ServerCommand::Time(command) => time::execute(*command, environment_clock, monotonic_ms),
-        ServerCommand::Property(_) => CommandReply {
-            success: false,
-            text: "setting command must execute on the server owner lane".into(),
-            stop: false,
-            error_code: Some("server.property.wrong_lane"),
-        },
-        ServerCommand::SpawnRandomBolid(_) | ServerCommand::SpawnRandomMeteorid => CommandReply {
-            success: false,
-            text: "bolid command must execute on the server owner lane".into(),
-            stop: false,
-            error_code: Some("server.bolid.wrong_lane"),
-        },
+        ServerCommand::Property(_) => CommandReply::error(
+            "server.property.wrong_lane",
+            "setting command must execute on the server owner lane",
+        ),
+        ServerCommand::SpawnRandomBolid(_) | ServerCommand::SpawnRandomMeteorid => {
+            CommandReply::error(
+                "server.bolid.wrong_lane",
+                "bolid command must execute on the server owner lane",
+            )
+        }
         ServerCommand::Registered(_) => unreachable!("registered commands dispatched above"),
     }
 }
