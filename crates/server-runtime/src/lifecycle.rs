@@ -1,6 +1,4 @@
 use crate::{
-    admin::AdminServer,
-    connection::Client,
     content::ContentServer,
     environment::EnvironmentClock,
     executor::Executor,
@@ -24,8 +22,7 @@ use std::{
 
 pub(crate) struct ShutdownContext<'a> {
     pub shutdown_request: &'a crate::composition::ShutdownRequest,
-    pub admin: &'a mut AdminServer,
-    pub clients: &'a mut [Client],
+    pub transport: &'a mut dyn minimium_transport::TransportPort,
     pub player_store: &'a mut PlayerStore,
     pub persistence: &'a mut PersistenceWorker,
     pub content: &'a mut ContentServer,
@@ -45,9 +42,10 @@ pub(crate) fn shutdown(mut context: ShutdownContext<'_>) -> io::Result<()> {
     // One process-wide 30-second deadline; the final two seconds belong to diagnostics.
     let log_deadline = context.shutdown_request.begin_shutdown();
     let deadline = log_deadline - Duration::from_secs(2);
-    context.admin.stop_admission();
-    drain_admin_requests(context.admin, &mut context.runtime_error, deadline);
-    close_client_sockets(context.clients);
+    context.transport.stop_admission();
+    context.transport.reject_admin_pending();
+    drain_transport(context.transport, &mut context.runtime_error, deadline);
+    context.transport.close_all();
     let content_deadline = (Instant::now() + Duration::from_secs(2)).min(deadline);
     let mut unfinished = context
         .content
@@ -91,36 +89,39 @@ pub(crate) fn shutdown(mut context: ShutdownContext<'_>) -> io::Result<()> {
     )
 }
 
-fn drain_admin_requests(
-    admin: &mut AdminServer,
+fn drain_transport(
+    transport: &mut dyn minimium_transport::TransportPort,
     runtime_error: &mut Option<io::Error>,
     deadline: Instant,
 ) {
-    admin.reject_pending("server stopping");
-    while admin.has_pending_output() && Instant::now() < deadline {
-        match admin.poll(Instant::now()) {
-            Ok(requests) => {
-                for request in requests {
-                    admin.respond(
-                        request.id,
-                        false,
-                        Some("server.stopping"),
-                        "server stopping",
-                    );
+    while transport.has_pending_admin_output() && Instant::now() < deadline {
+        match transport.poll(Instant::now()) {
+            Ok(events) => {
+                for event in events {
+                    if let minimium_transport::TransportEvent::Admin(
+                        minimium_transport::AdminTransportEvent::Request { id, .. },
+                    ) = event
+                    {
+                        let _ = transport.respond_admin(
+                            id,
+                            minimium_transport::AdminResponse {
+                                success: false,
+                                error_code: Some("server.stopping".to_owned()),
+                                key: None,
+                                text: "server stopping".to_owned(),
+                                usage: None,
+                            },
+                        );
+                    }
                 }
             }
             Err(error) => {
-                runtime_error.get_or_insert(error);
+                runtime_error.get_or_insert_with(|| io::Error::other(error));
                 break;
             }
         }
+        let _ = transport.flush(Instant::now());
         thread::sleep(Duration::from_millis(5));
-    }
-}
-
-fn close_client_sockets(clients: &mut [Client]) {
-    for client in clients {
-        let _ = client.stream.shutdown(std::net::Shutdown::Both);
     }
 }
 

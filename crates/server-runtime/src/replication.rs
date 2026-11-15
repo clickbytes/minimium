@@ -5,7 +5,7 @@ pub(crate) use player_diff::diff_remote_players;
 
 use crate::executor::Executor;
 use crate::{
-    connection::{queue_encoded_frame_with_reserve, queue_message, Client},
+    connection::{queue_message, queue_message_with_limit, Client},
     metrics::RuntimeMetrics,
     world_registry::WorldRegistry,
 };
@@ -274,18 +274,16 @@ pub(crate) fn replicate_entities(
                 target_revision: sync.target_revision,
                 full: sync.full,
             };
-            if let Some(frame) =
-                encode_sync_frame(client, metrics, &message).filter(|frame| frame.len() <= budget)
-            {
-                let bytes = frame.len();
-                if queue_encoded_frame_with_reserve(client, &frame, metrics, MAX_SERVER_FRAME_BYTES)
-                {
-                    sync.begin_pending = false;
-                    budget -= bytes;
-                } else {
-                    client.entity_sync = Some(sync);
-                    continue;
-                }
+            if let Ok(frame_bytes) = queue_message_with_limit(
+                client,
+                metrics,
+                message,
+                MAX_SERVER_FRAME_BYTES,
+                budget,
+                None,
+            ) {
+                sync.begin_pending = false;
+                budget -= frame_bytes;
             } else {
                 client.entity_sync = Some(sync);
                 continue;
@@ -298,16 +296,16 @@ pub(crate) fn replicate_entities(
                 revision: sync.target_revision,
                 operation: operation.clone(),
             };
-            let Some(frame) = encode_sync_frame(client, metrics, &message) else {
+            let Ok(size) = queue_message_with_limit(
+                client,
+                metrics,
+                message,
+                MAX_SERVER_FRAME_BYTES,
+                budget,
+                None,
+            ) else {
                 break;
             };
-            let size = frame.len();
-            if size > budget {
-                break;
-            }
-            if !queue_encoded_frame_with_reserve(client, &frame, metrics, MAX_SERVER_FRAME_BYTES) {
-                break;
-            }
             sync.operations.pop_front();
             budget = budget.saturating_sub(size);
         }
@@ -317,46 +315,23 @@ pub(crate) fn replicate_entities(
                 sync_id: sync.sync_id,
                 target_revision: sync.target_revision,
             };
-            if let Some(frame) =
-                encode_sync_frame(client, metrics, &message).filter(|frame| frame.len() <= budget)
+            if queue_message_with_limit(
+                client,
+                metrics,
+                message,
+                MAX_SERVER_FRAME_BYTES,
+                budget,
+                None,
+            )
+            .is_ok()
             {
-                if queue_encoded_frame_with_reserve(client, &frame, metrics, MAX_SERVER_FRAME_BYTES)
-                {
-                    sync.complete_sent = true;
-                }
+                sync.complete_sent = true;
             }
         }
         client.entity_sync = Some(sync);
     }
 }
 
-fn encode_sync_frame(
-    client: &mut Client,
-    metrics: &mut RuntimeMetrics,
-    message: &ServerMessage,
-) -> Option<Vec<u8>> {
-    let started = Instant::now();
-    let result = minimium_protocol::encode_server(message);
-    let elapsed = started.elapsed();
-    metrics.encoding.record(elapsed);
-    client.encoding_us = client
-        .encoding_us
-        .saturating_add(elapsed.as_micros().min(u128::from(u64::MAX)) as u64);
-    match result {
-        Ok(frame) => Some(frame),
-        Err(error) => {
-            if let Some(logger) = &client.protocol_logger {
-                crate::diagnostics::emit(
-                    logger,
-                    minimium_diagnostics::Level::Error,
-                    "protocol.message_encode_failed",
-                    &[("reason", error.to_string())],
-                );
-            }
-            None
-        }
-    }
-}
 pub(crate) fn advance_deadline(
     next: &mut Instant,
     interval: Duration,

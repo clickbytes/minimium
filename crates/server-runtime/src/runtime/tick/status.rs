@@ -1,18 +1,17 @@
 use super::super::ServerRuntime;
 use crate::commands::{ClientTrafficRow, ClientTrafficSnapshot, RuntimeStatusSnapshot};
 use minimium_protocol::PROTOCOL_VERSION;
-use std::net::SocketAddr;
 
 impl ServerRuntime {
     pub(super) fn runtime_status_snapshot(
         &self,
-        game_address: SocketAddr,
+        game_address: &str,
         max_players: usize,
     ) -> RuntimeStatusSnapshot {
         let (environment_profiles, environment_profiles_truncated) =
             self.game.worlds.environment_snapshot(128);
         RuntimeStatusSnapshot {
-            game_address: game_address.to_string(),
+            game_address: game_address.to_owned(),
             max_players,
             map_fingerprint: self.map.fingerprint(),
             tick_ms: super::super::TICK.as_millis(),
@@ -39,14 +38,20 @@ impl ServerRuntime {
             .clients
             .iter()
             .filter_map(|client| {
-                client.player_id().map(|id| ClientTrafficRow {
-                    id,
-                    bytes_in: client.bytes_in,
-                    bytes_out: client.bytes_out,
-                    decoded_frames: client.frames_in,
-                    queued_frames: client.frames_out,
-                    encoding_us: client.encoding_us,
-                    connected_ms: client.connected_at.elapsed().as_millis(),
+                client.player_id().map(|id| {
+                    let stats = client
+                        .transport
+                        .stats(client.connection_id())
+                        .unwrap_or_default();
+                    ClientTrafficRow {
+                        id,
+                        bytes_in: stats.bytes_in,
+                        bytes_out: stats.bytes_out,
+                        decoded_frames: stats.frames_in,
+                        queued_frames: stats.frames_out,
+                        encoding_us: client.encoding_us,
+                        connected_ms: client.connected_at.elapsed().as_millis(),
+                    }
                 })
             })
             .take(512)

@@ -1,5 +1,4 @@
 //! Authoritative world lifecycle, ticking, networking and persistence runtime.
-mod accept;
 mod admin;
 pub mod authentication;
 mod command_output;
@@ -15,10 +14,8 @@ mod lifecycle;
 mod metrics;
 pub mod modules;
 mod process_error;
-mod receive;
 mod replication;
 mod sector_streaming;
-mod send;
 mod server_command;
 mod simulation;
 mod startup;
@@ -112,12 +109,19 @@ pub fn run_with_config(
             std::io::Error::other(format!("component registry is invalid: {error:?}")),
         )
     })?;
+    let transport = composition.transport.ok_or_else(|| {
+        ServerProcessError::caused_by(
+            ServerProcessErrorKind::RuntimeSetup,
+            std::io::Error::other("server host did not provide a transport adapter"),
+        )
+    })?;
     let startup = startup::initialize(
         &config,
         composition.world_composer,
         &component_registry,
         composition.storage_logger,
         composition.server_logger.clone(),
+        transport,
     )
     .map_err(|error| ServerProcessError::from_boxed(ServerProcessErrorKind::Startup, error))?;
     let attempt_id = config.startup_attempt_id.clone();
