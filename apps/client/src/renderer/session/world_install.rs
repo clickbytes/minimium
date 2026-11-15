@@ -1,5 +1,5 @@
 use super::*;
-impl Renderer {
+impl DesktopHost {
     pub(super) fn resolved_map_for_context(
         &mut self,
         context: minimium_protocol::WorldContext,
@@ -58,10 +58,10 @@ impl Renderer {
             minimium_renderer::terrain_view::TerrainView::new(
                 target_position,
                 self.fov_degrees.to_radians(),
-                self.gpu.size.height,
+                self.renderer.size.height,
             ),
-            self.gpu.render_origin,
-            self.gpu.world_geometry.origin_generation(),
+            self.renderer.render_origin,
+            self.renderer.world_geometry.origin_generation(),
             &self.application.world_catalog,
             &self.application.game.world_manifests,
             Some((map.as_ref(), manifest)),
@@ -73,19 +73,21 @@ impl Renderer {
                 self.application
                     .connection
                     .record_diagnostic_failure(error.code(), &error.to_string());
-                self.gpu.release_scene_stage(instance, owner);
+                self.renderer.release_scene_stage(instance, owner);
                 return false;
             }
         };
         let gpu_ready = scene.as_ref().is_some_and(|scene| {
-            self.gpu.cache_sector_scene(instance, scene)
-                && self.gpu.activate_sector_scene(instance, scene, fingerprint)
+            self.renderer.cache_sector_scene(instance, scene)
+                && self
+                    .renderer
+                    .activate_sector_scene(instance, scene, fingerprint)
         });
         if !gpu_ready {
-            self.gpu.release_scene_stage(instance, owner);
+            self.renderer.release_scene_stage(instance, owner);
         }
         self.application.set_loading(!gpu_ready);
-        self.gpu.scene_visible = gpu_ready;
+        self.renderer.scene_visible = gpu_ready;
         let previous_instance = self.application.game.current_instance;
         self.application.game.gameplay.collision_index = scene.as_ref().map_or_else(
             || minimium_simulation::CollisionIndex::from_geometry(Vec::new(), Vec::new()),
@@ -133,7 +135,7 @@ impl Renderer {
         self.application.input.clear_held();
         self.input.jump_pending = false;
         self.application.activate_world(instance);
-        self.gpu.release_scene_stage(
+        self.renderer.release_scene_stage(
             instance,
             super::super::sector_scene::SceneInterestOwner::Active(context),
         );
@@ -145,7 +147,7 @@ impl Renderer {
             self.sector_cache.release_interest(
                 super::super::sector_scene::SceneInterestOwner::Active(source),
             );
-            self.gpu.release_scene_stage(
+            self.renderer.release_scene_stage(
                 source.instance(),
                 super::super::sector_scene::SceneInterestOwner::Active(source),
             );
@@ -154,21 +156,21 @@ impl Renderer {
             self.release_world_sectors(previous_instance);
         }
         self.metrics.frame_stats.set_gpu_bytes(
-            self.gpu.fixed_gpu_bytes
-                + u64::from(self.gpu.size.width.max(1))
-                    * u64::from(self.gpu.size.height.max(1))
+            self.renderer.fixed_gpu_bytes
+                + u64::from(self.renderer.size.width.max(1))
+                    * u64::from(self.renderer.size.height.max(1))
                     * 4,
         );
         true
     }
 }
 
-impl Renderer {
+impl DesktopHost {
     pub(super) fn apply_altitude_position(&mut self, position: minimium_world::world::Position3Mm) {
         self.application.game.gameplay.prediction.position_mm = Some(position);
         self.application.game.gameplay.prediction.character.position =
             position.0.map(|v| v as f32 / 1000.0);
-        self.gpu.set_render_origin(
+        self.renderer.set_render_origin(
             self.application
                 .game
                 .gameplay
@@ -185,7 +187,7 @@ impl Renderer {
         self.last_render_position = [f32::INFINITY; 3];
         self.application.game.gameplay.sectors_ready = false;
         self.application.set_loading(true);
-        self.gpu.scene_visible = false;
+        self.renderer.scene_visible = false;
         self.application.input.clear_held();
         self.application.status =
             crate::application::ClientStatus::Status(minimium_localization::UiStatus::EarthLoading);

@@ -1,7 +1,7 @@
 //! Read-only presentation diagnostics. No sampling or GPU readback on this path.
-use super::Renderer;
+use super::DesktopHost;
 
-impl Renderer {
+impl DesktopHost {
     pub(super) fn terrain_status(&self) -> Vec<String> {
         let instance = self.application.game.current_instance;
         let scene = self
@@ -19,9 +19,9 @@ impl Renderer {
             .and_then(|m| m.planet())
             .map(|p| p.peak_relief)
             .unwrap_or_default();
-        let surfaces = self.gpu.world_geometry.terrain();
+        let surfaces = self.renderer.world_geometry.terrain();
         let active_keys = self
-            .gpu
+            .renderer
             .world_geometry
             .publication()
             .map_or(&[][..], |publication| publication.keys.as_slice());
@@ -52,8 +52,8 @@ impl Renderer {
             ),
             format!(
                 "terrain light atmosphere={} hdr={} base_exposure={:.2} view_exposure={:.2} moon_flux={:.3e}",
-                self.gpu.atmosphere_gpu.is_active(),
-                self.gpu.hdr_enabled,
+                self.renderer.atmosphere_gpu.is_active(),
+                self.renderer.hdr_enabled,
                 environment.ambient_rgb_exposure[3],
                 view_exposure,
                 environment.moon_disk_radiance[3]
@@ -80,7 +80,7 @@ impl Renderer {
                 relief.exponent,
                 relief.start_m,
                 relief.full_m,
-                self.gpu.terrain_gpu.uniform.climate[3]
+                self.renderer.terrain_gpu.uniform.climate[3]
             ),
             format!(
                 "terrain last_prepare_ms={:.2} source_cache_mib={:.2} upload_limit=8_patches/4MiB recipe={}",
@@ -90,12 +90,12 @@ impl Renderer {
             ),
             format!(
                 "terrain climate={} material_mib={:.2}; debug source: cyan=mapped orange=procedural",
-                if self.gpu.terrain_gpu.uniform.cover[2] > 0.0 {
+                if self.renderer.terrain_gpu.uniform.cover[2] > 0.0 {
                     "planet+local-history"
                 } else {
                     "preparing-history"
                 },
-                self.gpu.terrain_gpu.bytes as f64 / 1048576.0
+                self.renderer.terrain_gpu.bytes as f64 / 1048576.0
             ),
         ]
     }

@@ -1,8 +1,8 @@
-use super::super::Renderer;
+use super::super::DesktopHost;
 use crate::client_commands::{MeteorLightDebug, PresentationOperation, PresentationResult};
 
 pub(super) fn execute(
-    renderer: &mut Renderer,
+    renderer: &mut DesktopHost,
     operation: PresentationOperation,
 ) -> PresentationResult {
     let mut lines = Vec::new();
@@ -11,7 +11,7 @@ pub(super) fn execute(
             lines.extend(super::dev_input::execute_developer(renderer, operation));
         }
         PresentationOperation::AtmosphereStatus => {
-            lines.extend(renderer.gpu.atmosphere_gpu.status());
+            lines.extend(renderer.renderer.atmosphere_gpu.status());
         }
         PresentationOperation::WeatherStatus => lines.extend(renderer.weather_status()),
         PresentationOperation::TerrainStatus => lines.extend(renderer.terrain_status()),
@@ -75,8 +75,8 @@ pub(super) fn execute(
             ));
         }
         PresentationOperation::MeteorLight(mode) => {
-            renderer.gpu.transient_enabled = mode != MeteorLightDebug::Off;
-            renderer.gpu.transient_transmission = mode == MeteorLightDebug::Transmission;
+            renderer.renderer.transient_enabled = mode != MeteorLightDebug::Off;
+            renderer.renderer.transient_transmission = mode == MeteorLightDebug::Transmission;
             lines.push(format!("meteors: local light {mode:?}"));
         }
         PresentationOperation::MeteorDebug(mode) => {

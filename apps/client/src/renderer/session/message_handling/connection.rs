@@ -1,14 +1,14 @@
 use super::*;
 
-impl Renderer {
+impl DesktopHost {
     pub(super) fn handle_welcome(&mut self, message: ServerMessage) {
+        let game_message = message.clone();
         let ServerMessage::Welcome {
             id,
             map_fingerprint,
             context,
             health,
             position,
-            position_mm,
             manifest,
             ..
         } = message
@@ -21,10 +21,10 @@ impl Renderer {
             self.fail_connection("serwer nie udostępnia manifestu Earth");
             return;
         }
-        let Some(map) = self.resolved_map_for_context(context, manifest) else {
+        if self.resolved_map_for_context(context, manifest).is_none() {
             self.fail_connection("server generation manifest is not supported");
             return;
-        };
+        }
         let bootstrap_instance = self.application.game.current_instance;
         if !self.install_world(
             super::super::super::sector_scene::SceneInterestOwner::Active(context),
@@ -39,23 +39,22 @@ impl Renderer {
         let bootstrap =
             super::super::super::sector_scene::SceneInterestOwner::Bootstrap(bootstrap_instance);
         self.sector_cache.release_interest(bootstrap);
-        self.gpu.release_scene_stage(bootstrap_instance, bootstrap);
+        self.renderer
+            .release_scene_stage(bootstrap_instance, bootstrap);
         if bootstrap_instance != context.instance() {
             self.release_world_sectors(bootstrap_instance);
         }
-        self.application
-            .commit_world_content(context.instance(), manifest, (*map).clone());
-        self.application.game.set_session_context(Some(context));
-        self.application.game.gameplay.health = health;
-        self.gpu.scene_visible = !self.application.is_loading();
+        self.renderer.scene_visible = !self.application.is_loading();
         self.application.status =
             crate::application::ClientStatus::Status(if self.application.settings.require_earth {
                 minimium_localization::UiStatus::EarthConnected
             } else {
                 minimium_localization::UiStatus::Connected
             });
-        self.application.game.gameplay.prediction.position_mm =
-            manifest.planet().map(|_| position_mm);
+        if let Err(error) = self.application.apply_game_message(&game_message) {
+            self.fail_connection(&format!("client world state update failed: {error:?}"));
+            return;
+        }
         if self.application.ui.console.open {
             self.application.ui.console.push_client_text(
                 Text::Connected { id, health },

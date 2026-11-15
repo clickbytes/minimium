@@ -1,10 +1,10 @@
 use crate::{
-    client_commands::{execute_text, help_lines, CommandContext, CommandSource, TextCommandResult},
+    client_commands::{help_lines, CommandSource, TextCommandResult},
     messages::ClientText as Text,
     options::ClientOptions,
     session::{SessionEvent, SessionState},
 };
-use minimium_client_runtime::{connector::StartError, ConnectionController, ConnectionEvent};
+use minimium_client_runtime::{connector::StartError, ConnectionEvent};
 use minimium_protocol::ServerMessage;
 use std::{
     error::Error,
@@ -29,8 +29,6 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
         worlds,
         connection,
     } = crate::bootstrap::ClientBootstrap::new(&options)?;
-    // The resolver retains its catalog; this host has no local scene view.
-    drop(worlds);
     let mut text_properties = properties::TextProperties::new(&options);
     if options.startup_settings.sky_quality() != minimium_renderer::quality::SkyQuality::Standard {
         println!(
@@ -53,8 +51,27 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
     );
     let (sender, receiver) = mpsc::sync_channel(INPUT_QUEUE_CAPACITY);
     super::spawn_console_input_reader(sender, logger.clone());
-    let mut connection = connection.for_host(crate::bootstrap::HostCapabilities::CpuOnly);
-    let mut action_executor = crate::application::ClientActionExecutor::default();
+    #[cfg(feature = "desktop")]
+    let headless_settings = crate::application::HeadlessApplicationSettings {
+        locale: options.locale,
+        local_server_config: options.local_server_launch_config(
+            data_dir.clone(),
+            log_dir.clone(),
+            parent_run_id.clone(),
+            None,
+        )?,
+        require_earth: options.require_earth,
+        demo: options.demo,
+        config_file_settings: options.config_file_settings.clone(),
+        startup_settings: options.startup_settings.clone(),
+    };
+    #[cfg(not(feature = "desktop"))]
+    let headless_settings = crate::application::HeadlessApplicationSettings;
+    let mut application = crate::application::ClientApplication::new_headless(
+        connection.for_host(crate::bootstrap::HostCapabilities::CpuOnly),
+        worlds,
+        headless_settings,
+    );
     let mut events = Vec::with_capacity(16);
     let mut prompt_needed = true;
     let mut last_snapshot: Option<ServerMessage> = None;
@@ -62,21 +79,21 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
     let mut last_environment_status_at = None;
 
     if let Some(address) = options.connect.as_ref() {
-        let result = start_remote(&mut connection, address);
+        let result = start_remote(&mut application, address);
         format_startup_output(result, &localizer, options.locale);
     }
 
     loop {
-        if let Some(result) = connection.poll_admin_result() {
+        if let Some(result) = application.poll_admin_result() {
             match result {
                 Ok(response) => println!("{}", response.trim()),
                 Err(error) => {
-                    connection.record_diagnostic_failure("client.admin_response_failed", &error);
+                    application.record_diagnostic_failure("client.admin_response_failed", &error);
                     println!("{error}");
                 }
             }
         }
-        match connection.poll_connector() {
+        match application.poll_connector() {
             ConnectionEvent::InProgress {
                 waiting_for_cleanup: true,
             } => println!(
@@ -110,26 +127,26 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
             }
             _ => {}
         }
-        if connection.session().is_some() {
+        if application.session().is_some() {
             events.clear();
-            connection.poll_session(&mut events);
+            application.poll_session(&mut events);
             for event in events.drain(..) {
                 match event {
-                    SessionEvent::Message(message @ ServerMessage::Snapshot { .. }) => {
-                        last_snapshot = Some(message);
-                    }
-                    SessionEvent::Message(
-                        message @ ServerMessage::TransitionPrepare {
-                            transition_id,
-                            target_context,
-                            ..
-                        },
-                    ) => {
-                        let ticket = minimium_client_runtime::TransferTicket::new(
-                            transition_id,
-                            target_context,
-                        );
-                        let _ = connection.report_transfer_host_ready(ticket);
+                    SessionEvent::Message(message) => {
+                        let state_update = application.apply_game_message(&message);
+                        if let Err(error) = state_update {
+                            if !matches!(
+                                error,
+                                crate::application::ApplicationMessageError::StaleWorldContext
+                            ) {
+                                println!("Client state update failed: {error:?}");
+                                application.disconnect_session();
+                            }
+                        }
+                        if state_update.is_ok() && matches!(message, ServerMessage::Snapshot { .. })
+                        {
+                            last_snapshot = Some(message.clone());
+                        }
                         events::print_session_event(
                             SessionEvent::Message(message),
                             false,
@@ -140,15 +157,18 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                     other => events::print_session_event(other, false, &localizer, options.locale),
                 }
             }
-            if connection
+            if let Some(ticket) = application.pending_transfer_ticket() {
+                let _ = application.report_transfer_host_ready(ticket);
+            }
+            if application
                 .session()
                 .is_some_and(|current| current.state() == SessionState::Disconnected)
             {
-                connection.take_session();
+                application.disconnect_session();
                 last_snapshot = None;
             }
         }
-        if let Some(frame) = connection
+        if let Some(frame) = application
             .session()
             .filter(|session| session.state() == SessionState::Connected)
             .map(|session| session.environment_frame())
@@ -194,18 +214,14 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
         match receiver.recv_timeout(Duration::from_millis(25)) {
             Ok(line) => {
                 prompt_needed = true;
-                let result = execute_text(
+                let result = application.execute_text_command(
                     &line,
                     CommandSource::Terminal,
-                    &mut CommandContext {
-                        connection: &mut connection,
-                        action_executor: &mut action_executor,
-                        fire_direction: [1.0, 0.0, 0.0],
-                        player_position: last_snapshot.as_ref().and_then(|message| match message {
-                            ServerMessage::Snapshot { self_position, .. } => Some(*self_position),
-                            _ => None,
-                        }),
-                    },
+                    [1.0, 0.0, 0.0],
+                    last_snapshot.as_ref().and_then(|message| match message {
+                        ServerMessage::Snapshot { self_position, .. } => Some(*self_position),
+                        _ => None,
+                    }),
                 );
                 match result {
                     TextCommandResult::Empty => {}
@@ -227,7 +243,7 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                         let (should_exit, result) = actions::handle(
                             action,
                             &mut options,
-                            &mut connection,
+                            &mut application,
                             &mut last_snapshot,
                             &localizer,
                             &data_dir,
@@ -299,8 +315,8 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
     }
 
     let shutdown_deadline = Instant::now() + Duration::from_secs(30);
-    let cleanup_result = connection.finish_until(shutdown_deadline - Duration::from_secs(2));
-    drop(connection);
+    let cleanup_result = application.finish_until(shutdown_deadline - Duration::from_secs(2));
+    drop(application);
     drop(localizer);
     drop(logger);
     let diagnostics_result = diagnostics.shutdown_until(shutdown_deadline);
@@ -321,10 +337,10 @@ pub(super) fn format_startup_output(
     }
 }
 pub(super) fn start_remote(
-    connection: &mut ConnectionController,
+    application: &mut crate::application::ClientApplication,
     address: &str,
 ) -> crate::client_commands::CommandActionResult {
-    match connection.start_remote(address.to_owned()) {
+    match application.start_remote(address.to_owned()) {
         Ok(()) => crate::client_commands::CommandActionResult {
             outputs: vec![crate::client_commands::CommandOutput::ClientText {
                 message: Text::ConnectingTo(address.to_owned()),

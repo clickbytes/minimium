@@ -38,10 +38,10 @@ An origin or publication change rebuilds even stationary player geometry, and
 disconnect/reset invalidates the stamp together with the buffer. Waiting scenes
 cannot draw players retained from a previous world.
 
-The desktop renderer reads the confirmed equipped tool from the active client
-session and passes its neutral `ToolKind` to the first-person viewmodel pass.
-Shovels and pickaxes are presentation-only low-poly meshes; gameplay tool use
-continues through the existing authoritative session action.
+The desktop host reads the confirmed equipped tool from the active client
+session and supplies its selected `ToolDefinition` to the tool preview. Shovels
+and pickaxes are presentation-only low-poly meshes; gameplay tool use continues
+through the existing authoritative session action.
 
 Camera and tool-preview rays use the shared world `CharacterGeometry` eye and
 radial frame. Remote body meshes and shadow casters are generated from its
@@ -111,30 +111,43 @@ Authored instance 1, manual dungeon instance 4 and the sample primary instance
 are selected by the common composition, without a fingerprint-based lookup.
 The former terminal-only world setup and duplicated desktop setup are removed.
 
-The front-end loop owns UI and polls the runtime connection controller; the runtime owns its socket, bounded protocol state and local-server guard, while background connector work reports typed results.
+`DesktopHost` and the terminal front end drive `ClientApplication`; the
+application owns desktop UI state and polls the runtime connection controller.
+The runtime owns its socket, bounded protocol state and local-server guard,
+while background connector work reports typed results.
 
 Both frontends display the controller's typed busy rejection. Desktop switches
 its scene to connecting only after an attempt is accepted; a rejected restart
 keeps the active environment and geometry visible.
 
-`ClientApplication` owns the connection controller, client gameplay/session
-state, input action mapper, settings, UI model, world catalog, overview model,
-typed connection status and a bounded data registry for one staged transfer.
+`ClientApplication` is the shared CPU state owner for desktop and terminal
+connection, session updates, actions, prediction and the active world catalog.
+The desktop `DesktopHost` owns it alongside a GPU-only `Renderer`; the renderer
+has no client session or gameplay state. The host builds immutable
+`DesktopRenderView` values for frame preparation and reports presentation
+readiness with the transfer ticket and terrain revision used to prepare it.
+The application validates that report against the current pending transfer and
+CPU content before asking the runtime to queue readiness. Terminal mode uses the
+same CPU content gate and retries until its resolved map, manifest, planetary
+geography and planetary water catalog are available. GPU readiness never
+authorizes a world change.
+
 The client runtime owns transfer ticket lifecycle and protocol readiness. A
 pending transfer retains its resolved map behind its context and transition ID;
 preparing destination geometry does not overwrite the active world catalog.
 The application installs that map in the active catalog only after commit.
-Cancel and failure drop the staged map.
-The renderer owns gameplay render geometry, hit feedback and GPU resources. The
-application action executor owns the mouse weapon-fallback cooldown and reports
-the resolved queued action kind; the application has no GPU handle.
-The transition and overview fields are private to `ClientApplication`. Renderer
-consumers read the overview model through an immutable view and request open,
+Cancel and failure drop the staged map. `DesktopHost` owns gameplay render
+geometry preparation and hit feedback; `Renderer` owns GPU resources and frame
+submission. The application action executor owns the mouse weapon-fallback
+cooldown and reports the resolved queued action kind; the application has no
+GPU handle.
+The transition and overview fields are private to `ClientApplication`. Desktop
+host consumers read the overview model through an immutable view and request open,
 close, zoom and drag transitions through application methods. Open state is the
 presence of one world instance, so an open map cannot lack an instance. The
 overview model owns finite, bounded zoom and transient drag state.
-The renderer owns CPU shadow selection state and passes it to GPU submission
-through the immutable per-frame scene snapshot; GPU resources own caster buffers
+`DesktopHost` owns CPU shadow selection state and passes it to GPU submission
+through the immutable per-frame scene snapshot; `Renderer` owns caster buffers
 and uniforms, not shadow validity or source selection.
 The snapshot carries the renderer's complete geometry publication stamp and keys;
 scene receivers, selected casters, remote casters and the uploaded map must match
@@ -145,9 +158,9 @@ the current geometry publication; separate expected fields show the prepared
 shadow's stamp when it is stale. The incomplete reason distinguishes missing
 source, budget failure, stale context and pending/failed upload.
 `shadow_prepare::prepare_shadow_frame` performs CPU-only selection, bounds checks,
-uniform preparation and bounded local-map geometry conversion. `GpuResources`
+uniform preparation and bounded local-map geometry conversion. `Renderer`
 owns shadow buffer allocation/upload and pass encoding; it publishes cache
-metadata only after the complete upload. `Renderer::release_world_sectors` is
+metadata only after the complete upload. `DesktopHost::release_world_sectors` is
 the single caller-facing world release point, clearing CPU map preparation and
 GPU world/shadow buffers together. The shadow CPU timer includes preparation
 and reads of immutable publication metadata, but no buffer upload or encode.

@@ -1,5 +1,5 @@
 use super::*;
-impl Renderer {
+impl DesktopHost {
     pub(super) fn property_line(&self, key: Key, changed: bool) -> String {
         if let Some(line) = crate::client_commands::format_time_value(key, self.environment_frame) {
             return line;

@@ -1,5 +1,7 @@
 #[cfg(feature = "desktop")]
+mod desktop_view;
 mod game;
+mod messages;
 mod settings;
 #[cfg(feature = "desktop")]
 mod transitions;
@@ -7,7 +9,11 @@ mod transitions;
 mod ui;
 
 #[cfg(feature = "desktop")]
-pub(crate) use game::{ClientGameState, GameplayState};
+pub(crate) use desktop_view::TransferPresentationReady;
+pub(crate) use game::ClientGameState;
+#[cfg(feature = "desktop")]
+pub(crate) use game::GameplayState;
+pub(crate) use messages::ApplicationMessageError;
 #[cfg(feature = "desktop")]
 pub(crate) use settings::ClientSettings;
 pub(crate) use settings::{SettingsStore, StartupSettings};
@@ -22,31 +28,46 @@ pub(crate) use ui::ClientStatus;
 #[cfg(feature = "desktop")]
 pub(crate) use ui::UiModel;
 
-#[cfg(feature = "desktop")]
 use minimium_client_runtime::ConnectionController;
-#[cfg(feature = "desktop")]
 use minimium_world::world::{WorldInstanceId, WorldMap};
-#[cfg(feature = "desktop")]
 use std::collections::HashMap;
 
-/// Application-owned client state; presentation resources remain in the renderer.
-#[cfg(feature = "desktop")]
+/// Shared client state owner; presentation resources belong to the host renderer.
 pub(crate) struct ClientApplication {
     #[cfg(feature = "desktop")]
     pub(crate) ui: UiModel,
-    #[cfg(feature = "desktop")]
     pub(crate) game: ClientGameState,
     pub(crate) connection: ConnectionController,
     pub(crate) action_executor: ClientActionExecutor,
+    pending_transfer: Option<messages::ApplicationTransferPreparation>,
+    #[cfg(feature = "desktop")]
+    tool_profile: minimium_simulation::tools::ToolProfile,
+    #[cfg(feature = "desktop")]
     pub(crate) settings: ClientSettings,
+    #[cfg(feature = "desktop")]
     pub(crate) input: crate::input::InputMapper,
     pub(crate) world_catalog: HashMap<WorldInstanceId, WorldMap>,
+    #[cfg(feature = "desktop")]
     transitions: WorldTransitionController,
+    #[cfg(feature = "desktop")]
     overview: MapOverviewModel,
+    #[cfg(feature = "desktop")]
     pub(crate) status: ClientStatus,
 }
 
 #[cfg(feature = "desktop")]
+pub(crate) struct HeadlessApplicationSettings {
+    pub(crate) locale: minimium_localization::Locale,
+    pub(crate) local_server_config: minimium_client_runtime::LocalServerLaunchConfig,
+    pub(crate) require_earth: bool,
+    pub(crate) demo: bool,
+    pub(crate) config_file_settings: std::collections::BTreeMap<String, String>,
+    pub(crate) startup_settings: StartupSettings,
+}
+
+#[cfg(not(feature = "desktop"))]
+pub(crate) struct HeadlessApplicationSettings;
+
 impl ClientApplication {
     #[cfg(feature = "desktop")]
     pub(crate) fn new(
@@ -65,6 +86,9 @@ impl ClientApplication {
             game,
             connection,
             action_executor: ClientActionExecutor::default(),
+            pending_transfer: None,
+            #[cfg(feature = "desktop")]
+            tool_profile: minimium_game_sample::DEFAULT_TOOL_PROFILE,
             settings,
             input,
             world_catalog,
@@ -74,38 +98,99 @@ impl ClientApplication {
         }
     }
 
+    pub(crate) fn new_headless(
+        connection: ConnectionController,
+        worlds: crate::bootstrap::InitialWorlds,
+        settings: HeadlessApplicationSettings,
+    ) -> Self {
+        let game = ClientGameState::for_initial_world(
+            worlds.instance,
+            worlds.map.spawn(),
+            worlds.world_manifests,
+        );
+        #[cfg(not(feature = "desktop"))]
+        let _ = settings;
+        #[cfg(feature = "desktop")]
+        let desktop = (
+            UiModel {
+                console: crate::console::Console::new(),
+                session_events: Vec::with_capacity(16),
+            },
+            ClientSettings::new(
+                settings.locale,
+                settings.local_server_config,
+                settings.require_earth,
+                settings.demo,
+                settings.config_file_settings,
+                SettingsStore::new(&settings.startup_settings),
+            ),
+            crate::input::InputMapper::default(),
+            ClientStatus::ClientText(crate::messages::ClientText::TerminalIntro),
+        );
+        Self {
+            #[cfg(feature = "desktop")]
+            ui: desktop.0,
+            game,
+            connection,
+            action_executor: ClientActionExecutor::default(),
+            pending_transfer: None,
+            #[cfg(feature = "desktop")]
+            tool_profile: minimium_game_sample::DEFAULT_TOOL_PROFILE,
+            #[cfg(feature = "desktop")]
+            settings: desktop.1,
+            #[cfg(feature = "desktop")]
+            input: desktop.2,
+            world_catalog: worlds.world_catalog,
+            #[cfg(feature = "desktop")]
+            transitions: WorldTransitionController::new(false),
+            #[cfg(feature = "desktop")]
+            overview: MapOverviewModel::new(2.8),
+            #[cfg(feature = "desktop")]
+            status: desktop.3,
+        }
+    }
+
+    #[cfg(feature = "desktop")]
     pub(crate) fn overview(&self) -> &MapOverviewModel {
         &self.overview
     }
 
+    #[cfg(feature = "desktop")]
     pub(crate) fn overview_open(&mut self, instance: WorldInstanceId) {
         self.overview.open(instance);
     }
 
+    #[cfg(feature = "desktop")]
     pub(crate) fn overview_close(&mut self) {
         self.overview.close();
     }
 
+    #[cfg(feature = "desktop")]
     pub(crate) fn overview_set_zoom(&mut self, zoom: f32) {
         self.overview.set_zoom(zoom);
     }
 
+    #[cfg(feature = "desktop")]
     pub(crate) fn overview_begin_slider_drag(&mut self) {
         self.overview.begin_slider_drag();
     }
 
+    #[cfg(feature = "desktop")]
     pub(crate) fn overview_begin_drag(&mut self) {
         self.overview.begin_drag();
     }
 
+    #[cfg(feature = "desktop")]
     pub(crate) fn overview_end_drag(&mut self) -> bool {
         self.overview.end_drag()
     }
 
+    #[cfg(feature = "desktop")]
     pub(crate) fn overview_drag_by(&mut self, dx: f64, dy: f64, horizontal: f32) {
         self.overview.drag_by(dx, dy, horizontal);
     }
 
+    #[cfg(feature = "desktop")]
     pub(crate) fn register_transition(
         &mut self,
         id: minimium_world::world::TransitionId,
@@ -114,16 +199,12 @@ impl ClientApplication {
         self.transitions.register(id, pending)
     }
 
+    #[cfg(feature = "desktop")]
     pub(crate) fn has_transition_id(&self, id: minimium_world::world::TransitionId) -> bool {
         self.transitions.contains_id(id)
     }
 
-    pub(crate) fn pending_transition_preparations(
-        &self,
-    ) -> Vec<(minimium_world::world::TransitionId, PendingSectorTransition)> {
-        self.transitions.pending_preparations()
-    }
-
+    #[cfg(feature = "desktop")]
     pub(crate) fn commit_transition(
         &mut self,
         id: minimium_world::world::TransitionId,
@@ -132,6 +213,7 @@ impl ClientApplication {
         self.transitions.commit(id, context)
     }
 
+    #[cfg(feature = "desktop")]
     pub(crate) fn has_transition(
         &self,
         id: minimium_world::world::TransitionId,
@@ -140,6 +222,7 @@ impl ClientApplication {
         self.transitions.contains(id, context)
     }
 
+    #[cfg(feature = "desktop")]
     pub(crate) fn cancel_transition(
         &mut self,
         id: minimium_world::world::TransitionId,
@@ -148,6 +231,7 @@ impl ClientApplication {
         self.transitions.cancel(id, source)
     }
 
+    #[cfg(feature = "desktop")]
     pub(crate) fn fail_transition(
         &mut self,
         id: minimium_world::world::TransitionId,
@@ -155,28 +239,36 @@ impl ClientApplication {
         self.transitions.fail(id)
     }
 
+    #[cfg(feature = "desktop")]
     pub(crate) fn clear_transitions(&mut self) -> Vec<PendingSectorTransition> {
         self.transitions.take_pending()
     }
 
+    #[cfg(feature = "desktop")]
     pub(crate) fn is_loading(&self) -> bool {
         self.transitions.is_loading()
     }
+    #[cfg(feature = "desktop")]
     pub(crate) fn set_loading(&mut self, loading: bool) {
         self.transitions.set_loading(loading);
     }
+    #[cfg(feature = "desktop")]
     pub(crate) fn arm_map_teleport(&mut self) -> bool {
         self.transitions.arm_map_teleport()
     }
+    #[cfg(feature = "desktop")]
     pub(crate) fn map_teleport_armed(&self) -> bool {
         self.transitions.map_teleport_armed()
     }
+    #[cfg(feature = "desktop")]
     pub(crate) fn map_teleport_pending(&self) -> bool {
         self.transitions.map_teleport_pending()
     }
+    #[cfg(feature = "desktop")]
     pub(crate) fn request_map_teleport(&mut self) -> bool {
         self.transitions.request_map_teleport()
     }
+    #[cfg(feature = "desktop")]
     pub(crate) fn resolve_map_teleport(&mut self) {
         self.transitions.resolve_map_teleport();
     }
@@ -195,9 +287,170 @@ impl ClientApplication {
         self.connection.start_local(config)
     }
 
-    #[cfg(feature = "desktop")]
+    pub(crate) fn cancel_connection_attempt(&mut self) {
+        self.connection.cancel();
+    }
+
+    pub(crate) fn poll_connector(&mut self) -> minimium_client_runtime::ConnectionEvent {
+        self.connection.poll_connector()
+    }
+
+    pub(crate) fn poll_admin_result(
+        &mut self,
+    ) -> Option<Result<String, minimium_client_runtime::ControllerError>> {
+        self.connection.poll_admin_result()
+    }
+
+    pub(crate) fn poll_session(&mut self, events: &mut Vec<crate::session::SessionEvent>) {
+        self.connection.poll_session(events);
+    }
+
+    pub(crate) fn session(&self) -> Option<&crate::session::ClientSession> {
+        self.connection.session()
+    }
+
+    pub(crate) fn connection_view(&self) -> &ConnectionController {
+        &self.connection
+    }
+
+    pub(crate) fn is_connection_busy(&self) -> bool {
+        self.connection.busy()
+    }
+
+    pub(crate) fn record_diagnostic_failure(
+        &mut self,
+        code: &'static str,
+        error: &impl std::fmt::Display,
+    ) {
+        self.connection.record_diagnostic_failure(code, error);
+    }
+
+    pub(crate) fn report_transfer_host_ready(
+        &mut self,
+        ticket: minimium_client_runtime::TransferTicket,
+    ) -> Result<(), crate::session::QueueError> {
+        if !self.transfer_cpu_content_ready(ticket) {
+            return Err(crate::session::QueueError::StaleWorldContext);
+        }
+        if self
+            .connection
+            .session()
+            .is_some_and(|session| session.host_readiness_requested(ticket))
+        {
+            return Ok(());
+        }
+        self.connection.report_transfer_host_ready(ticket)
+    }
+
+    pub(crate) fn pending_transfer_ticket(
+        &self,
+    ) -> Option<minimium_client_runtime::TransferTicket> {
+        self.pending_transfer.map(|preparation| preparation.ticket)
+    }
+
+    pub(crate) fn transfer_cpu_content_ready(
+        &self,
+        ticket: minimium_client_runtime::TransferTicket,
+    ) -> bool {
+        let Some(preparation) = self.pending_transfer else {
+            return false;
+        };
+        if preparation.ticket != ticket {
+            return false;
+        }
+        let Some(session) = self.connection.session() else {
+            return false;
+        };
+        let Some(content) = session.resolved_world_content_for_context(ticket.context()) else {
+            return false;
+        };
+        if content.manifest != preparation.manifest
+            || content.map.fingerprint() != preparation.map_fingerprint
+        {
+            return false;
+        }
+        let Some(terrain) = session.terrain_inputs_for_context(ticket.context()) else {
+            return false;
+        };
+        if preparation.manifest.planet().is_some() && terrain.geography.is_none() {
+            return false;
+        }
+        preparation.manifest.planet().is_none()
+            || session
+                .water_catalog_for_context(ticket.context())
+                .is_some()
+    }
+
+    pub(crate) fn finish_until(
+        &mut self,
+        deadline: std::time::Instant,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.connection.finish_until(deadline)
+    }
+
+    pub(crate) fn request_set_time(
+        &mut self,
+        minute: u16,
+        longitude: f64,
+    ) -> Result<(), minimium_client_runtime::ControllerError> {
+        self.connection.request_set_time(minute, longitude)
+    }
+
+    pub(crate) fn request_time_scale(
+        &mut self,
+        value: String,
+    ) -> Result<(), minimium_client_runtime::ControllerError> {
+        self.connection.request_time_scale(value)
+    }
+
+    pub(crate) fn request_time_mode(
+        &mut self,
+        mode: &str,
+    ) -> Result<(), minimium_client_runtime::ControllerError> {
+        self.connection.request_time_mode(mode)
+    }
+
+    pub(crate) fn request_time_offline_policy(
+        &mut self,
+        policy: &str,
+    ) -> Result<(), minimium_client_runtime::ControllerError> {
+        self.connection.request_time_offline_policy(policy)
+    }
+
+    pub(crate) fn request_random_bolid(
+        &mut self,
+        count: u16,
+    ) -> Result<(), minimium_client_runtime::ControllerError> {
+        self.connection.request_random_bolid(count)
+    }
+
+    pub(crate) fn request_random_meteorid(
+        &mut self,
+    ) -> Result<(), minimium_client_runtime::ControllerError> {
+        self.connection.request_random_meteorid()
+    }
+
+    pub(crate) fn execute_text_command(
+        &mut self,
+        input: &str,
+        source: crate::client_commands::CommandSource,
+        fire_direction: [f32; 3],
+        player_position: Option<[f32; 3]>,
+    ) -> crate::client_commands::TextCommandResult {
+        let mut context = crate::client_commands::CommandContext {
+            connection: &mut self.connection,
+            action_executor: &mut self.action_executor,
+            fire_direction,
+            player_position,
+        };
+        crate::client_commands::execute_text(input, source, &mut context)
+    }
+
     pub(crate) fn disconnect_session(&mut self) -> Option<crate::session::ClientSession> {
         self.game.set_session_context(None);
+        self.pending_transfer = None;
+        self.game.gameplay.clear_remote_players();
+        #[cfg(feature = "desktop")]
         self.transitions.reset();
         self.connection.take_session()
     }
@@ -207,17 +460,6 @@ impl ClientApplication {
         let previous = self.game.current_instance;
         self.game.current_instance = instance;
         previous
-    }
-
-    #[cfg(feature = "desktop")]
-    pub(crate) fn commit_world_content(
-        &mut self,
-        instance: WorldInstanceId,
-        manifest: minimium_world::world::WorldManifest,
-        map: WorldMap,
-    ) {
-        self.game.world_manifests.insert(instance, manifest);
-        self.world_catalog.insert(instance, map);
     }
 }
 mod actions;

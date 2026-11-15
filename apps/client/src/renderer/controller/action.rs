@@ -2,7 +2,7 @@ use super::output::CommandOutputCollector;
 use super::*;
 
 pub(super) fn execute(
-    renderer: &mut Renderer,
+    renderer: &mut DesktopHost,
     action: FrontendAction,
 ) -> (bool, client_commands::CommandActionResult) {
     let mut output = CommandOutputCollector::default();

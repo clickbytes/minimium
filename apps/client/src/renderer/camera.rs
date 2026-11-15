@@ -6,15 +6,15 @@ pub(super) use character::{
     camera_direction, camera_direction_from_geometry, gravity_for_manifest,
 };
 
-impl Renderer {
+impl DesktopHost {
     pub(super) fn update(&mut self) -> environment::PreparedEnvironmentFrame {
         self.update_tool_use();
-        self.gpu.held_tool_kind = self
+        self.renderer.held_tool_kind = self
             .application
             .connection
             .session()
             .and_then(|session| session.inventory().tool());
-        self.gpu.held_tool_visible = self.application.game.gameplay.sectors_ready
+        self.renderer.held_tool_visible = self.application.game.gameplay.sectors_ready
             && !self.application.ui.console.open
             && !self.application.overview().is_open();
         if self.application.overview().is_open()
@@ -22,9 +22,9 @@ impl Renderer {
                 != Some(self.application.game.current_instance)
         {
             self.application.overview_close();
-            self.gpu.overview_active = false;
+            self.renderer.overview_active = false;
         }
-        self.gpu.world_geometry.begin_frame();
+        self.renderer.world_geometry.begin_frame();
         let now = Instant::now();
         let dt = now
             .duration_since(self.metrics.last_frame)
@@ -137,7 +137,7 @@ impl Renderer {
             }
         }
         let origin = if self.application.overview().is_open() {
-            self.gpu.render_origin
+            self.renderer.render_origin
         } else if self
             .application
             .game
@@ -148,17 +148,17 @@ impl Renderer {
             let position = self.application.game.gameplay.prediction.character.position;
             if position
                 .iter()
-                .zip(self.gpu.render_origin)
+                .zip(self.renderer.render_origin)
                 .any(|(p, o)| (p - o).abs() > 4096.0)
             {
                 position.map(|coordinate| (coordinate / 4096.0).round() * 4096.0)
             } else {
-                self.gpu.render_origin
+                self.renderer.render_origin
             }
         } else {
             [0.0; 3]
         };
-        if self.gpu.set_render_origin(origin) {
+        if self.renderer.set_render_origin(origin) {
             self.shadow_state
                 .invalidate(shadows::ShadowInvalidReason::StaleContext);
             self.last_render_position = [f32::INFINITY; 3];
@@ -171,7 +171,7 @@ impl Renderer {
             && self.last_render_position.iter().all(|p| p.is_finite())
         {
             self.application.set_loading(false);
-            self.gpu.scene_visible = true;
+            self.renderer.scene_visible = true;
             self.application.status = crate::application::ClientStatus::Status(
                 minimium_localization::UiStatus::EarthMoved,
             );
@@ -191,7 +191,9 @@ impl Renderer {
         let (view, far) = if self.application.overview().is_open() {
             let (view, far) = self.overview_camera();
             (
-                view * glam::Mat4::from_translation(glam::Vec3::from_array(self.gpu.render_origin)),
+                view * glam::Mat4::from_translation(glam::Vec3::from_array(
+                    self.renderer.render_origin,
+                )),
                 far,
             )
         } else {
@@ -255,12 +257,12 @@ impl Renderer {
                 200.0
             };
             let local_camera = glam::Vec3::from_array(std::array::from_fn(|axis| {
-                (eye_world[axis] - f64::from(self.gpu.render_origin[axis])) as f32
+                (eye_world[axis] - f64::from(self.renderer.render_origin[axis])) as f32
             })) + glam::Vec3::from_array(visual_offset);
             (glam::Mat4::look_to_rh(local_camera, direction, up), far)
         };
         let camera_eye_local = view.inverse().transform_point3(glam::Vec3::ZERO);
-        let render_origin = glam::Vec3::from_array(self.gpu.render_origin);
+        let render_origin = glam::Vec3::from_array(self.renderer.render_origin);
         let camera_eye_world = (camera_eye_local + render_origin).as_dvec3().to_array();
         // The overview camera is millions of metres from the globe. A 5 cm
         // near plane rounds its depth to 1.0 in f32 and hides the surface.
@@ -283,10 +285,10 @@ impl Renderer {
                 .unwrap_or(10_000.0);
             radius * ((self.application.overview().zoom() - 1.0) * 0.08).max(0.001)
         } else {
-            let terrain_near = self.gpu.world_geometry.surface_near(
+            let terrain_near = self.renderer.world_geometry.surface_near(
                 self.application.game.current_instance,
                 &self
-                    .gpu
+                    .renderer
                     .world_geometry
                     .publication()
                     .map_or_else(Vec::new, |publication| publication.keys.clone()),
@@ -319,7 +321,7 @@ impl Renderer {
         };
         let projection = glam::Mat4::perspective_rh(
             self.fov_degrees.to_radians(),
-            self.gpu.size.width as f32 / self.gpu.size.height as f32,
+            self.renderer.size.width as f32 / self.renderer.size.height as f32,
             near,
             far,
         );
@@ -338,11 +340,11 @@ impl Renderer {
                     / 1000.0
             })
             .unwrap_or(0.0);
-        let render_origin_m = self.gpu.render_origin.map(f64::from);
+        let render_origin_m = self.renderer.render_origin.map(f64::from);
         let render_view = RenderViewFrame::from_camera(RenderViewInput {
             view,
             projection,
-            viewport: [self.gpu.size.width, self.gpu.size.height],
+            viewport: [self.renderer.size.width, self.renderer.size.height],
             render_origin_m,
             camera_eye_world_m: camera_eye_world,
             game_planet_radius_m,
@@ -352,7 +354,7 @@ impl Renderer {
                 environment::EnvironmentViewKind::Surface
             },
             srgb_surface: matches!(
-                self.gpu.config.format,
+                self.renderer.config.format,
                 wgpu::TextureFormat::Rgba8UnormSrgb | wgpu::TextureFormat::Bgra8UnormSrgb
             ),
         });
@@ -385,9 +387,9 @@ impl Renderer {
             .is_some_and(|descriptor| {
                 descriptor.profile() == minimium_environment::EnvironmentProfile::Earth
             });
-        self.gpu.atmosphere_gpu.upload(
-            &self.gpu.device,
-            &self.gpu.queue,
+        self.renderer.atmosphere_gpu.upload(
+            &self.renderer.device,
+            &self.renderer.queue,
             prepared_environment.frame.render_view,
             if earth {
                 game_planet_radius_m
@@ -417,7 +419,7 @@ impl Renderer {
         let shadow_prepare_started = Instant::now();
         self.prepared_bolids = self.prepare_bolids();
         self.prepare_shadow_frame(&prepared_environment.frame, player_position);
-        self.gpu.last_shadow_prepare_cpu = Some(shadow_prepare_started.elapsed());
+        self.renderer.last_shadow_prepare_cpu = Some(shadow_prepare_started.elapsed());
 
         let celestial_labels = if self.show_celestial_names {
             celestial_labels::prepare(&prepared_environment.frame, self.sky_catalogue.as_ref())
@@ -430,8 +432,8 @@ impl Renderer {
             .format(&self.localizer, self.application.settings.locale);
         let tool_overlay = self.tool_overlay(&prepared_environment.frame.render_view);
         self.application.ui.console.build_vertices(
-            self.gpu.size.width,
-            self.gpu.size.height,
+            self.renderer.size.width,
+            self.renderer.size.height,
             self.application.game.gameplay.health,
             self.input.cursor_locked && !self.application.ui.console.open,
             self.gameplay_presentation

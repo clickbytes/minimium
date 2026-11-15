@@ -3,7 +3,7 @@ use minimium_renderer::milky_way_gpu::{BolidGpuEvent, BolidGpuFrame, MAX_BOLIDS}
 mod preparation;
 pub(super) use preparation::BolidWorker;
 
-impl Renderer {
+impl DesktopHost {
     pub(super) fn bolid_notice(&mut self, notice: minimium_localization::UiNotice) {
         self.application.ui.console.push_ui_message(
             minimium_localization::UiMessage::Notice(notice),

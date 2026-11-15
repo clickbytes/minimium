@@ -1,6 +1,6 @@
 use super::*;
 
-impl Renderer {
+impl DesktopHost {
     pub(in crate::renderer) fn water_presentation_for(
         &self,
         context: minimium_protocol::WorldContext,
@@ -77,8 +77,8 @@ impl Renderer {
             manifest,
             self.application.game.gameplay.prediction.character.position,
             view,
-            self.gpu.render_origin,
-            self.gpu.world_geometry.origin_generation(),
+            self.renderer.render_origin,
+            self.renderer.world_geometry.origin_generation(),
             &self.application.world_catalog,
             &self.application.game.world_manifests,
             None,
@@ -107,9 +107,9 @@ impl Renderer {
             return false;
         }
         if !self
-            .gpu
+            .renderer
             .cache_sector_scene(self.application.game.current_instance, &scene)
-            || !self.gpu.activate_sector_scene(
+            || !self.renderer.activate_sector_scene(
                 self.application.game.current_instance,
                 &scene,
                 self.application
@@ -164,67 +164,56 @@ impl Renderer {
     }
 
     pub(in crate::renderer) fn advance_pending_transitions(&mut self) {
-        let pending = self.application.pending_transition_preparations();
-        for (transition_id, pending) in pending {
-            let ticket =
-                minimium_client_runtime::TransferTicket::new(transition_id, pending.context);
-            if self.application.connection.host_readiness_requested(ticket) {
-                continue;
-            }
-            let instance = pending.context.instance();
-            let Some(terrain_inputs) = self
-                .application
-                .connection
-                .session()
-                .and_then(|session| session.terrain_inputs_for_context(pending.context))
-            else {
-                continue;
-            };
-            let water = self.water_presentation_for(pending.context);
-            let scene = match self.sector_cache.ensure_scene(
-                super::super::sector_scene::SceneInterestOwner::Pending(
-                    transition_id,
-                    pending.context,
-                ),
-                instance,
-                pending.manifest,
-                pending.destination,
-                minimium_renderer::terrain_view::TerrainView::new(
-                    pending.destination,
-                    self.fov_degrees.to_radians(),
-                    self.gpu.size.height,
-                ),
-                self.gpu.render_origin,
-                self.gpu.world_geometry.origin_generation(),
-                &self.application.world_catalog,
-                &self.application.game.world_manifests,
-                Some((pending.map.as_ref(), pending.manifest)),
-                terrain_inputs,
-                water,
-            ) {
-                Ok(Some(scene)) => scene,
-                Ok(None) => continue,
-                Err(error) => {
-                    self.application
-                        .connection
-                        .record_diagnostic_failure(error.code(), &error.to_string());
-                    if let Some(session) = self.application.connection.session_mut() {
-                        let _ = session.cancel_pending_transition();
-                    }
-                    if let Some(failed) = self.application.fail_transition(transition_id) {
-                        self.release_prepared_target(transition_id, failed.context);
-                    }
-                    continue;
+        let view = self.application.desktop_render_view();
+        let Some(pending) = view.pending.as_ref() else {
+            return;
+        };
+        let ticket = pending.ticket;
+        let transition = pending.transition;
+        let terrain_revision = pending.terrain_inputs.revision();
+        let terrain_inputs = pending.terrain_inputs.clone();
+        let transition_id = ticket.transition_id();
+        let context = ticket.context();
+        let instance = context.instance();
+        let water = self.water_presentation_for(context);
+        let scene = match self.sector_cache.ensure_scene(
+            super::super::sector_scene::SceneInterestOwner::Pending(transition_id, context),
+            instance,
+            transition.manifest,
+            transition.destination,
+            minimium_renderer::terrain_view::TerrainView::new(
+                transition.destination,
+                self.fov_degrees.to_radians(),
+                self.renderer.size.height,
+            ),
+            self.renderer.render_origin,
+            self.renderer.world_geometry.origin_generation(),
+            view.world_catalog,
+            &self.application.game.world_manifests,
+            Some((transition.map.as_ref(), transition.manifest)),
+            terrain_inputs,
+            water,
+        ) {
+            Ok(Some(scene)) => scene,
+            Ok(None) => return,
+            Err(error) => {
+                self.application
+                    .connection
+                    .record_diagnostic_failure(error.code(), &error.to_string());
+                if let Some(session) = self.application.connection.session_mut() {
+                    let _ = session.cancel_pending_transition();
                 }
-            };
-            if !self.gpu.cache_sector_scene(instance, &scene) {
-                continue;
+                if let Some(failed) = self.application.fail_transition(transition_id) {
+                    self.release_prepared_target(transition_id, failed.context);
+                }
+                return;
             }
-            let _ = self
-                .application
-                .connection
-                .report_transfer_host_ready(ticket);
+        };
+        if !self.renderer.cache_sector_scene(instance, &scene) {
+            return;
         }
+        let ready = crate::application::TransferPresentationReady::new(ticket, terrain_revision);
+        let _ = self.application.report_transfer_presentation_ready(ready);
     }
 
     pub(in crate::renderer) fn clear_pending_sector_transitions(&mut self) {
@@ -241,7 +230,7 @@ impl Renderer {
         self.sector_cache.release_interest(
             super::super::sector_scene::SceneInterestOwner::Pending(transition_id, context),
         );
-        self.gpu.release_scene_stage(
+        self.renderer.release_scene_stage(
             context.instance(),
             super::super::sector_scene::SceneInterestOwner::Pending(transition_id, context),
         );

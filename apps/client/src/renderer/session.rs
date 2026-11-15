@@ -4,7 +4,7 @@ mod sector_readiness;
 use super::*;
 use crate::messages::ClientText as Text;
 
-impl Renderer {
+impl DesktopHost {
     pub(crate) fn start_remote_attempt(
         &mut self,
         address: &str,
@@ -64,7 +64,7 @@ impl Renderer {
             self.application.status = crate::application::ClientStatus::Status(
                 minimium_localization::UiStatus::EarthConnecting,
             );
-            self.gpu.scene_visible = false;
+            self.renderer.scene_visible = false;
         }
     }
 
@@ -157,7 +157,7 @@ impl Renderer {
 
     fn reset_remote_gameplay(&mut self) {
         self.application.action_executor.clear_input_cooldown();
-        self.gpu.clear_remote_vertices();
+        self.renderer.clear_remote_vertices();
         self.application.game.gameplay.clear_remote_players();
         self.application.game.gameplay.health = PLAYER_MAX_HEALTH;
         self.gameplay_presentation.clear_remote_players();
@@ -203,15 +203,16 @@ impl Renderer {
             self.application.game.current_instance,
         );
         self.sector_cache.release_interest(bootstrap);
-        self.gpu
+        self.renderer
             .release_scene_stage(bootstrap.instance(), bootstrap);
         if let Some(context) = self.application.game.session_context() {
             let active = super::sector_scene::SceneInterestOwner::Active(context);
             self.sector_cache.release_interest(active);
-            self.gpu.release_scene_stage(context.instance(), active);
+            self.renderer
+                .release_scene_stage(context.instance(), active);
         }
         if self.application.settings.require_earth {
-            self.gpu.scene_visible = false;
+            self.renderer.scene_visible = false;
             if !self.application.status.is_error() {
                 self.application.status = crate::application::ClientStatus::Status(
                     minimium_localization::UiStatus::EarthDisconnected,
@@ -230,7 +231,7 @@ impl Renderer {
                 .saturating_add(metrics.bytes_received);
             session.close();
         }
-        self.gpu.clear_remote_vertices();
+        self.renderer.clear_remote_vertices();
         self.application.game.gameplay.clear_remote_players();
         self.application.game.gameplay.health = PLAYER_MAX_HEALTH;
         self.gameplay_presentation.clear_remote_players();
@@ -242,7 +243,7 @@ impl Renderer {
             minimium_localization::UiMessage::EarthError(message.clone()),
         );
         if self.application.settings.require_earth {
-            self.gpu.scene_visible = false;
+            self.renderer.scene_visible = false;
         }
         self.application
             .connection
@@ -300,7 +301,7 @@ impl Renderer {
                     if self.application.settings.require_earth {
                         self.application.status =
                             crate::application::ClientStatus::ClientText(text.clone());
-                        self.gpu.scene_visible = false;
+                        self.renderer.scene_visible = false;
                     }
                     if self.application.ui.console.open {
                         self.application.ui.console.push_client_text(

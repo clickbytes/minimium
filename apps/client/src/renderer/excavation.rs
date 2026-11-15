@@ -1,6 +1,6 @@
 use super::*;
 
-impl Renderer {
+impl DesktopHost {
     pub(super) fn equip_tool(&mut self, slot: Option<u8>) {
         if let crate::application::LocalActionOutcome::Rejected { error, .. } =
             self.application.action_executor.execute(

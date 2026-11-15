@@ -6,7 +6,7 @@ use crate::messages::ClientText as Text;
 pub(super) use output::format_console_output;
 use output::CommandOutputCollector;
 
-pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
+pub(super) fn execute_console_input(renderer: &mut DesktopHost) -> bool {
     let input = renderer
         .application
         .ui
@@ -18,7 +18,7 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
 }
 
 pub(super) fn execute_input(
-    renderer: &mut Renderer,
+    renderer: &mut DesktopHost,
     input: &str,
     source: client_commands::CommandSource,
 ) -> (bool, client_commands::CommandActionResult) {

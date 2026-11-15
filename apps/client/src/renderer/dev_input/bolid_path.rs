@@ -1,5 +1,5 @@
 //! Repeatable local presentation input; no server writes or injected events.
-use super::Renderer;
+use super::DesktopHost;
 use minimium_protocol::BolidEvent;
 
 pub(super) fn format(event: &BolidEvent) -> String {
@@ -12,7 +12,7 @@ pub(super) fn format(event: &BolidEvent) -> String {
 }
 
 pub(super) fn restore(
-    renderer: &mut Renderer,
+    renderer: &mut DesktopHost,
     path: crate::client_commands::BolidPath,
 ) -> Vec<String> {
     let mut output = Vec::new();

@@ -15,7 +15,7 @@ pub(super) struct RendererSetup {
     pub(super) demo: bool,
 }
 
-impl Renderer {
+impl DesktopHost {
     pub(super) async fn new(setup: RendererSetup) -> Result<Self, Box<dyn Error>> {
         let RendererSetup {
             window,
@@ -67,7 +67,7 @@ impl Renderer {
             .flat_map(|(_, geometry)| sector_geometry(geometry))
             .collect();
         let dpi_scale = window.scale_factor();
-        let mut gpu = GpuResources::new(window, &vertices, sky_quality, &renderer_logger).await?;
+        let mut gpu = Renderer::new(window, &vertices, sky_quality, &renderer_logger).await?;
         let effective_quality = if gpu.shadow_gpu.settings.enabled {
             minimium_renderer::quality::SkyQuality::Standard
         } else {
@@ -161,7 +161,7 @@ impl Renderer {
             last_sky_view_at: None,
             pending_bolid_request: None,
             localizer,
-            gpu,
+            renderer: gpu,
             shadow_state: shadows::ShadowState::default(),
             prepared_shadow: shadow_prepare::PreparedShadowFrame::invalid(
                 shadows::ShadowInvalidReason::InvalidFrame,
@@ -266,9 +266,9 @@ impl Renderer {
         if size.width == 0 || size.height == 0 {
             return;
         }
-        self.gpu.resize(size);
+        self.renderer.resize(size);
         self.metrics.frame_stats.set_gpu_bytes(
-            self.gpu.fixed_gpu_bytes + u64::from(size.width) * u64::from(size.height) * 4,
+            self.renderer.fixed_gpu_bytes + u64::from(size.width) * u64::from(size.height) * 4,
         );
     }
 }

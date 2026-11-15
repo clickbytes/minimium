@@ -1,6 +1,6 @@
 use super::*;
 
-impl Renderer {
+impl DesktopHost {
     pub(super) fn handle_altitude_result(
         &mut self,
         context: minimium_protocol::WorldContext,
@@ -44,14 +44,14 @@ impl Renderer {
                 .character
                 .position
                 .map(|coordinate| (coordinate / 256.0).round() * 256.0);
-            self.gpu.set_render_origin(origin);
+            self.renderer.set_render_origin(origin);
             self.shadow_state
                 .invalidate(super::super::super::shadows::ShadowInvalidReason::StaleContext);
             self.application.game.gameplay.prediction.character.velocity = [0.0; 3];
             self.application.game.gameplay.prediction.character.grounded = false;
             self.application.game.gameplay.sectors_ready = false;
             self.application.set_loading(true);
-            self.gpu.scene_visible = false;
+            self.renderer.scene_visible = false;
             self.last_render_position = [f32::INFINITY; 3];
             self.application.input.clear_held();
             self.application.status = crate::application::ClientStatus::Status(
@@ -71,7 +71,7 @@ impl Renderer {
                 &self.localizer,
                 self.application.settings.locale,
             );
-            if !self.application.overview().is_open() && self.gpu.scene_visible {
+            if !self.application.overview().is_open() && self.renderer.scene_visible {
                 self.toggle_overview();
                 self.application.arm_map_teleport();
             }
@@ -129,52 +129,18 @@ impl Renderer {
     }
 
     pub(super) fn handle_snapshot(&mut self, message: ServerMessage) {
-        let ServerMessage::Snapshot {
-            server_time_ms,
-            server_tick,
-            full_snapshot,
-            resolved_input_seq,
-            self_position,
-            self_position_mm,
-            self_velocity,
-            self_grounded,
-            self_movement,
-            players,
-            removed_players,
-            ..
-        } = message
-        else {
-            return;
-        };
-        if !self.application.game.gameplay.apply_snapshot(
-            server_time_ms,
-            full_snapshot,
-            server_tick,
-            resolved_input_seq,
-            self_position,
-            self_position_mm,
-            self_velocity,
-            self_grounded,
-            self_movement,
-            self.application.connection.movement,
-            self.application
-                .game
-                .world_manifests
-                .get(&self.application.game.current_instance)
-                .copied(),
-            self.application
-                .connection
-                .session()
-                .and_then(|session| session.prepared_geography()),
-            &players,
-            &removed_players,
-        ) {
-            self.fail_connection(
-                Text::VisiblePlayerLimitExceeded
-                    .localized(&self.localizer, self.application.settings.locale),
-            );
-        } else {
-            self.gameplay_presentation.remote_geometry_dirty = true;
+        match self.application.apply_game_message(&message) {
+            Ok(()) => self.gameplay_presentation.remote_geometry_dirty = true,
+            Err(crate::application::ApplicationMessageError::VisiblePlayerLimitExceeded) => {
+                self.fail_connection(
+                    Text::VisiblePlayerLimitExceeded
+                        .localized(&self.localizer, self.application.settings.locale),
+                );
+            }
+            Err(crate::application::ApplicationMessageError::StaleWorldContext) => {}
+            Err(error) => {
+                self.fail_connection(&format!("client snapshot update failed: {error:?}"))
+            }
         }
     }
 }

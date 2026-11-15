@@ -1,4 +1,4 @@
-use super::super::Renderer;
+use super::super::DesktopHost;
 use super::{
     EnvironmentFrame, EnvironmentSettings, PreparedEnvironmentFrame, PreparedStarUpload,
     RenderViewFrame, SkyFrameInput, StarFrameStamp,
@@ -12,7 +12,7 @@ use minimium_environment::{
 use minimium_protocol::WorldContext;
 use minimium_world::world::Position3Mm;
 
-impl Renderer {
+impl DesktopHost {
     pub(in crate::renderer) fn update_render_environment(
         &mut self,
         render_view: RenderViewFrame,
@@ -51,7 +51,7 @@ impl Renderer {
         &mut self,
         render_view: RenderViewFrame,
     ) -> Option<PreparedStarUpload> {
-        if !self.gpu.scene_visible {
+        if !self.renderer.scene_visible {
             self.environment_observer.clear();
             self.render_environment_frame = EnvironmentFrame::unavailable(render_view);
             self.environment_error = None;
@@ -244,7 +244,7 @@ impl Renderer {
             utc_day: utc_ms.get().div_euclid(86_400_000),
             epoch_revision: corrected.star_epoch_revision,
         };
-        let star_upload = if self.gpu.uploaded_star_stamp != Some(star_stamp) {
+        let star_upload = if self.renderer.uploaded_star_stamp != Some(star_stamp) {
             let instances = match catalogue.prepare_gpu_instances(&corrected) {
                 Ok(instances) => instances,
                 Err(error) => {

@@ -1,6 +1,6 @@
 use super::*;
 
-impl Renderer {
+impl DesktopHost {
     pub(super) fn handle_transition_prepare(
         &mut self,
         transition_id: minimium_world::world::TransitionId,
@@ -47,22 +47,17 @@ impl Renderer {
 
     pub(super) fn handle_transition_committed(
         &mut self,
+        message: ServerMessage,
         transition_id: minimium_world::world::TransitionId,
         context: minimium_protocol::WorldContext,
         map_fingerprint: u64,
         destination: [f32; 3],
-        destination_mm: minimium_world::world::Position3Mm,
-        health: u16,
         manifest: WorldManifest,
     ) {
         if !self.application.has_transition(transition_id, context) {
             self.fail_connection("world transfer commit has no matching ready ticket");
             return;
         }
-        let Some(map) = self.resolved_map_for_context(context, manifest) else {
-            self.fail_connection("target generation manifest is not supported");
-            return;
-        };
         if !self.install_world(
             super::super::super::sector_scene::SceneInterestOwner::Pending(transition_id, context),
             context,
@@ -77,12 +72,10 @@ impl Renderer {
             self.fail_connection("world transfer ticket changed during commit");
             return;
         }
-        self.application
-            .commit_world_content(context.instance(), manifest, (*map).clone());
-        self.application.game.set_session_context(Some(context));
-        self.application.game.gameplay.health = health;
-        self.application.game.gameplay.prediction.position_mm =
-            manifest.planet().map(|_| destination_mm);
+        if let Err(error) = self.application.apply_game_message(&message) {
+            self.fail_connection(&format!("client transfer state update failed: {error:?}"));
+            return;
+        }
         if self.application.ui.console.open {
             self.application.ui.console.push_ui_message(
                 minimium_localization::UiMessage::WorldTransferCommitted,

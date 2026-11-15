@@ -2,7 +2,7 @@ use super::{
     environment::{EnvironmentFrame, EnvironmentFrameStatus},
     shadow_map_cache::{PreparedMapCasters, ShadowMapPreparationCache},
     shadows::{self, ShadowInvalidReason, ShadowState, ShadowUniform},
-    Renderer,
+    DesktopHost,
 };
 use minimium_protocol::WorldContext;
 use minimium_world::world::{
@@ -271,14 +271,14 @@ pub(super) fn prepare_shadow_frame(
     })
 }
 
-impl Renderer {
+impl DesktopHost {
     pub(super) fn prepare_shadow_frame(
         &mut self,
         environment: &EnvironmentFrame,
         player_position_m: [f64; 3],
     ) {
         let instance = self.application.game.current_instance;
-        let publication = self.gpu.world_geometry.publication().cloned();
+        let publication = self.renderer.world_geometry.publication().cloned();
         let active_sectors = publication
             .as_ref()
             .into_iter()
@@ -286,7 +286,7 @@ impl Renderer {
             .map(|(key, lod)| {
                 let catalog_key = (instance, *key, *lod);
                 let bounds = self
-                    .gpu
+                    .renderer
                     .world_geometry
                     .bounds()
                     .get(&catalog_key)
@@ -294,12 +294,17 @@ impl Renderer {
                 ShadowSectorSnapshot {
                     key: *key,
                     lod: *lod,
-                    resident: self.gpu.world_geometry.contains(instance, *key, *lod),
+                    resident: self.renderer.world_geometry.contains(instance, *key, *lod),
                     bounds,
                 }
             })
             .collect::<Vec<_>>();
-        let geometry_version = self.gpu.world_geometry.versions().get(&instance).copied();
+        let geometry_version = self
+            .renderer
+            .world_geometry
+            .versions()
+            .get(&instance)
+            .copied();
         let geometry_stamp = publication.map(|publication| publication.stamp);
         let input = ShadowPreparationInput {
             environment,
@@ -308,21 +313,21 @@ impl Renderer {
             geometry_version,
             geometry_stamp,
             active_sectors: &active_sectors,
-            scene_visible: self.gpu.scene_visible,
-            overview_active: self.gpu.overview_active,
-            overview_planet: self.gpu.overview_planet,
-            remote_complete: self.gpu.shadow_remote_complete
-                && self.gpu.shadow_remote_stamp == geometry_stamp,
-            shadow_enabled: self.gpu.shadow_gpu.settings.enabled,
-            physical: self.gpu.atmosphere_gpu.is_active(),
-            settings: self.gpu.shadow_gpu.settings,
+            scene_visible: self.renderer.scene_visible,
+            overview_active: self.renderer.overview_active,
+            overview_planet: self.renderer.overview_planet,
+            remote_complete: self.renderer.shadow_remote_complete
+                && self.renderer.shadow_remote_stamp == geometry_stamp,
+            shadow_enabled: self.renderer.shadow_gpu.settings.enabled,
+            physical: self.renderer.atmosphere_gpu.is_active(),
+            settings: self.renderer.shadow_gpu.settings,
             player_position_m,
-            render_origin: self.gpu.render_origin,
-            atmosphere: self.gpu.atmosphere_gpu.optical_uniform(),
+            render_origin: self.renderer.render_origin,
+            atmosphere: self.renderer.atmosphere_gpu.optical_uniform(),
             bolid_light: super::bolids::strongest_bolid_light(
                 &self.prepared_bolids,
                 environment.render_view.camera_eye_world_m,
-                self.gpu.atmosphere_gpu.optical_uniform(),
+                self.renderer.atmosphere_gpu.optical_uniform(),
             ),
         };
         match prepare_shadow_frame(

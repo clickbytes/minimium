@@ -1,9 +1,9 @@
-use super::super::Renderer;
+use super::super::DesktopHost;
 use crate::{environment::EnvironmentFrameInput, session::SessionState};
 use minimium_protocol::WorldContext;
 use minimium_world::world::MembershipEpoch;
 
-impl Renderer {
+impl DesktopHost {
     /// Publish one immutable clock/context tuple for every consumer this frame.
     pub(in crate::renderer) fn update_environment_frame(&mut self) {
         if let Some(session) = self

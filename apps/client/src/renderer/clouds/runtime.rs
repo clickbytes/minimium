@@ -1,7 +1,7 @@
 use super::{worker::CloudWorker, Publication, Request, Stamp};
 use crate::renderer::{
     environment::{EnvironmentFrame, EnvironmentViewKind},
-    Renderer,
+    DesktopHost,
 };
 use glam::{DVec3, Mat4};
 use minimium_environment::weather::{self, CloudDebug};
@@ -45,7 +45,7 @@ impl WeatherState {
     }
 }
 
-impl Renderer {
+impl DesktopHost {
     pub(in crate::renderer) fn update_weather(&mut self, frame: &EnvironmentFrame) {
         // The inexpensive seasonal fallback is available even before cloud publication.
         if let (Some(manifest), Some(utc)) = (
@@ -57,8 +57,8 @@ impl Renderer {
         ) {
             let utc = utc as f64 / 1000.0;
             let seed = manifest.generation().seed().get();
-            self.gpu.terrain_gpu.uniform.debug[1] = seed as u32 ^ (seed >> 64) as u32;
-            self.gpu.terrain_gpu.uniform.debug[2] = (seed >> 32) as u32 ^ (seed >> 96) as u32;
+            self.renderer.terrain_gpu.uniform.debug[1] = seed as u32 ^ (seed >> 64) as u32;
+            self.renderer.terrain_gpu.uniform.debug[2] = (seed >> 32) as u32 ^ (seed >> 96) as u32;
             let direction =
                 DVec3::from_array(frame.render_view.camera_eye_world_m).normalize_or_zero();
             let scenario = self
@@ -68,7 +68,7 @@ impl Renderer {
                 .map(|s| s.climate_scenario())
                 .unwrap_or_default();
             let offset = scenario.offset(direction, utc);
-            self.gpu.terrain_gpu.uniform.climate = [
+            self.renderer.terrain_gpu.uniform.climate = [
                 minimium_environment::climate::seasonality(DVec3::Y, utc) as f32,
                 offset.temperature_c as f32,
                 offset.moisture as f32,
@@ -87,7 +87,7 @@ impl Renderer {
         let Some((((manifest, context), clock_revision), utc)) =
             inputs.filter(|(((m, _), _), _)| {
                 m.topology() == minimium_world::world::WorldTopology::Planet
-                    && self.gpu.scene_visible
+                    && self.renderer.scene_visible
                     && frame.status
                         == crate::renderer::environment::EnvironmentFrameStatus::Available
             })
@@ -96,9 +96,9 @@ impl Renderer {
             self.weather.published = None;
             self.weather.last_request = None;
             self.weather.worker.clear();
-            self.gpu.cloud_gpu.clear();
-            self.gpu.terrain_gpu.clear_cover();
-            self.gpu.atmosphere_gpu.clear_weather();
+            self.renderer.cloud_gpu.clear();
+            self.renderer.terrain_gpu.clear_cover();
+            self.renderer.atmosphere_gpu.clear_weather();
             return;
         };
         let terrain_inputs = self
@@ -124,13 +124,13 @@ impl Renderer {
         let position = DVec3::from_array(frame.render_view.camera_eye_world_m);
         let observer = position.normalize_or_zero();
         if self.weather.stamp != Some(stamp) {
-            self.gpu.terrain_gpu.clear_cover();
-            self.gpu.atmosphere_gpu.clear_weather();
+            self.renderer.terrain_gpu.clear_cover();
+            self.renderer.atmosphere_gpu.clear_weather();
             self.weather.stamp = Some(stamp);
             self.weather.published = None;
             self.weather.last_request = None;
             self.weather.worker.clear();
-            self.gpu.cloud_gpu.clear();
+            self.renderer.cloud_gpu.clear();
         }
         if let Some((failed_stamp, error)) = self.weather.worker.take_failure() {
             if failed_stamp == stamp {
@@ -141,11 +141,15 @@ impl Renderer {
         }
         if let Some((cover_stamp, cover)) = self.weather.worker.take_cover() {
             if cover_stamp == stamp {
-                self.gpu.terrain_gpu.upload_cover(&self.gpu.queue, &cover);
-                self.gpu.atmosphere_gpu.set_weather(&self.gpu.queue, &cover);
+                self.renderer
+                    .terrain_gpu
+                    .upload_cover(&self.renderer.queue, &cover);
+                self.renderer
+                    .atmosphere_gpu
+                    .set_weather(&self.renderer.queue, &cover);
             }
         }
-        self.gpu.terrain_gpu.set_cover_time(utc);
+        self.renderer.terrain_gpu.set_cover_time(utc);
         let candidate = self.weather.worker.take().filter(|result| {
             result.request.stamp == stamp && result.request.detail == self.weather.detail
         });
@@ -167,7 +171,7 @@ impl Renderer {
                 utc,
                 observer,
                 eye: DVec3::from_array(frame.render_view.camera_eye_world_m),
-                sort: !self.gpu.cloud_gpu.oit,
+                sort: !self.renderer.cloud_gpu.oit,
                 revision: self.weather.sequence,
                 detail: self.weather.detail,
                 started: now,
@@ -176,7 +180,7 @@ impl Renderer {
             self.weather.last_request = Some(now);
         }
         let Some(publication) = candidate.or_else(|| self.weather.published.clone()) else {
-            self.gpu.cloud_gpu.debug = false;
+            self.renderer.cloud_gpu.debug = false;
             return;
         };
         if publication.snapshot.clouds.len() != publication.morphs.len() {
@@ -186,7 +190,7 @@ impl Renderer {
             );
             return;
         }
-        let gpu = &mut self.gpu.cloud_gpu;
+        let gpu = &mut self.renderer.cloud_gpu;
         let view = frame.render_view;
         let origin = DVec3::from_array(view.render_origin_m);
         let radius = view.game_planet_radius_m
@@ -254,7 +258,7 @@ impl Renderer {
             self.sky_quality.effective == minimium_renderer::quality::SkyQuality::Standard;
         uniform.select_inside(&records, standard_lighting);
         if let Err(error) = gpu.upload_frame(
-            &self.gpu.queue,
+            &self.renderer.queue,
             &publication.faces,
             publication.snapshot.revision,
             &records,
@@ -325,13 +329,13 @@ impl Renderer {
                 "weather unavailable / preparing regional snapshot".into(),
                 format!(
                     "terrain cover={} seasonal_phase={:.2} materials={:.1}MiB",
-                    if self.gpu.terrain_gpu.uniform.cover_center[3] > 0.0 {
+                    if self.renderer.terrain_gpu.uniform.cover_center[3] > 0.0 {
                         "history-grid"
                     } else {
                         "analytic-fallback"
                     },
-                    self.gpu.terrain_gpu.uniform.climate[0],
-                    self.gpu.terrain_gpu.bytes as f64 / 1048576.0
+                    self.renderer.terrain_gpu.uniform.climate[0],
+                    self.renderer.terrain_gpu.bytes as f64 / 1048576.0
                 ),
             ];
         };
@@ -341,7 +345,7 @@ impl Renderer {
             .environment_frame
             .render_world_utc_ms
             .map_or(s.utc, |t| t as f64 / 1000.0);
-        let gpu = &self.gpu.cloud_gpu;
+        let gpu = &self.renderer.cloud_gpu;
         let wind_scale = self
             .render_environment_frame
             .render_view
@@ -393,12 +397,12 @@ impl Renderer {
         vec![
             format!(
                 "terrain cover={} materials={:.1}MiB",
-                if self.gpu.terrain_gpu.uniform.cover_center[3] > 0.0 {
+                if self.renderer.terrain_gpu.uniform.cover_center[3] > 0.0 {
                     "history-grid"
                 } else {
                     "analytic-fallback"
                 },
-                self.gpu.terrain_gpu.bytes as f64 / 1048576.0
+                self.renderer.terrain_gpu.bytes as f64 / 1048576.0
             ),
             format!(
                 "weather Seasonal region={:?} T={:.1}C humidity={:.0}% water={:.0}% uplift={:.2}",

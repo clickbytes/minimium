@@ -1,6 +1,6 @@
-use super::{scene_bridge::RenderSceneSnapshot, GpuResources};
+use super::{scene_bridge::RenderSceneSnapshot, Renderer};
 
-impl GpuResources {
+impl Renderer {
     /// Keeps every GPU pass on the one immutable snapshot prepared for this frame.
     pub(super) fn render(
         &mut self,
@@ -146,7 +146,7 @@ impl GpuResources {
         self.terrain_gpu.update(&self.queue);
         let client = render_frame
             .client
-            .expect("application attaches ClientView before rendering");
+            .expect("desktop host attaches ClientView before rendering");
         let upload_started = std::time::Instant::now();
         self.milky_way.upload_bolids(&self.queue, &snapshot.bolids);
         prepared.upload_stars(self);
