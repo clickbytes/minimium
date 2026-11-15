@@ -143,10 +143,18 @@ impl ServerRuntime {
                 );
             }
             if let Some(id) = request_id {
-                let _ = self
+                if let Err(error) = self
                     .operations
                     .transport
-                    .respond_admin(id, crate::admin::response(&reply));
+                    .respond_admin(id, crate::admin::response(&reply))
+                {
+                    crate::diagnostics::emit(
+                        &self.server_logger,
+                        minimium_diagnostics::Level::Debug,
+                        "server.admin_response_dropped",
+                        &[("reason", error.to_string())],
+                    );
+                }
             } else {
                 let prefix = match reply.error_code() {
                     Some(code) => format!("ERR {code}"),
