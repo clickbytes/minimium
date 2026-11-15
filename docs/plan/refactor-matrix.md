@@ -1,3 +1,5 @@
+> Historical refactor matrix. The active [E049 contract](epic-049.md) governs scheduling, compilation and integration; older sequential instructions below are retained as history.
+
 # Refactor decisions and review matrix
 
 Packages are sequential; acceptance of one precedes work on the next. Before assigning a subtask, record its exclusive file ownership and contract. The status of a package is `gotowe`, `w pracy`, `do przeglądu`, or `odebrane`; implementation acceptance is distinct from deferred behavioral verification.

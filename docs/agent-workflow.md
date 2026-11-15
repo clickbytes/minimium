@@ -57,6 +57,10 @@ A task can use a **small combination** when required (e.g. world-consistency + s
 | Review a changed PR before closeout | verify | changed package READMEs, Cargo graph, diff, relevant scripts | the entire unrelated codebase | true PASS/FAIL/NOT RUN/NOT APPLICABLE matrix |
 | Change sample-game planet/portal content | no specialist skill for content-only; new-system if adding behavior | games/sample AGENTS+README, apps composition, world definitions | all rendering internals unless asset ABI changes | reproducibility, schema/seed impact and updated consumer |
 
+## Dependency gates and independent work
+
+For active E049, use [its execution contract](plan/epic-049.md). Every predecessor must be verified CLOSED before its dependent issue starts. Independent issues may run concurrently in separate worktrees after coordinator file/contract reservation; historical E046/E047 global serialization does not apply.
+
 ## One dependent Issue at a time
 
 1. Before beginning: verify predecessor Issue `CLOSED`, current HEAD, working tree (if checkout available), and whether an old PR already implemented the same change. GitHub connectors cannot see uncommitted user-local work.

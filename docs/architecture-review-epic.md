@@ -1,3 +1,5 @@
+> Historyczny plan E046. Aktywne wykonanie prowadzi [E049](plan/epic-049.md); poniższe reguły sekwencji i odraczania kompilacji nie sterują E049. Historia i dowody pozostają zachowane.
+
 # Epic E046 — Dokończenie fundamentów silnika
 
 Status: otwarty. Opisy wykonawcze uporządkowane 2026-11-07; aktualizacja planu nie potwierdza ukończenia implementacji. Źródłem stanu wykonania są dowody w poszczególnych issues i ich rzeczywiste stany GitHub.

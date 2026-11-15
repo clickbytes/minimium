@@ -1,0 +1,783 @@
+[
+  {
+    "id": "O00",
+    "number": 422,
+    "url": "https://github.com/clickbytes/minimium/issues/422",
+    "findings": "",
+    "title": "Kontrakt wykonania epiku",
+    "deps": [],
+    "owner": "koordynator; dokumentacja aktywnego planu",
+    "paths": "docs/plan/epic-049.md; docs/architecture-review-epic.md; docs/plan/refactor-matrix.md; docs/agent-workflow.md",
+    "contract": "Zapisać mapowanie F01–F43 → issues, graf zależności, decyzje właścicielskie i zgodność. Usunąć wpływ historycznych instrukcji globalnie sekwencyjnego E046/E047 na E049; zachować historię. Dokumentować faktyczną własność razem z implementacją, bez przedwczesnych deklaracji nowych granic.",
+    "scenario": "Odczyt zależności i natywnych sub-issues; E049 jako jedyny otwarty epic."
+  },
+  {
+    "id": "W01",
+    "number": 423,
+    "url": "https://github.com/clickbytes/minimium/issues/423",
+    "findings": "F01",
+    "title": "Jednoznaczna wersja zawartości terenu",
+    "deps": [
+      "O00"
+    ],
+    "owner": "procgen TerrainInputs; terrain/remnants jako źródła rewizji",
+    "paths": "crates/procgen/src/terrain_overlay.rs; crates/renderer/src/render_patch_cache.rs; crates/sectors/src/lib.rs; konsumenci sector_revision w client/server streaming",
+    "contract": "Zastąpić XOR typowanym SectorContentVersion, przechowującym osobno monotoniczne rewizje edycji, pozostałości i wolumenu. Tożsamość świata/contentu pozostaje częścią klucza lub kontekstu cache. Początkowo dopuścić szerszą invalidację. Migrować porównania cache, sektorów i odrzucanie wyników workerów; usunąć XOR także wewnątrz składników wersji.",
+    "scenario": "Dwie równoczesne zmiany chunków nie znikają z wersji; zmiana świata i spóźniony worker nie publikują starej geometrii."
+  },
+  {
+    "id": "W02",
+    "number": 424,
+    "url": "https://github.com/clickbytes/minimium/issues/424",
+    "findings": "F02",
+    "title": "Wspólna publikacja geometrii przestrzennej",
+    "deps": [
+      "O00",
+      "W01"
+    ],
+    "owner": "simulation oraz server sector streaming/publication",
+    "paths": "crates/simulation/src/simulation/world_state.rs; crates/server-runtime/src/sector_streaming/collision.rs; publikacja excavation",
+    "contract": "Publikować zgodne wersje indeksów ruchu, narzędzi i walki. Zachować bazową geometrię oraz zastępowanie zmienionych sektorów. Wykop usuwa stary bloker. Pokrycie walki obejmuje pełny zasięg broni; brak wymaganej geometrii daje jawny wynik niegotowości. Nie zastępować bezwarunkowo indeksu walki lokalnym indeksem ruchu.",
+    "scenario": "Wykop i hitscan na granicy sektora oraz poza lokalnym promieniem ruchu; brak geometrii i stale preparation."
+  },
+  {
+    "id": "W03",
+    "number": 425,
+    "url": "https://github.com/clickbytes/minimium/issues/425",
+    "findings": "F03",
+    "title": "Wspólna geometria postaci",
+    "deps": [
+      "O00",
+      "W02"
+    ],
+    "owner": "CPU kontrakt postaci w world/simulation; renderer jako konsument",
+    "paths": "crates/simulation/src/simulation/combat.rs; crates/simulation/src/simulation/tool_raycast.rs; apps/client/src/renderer/gameplay_presentation.rs; kamera i shadow caster",
+    "contract": "Wspólny kontrakt pozycji, wymiarów i radialnej ramy dla oka, hitboxu, modelu zdalnego i cienia. Hitscan transformuje promień do lokalnej ramy postaci. Migrować kamerę, combat, tool_raycast, remote geometry i caster. Renderer konsumuje CPU bez zależności od runtime. Zachować geometrię przy pionie +Y.",
+    "scenario": "Postać na +Y, równiku i -Y: zgodne oko, trafienia, model i cień."
+  },
+  {
+    "id": "C01",
+    "number": 426,
+    "url": "https://github.com/clickbytes/minimium/issues/426",
+    "findings": "F06,F36",
+    "title": "Jeden katalog wartości ustawień",
+    "deps": [
+      "O00"
+    ],
+    "owner": "aplikacja klienta i katalog właściwości",
+    "paths": "apps/client/src/config.rs; apps/client/src/options.rs; apps/client/src/options/catalog.rs; apps/client/src/application/settings.rs; apps/client/src/client_commands/properties; apps/client/src/renderer/settings.rs",
+    "contract": "Wspólne klucze, wartości domyślne, kanoniczne kodowanie i typowane wartości startowe. Usunąć serializację przez Debug oraz rozbieżne listy startup. Reset przywraca zwalidowaną wartość startową, również optical_depth, base_color i client.audio.meteor_volume. Zachować pochodzenie, requested/effective i przyczyny ograniczeń.",
+    "scenario": "Startup, set/get/reset wszystkich właściwości; profil bez GPU i ograniczenia jakości."
+  },
+  {
+    "id": "C02",
+    "number": 427,
+    "url": "https://github.com/clickbytes/minimium/issues/427",
+    "findings": "F04",
+    "title": "Rozdzielenie aktywnego i przygotowywanego contentu",
+    "deps": [
+      "O00"
+    ],
+    "owner": "ClientSession w client-runtime",
+    "paths": "crates/client-runtime/src/session.rs; crates/client-runtime/src/session/receive.rs; crates/client-runtime/src/session/receive/decode; crates/client-runtime/src/world_content.rs; apps/client/src/renderer/session; odczyty terenu desktopu",
+    "contract": "Osobne ActiveWorldContent i PendingWorldContent powiązane z WorldContext oraz ticketem. Geografia, katalog wody i dane celu nie podmieniają źródła podczas prepare. Commit przełącza cały komplet; cancel/fail/disconnect usuwa pending. Spóźniony resolver niczego nie publikuje. Zmigrować wszystkie odczyty, również desktop i collision/prediction. Zachować bounded aktywny i oczekujący content.",
+    "scenario": "Earth → dungeon: źródło pozostaje spójne podczas prepare, commit przełącza komplet; cancel, fail, disconnect, late resolver i retry."
+  },
+  {
+    "id": "C03",
+    "number": 428,
+    "url": "https://github.com/clickbytes/minimium/issues/428",
+    "findings": "F34",
+    "title": "Stan połączenia pilnowany przez właściciela",
+    "deps": [
+      "O00"
+    ],
+    "owner": "ConnectionController",
+    "paths": "crates/client-runtime/src/connection_controller.rs; wywołania desktop/terminal",
+    "contract": "start_remote/start_local sprawdzają pełne busy() przed uruchomieniem connectora. Sesja, próba albo cleanup zwracają typowany Busy bez mutacji i utraty lokalnego serwera. Ponowny start możliwy po zakończeniu disconnect/cancel.",
+    "scenario": "Start przy aktywnej sesji, próbie i cleanup; brak utraty child process; ponowny start po zakończeniu."
+  },
+  {
+    "id": "C04",
+    "number": 429,
+    "url": "https://github.com/clickbytes/minimium/issues/429",
+    "findings": "F05",
+    "title": "Wspólny kontroler gotowości transferu",
+    "deps": [
+      "O00",
+      "C02",
+      "C03"
+    ],
+    "owner": "client-runtime transfer lifecycle; host readiness port",
+    "paths": "crates/client-runtime/src/session; apps/client/src/application/transitions.rs; apps/client/src/terminal_client; apps/client/src/renderer/session/message_handling/transitions.rs",
+    "contract": "Wspólny lifecycle z portem gotowości hosta. Terminal wymaga danych CPU; desktop dodatkowo publikacji prezentacji. Jeden ticket, kontekst i ścieżka TransitionReady. Powtórzenia, cancel, fail i spóźnione przygotowanie są obsłużone. Formatter terminala wyłącznie odbiera wynik.",
+    "scenario": "Transfer obu frontendów, powtórzone ready, cancel przed uploadem i late host readiness."
+  },
+  {
+    "id": "C05",
+    "number": 430,
+    "url": "https://github.com/clickbytes/minimium/issues/430",
+    "findings": "F35",
+    "title": "Zgodny katalog kontrolek i obsługa myszy",
+    "deps": [
+      "O00"
+    ],
+    "owner": "aplikacja klienta input",
+    "paths": "apps/client/src/input.rs; apps/client/src/window_events.rs; katalog konfiguracji bindings",
+    "contract": "Walidator i adapter używają jednego katalogu obsługiwanych kontrolek. MouseRight działa dla przypisanej akcji, z symetrycznym press/release. Zachować pierwszeństwo konsoli, przeciągania mapy i przechwycenia kursora. Konfiguracja odrzuca nieobsługiwane identyfikatory.",
+    "scenario": "MouseRight press/release, przełączenie focus/konsoli/mapy, nieobsługiwany binding."
+  },
+  {
+    "id": "C06",
+    "number": 431,
+    "url": "https://github.com/clickbytes/minimium/issues/431",
+    "findings": "F19",
+    "title": "Wspólny ClientBootstrap",
+    "deps": [
+      "O00",
+      "C01",
+      "C03"
+    ],
+    "owner": "aplikacja klienta composition bez GPU",
+    "paths": "apps/client/src/terminal_client/world_setup.rs; desktop inicjalizacja; crates/client-runtime/src/bootstrap; resolver aplikacji",
+    "contract": "Wspólne składanie map/katalogu manifestów, schematów, auth, loggerów, cache, resolvera i ConnectionController. Usunąć duplikację desktop/terminal. Capabilities hostów jawne; bootstrap dostępny bez GPU.",
+    "scenario": "Desktop i terminal mają zgodne mapy, manifesty, auth i cache; no-default-features."
+  },
+  {
+    "id": "C07",
+    "number": 432,
+    "url": "https://github.com/clickbytes/minimium/issues/432",
+    "findings": "F11",
+    "title": "Typowany executor akcji klienta",
+    "deps": [
+      "O00",
+      "C05",
+      "C06"
+    ],
+    "owner": "ClientApplication/executor klienta",
+    "paths": "apps/client/src/input.rs; apps/client/src/client_commands; apps/client/src/terminal_client; apps/client/src/application",
+    "contract": "Jawne UseEquipped i FireWeapon obok pozostałych akcji. Input wykonuje UseEquipped, combat fire wykonuje FireWeapon. Wspólny executor stosuje warunki sesji, tworzy żądanie i zwraca typowany wynik lokalnego kolejkowania. Serwer nadal zatwierdza autorytatywnie. Migrować input, konsolę, terminal bez zmiany znaczenia.",
+    "scenario": "UseEquipped z narzędziem i bronią, combat fire, brak sesji, kolejka pełna i późniejsze odrzucenie serwera."
+  },
+  {
+    "id": "C08",
+    "number": 433,
+    "url": "https://github.com/clickbytes/minimium/issues/433",
+    "findings": "F12",
+    "title": "Komendy bez widgetu konsoli",
+    "deps": [
+      "O00",
+      "C07"
+    ],
+    "owner": "parser/executor aplikacji, widget jako adapter",
+    "paths": "apps/client/src/renderer/dev_input.rs; apps/client/src/client_commands; apps/client/src/console; apps/client/src/terminal_client",
+    "contract": "Oddzielić parser i executor od edytora. Dev stdin, konsola, terminal przekazują tekst wspólnej ścieżce i formatują wynik. Diagnostyka GPU jako jawne operacje prezentacyjne z wynikiem unavailable hosta. Stdin nie kasuje tekstu, historii ani preeditu użytkownika; zachować limity wejścia.",
+    "scenario": "Pole edytowane podczas komendy stdin; historia/IME pozostaje; terminal GPU command unavailable; limity długości."
+  },
+  {
+    "id": "C09",
+    "number": 434,
+    "url": "https://github.com/clickbytes/minimium/issues/434",
+    "findings": "F08",
+    "title": "Samodzielna aplikacja klienta",
+    "deps": [
+      "O00",
+      "C04",
+      "C06",
+      "C08",
+      "P01"
+    ],
+    "owner": "ClientApplication i DesktopHost",
+    "paths": "apps/client/src/application; apps/client/src/renderer/session; apps/client/src/renderer.rs; desktop host",
+    "contract": "DesktopHost posiada aplikację i renderer jako równorzędne części. ClientApplication koordynuje połączenie, transfer, akcje, predykcję i aktywny świat przez kontrolowane operacje. Renderer dostaje przygotowany widok CPU i raportuje gotowość zasobów. Usunąć mutowanie aplikacji metodami renderera; przenieść orkiestrację do właściciela.",
+    "scenario": "Transfer/connect/disconnect oraz akcje obu hostów; renderer nie mutuje sesji; CPU-only compilation."
+  },
+  {
+    "id": "C10",
+    "number": 435,
+    "url": "https://github.com/clickbytes/minimium/issues/435",
+    "findings": "F18",
+    "title": "Krok aplikacji niezależny od redraw",
+    "deps": [
+      "O00",
+      "C09"
+    ],
+    "owner": "ClientApplication step; monotoniczny scheduler hosta",
+    "paths": "apps/client/src/application; apps/client/src/window_events.rs; apps/client/src/terminal_client; redraw/render loop",
+    "contract": "Polling, fixed-step prediction, akumulator i lifecycle należą do kroku aplikacji napędzanego monotonicznym schedulerem hosta. RedrawRequested tylko prezentuje ostatni widok. Zachować dt i ograniczenia nadrabiania. Terminal korzysta z tego samego kroku.",
+    "scenario": "Brak redraw/minimalizacja nie zatrzymuje sesji; nadrabianie i reconnect zachowują limity."
+  },
+  {
+    "id": "S01",
+    "number": 436,
+    "url": "https://github.com/clickbytes/minimium/issues/436",
+    "findings": "F20",
+    "title": "Obowiązkowa walidacja komponentów",
+    "deps": [
+      "O00"
+    ],
+    "owner": "world component registry",
+    "paths": "crates/world/src/entity/registry.rs; component store insert/upgrade/restore; games/sample component descriptors; runtime effects",
+    "contract": "Każdy descriptor ma obowiązkowy walidator payloadu. Centralna walidacja rozmiaru, schematu i treści przy insert, upgrade, restore i efektach. Rzeczywiste walidatory istniejących komponentów; zły payload nie trafia do staged store. Brak domyślnego accept.",
+    "scenario": "Niepoprawna długość, schemat i treść dla wszystkich komponentów i każdej ścieżki publikacji."
+  },
+  {
+    "id": "S02",
+    "number": 437,
+    "url": "https://github.com/clickbytes/minimium/issues/437",
+    "findings": "F23",
+    "title": "Rejestracja impact przez silnik",
+    "deps": [
+      "O00",
+      "S01"
+    ],
+    "owner": "właściciel funkcji impact; aplikacje składają registry",
+    "paths": "crates/world/src/impact; games/sample moduł portali; server/client component registry composition",
+    "contract": "Rejestrować engine.impact_body przez właściciela impact. Usunąć rejestrację z modułu portali sample; aktualizować składanie po obu stronach. Zachować ID, schemat, kodowanie i wykrywanie kolizji rejestracji.",
+    "scenario": "Impact bez modułu portali; podwójna rejestracja daje typowany błąd; zapis/protokół zgodny."
+  },
+  {
+    "id": "S03",
+    "number": 438,
+    "url": "https://github.com/clickbytes/minimium/issues/438",
+    "findings": "F21",
+    "title": "Jeden właściciel live impact state",
+    "deps": [
+      "O00",
+      "S02",
+      "S04"
+    ],
+    "owner": "Impacts jako hermetyczny właściciel lotu",
+    "paths": "crates/server-runtime/src/impacts; world impact component; world_registry/entity_state",
+    "contract": "Impacts.bodies prywatne, komponent jest projekcją ostatniego trwałego checkpointu. Publikacja projekcji przez operację właściciela. Generic set/remove/despawn nie omijają reguł komponentu systemowego. Zachować cadence checkpointów, replay i zapis.",
+    "scenario": "Próby generic set/remove/despawn impactu; checkpoint i replay; stale save ack."
+  },
+  {
+    "id": "S04",
+    "number": 439,
+    "url": "https://github.com/clickbytes/minimium/issues/439",
+    "findings": "F24",
+    "title": "Neutralne zmiany i rezerwacja storage",
+    "deps": [
+      "O00",
+      "S01"
+    ],
+    "owner": "world registry staged mutation; storage reservation adapter",
+    "paths": "crates/server-runtime/src/world_registry/entity_state.rs; crates/storage component encoders/reservations",
+    "contract": "Mutator przygotowuje neutralny opis zmian i staged stores. Storage oblicza koszt rekordów i zwraca przygotowaną rezerwację. Właściciel zatwierdza stores i rezerwację razem. Usunąć wiedzę mutatora o konkretnych encoderach i kosztach; zachować limity i atomowość.",
+    "scenario": "Brak quota, encoder error i błąd komponentu nie publikują części staged stores ani rezerwacji."
+  },
+  {
+    "id": "S05",
+    "number": 440,
+    "url": "https://github.com/clickbytes/minimium/issues/440",
+    "findings": "F22",
+    "title": "Wynik każdego efektu",
+    "deps": [
+      "O00",
+      "S04"
+    ],
+    "owner": "server runtime commit_system_batch",
+    "paths": "crates/server-runtime/src/runtime; crates/gameplay/src/system.rs; effect consumers/diagnostics",
+    "contract": "Ograniczony EffectBatchOutcome z wynikiem każdego efektu. Podzbiór zmian encji pozostaje atomowy. Transfer zwraca Started albo typowane Rejected; rozpoczęcie nie oznacza commit świata. Migrować konsumentów i diagnostykę; nie deklarować atomowości obejmującej transport.",
+    "scenario": "Mieszany batch: encje, odrzucony transfer, limity; każdy efekt ma wynik, brak fałszywego commit."
+  },
+  {
+    "id": "S06",
+    "number": 441,
+    "url": "https://github.com/clickbytes/minimium/issues/441",
+    "findings": "F16",
+    "title": "Autorytatywny właściciel reguł akcji",
+    "deps": [
+      "O00",
+      "W03"
+    ],
+    "owner": "actor/action owner; admission adapter",
+    "paths": "crates/server-runtime/src/connection.rs; crates/server-runtime/src/runtime/admission/actions; crates/simulation action execution",
+    "contract": "Cooldown i polityki akcji przenieść z connection do actor/action owner. Wszystkie wejścia, w tym host embedded, przechodzą wspólną walidację. Zachować monotoniczny zegar, chwilę naliczania cooldown i cleanup po usunięciu aktora. Admission zachowuje permissions, context i transport limits.",
+    "scenario": "Network i embedded odmawiają tak samo; cooldown po rejected action zgodny; actor removal czyści stan."
+  },
+  {
+    "id": "S07",
+    "number": 442,
+    "url": "https://github.com/clickbytes/minimium/issues/442",
+    "findings": "F14",
+    "title": "Typowane wyniki administracji",
+    "deps": [
+      "O00",
+      "S05"
+    ],
+    "owner": "admin owner results; CLI formatter",
+    "paths": "crates/server-runtime admin/built-ins/properties/modules; crates/gameplay module commands; apps/ctl",
+    "contract": "Zastąpić źródłowe success+text typowanym sukcesem/błędem i ograniczonym payloadem. Migrować built-ins, properties, modules. Formatowanie w terminal/admin adapterze. Zachować wire format i stabilne error codes; tekst nie rozstrzyga sukcesu.",
+    "scenario": "Każdy built-in: success/error, limit payload, permission denied i zgodność transportu."
+  },
+  {
+    "id": "S08",
+    "number": 443,
+    "url": "https://github.com/clickbytes/minimium/issues/443",
+    "findings": "F13",
+    "title": "Użyteczny port komend modułów",
+    "deps": [
+      "O00",
+      "S05",
+      "S06",
+      "S07"
+    ],
+    "owner": "gameplay ModuleCommandContext i server owner executor",
+    "paths": "crates/gameplay module command contracts; crates/server-runtime module command dispatch; built-ins",
+    "contract": "ModuleCommandContext daje bounded read views świata/komponentów i emisję typed effects/actions. Bez &mut ServerRuntime, raw registry, network/storage. Built-ins i modules wspólna walidacja i wykonanie; wyniki S05/S07.",
+    "scenario": "Komenda modułu czyta komponent i emituje efekt; odmowa uprawnień, partial outcome, resource budget."
+  },
+  {
+    "id": "S09",
+    "number": 444,
+    "url": "https://github.com/clickbytes/minimium/issues/444",
+    "findings": "F15",
+    "title": "Harmonogram obejmujący built-ins",
+    "deps": [
+      "O00",
+      "S08"
+    ],
+    "owner": "server runtime tick scheduler",
+    "paths": "crates/server-runtime/src/runtime/tick.rs; crates/gameplay/src/system.rs; system registration",
+    "contract": "Odwzorować rzeczywistą kolejność tick jako jawny graf ID built-ins i extension points. Zachować kolejność, shutdown gate i moment publikacji efektów. Walidować nieznane zależności, cykle i niedozwolone przejścia faz. before/after ma odnosić się do rzeczywistego tick.",
+    "scenario": "Zależność przed/po built-in; cycle, unknown ID i phase reversal; shutdown bez dodatkowych efektów."
+  },
+  {
+    "id": "S10",
+    "number": 445,
+    "url": "https://github.com/clickbytes/minimium/issues/445",
+    "findings": "F09",
+    "title": "Właściciel transakcji wykopów",
+    "deps": [
+      "O00",
+      "W02",
+      "S03",
+      "S04",
+      "S05"
+    ],
+    "owner": "ExcavationCoordinator",
+    "paths": "crates/server-runtime excavation/impacts; runtime publication; preparation/storage reservations",
+    "contract": "ExcavationCoordinator posiada przygotowanie, rezerwacje, oczekiwanie na trwałość i publikację. Wąskie porty odczytu świata, work submission i commit; bez całego runtime. Przełączyć excavations i impacts z kontrolą rewizji, cancellation i durable-before-publication.",
+    "scenario": "Cancel, stale revision, worker failure, storage failure i late ack nigdy nie publikują niedurable geometrii."
+  },
+  {
+    "id": "S11",
+    "number": 446,
+    "url": "https://github.com/clickbytes/minimium/issues/446",
+    "findings": "F09,F10",
+    "title": "Transport jako adapter hosta",
+    "deps": [
+      "O00",
+      "S06",
+      "S08"
+    ],
+    "owner": "transport host adapter; runtime typed event owner",
+    "paths": "crates/server-runtime/src/connection.rs; runtime listener/read/write; crates/transport; apps/server",
+    "contract": "Wydzielić właściciela listeners, sockets, byte buffers i codecs. Runtime odbiera typed events i emituje bounded responses przez connection IDs. Zachować auth, framing, response order i backpressure. Obecny proces serwera korzysta z nowej ścieżki w tym samym PR.",
+    "scenario": "Partial/zero writes, malformed framing, auth refusal, slow client i response ordering."
+  },
+  {
+    "id": "S12",
+    "number": 447,
+    "url": "https://github.com/clickbytes/minimium/issues/447",
+    "findings": "F09,F10",
+    "title": "Jawny port persistence",
+    "deps": [
+      "O00",
+      "S10",
+      "S11"
+    ],
+    "owner": "persistence port w runtime; file backend adapter",
+    "paths": "crates/server-runtime runtime bootstrap/storage lifecycle; crates/storage; apps/server",
+    "contract": "Port bootstrap/replay, reservations, snapshots, journal, ack i shutdown. Podłączyć istniejący backend plikowy. Runtime nie otwiera katalogów ani plików. Enqueue i durable ack oddzielne; nie maskować błędów.",
+    "scenario": "Bootstrap corruption, rejected reservation, delayed durable ack, save failure i shutdown flush."
+  },
+  {
+    "id": "S13",
+    "number": 448,
+    "url": "https://github.com/clickbytes/minimium/issues/448",
+    "findings": "F10",
+    "title": "Publiczne submit/query/step",
+    "deps": [
+      "O00",
+      "S09",
+      "S12"
+    ],
+    "owner": "koordynator; ten sam authoritative runtime",
+    "paths": "crates/server-runtime public facade; apps/server; memory persistence adapter; embedded host example",
+    "contract": "Fasada tego samego właściciela: submit przyjęcie/odrzucenie, query immutable result, step bounded outcomes. Constructor bierze prepared worlds, modules, explicit services bez TCP/process/filesystem. Rzeczywisty bounded memory backend i kompilowalny host example. run/run_with_config prowadzą dokładnie ten runtime z process adapters. Host dostarcza czas i execution resources.",
+    "scenario": "Ten sam scenariusz przez proces i host API; bounded memory exhaustion, step budgets, queries bez mutacji."
+  },
+  {
+    "id": "S14",
+    "number": 449,
+    "url": "https://github.com/clickbytes/minimium/issues/449",
+    "findings": "F17",
+    "title": "Jawna polityka czasu pracy asynchronicznej",
+    "deps": [
+      "O00",
+      "S10",
+      "S13"
+    ],
+    "owner": "hydrology/impact owners i step input",
+    "paths": "crates/server-runtime hydrology/impacts; runtime step configuration",
+    "contract": "Parametry hydrology/impacts w konfiguracji właścicieli i wejściu kroku. Zachować cadence, fixed dt, retry i brak nadrabiania wstrzymanych kroków. Oddzielić monotonic scheduling, simulation i UTC. Busy/stale/save waiting mają jawny wpływ na postęp.",
+    "scenario": "Busy worker i storage wait, stale completion, pause/resume, UTC jump bez extra simulation catch-up."
+  },
+  {
+    "id": "S15",
+    "number": 450,
+    "url": "https://github.com/clickbytes/minimium/issues/450",
+    "findings": "F05",
+    "title": "Deadline i cleanup transferu",
+    "deps": [
+      "O00",
+      "C04",
+      "S05"
+    ],
+    "owner": "server transfer owner",
+    "paths": "crates/server-runtime transfer lifecycle; pending transfer tickets/reservations; runtime tick",
+    "contract": "Osobny monotoniczny deadline 300 s, spójny z content preparation. Expiry anuluje pending transfer i zwalnia tickety/rezerwacje, zachowując aktywny świat. Niezależny od idle connection timeout. Istniejące cancel messages, bez zmiany protokołu.",
+    "scenario": "Aktywny heartbeat i brak ready przez 300 s; late ready po cancel; aktywny świat zachowany."
+  },
+  {
+    "id": "G01",
+    "number": 451,
+    "url": "https://github.com/clickbytes/minimium/issues/451",
+    "findings": "F07",
+    "title": "Ochrona instalowanego pakietu przed ewikcją",
+    "deps": [
+      "O00"
+    ],
+    "owner": "ContentCache asset-io",
+    "paths": "crates/asset-io/src/content_cache.rs; crates/asset-io/src/materials; cache consumers w client-runtime",
+    "contract": "Plan instalacji ma chroniony zbiór wymaganych digestów. Zachować wyłączny quota lock do uzyskania lease; bez drugiego lock protocol. Ewikcja omija wymagane cache hits. A=60, X=30, B=40, limit=100 usuwa X i kończy w 100 albo jawny błąd, nigdy 130. Uwzględnić duplikaty digestów i rzeczywiste koszty cache/receipts w granicach obecnego kontraktu.",
+    "scenario": "Częściowo obecny pakiet, active leases, duplicate digest, błędny fetch/hash, mała quota."
+  },
+  {
+    "id": "G02",
+    "number": 452,
+    "url": "https://github.com/clickbytes/minimium/issues/452",
+    "findings": "F29",
+    "title": "Poprawna konstrukcja i błędy próbkowania Earth",
+    "deps": [
+      "O00"
+    ],
+    "owner": "procgen PlanetTerrain",
+    "paths": "crates/procgen/src/planet.rs; sampling/generator; sector workers; resolver; presentation callers",
+    "contract": "Earth wymaga prepared geography przy validated construction. Sampling errors dają typed GenerationError bez expect. Migrować generator, sampling, workers, resolver, presentation. Usunąć buildery pozwalające odtworzyć invalid state.",
+    "scenario": "Brak geography, mismatched geography i sampling failure propagują błąd; valid Earth zachowuje wynik."
+  },
+  {
+    "id": "G03",
+    "number": 453,
+    "url": "https://github.com/clickbytes/minimium/issues/453",
+    "findings": "F25",
+    "title": "Polityka scenariusza dostarczana przez grę",
+    "deps": [
+      "O00",
+      "G02",
+      "G04"
+    ],
+    "owner": "sample composition; neutral procgen",
+    "paths": "games/sample; crates/procgen/src/planet.rs; spawn/routes/marker/relief sampling",
+    "contract": "Sample dostarcza spawn/routes, marker i relief attenuation. Procgen neutralne sampling/geometric operations. Przenieść także regułę przy +Y z dokładną arytmetyką i parametrami. Usunąć hardcoded Bergen i golden marker z engine. Zachować sample output, seed, fingerprint.",
+    "scenario": "Identyczne punkty i geometria sample, rule +Y, inna konfiguracja bez Bergen/marker w engine."
+  },
+  {
+    "id": "G04",
+    "number": 454,
+    "url": "https://github.com/clickbytes/minimium/issues/454",
+    "findings": "F27",
+    "title": "Wspólny profil materiałowy terenu",
+    "deps": [
+      "O00",
+      "W01",
+      "G02"
+    ],
+    "owner": "validated terrain material profile związany z content",
+    "paths": "procgen/terrain preparation; server/client sector workers; collision; contour rendering; teleport/spawn/debug; games/sample",
+    "contract": "Validated profile powiązany z rozwiązaną tożsamością contentu, przekazany wszystkim konsumentom. Usunąć ukryte 1.5; sample jawnie 1.5 m. Konflikt profilu z rozpoznanym contentem odrzucić przed publikacją; bez niewersjonowanych world params.",
+    "scenario": "Zgodne granice materiałów na serwerze, collision, render i spawn; mismatch content/profile odrzucony."
+  },
+  {
+    "id": "G05",
+    "number": 455,
+    "url": "https://github.com/clickbytes/minimium/issues/455",
+    "findings": "F26",
+    "title": "Neutralna operacja deformacji",
+    "deps": [
+      "O00",
+      "S06",
+      "G04"
+    ],
+    "owner": "terrain neutral deformation; sample rules; action executor",
+    "paths": "crates/terrain deformation; crates/simulation tool admission; games/sample tool profiles; server action executor",
+    "contract": "Terrain wykonuje validated deformation z parametrami i allowed materials. Sample definiuje tool/equipment rules; authoritative executor wybiera definition. Zachować ID i inventory/protocol encoding. Usunąć Shovel/Pickaxe branches z terrain algorithm.",
+    "scenario": "Shovel/pickaxe dotychczasowy wynik, niedopuszczony materiał, invalid params i authoritative rejection."
+  },
+  {
+    "id": "G06",
+    "number": 456,
+    "url": "https://github.com/clickbytes/minimium/issues/456",
+    "findings": "F26",
+    "title": "Modele narzędzi jako dane gry",
+    "deps": [
+      "O00",
+      "G05",
+      "P01"
+    ],
+    "owner": "sample CPU model data; renderer upload",
+    "paths": "crates/renderer/src/held_tool.rs; crates/renderer/src/held_tool_gpu.rs; games/sample; apps/client tool presentation",
+    "contract": "Przenieść shovel/pickaxe geometry do sample content. Renderer otrzymuje neutralny CPU opis i odpowiada za upload/presentation. Zachować shape, materials, pose i wybór z confirmed inventory.",
+    "scenario": "Oba modele i pozycjonowanie identyczne, zmiana confirmed inventory, CPU consumer bez GPU."
+  },
+  {
+    "id": "G07",
+    "number": 457,
+    "url": "https://github.com/clickbytes/minimium/issues/457",
+    "findings": "F38",
+    "title": "Niezmienna publikacja materiałów",
+    "deps": [
+      "O00"
+    ],
+    "owner": "asset-io material server snapshot",
+    "paths": "crates/asset-io/src/material_server.rs; material workers/lifecycle",
+    "contract": "Przed ogłoszeniem paczki zrobić prywatny snapshot do nowych plików, weryfikować długości i digest kopiowanych bajtów. Serwować wyłącznie snapshot bez hardlinków. Manifest limits zachowane; staging błędu i snapshot po zakończeniu workerów sprzątane. Same-length overwrite źródła nie zmienia publikowanych bajtów.",
+    "scenario": "Overwrite źródła, zmiana długości podczas snapshot, invalid digest, worker shutdown i cleanup error."
+  },
+  {
+    "id": "G08",
+    "number": 458,
+    "url": "https://github.com/clickbytes/minimium/issues/458",
+    "findings": "F39",
+    "title": "Jawny krok cook i manifest pakowania",
+    "deps": [
+      "O00",
+      "G07"
+    ],
+    "owner": "cooker/packager adapters; sample recipe composition",
+    "paths": "material cooker/packager scripts/tools; games/sample material recipe; apps/client manifest consumption",
+    "contract": "Cooker bierze recipe i output directory, zwraca manifest. Packager i klient konsumują wskazany manifest zamiast niezależnego sample-v1. Sample wskazuje obecną recepturę. Zachować bytes/digest paczki; Cargo nie tworzy alternatywnej receptury.",
+    "scenario": "Explicit manifest roundtrip, recipe mismatch rejection, sample bytes/digest unchanged."
+  },
+  {
+    "id": "P01",
+    "number": 459,
+    "url": "https://github.com/clickbytes/minimium/issues/459",
+    "findings": "F28",
+    "title": "Kontrakty CPU bez feature GPU",
+    "deps": [
+      "O00"
+    ],
+    "owner": "renderer CPU public contract",
+    "paths": "crates/renderer/src/lib.rs; RenderFrame; PreparedSector; uniform data; crates/renderer/examples",
+    "contract": "Rozdzielić RenderFrame, PreparedSector i potrzebne uniform data od upload/backend. Eksporty przy --no-default-features bez wgpu i astronomy backend. Kompilowalny rzeczywisty CPU consumer example. Zachować GPU ABI.",
+    "scenario": "cargo check renderer --no-default-features --examples; CPU consumer uses exports; unchanged GPU sizes."
+  },
+  {
+    "id": "P02",
+    "number": 460,
+    "url": "https://github.com/clickbytes/minimium/issues/460",
+    "findings": "F30",
+    "title": "Czas prezentacji dostarczany przez hosta",
+    "deps": [
+      "O00",
+      "P01",
+      "C10"
+    ],
+    "owner": "host monotonic cosmetic clock; frame CPU input",
+    "paths": "crates/renderer/src/gpu_frame.rs; ClientApplication/host frame preparation",
+    "contract": "Usunąć globalny OnceLock<Instant>. Ramka dostaje host-owned monotonic cosmetic time, niezależny od UTC, niezerowany przy redraw/resize/transfer. Te same inputs dają ten sam uniform.",
+    "scenario": "Resize, transfer, repeated redraw i UTC jumps; deterministic uniform input."
+  },
+  {
+    "id": "P03",
+    "number": 461,
+    "url": "https://github.com/clickbytes/minimium/issues/461",
+    "findings": "F31",
+    "title": "Neutralne transient lights",
+    "deps": [
+      "O00",
+      "P01"
+    ],
+    "owner": "renderer bounded light contract; meteor producer adapter",
+    "paths": "crates/renderer transient lights/MeteorFrame; apps/client/src/renderer/meteors; GPU uniform consumers",
+    "contract": "Bounded light frame niezależny od MeteorFrame. Meteor producer adapter do kontraktu. Zachować selection, limits, occluders, units i GPU layout. Nonmeteor source bez fake meteor.",
+    "scenario": "Źródło niemetorowe i meteor w tej samej ramce, overflow selection i cloud occlusion zgodne."
+  },
+  {
+    "id": "P04",
+    "number": 462,
+    "url": "https://github.com/clickbytes/minimium/issues/462",
+    "findings": "F33",
+    "title": "Walidacja uploadu chmur",
+    "deps": [
+      "O00"
+    ],
+    "owner": "renderer cloud GPU owner",
+    "paths": "crates/renderer/src/cloud_gpu.rs; cloud upload callsites",
+    "contract": "Preflight całego uploadu przed pierwszym GPU queue write. Nadmiar records/faces daje typed error, poprzednia poprawna publikacja pozostaje. Counters/revisions zmieniają się dopiero po accepted upload. Bez silent truncation.",
+    "scenario": "Overflow record/face, invalid bounds i brak częściowych GPU writes; previous publication remains."
+  },
+  {
+    "id": "P05",
+    "number": 463,
+    "url": "https://github.com/clickbytes/minimium/issues/463",
+    "findings": "F37",
+    "title": "Widoczność zdalnych graczy",
+    "deps": [
+      "O00"
+    ],
+    "owner": "renderer scene publication",
+    "paths": "crates/renderer/src/scene_encoder.rs; remote player buffer producer; apps/client/src/renderer/gameplay_presentation.rs",
+    "contract": "Remote draw uwzględnia scene_visible. Bufor związany z WorldContext; użycie odrzucone przy publication mismatch. Świat oczekujący na geometrię nie pokazuje graczy poprzedniej sceny.",
+    "scenario": "Transfer przy opóźnionej geometrii; context mismatch, hidden scene i nowa zgodna publikacja."
+  },
+  {
+    "id": "P06",
+    "number": 464,
+    "url": "https://github.com/clickbytes/minimium/issues/464",
+    "findings": "F32",
+    "title": "Hermetyczny WeatherModel",
+    "deps": [
+      "O00"
+    ],
+    "owner": "environment weather model",
+    "paths": "crates/environment/src/weather/mod.rs; WeatherModel field consumers",
+    "contract": "Ukryć source fields, dać read access i migrować consumers. Jeśli rekonfiguracja używana, przeliczyć derivatives i invalidować cache w jednej operacji. Bez nieużywanych setters.",
+    "scenario": "Zmiana używanego profilu nie zostawia stale cache; brak public mutable source fields."
+  },
+  {
+    "id": "P07",
+    "number": 465,
+    "url": "https://github.com/clickbytes/minimium/issues/465",
+    "findings": "F41",
+    "title": "Debug i LOD chmur w prezentacji",
+    "deps": [
+      "O00",
+      "P06",
+      "C01"
+    ],
+    "owner": "renderer/client quality; environment physical data",
+    "paths": "crates/environment/src/weather; renderer clouds; apps/client cloud settings",
+    "contract": "CloudDebug i tessellation/LOD do renderer/client settings. Environment zachowuje physical sizes, density, position i evolution. Zachować quality policy i mesh limits.",
+    "scenario": "Ta sama pogoda różne quality/debug; fizyczny stan nie zmieniony, limity mesh zachowane."
+  },
+  {
+    "id": "P08",
+    "number": 466,
+    "url": "https://github.com/clickbytes/minimium/issues/466",
+    "findings": "F42",
+    "title": "Uzgodniona tożsamość ciał niebieskich",
+    "deps": [
+      "O00"
+    ],
+    "owner": "environment catalogue; astronomy adapter",
+    "paths": "crates/environment solar-system catalogue; crates/astronomy; sample celestial IDs",
+    "contract": "Catalogue owner definiuje reserved Sun/Moon IDs i odrzuca collisions typed error. Astronomy importuje kontrakt, nie pomija kolizji. Zachować sample IDs; wszyscy consumers zmigrowani.",
+    "scenario": "Reserved ID collision i repeated IDs jawne błędy; sample IDs oraz Sun/Moon rendering zgodne."
+  },
+  {
+    "id": "P09",
+    "number": 467,
+    "url": "https://github.com/clickbytes/minimium/issues/467",
+    "findings": "F43",
+    "title": "Domenowy błąd parsowania profilu",
+    "deps": [
+      "O00"
+    ],
+    "owner": "core PlayerProfileId; platform/storage adapters",
+    "paths": "crates/core PlayerProfileId::from_hex; crates/platform profile I/O; crates/storage/src/player_store/profiles.rs",
+    "contract": "from_hex zwraca core-owned error. Platform/storage mapują na I/O z file context. Zachować length, alphabet i encoding.",
+    "scenario": "Invalid length/alphabet oraz valid profile; adapter błędy z kontekstem pliku."
+  },
+  {
+    "id": "Q01",
+    "number": 468,
+    "url": "https://github.com/clickbytes/minimium/issues/468",
+    "findings": "F40",
+    "title": "Egzekwowalne granice",
+    "deps": [
+      "W01",
+      "W02",
+      "W03",
+      "C01",
+      "C02",
+      "C03",
+      "C04",
+      "C05",
+      "C06",
+      "C07",
+      "C08",
+      "C09",
+      "C10",
+      "S01",
+      "S02",
+      "S03",
+      "S04",
+      "S05",
+      "S06",
+      "S07",
+      "S08",
+      "S09",
+      "S10",
+      "S11",
+      "S12",
+      "S13",
+      "S14",
+      "S15",
+      "G01",
+      "G02",
+      "G03",
+      "G04",
+      "G05",
+      "G06",
+      "G07",
+      "G08",
+      "P01",
+      "P02",
+      "P03",
+      "P04",
+      "P05",
+      "P06",
+      "P07",
+      "P08",
+      "P09"
+    ],
+    "owner": "koordynator; architecture/static gates",
+    "paths": "architecture.toml; scripts/check_architecture.py; scripts/check_static_refactor.py; package READMEs; CPU/embedded examples",
+    "contract": "Po zamknięciu implementacji uaktualnić dependency declarations i static gates. Sprawdzić rzeczywisty feature graph, CPU consumers i hosted runtime compilation. Ownership przez Rust visibility i narrow APIs; opisać zakres skryptów, nazwy/layout regex nie dowodzą poprawnej własności.",
+    "scenario": "Actual forbidden edge/feature detection i compile consumer examples; żadnej deklaracji runtime PASS."
+  },
+  {
+    "id": "Q02",
+    "number": 469,
+    "url": "https://github.com/clickbytes/minimium/issues/469",
+    "findings": "",
+    "title": "Końcowy przegląd integracyjny",
+    "deps": [
+      "Q01"
+    ],
+    "owner": "koordynator; cała zintegrowana implementacja",
+    "paths": "zintegrowany main; docs/plan/epic-049; GitHub evidence",
+    "contract": "Prześledzić F01–F43 na main, brak starych executorów, niepodłączonych APIs, nieudokumentowanych >500 lines. Tabela finding → implementation → consumers → evidence. Zamknąć dopiero po pełnej zgodności i właściwych static checks.",
+    "scenario": "Cała macierz F01–F43 i negatywne ścieżki reviewed; odroczone runtime gaps zapisane."
+  },
+  {
+    "id": "Q03",
+    "number": 470,
+    "url": "https://github.com/clickbytes/minimium/issues/470",
+    "findings": "",
+    "title": "Final testing i odbiór E049",
+    "deps": [
+      "Q02"
+    ],
+    "owner": "koordynator; final acceptance",
+    "paths": "cała macierz E049; meteor acceptance #384",
+    "contract": "ZABLOKOWANE do jawnego rozpoczęcia final testing przez użytkownika. #384 jest rzeczywistym sub-issue z pełnym zakresem meteorów. Dopiero po zgodzie test suites, game/GPU, benchmarks, compatibility i host/process parity. Epic zamknąć dopiero po wszystkich dzieciach CLOSED i main verification.",
+    "scenario": "Równoczesne zmiany chunków; movement/tool/hitscan; radial geometry; transfer prepare/ready/commit/cancel/timeout/late; settings/reset/MouseRight/stdin; cache/quota/lease/snapshot; component/effects/permissions/backpressure; process vs embedded; seeds/digests/save/protocol; CPU build/cloud limits/hidden scene i pełne #384."
+  }
+]
