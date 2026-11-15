@@ -28,7 +28,7 @@ pub struct GeneratedWorld {
 }
 
 /// Canonical sample material policy for any manifest accepted by the current
-/// generator contract. The application binds it to the resolved map identity.
+/// generator contract, bound to its resolved map identity.
 pub fn terrain_material_profile(
     manifest: WorldManifest,
     map: &WorldMap,
