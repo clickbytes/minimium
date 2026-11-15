@@ -341,8 +341,17 @@ impl Renderer {
         {
             return;
         }
-        let direction = super::camera::camera_direction(
-            self.application.game.gameplay.prediction.character,
+        let prediction = &self.application.game.gameplay.prediction;
+        let character = prediction.character;
+        let feet_m = prediction.position_mm.map_or_else(
+            || character.position.map(f64::from),
+            |position| position.0.map(|value| value as f64 / 1000.0),
+        );
+        let Some(geometry) = CharacterGeometry::new(feet_m, character.gravity) else {
+            return;
+        };
+        let direction = super::camera::camera_direction_from_geometry(
+            geometry,
             self.input.yaw,
             self.input.pitch,
         )

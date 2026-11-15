@@ -40,14 +40,7 @@ pub(super) fn query(
     direction: [f32; 3],
     reach: f64,
 ) -> Option<SurfaceHit> {
-    let actor = owner.world.player(player)?;
-    let feet = actor
-        .position_mm
-        .map_or(actor.position.map(f64::from), |p| {
-            p.0.map(|v| v as f64 / 1000.0)
-        });
-    let up = minimium_world::world::character_frame(owner.world.gravity(), actor.position).0;
-    let eye = std::array::from_fn(|i| feet[i] + f64::from(up[i]) * 1.6);
+    let eye = owner.world.character_geometry(player)?.eye_position_m();
     let length = direction
         .iter()
         .map(|v| f64::from(*v).powi(2))

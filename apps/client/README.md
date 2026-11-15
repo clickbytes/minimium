@@ -18,6 +18,14 @@ session and passes its neutral `ToolKind` to the first-person viewmodel pass.
 Shovels and pickaxes are presentation-only low-poly meshes; gameplay tool use
 continues through the existing authoritative session action.
 
+Camera and tool-preview rays use the shared world `CharacterGeometry` eye and
+radial frame. Remote body meshes and shadow casters are generated from its
+0.6×1.7×0.6 m local body box, oriented by the same frame used by simulation
+hitscan. FixedY and radial characters at +Y use right +Z, up +Y, and forward
++X; because both horizontal body dimensions are 0.6 m, their spatial boxes
+match the previous axis-aligned bounds. Radial characters rotate with their
+local up direction elsewhere.
+
 ## Dependencies
 
 The default `desktop` feature enables renderer GPU code and the astronomy,

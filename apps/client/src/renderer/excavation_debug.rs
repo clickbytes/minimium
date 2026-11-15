@@ -147,26 +147,21 @@ impl Renderer {
             .map_or(character.position.map(f64::from), |p| {
                 p.0.map(|v| v as f64 / 1000.0)
             });
-        let up = character_frame(character.gravity, character.position)
-            .0
-            .map(f64::from);
-        let eye = std::array::from_fn(|axis| feet[axis] + up[axis] * 1.6);
-        let direction = camera::camera_direction(character, self.input.yaw, self.input.pitch)
-            .as_dvec3()
-            .to_array();
+        let geometry = CharacterGeometry::new(feet, character.gravity)?;
+        let eye = geometry.eye_position_m();
+        let direction =
+            camera::camera_direction_from_geometry(geometry, self.input.yaw, self.input.pitch)
+                .as_dvec3()
+                .to_array();
         let blockers = gameplay
             .reconciliation
             .tracks()
             .iter()
             .flatten()
-            .map(|track| {
+            .filter_map(|track| {
                 let feet_m = track.displayed_position_mm.map(|v| v as f64 / 1000.0);
-                minimium_simulation::ToolRayCapsule {
-                    feet_m,
-                    up: character_frame(character.gravity, feet_m.map(|v| v as f32))
-                        .0
-                        .map(f64::from),
-                }
+                CharacterGeometry::new(feet_m, character.gravity)
+                    .map(|geometry| minimium_simulation::ToolRayCapsule { geometry })
             });
         let mut hit = gameplay.collision_index.tool_surface_hit(
             self.application.game.current_instance,
