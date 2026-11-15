@@ -3,12 +3,15 @@ use super::*;
 impl Renderer {
     pub(in crate::renderer) fn water_presentation_for(
         &self,
-        instance: minimium_world::world::WorldInstanceId,
+        context: minimium_protocol::WorldContext,
     ) -> Option<super::super::sector_worker::WaterPresentation> {
         let session = self.application.connection.session()?;
-        let catalog = session.water_catalog_for(instance)?;
+        if !session.shares_active_world_state(context) {
+            return None;
+        }
+        let catalog = session.water_catalog_for_context(context)?;
         let snapshot = session.fluid_snapshot()?;
-        (snapshot.world() == instance)
+        (snapshot.world() == context.instance())
             .then(|| super::super::sector_worker::WaterPresentation::new(catalog, snapshot))
     }
 
@@ -56,8 +59,20 @@ impl Renderer {
             }
         }
         let view = self.terrain_view();
-        let water = self.water_presentation_for(self.application.game.current_instance);
+        let water = self
+            .application
+            .game
+            .session_context()
+            .and_then(|context| self.water_presentation_for(context));
         let scene = match self.sector_cache.ensure_scene(
+            self.application.game.session_context().map_or_else(
+                || {
+                    super::super::sector_scene::SceneInterestOwner::Bootstrap(
+                        self.application.game.current_instance,
+                    )
+                },
+                super::super::sector_scene::SceneInterestOwner::Active,
+            ),
             self.application.game.current_instance,
             manifest,
             self.application.game.gameplay.prediction.character.position,
@@ -66,6 +81,7 @@ impl Renderer {
             self.gpu.world_geometry.origin_generation(),
             &self.application.world_catalog,
             &self.application.game.world_manifests,
+            None,
             self.application
                 .connection
                 .session()
@@ -151,8 +167,20 @@ impl Renderer {
         let pending = self.application.pending_transition_preparations();
         for (transition_id, pending) in pending {
             let instance = pending.context.instance();
-            let water = self.water_presentation_for(instance);
+            let Some(terrain_inputs) = self
+                .application
+                .connection
+                .session()
+                .and_then(|session| session.terrain_inputs_for_context(pending.context))
+            else {
+                continue;
+            };
+            let water = self.water_presentation_for(pending.context);
             let scene = match self.sector_cache.ensure_scene(
+                super::super::sector_scene::SceneInterestOwner::Pending(
+                    transition_id,
+                    pending.context,
+                ),
                 instance,
                 pending.manifest,
                 pending.destination,
@@ -165,11 +193,8 @@ impl Renderer {
                 self.gpu.world_geometry.origin_generation(),
                 &self.application.world_catalog,
                 &self.application.game.world_manifests,
-                self.application
-                    .connection
-                    .session()
-                    .and_then(|session| session.base_geography())
-                    .into(),
+                Some((pending.map.as_ref(), pending.manifest)),
+                terrain_inputs,
                 water,
             ) {
                 Ok(Some(scene)) => scene,
@@ -178,8 +203,11 @@ impl Renderer {
                     self.application
                         .connection
                         .record_diagnostic_failure(error.code(), &error.to_string());
+                    if let Some(session) = self.application.connection.session_mut() {
+                        let _ = session.cancel_pending_transition();
+                    }
                     if let Some(failed) = self.application.fail_transition(transition_id) {
-                        self.release_prepared_target(failed.context.instance());
+                        self.release_prepared_target(transition_id, failed.context);
                     }
                     continue;
                 }
@@ -202,17 +230,25 @@ impl Renderer {
 
     pub(in crate::renderer) fn clear_pending_sector_transitions(&mut self) {
         for pending in self.application.clear_transitions() {
-            self.release_prepared_target(pending.context.instance());
+            self.sector_cache.release_interest(
+                super::super::sector_scene::SceneInterestOwner::Pending(
+                    pending.transition_id,
+                    pending.context,
+                ),
+            );
         }
     }
 
     pub(super) fn release_prepared_target(
         &mut self,
-        instance: minimium_world::world::WorldInstanceId,
+        transition_id: minimium_world::world::TransitionId,
+        context: minimium_protocol::WorldContext,
     ) {
-        if instance != self.application.game.current_instance {
-            self.sector_cache.release_interest(instance);
-            self.release_world_sectors(instance);
+        self.sector_cache.release_interest(
+            super::super::sector_scene::SceneInterestOwner::Pending(transition_id, context),
+        );
+        if context.instance() != self.application.game.current_instance {
+            self.release_world_sectors(context.instance());
         }
     }
 }

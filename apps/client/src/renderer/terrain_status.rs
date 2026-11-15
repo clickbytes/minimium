@@ -4,7 +4,13 @@ use super::Renderer;
 impl Renderer {
     pub(super) fn terrain_status(&self) -> Vec<String> {
         let instance = self.application.game.current_instance;
-        let scene = self.sector_cache.presentation(instance);
+        let scene = self
+            .application
+            .game
+            .session_context()
+            .map(super::sector_scene::SceneInterestOwner::Active)
+            .or_else(|| Some(super::sector_scene::SceneInterestOwner::Bootstrap(instance)))
+            .and_then(|owner| self.sector_cache.presentation(owner));
         let relief = self
             .application
             .game

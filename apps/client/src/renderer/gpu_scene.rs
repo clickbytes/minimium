@@ -131,6 +131,7 @@ impl Renderer {
         instance: minimium_world::world::WorldInstanceId,
     ) {
         self.shadow_map_preparation.release_world(instance);
+        self.sector_cache.remove_world_data(instance);
         self.gpu.release_world_sectors(instance);
     }
 }

@@ -27,8 +27,7 @@ pub(super) fn dispatch(
                 return DispatchResult::Skip;
             }
             let mismatched = session
-                .resolved_worlds
-                .get(&context.instance())
+                .resolved_world_content_for_context(*context)
                 .is_some_and(|content| {
                     content.manifest.generation().seed().get() != body.world_seed
                         || content.manifest.planet().is_none_or(|p| {

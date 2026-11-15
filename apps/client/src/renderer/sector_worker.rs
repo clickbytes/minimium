@@ -4,7 +4,7 @@ mod water;
 use water::build_water_vertices;
 pub(super) use water::WaterPresentation;
 
-use super::sector_scene::SectorWorkerError;
+use super::sector_scene::{SceneInterestOwner, SectorWorkerError};
 use minimium_procgen::{planet_surface_for, PlanetTerrain, SectorContentVersion, SectorGeometry};
 use minimium_renderer::{prepared_sector::PreparedSector, render_patch_cache::RenderPatchCache};
 use minimium_world::world::{SectorKey, WorldInstanceId, WorldManifest};
@@ -35,6 +35,7 @@ impl Key {
     }
 }
 struct Request {
+    owner: SceneInterestOwner,
     key: Key,
     collision: Vec<(SectorKey, Arc<SectorGeometry>)>,
     geography: minimium_procgen::TerrainInputs,
@@ -90,10 +91,10 @@ impl PreparedScene {
 }
 #[derive(Default)]
 struct State {
-    pending: Option<Request>,
-    requested: Option<Key>,
-    completed: Option<Arc<PreparedScene>>,
-    failed: Option<(Key, minimium_procgen::ExcavationGeometryError)>,
+    pending: HashMap<SceneInterestOwner, Request>,
+    requested: HashMap<SceneInterestOwner, Key>,
+    completed: HashMap<SceneInterestOwner, Arc<PreparedScene>>,
+    failed: HashMap<SceneInterestOwner, (Key, minimium_procgen::ExcavationGeometryError)>,
     stop: bool,
 }
 pub(super) struct SectorWorker {
@@ -142,13 +143,14 @@ impl SectorWorker {
                 loop {
                     let request = {
                         let mut s = shared.0.lock().unwrap();
-                        while s.pending.is_none() && !s.stop {
+                        while s.pending.is_empty() && !s.stop {
                             s = shared.1.wait(s).unwrap();
                         }
                         if s.stop {
                             break;
                         }
-                        s.pending.take().unwrap()
+                        let owner = *s.pending.keys().next().expect("pending scene request");
+                        s.pending.remove(&owner).unwrap()
                     };
                     let started = std::time::Instant::now();
                     let water_changed =
@@ -221,9 +223,9 @@ impl SectorWorker {
                                 &|| {
                                     let s = shared.0.lock().unwrap();
                                     s.stop
-                                        || s.pending
-                                            .as_ref()
-                                            .is_some_and(|r| !r.key.same_geometry(request.key))
+                                        || s.requested
+                                            .get(&request.owner)
+                                            .is_none_or(|key| !key.same_geometry(request.key))
                                 },
                             )
                         } else {
@@ -236,7 +238,12 @@ impl SectorWorker {
                     let meshes = match meshes {
                         Ok(meshes) => meshes,
                         Err(error) => {
-                            shared.0.lock().unwrap().failed = Some((request.key, error));
+                            shared
+                                .0
+                                .lock()
+                                .unwrap()
+                                .failed
+                                .insert(request.owner, (request.key, error));
                             continue;
                         }
                     };
@@ -255,7 +262,7 @@ impl SectorWorker {
                             let s = shared.0.lock().unwrap();
                             if s.stop
                                 || s.pending
-                                    .as_ref()
+                                    .get(&request.owner)
                                     .is_some_and(|r| !r.key.same_geometry(request.key))
                             {
                                 cancelled = true;
@@ -315,18 +322,17 @@ impl SectorWorker {
                         continue;
                     }
                     let mut s = shared.0.lock().unwrap();
-                    if !s.stop
-                        && s.pending
-                            .as_ref()
-                            .is_none_or(|r| r.key.same_geometry(request.key))
-                    {
-                        s.completed = Some(Arc::new(PreparedScene {
-                            key: request.key,
-                            patches,
-                            water_vertices,
-                            build_ms: started.elapsed().as_secs_f64() * 1000.0,
-                            cache_bytes: geometry.bytes(),
-                        }));
+                    if !s.stop && s.requested.get(&request.owner) == Some(&request.key) {
+                        s.completed.insert(
+                            request.owner,
+                            Arc::new(PreparedScene {
+                                key: request.key,
+                                patches,
+                                water_vertices,
+                                build_ms: started.elapsed().as_secs_f64() * 1000.0,
+                                cache_bytes: geometry.bytes(),
+                            }),
+                        );
                         prepared_water_revision = Some(request.key.water_level_revision);
                     }
                 }
@@ -339,6 +345,7 @@ impl SectorWorker {
     }
     pub fn poll(
         &self,
+        owner: SceneInterestOwner,
         world: WorldInstanceId,
         manifest: WorldManifest,
         view: minimium_renderer::terrain_view::TerrainView,
@@ -364,23 +371,64 @@ impl SectorWorker {
         }
         // A newer wave must not repeatedly cancel a complete, still-current
         // terrain scene. Publish this water frame, then prepare the latest one.
-        let completed = s.completed.take().filter(|r| r.key.same_geometry(key));
-        if let Some((failed_key, error)) = s.failed.take() {
+        let completed = s
+            .completed
+            .remove(&owner)
+            .filter(|scene| scene.key.same_geometry(key));
+        if let Some((failed_key, error)) = s.failed.remove(&owner) {
             if failed_key == key {
                 return Err(SectorWorkerError::Geometry(error));
             }
         }
-        if s.requested != Some(key) {
-            s.pending = Some(Request {
-                key,
-                collision: collision.to_vec(),
-                geography,
-                water,
-            });
-            s.requested = Some(key);
+        if s.requested.get(&owner) != Some(&key) {
+            if s.requested.len() >= 3 && !s.requested.contains_key(&owner) {
+                return Err(SectorWorkerError::QueueFull);
+            }
+            s.pending.insert(
+                owner,
+                Request {
+                    owner,
+                    key,
+                    collision: collision.to_vec(),
+                    geography,
+                    water,
+                },
+            );
+            s.requested.insert(owner, key);
             self.state.1.notify_one();
         }
         Ok(completed)
+    }
+
+    pub(super) fn cancel(&self, owner: SceneInterestOwner) -> bool {
+        let mut state = self.state.0.lock().unwrap();
+        state.pending.remove(&owner);
+        let requested = state.requested.remove(&owner).is_some();
+        state.completed.remove(&owner);
+        state.failed.remove(&owner);
+        requested
+    }
+
+    pub(super) fn promote(&mut self, source: SceneInterestOwner, target: SceneInterestOwner) {
+        let mut state = self.state.0.lock().unwrap();
+        if let Some(key) = state.requested.remove(&source) {
+            state.requested.insert(target, key);
+        }
+        if let Some(request) = state.pending.remove(&source) {
+            state.pending.insert(
+                target,
+                Request {
+                    owner: target,
+                    ..request
+                },
+            );
+        }
+        if let Some(scene) = state.completed.remove(&source) {
+            state.completed.insert(target, scene);
+        }
+        if let Some((key, error)) = state.failed.remove(&source) {
+            state.failed.insert(target, (key, error));
+        }
     }
 }
 impl Drop for SectorWorker {

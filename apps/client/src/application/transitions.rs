@@ -147,7 +147,7 @@ impl WorldTransitionController {
         self.pending
             .iter()
             .filter(|(_, transition)| !transition.ready_sent())
-            .map(|(id, transition)| (*id, *transition))
+            .map(|(id, transition)| (*id, transition.clone()))
             .collect()
     }
 
@@ -197,11 +197,6 @@ impl WorldTransitionController {
             return None;
         }
         self.pending.remove(&id)
-    }
-
-    pub(crate) fn remove_instance(&mut self, instance: WorldInstanceId) {
-        self.pending
-            .retain(|_, pending| pending.context.instance() != instance);
     }
 
     pub(crate) fn take_pending(&mut self) -> Vec<PendingSectorTransition> {
@@ -254,12 +249,14 @@ impl WorldTransitionController {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) struct PendingSectorTransition {
+    pub(crate) transition_id: TransitionId,
     pub(crate) source_context: WorldContext,
     pub(crate) context: WorldContext,
     pub(crate) destination: [f32; 3],
     pub(crate) manifest: WorldManifest,
+    pub(crate) map: std::sync::Arc<minimium_world::world::WorldMap>,
     phase: PendingTransitionPhase,
 }
 
@@ -282,16 +279,20 @@ enum PendingTransitionEvent {
 
 impl PendingSectorTransition {
     pub(crate) fn preparing(
+        transition_id: TransitionId,
         source_context: WorldContext,
         context: WorldContext,
         destination: [f32; 3],
         manifest: WorldManifest,
+        map: std::sync::Arc<minimium_world::world::WorldMap>,
     ) -> Self {
         Self {
+            transition_id,
             source_context,
             context,
             destination,
             manifest,
+            map,
             phase: PendingTransitionPhase::Preparing,
         }
     }

@@ -68,7 +68,11 @@ The front-end loop owns UI and polls the runtime connection controller; the runt
 state, input action mapper, settings, UI model, world catalog, overview model,
 typed connection status and `WorldTransitionController`. Transfer tickets move
 through prepare, ready, commit, cancel or fail via application methods, which
-reject stale context/ticket events. The renderer owns only gameplay render
+reject stale context/ticket events. A pending transfer retains its resolved map
+behind its own context and transition ticket; preparing destination geometry
+does not overwrite the active world catalog. The application installs that map
+in the active catalog only after commit. Cancel and failure drop the staged map.
+The renderer owns only gameplay render
 geometry, hit feedback and shot cooldown alongside GPU resources. The application
 has no GPU handle.
 The transition and overview fields are private to `ClientApplication`. Renderer

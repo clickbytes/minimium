@@ -1,11 +1,10 @@
 //! Bounded sector materialization. SectorManager installation stays on the UI lane.
-use super::sector_scene::SectorWorkerError;
+use super::sector_scene::{SceneInterestOwner, SectorWorkerError};
 use minimium_procgen::SectorGeometry;
 use minimium_sectors::SectorTicket;
 use minimium_world::world::{WorldManifest, WorldMap};
 use std::{
-    collections::BTreeMap,
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
     sync::{Arc, Condvar, Mutex},
     thread::JoinHandle,
 };
@@ -20,17 +19,17 @@ struct SceneCollisionState {
         Arc<SectorGeometry>,
         Arc<minimium_simulation::CollisionIndex>,
     )>,
-    pending: BTreeMap<minimium_world::world::WorldInstanceId, SceneCollisionJob>,
-    completed: BTreeMap<minimium_world::world::WorldInstanceId, SceneCollisionResult>,
+    pending: HashMap<SceneInterestOwner, SceneCollisionJob>,
+    completed: HashMap<SceneInterestOwner, SceneCollisionResult>,
     stop: bool,
 }
 struct SceneCollisionJob {
-    instance: minimium_world::world::WorldInstanceId,
+    owner: SceneInterestOwner,
     revision: u64,
     sectors: Vec<Arc<SectorGeometry>>,
 }
 pub(super) struct SceneCollisionResult {
-    pub(super) instance: minimium_world::world::WorldInstanceId,
+    pub(super) owner: SceneInterestOwner,
     pub(super) revision: u64,
     pub(super) index: Arc<minimium_simulation::CollisionIndex>,
 }
@@ -95,14 +94,14 @@ impl SceneCollisionWorker {
                     cached.iter().map(|(_, index)| index.clone()).collect(),
                 ));
                 let result = SceneCollisionResult {
-                    instance: job.instance,
+                    owner: job.owner,
                     revision: job.revision,
                     index,
                 };
                 let mut state = shared.0.lock().unwrap();
                 state.cached = cached;
                 if !state.stop {
-                    state.completed.insert(result.instance, result);
+                    state.completed.insert(result.owner, result);
                 }
             })
             .map_err(SectorWorkerError::ThreadSpawn)?;
@@ -113,17 +112,24 @@ impl SceneCollisionWorker {
     }
     pub(super) fn submit(
         &self,
-        instance: minimium_world::world::WorldInstanceId,
+        owner: SceneInterestOwner,
         revision: u64,
         sectors: Vec<Arc<SectorGeometry>>,
     ) -> Result<(), SectorWorkerError> {
         if self.thread.as_ref().is_none_or(JoinHandle::is_finished) {
             return Err(SectorWorkerError::WorkerStopped(Vec::new()));
         }
-        self.state.0.lock().unwrap().pending.insert(
-            instance,
+        let mut state = self.state.0.lock().unwrap();
+        if state.pending.len() + state.completed.len() >= 3
+            && !state.pending.contains_key(&owner)
+            && !state.completed.contains_key(&owner)
+        {
+            return Err(SectorWorkerError::QueueFull);
+        }
+        state.pending.insert(
+            owner,
             SceneCollisionJob {
-                instance,
+                owner,
                 revision,
                 sectors,
             },
@@ -138,6 +144,24 @@ impl SceneCollisionWorker {
         Ok(std::mem::take(&mut self.state.0.lock().unwrap().completed)
             .into_values()
             .collect())
+    }
+
+    pub(super) fn cancel(&self, owner: SceneInterestOwner) {
+        let mut state = self.state.0.lock().unwrap();
+        state.pending.remove(&owner);
+        state.completed.remove(&owner);
+    }
+
+    pub(super) fn promote(&self, source: SceneInterestOwner, target: SceneInterestOwner) {
+        let mut state = self.state.0.lock().unwrap();
+        if let Some(mut job) = state.pending.remove(&source) {
+            job.owner = target;
+            state.pending.insert(target, job);
+        }
+        if let Some(mut result) = state.completed.remove(&source) {
+            result.owner = target;
+            state.completed.insert(target, result);
+        }
     }
 }
 impl Drop for SceneCollisionWorker {

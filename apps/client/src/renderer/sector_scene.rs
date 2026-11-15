@@ -1,10 +1,14 @@
 mod collision;
+mod interests;
 
 use super::sector_worker::{PreparedScene, SectorWorker};
 pub(super) use collision::collision_from_sectors;
+pub(in crate::renderer) use interests::SceneInterestOwner;
 use minimium_procgen::SectorGeometry;
+use minimium_protocol::WorldContext;
 use minimium_sectors::{InstallResult, RequestError, SectorManager, SectorTicket};
 use minimium_simulation::CollisionIndex;
+use minimium_world::world::TransitionId;
 use minimium_world::world::{
     GenerationRevision, SectorKey, SectorRevision, WorldContentRevision, WorldInstanceId,
     WorldManifest, WorldMap,
@@ -60,14 +64,15 @@ impl std::error::Error for SectorWorkerError {
 
 pub(super) struct ClientSectorCache {
     terrain_inputs: HashMap<WorldInstanceId, Arc<minimium_procgen::TerrainInputs>>,
+    world_sources: HashMap<WorldInstanceId, (Arc<WorldMap>, WorldManifest)>,
     manager: SectorManager<SectorGeometry>,
     collision_worker: super::collision_worker::CollisionWorker,
     scene_collision_worker: super::collision_worker::SceneCollisionWorker,
     next_collision_revision: u64,
-    interests: HashMap<WorldInstanceId, SectorInterest>,
+    interests: HashMap<SceneInterestOwner, SectorInterest>,
     workers: HashMap<WorldInstanceId, SectorWorker>,
-    presentations: HashMap<WorldInstanceId, Arc<PreparedScene>>,
-    water_presentations: HashMap<WorldInstanceId, super::sector_worker::WaterPresentation>,
+    presentations: HashMap<SceneInterestOwner, Arc<PreparedScene>>,
+    water_presentations: HashMap<SceneInterestOwner, super::sector_worker::WaterPresentation>,
 }
 
 struct SectorInterest {
@@ -109,16 +114,13 @@ impl ClientSectorCache {
         unfinished
     }
 
-    pub(super) fn presentation(&self, instance: WorldInstanceId) -> Option<&PreparedScene> {
-        self.presentations.get(&instance).map(AsRef::as_ref)
-    }
-    pub(super) fn reset(&mut self) -> Result<(), SectorWorkerError> {
-        *self = Self::new()?;
-        Ok(())
+    pub(super) fn presentation(&self, owner: SceneInterestOwner) -> Option<&PreparedScene> {
+        self.presentations.get(&owner).map(AsRef::as_ref)
     }
     pub(super) fn new() -> Result<Self, SectorWorkerError> {
         Ok(Self {
             terrain_inputs: HashMap::new(),
+            world_sources: HashMap::new(),
             manager: SectorManager::new(CLIENT_SECTOR_CACHE_CAPACITY, CLIENT_SECTOR_CACHE_CAPACITY)
                 .expect("client sector cache capacity is nonzero"),
             collision_worker: super::collision_worker::CollisionWorker::new()?,
@@ -131,27 +133,9 @@ impl ClientSectorCache {
         })
     }
 
-    pub(super) fn interest_matches(
-        &self,
-        instance: WorldInstanceId,
-        keys: &[SectorKey],
-        manifest: WorldManifest,
-    ) -> bool {
-        self.interests.get(&instance).is_some_and(|interest| {
-            interest.keys == keys
-                && interest.tickets.len() == keys.len()
-                && interest.tickets.iter().all(|ticket| {
-                    self.manager
-                        .state(*ticket)
-                        .is_some_and(|state| state != minimium_sectors::SectorState::Failed)
-                })
-                && interest.generation == manifest.generation().revision()
-                && interest.content_revision == manifest.content_revision()
-        })
-    }
-
     pub(super) fn ensure_scene(
         &mut self,
+        owner: SceneInterestOwner,
         instance: WorldInstanceId,
         manifest: WorldManifest,
         position: [f32; 3],
@@ -160,13 +144,14 @@ impl ClientSectorCache {
         origin_generation: u64,
         maps: &HashMap<WorldInstanceId, WorldMap>,
         manifests: &HashMap<WorldInstanceId, WorldManifest>,
+        map_override: Option<(&WorldMap, WorldManifest)>,
         geography: minimium_procgen::TerrainInputs,
         water: Option<super::sector_worker::WaterPresentation>,
     ) -> Result<Option<ClientSectorScene>, SectorWorkerError> {
         let water = water.map(|incoming| {
             let cached = self
                 .water_presentations
-                .entry(instance)
+                .entry(owner)
                 .or_insert_with(|| incoming.clone());
             if !Arc::ptr_eq(&cached.snapshot, &incoming.snapshot)
                 || cached.catalog.digest != incoming.catalog.digest
@@ -181,7 +166,7 @@ impl ClientSectorCache {
         {
             let terrain = &geography;
             let old = self.terrain_inputs.get(&instance);
-            if old.map_or(Default::default(), |t| t.revision()) != terrain.revision() {
+            if old.is_none_or(|previous| previous.revision() != terrain.revision()) {
                 let count = minimium_procgen::planet_sector_count(manifest);
                 self.manager.invalidate_where(instance, |key| {
                     old.map_or(Default::default(), |t| t.sector_version(key, 1, count))
@@ -189,11 +174,29 @@ impl ClientSectorCache {
                 });
                 self.terrain_inputs
                     .insert(instance, Arc::new(terrain.clone()));
-                self.presentations.remove(&instance);
+                self.presentations.retain(|scene_owner, _| {
+                    scene_owner.instance() != instance || *scene_owner != owner
+                });
             }
         }
-        if maps.get(&instance).is_none() || manifests.get(&instance) != Some(&manifest) {
+        let world_matches = map_override
+            .filter(|_| owner.instance() == instance)
+            .map(|(_, candidate)| candidate == manifest)
+            .unwrap_or_else(|| {
+                maps.get(&instance).is_some() && manifests.get(&instance) == Some(&manifest)
+            });
+        if !world_matches {
             return Ok(None);
+        }
+        if let Some((map, source_manifest)) = map_override.filter(|_| owner.instance() == instance)
+        {
+            self.world_sources
+                .insert(instance, (Arc::new(map.clone()), source_manifest));
+        } else if let (Some(map), Some(source_manifest)) =
+            (maps.get(&instance), manifests.get(&instance).copied())
+        {
+            self.world_sources
+                .insert(instance, (Arc::new(map.clone()), source_manifest));
         }
         // Earth jobs must wait for the session's validated geography, including
         // bootstrap frames before Welcome. Never dispatch a job that would panic.
@@ -201,14 +204,9 @@ impl ClientSectorCache {
             return Ok(None);
         }
         let keys = minimium_procgen::sector_neighborhood_for(manifest, position);
-        let same_interest = self.interest_matches(instance, &keys, manifest);
+        let same_interest = self.interest_matches(owner, &keys, manifest);
         if !same_interest {
-            if let Some(previous) = self.interests.remove(&instance) {
-                for ticket in previous.tickets {
-                    self.manager.unpin(ticket);
-                    let _ = self.manager.cancel(ticket);
-                }
-            }
+            self.release_interest(owner);
             let mut tickets = Vec::with_capacity(keys.len());
             let mut request_error = None;
             for key in &keys {
@@ -232,14 +230,20 @@ impl ClientSectorCache {
             if let Some(error) = request_error {
                 for ticket in tickets {
                     self.manager.unpin(ticket);
-                    let _ = self.manager.cancel(ticket);
+                    let shared = self
+                        .interests
+                        .values()
+                        .any(|other| other.tickets.contains(&ticket));
+                    if !shared {
+                        let _ = self.manager.cancel(ticket);
+                    }
                 }
                 return Err(error);
             }
             let collision_revision = self.next_collision_revision;
             self.next_collision_revision = self.next_collision_revision.wrapping_add(1).max(1);
             self.interests.insert(
-                instance,
+                owner,
                 SectorInterest {
                     keys: keys.clone(),
                     tickets,
@@ -289,19 +293,21 @@ impl ClientSectorCache {
             let Some(ticket) = self.manager.begin_next() else {
                 break;
             };
-            let Some(source_map) = maps.get(&ticket.instance()) else {
+            let ticket_instance = ticket.instance();
+            let Some((source_map, source_manifest)) = self.world_sources.get(&ticket_instance)
+            else {
                 let _ = self.manager.fail(ticket);
                 continue;
             };
-            let Some(source_manifest) = manifests.get(&ticket.instance()) else {
+            let Some(source_geography) = self.terrain_inputs.get(&ticket_instance) else {
                 let _ = self.manager.fail(ticket);
                 continue;
             };
             if let Err(error) = self.collision_worker.submit(
                 ticket,
-                source_map.clone(),
+                source_map.as_ref().clone(),
                 *source_manifest,
-                geography.clone(),
+                source_geography.as_ref().clone(),
             ) {
                 let _ = self.manager.fail(ticket);
                 return Err(error);
@@ -309,7 +315,7 @@ impl ClientSectorCache {
             continue;
         }
 
-        let Some(interest) = self.interests.get(&instance) else {
+        let Some(interest) = self.interests.get(&owner) else {
             return Ok(None);
         };
         if interest.keys != keys
@@ -330,20 +336,20 @@ impl ClientSectorCache {
             return Ok(None);
         };
         for result in self.scene_collision_worker.poll()? {
-            if let Some(interest) = self.interests.get_mut(&result.instance) {
+            if let Some(interest) = self.interests.get_mut(&result.owner) {
                 if interest.collision_revision == result.revision {
                     interest.collision = Some((*result.index).clone());
                     interest.collision_pending = false;
                 }
             }
         }
-        let Some(interest) = self.interests.get_mut(&instance) else {
+        let Some(interest) = self.interests.get_mut(&owner) else {
             return Ok(None);
         };
         if interest.collision.is_none() && !interest.collision_pending {
             let revision = interest.collision_revision;
             self.scene_collision_worker.submit(
-                instance,
+                owner,
                 revision,
                 sectors
                     .iter()
@@ -365,6 +371,7 @@ impl ClientSectorCache {
             }
             let worker = self.workers.get(&instance).expect("worker inserted");
             if let Some(result) = worker.poll(
+                owner,
                 instance,
                 manifest,
                 view,
@@ -374,9 +381,9 @@ impl ClientSectorCache {
                 &sectors,
                 geography,
             )? {
-                self.presentations.insert(instance, result);
+                self.presentations.insert(owner, result);
             }
-            if let Some(result) = self.presentations.get(&instance).filter(|r| {
+            if let Some(result) = self.presentations.get(&owner).filter(|r| {
                 r.matches(
                     instance,
                     manifest,
@@ -393,7 +400,7 @@ impl ClientSectorCache {
                     .iter()
                     .map(|p| (p.key, p.lod, p.geometry.clone()))
                     .collect()
-            } else if let Some(previous) = self.presentations.get(&instance).filter(|scene| {
+            } else if let Some(previous) = self.presentations.get(&owner).filter(|scene| {
                 scene.geometry_matches(
                     instance,
                     manifest,
@@ -427,16 +434,11 @@ impl ClientSectorCache {
         }))
     }
 
-    pub(super) fn release_interest(&mut self, instance: WorldInstanceId) {
-        self.presentations.remove(&instance);
-        self.water_presentations.remove(&instance);
+    pub(super) fn remove_world_data(&mut self, instance: WorldInstanceId) {
+        self.release_world_interests(instance);
+        self.terrain_inputs.remove(&instance);
+        self.world_sources.remove(&instance);
         self.workers.remove(&instance);
-        if let Some(interest) = self.interests.remove(&instance) {
-            for ticket in interest.tickets {
-                self.manager.unpin(ticket);
-                let _ = self.manager.cancel(ticket);
-            }
-        }
     }
 
     fn request(
