@@ -54,8 +54,9 @@ truncation, while missing worlds and entities return distinct typed errors.
 The context contains no runtime, registry, storage, or network handle. The host
 owns command permissions and sends emitted effects through the same validated
 executor used by gameplay systems. A handler error discards its whole effect
-buffer; successful handlers receive per-effect applied, started, or rejected
-results, where Started does not imply transfer readiness or commit.
+buffer. After execution, the command caller receives each effect's applied,
+started, or rejected result; Started does not imply transfer readiness or
+commit.
 
 ## Change guide
 
