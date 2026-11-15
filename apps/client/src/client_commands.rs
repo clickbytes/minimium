@@ -7,7 +7,9 @@
 
 #[cfg(feature = "desktop")]
 use crate::application::SuppressionReason;
-use crate::application::{ClientAction, ClientActionExecutor, LocalActionOutcome};
+use crate::application::{
+    ClientAction, ClientActionExecutor, LocalActionOutcome, QueuedActionKind,
+};
 use crate::{options::ThreadLane, session::QueueError};
 use minimium_commands::{
     lex_command_line_with_spans, CommandError, CommandErrorCode, CommandOutcome,
@@ -23,7 +25,9 @@ mod help;
 mod interface;
 mod meteors;
 mod movement;
+mod presentation;
 mod properties;
+mod text;
 mod weather;
 
 pub(crate) use gameplay::nearest_portal_entity;
@@ -32,6 +36,9 @@ pub(crate) use meteors::{MeteorDebug, MeteorLightDebug, MeteorPreset};
 pub(crate) use minimium_commands::{
     CommandArgumentSpec as ArgumentSpec, CommandArgumentType as ArgumentType,
 };
+#[cfg(feature = "desktop")]
+pub(crate) use presentation::{BolidPath, DeveloperOperation};
+pub(crate) use presentation::{PresentationCapability, PresentationOperation, PresentationResult};
 pub(crate) use properties::local_setting_specs;
 #[cfg(feature = "desktop")]
 pub(crate) use properties::property_specs;
@@ -40,13 +47,15 @@ pub(crate) use properties::{
     parse_setting_value, property_spec, ClientPropertyCommand, ClientPropertyKey,
     ClientPropertyValue,
 };
+pub(crate) use text::{
+    execute_text, CommandActionResult, CommandOutput, CommandSource, TextCommandResult,
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum ClientCommand {
+    Presentation(PresentationOperation),
     AtmosphereDebug(minimium_renderer::atmosphere_debug::AtmosphereDebug),
-    AtmosphereStatus,
     TerrainDebug(minimium_renderer::terrain_debug::TerrainDebug),
-    TerrainStatus,
     Property(properties::ClientPropertyCommand),
     SetAltitude(f32),
     ConfigSave(std::path::PathBuf),
@@ -70,14 +79,7 @@ pub(crate) enum ClientCommand {
     Clear,
     Quit,
     SkyQuality(SkyQuality),
-    SkyInfo,
-    SkyBodies,
     SkyDemo(bool),
-    SkyMeteorsStatus,
-    SkyMeteorsSpawn(MeteorPreset, Option<u64>),
-    SkyMeteorsClear,
-    SkyMeteorsLight(MeteorLightDebug),
-    SkyMeteorsDebug(MeteorDebug),
     Fov(Option<f32>),
     ShowCelestialNames(bool),
     TimeStatus,
@@ -85,7 +87,6 @@ pub(crate) enum ClientCommand {
     SpawnRandomBolid(u16),
     SpawnRandomMeteorid,
     SetTime { minute: u16, local: bool },
-    WeatherStatus,
     WeatherDebug(minimium_environment::weather::CloudDebug),
     WeatherDetail(u8),
 }
@@ -208,37 +209,6 @@ pub(crate) fn parse_command(input: &str) -> Result<Option<ClientCommand>, ParseE
     }
 }
 
-pub(crate) fn parse_command_typed(input: &str) -> Result<Option<ClientCommand>, CommandError> {
-    parse_command(input).map_err(|error| match error {
-        ParseError::Structured(error) => error,
-        ParseError::UnknownCommand => CommandError::new(
-            CommandErrorCode::UnknownCommand,
-            input.split_whitespace().next(),
-            "unknown command",
-            Some("help"),
-        ),
-        ParseError::FovUsage => CommandError::new(
-            CommandErrorCode::InvalidValue,
-            Some("client.camera.fov"),
-            "field of view must be finite and between 30 and 110 degrees",
-            Some("camera fov [30..=110]"),
-        ),
-        ParseError::MeteorUsage => meteors::command_error(),
-        ParseError::Usage(usage) => CommandError::new(
-            CommandErrorCode::InvalidArguments,
-            input.split_whitespace().next(),
-            "invalid command arguments",
-            Some(usage),
-        ),
-        other => CommandError::new(
-            CommandErrorCode::InvalidArguments,
-            input.split_whitespace().next(),
-            format!("{other:?}"),
-            None::<String>,
-        ),
-    })
-}
-
 pub(crate) struct CommandContext<'a> {
     pub connection: &'a mut minimium_client_runtime::ConnectionController,
     pub action_executor: &'a mut ClientActionExecutor,
@@ -250,8 +220,6 @@ pub(crate) struct CommandContext<'a> {
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum FrontendAction {
     Notice(minimium_localization::UiNotice),
-    AtmosphereStatus,
-    TerrainStatus,
     Help,
     Print(String),
     Connect(String),
@@ -263,29 +231,27 @@ pub(crate) enum FrontendAction {
     MapTeleport,
     Clear,
     Quit,
-    SkyInfo,
-    SkyBodies,
     Property(properties::ClientPropertyCommand),
     ConfigSave(std::path::PathBuf),
     TimeStatus,
     TimeScale(String),
-    SkyMeteorsStatus,
-    SkyMeteorsSpawn(MeteorPreset, Option<u64>),
-    SkyMeteorsClear,
-    SkyMeteorsLight(MeteorLightDebug),
-    SkyMeteorsDebug(MeteorDebug),
     SpawnRandomBolid(u16),
     SpawnRandomMeteorid,
     TimeMode(String),
     TimeOfflinePolicy(String),
     SetTime { minute: u16, local: bool },
-    WeatherStatus,
+    Presentation(PresentationOperation),
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum CommandResult {
-    Sent,
-    QueueError(QueueError),
+    Queued {
+        kind: QueuedActionKind,
+    },
+    QueueRejected {
+        kind: QueuedActionKind,
+        error: QueueError,
+    },
     #[cfg(feature = "desktop")]
     Suppressed(SuppressionReason),
     Action(FrontendAction),
@@ -293,13 +259,13 @@ pub(crate) enum CommandResult {
 
 pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) -> CommandResult {
     let action = match command {
+        ClientCommand::Presentation(operation) => {
+            return CommandResult::Action(FrontendAction::Presentation(operation));
+        }
         ClientCommand::AtmosphereDebug(mode) => {
             return CommandResult::Action(FrontendAction::Property(ClientPropertyCommand::Set(
                 ClientPropertyValue::AtmosphereDebug(mode),
             )))
-        }
-        ClientCommand::AtmosphereStatus => {
-            return CommandResult::Action(FrontendAction::AtmosphereStatus)
         }
         ClientCommand::SetAltitude(km) => {
             if !context.connection.flight_enabled || !context.connection.movement.can_fly {
@@ -313,12 +279,6 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
             return CommandResult::Action(FrontendAction::ConfigSave(path))
         }
         ClientCommand::Print(text) => return CommandResult::Action(FrontendAction::Print(text)),
-        ClientCommand::WeatherStatus => {
-            return CommandResult::Action(FrontendAction::WeatherStatus)
-        }
-        ClientCommand::TerrainStatus => {
-            return CommandResult::Action(FrontendAction::TerrainStatus)
-        }
         ClientCommand::TerrainDebug(mode) => {
             return CommandResult::Action(FrontendAction::Property(ClientPropertyCommand::Set(
                 ClientPropertyValue::TerrainDebug(mode),
@@ -389,23 +349,6 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
                 ClientPropertyValue::SkyQuality(quality),
             )))
         }
-        ClientCommand::SkyInfo => return CommandResult::Action(FrontendAction::SkyInfo),
-        ClientCommand::SkyMeteorsStatus => {
-            return CommandResult::Action(FrontendAction::SkyMeteorsStatus);
-        }
-        ClientCommand::SkyMeteorsSpawn(preset, seed) => {
-            return CommandResult::Action(FrontendAction::SkyMeteorsSpawn(preset, seed));
-        }
-        ClientCommand::SkyMeteorsDebug(mode) => {
-            return CommandResult::Action(FrontendAction::SkyMeteorsDebug(mode))
-        }
-        ClientCommand::SkyMeteorsLight(enabled) => {
-            return CommandResult::Action(FrontendAction::SkyMeteorsLight(enabled));
-        }
-        ClientCommand::SkyMeteorsClear => {
-            return CommandResult::Action(FrontendAction::SkyMeteorsClear);
-        }
-        ClientCommand::SkyBodies => return CommandResult::Action(FrontendAction::SkyBodies),
         ClientCommand::SkyDemo(enabled) => {
             return CommandResult::Action(FrontendAction::Property(ClientPropertyCommand::Set(
                 ClientPropertyValue::SkyDemo(enabled),
@@ -474,8 +417,10 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
     };
     let result = context.action_executor.execute(context.connection, action);
     match result {
-        LocalActionOutcome::Queued { .. } => CommandResult::Sent,
-        LocalActionOutcome::Rejected { error, .. } => CommandResult::QueueError(error),
+        LocalActionOutcome::Queued { kind, .. } => CommandResult::Queued { kind },
+        LocalActionOutcome::Rejected { kind, error } => {
+            CommandResult::QueueRejected { kind, error }
+        }
         #[cfg(feature = "desktop")]
         LocalActionOutcome::Suppressed(reason) => CommandResult::Suppressed(reason),
     }

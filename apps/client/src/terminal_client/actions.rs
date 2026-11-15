@@ -1,14 +1,11 @@
-use super::{events, help_lines, print_start_error, properties, start_remote, ClientOptions};
-use crate::client_commands::FrontendAction;
+use super::{events, help_lines, properties, start_error_output, start_remote, ClientOptions};
+use crate::client_commands::{CommandActionResult, CommandOutput, FrontendAction};
 use crate::messages::ClientText as Text;
 use crate::session::SessionEvent;
 use minimium_client_runtime::ConnectionController;
 use minimium_localization::Localizer;
 use minimium_protocol::ServerMessage;
-use std::{
-    io::{self, Write},
-    path::Path,
-};
+use std::path::Path;
 
 pub(super) fn handle(
     action: FrontendAction,
@@ -20,7 +17,15 @@ pub(super) fn handle(
     log_dir: &Path,
     parent_run_id: &str,
     text_properties: &mut properties::TextProperties,
-) -> io::Result<bool> {
+) -> (bool, CommandActionResult) {
+    let mut result = CommandActionResult::default();
+    macro_rules! println {
+        ($($argument:tt)*) => {
+            {
+                result.outputs.push(CommandOutput::Line(format!($($argument)*)));
+            }
+        };
+    }
     match action {
         FrontendAction::Notice(notice) => println!(
             "{}",
@@ -45,7 +50,7 @@ pub(super) fn handle(
                     "{}",
                     Text::DisconnectOrWait.localized(&localizer, options.locale)
                 );
-                return Ok(false);
+                return (false, result);
             }
             let config = match options.local_server_launch_config(
                 data_dir.to_path_buf(),
@@ -68,7 +73,7 @@ pub(super) fn handle(
                             ),
                         )
                     );
-                    return Ok(false);
+                    return (false, result);
                 }
             };
             match connection.start_local(config) {
@@ -78,7 +83,7 @@ pub(super) fn handle(
                         Text::StartingLocalServer.localized(&localizer, options.locale)
                     );
                 }
-                Err(error) => print_start_error(error, &localizer, options.locale),
+                Err(error) => result.outputs.extend(start_error_output(error).outputs),
             }
         }
         FrontendAction::Connect(address) => {
@@ -88,7 +93,9 @@ pub(super) fn handle(
                     Text::DisconnectOrWait.localized(&localizer, options.locale)
                 );
             } else {
-                start_remote(connection, &address, &localizer, options.locale);
+                result
+                    .outputs
+                    .extend(start_remote(connection, &address).outputs);
             }
         }
         FrontendAction::Disconnect => {
@@ -150,10 +157,9 @@ pub(super) fn handle(
             ),
         },
         FrontendAction::Clear => {
-            print!("\x1B[2J\x1B[H");
-            io::stdout().flush()?;
+            result.outputs.push(CommandOutput::Clear);
         }
-        FrontendAction::Quit => return Ok(true),
+        FrontendAction::Quit => return (true, result),
         FrontendAction::MapTeleport => {
             println!(
                 "{}",
@@ -161,28 +167,6 @@ pub(super) fn handle(
                     options.locale,
                     &minimium_localization::UiMessage::Notice(
                         minimium_localization::UiNotice::MapTeleportDesktopOnly
-                    )
-                )
-            );
-        }
-        FrontendAction::SkyInfo => {
-            println!(
-                "{}",
-                localizer.format(
-                    options.locale,
-                    &minimium_localization::UiMessage::Notice(
-                        minimium_localization::UiNotice::SkyInfoDesktopOnly
-                    )
-                )
-            );
-        }
-        FrontendAction::SkyBodies => {
-            println!(
-                "{}",
-                localizer.format(
-                    options.locale,
-                    &minimium_localization::UiMessage::Notice(
-                        minimium_localization::UiNotice::SkyInfoDesktopOnly
                     )
                 )
             );
@@ -221,34 +205,6 @@ pub(super) fn handle(
                     );
                 }
             }
-        }
-        FrontendAction::WeatherStatus
-        | FrontendAction::AtmosphereStatus
-        | FrontendAction::TerrainStatus => {
-            println!(
-                "{}",
-                localizer.format(
-                    options.locale,
-                    &minimium_localization::UiMessage::Notice(
-                        minimium_localization::UiNotice::WeatherRequiresDesktop
-                    )
-                )
-            );
-        }
-        FrontendAction::SkyMeteorsStatus
-        | FrontendAction::SkyMeteorsSpawn(_, _)
-        | FrontendAction::SkyMeteorsDebug(_)
-        | FrontendAction::SkyMeteorsLight(_)
-        | FrontendAction::SkyMeteorsClear => {
-            println!(
-                "{}",
-                localizer.format(
-                    options.locale,
-                    &minimium_localization::UiMessage::Notice(
-                        minimium_localization::UiNotice::MeteorsRequireDesktop
-                    )
-                )
-            );
         }
         FrontendAction::SetTime { minute, local } => {
             let longitude = match last_snapshot.as_ref() {
@@ -388,6 +344,39 @@ pub(super) fn handle(
                 }
             }
         }
+        FrontendAction::Presentation(operation) => {
+            let capability = match operation {
+                crate::client_commands::PresentationOperation::Developer(_) => {
+                    crate::client_commands::PresentationCapability::DeveloperRenderer
+                }
+                crate::client_commands::PresentationOperation::AtmosphereStatus
+                | crate::client_commands::PresentationOperation::WeatherStatus
+                | crate::client_commands::PresentationOperation::TerrainStatus => {
+                    crate::client_commands::PresentationCapability::WeatherDiagnostics
+                }
+                crate::client_commands::PresentationOperation::SkyInfo
+                | crate::client_commands::PresentationOperation::SkyBodies => {
+                    crate::client_commands::PresentationCapability::SkyDiagnostics
+                }
+                crate::client_commands::PresentationOperation::MeteorStatus
+                | crate::client_commands::PresentationOperation::MeteorSpawn(_, _)
+                | crate::client_commands::PresentationOperation::MeteorClear
+                | crate::client_commands::PresentationOperation::MeteorLight(_)
+                | crate::client_commands::PresentationOperation::MeteorDebug(_) => {
+                    crate::client_commands::PresentationCapability::MeteorDiagnostics
+                }
+            };
+            unavailable(&mut result, capability);
+        }
     }
-    Ok(false)
+    (false, result)
+}
+
+fn unavailable(
+    result: &mut CommandActionResult,
+    capability: crate::client_commands::PresentationCapability,
+) {
+    result.outputs.push(CommandOutput::Presentation(
+        crate::client_commands::PresentationResult::Unavailable(capability),
+    ));
 }

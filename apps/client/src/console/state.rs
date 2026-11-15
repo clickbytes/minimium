@@ -284,18 +284,6 @@ impl Console {
         self.scroll_offset = 0;
     }
 
-    pub(crate) fn diagnostic_lines_since(&self, index: usize) -> Vec<String> {
-        self.lines
-            .iter()
-            .skip(index)
-            .map(|line| line.text.clone())
-            .collect()
-    }
-
-    pub(crate) fn diagnostic_line_count(&self) -> usize {
-        self.lines.len()
-    }
-
     pub fn scroll_lines(&mut self, delta: isize) {
         self.scroll_offset = self.scroll_offset.saturating_add_signed(delta);
         self.scroll_offset = self.scroll_offset.min(self.lines.len());

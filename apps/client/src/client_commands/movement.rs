@@ -123,7 +123,10 @@ fn apply(setting: Setting, context: &mut CommandContext<'_>) -> CommandResult {
                         crate::application::ClientAction::SetFlightEnabled(value),
                     )
                 {
-                    return CommandResult::QueueError(error);
+                    return CommandResult::QueueRejected {
+                        kind: crate::application::QueuedActionKind::Other,
+                        error,
+                    };
                 }
                 return CommandResult::Action(FrontendAction::Print(format_movement(
                     settings,
@@ -156,7 +159,10 @@ fn apply(setting: Setting, context: &mut CommandContext<'_>) -> CommandResult {
                 },
             )
         {
-            return CommandResult::QueueError(error);
+            return CommandResult::QueueRejected {
+                kind: crate::application::QueuedActionKind::Other,
+                error,
+            };
         }
         true
     } else {

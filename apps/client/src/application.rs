@@ -221,6 +221,7 @@ impl ClientApplication {
     }
 }
 mod actions;
+pub(crate) use actions::QueuedActionKind;
 pub(crate) use actions::{ClientAction, ClientActionExecutor, LocalActionOutcome};
 #[cfg(feature = "desktop")]
-pub(crate) use actions::{QueuedActionKind, SuppressionReason, UseTrigger};
+pub(crate) use actions::{SuppressionReason, UseTrigger};

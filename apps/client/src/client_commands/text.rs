@@ -1,0 +1,128 @@
+use super::{
+    execute, parse_command, ClientCommand, CommandContext, CommandResult, FrontendAction,
+    ParseError, PresentationResult,
+};
+use crate::application::QueuedActionKind;
+#[cfg(feature = "desktop")]
+use crate::application::SuppressionReason;
+use crate::session::QueueError;
+use minimium_commands::{CommandError, CommandErrorCode};
+
+fn parse_command_typed(input: &str) -> Result<Option<ClientCommand>, CommandError> {
+    if let Some(command) = super::presentation::parse(input) {
+        return command.map(ClientCommand::Presentation).map(Some);
+    }
+    parse_command(input).map_err(|error| match error {
+        ParseError::Structured(error) => error,
+        ParseError::UnknownCommand => CommandError::new(
+            CommandErrorCode::UnknownCommand,
+            input.split_whitespace().next(),
+            "unknown command",
+            Some("help"),
+        ),
+        ParseError::FovUsage => CommandError::new(
+            CommandErrorCode::InvalidValue,
+            Some("client.camera.fov"),
+            "field of view must be finite and between 30 and 110 degrees",
+            Some("camera fov [30..=110]"),
+        ),
+        ParseError::MeteorUsage => super::meteors::command_error(),
+        ParseError::Usage(usage) => CommandError::new(
+            CommandErrorCode::InvalidArguments,
+            input.split_whitespace().next(),
+            "invalid command arguments",
+            Some(usage),
+        ),
+        other => CommandError::new(
+            CommandErrorCode::InvalidArguments,
+            input.split_whitespace().next(),
+            format!("{other:?}"),
+            None::<String>,
+        ),
+    })
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CommandSource {
+    #[cfg(feature = "desktop")]
+    Console,
+    Terminal,
+    #[cfg(feature = "desktop")]
+    DeveloperStdin,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum TextCommandResult {
+    Empty,
+    Rejected(CommandError),
+    Queued {
+        kind: QueuedActionKind,
+    },
+    QueueRejected {
+        kind: QueuedActionKind,
+        error: QueueError,
+    },
+    #[cfg(feature = "desktop")]
+    Suppressed(SuppressionReason),
+    Action(FrontendAction),
+}
+
+pub(crate) fn execute_text(
+    input: &str,
+    source: CommandSource,
+    context: &mut CommandContext<'_>,
+) -> TextCommandResult {
+    let input = input.trim();
+    if input.is_empty() {
+        return TextCommandResult::Empty;
+    }
+    let limit = match source {
+        CommandSource::Terminal => 512,
+        #[cfg(feature = "desktop")]
+        CommandSource::DeveloperStdin if super::presentation::is_developer_family(input) => 512,
+        #[cfg(feature = "desktop")]
+        CommandSource::Console | CommandSource::DeveloperStdin => 128,
+    };
+    if input.len() > limit {
+        return TextCommandResult::Rejected(CommandError::new(
+            CommandErrorCode::InvalidArguments,
+            None::<String>,
+            format!("command exceeds {limit} bytes"),
+            None::<String>,
+        ));
+    }
+    let command = match parse_command_typed(input) {
+        Ok(Some(command)) => command,
+        Ok(None) => return TextCommandResult::Empty,
+        Err(error) => return TextCommandResult::Rejected(error),
+    };
+    match execute(command, context) {
+        CommandResult::Queued { kind } => TextCommandResult::Queued { kind },
+        CommandResult::QueueRejected { kind, error } => {
+            TextCommandResult::QueueRejected { kind, error }
+        }
+        #[cfg(feature = "desktop")]
+        CommandResult::Suppressed(reason) => TextCommandResult::Suppressed(reason),
+        CommandResult::Action(action) => TextCommandResult::Action(action),
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum CommandOutput {
+    Line(String),
+    #[cfg(feature = "desktop")]
+    UiMessage(minimium_localization::UiMessage),
+    #[cfg(feature = "desktop")]
+    UiError(minimium_localization::UiMessage),
+    ClientText {
+        message: crate::messages::ClientText,
+        error: bool,
+    },
+    Presentation(PresentationResult),
+    Clear,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct CommandActionResult {
+    pub outputs: Vec<CommandOutput>,
+}
