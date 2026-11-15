@@ -4,9 +4,9 @@ use super::{ActiveEvent, ContextState, MeteorRuntime};
 use crate::client_commands::MeteorPreset;
 use crate::renderer::environment::{EnvironmentFrame, EnvironmentFrameStatus, RenderViewFrame};
 use minimium_renderer::meteors::{
-    coords::PlanetSurfaceScale, MeteorDisabledReason, MeteorFrame, MeteorFrameContext,
-    MeteorFrameState,
+    MeteorDisabledReason, MeteorFrame, MeteorFrameContext, MeteorFrameState,
 };
+use minimium_renderer::planet_coordinates::PlanetSurfaceScale;
 
 impl MeteorRuntime {
     /// Creates the runtime with its single monotonic datum.

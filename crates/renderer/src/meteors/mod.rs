@@ -2,7 +2,7 @@
 //!
 //! This module is the E047-01 CPU-only contract between any local producer and
 //! the renderer pass set. [`crate::meteors::frame::MeteorFrame`] is the
-//! per-frame input; [`model`] holds the validated physical samples and [`coords`]
+//! per-frame input; [`model`] holds the validated physical samples and [`crate::planet_coordinates`]
 //! the single physical ↔ game ↔ render-origin adapter. The frame carries fixed,
 //! sorted arrays and never allocates on the render path; pushes are rejected in
 //! disabled states, above the caps or on any contract violation, so nothing
@@ -10,7 +10,6 @@
 //! until E047-02; no server producer exists and `Tracked` is an input marker
 //! only.
 
-pub mod coords;
 pub mod fragmentation;
 pub mod kinematics;
 pub mod model;
@@ -26,8 +25,6 @@ use crate::meteors::model::{MeteorId, MeteorPhase, MeteorSource};
 
 /// Hard cap on bright cores rendered per frame (ADR 0013 § 6).
 pub const MAX_METEOR_CORES: usize = 16;
-/// Hard cap on transient light sources per frame (ADR 0013 § 6).
-pub const MAX_TRANSIENT_LIGHTS: usize = 4;
 /// Hard cap on trail points carried per frame (8 per core across 16 cores;
 /// the bolid train uses 24 adaptive nodes per event, meteors stay shorter).
 pub const MAX_TRAIL_POINTS: usize = 128;
@@ -181,41 +178,5 @@ impl TrailPoint {
             && self.opacity <= 1.0
             && self.intensity.is_finite()
             && self.intensity >= 0.0
-    }
-}
-
-/// One render-side transient light moment in origin-relative `f32` render units.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct TransientLightMoment {
-    /// Deterministic identity; also the received-luminance tie-breaker.
-    pub id: MeteorId,
-    /// `f32` metres relative to the render origin (never absolute world values).
-    pub position_rel_m: [f32; 3],
-    /// Emission colour, linear HDR, components in `[0, 1]`.
-    pub linear_rgb: [f32; 3],
-    /// Scene-linear radiant intensity (visible power / 4 pi), before exposure.
-    pub luminous_intensity: f64,
-    /// Actionable maximum lighting distance in physical metres.
-    pub range_m: f32,
-    /// Remaining client-monotonic life in seconds.
-    pub ttl_s: f32,
-}
-
-impl TransientLightMoment {
-    /// Contract check used by the per-frame render-status validation.
-    pub fn is_finite_contract(self) -> bool {
-        self.position_rel_m
-            .iter()
-            .all(|value| value.is_finite() && value.abs() <= RENDER_REL_M_MAX)
-            && self
-                .linear_rgb
-                .iter()
-                .all(|value| value.is_finite() && *value >= 0.0 && *value <= 1.0)
-            && self.luminous_intensity.is_finite()
-            && (0.0..=model::INTENSITY_MAX).contains(&self.luminous_intensity)
-            && self.range_m.is_finite()
-            && self.range_m >= 0.0
-            && self.ttl_s.is_finite()
-            && self.ttl_s >= 0.0
     }
 }

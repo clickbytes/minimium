@@ -1,10 +1,11 @@
 //! Presentation of server-owned bodies. No local terrain or physics authority.
 use minimium_protocol::WorldContext;
 use minimium_renderer::meteors::{
-    model::{MeteorPhase, MeteorSample, MeteorSource, MeteorTrailSample, TransientLightSample},
+    model::{MeteorPhase, MeteorSample, MeteorSource, MeteorTrailSample},
     trail::TrailKind,
     MeteorFrame,
 };
+use minimium_renderer::transient_lighting::TransientLightSample;
 use minimium_world::{
     impact::BodyState,
     terrain_edits::{length, project},
@@ -300,7 +301,9 @@ fn trail(
     }
 }
 fn light(frame: &mut MeteorFrame, id: u64, p: [f64; 3], rgb: [f64; 3], power: f64, range: f64) {
-    if let Ok(sample) = TransientLightSample::new(id, physical(frame, p), rgb, power, range, 0.1) {
+    if let Ok(sample) =
+        TransientLightSample::new(id, physical(frame, p), rgb, power, range, 0.1, 1.0)
+    {
         frame.push_light(sample);
     }
 }

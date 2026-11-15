@@ -1,7 +1,10 @@
 //! Bounded local point lights, independent of producer, protocol and GPU effects.
-use crate::meteors::{MeteorFrame, MeteorFrameContext, MeteorFrameState, TransientLightMoment};
+mod frame;
+mod model;
 use bytemuck::{Pod, Zeroable};
+pub use frame::{TransientLightContext, TransientLightFrame};
 use glam::DVec3;
+pub use model::{LightContractError, TransientLightMoment, TransientLightSample};
 
 pub const CAPACITY: usize = 4;
 pub const OCCLUDERS_PER_LIGHT: usize = 8;
@@ -36,7 +39,7 @@ pub struct TransientLightUniform {
     pub clouds: [CloudLightOccluder; CAPACITY * OCCLUDERS_PER_LIGHT],
 }
 
-fn physical(world: DVec3, context: MeteorFrameContext) -> DVec3 {
+fn physical(world: DVec3, context: TransientLightContext) -> DVec3 {
     let length = world.length();
     world.normalize_or_zero()
         * (context.game_radius_m
@@ -47,7 +50,7 @@ fn physical(world: DVec3, context: MeteorFrameContext) -> DVec3 {
 
 /// Finite local sources only. Ranking is physical received power, luminance
 /// weighted, with a smooth final 20% range fade. The caller breaks ties by ID.
-pub fn score(light: &TransientLightMoment, context: MeteorFrameContext) -> f64 {
+pub fn score(light: &TransientLightMoment, context: TransientLightContext) -> f64 {
     if !light.is_finite_contract() || light.ttl_s <= 0.0 || light.range_m <= 0.0 {
         return 0.0;
     }
@@ -60,7 +63,7 @@ pub fn score(light: &TransientLightMoment, context: MeteorFrameContext) -> f64 {
         return 0.0;
     }
     let eye = DVec3::from_array(context.camera_eye_world_m);
-    if !crate::meteors::visibility::head_visible(
+    if !crate::planet_coordinates::sphere_source_visible(
         eye.to_array(),
         source.to_array(),
         context.game_radius_m,
@@ -84,11 +87,10 @@ pub fn range_fade(distance: f64, range: f64) -> f64 {
 impl TransientLightUniform {
     pub const BYTES: u64 = std::mem::size_of::<Self>() as u64;
 
-    pub fn from_frame(frame: &MeteorFrame) -> Self {
-        if frame.state() != MeteorFrameState::Ready {
+    pub fn from_frame(frame: &TransientLightFrame) -> Self {
+        let Some(context) = frame.context() else {
             return Self::default();
-        }
-        let context = frame.context();
+        };
         let anchor = context.surface_scale.physical_altitude_m(0.0);
         let inverse_scale = context.surface_scale.physical_altitude_m(1.0) - anchor;
         let mut result = Self {
@@ -105,12 +107,7 @@ impl TransientLightUniform {
             if score(light, context) <= 0.0 {
                 continue;
             }
-            let radius = frame
-                .cores()
-                .iter()
-                .find(|core| core.id == light.id)
-                .map_or(1.0, |core| core.radius_m)
-                .max(0.01);
+            let radius = light.radius_m.max(0.01);
             result.sources[result.count[0] as usize] = TransientLight {
                 position_radius: [
                     light.position_rel_m[0],
@@ -135,11 +132,14 @@ impl TransientLightUniform {
     }
 
     /// Read-only observer diagnostic; no exposure or global ambient modification.
-    pub fn observer_irradiance(frame: &MeteorFrame) -> f64 {
+    pub fn observer_irradiance(frame: &TransientLightFrame) -> f64 {
+        let Some(context) = frame.context() else {
+            return 0.0;
+        };
         frame
             .lights()
             .iter()
-            .map(|light| score(light, frame.context()))
+            .map(|light| score(light, context))
             .sum()
     }
 }

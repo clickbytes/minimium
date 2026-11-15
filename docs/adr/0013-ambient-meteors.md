@@ -283,6 +283,21 @@ issue begins only when the previous one is verifiably CLOSED:
 
 ## Consequences and risks
 
+### E049-P03 refinement: independent light sources
+
+The implemented shared light owner is now
+`minimium_renderer::transient_lighting::TransientLightFrame`, independent of
+meteor geometry. `TransientLightSample` and its validation error live with that
+owner; the physical/game/render-origin mapping moves from `meteors::coords` to
+`planet_coordinates` for both producers. `RenderFrame` carries the neutral
+light frame explicitly. The meteor adapter resolves radii from its final core
+selection before export; other producers provide radii directly. Source
+ranking, four-source capacity, cloud occluders, units and the 2288-byte uniform
+layout remain unchanged. Optical heads use indices from the final shared frame.
+No protocol, save, simulation or new render pass is introduced. The CPU example
+constructs a non-meteor light; runtime and visual acceptance remain deferred to
+E049-Q03, including #384. The following E047 baseline notes are historical.
+
 - E047-01..17 implement against this ADR; discovering an inconsistency requires reopening E047-00
   (per the epic flow) rather than diverging locally.
 - Exactly the files named in § 2 gain code in later issues; this issue changes documentation only,
