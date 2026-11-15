@@ -1,3 +1,5 @@
+mod controls;
+pub(crate) use controls::PhysicalControl;
 use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -77,9 +79,9 @@ impl InputContext {
 
 #[derive(Clone, Debug)]
 pub(crate) struct InputMapper {
-    bindings: HashMap<(InputContext, String), InputAction>,
+    bindings: HashMap<(InputContext, PhysicalControl), InputAction>,
     #[cfg(feature = "desktop")]
-    held: HashMap<String, InputAction>,
+    held: HashMap<PhysicalControl, InputAction>,
 }
 
 impl Default for InputMapper {
@@ -116,7 +118,7 @@ impl InputMapper {
             result.insert(
                 InputContext::parse(ctx).unwrap(),
                 InputAction::parse(action).unwrap(),
-                key.to_owned(),
+                PhysicalControl::parse(key).expect("default control is supported"),
             )?;
         }
         if setting.trim().is_empty() {
@@ -138,13 +140,12 @@ impl InputMapper {
             let action = InputAction::parse(action)
                 .ok_or_else(|| format!("unknown input action `{action}`"))?;
             let key = key.trim();
-            if key.is_empty() || key.len() > 32 || !key.bytes().all(|b| b.is_ascii_alphanumeric()) {
-                return Err(format!("invalid physical input `{key}`"));
-            }
+            let control = PhysicalControl::parse(key)
+                .ok_or_else(|| format!("unsupported physical input `{key}`"))?;
             result
                 .bindings
                 .retain(|(c, _), a| *c != context || *a != action);
-            result.insert(context, action, key.to_owned())?;
+            result.insert(context, action, control)?;
         }
         Ok(result)
     }
@@ -152,7 +153,7 @@ impl InputMapper {
         &mut self,
         context: InputContext,
         action: InputAction,
-        key: String,
+        key: PhysicalControl,
     ) -> Result<(), String> {
         if self
             .bindings
@@ -160,7 +161,8 @@ impl InputMapper {
             .any(|((c, k), a)| *c == context && *k == key && *a != action)
         {
             return Err(format!(
-                "input `{key}` has conflicting bindings in {} context",
+                "input `{}` has conflicting bindings in {} context",
+                key.name(),
                 context.name()
             ));
         }
@@ -168,27 +170,19 @@ impl InputMapper {
         Ok(())
     }
     #[cfg(feature = "desktop")]
-    pub(crate) fn key_down(&mut self, key: String, context: InputContext) -> Option<InputAction> {
-        self.down(key, context)
-    }
-    #[cfg(feature = "desktop")]
-    pub(crate) fn key_up(&mut self, key: String) {
+    pub(crate) fn release(&mut self, key: PhysicalControl) {
         self.held.remove(&key);
     }
     #[cfg(feature = "desktop")]
-    pub(crate) fn mouse_down(&mut self, key: String, context: InputContext) -> Option<InputAction> {
-        self.down(key, context)
-    }
-    #[cfg(feature = "desktop")]
-    pub(crate) fn mouse_up(&mut self, key: String) {
-        self.held.remove(&key);
-    }
-    #[cfg(feature = "desktop")]
-    fn down(&mut self, key: String, context: InputContext) -> Option<InputAction> {
+    pub(crate) fn press(
+        &mut self,
+        key: PhysicalControl,
+        context: InputContext,
+    ) -> Option<InputAction> {
         let action = self
             .bindings
-            .get(&(InputContext::Global, key.clone()))
-            .or_else(|| self.bindings.get(&(context, key.clone())))
+            .get(&(InputContext::Global, key))
+            .or_else(|| self.bindings.get(&(context, key)))
             .copied()?;
         if context != InputContext::Gameplay
             && matches!(

@@ -169,7 +169,7 @@ impl ApplicationHandler for App {
                 _ => {}
             },
             WindowEvent::MouseInput { state, button, .. } => {
-                super::window_events::mouse_input(renderer, window, state, button)
+                super::window_events::mouse_input(renderer, window, event_loop, state, button)
             }
             WindowEvent::MouseWheel { delta, .. } => {
                 super::window_events::mouse_wheel(renderer, delta)
