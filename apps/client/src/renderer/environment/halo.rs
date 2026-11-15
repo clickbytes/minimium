@@ -1,6 +1,7 @@
 use super::{EnvironmentSettings, HaloSource, LocalBodyFrame, RenderViewFrame, MAX_HALO_BODIES};
 use bytemuck::Zeroable;
-use minimium_astronomy::{ObservedBody, SKY_MOON_ID, SKY_SUN_ID};
+use minimium_astronomy::ObservedBody;
+use minimium_environment::universe::{SKY_MOON_ID, SKY_SUN_ID};
 use std::f64::consts::PI;
 
 #[derive(Clone, Copy, Eq, PartialEq)]

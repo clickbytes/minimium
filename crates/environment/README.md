@@ -50,6 +50,11 @@ leave the current cache intact. There are no independent source-field setters.
 
 Preserve coordinate conventions, catalogue bounds, model revisions and explicit invalid-observer errors.
 
+The catalogue owns `SKY_SUN_ID` (1) and `SKY_MOON_ID` (2), reserved for the
+astronomy adapter's built-in observations. `UniverseCatalog::register` rejects
+either with `CatalogError::ReservedBodyId` before changing the catalogue. Other
+body IDs, including the sample's 1001/1002/1003, retain their current meaning.
+
 `TerrainSampler` has an associated error type. Terrain, source-height and bound
 failures propagate through climate, cover and cloud queries; environment does not
 depend on procgen to name that error. `Ok(None)` means an optional source/bound
