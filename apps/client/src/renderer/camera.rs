@@ -3,8 +3,7 @@ use crate::messages::ClientText as Text;
 
 mod character;
 pub(super) use character::{
-    camera_direction, camera_direction_from_geometry, fallback_character_frame,
-    gravity_for_manifest,
+    camera_direction, camera_direction_from_geometry, gravity_for_manifest,
 };
 
 impl Renderer {
@@ -209,7 +208,7 @@ impl Renderer {
             let geometry = CharacterGeometry::new(feet_m, character.gravity);
             let frame = geometry
                 .map(|geometry| geometry.frame())
-                .unwrap_or_else(|| fallback_character_frame(character));
+                .unwrap_or_else(|| character::fallback_character_frame(character));
             let up = glam::Vec3::from_array(frame.up.map(|value| value as f32));
             let direction = geometry
                 .map_or_else(

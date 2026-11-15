@@ -1,6 +1,10 @@
 use super::super::*;
 
-pub(super) fn camera_direction(character: CharacterState, yaw: f32, pitch: f32) -> glam::Vec3 {
+pub(in crate::renderer) fn camera_direction(
+    character: CharacterState,
+    yaw: f32,
+    pitch: f32,
+) -> glam::Vec3 {
     CharacterGeometry::new(character.position.map(f64::from), character.gravity)
         .map_or(glam::Vec3::ZERO, |geometry| {
             camera_direction_from_geometry(geometry, yaw, pitch)
@@ -18,7 +22,7 @@ pub(super) fn fallback_character_frame(
     }
 }
 
-pub(super) fn camera_direction_from_geometry(
+pub(in crate::renderer) fn camera_direction_from_geometry(
     geometry: CharacterGeometry,
     yaw: f32,
     pitch: f32,
@@ -37,6 +41,6 @@ fn camera_direction_from_frame(
     forward * (yaw.cos() * pitch.cos()) + right * (yaw.sin() * pitch.cos()) + up * pitch.sin()
 }
 
-pub(super) fn gravity_for_manifest(manifest: WorldManifest) -> CharacterGravity {
+pub(in crate::renderer) fn gravity_for_manifest(manifest: WorldManifest) -> CharacterGravity {
     minimium_world::world::GravityPolicy::for_manifest(manifest).character_gravity()
 }
