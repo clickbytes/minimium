@@ -5,6 +5,7 @@ mod desktop_view;
 mod game;
 mod messages;
 mod settings;
+mod step;
 #[cfg(feature = "desktop")]
 mod transitions;
 #[cfg(feature = "desktop")]
@@ -21,6 +22,9 @@ pub(crate) use messages::WorldContextChange;
 #[cfg(feature = "desktop")]
 pub(crate) use settings::ClientSettings;
 pub(crate) use settings::{SettingsStore, StartupSettings};
+pub(crate) use step::ClientStepInput;
+#[cfg(feature = "desktop")]
+pub(crate) use step::{AppliedSessionEvent, ClientStepDisconnect, PredictionInput};
 #[cfg(feature = "desktop")]
 pub(crate) use transitions::{
     MapOverviewModel, PendingSectorTransition, WorldTransitionController,
@@ -51,6 +55,7 @@ pub(crate) struct ClientApplication {
     #[cfg(feature = "desktop")]
     pub(crate) input: crate::input::InputMapper,
     world_catalog: HashMap<WorldInstanceId, WorldMap>,
+    last_step_at: Option<std::time::Instant>,
     #[cfg(feature = "desktop")]
     transitions: WorldTransitionController,
     #[cfg(feature = "desktop")]
@@ -136,6 +141,7 @@ impl ClientApplication {
             settings,
             input,
             world_catalog,
+            last_step_at: None,
             transitions,
             overview,
             status,
@@ -158,7 +164,6 @@ impl ClientApplication {
         let desktop = (
             UiModel {
                 console: crate::console::Console::new(),
-                session_events: Vec::with_capacity(16),
             },
             ClientSettings::new(
                 settings.locale,
@@ -185,6 +190,7 @@ impl ClientApplication {
             #[cfg(feature = "desktop")]
             input: desktop.2,
             world_catalog: worlds.world_catalog,
+            last_step_at: None,
             #[cfg(feature = "desktop")]
             transitions: WorldTransitionController::new(false),
             #[cfg(feature = "desktop")]
@@ -212,17 +218,17 @@ impl ClientApplication {
         self.connection.cancel();
     }
 
-    pub(crate) fn poll_connector(&mut self) -> minimium_client_runtime::ConnectionEvent {
+    fn poll_connector(&mut self) -> minimium_client_runtime::ConnectionEvent {
         self.connection.poll_connector()
     }
 
-    pub(crate) fn poll_admin_result(
+    fn poll_admin_result(
         &mut self,
     ) -> Option<Result<String, minimium_client_runtime::ControllerError>> {
         self.connection.poll_admin_result()
     }
 
-    pub(crate) fn poll_session(&mut self, events: &mut Vec<crate::session::SessionEvent>) {
+    fn poll_session(&mut self, events: &mut Vec<crate::session::SessionEvent>) {
         self.connection.poll_session(events);
     }
 

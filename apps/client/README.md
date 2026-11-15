@@ -103,7 +103,7 @@ server message. Its action dispatch suppresses gameplay actions outside gameplay
 map toggles while console or modal input owns the event, and console toggles
 while modal input owns it.
 
-Front ends resolve profile, server-data, material-cache, config and log paths once through `minimium-platform::AppPaths`, then pass the selected absolute paths to client runtime and locally owned server launches. `--log-dir` selects the process log root and defaults to `./logs`. One application-owned world resolver is shared by desktop and terminal; it verifies generated or authored content against each server manifest before runtime and presentation consume the map. Front ends collect input and poll sessions, then build presentation state and submit frames to the renderer. Text mode uses the same session and resolver without GPU construction.
+Front ends resolve profile, server-data, material-cache, config and log paths once through `minimium-platform::AppPaths`, then pass the selected absolute paths to client runtime and locally owned server launches. `--log-dir` selects the process log root and defaults to `./logs`. One application-owned world resolver is shared by desktop and terminal; it verifies generated or authored content against each server manifest before runtime and presentation consume the map. Both hosts call `ClientApplication::step` with monotonic time; it polls and applies CPU session state and advances fixed-step prediction when the desktop supplies gameplay input. The desktop event-loop deadline runs independently of redraw and `RedrawRequested` only prepares and submits the latest view. Terminal calls the same step with neutral prediction input and no GPU construction.
 
 ## Ownership and execution
 
@@ -118,17 +118,30 @@ Authored instance 1, manual dungeon instance 4 and the sample primary instance
 are selected by the common composition, without a fingerprint-based lookup.
 The former terminal-only world setup and duplicated desktop setup are removed.
 
-`DesktopHost` and the terminal front end drive `ClientApplication`; the
+`DesktopHost` and the terminal front end call `ClientApplication::step`; the
 application owns desktop UI state and polls the runtime connection controller.
 The runtime owns its socket, bounded protocol state and local-server guard,
 while background connector work reports typed results.
+
+The desktop host gates steps on a monotonic 16 ms deadline in `about_to_wait`,
+including after input events, so missed deadlines do not accelerate the cadence.
+Session polling and fixed-step progression do not depend on a redraw callback;
+minimized and occluded windows continue the application loop. The step caps
+elapsed prediction time at the existing simulation step, applies prediction
+before polling session messages, and returns typed connector/session updates.
+The terminal calls the same step before its existing bounded 25 ms input wait,
+with prediction omitted so it cannot enqueue synthetic movement. The redraw
+callback prepares camera/environment presentation from the latest immutable
+application view and submits it without polling or stepping a session.
 
 Both frontends display the controller's typed busy rejection. Desktop switches
 its scene to connecting only after an attempt is accepted; a rejected restart
 keeps the active environment and geometry visible.
 
 `ClientApplication` is the shared CPU state owner for desktop and terminal
-connection, session updates, actions, prediction and the active world catalog.
+connection, session updates, actions, fixed-step accumulation/prediction and the
+active world catalog. Its step applies CPU message results once and returns
+world-context changes for host-only presentation installation and cleanup.
 The desktop `DesktopHost` owns it alongside a GPU-only `Renderer`; the renderer
 has no client session or gameplay state. The host builds immutable
 `DesktopRenderView` values for frame preparation and reports presentation

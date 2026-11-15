@@ -276,12 +276,23 @@ impl ApplicationHandler for App {
                 }
             }
         }
-        if let Some(window) = &self.window {
-            window.request_redraw();
+        let now = Instant::now();
+        if let Some(renderer) = &mut self.host {
+            if now >= renderer.metrics.next_step_at {
+                renderer.metrics.next_step_at = now + Duration::from_millis(16);
+                renderer.step(now);
+                if let Some(window) = &self.window {
+                    window.request_redraw();
+                }
+            }
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
+                renderer.metrics.next_step_at,
+            ));
+        } else {
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
+                now + Duration::from_millis(16),
+            ));
         }
-        event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
-            Instant::now() + Duration::from_millis(16),
-        ));
     }
 }
 

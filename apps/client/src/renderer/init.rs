@@ -174,8 +174,9 @@ impl DesktopHost {
                 cursor_locked: false,
                 jump_pending: false,
             },
+            camera_visual_offset: [0.0; 3],
             metrics: FrameMetrics {
-                last_frame: Instant::now(),
+                next_step_at: Instant::now() + Duration::from_millis(16),
                 fps_time: Instant::now(),
                 fps_frames: 0,
                 frame_stats,
@@ -213,10 +214,7 @@ impl DesktopHost {
             },
             excavation_debug: Default::default(),
             application: crate::application::ClientApplication::new(
-                crate::application::UiModel {
-                    console,
-                    session_events: Vec::with_capacity(16),
-                },
+                crate::application::UiModel { console },
                 crate::application::ClientGameState::new(
                     crate::application::GameplayState {
                         reconciliation: minimium_client_runtime::SnapshotReconciler::default(),
@@ -253,6 +251,7 @@ impl DesktopHost {
                     minimium_localization::UiStatus::EnvironmentLocalDemo
                 }),
             ),
+            pending_step_disconnect: None,
             sector_cache,
             last_render_position: if gpu_ready {
                 map.spawn()

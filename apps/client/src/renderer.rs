@@ -7,7 +7,7 @@ use crate::{
 };
 use minimium_client_runtime::{connector::StartError, ConnectionEvent};
 use minimium_protocol::{ServerMessage, MAX_VISIBLE_PLAYERS};
-use minimium_simulation::{CharacterState, CollisionQuery, MovementIntent, PLAYER_MAX_HEALTH};
+use minimium_simulation::{CharacterState, CollisionQuery, PLAYER_MAX_HEALTH};
 use minimium_world::world::{
     character_frame, CharacterGeometry, CharacterGravity, WorldManifest, WorldTopology,
 };
@@ -154,7 +154,7 @@ struct InputState {
 }
 
 struct FrameMetrics {
-    last_frame: Instant,
+    next_step_at: Instant,
     fps_time: Instant,
     fps_frames: u32,
     frame_stats: crate::stats::FrameStats,
@@ -182,6 +182,7 @@ struct DesktopHost {
     prepared_shadow: shadow_prepare::PreparedShadowFrame,
     shadow_map_preparation: shadow_map_cache::ShadowMapPreparationCache,
     input: InputState,
+    camera_visual_offset: [f32; 3],
     metrics: FrameMetrics,
     demo_universe_enabled: bool,
     fov_degrees: f32,
@@ -201,6 +202,7 @@ struct DesktopHost {
     weather: clouds::WeatherState,
     demo_environment: Option<LocalDemoEnvironment>,
     application: crate::application::ClientApplication,
+    pending_step_disconnect: Option<crate::application::ClientStepDisconnect>,
     gameplay_presentation: GameplayPresentation,
     excavation_debug: excavation_debug::ExcavationDebug,
     sector_cache: sector_scene::ClientSectorCache,

@@ -57,14 +57,6 @@ impl ClientApplication {
         self.action_executor.clear_input_cooldown();
     }
 
-    pub(crate) fn refresh_prediction_water_read(&mut self) {
-        let water = self
-            .connection
-            .session()
-            .and_then(|session| session.water_read());
-        self.game.gameplay.prediction.set_water_read(water);
-    }
-
     pub(crate) fn report_sky_view(
         &mut self,
         context: minimium_protocol::WorldContext,
@@ -122,59 +114,6 @@ impl ClientApplication {
             self.game.gameplay.sectors_ready = false;
         }
         true
-    }
-
-    pub(crate) fn accumulate_prediction_time(&mut self, delta_seconds: f32) {
-        self.game.accumulate_prediction_time(delta_seconds);
-    }
-
-    pub(crate) fn predict_next(
-        &mut self,
-        direction: [f32; 2],
-        vertical: f32,
-        jump_pending: bool,
-        movement_enabled: bool,
-    ) -> Option<minimium_client_runtime::PredictedStep> {
-        let manifest = self
-            .game
-            .world_manifests
-            .get(&self.game.current_instance)
-            .copied();
-        let movement = self.connection.movement;
-        let geography = self
-            .connection
-            .session()
-            .and_then(|session| session.prepared_geography());
-        self.game.predict_next(
-            direction,
-            vertical,
-            movement,
-            jump_pending,
-            movement_enabled,
-            manifest,
-            geography,
-        )
-    }
-
-    pub(crate) fn rollback_prediction(&mut self, step: &minimium_client_runtime::PredictedStep) {
-        self.game.gameplay.prediction.character = step.previous_state;
-        self.game.gameplay.prediction.position_mm = step.previous_mm;
-    }
-
-    pub(crate) fn take_prediction_visual_offset(&mut self, delta_seconds: f32) -> [f32; 3] {
-        self.game
-            .gameplay
-            .prediction
-            .take_visual_offset(delta_seconds)
-    }
-
-    pub(crate) fn record_movement_input(&mut self, sample: minimium_protocol::MovementSample) {
-        let policy = self.connection.movement;
-        let collision_revision = self.game.gameplay.collision_revision;
-        self.game
-            .gameplay
-            .prediction
-            .record_input(sample, policy, collision_revision);
     }
 
     pub(crate) fn overview(&self) -> &MapOverviewModel {
