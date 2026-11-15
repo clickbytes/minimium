@@ -214,6 +214,10 @@ impl CloudGpu {
         self.debug = false;
     }
 
+    pub fn revision(&self) -> Option<u64> {
+        self.revision
+    }
+
     /// Encodes the cloud face, transparency composite and optional debug passes.
     pub fn encode(
         &self,
