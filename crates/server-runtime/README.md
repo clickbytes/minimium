@@ -77,6 +77,32 @@ built-in IDs and extension boundaries. Graph allocation is startup-only;
 dispatch reuses the immutable plan. No tick cadence, monotonic clock, catch-up,
 protocol, save or generator changes.
 
+Pending transfers have an independent 300-second monotonic deadline, matching
+the client content-preparation limit. `WorldRegistry` stores their start instant
+and checks elapsed time supplied by its owner; heartbeat traffic, world UTC,
+time scale and duplicate Ready do not renew it. The runtime expires pending
+transfers before world-input/sector processing; Ready rejects an expired ticket,
+and commit checks expiry again. Expiry preserves active membership, source
+position, inventory and return location, and never reuses consumed epoch or
+transition IDs. A transfer that cannot obtain server geometry also expires.
+
+Explicit cancellation, expiry and destination-obstruction failure return a typed
+`CancelledTransfer` with the source context. One runtime cleanup path releases
+that player's transfer pins and cancels queued/generating tickets only when no
+other consumer retains them. Queued/finished stale worker jobs are discarded;
+already-running bounded jobs finish but cannot install a retired ticket.
+Installed unpinned data remains ordinary cache content. There is no separate
+destination membership or storage reservation before commit. The existing
+`TransitionCancelled` message names the still-active source context, as required
+by the client; output backpressure leaves cleanup complete and schedules the
+existing disconnect path. Late Ready/cancel never recreates pending state.
+
+S15 deferred acceptance: 300 seconds with continued connection traffic, exact
+deadline, Ready before/after expiry, destination collision rejection, shared
+pins, late worker results, cancel output pressure and preservation of source
+world state. Existing fixtures are migrated/compiled only; runtime execution
+remains behind Q03.
+
 `ServerRuntime` owns mutable authoritative state on one lane. Worker threads do not mutate active worlds. Signal, admin `server stop`, and host-owner shutdown converge on the shared `ShutdownRequest`. Shutdown closes game and admin admission, rejects pending admin commands, then keeps the owner lane frozen while bounded workers stop and the final snapshot is captured and persisted. A single absolute deadline is 30 seconds from lifecycle start; worker, save, endpoint/status work has the first 28 seconds and the host diagnostics flush uses the remaining two seconds. A timeout is reported as failure and does not mean blocking operating-system I/O was cancelled. `Attached` client sessions never stop the server; only an `OwnedServer` sends graceful stop and reaps its child.
 
 `GameState` owns actor-keyed fire and per-player chat cooldowns, plus the global
