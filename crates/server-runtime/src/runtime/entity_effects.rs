@@ -6,7 +6,7 @@ use crate::modules::{
 use std::io;
 
 impl ServerRuntime {
-    pub(super) fn commit_system_batch(
+    pub(super) fn commit_effect_batch(
         &mut self,
         batch: WorldEffectBatch,
     ) -> io::Result<EffectBatchOutcome> {
@@ -93,11 +93,7 @@ impl ServerRuntime {
         })
     }
 
-    pub(super) fn report_system_batch_outcome(
-        &self,
-        stage: crate::modules::Stage,
-        outcome: &EffectBatchOutcome,
-    ) {
+    pub(super) fn report_effect_batch_outcome(&self, source: &str, outcome: &EffectBatchOutcome) {
         let mut counts = [0usize; 8];
         for result in outcome.results() {
             let index = match result {
@@ -142,7 +138,7 @@ impl ServerRuntime {
             if count > 0 {
                 emit_system_effect_diagnostic(
                     &self.world_logger,
-                    &format!("{stage:?}:{}/{}", reasons[index].0, reasons[index].1),
+                    &format!("{source}:{}/{}", reasons[index].0, reasons[index].1),
                     &format!("{count} effects rejected"),
                 );
             }
@@ -150,7 +146,7 @@ impl ServerRuntime {
         if outcome.rejected_pushes() > 0 {
             emit_system_effect_diagnostic(
                 &self.world_logger,
-                &format!("{stage:?}:buffer"),
+                &format!("{source}:buffer"),
                 &format!(
                     "{} effects rejected by stage limits",
                     outcome.rejected_pushes()

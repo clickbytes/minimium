@@ -18,6 +18,21 @@ The process preflights snapshot and excavation journal versions before creating 
 
 Administrative execution returns a typed success payload or a typed failure code and bounded detail. Built-in commands return structured reports and immutable owner snapshots; the shared command output adapter formats them for both terminal and admin responses. Only extension module text uses the bounded opaque text payload. The admin wire envelope, permissions and stable error codes remain owned by their existing adapters.
 
+Registered module commands receive the neutral `ModuleCommandContext`, not the
+owner command context used by persistence, clock and shutdown built-ins. The
+module context lends bounded world, entity, player and component read pages and
+accepts bounded `WorldEffect` emission. Pages cap at 256 rows; dynamic names and
+component bytes cap at 1 MiB, with explicit truncation and distinct missing
+world/entity errors. The built-in `world` module uses this port for world and
+entity queries and emits `DespawnEntity` for `entity despawn`. Successful
+handlers pass their batch through the same `commit_effect_batch` as gameplay
+systems; handler errors discard their emitted effects. The reply carries the
+typed `EffectBatchOutcome`, and its formatter reports retained results with
+truncation explicitly marked at the existing output bound. Effect rejection makes the command response
+an error or partial-effect error rather than a full success. A transfer's
+Started result means its prepare was queued, not that the transition is ready
+or committed.
+
 Rendered command text, module text and failure details are capped at 8 KiB with a UTF-8-safe `[truncated]` marker. This leaves room for worst-case JSON escaping within the existing 64 KiB admin reply cap. List snapshots have separate row caps and report truncation explicitly; metrics client rows are capped at 512.
 
 Property reads preserve their existing successful response for unknown keys and unavailable clock properties through typed `UnknownProperty` and `UnavailableProperty` query results. Mutation validation failures continue to use the established typed error codes.

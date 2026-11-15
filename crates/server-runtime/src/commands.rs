@@ -1,11 +1,14 @@
+mod owner_context;
 mod time;
 mod world;
 
-use crate::modules::{CommandScope, ModuleRegistry};
+pub(crate) use owner_context::OwnerCommandContext;
+
+use crate::modules::{CommandScope, ModuleCommandContext, ModuleRegistry, WorldEffectBuffer};
 use crate::runtime::schedule::{ScheduleDiagnostics, ServerSchedule, SystemFn};
 use std::sync::Arc;
 
-pub type ModuleHandler = fn(&mut CommandContext<'_>, &[&str]) -> CommandReply;
+pub type ModuleHandler = fn(&mut ModuleCommandContext<'_>, &[&str]) -> CommandReply;
 
 pub(crate) fn initialize_modules(
     modules: &[Arc<crate::ServerGameplayModule>],
@@ -38,7 +41,7 @@ pub(crate) fn component_registry(
 
 fn execute_registered(
     line: &str,
-    context: &mut CommandContext<'_>,
+    context: &mut ModuleCommandContext<'_>,
     registry: &ModuleRegistry<ModuleHandler, SystemFn>,
 ) -> CommandReply {
     match registry.resolve(line) {
@@ -54,37 +57,23 @@ fn execute_registered(
     }
 }
 
+pub(crate) fn execute_module_command(
+    line: &str,
+    worlds: &crate::world_registry::WorldRegistry,
+    effects: &mut WorldEffectBuffer,
+    registry: &ModuleRegistry<ModuleHandler, SystemFn>,
+) -> CommandReply {
+    let view = world::RuntimeCommandReadView::new(worlds);
+    let mut context = ModuleCommandContext::new(&view, effects);
+    execute_registered(line, &mut context, registry)
+}
+
 use crate::server_command::ServerCommand;
-use crate::{environment::EnvironmentClock, world_registry::WorldRegistry};
-use crate::{
-    metrics::RuntimeMetrics,
-    storage::{PersistenceWorker, PlayerStore},
-};
-use minimium_environment::time::MonotonicMs;
-
-pub struct CommandContext<'a> {
-    pub(crate) worlds: &'a WorldRegistry,
-    pub(crate) player_store: &'a mut PlayerStore,
-    pub(crate) persistence: &'a mut PersistenceWorker,
-    pub(crate) map_fingerprint: u64,
-    pub(crate) lanes: usize,
-    pub(crate) metrics: &'a RuntimeMetrics,
-    pub(crate) environment_clock: &'a mut EnvironmentClock,
-    pub(crate) monotonic_ms: MonotonicMs,
-    pub(crate) schedule_diagnostics: ScheduleDiagnostics,
-    pub(crate) runtime_status: Option<RuntimeStatusSnapshot>,
-    pub(crate) client_traffic: ClientTrafficSnapshot,
-}
-
-impl CommandContext<'_> {
-    pub fn world_count(&self) -> usize {
-        self.worlds.iter().count()
-    }
-}
 
 pub struct CommandReply {
     outcome: Result<CommandPayload, CommandFailure>,
     action: CommandAction,
+    effects: Option<crate::modules::EffectBatchOutcome>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -137,6 +126,16 @@ pub(crate) enum CommandPayload {
     EntityList {
         rows: Vec<EntityRow>,
         truncated: bool,
+    },
+    EntityInspect {
+        world: minimium_world::world::WorldInstanceId,
+        entity: minimium_world::entity::EntityId,
+        rows: Vec<EntityComponentRow>,
+        truncated: bool,
+    },
+    EntityDespawn {
+        world: minimium_world::world::WorldInstanceId,
+        entity: minimium_world::entity::EntityId,
     },
     Bolid {
         id: u64,
@@ -237,6 +236,12 @@ pub(crate) struct EntityRow {
     pub kind: EntityKind,
 }
 #[derive(Clone, Debug)]
+pub(crate) struct EntityComponentRow {
+    pub kind: minimium_world::entity::ComponentTypeId,
+    pub schema: minimium_world::entity::SchemaVersion,
+    pub bytes: usize,
+}
+#[derive(Clone, Debug)]
 pub(crate) enum EntityKind {
     Entity(u64),
     Player(minimium_core::ids::PlayerId, String),
@@ -301,12 +306,14 @@ impl CommandReply {
         Self {
             outcome: Ok(payload),
             action: CommandAction::Continue,
+            effects: None,
         }
     }
     pub(crate) fn stopping(payload: CommandPayload) -> Self {
         Self {
             outcome: Ok(payload),
             action: CommandAction::Stop,
+            effects: None,
         }
     }
     pub fn module_text(text: BoundedText) -> Self {
@@ -325,13 +332,29 @@ impl CommandReply {
                 detail: BoundedText::new(detail),
             }),
             action: CommandAction::Continue,
+            effects: None,
         }
     }
     pub fn is_success(&self) -> bool {
         self.outcome.is_ok()
+            && self
+                .effects
+                .as_ref()
+                .map_or(true, |outcome| !outcome.has_rejections())
     }
     pub fn error_code(&self) -> Option<&'static str> {
-        self.outcome.as_ref().err().map(|e| e.code)
+        self.outcome.as_ref().err().map(|e| e.code).or_else(|| {
+            self.effects
+                .as_ref()
+                .filter(|outcome| outcome.has_rejections())
+                .map(|outcome| {
+                    if outcome.has_successes() {
+                        "server.command.partial_effects"
+                    } else {
+                        "server.command.effects_rejected"
+                    }
+                })
+        })
     }
     pub fn detail(&self) -> Option<&str> {
         self.outcome.as_ref().err().map(|e| e.detail.as_str())
@@ -345,17 +368,23 @@ impl CommandReply {
     pub(crate) fn payload_mut(&mut self) -> Option<&mut CommandPayload> {
         self.outcome.as_mut().ok()
     }
+    pub(crate) fn handler_succeeded(&self) -> bool {
+        self.outcome.is_ok()
+    }
+    pub(crate) fn set_effect_outcome(&mut self, outcome: crate::modules::EffectBatchOutcome) {
+        self.effects = Some(outcome);
+    }
+    pub(crate) fn effect_outcome(&self) -> Option<&crate::modules::EffectBatchOutcome> {
+        self.effects.as_ref()
+    }
 }
 
 pub fn execute(
     command: &ServerCommand,
-    mut context: CommandContext<'_>,
+    context: OwnerCommandContext<'_>,
     registry: &ModuleRegistry<ModuleHandler, SystemFn>,
 ) -> CommandReply {
-    if let ServerCommand::Registered(line) = command {
-        return execute_registered(line, &mut context, registry);
-    }
-    let CommandContext {
+    let OwnerCommandContext {
         worlds,
         player_store,
         persistence,
@@ -446,6 +475,9 @@ pub fn execute(
                 "bolid command must execute on the server owner lane",
             )
         }
-        ServerCommand::Registered(_) => unreachable!("registered commands dispatched above"),
+        ServerCommand::Registered(_) => CommandReply::error(
+            "server.command.dispatch_error",
+            "registered command used the owner command context",
+        ),
     }
 }

@@ -41,8 +41,8 @@ const CLIENT_AUTHENTICATION_TIMEOUT: Duration = Duration::from_secs(10);
 const CLIENT_CONTENT_TIMEOUT: Duration = Duration::from_secs(300);
 mod runtime;
 
-pub use commands::{CommandContext as ModuleCommandContext, CommandReply as ModuleCommandReply};
-pub use minimium_gameplay::EngineModule;
+pub use commands::CommandReply as ModuleCommandReply;
+pub use minimium_gameplay::{EngineModule, ModuleCommandContext};
 pub use runtime::schedule::{ModuleSystem, ModuleSystemContext};
 pub type ModuleCommandHandler = fn(&mut ModuleCommandContext<'_>, &[&str]) -> ModuleCommandReply;
 pub type ServerGameplayModule = dyn EngineModule<ModuleCommandHandler, ModuleSystem>;
