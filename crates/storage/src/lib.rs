@@ -53,7 +53,7 @@ pub use budget::{
 pub use error::{StorageError, StorageErrorKind};
 pub use format::SAVE_VERSION;
 pub use loaded_state::LoadedState;
-pub use persistence::PersistenceWorker;
+pub use persistence::{PersistenceStatus, PersistenceWorker, SaveStatus};
 pub use player_store::{PlayerStore, SaveSnapshot};
 
 /// Checks the saved snapshot version without creating files or loading records.

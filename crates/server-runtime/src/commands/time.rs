@@ -1,4 +1,4 @@
-use super::CommandReply;
+use super::{CommandPayload, CommandReply};
 use crate::environment::EnvironmentClock;
 use minimium_environment::time::MonotonicMs;
 use minimium_environment::TimeCommand;
@@ -10,12 +10,10 @@ pub(super) fn execute(
 ) -> CommandReply {
     let result = match command {
         TimeCommand::Status => {
-            return CommandReply {
-                success: true,
-                text: clock.status(monotonic_ms),
-                stop: false,
-                error_code: None,
-            };
+            return match clock.property_snapshot(monotonic_ms) {
+                Ok(snapshot) => CommandReply::success(CommandPayload::Time(snapshot)),
+                Err(error) => CommandReply::error(error.code(), &error.to_string()),
+            }
         }
         TimeCommand::Mode(mode) => clock.set_mode(monotonic_ms, mode),
         TimeCommand::Set(world_utc_ms) => clock.set_date(monotonic_ms, world_utc_ms),
@@ -23,17 +21,10 @@ pub(super) fn execute(
         TimeCommand::Offline(policy) => clock.set_offline_policy(monotonic_ms, policy),
     };
     match result {
-        Ok(_) => CommandReply {
-            success: true,
-            text: clock.status(monotonic_ms),
-            stop: false,
-            error_code: None,
+        Ok(_) => match clock.property_snapshot(monotonic_ms) {
+            Ok(snapshot) => CommandReply::success(CommandPayload::Time(snapshot)),
+            Err(error) => CommandReply::error(error.code(), &error.to_string()),
         },
-        Err(error) => CommandReply {
-            success: false,
-            text: error.to_string(),
-            stop: false,
-            error_code: Some(error.code()),
-        },
+        Err(error) => CommandReply::error(error.code(), &error.to_string()),
     }
 }

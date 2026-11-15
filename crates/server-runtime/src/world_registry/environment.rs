@@ -1,21 +1,26 @@
 use super::WorldRegistry;
-use std::fmt::Write as _;
 
 impl WorldRegistry {
-    pub(crate) fn environment_summary(&self) -> String {
-        let mut summary = String::new();
-        for (instance_id, instance) in &self.instances {
-            if !summary.is_empty() {
-                summary.push(',');
+    pub(crate) fn environment_snapshot(
+        &self,
+        limit: usize,
+    ) -> (
+        Vec<(u128, u64, minimium_environment::EnvironmentProfile)>,
+        bool,
+    ) {
+        let mut rows = Vec::with_capacity(limit.min(self.instances.len()));
+        let mut truncated = false;
+        for (id, instance) in &self.instances {
+            if rows.len() == limit {
+                truncated = true;
+                break;
             }
-            let _ = write!(
-                summary,
-                "{}:{}:{:?}",
-                instance_id,
+            rows.push((
+                id.get(),
                 instance.clock_id.get(),
-                instance.environment_profile
-            );
+                instance.environment_profile,
+            ));
         }
-        summary
+        (rows, truncated)
     }
 }

@@ -319,12 +319,22 @@ pub(crate) fn server_properties() -> impl Iterator<Item = &'static PropertySpec>
     property_registry().specs()
 }
 
-pub(crate) fn server_command_usage(target: &str) -> Option<String> {
+pub(crate) fn server_command_help(target: &str) -> Option<crate::commands::CommandHelp> {
     server_registry()
         .commands()
         .iter()
         .find(|spec| spec.name == target || spec.alias == Some(target))
-        .map(CommandSpec::format_help)
+        .map(|spec| crate::commands::CommandHelp {
+            usage: spec.usage,
+            arguments: spec.arguments,
+        })
+}
+
+pub(crate) fn server_command_exists(target: &str) -> bool {
+    server_registry()
+        .commands()
+        .iter()
+        .any(|spec| spec.name == target || spec.alias == Some(target))
 }
 
 impl ServerCommand {
@@ -397,12 +407,11 @@ fn parse_error(
     CommandError::new(code, Some(subject), reason, Some(usage))
 }
 
-pub fn server_help() -> String {
+pub(crate) fn server_help_usages() -> Vec<&'static str> {
     server_registry()
         .commands()
         .iter()
         .filter(|spec| spec.name != "time")
         .map(|spec| spec.usage)
-        .collect::<Vec<_>>()
-        .join(" | ")
+        .collect()
 }

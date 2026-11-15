@@ -68,11 +68,12 @@ impl ServerRuntime {
                     .command_queue
                     .push_back((Some(request.id), request.command));
             } else {
-                self.operations.admin.respond(
+                self.operations.admin.respond_command(
                     request.id,
-                    false,
-                    Some("server.command.queue_full"),
-                    "command queue full",
+                    &crate::commands::CommandReply::error(
+                        "server.command.queue_full",
+                        "command queue full",
+                    ),
                 );
             }
         }

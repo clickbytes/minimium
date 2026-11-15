@@ -22,6 +22,8 @@ The current snapshot limit is 128 MiB and 16,384 saved world instances. The enco
 
 The server owns `PlayerStore` and captures live player and world data on its owner lane. Snapshot capture keeps the public `PlayerStore::save_snapshot` entry point, assigns a monotone process-local revision, and copies the current full entity set so despawned entities cannot return from stale load state. The worker rejects stale revisions; shutdown queues the final higher revision after any earlier autosave and waits for it before joining. Timeout/error is propagated to the server process status and does not claim cancellation of blocked OS I/O; writes use temporary files and atomic replacement so a failed pre-replacement write preserves the prior complete snapshot. The worker owns its bounded request channel, save-status bookkeeping, queued immutable snapshots and configured data directory.
 
+`PersistenceWorker::status` returns a read-only `PersistenceStatus` snapshot containing the pending-save count and typed last-save state. It exposes no worker or filesystem handles; presentation adapters format this immutable data.
+
 ## Invariants and errors
 
 Snapshot loading, capture, writing and persistence-worker operations return `StorageError`, with stable codes for invalid formats, unsupported versions, size limits, busy queues and stopped workers. The original I/O error remains available through `Error::source`; the server may adapt it at its process boundary. Missing snapshots still represent an empty store.
