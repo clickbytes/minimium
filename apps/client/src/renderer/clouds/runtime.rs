@@ -96,10 +96,7 @@ impl Renderer {
             self.weather.published = None;
             self.weather.last_request = None;
             self.weather.worker.clear();
-            self.gpu.cloud_gpu.count = 0;
-            self.gpu.cloud_gpu.inside_count = 0;
-            self.gpu.cloud_gpu.light_records.clear();
-            self.gpu.cloud_gpu.debug = false;
+            self.gpu.cloud_gpu.clear();
             self.gpu.terrain_gpu.clear_cover();
             self.gpu.atmosphere_gpu.clear_weather();
             return;
@@ -119,9 +116,7 @@ impl Renderer {
             self.weather.published = None;
             self.weather.last_request = None;
             self.weather.worker.clear();
-            self.gpu.cloud_gpu.count = 0;
-            self.gpu.cloud_gpu.inside_count = 0;
-            self.gpu.cloud_gpu.light_records.clear();
+            self.gpu.cloud_gpu.clear();
         }
         if let Some((failed_stamp, error)) = self.weather.worker.take_failure() {
             if failed_stamp == stamp {
@@ -137,11 +132,9 @@ impl Renderer {
             }
         }
         self.gpu.terrain_gpu.set_cover_time(utc);
-        if let Some(result) = self.weather.worker.take() {
-            if result.request.stamp == stamp && result.request.detail == self.weather.detail {
-                self.weather.published = Some(result);
-            }
-        }
+        let candidate = self.weather.worker.take().filter(|result| {
+            result.request.stamp == stamp && result.request.detail == self.weather.detail
+        });
         let now = Instant::now();
         if self
             .weather
@@ -172,16 +165,18 @@ impl Renderer {
             });
             self.weather.last_request = Some(now);
         }
-        let Some(publication) = &self.weather.published else {
+        let Some(publication) = candidate.or_else(|| self.weather.published.clone()) else {
             self.gpu.cloud_gpu.debug = false;
             return;
         };
+        if publication.snapshot.clouds.len() != publication.morphs.len() {
+            self.application.connection.record_diagnostic_failure(
+                "renderer.cloud_publication_invalid",
+                "Cloud publication has mismatched cloud and morph counts",
+            );
+            return;
+        }
         let gpu = &mut self.gpu.cloud_gpu;
-        gpu.update_faces(
-            &self.gpu.queue,
-            &publication.faces,
-            publication.snapshot.revision,
-        );
         let view = frame.render_view;
         let origin = DVec3::from_array(view.render_origin_m);
         let radius = view.game_planet_radius_m
@@ -245,14 +240,24 @@ impl Renderer {
                 .to_array(),
             config: [self.weather.debug as u32, target_size[0], target_size[1], 0],
         };
-        gpu.standard_lighting =
+        let standard_lighting =
             self.sky_quality.effective == minimium_renderer::quality::SkyQuality::Standard;
-        uniform.select_inside(
+        uniform.select_inside(&records, standard_lighting);
+        if let Err(error) = gpu.upload_frame(
+            &self.gpu.queue,
+            &publication.faces,
+            publication.snapshot.revision,
             &records,
-            self.sky_quality.effective == minimium_renderer::quality::SkyQuality::Standard,
-        );
-        gpu.upload_frame(&self.gpu.queue, &records, &uniform);
+            &uniform,
+        ) {
+            self.application
+                .connection
+                .record_diagnostic_failure("renderer.cloud_upload_rejected", &error.to_string());
+            return;
+        }
+        gpu.standard_lighting = standard_lighting;
         gpu.debug = self.weather.debug != CloudDebug::Off;
+        self.weather.published = Some(publication);
     }
 
     /// Read-only aiming hints for manual finite-source cloud occlusion checks.
