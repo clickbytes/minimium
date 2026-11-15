@@ -136,7 +136,7 @@ impl WorldTransitionController {
         id: TransitionId,
         transition: PendingSectorTransition,
     ) -> bool {
-        if self.pending.contains_key(&id) {
+        if !self.pending.is_empty() || self.pending.contains_key(&id) {
             return false;
         }
         self.pending.insert(id, transition);

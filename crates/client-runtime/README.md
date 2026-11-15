@@ -37,6 +37,13 @@ The connector performs DNS, socket and local process startup away from the UI la
 
 The caller owns and polls the controller on its event-loop lane. A session owns its socket and bounded wire buffers; the controller owns the connector and optional local-server guard. The runtime owns local prediction and snapshot/interpolation state, while the host owns collision snapshots and rendered geometry. Prepared geography is immutable and shared by `Arc` with generation and presentation workers.
 
+`ConnectionController::start_remote` and `start_local` reject an existing session,
+attempt or pending cleanup before calling the connector or changing owned state.
+`StartError::Busy` carries an optional attempt ID: session/cleanup rejection has
+no synthetic ID, while a live connector worker retains its actual ID. Cancelled
+workers remain busy until drained; after session removal and cleanup completion,
+the same controller can start again without losing its local-server guard.
+
 `ConnectionController::finish_until` accepts the process-owned absolute work
 deadline; desktop and terminal use the same 30-second endpoint cleanup and
 diagnostics deadline, with the last two seconds reserved for the log writer.

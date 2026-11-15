@@ -64,6 +64,10 @@ Front ends resolve profile, server-data, material-cache, config and log paths on
 
 The front-end loop owns UI and polls the runtime connection controller; the runtime owns its socket, bounded protocol state and local-server guard, while background connector work reports typed results.
 
+Both frontends display the controller's typed busy rejection. Desktop switches
+its scene to connecting only after an attempt is accepted; a rejected restart
+keeps the active environment and geometry visible.
+
 `ClientApplication` owns the connection controller, client gameplay/session
 state, input action mapper, settings, UI model, world catalog, overview model,
 typed connection status and `WorldTransitionController`. Transfer tickets move
@@ -532,6 +536,9 @@ seeded color/flicker, the separately moving fragment, a ground flash, dust/eject
 point illumination and optional desktop-audio sound with propagation delay.
 There is no mining/inventory reward attached to the remnant. Restart both endpoints
 for protocol 21. `start-earth.ps1` rebuilds the matching release executables.
+Tracked engine bodies arrive in typed `ImpactState` protocol messages and are
+decoded as `BodyState`; they are ServerOnly entity components, so client replica
+schema registration remains limited to components carried by entity replication.
 Initial terrain synchronization gates prediction; impact revisions gate replacement
 geometry/collision, and the burst waits for the new presentation. The terminal
 client consumes the same replica without GPU dependencies. Runtime visual/FPS and

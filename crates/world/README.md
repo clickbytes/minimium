@@ -48,6 +48,10 @@ the pure Earth height/datum conversion. Identity preserves legacy arithmetic.
 
 `impact::BodyState` is a validated world-scoped entity component (type 0x100,
 schema 1); its neutral 162-byte record is shared by storage and protocol adapters.
+The impact owner registers its ServerOnly descriptor through
+`impact::register_component`; server composition installs it before application
+module descriptors so type/name collisions remain typed registry errors. Client
+impact state travels as typed protocol messages rather than entity replication.
 It carries immutable world seed, physical parameters, SI velocity, game-space
 position, lifetime, fragmentation and flight/landed/collected phase. `follows`
 rejects identity changes, phase regression and changes to committed craters.

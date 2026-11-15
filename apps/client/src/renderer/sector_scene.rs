@@ -68,9 +68,9 @@ pub(super) struct ClientSectorCache {
     manager: SectorManager<SectorGeometry>,
     collision_worker: super::collision_worker::CollisionWorker,
     scene_collision_worker: super::collision_worker::SceneCollisionWorker,
+    worker: SectorWorker,
     next_collision_revision: u64,
     interests: HashMap<SceneInterestOwner, SectorInterest>,
-    workers: HashMap<WorldInstanceId, SectorWorker>,
     presentations: HashMap<SceneInterestOwner, Arc<PreparedScene>>,
     water_presentations: HashMap<SceneInterestOwner, super::sector_worker::WaterPresentation>,
 }
@@ -100,10 +100,8 @@ pub(super) struct ClientSectorScene {
 impl ClientSectorCache {
     pub(super) fn shutdown_until(&mut self, deadline: std::time::Instant) -> Vec<&'static str> {
         let mut unfinished = Vec::new();
-        for (_, mut worker) in self.workers.drain() {
-            if !worker.shutdown_until(deadline) {
-                unfinished.push("client-terrain-presentation");
-            }
+        if !self.worker.shutdown_until(deadline) {
+            unfinished.push("client-terrain-presentation");
         }
         if !self.collision_worker.shutdown_until(deadline) {
             unfinished.push("client-sector-materialization");
@@ -125,9 +123,9 @@ impl ClientSectorCache {
                 .expect("client sector cache capacity is nonzero"),
             collision_worker: super::collision_worker::CollisionWorker::new()?,
             scene_collision_worker: super::collision_worker::SceneCollisionWorker::new()?,
+            worker: SectorWorker::new()?,
             next_collision_revision: 1,
             interests: HashMap::new(),
-            workers: HashMap::new(),
             presentations: HashMap::new(),
             water_presentations: HashMap::new(),
         })
@@ -174,9 +172,8 @@ impl ClientSectorCache {
                 });
                 self.terrain_inputs
                     .insert(instance, Arc::new(terrain.clone()));
-                self.presentations.retain(|scene_owner, _| {
-                    scene_owner.instance() != instance || *scene_owner != owner
-                });
+                self.presentations
+                    .retain(|scene_owner, _| scene_owner.instance() != instance);
             }
         }
         let world_matches = map_override
@@ -190,13 +187,11 @@ impl ClientSectorCache {
         }
         if let Some((map, source_manifest)) = map_override.filter(|_| owner.instance() == instance)
         {
-            self.world_sources
-                .insert(instance, (Arc::new(map.clone()), source_manifest));
+            self.cache_world_source(instance, map, source_manifest);
         } else if let (Some(map), Some(source_manifest)) =
             (maps.get(&instance), manifests.get(&instance).copied())
         {
-            self.world_sources
-                .insert(instance, (Arc::new(map.clone()), source_manifest));
+            self.cache_world_source(instance, map, source_manifest);
         }
         // Earth jobs must wait for the session's validated geography, including
         // bootstrap frames before Welcome. Never dispatch a job that would panic.
@@ -366,11 +361,7 @@ impl ClientSectorCache {
         let terrain_revision = geography.revision();
         let render_sectors = if manifest.topology() == minimium_world::world::WorldTopology::Planet
         {
-            if !self.workers.contains_key(&instance) {
-                self.workers.insert(instance, SectorWorker::new()?);
-            }
-            let worker = self.workers.get(&instance).expect("worker inserted");
-            if let Some(result) = worker.poll(
+            if let Some(result) = self.worker.poll(
                 owner,
                 instance,
                 manifest,
@@ -438,7 +429,6 @@ impl ClientSectorCache {
         self.release_world_interests(instance);
         self.terrain_inputs.remove(&instance);
         self.world_sources.remove(&instance);
-        self.workers.remove(&instance);
     }
 
     fn request(
@@ -461,6 +451,25 @@ impl ClientSectorCache {
                 }),
             Err(RequestError::QueueFull) => Err(SectorWorkerError::QueueFull),
             Err(_) => Err(SectorWorkerError::CacheFull),
+        }
+    }
+
+    fn cache_world_source(
+        &mut self,
+        instance: WorldInstanceId,
+        map: &WorldMap,
+        manifest: WorldManifest,
+    ) {
+        let fingerprint = map.fingerprint();
+        let unchanged =
+            self.world_sources
+                .get(&instance)
+                .is_some_and(|(current, current_manifest)| {
+                    *current_manifest == manifest && current.fingerprint() == fingerprint
+                });
+        if !unchanged {
+            self.world_sources
+                .insert(instance, (Arc::new(map.clone()), manifest));
         }
     }
 }

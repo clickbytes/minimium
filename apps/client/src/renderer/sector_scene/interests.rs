@@ -39,10 +39,7 @@ impl ClientSectorCache {
     pub(in crate::renderer) fn release_interest(&mut self, owner: SceneInterestOwner) {
         self.presentations.remove(&owner);
         self.water_presentations.remove(&owner);
-        let _ = self
-            .workers
-            .get(&owner.instance())
-            .is_some_and(|worker| worker.cancel(owner));
+        let _ = self.worker.cancel(owner);
         self.scene_collision_worker.cancel(owner);
         if let Some(interest) = self.interests.remove(&owner) {
             for ticket in interest.tickets {
@@ -76,9 +73,7 @@ impl ClientSectorCache {
         if let Some(water) = self.water_presentations.remove(&source) {
             self.water_presentations.insert(target, water);
         }
-        if let Some(worker) = self.workers.get_mut(&source.instance()) {
-            worker.promote(source, target);
-        }
+        self.worker.promote(source, target);
         self.scene_collision_worker.promote(source, target);
     }
 
@@ -94,6 +89,5 @@ impl ClientSectorCache {
         }
         self.terrain_inputs.remove(&instance);
         self.world_sources.remove(&instance);
-        self.workers.remove(&instance);
     }
 }

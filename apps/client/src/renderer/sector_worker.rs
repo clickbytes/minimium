@@ -34,6 +34,7 @@ impl Key {
             && self.view == other.view
     }
 }
+#[derive(Clone)]
 struct Request {
     owner: SceneInterestOwner,
     key: Key,
@@ -92,6 +93,7 @@ impl PreparedScene {
 #[derive(Default)]
 struct State {
     pending: HashMap<SceneInterestOwner, Request>,
+    pending_order: std::collections::VecDeque<SceneInterestOwner>,
     requested: HashMap<SceneInterestOwner, Key>,
     completed: HashMap<SceneInterestOwner, Arc<PreparedScene>>,
     failed: HashMap<SceneInterestOwner, (Key, minimium_procgen::ExcavationGeometryError)>,
@@ -149,8 +151,11 @@ impl SectorWorker {
                         if s.stop {
                             break;
                         }
-                        let owner = *s.pending.keys().next().expect("pending scene request");
-                        s.pending.remove(&owner).unwrap()
+                        let owner = s.pending_order.pop_front().expect("pending scene request");
+                        s.pending
+                            .get(&owner)
+                            .cloned()
+                            .expect("queued scene request")
                     };
                     let started = std::time::Instant::now();
                     let water_changed =
@@ -238,12 +243,11 @@ impl SectorWorker {
                     let meshes = match meshes {
                         Ok(meshes) => meshes,
                         Err(error) => {
-                            shared
-                                .0
-                                .lock()
-                                .unwrap()
-                                .failed
-                                .insert(request.owner, (request.key, error));
+                            let mut state = shared.0.lock().unwrap();
+                            if state.requested.get(&request.owner) == Some(&request.key) {
+                                state.failed.insert(request.owner, (request.key, error));
+                                state.pending.remove(&request.owner);
+                            }
                             continue;
                         }
                     };
@@ -322,7 +326,13 @@ impl SectorWorker {
                         continue;
                     }
                     let mut s = shared.0.lock().unwrap();
-                    if !s.stop && s.requested.get(&request.owner) == Some(&request.key) {
+                    if !s.stop
+                        && s.requested.get(&request.owner) == Some(&request.key)
+                        && s.pending
+                            .get(&request.owner)
+                            .is_some_and(|pending| pending.key == request.key)
+                    {
+                        s.pending.remove(&request.owner);
                         s.completed.insert(
                             request.owner,
                             Arc::new(PreparedScene {
@@ -394,6 +404,9 @@ impl SectorWorker {
                     water,
                 },
             );
+            if !s.pending_order.contains(&owner) {
+                s.pending_order.push_back(owner);
+            }
             s.requested.insert(owner, key);
             self.state.1.notify_one();
         }
@@ -403,6 +416,7 @@ impl SectorWorker {
     pub(super) fn cancel(&self, owner: SceneInterestOwner) -> bool {
         let mut state = self.state.0.lock().unwrap();
         state.pending.remove(&owner);
+        state.pending_order.retain(|queued| *queued != owner);
         let requested = state.requested.remove(&owner).is_some();
         state.completed.remove(&owner);
         state.failed.remove(&owner);
@@ -415,6 +429,8 @@ impl SectorWorker {
             state.requested.insert(target, key);
         }
         if let Some(request) = state.pending.remove(&source) {
+            let was_queued = state.pending_order.contains(&source);
+            state.pending_order.retain(|owner| *owner != source);
             state.pending.insert(
                 target,
                 Request {
@@ -422,6 +438,10 @@ impl SectorWorker {
                     ..request
                 },
             );
+            if was_queued || !state.pending_order.contains(&target) {
+                state.pending_order.push_back(target);
+            }
+            self.state.1.notify_one();
         }
         if let Some(scene) = state.completed.remove(&source) {
             state.completed.insert(target, scene);
