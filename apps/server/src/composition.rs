@@ -60,6 +60,7 @@ pub(super) fn server_composition(
     let world_procgen_logger = procgen_logger.clone();
     ServerComposition {
         impact_profile: Some(minimium_game_sample::DEFAULT_IMPACT_PROFILE),
+        async_work_policy: minimium_server_runtime::AsyncWorkPolicy::default(),
         excavation: minimium_server_runtime::composition::ExcavationConfig {
             terrain: minimium_terrain::TerrainConfig {
                 max_chunks: 4096,

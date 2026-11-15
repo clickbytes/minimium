@@ -52,7 +52,10 @@ pub use runtime::schedule::{ModuleSystem, ModuleSystemContext};
 pub type ModuleCommandHandler = fn(&mut ModuleCommandContext<'_>, &[&str]) -> ModuleCommandReply;
 pub type ServerGameplayModule = dyn EngineModule<ModuleCommandHandler, ModuleSystem>;
 
-pub use composition::{ContentServicePort, ProcessLifecyclePort, RuntimeSettings};
+pub use composition::{
+    AsyncWorkPolicy, AsyncWorkPolicyError, ContentServicePort, ProcessLifecyclePort,
+    RuntimeSettings,
+};
 pub use config::LaneSelection;
 pub use config::RuntimeServerConfig;
 pub use environment::EnvironmentConfig as RuntimeEnvironmentConfig;
@@ -178,6 +181,7 @@ pub fn run_with_config(
             combat: composition.combat,
             impacts: composition.impact_profile,
             excavation: runtime_excavation,
+            async_work_policy: composition.async_work_policy,
             modules,
             loggers: RuntimeLoggers {
                 server: composition.server_logger,
