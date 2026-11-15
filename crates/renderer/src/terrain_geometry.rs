@@ -18,6 +18,7 @@ pub struct TerrainVertex {
     pub presentation: [f32; 2],
 }
 
+#[cfg(feature = "gpu")]
 impl TerrainVertex {
     const ATTRIBUTES: [wgpu::VertexAttribute; 10] = wgpu::vertex_attr_array![
         0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Float32x3,

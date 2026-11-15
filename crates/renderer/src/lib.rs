@@ -50,13 +50,11 @@ mod coast_probe;
 pub mod environment_pipelines;
 #[cfg(feature = "gpu")]
 pub mod frame_encoder;
-#[cfg(feature = "gpu")]
 pub mod geometry;
 #[cfg(feature = "gpu")]
 pub mod geometry_gpu;
 #[cfg(feature = "gpu")]
 pub mod gpu_bindings;
-#[cfg(feature = "gpu")]
 pub mod gpu_frame;
 pub mod held_tool;
 #[cfg(feature = "gpu")]
@@ -76,7 +74,6 @@ pub mod moon_disk;
 pub mod moon_lighting;
 #[cfg(feature = "gpu")]
 pub mod moon_sphere;
-#[cfg(feature = "gpu")]
 pub mod ocean_geometry;
 #[cfg(feature = "gpu")]
 mod ocean_pipeline;
@@ -86,14 +83,12 @@ pub mod output;
 pub mod overview_gpu;
 #[cfg(feature = "gpu")]
 pub mod planet_visibility;
-#[cfg(feature = "gpu")]
 pub mod prepared_sector;
 #[cfg(feature = "gpu")]
 pub mod profiles;
 pub mod quality;
 #[cfg(feature = "gpu")]
 mod render_contours;
-#[cfg(feature = "gpu")]
 pub mod render_frame;
 #[cfg(feature = "gpu")]
 pub mod render_patch_cache;
@@ -101,11 +96,9 @@ pub mod render_patch_cache;
 pub mod scene_encoder;
 #[cfg(feature = "gpu")]
 pub mod shader_source;
-#[cfg(feature = "gpu")]
 pub mod shadow_geometry;
 #[cfg(feature = "gpu")]
 pub mod shadow_gpu;
-#[cfg(feature = "gpu")]
 pub mod shadow_settings;
 #[cfg(feature = "gpu")]
 pub mod shadow_target;
@@ -128,11 +121,9 @@ mod terrain_cover_gpu;
 pub mod terrain_debug;
 #[cfg(feature = "gpu")]
 pub mod terrain_edges;
-#[cfg(feature = "gpu")]
 pub mod terrain_geometry;
 #[cfg(feature = "gpu")]
 pub mod terrain_gpu;
-#[cfg(feature = "gpu")]
 mod terrain_occlusion;
 #[cfg(feature = "gpu")]
 mod terrain_palette;
@@ -145,7 +136,6 @@ mod transient_clouds;
 pub mod transient_lighting;
 #[cfg(feature = "gpu")]
 pub mod ui_pipeline;
-#[cfg(feature = "gpu")]
 pub mod ui_vertex;
 pub mod water_surface;
 #[cfg(feature = "gpu")]
@@ -183,15 +173,12 @@ pub use moon_disk::MoonGpu;
 pub use moon_sphere::MoonSphereGpu;
 #[cfg(feature = "gpu")]
 pub use output::OutputEncoder;
-#[cfg(feature = "gpu")]
 pub use render_frame::RenderFrame;
 #[cfg(feature = "gpu")]
 pub use shadow_gpu::ShadowGpu;
-#[cfg(feature = "gpu")]
 pub use shadow_settings::ShadowSettings;
 #[cfg(feature = "gpu")]
 pub use star_gpu::StarGpu;
-#[cfg(feature = "gpu")]
 pub use ui_vertex::UiVertex;
 
 /// Selects the camera projection context used by world rendering.
@@ -313,5 +300,4 @@ impl RenderViewFrame {
 #[cfg(feature = "gpu")]
 mod geometry_rebase;
 
-#[cfg(feature = "gpu")]
 pub mod shadow_view;

@@ -9,6 +9,7 @@ pub struct UiVertex {
     pub color: [f32; 3],
 }
 
+#[cfg(feature = "gpu")]
 impl UiVertex {
     const ATTRIBUTES: [wgpu::VertexAttribute; 3] =
         wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float32x3];

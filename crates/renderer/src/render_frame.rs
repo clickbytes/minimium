@@ -86,7 +86,7 @@ impl RenderFrame {
         let mut environment = self.environment;
         environment.flags[3] = u32::from(hdr_enabled);
         if hdr_enabled && physical_atmosphere {
-            environment.ambient_rgb_exposure[3] = crate::lighting::view_exposure(
+            environment.ambient_rgb_exposure[3] = view_exposure(
                 self.view,
                 environment.global_sun_direction,
                 environment.ambient_rgb_exposure[3],
@@ -94,4 +94,22 @@ impl RenderFrame {
         }
         environment
     }
+}
+
+/// View-driven exposure, without a histogram/readback. A visible daylight limb
+/// keeps orbital views in day exposure. Night gain preserves lunar irradiance
+/// ratios; the HDR path applies it before half-float scene/LUT storage.
+pub fn view_exposure(view: crate::RenderViewFrame, sun: [f32; 4], base: f32) -> f32 {
+    let direction =
+        glam::DVec3::new(sun[0] as f64, sun[1] as f64, sun[2] as f64).normalize_or_zero();
+    let mut points = crate::shadow_view::surface_footprint(view);
+    points.push(glam::DVec3::from_array(view.camera_eye_world_m));
+    let cosine = points
+        .iter()
+        .map(|p| p.normalize_or_zero().dot(direction))
+        .fold(-1.0, f64::max);
+    let altitude = cosine.clamp(-1.0, 1.0).asin().to_degrees();
+    let t = ((-altitude - 6.0) / 12.0).clamp(0.0, 1.0);
+    let night = t * t * (3.0 - 2.0 * t);
+    base * (15.0 * night as f32).exp2()
 }

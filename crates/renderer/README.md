@@ -107,9 +107,21 @@ active and staged geometry.
 
 ## Dependencies
 
-The default `gpu` feature gates rendering modules and GPU/astronomy dependencies.
-With default features disabled, camera metadata and quality/debug selections are
-CPU-only contracts usable by the terminal command frontend.
+The default `gpu` feature gates upload, resource and pipeline modules and the
+GPU/astronomy dependencies. With default features disabled, `RenderFrame`,
+`PreparedSector`, camera/environment uniform data in `gpu_frame`, UI and
+geometry vertex data, CPU sector preparation, shadow bounds/view helpers and
+quality/debug selections remain available. Vertex-buffer layout methods require
+`gpu`; the vertex fields and their ABI are identical in both configurations.
+`render_frame::view_exposure` is a CPU calculation shared by frame preparation
+and desktop diagnostics, independent of the astronomy-backed lighting adapter.
+
+`examples/cpu_frame.rs` is a CPU consumer that prepares a box sector, inspects
+its shadow geometry/bounds, creates a frame with client/UI data and computes
+output exposure. Compile it with `cargo check -p minimium-renderer
+--no-default-features --examples --locked`. This performs no GPU session and is
+not a visual test. The existing cosmetic clock in `gpu_frame::environment_uniform`
+is unchanged here; host-owned cosmetic time belongs to E049-P02.
 
 Uses `glam` for camera and geometry calculations; `bytemuck` and `half` for GPU layouts and optical LUT values; `wgpu` for rendering resources; `pollster` for bounded GPU error-scope resolution; `minimium-assets` for the embedded star catalogue; `minimium-procgen` and `minimium-world` for manifests, geography and generated patches; and public astronomy/environment observations for visual lighting. It has no window, client-runtime, session, protocol, storage or transport dependency.
 

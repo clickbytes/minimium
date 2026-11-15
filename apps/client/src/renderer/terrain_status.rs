@@ -40,7 +40,7 @@ impl Renderer {
             .map(|b| b.surface.size() + b.ocean.size() + b.objects.size())
             .sum();
         let environment = self.render_environment_frame.environment_uniform;
-        let view_exposure = minimium_renderer::lighting::view_exposure(
+        let view_exposure = minimium_renderer::render_frame::view_exposure(
             self.render_environment_frame.render_view,
             environment.global_sun_direction,
             environment.ambient_rgb_exposure[3],
