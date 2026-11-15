@@ -85,7 +85,8 @@ impl CharacterGeometry {
         PLAYER_EYE_HEIGHT
     }
 
-    /// Sign of the local-frame determinant; radial frames may reflect the FixedY basis.
+    /// Sign of the local-to-world determinant for basis columns [right, up, forward].
+    /// Negative values require reversed triangle winding for transformed meshes.
     pub fn frame_handedness(self) -> f64 {
         let right_cross_up = cross(self.frame.right, self.frame.up);
         dot(right_cross_up, self.frame.forward).signum()

@@ -5,10 +5,10 @@ pub(in crate::renderer) fn camera_direction(
     yaw: f32,
     pitch: f32,
 ) -> glam::Vec3 {
-    CharacterGeometry::new(character.position.map(f64::from), character.gravity)
-        .map_or(glam::Vec3::ZERO, |geometry| {
-            camera_direction_from_geometry(geometry, yaw, pitch)
-        })
+    let frame = CharacterGeometry::new(character.position.map(f64::from), character.gravity)
+        .map(|geometry| geometry.frame())
+        .unwrap_or_else(|| fallback_character_frame(character));
+    camera_direction_from_frame(frame, yaw, pitch)
 }
 
 pub(super) fn fallback_character_frame(
