@@ -95,8 +95,10 @@ seed derivation and geometry.
 
 ## Rare meteorite event
 
-The sample gameplay module registers the engine body component. Application
-composition separately passes the sample `DEFAULT_IMPACT_PROFILE`: probability 100/10000 per automatic event opportunity, initial mass
+The server base component registry registers the engine body descriptor through
+`minimium-world::impact`; the sample gameplay module registers only sample-owned
+schemas. Application composition separately passes the sample
+`DEFAULT_IMPACT_PROFILE`: probability 100/10000 per automatic event opportunity, initial mass
 500000 kg, density 7800 kg/m3, maximum crater radius 24 game metres. These are
 gameplay settings for a compressed planet, not a prediction of real crater size.
 The final radius depends on surviving kinetic energy. Ordinary cosmetic meteors

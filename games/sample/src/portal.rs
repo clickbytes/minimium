@@ -90,7 +90,6 @@ impl<H> EngineModule<H, GameplaySystem> for SampleGameplayModule {
         &self,
         registrar: &mut ModuleRegistrar<'_, H, GameplaySystem>,
     ) -> Result<(), ModuleError> {
-        registrar.component(minimium_world::impact::component_descriptor())?;
         registrar.component(ComponentDescriptor {
             id: PORTAL_COMPONENT,
             name: "sample.portal",
