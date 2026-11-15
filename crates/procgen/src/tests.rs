@@ -1,7 +1,7 @@
 use super::*;
 use minimium_world::world::{
-    CharacterGravity, GenerationRevision, GenerationSpec, PlanetEdge, PlanetFace, PlanetSectorKey,
-    SectorKey, WorldSeed,
+    GenerationRevision, GenerationSpec, PlanetEdge, PlanetFace, PlanetSectorKey, SectorKey,
+    WorldSeed,
 };
 use std::collections::HashSet;
 
