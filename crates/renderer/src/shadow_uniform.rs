@@ -122,6 +122,65 @@ fn least_parallel_axis(direction: glam::DVec3) -> glam::DVec3 {
         .expect("basis axes are nonempty")
 }
 
+/// Perspective shadow cone covering the bounded receiver region. The emitter
+/// remains omnidirectional; only shadow-map coverage is restricted to this cone.
+pub fn prepare_point_at_origin(
+    source: [f64; 3],
+    center: [f64; 3],
+    origin: [f64; 3],
+    settings: ShadowSettings,
+) -> Option<ShadowUniform> {
+    let source = glam::DVec3::from_array(source);
+    let center = glam::DVec3::from_array(center);
+    let origin = glam::DVec3::from_array(origin);
+    let delta = center - source;
+    let distance = delta.length();
+    let radius = f64::from(settings.caster_radius_m) * 1.05;
+    if !distance.is_finite() || distance <= radius {
+        return None;
+    }
+    let near = (distance - radius).max(1.0);
+    let far = distance + radius;
+    // Only rays through receivers can contribute visible shadows. Keep the
+    // larger caster radius for depth and selection, not angular coverage:
+    // using it for FOV wastes most texels outside the receiving region.
+    let receiver_radius = f64::from(settings.receiver_radius_m) * 1.01;
+    if receiver_radius <= 0.0 || receiver_radius > radius {
+        return None;
+    }
+    let fov = 2.0 * (receiver_radius / distance).asin();
+    let view = glam::DMat4::look_at_rh(
+        source - center,
+        glam::DVec3::ZERO,
+        least_parallel_axis(delta.normalize()),
+    );
+    // Point-shadow shaders subtract the receiver center before projection.
+    // Keep f32 dot products local to this bounded region, even when the scene
+    // origin lies far away or the source is tens of kilometres above it.
+    let matrix = glam::DMat4::perspective_rh(fov, 1.0, near, far) * view;
+    Some(ShadowUniform {
+        light_view_projection: matrix.as_mat4().to_cols_array_2d(),
+        receiver_center_relative_radius: (center - origin)
+            .as_vec3()
+            .extend(settings.receiver_radius_m)
+            .to_array(),
+        texel_depth_range: [
+            1.0 / settings.resolution as f32,
+            1.0 / settings.resolution as f32,
+            near as f32,
+            far as f32,
+        ],
+        bias_fade: [
+            settings.constant_bias_m,
+            settings.slope_bias_m,
+            settings.max_bias_m,
+            settings.fade_start_m,
+        ],
+        // Point-map occlusion weight; the client can fade its bounded takeover.
+        flags: [1, 3, 1.0_f32.to_bits(), 0],
+    })
+}
+
 const _: () = {
     assert!(std::mem::size_of::<ShadowUniform>() == 128);
     assert!(std::mem::align_of::<ShadowUniform>() == 16);

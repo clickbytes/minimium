@@ -13,6 +13,7 @@ glam = "0.30"
 bytemuck = { version = "1.25", features = ["derive"] }
 minimium-procgen = { path = "../procgen" }
 minimium-world = { path = "../world" }
+minimium-fluids = { path = "../fluids" }
 minimium-astronomy = { path = "../astronomy", optional = true }
 minimium-environment = { path = "../environment" }
 minimium-assets = { path = "../assets" }

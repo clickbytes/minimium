@@ -1,8 +1,8 @@
-mod migration;
 mod profiles;
 mod snapshot;
 
-use super::{format, LoadedState};
+use super::budget::{SnapshotBudget, SnapshotRecordKey};
+use super::{format, LoadedState, StorageError};
 use minimium_core::identity::PlayerProfileId;
 use minimium_core::identity::MAX_PLAYER_NAME_BYTES;
 use minimium_core::ids::PlayerId;
@@ -54,6 +54,8 @@ pub struct PlayerStore {
     pub(super) profile_by_player: HashMap<PlayerId, PlayerProfileId>,
     active_players: HashSet<PlayerId>,
     pub(super) sector_states: Vec<(WorldInstanceId, WorldSectorState)>,
+    pub(super) snapshot_budget: SnapshotBudget,
+    pub(super) snapshot_revision: u64,
 }
 
 pub struct SaveSnapshot {
@@ -63,7 +65,11 @@ pub struct SaveSnapshot {
     pub(super) manifest: WorldManifest,
     pub(super) world_manifests: Vec<SavedWorldManifest>,
     pub(super) sector_states: Vec<(WorldInstanceId, WorldSectorState)>,
+    pub(super) entity_counters: Vec<(WorldInstanceId, u64)>,
+    pub(super) world_initialization: Vec<(WorldInstanceId, bool)>,
+    pub(super) entities: Vec<super::PersistedEntity>,
     pub(super) player_shards: Vec<Arc<HashMap<PlayerProfileId, StoredPlayer>>>,
+    revision: u64,
 }
 
 pub(super) struct SavedWorldManifest {
@@ -81,16 +87,29 @@ impl Default for PlayerStore {
             profile_by_player: HashMap::new(),
             active_players: HashSet::new(),
             sector_states: Vec::new(),
+            snapshot_budget: SnapshotBudget::default(),
+            snapshot_revision: 0,
         }
     }
 }
 
 impl PlayerStore {
+    pub fn snapshot_budget_mut(&mut self) -> &mut SnapshotBudget {
+        &mut self.snapshot_budget
+    }
+
+    pub(super) fn reserve_profile_record(&mut self, profile_id: PlayerProfileId) -> io::Result<()> {
+        let bytes = format::maximum_profile_record_bytes()?;
+        self.snapshot_budget
+            .reserve(SnapshotRecordKey::Profile(profile_id), bytes)
+    }
+
     pub fn load(
         data_dir: &Path,
         worlds: &[(WorldInstanceId, WorldMap, WorldManifest)],
-    ) -> io::Result<LoadedState> {
-        format::load(data_dir, worlds)
+        components: &minimium_world::entity::ComponentRegistry,
+    ) -> Result<LoadedState, StorageError> {
+        format::load(data_dir, worlds, components).map_err(StorageError::from_io)
     }
 
     pub fn sector_states(&self) -> Vec<(WorldInstanceId, WorldSectorState)> {
@@ -101,7 +120,13 @@ impl PlayerStore {
         &mut self,
         input: super::WorldSaveInput,
         saved_clock: SavedClockState,
-    ) -> io::Result<SaveSnapshot> {
-        snapshot::capture(self, input, saved_clock)
+    ) -> Result<SaveSnapshot, StorageError> {
+        let revision = self.snapshot_revision.checked_add(1).ok_or_else(|| {
+            StorageError::from_io(io::Error::other("snapshot revision exhausted"))
+        })?;
+        let snapshot =
+            snapshot::capture(self, input, saved_clock, revision).map_err(StorageError::from_io)?;
+        self.snapshot_revision = revision;
+        Ok(snapshot)
     }
 }

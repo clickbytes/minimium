@@ -1,0 +1,259 @@
+use super::*;
+use minimium_localization::{ToolMessage, ToolNotice, UiMessage};
+use minimium_protocol::{ExcavationMessage, WorldContext};
+use minimium_world::{
+    items::{ActionRejection, ActionResult, ToolKind},
+    terrain::{SurfaceHit, SurfaceTarget, TerrainRead},
+};
+
+#[derive(Default)]
+pub(super) struct ExcavationDebug {
+    context: Option<WorldContext>,
+    last_result: Option<ActionResult>,
+}
+
+impl Renderer {
+    pub(super) fn observe_excavation(
+        &mut self,
+        context: WorldContext,
+        message: &ExcavationMessage,
+    ) {
+        if Some(context) != self.application.game.session_context() {
+            return;
+        }
+        if self.excavation_debug.context != Some(context) {
+            self.excavation_debug = ExcavationDebug {
+                context: Some(context),
+                last_result: None,
+            };
+        }
+        let message = match message {
+            ExcavationMessage::Inventory { inventory } => Some(ToolMessage::Heading {
+                tool: self.tool_notice(tool_name(inventory.tool())),
+            }),
+            ExcavationMessage::ActionResult { result } => {
+                self.excavation_debug.last_result = Some(*result);
+                Some(self.tool_result_message(*result))
+            }
+            _ => None,
+        };
+        if let Some(message) = message {
+            self.application.ui.console.push_ui_message(
+                UiMessage::Tool(message),
+                &self.localizer,
+                self.application.settings.locale,
+            );
+        }
+    }
+
+    fn tool_notice(&self, notice: ToolNotice) -> String {
+        self.localizer.format(
+            self.application.settings.locale,
+            &UiMessage::Tool(ToolMessage::Notice(notice)),
+        )
+    }
+
+    fn tool_result_message(&self, result: ActionResult) -> ToolMessage {
+        let (action, notice) = match result {
+            ActionResult::Committed { action_id, .. } => (action_id, ToolNotice::Committed),
+            ActionResult::Rejected { action_id, reason } => (action_id, rejection_notice(reason)),
+        };
+        ToolMessage::Result {
+            action,
+            outcome: self.tool_notice(notice),
+        }
+    }
+
+    pub(super) fn tool_overlay(
+        &self,
+        view: &minimium_renderer::RenderViewFrame,
+    ) -> Option<crate::console::ToolOverlay> {
+        let session = self.application.connection.session()?;
+        let inventory = session.inventory();
+        if inventory.slots.iter().all(Option::is_none)
+            || self.application.overview().is_open()
+            || self.application.ui.console.open
+        {
+            return None;
+        }
+        let ready = self.gpu.scene_visible
+            && self.application.game.gameplay.sectors_ready
+            && session.excavation_ready();
+        let hit = ready.then(|| self.preview_tool_hit()).flatten();
+        let (notice, color) = if !ready {
+            (ToolNotice::Synchronizing, [1.0, 0.75, 0.25])
+        } else if session.tool_action_pending() {
+            (ToolNotice::Pending, [1.0, 0.75, 0.25])
+        } else if let Some(tool) = inventory.tool() {
+            match hit {
+                None => (ToolNotice::NoTarget, [0.85, 0.65, 0.35]),
+                Some(hit) if !matches!(hit.target, SurfaceTarget::Terrain(_)) => {
+                    (ToolNotice::Obstructed, [1.0, 0.32, 0.26])
+                }
+                Some(hit) if !tool.removes(hit.material) => {
+                    (ToolNotice::WrongMaterial, [1.0, 0.32, 0.26])
+                }
+                Some(_) => (ToolNotice::Ready, [0.25, 0.95, 0.45]),
+            }
+        } else {
+            (ToolNotice::NotEquipped, [0.85, 0.65, 0.35])
+        };
+        let format = |message| {
+            self.localizer
+                .format(self.application.settings.locale, &UiMessage::Tool(message))
+        };
+        let target = hit.map_or_else(
+            || self.tool_notice(ToolNotice::NoTarget),
+            |hit| {
+                let material = if matches!(hit.target, SurfaceTarget::Terrain(_)) {
+                    use minimium_world::terrain::TerrainMaterial;
+                    match hit.material {
+                        TerrainMaterial::Soil => ToolNotice::Soil,
+                        TerrainMaterial::Rock => ToolNotice::Rock,
+                        TerrainMaterial::Empty => ToolNotice::Empty,
+                    }
+                } else {
+                    ToolNotice::Obstacle
+                };
+                format(ToolMessage::Target {
+                    material: self.tool_notice(material),
+                    distance: format!("{:.2}", hit.distance_m),
+                })
+            },
+        );
+        Some(crate::console::ToolOverlay {
+            heading: format(ToolMessage::Heading {
+                tool: self.tool_notice(tool_name(inventory.tool())),
+            }),
+            target,
+            status: self.tool_notice(notice),
+            color,
+            controls: self.tool_notice(ToolNotice::Controls),
+            preview: self.tool_notice(ToolNotice::Preview),
+            result: (self.excavation_debug.context == self.application.game.session_context())
+                .then_some(self.excavation_debug.last_result)
+                .flatten()
+                .map(|result| format(self.tool_result_message(result))),
+            outline: hit.map_or_else(Vec::new, |hit| outline(hit, view)),
+        })
+    }
+
+    fn preview_tool_hit(&self) -> Option<SurfaceHit> {
+        let gameplay = &self.application.game.gameplay;
+        let character = gameplay.prediction.character;
+        let feet = gameplay
+            .prediction
+            .position_mm
+            .map_or(character.position.map(f64::from), |p| {
+                p.0.map(|v| v as f64 / 1000.0)
+            });
+        let up = character_frame(character.gravity, character.position)
+            .0
+            .map(f64::from);
+        let eye = std::array::from_fn(|axis| feet[axis] + up[axis] * 1.6);
+        let direction = camera::camera_direction(character, self.input.yaw, self.input.pitch)
+            .as_dvec3()
+            .to_array();
+        let blockers = gameplay
+            .reconciliation
+            .tracks()
+            .iter()
+            .flatten()
+            .map(|track| {
+                let feet_m = track.displayed_position_mm.map(|v| v as f64 / 1000.0);
+                minimium_simulation::ToolRayCapsule {
+                    feet_m,
+                    up: character_frame(character.gravity, feet_m.map(|v| v as f32))
+                        .0
+                        .map(f64::from),
+                }
+            });
+        let mut hit = gameplay.collision_index.tool_surface_hit(
+            self.application.game.current_instance,
+            eye,
+            direction,
+            minimium_game_sample::DEFAULT_TOOL_PROFILE.reach_m,
+            blockers,
+        )?;
+        if let SurfaceTarget::Terrain(_) = hit.target {
+            let session = self.application.connection.session()?;
+            let manifest = *self
+                .application
+                .game
+                .world_manifests
+                .get(&self.application.game.current_instance)?;
+            let inputs = session.terrain_inputs();
+            let store = inputs.volumes.clone()?;
+            let terrain = minimium_procgen::PlanetTerrain::new(
+                manifest.generation(),
+                minimium_procgen::planet_surface_for(manifest),
+            )?
+            .with_definition(manifest.planet()?)
+            .with_inputs(inputs);
+            let base = terrain.volume_base(minimium_game_sample::SOIL_DEPTH_M)?;
+            let behind = std::array::from_fn(|i| hit.position_m[i] - hit.normal[i] * 0.01);
+            if let Some(sample) = store.view(&base).sample(behind) {
+                hit.material = sample.material;
+                hit.revision = sample.revision;
+            }
+        }
+        Some(hit)
+    }
+}
+
+fn tool_name(tool: Option<ToolKind>) -> ToolNotice {
+    match tool {
+        Some(ToolKind::Shovel) => ToolNotice::Shovel,
+        Some(ToolKind::Pickaxe) => ToolNotice::Pickaxe,
+        None => ToolNotice::Stowed,
+    }
+}
+
+fn rejection_notice(reason: ActionRejection) -> ToolNotice {
+    match reason {
+        ActionRejection::NotEquipped => ToolNotice::NotEquipped,
+        ActionRejection::InvalidIntent => ToolNotice::InvalidIntent,
+        ActionRejection::OutOfReach => ToolNotice::NoTarget,
+        ActionRejection::Obstructed => ToolNotice::Obstructed,
+        ActionRejection::UnsafeGeometry => ToolNotice::UnsafeGeometry,
+        ActionRejection::WrongMaterial => ToolNotice::WrongMaterial,
+        ActionRejection::Busy => ToolNotice::Busy,
+        ActionRejection::RateLimited => ToolNotice::RateLimited,
+        ActionRejection::Stale => ToolNotice::Stale,
+        ActionRejection::Capacity => ToolNotice::Capacity,
+        ActionRejection::Storage => ToolNotice::Storage,
+    }
+}
+
+fn outline(hit: SurfaceHit, view: &minimium_renderer::RenderViewFrame) -> Vec<Option<[f32; 2]>> {
+    let center = glam::DVec3::from_array(hit.position_m);
+    let mut normal = glam::DVec3::from_array(hit.normal).normalize_or_zero();
+    if normal == glam::DVec3::ZERO {
+        normal = (glam::DVec3::from_array(view.camera_eye_world_m) - center).normalize_or_zero();
+    }
+    let axis = if normal.x.abs() < 0.8 {
+        glam::DVec3::X
+    } else {
+        glam::DVec3::Y
+    };
+    let tangent = normal.cross(axis).normalize_or_zero();
+    let bitangent = normal.cross(tangent);
+    let matrix = glam::Mat4::from_cols_array_2d(&view.view_projection);
+    (0..=32)
+        .map(|index| {
+            let angle = index as f64 * std::f64::consts::TAU / 32.0;
+            let point = center
+                + normal * 0.01
+                + (tangent * angle.cos() + bitangent * angle.sin())
+                    * minimium_game_sample::DEFAULT_TOOL_PROFILE.radius_m;
+            let relative = (point - glam::DVec3::from_array(view.render_origin_m)).as_vec3();
+            let clip = matrix * relative.extend(1.0);
+            if !clip.is_finite() || clip.w <= 0.0 {
+                return None;
+            }
+            let ndc = clip.truncate() / clip.w;
+            (ndc.x.abs() <= 1.0 && ndc.y.abs() <= 1.0 && (0.0..=1.0).contains(&ndc.z))
+                .then_some([ndc.x, ndc.y])
+        })
+        .collect()
+}

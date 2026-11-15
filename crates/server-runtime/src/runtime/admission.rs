@@ -1,6 +1,7 @@
 mod actions;
 mod dispatch;
 mod identity;
+mod placement;
 mod queue;
 mod routing;
 mod technical;
@@ -20,6 +21,7 @@ impl ServerRuntime {
             }
             dispatch::dispatch_message(self, index, message, decoded_at);
         }
+        identity::poll_authentication(self);
         self.connections.messages = messages;
     }
 }

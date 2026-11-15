@@ -1,11 +1,17 @@
 use super::state::Console;
 use super::theme::{ECHO_TEXT, MAX_LINES};
 
-pub(super) fn take_input(console: &mut Console) -> String {
+pub(super) fn take_input(
+    console: &mut Console,
+    localizer: &minimium_localization::Localizer,
+    locale: minimium_localization::Locale,
+) -> String {
     let input = console.editor.clear();
     console.history_cursor = None;
     console.history_draft.clear();
-    console.suggestions.edited(&console.editor);
+    console
+        .suggestions
+        .edited(&console.editor, localizer, locale);
     if !input.trim().is_empty() {
         console.scroll_to_latest();
         if console.history.last() != Some(&input) {
@@ -19,7 +25,11 @@ pub(super) fn take_input(console: &mut Console) -> String {
     input
 }
 
-pub(super) fn history_up(console: &mut Console) {
+pub(super) fn history_up(
+    console: &mut Console,
+    localizer: &minimium_localization::Localizer,
+    locale: minimium_localization::Locale,
+) {
     if console.history.is_empty() {
         return;
     }
@@ -32,10 +42,16 @@ pub(super) fn history_up(console: &mut Console) {
         .saturating_sub(1);
     console.history_cursor = Some(index);
     console.editor.set_text(&console.history[index]);
-    console.suggestions.edited(&console.editor);
+    console
+        .suggestions
+        .edited(&console.editor, localizer, locale);
 }
 
-pub(super) fn history_down(console: &mut Console) {
+pub(super) fn history_down(
+    console: &mut Console,
+    localizer: &minimium_localization::Localizer,
+    locale: minimium_localization::Locale,
+) {
     let Some(index) = console.history_cursor else {
         return;
     };
@@ -46,5 +62,7 @@ pub(super) fn history_down(console: &mut Console) {
         console.history_cursor = Some(index + 1);
         console.editor.set_text(&console.history[index + 1]);
     }
-    console.suggestions.edited(&console.editor);
+    console
+        .suggestions
+        .edited(&console.editor, localizer, locale);
 }

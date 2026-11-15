@@ -1,10 +1,17 @@
-/target/
+# Cargo output, including standalone tools below scripts/.
+target/
+
+# Downloaded third-party packages and local world/profile data.
 /third_party/
 /.minimium/
-/.minimium-local/
-/.minimium-earth/
-/.minimium-server/
-/.minimium-loadtest/
+/.minimium-*/
+
+# Runtime logs include extensionless markers and lock files.
+/logs/
+*.log
+
+# Local source exports and Python tool caches.
+/concat.txt
 /concat.xz.b64
 __pycache__/
-*.log
+.ruff_cache/

@@ -15,6 +15,21 @@ pub(super) fn handle_message(
     player_id: Option<PlayerId>,
 ) -> RoutingOutcome {
     match message {
+        ClientMessage::SkyView {
+            context,
+            direction,
+            night,
+        } if player_id.is_some() => {
+            let player = player_id.expect("guarded above");
+            if runtime.game.worlds.context_matches(player, context) {
+                runtime
+                    .sky_views
+                    .insert(player, (context, direction, night, decoded_at));
+            } else {
+                runtime.metrics.rejected_inputs = runtime.metrics.rejected_inputs.saturating_add(1);
+            }
+            RoutingOutcome::Handled
+        }
         ClientMessage::Ping if player_id.is_some() => {
             if !queue_message(
                 &mut runtime.connections.clients[index],
@@ -31,6 +46,37 @@ pub(super) fn handle_message(
             client_send_monotonic_ms,
         } if player_id.is_some() => {
             handle_time_probe(runtime, index, seq, client_send_monotonic_ms, decoded_at);
+            RoutingOutcome::Handled
+        }
+        ClientMessage::ReplicationAck {
+            context,
+            sync_id,
+            revision,
+            accepted,
+        } if player_id.is_some() => {
+            let client = &mut runtime.connections.clients[index];
+            let matches_pending = client.entity_sync.as_ref().is_some_and(|pending| {
+                pending.context == context
+                    && pending.sync_id == sync_id
+                    && pending.target_revision == revision
+                    && pending.complete_sent
+            });
+            if matches_pending {
+                if accepted {
+                    if let Some(pending) = client.entity_sync.take() {
+                        client.entity_revision = pending.target_revision;
+                        client.entity_sync_initialized = true;
+                        client.replicated_components = pending.visible_components;
+                    }
+                } else {
+                    client.entity_sync = None;
+                    client.entity_revision = 0;
+                    client.entity_sync_initialized = false;
+                    client.replicated_components.clear();
+                }
+            } else {
+                runtime.metrics.rejected_inputs = runtime.metrics.rejected_inputs.saturating_add(1);
+            }
             RoutingOutcome::Handled
         }
         ClientMessage::Quit if player_id.is_some() => {
@@ -80,18 +126,48 @@ fn handle_time_probe(
         }
         return;
     }
-    let Ok(server_receive_monotonic_ms) = runtime.monotonic_ms(decoded_at) else {
-        reject_clock_probe(runtime);
-        return;
+    let server_receive_monotonic_ms = match runtime.monotonic_ms(decoded_at) {
+        Ok(value) => value,
+        Err(error) => {
+            crate::diagnostics::emit(
+                &runtime.server_logger,
+                minimium_diagnostics::Level::Error,
+                "server.clock_probe_timestamp_failed",
+                &[("reason", error.to_string())],
+            );
+            reject_clock_probe(runtime);
+            return;
+        }
     };
     let send_at = Instant::now();
-    let Ok(server_send_monotonic_ms) = runtime.monotonic_ms(send_at) else {
-        reject_clock_probe(runtime);
-        return;
+    let server_send_monotonic_ms = match runtime.monotonic_ms(send_at) {
+        Ok(value) => value,
+        Err(error) => {
+            crate::diagnostics::emit(
+                &runtime.server_logger,
+                minimium_diagnostics::Level::Error,
+                "server.clock_probe_timestamp_failed",
+                &[("reason", error.to_string())],
+            );
+            reject_clock_probe(runtime);
+            return;
+        }
     };
-    let Ok(sample) = runtime.environment_clock.sample(server_send_monotonic_ms) else {
-        reject_clock_probe(runtime);
-        return;
+    let sample = match runtime.environment_clock.sample(server_send_monotonic_ms) {
+        Ok(sample) => sample,
+        Err(error) => {
+            crate::diagnostics::emit(
+                &runtime.environment_logger,
+                minimium_diagnostics::Level::Error,
+                "environment.clock_probe_sample_failed",
+                &[
+                    ("error_code", error.code().to_owned()),
+                    ("reason", error.to_string()),
+                ],
+            );
+            reject_clock_probe(runtime);
+            return;
+        }
     };
     if queue_message(
         &mut runtime.connections.clients[index],

@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$DataDir = ([IO.Path]::Combine($env:LOCALAPPDATA, 'Minimium', 'earth')),
+    [string]$DataDir = ([IO.Path]::Combine($env:LOCALAPPDATA, 'Minimium', 'earth-v6')),
     [string]$PackageDir = (Join-Path $PSScriptRoot 'third_party/gebco-2026'),
     [string]$ProfileDir,
     [string]$Seed,
@@ -14,11 +14,19 @@ param(
     [int]$PeakFullMeters = 9000,
     [ValidateScript({ -not [double]::IsNaN($_) -and -not [double]::IsInfinity($_) -and $_ -ge 0 -and $_ -le 1 })]
     [double]$ClimateReliefInfluence = 0,
-    [switch]$ResetWorld,
-    [switch]$Windowed
+    [Alias('ResetWorld')]
+    [switch]$RebuildWorld,
+    [switch]$Windowed,
+    [switch]$DevStdin
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'scripts/earth-world.ps1')
+$DataDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($DataDir)
+if ($DataDir -ne [IO.Path]::GetPathRoot($DataDir)) { $DataDir = $DataDir.TrimEnd('\', '/') }
+$profile = if ($ProfileDir) {
+    $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ProfileDir)
+} else { "${DataDir}-profile" }
 function Set-LauncherEnvironmentVariable {
     param([string]$Name, [AllowNull()][AllowEmptyString()][string]$Value)
     # Explicitly remove omitted options instead of relying on null-to-string binding.
@@ -36,48 +44,34 @@ if ($PeakStartMeters -ge $PeakFullMeters) {
 }
 $existingWorld = @('world.planet.ron', 'world.snapshot', 'world.seed') |
     Where-Object { Test-Path -LiteralPath (Join-Path $DataDir $_) }
-if ($peakRequested -and $existingWorld -and -not $ResetWorld) {
-    throw 'Peak settings define a new world. Use a new -DataDir or -ResetWorld (preserves a backup). To resume the saved world, omit the Peak parameters.'
+if ($peakRequested -and $existingWorld -and -not $RebuildWorld) {
+    throw 'Peak settings define a new world. Use a new -DataDir or -RebuildWorld (preserves world and profile backups). To resume the saved world, omit the Peak parameters.'
 }
 $package = [IO.Path]::GetFullPath($PackageDir)
 if (-not (Test-Path (Join-Path $package 'index.ron'))) {
     throw "GEBCO 2026 package is missing at $package. Run $PSScriptRoot/import-gebco-lite.ps1 -PackageDir $package for the compact 1-arcminute package, or import the full-resolution netCDF with import-gebco.ps1."
 }
 $projectRoot = $PSScriptRoot
-& rtk cargo build --release -p minimium-server -p minimium-client --manifest-path (Join-Path $projectRoot 'Cargo.toml')
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-if ($ResetWorld -and (Test-Path -LiteralPath $DataDir)) {
-    $worldDirectory = [IO.Path]::GetFullPath($DataDir).TrimEnd([IO.Path]::DirectorySeparatorChar)
-    $worldParent = [IO.Path]::GetDirectoryName($worldDirectory)
-    if (-not $worldParent -or $worldDirectory -eq [IO.Path]::GetPathRoot($worldDirectory).TrimEnd([IO.Path]::DirectorySeparatorChar)) {
-        throw 'ResetWorld requires a specific world directory, not a filesystem root.'
-    }
-    # Match the server's OS file lock; keep it held while preserving the old world.
-    $backupDirectory = "${worldDirectory}.backup-$([DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss'))-$([Guid]::NewGuid().ToString('N').Substring(0,8))"
-    if ([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($backupDirectory)) -ne $worldParent) {
-        throw 'World backup escaped its intended parent directory.'
-    }
-    $worldLock = [IO.FileStream]::new((Join-Path $worldDirectory 'server.lock'), [IO.FileMode]::OpenOrCreate,
-        [IO.FileAccess]::ReadWrite, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
-    $worldLockHeld = $false
-    try {
-        $worldLock.Lock(0, 1)
-        $worldLockHeld = $true
-        Move-Item -LiteralPath $worldDirectory -Destination $backupDirectory -ErrorAction Stop
-    } finally {
-        if ($worldLockHeld) { $worldLock.Unlock(0, 1) }
-        $worldLock.Dispose()
-    }
-    Write-Host "Previous world preserved at $backupDirectory"
-}
 $target = if ($env:CARGO_TARGET_DIR) {
     if ([IO.Path]::IsPathRooted($env:CARGO_TARGET_DIR)) { $env:CARGO_TARGET_DIR }
     else { Join-Path (Get-Location) $env:CARGO_TARGET_DIR }
 } else { Join-Path $projectRoot 'target' }
-$client = Join-Path $target 'release/minimium-client.exe'
-$profile = if ($ProfileDir) { $ProfileDir } else { "${DataDir}-profile" }
-$arguments = @('--server-data-dir', $DataDir, '--profile-dir', $profile, '--require-earth')
+$client = [IO.Path]::GetFullPath((Join-Path $target 'release/minimium-client.exe'))
+$activeClient = Get-Process minimium-client -ErrorAction SilentlyContinue |
+    Where-Object { $_.Path -eq $client }
+if ($activeClient) {
+    throw "Close the running Minimium client (PID $($activeClient.Id -join ', ')) before rebuilding $client."
+}
+& rtk cargo build --release -p minimium-server -p minimium-client --manifest-path (Join-Path $projectRoot 'Cargo.toml')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ($RebuildWorld) {
+    Backup-EarthWorldForRebuild -WorldDirectory $DataDir -ProfileDirectory $profile
+}
+Write-Host "Earth world: $DataDir"
+Write-Host "Earth player profile: $profile"
+$arguments = @('--server-data-dir', $DataDir, '--profile-dir', $profile, '--require-earth', '--dev')
 if ($Windowed) { $arguments += '--windowed' }
+if ($DevStdin) { $arguments += '--dev-stdin' }
 $previousPackage = [Environment]::GetEnvironmentVariable('MINIMIUM_EARTH_PACKAGE', 'Process')
 $previousConfig = [Environment]::GetEnvironmentVariable('MINIMIUM_LOCAL_PLANET_CONFIG', 'Process')
 $previousSeed = [Environment]::GetEnvironmentVariable('MINIMIUM_LOCAL_SEED', 'Process')
@@ -97,7 +91,7 @@ try {
         $presetText = @"
 (
     extends: Some($parentPreset),
-    generator_revision: Some(5),
+    generator_revision: Some(6),
     peak_relief: Some((
         start_m: $PeakStartMeters,
         full_m: $PeakFullMeters,

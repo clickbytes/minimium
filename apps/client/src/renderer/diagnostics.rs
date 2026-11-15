@@ -51,6 +51,7 @@ impl Renderer {
         push_shadow_fields(&mut snapshot, self);
         push_gpu_fields(&mut snapshot, self);
         push_milky_way_fields(&mut snapshot, self);
+        super::meteor_diagnostics::push(&mut snapshot, self);
         snapshot.lines().collect()
     }
 }
@@ -299,7 +300,7 @@ fn push_counter_fields(
     snapshot.push("shadow_prepare_cpu_samples", stats.shadow_cpu.samples);
     snapshot.push(
         "shadow_prepare_cpu_scope",
-        "local_casters_and_uniform_including_upload_excludes_remote_players",
+        "sector_snapshot_caster_selection_map_geometry_and_uniform_cpu_excludes_gpu_upload_and_remote_players",
     );
     snapshot.push("environment_gpu_elapsed_us", "n/a");
     snapshot.push("draw_calls_sky", stats.sky_draw_calls);
@@ -314,16 +315,18 @@ fn push_counter_fields(
 fn push_shadow_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
     let gpu = &renderer.gpu;
     let enabled = gpu.shadow_gpu.settings.enabled;
-    let valid = enabled && gpu.shadow_state.valid;
+    let active_publication = gpu
+        .world_geometry
+        .publication()
+        .map(|publication| publication.stamp);
+    let publication = active_publication;
+    let valid = enabled && renderer.shadow_state.valid && gpu.shadow_publish_ready;
     snapshot.push(
         "shadow_source",
-        if valid {
-            gpu.shadow_state
-                .source
-                .map_or("none", |source| source.label())
-        } else {
-            "none"
-        },
+        renderer
+            .shadow_state
+            .source
+            .map_or("none", |source| source.label()),
     );
     snapshot.push(
         "shadow_size",
@@ -335,30 +338,66 @@ fn push_shadow_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer
     snapshot.push(
         "shadow_range_m",
         if enabled {
-            gpu.shadow_state.receiver_radius_m.to_string()
+            renderer.shadow_state.receiver_radius_m.to_string()
         } else {
             "n/a".to_owned()
         },
     );
-    snapshot.push_optional("shadow_texel_m", valid.then_some(gpu.shadow_state.texel_m));
+    snapshot.push_optional(
+        "shadow_texel_m",
+        (enabled && renderer.shadow_state.texel_m > 0.0).then_some(renderer.shadow_state.texel_m),
+    );
+    snapshot.push_optional(
+        "shadow_scene_revision",
+        publication.map(|stamp| stamp.geometry_revision),
+    );
+    snapshot.push_optional(
+        "shadow_origin_generation",
+        publication.map(|stamp| stamp.origin_generation),
+    );
+    snapshot.push_optional(
+        "shadow_expected_scene_revision",
+        renderer
+            .prepared_shadow
+            .geometry_stamp
+            .map(|stamp| stamp.geometry_revision),
+    );
+    snapshot.push_optional(
+        "shadow_expected_origin_generation",
+        renderer
+            .prepared_shadow
+            .geometry_stamp
+            .map(|stamp| stamp.origin_generation),
+    );
     let caster_count = usize::from(gpu.shadow_gpu.map_casters().is_some())
         + usize::from(gpu.shadow_gpu.player_casters().is_some())
-        + gpu.shadow_state.caster_keys.len();
+        + renderer.shadow_state.caster_keys.len();
     snapshot.push_optional("shadow_caster_count", enabled.then_some(caster_count));
     snapshot.push_optional(
         "shadow_coverage_complete",
         enabled.then_some(
-            gpu.shadow_state.valid && (gpu.overview_active || gpu.shadow_remote_complete),
+            renderer.shadow_state.valid
+                && gpu.shadow_publish_ready
+                && (gpu.overview_active || gpu.shadow_remote_complete),
         ),
     );
     snapshot.push(
         "shadow_incomplete_reason",
         if valid {
             "none"
+        } else if renderer.prepared_shadow.valid
+            && renderer.prepared_shadow.geometry_stamp != active_publication
+        {
+            "stale_context"
+        } else if let Some(reason) = renderer.prepared_shadow.invalid_reason {
+            reason.label()
         } else {
-            gpu.shadow_state
-                .invalid_reason
-                .map_or("not_rendered", |reason| reason.label())
+            match gpu.shadow_upload_status {
+                super::shadow_gpu::ShadowUploadStatus::Ready => "not_rendered",
+                super::shadow_gpu::ShadowUploadStatus::Pending => "upload_pending",
+                super::shadow_gpu::ShadowUploadStatus::StaleContext => "stale_context",
+                super::shadow_gpu::ShadowUploadStatus::Failed => "upload_failed",
+            }
         },
     );
 }
@@ -368,6 +407,7 @@ fn push_gpu_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
     let star_bytes = gpu.stars.buffer.size();
     let uniform_bytes = gpu.environment_buffer.size()
         + gpu.camera_buffer.size()
+        + gpu.transient_buffer.size()
         + gpu.shadow_gpu.uniform_buffer.size();
     let shadow_texture_bytes = gpu.shadow_gpu.texture_bytes();
     let map_caster_bytes = gpu.shadow_gpu.map_caster_buffer_bytes();

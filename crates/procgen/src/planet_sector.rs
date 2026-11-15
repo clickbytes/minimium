@@ -4,7 +4,6 @@ use minimium_world::world::{
     MapTriangle, PlanetFace, PlanetSectorKey, WorldManifest, PLANET_DENSE_SECTORS_PER_FACE,
     PLANET_SECTORS_PER_FACE,
 };
-use std::sync::Arc;
 
 /// The collision lattice is fixed independently of the renderer's patch detail.
 /// Neighboring sectors, including those on different cube faces, sample the
@@ -52,7 +51,7 @@ pub fn planet_point_at_direction(
 pub fn planet_point_at_direction_with_geography(
     manifest: WorldManifest,
     direction: [f32; 3],
-    geography: Option<Arc<dyn crate::PreparedGeography>>,
+    geography: impl Into<crate::TerrainInputs>,
 ) -> Option<crate::PlanetPoint> {
     if manifest.topology() != minimium_world::world::WorldTopology::Planet
         || !direction.iter().all(|component| component.is_finite())
@@ -101,9 +100,7 @@ pub fn planet_point_at_direction_with_geography(
     if let Some(definition) = manifest.planet() {
         terrain = terrain.with_definition(definition);
     }
-    if let Some(geography) = geography {
-        terrain = terrain.with_geography(geography);
-    }
+    terrain = terrain.with_inputs(geography.into());
     Some(terrain.sample(sample))
 }
 
@@ -114,13 +111,11 @@ pub fn generate_planet_sector(manifest: WorldManifest, key: PlanetSectorKey) -> 
 pub fn generate_planet_sector_with_geography(
     manifest: WorldManifest,
     key: PlanetSectorKey,
-    geography: Option<Arc<dyn crate::PreparedGeography>>,
+    geography: impl Into<crate::TerrainInputs>,
 ) -> SectorGeometry {
     let mut terrain = PlanetTerrain::new(manifest.generation(), planet_surface_for(manifest))
         .expect("the planet generation quantum fits the surface");
-    if let Some(geography) = geography {
-        terrain = terrain.with_geography(geography);
-    }
+    terrain = terrain.with_inputs(geography.into());
     if let Some(definition) = manifest.planet() {
         terrain = terrain.with_definition(definition);
     }
@@ -165,10 +160,15 @@ pub fn generate_planet_sector_with_geography(
                 ),
             ] {
                 add_precise_triangle(&mut triangles, vertices, water, true);
+                let final_points = triangles.last().unwrap().precise_vertices.unwrap();
+                triangles.last_mut().unwrap().surface =
+                    Some(final_points.map(|point| surface_payload(&terrain, point)));
             }
         }
     }
+    let object_triangles = crate::impact_geometry::remnants(&terrain, &triangles);
     SectorGeometry {
+        object_triangles,
         boxes: Vec::new(),
         triangles,
     }
@@ -188,7 +188,7 @@ pub fn generate_planet_render_patch_with_geography(
     manifest: WorldManifest,
     key: PlanetSectorKey,
     subdivisions: u32,
-    geography: Option<Arc<dyn crate::PreparedGeography>>,
+    geography: impl Into<crate::TerrainInputs>,
 ) -> SectorGeometry {
     assert!(subdivisions.is_power_of_two() && (1..=16).contains(&subdivisions));
     let mut terrain = PlanetTerrain::new(manifest.generation(), planet_surface_for(manifest))
@@ -196,9 +196,7 @@ pub fn generate_planet_render_patch_with_geography(
     if let Some(definition) = manifest.planet() {
         terrain = terrain.with_definition(definition);
     }
-    if let Some(geography) = geography {
-        terrain = terrain.with_geography(geography);
-    }
+    terrain = terrain.with_inputs(geography.into());
     let count = planet_sector_count(manifest);
     let mut triangles = Vec::new();
     let edge_step = 16 / subdivisions;
@@ -239,11 +237,13 @@ pub fn generate_planet_render_patch_with_geography(
             for index in 0..border.len() {
                 let next = border[(index + 1) % border.len()];
                 let current = border[index];
-                add_ground_triangle(&mut triangles, [center, current, next]);
+                add_ground_triangle(&mut triangles, [center, current, next], &terrain);
             }
         }
     }
+    let object_triangles = crate::impact_geometry::remnants(&terrain, &triangles);
     SectorGeometry {
+        object_triangles,
         boxes: Vec::new(),
         triangles,
     }
@@ -267,7 +267,7 @@ pub fn generate_planet_render_block_with_geography(
     u: u16,
     v: u16,
     span: u16,
-    geography: Option<Arc<dyn crate::PreparedGeography>>,
+    geography: impl Into<crate::TerrainInputs>,
 ) -> SectorGeometry {
     const STEPS: usize = PLANET_RENDER_BLOCK_SUBDIVISIONS as usize;
     let count = u32::from(planet_sector_count(manifest));
@@ -277,9 +277,7 @@ pub fn generate_planet_render_block_with_geography(
     if let Some(definition) = manifest.planet() {
         terrain = terrain.with_definition(definition);
     }
-    if let Some(geography) = geography {
-        terrain = terrain.with_geography(geography);
-    }
+    terrain = terrain.with_inputs(geography.into());
     let mut samples = Vec::with_capacity((STEPS + 1) * (STEPS + 1));
     let mut points = Vec::with_capacity((STEPS + 1) * (STEPS + 1));
     let mut ocean = Vec::with_capacity((STEPS + 1) * (STEPS + 1));
@@ -313,13 +311,16 @@ pub fn generate_planet_render_block_with_geography(
             let ic = ia + 1;
             let id = ib + 1;
             for indices in [[ia, ib, ic], [ic, ib, id]] {
-                add_ground_triangle(&mut triangles, indices.map(|i| samples[i]));
+                add_ground_triangle(&mut triangles, indices.map(|i| samples[i]), &terrain);
             }
         }
     }
     let mut add = |vertices: [[i64; 3]; 3], color: [f32; 3]| {
         add_precise_triangle(&mut triangles, vertices, false, false);
-        triangles.last_mut().expect("triangle was added").color = color;
+        let triangle = triangles.last_mut().expect("triangle was added");
+        triangle.color = color;
+        let points = triangle.precise_vertices.expect("precise planet skirt");
+        triangle.surface = Some(points.map(|point| surface_payload(&terrain, point)));
     };
     let skirt_depth = manifest
         .planet()
@@ -352,19 +353,47 @@ pub fn generate_planet_render_block_with_geography(
             add([b, lowered(a), lowered(b)], color);
         }
     }
+    let object_triangles = crate::impact_geometry::remnants(&terrain, &triangles);
     SectorGeometry {
+        object_triangles,
         boxes: Vec::new(),
         triangles,
     }
 }
 
-fn add_ground_triangle(triangles: &mut Vec<MapTriangle>, points: [crate::PlanetPoint; 3]) {
-    add_precise_triangle(
-        triangles,
-        points.map(|p| p.position_mm.coordinates()),
-        points.iter().all(|p| p.ocean),
-        false,
-    );
+fn add_ground_triangle(
+    triangles: &mut Vec<MapTriangle>,
+    points: [crate::PlanetPoint; 3],
+    terrain: &PlanetTerrain,
+) {
+    let positions = points.map(|p| p.position_mm.coordinates());
+    add_precise_triangle(triangles, positions, points.iter().all(|p| p.ocean), false);
+    let final_positions = triangles.last().unwrap().precise_vertices.unwrap();
+    triangles.last_mut().unwrap().surface =
+        Some(final_positions.map(|point| surface_payload(terrain, point)));
+}
+
+fn surface_payload(
+    terrain: &PlanetTerrain,
+    point_mm: [i64; 3],
+) -> minimium_world::world::MapSurfaceVertex {
+    let point = point_mm.map(|v| v as f64 / 1000.0);
+    let length = point.iter().map(|v| v * v).sum::<f64>().sqrt().max(1.0);
+    let sample = terrain.surface_sample(point.map(|v| v / length));
+    minimium_world::world::MapSurfaceVertex {
+        kind: minimium_world::world::MapSurfaceKind::PlanetGround,
+        normal: sample.normal,
+        coverage: sample.coverage,
+        source_elevation_m: sample.source_elevation_m,
+        surface_elevation_m: sample.elevation_m,
+        slope: sample.slope,
+        water: sample.water,
+        habitat: [
+            sample.landform.retention,
+            sample.landform.exposure,
+            f32::from(sample.mapped_coverage),
+        ],
+    }
 }
 
 pub(crate) fn add_precise_triangle(
@@ -395,5 +424,6 @@ pub(crate) fn add_precise_triangle(
             [0.18, 0.42, 0.19]
         },
         solid,
+        surface: None,
     });
 }

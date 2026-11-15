@@ -1,4 +1,4 @@
-use super::{Membership, WorldRegistry};
+use super::{Membership, TerrainReads, WorldRegistry};
 use minimium_core::ids::PlayerId;
 use minimium_protocol::WorldContext;
 use minimium_world::world::{
@@ -35,49 +35,150 @@ pub(super) struct PendingTransfer {
 }
 
 impl WorldRegistry {
-    pub(crate) fn prepare_portal_transfer(
+    pub(crate) fn validate_transfer_batch(
+        &self,
+        requests: &[(
+            PlayerId,
+            WorldContext,
+            WorldInstanceId,
+            [f32; 3],
+            Option<WorldLocation>,
+        )],
+    ) -> bool {
+        let mut players = HashSet::with_capacity(requests.len());
+        if self.next_epoch.checked_add(requests.len() as u64).is_none()
+            || self
+                .next_transition
+                .checked_add(requests.len() as u128)
+                .is_none()
+        {
+            return false;
+        }
+        requests.iter().all(
+            |(player, source, target_instance, requested, return_location)| {
+                if !players.insert(*player)
+                    || self.transfers.contains_key(player)
+                    || !self.context_matches(*player, *source)
+                    || requested.iter().any(|value| !value.is_finite())
+                {
+                    return false;
+                }
+                let Some(target) = self.instances.get(target_instance) else {
+                    return false;
+                };
+                let destination = return_location
+                    .filter(|location| location.instance() == *target_instance)
+                    .map(|location| location.position())
+                    .unwrap_or_else(|| {
+                        if *requested == target.map.spawn() {
+                            target.map.spawn_position_mm().unwrap_or_else(|| {
+                                Position3Mm(
+                                    requested
+                                        .map(|value| (f64::from(value) * 1000.0).round() as i64),
+                                )
+                            })
+                        } else {
+                            Position3Mm(
+                                requested.map(|value| (f64::from(value) * 1000.0).round() as i64),
+                            )
+                        }
+                    });
+                let destination = destination.0.map(|value| value as f32 / 1000.0);
+                target
+                    .map
+                    .can_place_player_with_gravity(destination, target.world.gravity())
+            },
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn prepare_entity_transfer(
         &mut self,
         player: PlayerId,
         source_context: WorldContext,
+        target_instance: WorldInstanceId,
+        requested_destination: [f32; 3],
         return_location: Option<WorldLocation>,
     ) -> Option<TransferOffer> {
-        if self.transfers.contains_key(&player) || !self.context_matches(player, source_context) {
+        self.prepare_entity_transfer_checked(
+            player,
+            source_context,
+            target_instance,
+            requested_destination,
+            return_location,
+            None,
+        )
+    }
+
+    pub(crate) fn prepare_entity_transfer_with_terrain(
+        &mut self,
+        player: PlayerId,
+        source_context: WorldContext,
+        target_instance: WorldInstanceId,
+        requested_destination: [f32; 3],
+        return_location: Option<WorldLocation>,
+        reads: &TerrainReads<'_>,
+    ) -> Option<TransferOffer> {
+        self.prepare_entity_transfer_checked(
+            player,
+            source_context,
+            target_instance,
+            requested_destination,
+            return_location,
+            Some(reads),
+        )
+    }
+
+    fn prepare_entity_transfer_checked(
+        &mut self,
+        player: PlayerId,
+        source_context: WorldContext,
+        target_instance: WorldInstanceId,
+        requested_destination: [f32; 3],
+        return_location: Option<WorldLocation>,
+        reads: Option<&TerrainReads<'_>>,
+    ) -> Option<TransferOffer> {
+        if self.transfers.contains_key(&player)
+            || !self.context_matches(player, source_context)
+            || requested_destination.iter().any(|value| !value.is_finite())
+        {
             return None;
         }
-        let source = self.instances.get(&source_context.instance())?;
-        let anchor = source.portal?;
-        let position = source.world.player(player)?.position;
-        if !near_portal(position, anchor.position) {
-            return None;
-        }
-        let target = self.instances.get(&anchor.target_instance)?;
+        let target = self.instances.get(&target_instance)?;
         let target_manifest = target.manifest;
         let target_fingerprint = target.map.fingerprint();
         let return_destination = return_location
-            .filter(|location| location.instance() == anchor.target_instance)
+            .filter(|location| location.instance() == target_instance)
             .map(|location| location.position());
         let destination_mm = return_destination.unwrap_or_else(|| {
-            if anchor.destination == target.map.spawn() {
+            if requested_destination == target.map.spawn() {
                 target.map.spawn_position_mm().unwrap_or_else(|| {
                     Position3Mm(
-                        anchor
-                            .destination
+                        requested_destination
                             .map(|value| (f64::from(value) * 1000.0).round() as i64),
                     )
                 })
             } else {
                 Position3Mm(
-                    anchor
-                        .destination
-                        .map(|value| (f64::from(value) * 1000.0).round() as i64),
+                    requested_destination.map(|value| (f64::from(value) * 1000.0).round() as i64),
                 )
             }
         });
         let destination = destination_mm.0.map(|value| value as f32 / 1000.0);
-        if !target
+        let static_safe = target
             .map
-            .can_place_player_with_gravity(destination, target.world.gravity())
-        {
+            .can_place_player_with_gravity(destination, target.world.gravity());
+        let terrain_safe = if target.manifest.planet().is_some() {
+            reads.is_some_and(|reads| {
+                reads
+                    .get(&target_instance)
+                    .is_some_and(|terrain| super::terrain_capsule_clear(*terrain, destination_mm))
+            })
+        } else {
+            true
+        };
+        let safe = static_safe && terrain_safe;
+        if !safe {
             return None;
         }
         let target_epoch = self.allocate_epoch().ok()?;
@@ -87,7 +188,7 @@ impl WorldRegistry {
             transition_id,
             source_context,
             target_context: WorldContext::new(
-                anchor.target_instance,
+                target_instance,
                 target_manifest.content_revision(),
                 target_epoch,
             ),
@@ -171,10 +272,23 @@ impl WorldRegistry {
         self.context_matches(id, context) && !self.transfers.contains_key(&id)
     }
 
+    #[cfg(test)]
     pub(crate) fn commit_ready_transfers(
         &mut self,
         sector_ready: &HashSet<PlayerId>,
     ) -> Vec<CommittedTransfer> {
+        self.commit_ready_transfers_with_terrain(sector_ready, &TerrainReads::new())
+            .0
+    }
+
+    pub(crate) fn commit_ready_transfers_with_terrain(
+        &mut self,
+        sector_ready: &HashSet<PlayerId>,
+        reads: &TerrainReads<'_>,
+    ) -> (
+        Vec<CommittedTransfer>,
+        Vec<(PlayerId, TransitionId, WorldContext)>,
+    ) {
         let ready_players: Vec<_> = self
             .transfers
             .iter()
@@ -183,7 +297,27 @@ impl WorldRegistry {
             })
             .collect();
         let mut committed = Vec::with_capacity(ready_players.len());
+        let mut cancelled = Vec::new();
         for player in ready_players {
+            let Some(pending) = self.transfers.get(&player) else {
+                continue;
+            };
+            if !self.transfer_destination_clear(
+                pending.offer.target_context.instance(),
+                pending.offer.destination_mm,
+                reads,
+            ) {
+                let pending = self
+                    .transfers
+                    .remove(&player)
+                    .expect("pending transfer exists");
+                cancelled.push((
+                    player,
+                    pending.offer.transition_id,
+                    pending.offer.target_context,
+                ));
+                continue;
+            }
             let Some(transfer) = self.transfers.remove(&player) else {
                 continue;
             };
@@ -191,7 +325,7 @@ impl WorldRegistry {
                 committed.push(transfer);
             }
         }
-        committed
+        (committed, cancelled)
     }
 
     fn commit_one_transfer(
@@ -241,13 +375,4 @@ impl WorldRegistry {
             manifest: offer.manifest,
         })
     }
-}
-
-fn near_portal(position: [f32; 3], portal: [f32; 3]) -> bool {
-    position
-        .iter()
-        .zip(portal)
-        .map(|(position, portal)| (position - portal) * (position - portal))
-        .sum::<f32>()
-        <= 9.0
 }

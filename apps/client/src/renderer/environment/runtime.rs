@@ -19,7 +19,21 @@ impl Renderer {
     ) -> PreparedEnvironmentFrame {
         let started = std::time::Instant::now();
         let stars = self.update_render_environment_inner(render_view);
-        let prepared = PreparedEnvironmentFrame::new(self.render_environment_frame.clone(), stars);
+        // The client-local meteor runtime consumes the freshly rebuilt
+        // environment frame on the client monotonic clock and produces one
+        // bounded, origin-relative `MeteorFrame` per frame (ADR 0013 § 5).
+        let mut meteors = self
+            .meteors
+            .build_frame(&self.render_environment_frame)
+            .with_quality(self.meteors.effective_quality(self.sky_quality.effective));
+        self.impacts.append(
+            self.application.game.session_context(),
+            &mut meteors,
+            self.meteors.now_s(),
+            &mut self.meteors.audio,
+        );
+        let prepared =
+            PreparedEnvironmentFrame::new(self.render_environment_frame.clone(), stars, meteors);
         self.metrics
             .frame_stats
             .record_environment_cpu(started.elapsed());
@@ -73,15 +87,16 @@ impl Renderer {
             return None;
         };
         let Some(manifest) = self
+            .application
             .game
             .world_manifests
-            .get(&self.game.current_instance)
+            .get(&self.application.game.current_instance)
             .copied()
         else {
             self.publish_unavailable(render_view, "world manifest is unavailable");
             return None;
         };
-        if context.instance() != self.game.current_instance
+        if context.instance() != self.application.game.current_instance
             || context.content_revision() != manifest.content_revision()
         {
             self.publish_unavailable(
@@ -110,7 +125,8 @@ impl Renderer {
                 utc_ms,
                 manifest,
                 render_view,
-                self.connection
+                self.application
+                    .connection
                     .session()
                     .and_then(|session| session.prepared_geography()),
             ),
@@ -131,17 +147,29 @@ impl Renderer {
         render_view: RenderViewFrame,
         geography: Option<std::sync::Arc<dyn minimium_procgen::PreparedGeography>>,
     ) -> Option<PreparedStarUpload> {
-        let mut feet_position_mm = self.game.gameplay.prediction.position_mm.or_else(|| {
-            (self.environment_frame.quality
-                == crate::environment::SynchronizationQuality::LocalDemo)
-                .then(|| demo_position_mm(self.game.gameplay.prediction.character.position))
-                .flatten()
-        });
+        let mut feet_position_mm = self
+            .application
+            .game
+            .gameplay
+            .prediction
+            .position_mm
+            .or_else(|| {
+                (self.environment_frame.quality
+                    == crate::environment::SynchronizationQuality::LocalDemo)
+                    .then(|| {
+                        demo_position_mm(
+                            self.application.game.gameplay.prediction.character.position,
+                        )
+                    })
+                    .flatten()
+            });
         let mut eye_height = DEFAULT_OBSERVER_EYE_HEIGHT_MM;
+        let mut meteor_surface_scale = minimium_renderer::meteors::coords::PlanetSurfaceScale::UNIT;
         if manifest.planet().is_some() {
             match super::observer::camera_reference(manifest, render_view, geography.as_deref()) {
-                Ok(position) => {
+                Ok((position, surface_scale)) => {
                     feet_position_mm = Some(position);
+                    meteor_surface_scale = surface_scale;
                     eye_height = 0;
                 }
                 Err(error) => {
@@ -247,6 +275,7 @@ impl Renderer {
                 clock_revision: revision,
                 descriptor,
                 render_view,
+                meteor_surface_scale,
                 observed_bodies: observations,
                 settings: EnvironmentSettings::planetary(),
             },
@@ -285,9 +314,16 @@ impl Renderer {
     fn publish_unavailable(&mut self, view: RenderViewFrame, reason: impl Into<String>) {
         let reason = reason.into();
         if self.environment_error.as_deref() != Some(reason.as_str()) {
-            self.ui
-                .console
-                .push_error(format!("Environment unavailable: {reason}"));
+            self.application
+                .connection
+                .record_diagnostic_failure("renderer.environment_unavailable", &reason);
+            self.application.ui.console.push_ui_error_message(
+                minimium_localization::UiMessage::Notice(
+                    minimium_localization::UiNotice::EnvironmentUnavailable,
+                ),
+                &self.localizer,
+                self.application.settings.locale,
+            );
         }
         self.environment_error = Some(reason);
         self.render_environment_frame = EnvironmentFrame::unavailable(view);

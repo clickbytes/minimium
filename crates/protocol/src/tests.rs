@@ -43,7 +43,7 @@ fn environment_fixture(
 fn manifest(topology: WorldTopology) -> WorldManifest {
     let generation = GenerationSpec::new(
         WorldSeed::new(0x1234),
-        GenerationRevision::new(2).unwrap(),
+        GenerationRevision::new(5).unwrap(),
         10,
     )
     .unwrap();
@@ -68,6 +68,7 @@ fn context(instance: u128, epoch: u64) -> WorldContext {
 fn welcome_and_transition_frames_round_trip_full_world_context() {
     let (clock_sample, environment) = environment_fixture(EnvironmentProfile::EarthLike, 10);
     let welcome = ServerMessage::Welcome {
+        server_tick: 12,
         id: PlayerId::new(42),
         map_fingerprint: 0x1234,
         health: 77,
@@ -106,10 +107,15 @@ fn welcome_and_transition_frames_round_trip_full_world_context() {
 fn client_world_inputs_and_transition_acknowledgements_keep_their_epoch() {
     let movement = ClientMessage::WorldInput {
         context: context(2, 10),
-        input: ClientWorldInput::Move {
-            direction: [0.25, -1.0],
-            jump: true,
-        },
+        input: ClientWorldInput::Motion(MovementSample {
+            input_seq: 1,
+            target_tick: 2,
+            intent: minimium_simulation::MovementIntent {
+                direction: [0.25, -1.0],
+                jump: true,
+                ..Default::default()
+            },
+        }),
     };
     let frame = encode_client(&movement).unwrap();
     let (decoded, consumed) = decode_client(&frame).unwrap().unwrap();

@@ -3,6 +3,79 @@ use crate::storage::{WorldSaveEntry, WorldSaveInput};
 use std::io;
 
 impl WorldRegistry {
+    pub(crate) fn component(
+        &self,
+        instance: WorldInstanceId,
+        entity: EntityId,
+        kind: ComponentTypeId,
+    ) -> Option<&minimium_world::entity::ComponentBlob> {
+        self.instances.get(&instance)?.entities.get(entity, kind)
+    }
+
+    pub(crate) fn content_initialized(&self, instance: WorldInstanceId) -> Option<bool> {
+        self.instances
+            .get(&instance)
+            .map(|owner| owner.content_initialized)
+    }
+
+    pub(crate) fn component_views(
+        &self,
+        instance: WorldInstanceId,
+    ) -> Option<
+        impl Iterator<
+                Item = (
+                    EntityId,
+                    ComponentTypeId,
+                    minimium_world::entity::SchemaVersion,
+                    &[u8],
+                ),
+            > + '_,
+    > {
+        Some(
+            self.instances
+                .get(&instance)?
+                .entities
+                .iter_components()
+                .map(|(entity, kind, blob)| (entity, kind, blob.schema, blob.bytes.as_slice())),
+        )
+    }
+
+    pub(crate) fn initial_entities(
+        &self,
+        instance: WorldInstanceId,
+    ) -> Vec<minimium_gameplay::InitialEntityView<'_>> {
+        self.instances
+            .get(&instance)
+            .map_or_else(Vec::new, |owner| {
+                owner
+                    .initial_entities
+                    .iter()
+                    .map(|entity| minimium_gameplay::InitialEntityView {
+                        sector: entity.sector,
+                        components: entity
+                            .components
+                            .iter()
+                            .map(|component| minimium_gameplay::InitialComponentView {
+                                kind: component.kind,
+                                schema: component.schema,
+                                bytes: &component.bytes,
+                            })
+                            .collect(),
+                    })
+                    .collect()
+            })
+    }
+
+    pub(crate) fn set_player_movement_policy(
+        &mut self,
+        player: PlayerId,
+        policy: minimium_simulation::MovementPolicy,
+    ) {
+        if let Some(instance) = self.for_player_mut(player) {
+            instance.world.set_player_movement_policy(player, policy);
+        }
+    }
+
     pub(crate) fn snapshot_for_save(
         &self,
         expected_primary_fingerprint: u64,
@@ -25,12 +98,45 @@ impl WorldRegistry {
                 players: owner.world.snapshot(),
             })
             .collect();
+        let entity_counters = self
+            .iter()
+            .map(|(instance, owner)| (instance, owner.entities.next_id()))
+            .collect();
+        let world_initialization = self
+            .iter()
+            .map(|(instance, owner)| (instance, owner.content_initialized))
+            .collect();
+        let entities = self
+            .iter()
+            .flat_map(|(instance, owner)| {
+                owner.entities.iter().map(move |id| {
+                    let components = owner
+                        .entities
+                        .iter_components()
+                        .filter(|(entity, _, _)| *entity == id)
+                        .map(|(_, kind, blob)| crate::storage::PersistedComponent {
+                            kind,
+                            schema: blob.schema,
+                            bytes: blob.bytes.clone(),
+                        })
+                        .collect();
+                    crate::storage::PersistedEntity {
+                        world: instance,
+                        id,
+                        components,
+                    }
+                })
+            })
+            .collect();
         Ok(WorldSaveInput {
             primary_instance: self.primary_id(),
             primary_map_fingerprint,
             primary_manifest: primary.manifest,
             worlds,
             sector_states: self.sector_states(),
+            entity_counters,
+            world_initialization,
+            entities,
         })
     }
 

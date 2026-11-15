@@ -1,8 +1,7 @@
 use super::text::{self, DrawContext, QuadDraw, TextDraw, UiVertex};
 
 // overview_zoom is the camera distance in planet radii: smaller means closer.
-pub(crate) const MIN_ZOOM: f32 = 1.02;
-pub(crate) const MAX_ZOOM: f32 = 8.0;
+pub(crate) use crate::application::{MAX_OVERVIEW_ZOOM as MAX_ZOOM, MIN_OVERVIEW_ZOOM as MIN_ZOOM};
 
 fn geometry(width: f32, height: f32) -> (f32, f32, f32) {
     let length = (height * 0.45).clamp(100.0, 320.0);

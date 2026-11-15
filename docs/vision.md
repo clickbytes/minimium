@@ -8,15 +8,28 @@ The client presents the world and gathers player input. A separate server proces
 
 ## Accepted scope for the current implementation
 
-The current implementation uses game protocol v13 and world snapshot format v9. It adds versioned world manifests, deterministic generation, separate world instances, membership epochs, portal transfer, saved player/return locations, revisioned logical sector object states, and one persisted world-clock record. The client and server are separate processes; the server is authoritative. Game message definitions remain independent of their transport adapter.
+The current implementation uses game protocol v18, world snapshot format v10,
+and generator revision 5. It includes versioned world manifests, deterministic
+generation, separate world instances, membership epochs, portal transfer, saved
+player/return locations, durable entities and world-clock state. The client and
+server are separate processes; the server is authoritative. Other protocol,
+save, or generator revisions are rejected; no migration is provided. Game
+message definitions remain independent of their transport adapter.
 
 This scope excludes accounts, public-game authentication, TLS, inventory, NPCs, zones, a map editor, audio, and a browser client. These are not implied by the long-range product direction. Changes to protocol or save formats require an explicit decision and migration plan.
 
 ## Current prototype
 
-The workspace contains a desktop client, headless server, admin CLI, load generator, and shared core, procgen, assets, sectors and protocol crates. Game traffic uses protocol v13 over TCP. The server runs a fixed 20 Hz simulation step, accepts a bounded number of active and pending connections, uses a 32-unit spatial grid for nearby queries, and produces bounded nearby-player snapshots. A local client can launch a separate server process or connect to an address. The default worlds are a seeded planet and a separate dungeon instance.
+The workspace contains a desktop client, headless server, admin CLI, load generator, and shared engine crates. Game traffic uses protocol v18 over TCP. The server runs a fixed 20 Hz simulation step, accepts a bounded number of active and pending connections, uses a 32-unit spatial grid for nearby queries, and produces bounded nearby-player snapshots. A local client can launch a separate server process or connect to an address. The default worlds are a seeded planet and a separate dungeon instance.
 
-The local client profile ID is a durable identifier, not an account credential. Map fingerprints and generator digests detect accidental client/server mismatch; they do not authenticate a map or a player. Save v9 records loaded manifests and fingerprints, player instance, quantized position/orientation, health and return point, revisioned logical object-state sets per sector, and the world clock. v2/v3 data maps only to a loaded legacy map with a matching fingerprint. Public authentication, encryption, geometry edits and inventory remain future work.
+The local client profile ID is a durable identifier, not an account credential.
+The sample server's developer authentication treats it as a claim; this is not
+public account authentication. Map fingerprints and generator digests detect
+accidental client/server mismatch; they do not authenticate a map or a player.
+Save v10 records loaded manifests and fingerprints, player and entity state,
+world-clock state, and initialized content. Older or unknown saves are rejected
+without migration. Public account authentication, encryption, geometry edits
+and inventory remain future work.
 
 Execution lanes consist of the main server lane and optional persistent workers. One lane executes work inline. Storage snapshots and disk writes are handled by a dedicated worker outside the simulation loop. These are current implementation choices and measurement points, not evidence that more lanes improve performance or that save activity cannot affect observed runtime behavior.
 

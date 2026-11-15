@@ -11,6 +11,8 @@ path = "src/lib.rs"
 minimium-assets = { path = "../assets" }
 minimium-world = { path = "../world" }
 minimium-procgen = { path = "../procgen" }
+minimium-platform = { path = "../platform" }
+minimium-diagnostics = { path = "../diagnostics" }
 memmap2 = "0.9.12"
 ron = "0.12.3"
 serde = { version = "1", features = ["derive"] }

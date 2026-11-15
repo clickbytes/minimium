@@ -23,6 +23,9 @@ struct OutputParams { exposure: f32, hdr: f32, surface_is_srgb: f32, padding: f3
     if params.hdr > 0.5 {
         color = tone_map_color(color * params.exposure);
     }
+    let underwater = clamp(params.padding, 0.0, 1.0);
+    let underwater_color = color * vec3<f32>(0.48, 0.74, 0.9) + vec3<f32>(0.005, 0.025, 0.04);
+    color = mix(color, underwater_color, underwater);
     if params.surface_is_srgb < 0.5 {
         color = linear_to_srgb(color);
     }

@@ -102,6 +102,14 @@ impl PlanetTerrain {
             *weight *= 1.0 - exposed;
         }
         coverage[4] += loose * exposed;
+        let excavation = self
+            .terrain_edits()
+            .map_or(0.0, |edits| edits.sample(direction).1 as f32);
+        for weight in &mut coverage {
+            *weight *= 1.0 - excavation;
+        }
+        coverage[4] += excavation * 0.75;
+        coverage[1] += excavation * 0.25;
         let total: f32 = coverage.iter().sum();
         for weight in &mut coverage {
             *weight /= total;

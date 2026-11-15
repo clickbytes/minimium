@@ -5,6 +5,13 @@ use super::{
 
 const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
+        name: "dev inventory tools",
+        alias: None,
+        usage: "dev inventory tools",
+        arguments: &[],
+        parser: parse,
+    },
+    CommandSpec {
         name: "movement move",
         alias: Some("move"),
         usage: "movement move X Z (-1..1 each; tangent direction)",
@@ -111,13 +118,14 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
     }
     let arguments = raw_arguments.split_whitespace().collect::<Vec<_>>();
     match (*command, arguments.as_slice()) {
+        ("dev inventory tools", []) => Ok(ClientCommand::GrantTools),
         ("movement move", [x, z]) => Ok(ClientCommand::Move([
             parse_coordinate(x)?,
             parse_coordinate(z)?,
         ])),
         ("movement move", _) => Err(ParseError::MoveUsage),
         ("movement jump", []) => Ok(ClientCommand::Jump),
-        ("world portal", []) => Ok(ClientCommand::UsePortal),
+        ("world portal", []) => Ok(ClientCommand::InteractPortal),
         ("world teleport", []) => Ok(ClientCommand::MapTeleport),
         ("combat fire", []) => Ok(ClientCommand::Fire),
         ("social name", [name]) => Ok(ClientCommand::SetName((*name).to_owned())),
@@ -134,4 +142,35 @@ fn parse_coordinate(value: &str) -> Result<f32, ParseError> {
         return Err(ParseError::NonFiniteCoordinate);
     }
     Ok(coordinate)
+}
+
+pub(crate) fn nearest_portal_entity(
+    replicas: &minimium_client_runtime::ReplicatedEntities,
+    position: [f32; 3],
+) -> Option<minimium_world::entity::EntityId> {
+    replicas
+        .entities
+        .iter()
+        .filter_map(|(entity, replica)| {
+            let component = replica
+                .components
+                .get(&minimium_game_sample::PORTAL_COMPONENT)?;
+            if component.schema != minimium_game_sample::PORTAL_SCHEMA {
+                return None;
+            }
+            let portal = minimium_game_sample::PortalComponent::decode(&component.bytes)?;
+            let distance_squared = portal
+                .position
+                .iter()
+                .zip(position)
+                .map(|(portal, player)| (*portal - player).powi(2))
+                .sum::<f32>();
+            (distance_squared <= 9.0).then_some((*entity, distance_squared))
+        })
+        .min_by(|(left_id, left_distance), (right_id, right_distance)| {
+            left_distance
+                .total_cmp(right_distance)
+                .then_with(|| left_id.cmp(right_id))
+        })
+        .map(|(entity, _)| entity)
 }

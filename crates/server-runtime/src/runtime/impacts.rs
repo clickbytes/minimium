@@ -1,0 +1,434 @@
+//! Owner-lane impact lifecycle. Workers return immutable durable acknowledgements.
+mod replication;
+mod spawn;
+use super::*;
+use minimium_world::remnants::RemnantSnapshot;
+use minimium_world::{
+    entity::EntityId,
+    impact::{BodyState, BODY_COMPONENT, BODY_SCHEMA},
+    world::{SectorKey, WorldInstanceId},
+};
+use std::collections::BTreeMap;
+
+pub(super) struct Impacts {
+    pub(super) profile: Option<minimium_world::impact::ImpactProfile>,
+    journal: minimium_storage::impact_journal::ImpactJournal,
+    pub(super) bodies: BTreeMap<(WorldInstanceId, u64), BodyState>,
+    pub(super) pending: BTreeMap<(WorldInstanceId, u64), BodyState>,
+    clients: HashMap<PlayerId, replication::Cursor>,
+    last_manual: Option<Instant>,
+    failure: Option<String>,
+}
+
+impl Impacts {
+    pub(super) fn open(
+        path: &std::path::Path,
+        profile: Option<minimium_world::impact::ImpactProfile>,
+    ) -> io::Result<Self> {
+        if profile.is_some_and(|p| !p.valid()) {
+            return Err(io::Error::other("invalid impact configuration"));
+        }
+        let (journal, restored) = minimium_storage::impact_journal::ImpactJournal::open(path)?;
+        Ok(Self {
+            profile,
+            journal,
+            bodies: restored.into_iter().map(|b| ((b.world, b.id), b)).collect(),
+            pending: BTreeMap::new(),
+            clients: HashMap::new(),
+            last_manual: None,
+            failure: None,
+        })
+    }
+}
+
+impl ServerRuntime {
+    pub(super) fn impact_status(&self) -> String {
+        format!(
+            " meteorids_active={} impact_craters={} impact_pending={} impact_storage={}",
+            self.active_body_count(),
+            self.impacts
+                .bodies
+                .values()
+                .filter(|b| b.phase != 0)
+                .count(),
+            self.impacts.pending.len(),
+            if self.impacts.failure.is_some() {
+                "failed"
+            } else {
+                "ready"
+            }
+        )
+    }
+
+    pub(super) fn restore_impacts(&mut self) -> io::Result<()> {
+        for (world, owner) in self.game.worlds.iter() {
+            for (id, kind, _) in owner.entities.iter_components() {
+                if kind == BODY_COMPONENT && !self.impacts.bodies.contains_key(&(world, id.get())) {
+                    return Err(io::Error::other(
+                        "impact journal missing saved body; restore impacts.v1 with the world save",
+                    ));
+                }
+            }
+        }
+        for body in self.impacts.bodies.values().copied().collect::<Vec<_>>() {
+            self.reserve_body_budget(body)?;
+            self.install_impact(body, true)?;
+        }
+        Ok(())
+    }
+
+    fn prepare_impact(
+        &self,
+        body: BodyState,
+        restoring: bool,
+    ) -> io::Result<(
+        minimium_world::entity::EntityStore,
+        Arc<RemnantSnapshot>,
+        bool,
+    )> {
+        let owner = self
+            .game
+            .worlds
+            .get(body.world)
+            .ok_or_else(|| io::Error::other("impact world missing"))?;
+        if owner.manifest.generation().seed().get() != body.world_seed
+            || owner
+                .manifest
+                .planet()
+                .is_none_or(|p| (p.radius_mm as f64 / 1000.0 - body.planet_radius_m).abs() > 0.001)
+        {
+            return Err(io::Error::other("impact planet mismatch"));
+        }
+        let mut entities = owner.entities.clone();
+        let mut remnants = owner.remnants.clone();
+        let entity = EntityId::new(body.id).ok_or_else(|| io::Error::other("invalid body ID"))?;
+        if !entities.contains(entity) {
+            entities
+                .restore(entity)
+                .map_err(|e| io::Error::other(format!("impact entity: {e:?}")))?;
+        } else if restoring
+            && owner.entities.get(entity, BODY_COMPONENT).is_none()
+            && owner
+                .entities
+                .iter_components()
+                .any(|(id, _, _)| id == entity)
+        {
+            return Err(io::Error::other(
+                "saved impact ID conflicts with another entity",
+            ));
+        }
+        let bytes = body.encode();
+        entities
+            .insert(
+                &self.component_registry,
+                entity,
+                BODY_COMPONENT,
+                BODY_SCHEMA,
+                &bytes,
+            )
+            .map_err(|e| io::Error::other(format!("impact component: {e:?}")))?;
+        if body.crater().is_some() {
+            Arc::make_mut(&mut remnants)
+                .set(body)
+                .map_err(io::Error::other)?;
+        }
+        let changed = remnants.revision() != owner.remnants.revision();
+        Ok((entities, remnants, changed))
+    }
+
+    pub(super) fn install_impact(&mut self, body: BodyState, restoring: bool) -> io::Result<()> {
+        self.install_impact_with_invalidation(body, restoring, true)
+    }
+
+    pub(in crate::runtime) fn validate_impact(&self, body: BodyState) -> io::Result<()> {
+        self.prepare_impact(body, true).map(|_| ())
+    }
+
+    pub(in crate::runtime) fn install_impact_prepared(
+        &mut self,
+        body: BodyState,
+    ) -> io::Result<()> {
+        self.install_impact_with_invalidation(body, true, false)
+    }
+
+    fn install_impact_with_invalidation(
+        &mut self,
+        body: BodyState,
+        restoring: bool,
+        invalidate: bool,
+    ) -> io::Result<()> {
+        // Validate every fallible mutation before publishing entity and terrain together.
+        let (entities, remnants, changed) = self.prepare_impact(body, restoring)?;
+        let owner = self.game.worlds.get_mut(body.world).unwrap();
+        owner.entities = entities;
+        owner.remnants = remnants;
+        if changed && !restoring && invalidate {
+            if let Some(stamp) = body.crater() {
+                let manifest = owner.manifest;
+                self.game
+                    .sectors
+                    .invalidate_where(body.world, |key| affected(key, manifest, stamp));
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn update_impacts(&mut self) {
+        while let Some(result) = self.impacts.journal.poll() {
+            match result {
+                Ok(batch) => {
+                    for body in batch {
+                        self.impacts.pending.remove(&(body.world, body.id));
+                        if let Err(error) = self.install_impact(body, false) {
+                            self.impact_failure(error);
+                            return;
+                        }
+                        self.impacts.bodies.insert((body.world, body.id), body);
+                    }
+                }
+                Err(error) => {
+                    self.impact_failure(error);
+                    return;
+                }
+            }
+        }
+        if self.impacts.failure.is_some() {
+            self.replicate_impacts();
+            return;
+        }
+        let keys: Vec<_> = self
+            .impacts
+            .bodies
+            .iter()
+            .filter(|(k, b)| b.phase == 0 && !self.impacts.pending.contains_key(k))
+            .map(|(k, _)| *k)
+            .collect();
+        for key in keys {
+            if self.excavation_reserves(key.0) {
+                continue;
+            }
+            let mut body = self.impacts.bodies[&key];
+            let Some(owner) = self.game.worlds.get(body.world) else {
+                continue;
+            };
+            let geography = minimium_procgen::TerrainInputs {
+                geography: self.prepared_geography.clone(),
+                edits: Some(owner.terrain.clone()),
+                remnants: Some(owner.remnants.clone()),
+                volumes: owner.volumes.clone(),
+            };
+            let environment = Surface {
+                can_fragment: self.active_body_count() < minimium_world::impact::MAX_ACTIVE_BODIES
+                    && self.impacts.bodies.len() + self.impacts.pending.len() < 4096,
+                manifest: owner.manifest,
+                geography,
+            };
+            let result = minimium_simulation::impact::step_body(&mut body, 0.05, &environment);
+            if let Some(mut fragment) = result.fragment {
+                let result = self.reserve_body_entity(fragment.world).and_then(|id| {
+                    fragment.id = id;
+                    fragment.seed ^= id.wrapping_mul(0x9e3779b97f4a7c15);
+                    self.queue_body_batch(vec![body, fragment])
+                });
+                if let Err(error) = result {
+                    self.impact_failure(error);
+                    return;
+                }
+            } else if result.contacted {
+                if let Err(error) = self.queue_impact_excavation(body) {
+                    if error.kind() != io::ErrorKind::WouldBlock {
+                        self.impact_failure(error);
+                        return;
+                    }
+                }
+            } else if (body.age_s / 5.0).floor() > (self.impacts.bodies[&key].age_s / 5.0).floor() {
+                if let Err(error) = self.queue_body(body) {
+                    self.impact_failure(error);
+                    return;
+                }
+            } else {
+                self.impacts.bodies.insert(key, body);
+            }
+        }
+        self.replicate_impacts();
+    }
+
+    fn queue_body(&mut self, body: BodyState) -> io::Result<()> {
+        self.queue_body_batch(vec![body])
+    }
+
+    fn queue_body_batch(&mut self, batch: Vec<BodyState>) -> io::Result<()> {
+        for body in &batch {
+            self.prepare_impact(*body, false)?;
+            self.reserve_body_budget(*body)?;
+        }
+        self.impacts.journal.submit_batch(batch.clone())?;
+        for body in batch {
+            self.impacts.pending.insert((body.world, body.id), body);
+        }
+        Ok(())
+    }
+
+    fn active_body_count(&self) -> usize {
+        self.impacts
+            .bodies
+            .values()
+            .filter(|b| b.phase == 0)
+            .count()
+            + self
+                .impacts
+                .pending
+                .keys()
+                .filter(|k| !self.impacts.bodies.contains_key(k))
+                .count()
+    }
+
+    pub(super) fn reserve_body_budget(&mut self, body: BodyState) -> io::Result<()> {
+        let entity = EntityId::new(body.id).ok_or_else(|| io::Error::other("invalid body ID"))?;
+        let blob = minimium_world::entity::ComponentBlob::new(BODY_SCHEMA, body.encode())
+            .ok_or_else(|| io::Error::other("invalid body component"))?;
+        let budget = self.operations.player_store.snapshot_budget_mut();
+        let mut staged = budget.clone();
+        let key =
+            minimium_storage::SnapshotRecordKey::Component(body.world, entity, BODY_COMPONENT);
+        staged.reserve_many([
+            (
+                minimium_storage::SnapshotRecordKey::Entity(body.world, entity),
+                minimium_storage::entity_record_bytes(body.world, entity)?,
+            ),
+            (
+                key,
+                minimium_storage::component_record_bytes(
+                    body.world,
+                    entity,
+                    BODY_COMPONENT,
+                    &blob,
+                )?,
+            ),
+        ])?;
+        staged.reserve_component_payloads([(key, blob.bytes.len())])?;
+        *budget = staged;
+        Ok(())
+    }
+
+    fn reserve_body_entity(&mut self, world: WorldInstanceId) -> io::Result<u64> {
+        let owner = self
+            .game
+            .worlds
+            .get(world)
+            .ok_or_else(|| io::Error::other("unknown world"))?;
+        let id = owner
+            .entities
+            .next_id()
+            .checked_add(1)
+            .ok_or_else(|| io::Error::other("entity IDs exhausted"))?;
+        let sector = SectorKey::Planet(
+            minimium_world::world::PlanetSectorKey::from_direction_with_count(
+                [0.0, 1.0, 0.0],
+                minimium_procgen::planet_sector_count(owner.manifest),
+            ),
+        );
+        self.game
+            .worlds
+            .apply_entity_effect_batch(
+                &[crate::modules::WorldEffect::SpawnEntity {
+                    world,
+                    sector,
+                    components: Vec::new(),
+                }],
+                self.operations.player_store.snapshot_budget_mut(),
+                &self.component_registry,
+            )
+            .map_err(|e| io::Error::other(format!("impact allocation: {e:?}")))?;
+        Ok(id)
+    }
+
+    pub(super) fn impact_failure(&mut self, error: io::Error) {
+        crate::diagnostics::emit(
+            &self.world_logger,
+            minimium_diagnostics::Level::Error,
+            "world.impact_failed",
+            &[("reason", error.to_string())],
+        );
+        self.impacts.failure = Some(error.to_string());
+    }
+
+    pub(super) fn shutdown_impacts(&mut self, deadline: Instant) -> io::Result<()> {
+        for body in self
+            .impacts
+            .bodies
+            .values()
+            .filter(|b| b.phase == 0)
+            .copied()
+            .collect::<Vec<_>>()
+        {
+            if !self.impacts.pending.contains_key(&(body.world, body.id)) {
+                self.impacts.journal.submit(body)?;
+            }
+        }
+        self.impacts.journal.shutdown_until(deadline)?;
+        if let Some(error) = &self.impacts.failure {
+            return Err(io::Error::other(error.clone()));
+        }
+        Ok(())
+    }
+}
+
+struct Surface {
+    can_fragment: bool,
+    manifest: minimium_world::world::WorldManifest,
+    geography: minimium_procgen::TerrainInputs,
+}
+impl minimium_simulation::impact::BodyEnvironment for Surface {
+    fn terrain_distance(&self, position: [f64; 3]) -> Option<f64> {
+        let terrain = minimium_procgen::PlanetTerrain::new(
+            self.manifest.generation(),
+            minimium_procgen::planet_surface_for(self.manifest),
+        )?
+        .with_definition(self.manifest.planet()?)
+        .with_inputs(self.geography.clone());
+        // Soil depth affects material identity only; this query reads distance.
+        let base = terrain.volume_base(0.0)?;
+        if let Some(store) = &self.geography.volumes {
+            store
+                .view(&base)
+                .interpolated(position)
+                .map(|s| s.distance_m)
+        } else {
+            minimium_terrain::BaseTerrain::sample(&base, position).map(|s| s.distance_m)
+        }
+    }
+
+    fn can_fragment(&self) -> bool {
+        self.can_fragment
+    }
+    fn ground_radius(&self, direction: [f64; 3]) -> Option<f64> {
+        minimium_procgen::planet_point_at_direction_with_geography(
+            self.manifest,
+            direction.map(|v| v as f32),
+            self.geography.clone(),
+        )
+        .map(|p| p.height_mm as f64 / 1000.0)
+    }
+}
+
+fn affected(
+    key: SectorKey,
+    manifest: minimium_world::world::WorldManifest,
+    stamp: minimium_world::terrain_edits::CraterStamp,
+) -> bool {
+    let SectorKey::Planet(key) = key else {
+        return false;
+    };
+    let count = minimium_procgen::planet_sector_count(manifest);
+    let Some(sample) = key.cube_sample_with_count(1, 1, 2, count) else {
+        return false;
+    };
+    let radius = manifest
+        .planet()
+        .map_or(10000.0, |p| p.radius_mm as f64 / 1000.0);
+    let patch = minimium_world::terrain_edits::project(sample.coordinates().map(f64::from), radius);
+    let center = minimium_world::terrain_edits::project(stamp.center, radius);
+    minimium_world::terrain_edits::length(std::array::from_fn(|i| patch[i] - center[i]))
+        <= radius * 4.0 / f64::from(count) + stamp.radius_m * 2.0
+}

@@ -1,9 +1,11 @@
 use super::{PlayerReadiness, SectorPayload, TransferReadiness};
+use crate::world_registry::WorldRegistry;
 use minimium_core::ids::PlayerId;
 use minimium_sectors::SectorManager;
 use std::collections::HashSet;
 
 pub(super) fn collect_ready_players(
+    worlds: &WorldRegistry,
     sectors: &SectorManager<SectorPayload>,
     readiness: Vec<PlayerReadiness>,
 ) -> HashSet<PlayerId> {
@@ -14,13 +16,15 @@ pub(super) fn collect_ready_players(
                 && request
                     .tickets
                     .iter()
-                    .all(|ticket| sectors.collision_ready(*ticket)))
+                    .all(|ticket| sectors.collision_ready(*ticket))
+                && super::collision::tickets_ready(worlds, &request.tickets))
             .then_some(request.player)
         })
         .collect()
 }
 
 pub(super) fn collect_ready_transfers(
+    worlds: &WorldRegistry,
     sectors: &SectorManager<SectorPayload>,
     readiness: Vec<TransferReadiness>,
 ) -> HashSet<PlayerId> {
@@ -33,7 +37,8 @@ pub(super) fn collect_ready_transfers(
                 && request
                     .tickets
                     .iter()
-                    .all(|ticket| sectors.collision_ready(*ticket)))
+                    .all(|ticket| sectors.collision_ready(*ticket))
+                && super::collision::tickets_ready(worlds, &request.tickets))
             .then_some(request.player)
         })
         .collect()

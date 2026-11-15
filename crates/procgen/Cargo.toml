@@ -8,6 +8,7 @@ license.workspace = true
 path = "src/lib.rs"
 
 [dependencies]
+minimium-terrain = { path = "../terrain" }
 minimium-core = { path = "../core" }
 minimium-environment = { path = "../environment" }
 minimium-world = { path = "../world" }

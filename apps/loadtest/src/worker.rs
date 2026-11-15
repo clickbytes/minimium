@@ -3,7 +3,10 @@ use super::{
     scenarios::Scenario,
     stats::{ClientMeasurement, WorkerStats},
 };
-use minimium_protocol::{decode_server, ServerErrorCode, ServerMessage};
+use minimium_protocol::{
+    decode_server, encode_client, ClientMessage, ClientWorldInput, MovementSample, ServerErrorCode,
+    ServerMessage,
+};
 use std::{
     io::{Read, Write},
     net::{SocketAddr, TcpStream},
@@ -35,6 +38,10 @@ pub(super) const MOVEMENT_DIRECTIONS: [[f32; 2]; 8] = [
 ];
 pub(super) struct LoadClient {
     pub(super) client_id: usize,
+    pub(super) world_context: minimium_protocol::WorldContext,
+    pub(super) server_tick: u64,
+    pub(super) next_input_seq: u64,
+    pub(super) next_target_tick: u64,
     pub(super) stream: TcpStream,
     pub(super) receive_buffer: Vec<u8>,
     pub(super) next_ping_at: Instant,
@@ -42,7 +49,8 @@ pub(super) struct LoadClient {
     pub(super) next_movement_at: Instant,
     pub(super) pending_movement_index: Option<usize>,
     pub(super) pending_dispersed_movement: bool,
-    pub(super) dispersed_movement_frame: Option<Vec<u8>>,
+    pub(super) pending_movement_frame: Option<Vec<u8>>,
+    pub(super) dispersed_direction: [f32; 2],
     pub(super) next_fire_at: Instant,
     pub(super) pending_fire_index: Option<usize>,
     pub(super) next_chat_at: Instant,
@@ -54,6 +62,9 @@ pub(super) struct LoadClient {
     pub(super) movement_seed: usize,
     pub(super) movement_sequence: u64,
     pub(super) disconnected: bool,
+    pub(super) movement_count: usize,
+    pub(super) fire_frames: Vec<Vec<u8>>,
+    pub(super) chat_frame: Vec<u8>,
     pub(super) disconnected_before_start: bool,
     pub(super) next_setup_ping_at: Instant,
     pub(super) setup_ping_offset: Option<usize>,
@@ -72,9 +83,7 @@ pub(super) struct WorkerConfig {
     pub(super) scenario: Scenario,
     pub(super) total_clients: usize,
     pub(super) ping_frame: Vec<u8>,
-    pub(super) movement_frames: Vec<Vec<u8>>,
-    pub(super) fire_frames: Vec<Vec<u8>>,
-    pub(super) chat_frame: Vec<u8>,
+    pub(super) movement_directions: Vec<[f32; 2]>,
     pub(super) ready_sender: mpsc::Sender<()>,
     pub(super) start_receiver: mpsc::Receiver<Instant>,
     pub(super) abort_setup: Arc<AtomicBool>,
@@ -97,9 +106,7 @@ pub(super) fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> Worker
         scenario,
         total_clients,
         ping_frame,
-        movement_frames,
-        fire_frames,
-        chat_frame,
+        movement_directions,
         ready_sender,
         start_receiver,
         abort_setup,
@@ -109,9 +116,8 @@ pub(super) fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> Worker
     let setup_config = SetupConfig {
         socket,
         process_salt,
-        scenario,
         total_clients,
-        movement_frames: &movement_frames,
+        movement_directions: &movement_directions,
         ping_frame: &ping_frame,
     };
     for client_id in client_ids {
@@ -179,7 +185,7 @@ pub(super) fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> Worker
                         let outbound = (client.movement_sequence / 10) % 2 == 0;
                         Some(
                             (client.movement_seed + if outbound { 0 } else { 4 })
-                                % movement_frames.len(),
+                                % client.movement_count,
                         )
                     }
                     Scenario::Dispersed => {
@@ -188,7 +194,7 @@ pub(super) fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> Worker
                     }
                     _ => Some(
                         (client.movement_seed + (client.movement_sequence / 60) as usize)
-                            % movement_frames.len(),
+                            % client.movement_count,
                     ),
                 };
                 if let Some(direction_index) = direction_index {
@@ -200,7 +206,7 @@ pub(super) fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> Worker
             if scenario.includes_combat() && now >= client.next_fire_at {
                 let direction_index = (client.movement_seed
                     + (client.movement_sequence / 60) as usize)
-                    % fire_frames.len();
+                    % client.fire_frames.len();
                 client.pending_fire_index = Some(direction_index);
                 client.next_fire_at = now + FIRE_INTERVAL;
             }
@@ -244,15 +250,52 @@ pub(super) fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> Worker
                 if Instant::now() >= until {
                     continue;
                 }
+                let movement_direction = match pending.kind {
+                    OutboundKind::Movement(index) => Some(MOVEMENT_DIRECTIONS[index]),
+                    OutboundKind::DispersedMovement => Some(client.dispersed_direction),
+                    _ => None,
+                };
+                if let Some(direction) = movement_direction {
+                    if client.pending_movement_frame.is_none() {
+                        let sample = MovementSample {
+                            input_seq: client.next_input_seq,
+                            target_tick: client.next_target_tick,
+                            intent: minimium_simulation::MovementIntent {
+                                direction,
+                                ..Default::default()
+                            },
+                        };
+                        let message = ClientMessage::WorldInput {
+                            context: client.world_context,
+                            input: ClientWorldInput::Motion(sample),
+                        };
+                        match encode_client(&message) {
+                            Ok(frame) => {
+                                client.pending_movement_frame = Some(frame);
+                                let Some(next_seq) = client.next_input_seq.checked_add(1) else {
+                                    client.disconnected = true;
+                                    stats.errors = stats.errors.saturating_add(1);
+                                    continue;
+                                };
+                                client.next_input_seq = next_seq;
+                                client.next_target_tick = client.next_target_tick.saturating_add(1);
+                            }
+                            Err(_) => {
+                                client.disconnected = true;
+                                stats.errors = stats.errors.saturating_add(1);
+                                continue;
+                            }
+                        }
+                    }
+                }
                 let frame = match pending.kind {
                     OutboundKind::Ping => &ping_frame,
-                    OutboundKind::Movement(index) => &movement_frames[index],
-                    OutboundKind::DispersedMovement => client
-                        .dispersed_movement_frame
+                    OutboundKind::Movement(_) | OutboundKind::DispersedMovement => client
+                        .pending_movement_frame
                         .as_ref()
-                        .expect("dispersed scenario prepared each client movement frame"),
-                    OutboundKind::Fire(index) => &fire_frames[index],
-                    OutboundKind::Chat => &chat_frame,
+                        .expect("movement output has a sequenced frame"),
+                    OutboundKind::Fire(index) => &client.fire_frames[index],
+                    OutboundKind::Chat => &client.chat_frame,
                 };
                 match client.stream.write(&frame[pending.offset..]) {
                     Ok(0) => {
@@ -290,6 +333,12 @@ pub(super) fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> Worker
                                     client.chat_due = false;
                                     stats.chat_sent = stats.chat_sent.saturating_add(1);
                                 }
+                            }
+                            if matches!(
+                                pending.kind,
+                                OutboundKind::Movement(_) | OutboundKind::DispersedMovement
+                            ) {
+                                client.pending_movement_frame = None;
                             }
                         }
                     }
@@ -346,7 +395,11 @@ pub(super) fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> Worker
                                             client.disconnected = true;
                                             stats.errors = stats.errors.saturating_add(1);
                                         }
-                                        ServerMessage::Snapshot { .. } => {
+                                        ServerMessage::Snapshot { server_tick, .. } => {
+                                            client.server_tick = server_tick;
+                                            client.next_target_tick = client
+                                                .next_target_tick
+                                                .max(server_tick.saturating_add(2));
                                             stats.snapshots_received =
                                                 stats.snapshots_received.saturating_add(1);
                                         }

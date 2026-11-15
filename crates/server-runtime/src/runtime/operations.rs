@@ -5,23 +5,54 @@ impl ServerRuntime {
         self.operations.persistence.poll_completions();
         let now = Instant::now();
         let monotonic_ms = self.monotonic_ms(now)?;
-        if let Some(fault) = self.environment_clock.observe(monotonic_ms) {
-            eprintln!("environment clock fault={}", fault.code());
+        match self.environment_clock.observe(monotonic_ms) {
+            Ok(Some(fault)) => crate::diagnostics::emit(
+                &self.environment_logger,
+                minimium_diagnostics::Level::Warn,
+                "environment.clock_fault",
+                &[("fault_code", fault.code().to_owned())],
+            ),
+            Ok(None) => {}
+            Err(error) => crate::diagnostics::emit(
+                &self.environment_logger,
+                minimium_diagnostics::Level::Error,
+                "environment.clock_observation_failed",
+                &[
+                    ("error_code", error.code().to_owned()),
+                    ("reason", error.to_string()),
+                ],
+            ),
         }
         if now >= self.scheduler.next_utc_check {
             self.scheduler.next_utc_check = now + Duration::from_secs(5);
             match self.environment_clock.check_system_clock(monotonic_ms) {
-                Ok(Some(offset_ms)) => eprintln!(
-                    "system UTC correction direction={} magnitude_ms={}",
-                    if offset_ms >= 0 {
-                        "forward"
-                    } else {
-                        "backward"
-                    },
-                    offset_ms.abs()
+                Ok(Some(offset_ms)) => crate::diagnostics::emit(
+                    &self.environment_logger,
+                    minimium_diagnostics::Level::Info,
+                    "environment.system_clock_correction",
+                    &[
+                        (
+                            "direction",
+                            (if offset_ms >= 0 {
+                                "forward"
+                            } else {
+                                "backward"
+                            })
+                            .to_owned(),
+                        ),
+                        ("offset_ms", offset_ms.to_string()),
+                    ],
                 ),
                 Ok(None) => {}
-                Err(error) => eprintln!("environment clock correction failed: {error}"),
+                Err(error) => crate::diagnostics::emit(
+                    &self.environment_logger,
+                    minimium_diagnostics::Level::Error,
+                    "environment.system_clock_correction_failed",
+                    &[
+                        ("error_code", error.code().to_owned()),
+                        ("reason", error.to_string()),
+                    ],
+                ),
             }
         }
         self.environment_dirty_revision = self.environment_clock.dirty_revision();
@@ -37,9 +68,12 @@ impl ServerRuntime {
                     .command_queue
                     .push_back((Some(request.id), request.command));
             } else {
-                self.operations
-                    .admin
-                    .respond(request.id, false, "command queue full");
+                self.operations.admin.respond(
+                    request.id,
+                    false,
+                    Some("server.command.queue_full"),
+                    "command queue full",
+                );
             }
         }
         if let Some(console_rx) = &self.operations.console_rx {
@@ -50,7 +84,12 @@ impl ServerRuntime {
                 if self.operations.command_queue.len() < 64 {
                     self.operations.command_queue.push_back((None, command));
                 } else {
-                    eprintln!("ERR command queue full");
+                    crate::diagnostics::emit(
+                        &self.server_logger,
+                        minimium_diagnostics::Level::Warn,
+                        "server.command_queue_full",
+                        &[],
+                    );
                 }
             }
         }
@@ -74,25 +113,43 @@ impl ServerRuntime {
                 match snapshot_clock {
                     Ok(saved_clock) => {
                         let save_input = self.game.worlds.snapshot_for_save(self.map.fingerprint());
-                        let queue_result = save_input.and_then(|input| {
-                            self.operations.persistence.queue_world_save(
-                                &mut self.operations.player_store,
-                                input,
-                                saved_clock,
-                            )
-                        });
+                        let queue_result = save_input
+                            .map_err(crate::storage::StorageError::from)
+                            .and_then(|input| {
+                                self.operations.persistence.queue_world_save(
+                                    &mut self.operations.player_store,
+                                    input,
+                                    saved_clock,
+                                )
+                            });
                         if let Err(error) = queue_result {
-                            eprintln!("could not queue automatic world save: {error}");
-                        } else {
-                            println!("automatic world save queued");
+                            crate::diagnostics::emit(
+                                &self.server_logger,
+                                minimium_diagnostics::Level::Error,
+                                "server.autosave_queue_failed",
+                                &[("error_code", error.code().to_owned())],
+                            );
                         }
                     }
                     Err(error) => {
-                        eprintln!("could not capture environment clock for autosave: {error}");
+                        crate::diagnostics::emit(
+                            &self.server_logger,
+                            minimium_diagnostics::Level::Error,
+                            "server.autosave_clock_capture_failed",
+                            &[
+                                ("error_code", error.code().to_owned()),
+                                ("reason", error.to_string()),
+                            ],
+                        );
                     }
                 }
             } else {
-                eprintln!("automatic world save skipped because another save is pending");
+                crate::diagnostics::emit(
+                    &self.server_logger,
+                    minimium_diagnostics::Level::Info,
+                    "server.autosave_skipped_pending",
+                    &[],
+                );
             }
         }
         Ok(())

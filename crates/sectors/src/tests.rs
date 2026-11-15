@@ -25,12 +25,12 @@ fn ticket_replacement_rejects_late_generation_and_requires_collision_ready() {
         .unwrap();
     assert_ne!(old, new);
     assert_eq!(
-        sectors.install_data(old, SectorRevision::new(1).unwrap(), Arc::new(3)),
+        sectors.complete(old, SectorRevision::new(1).unwrap(), Arc::new(3)),
         InstallResult::Stale
     );
     assert_eq!(sectors.begin_next(), Some(new));
     assert_eq!(
-        sectors.install_data(new, SectorRevision::new(1).unwrap(), Arc::new(7)),
+        sectors.complete(new, SectorRevision::new(1).unwrap(), Arc::new(7)),
         InstallResult::Installed
     );
     assert_eq!(sectors.state(new), Some(SectorState::DataReady));
@@ -51,13 +51,13 @@ fn cache_is_bounded_isolated_by_instance_and_evicts_only_clean_unpinned_entries(
     assert_ne!(first_ticket, second_ticket);
     assert_eq!(sectors.begin_next(), Some(first_ticket));
     assert_eq!(
-        sectors.install_data(first_ticket, SectorRevision::new(1).unwrap(), Arc::new(11)),
+        sectors.complete(first_ticket, SectorRevision::new(1).unwrap(), Arc::new(11)),
         InstallResult::Installed
     );
     sectors.install_collision(first_ticket);
     assert_eq!(sectors.begin_next(), Some(second_ticket));
     assert_eq!(
-        sectors.install_data(second_ticket, SectorRevision::new(1).unwrap(), Arc::new(22)),
+        sectors.complete(second_ticket, SectorRevision::new(1).unwrap(), Arc::new(22)),
         InstallResult::Installed
     );
     sectors.install_collision(second_ticket);

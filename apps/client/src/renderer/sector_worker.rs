@@ -1,5 +1,11 @@
 //! Latest-request worker with bounded geometry/prepared caches; never owns GPU handles.
-use minimium_procgen::{planet_surface_for, PlanetTerrain, PreparedGeography, SectorGeometry};
+mod water;
+
+use water::build_water_vertices;
+pub(super) use water::WaterPresentation;
+
+use super::sector_scene::SectorWorkerError;
+use minimium_procgen::{planet_surface_for, PlanetTerrain, SectorGeometry};
 use minimium_renderer::{prepared_sector::PreparedSector, render_patch_cache::RenderPatchCache};
 use minimium_world::world::{SectorKey, WorldInstanceId, WorldManifest};
 use std::{
@@ -9,30 +15,74 @@ use std::{
 };
 #[derive(Clone, Copy, PartialEq)]
 struct Key {
+    terrain_revision: (u64, u64, u64),
     world: WorldInstanceId,
     manifest: WorldManifest,
     origin: [f32; 3],
+    origin_generation: u64,
+    water_level_revision: u64,
+    fluid_revision: u64,
     view: minimium_renderer::terrain_view::TerrainView,
+}
+impl Key {
+    fn same_geometry(self, other: Self) -> bool {
+        self.world == other.world
+            && self.manifest == other.manifest
+            && self.terrain_revision == other.terrain_revision
+            && self.origin == other.origin
+            && self.origin_generation == other.origin_generation
+            && self.view == other.view
+    }
 }
 struct Request {
     key: Key,
     collision: Vec<(SectorKey, Arc<SectorGeometry>)>,
-    geography: Option<Arc<dyn PreparedGeography>>,
+    geography: minimium_procgen::TerrainInputs,
+    water: Option<WaterPresentation>,
 }
+
 pub(super) struct PreparedScene {
     key: Key,
     pub patches: Vec<Arc<PreparedSector>>,
+    pub water_vertices: Arc<Vec<minimium_renderer::ocean_geometry::OceanVertex>>,
     pub build_ms: f64,
     pub cache_bytes: usize,
 }
 impl PreparedScene {
+    pub fn terrain_revision(&self) -> (u64, u64, u64) {
+        self.key.terrain_revision
+    }
     pub fn matches(
         &self,
         world: WorldInstanceId,
         manifest: WorldManifest,
+        view: minimium_renderer::terrain_view::TerrainView,
         origin: [f32; 3],
+        origin_generation: u64,
+        water_level_revision: u64,
+        fluid_revision: u64,
     ) -> bool {
-        self.key.world == world && self.key.manifest == manifest && self.key.origin == origin
+        self.key.world == world
+            && self.key.manifest == manifest
+            && self.key.view == view
+            && self.key.origin == origin
+            && self.key.origin_generation == origin_generation
+            && self.key.water_level_revision == water_level_revision
+            && self.key.fluid_revision == fluid_revision
+    }
+    pub fn geometry_matches(
+        &self,
+        world: WorldInstanceId,
+        manifest: WorldManifest,
+        origin: [f32; 3],
+        origin_generation: u64,
+        terrain_revision: (u64, u64, u64),
+    ) -> bool {
+        self.key.world == world
+            && self.key.manifest == manifest
+            && self.key.origin == origin
+            && self.key.origin_generation == origin_generation
+            && self.key.terrain_revision == terrain_revision
     }
     pub fn position(&self) -> [f32; 3] {
         self.key.view.position
@@ -43,6 +93,7 @@ struct State {
     pending: Option<Request>,
     requested: Option<Key>,
     completed: Option<Arc<PreparedScene>>,
+    failed: Option<(Key, minimium_procgen::ExcavationGeometryError)>,
     stop: bool,
 }
 pub(super) struct SectorWorker {
@@ -50,7 +101,25 @@ pub(super) struct SectorWorker {
     thread: Option<JoinHandle<()>>,
 }
 impl SectorWorker {
-    pub fn new() -> Self {
+    pub(super) fn shutdown_until(&mut self, deadline: std::time::Instant) -> bool {
+        self.state.0.lock().unwrap().stop = true;
+        self.state.1.notify_one();
+        while self
+            .thread
+            .as_ref()
+            .is_some_and(|thread| !thread.is_finished())
+            && std::time::Instant::now() < deadline
+        {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        match self.thread.take() {
+            Some(thread) if thread.is_finished() => thread.join().is_ok(),
+            Some(_) => false,
+            None => true,
+        }
+    }
+
+    pub fn new() -> Result<Self, SectorWorkerError> {
         let state = Arc::new((Mutex::new(State::default()), Condvar::new()));
         let shared = state.clone();
         let thread = std::thread::Builder::new()
@@ -61,6 +130,15 @@ impl SectorWorker {
                 let mut scope = None;
                 let mut origin = [f32::INFINITY; 3];
                 let mut prepared: HashMap<(SectorKey, u8), Arc<PreparedSector>> = HashMap::new();
+                let mut prepared_water_revision = None;
+                let mut water_mesh_cache: Option<(
+                    WorldInstanceId,
+                    WorldManifest,
+                    u64,
+                    u64,
+                    [f32; 3],
+                    Arc<Vec<minimium_renderer::ocean_geometry::OceanVertex>>,
+                )> = None;
                 loop {
                     let request = {
                         let mut s = shared.0.lock().unwrap();
@@ -73,15 +151,48 @@ impl SectorWorker {
                         s.pending.take().unwrap()
                     };
                     let started = std::time::Instant::now();
+                    let water_changed =
+                        prepared_water_revision != Some(request.key.water_level_revision);
+                    let water_vertices = match (request.water.as_ref(), water_mesh_cache.as_ref()) {
+                        (
+                            Some(water),
+                            Some((world, manifest, level_revision, revision, origin, mesh)),
+                        ) if *world == request.key.world
+                            && *manifest == request.key.manifest
+                            && *level_revision == water.level_revision
+                            && *revision == water.fluid_revision
+                            && *origin == request.key.origin =>
+                        {
+                            Arc::clone(mesh)
+                        }
+                        (water, _) => {
+                            let mesh = Arc::new(build_water_vertices(water, request.key.origin));
+                            if let Some(water) = water {
+                                water_mesh_cache = Some((
+                                    request.key.world,
+                                    request.key.manifest,
+                                    water.level_revision,
+                                    water.fluid_revision,
+                                    request.key.origin,
+                                    Arc::clone(&mesh),
+                                ));
+                            } else {
+                                water_mesh_cache = None;
+                            }
+                            mesh
+                        }
+                    };
                     let next_scope = (request.key.world, request.key.manifest);
                     if scope != Some(next_scope) {
                         geometry = RenderPatchCache::default();
                         edges = Default::default();
                         prepared.clear();
+                        prepared_water_revision = None;
                         scope = Some(next_scope);
                     }
                     if origin != request.key.origin {
                         prepared.clear();
+                        prepared_water_revision = None;
                         origin = request.key.origin;
                     }
                     let manifest = request.key.manifest;
@@ -96,11 +207,7 @@ impl SectorWorker {
                         let t = t
                             .with_surface_recipe(minimium_game_sample::SURFACE_RECIPE)
                             .expect("validated sample surface recipe");
-                        terrain = Some(if let Some(g) = request.geography.clone() {
-                            t.with_geography(g)
-                        } else {
-                            t
-                        });
+                        terrain = Some(t.with_inputs(request.geography.clone()));
                     }
                     let meshes =
                         if manifest.topology() == minimium_world::world::WorldTopology::Planet {
@@ -113,19 +220,25 @@ impl SectorWorker {
                                 &|| {
                                     let s = shared.0.lock().unwrap();
                                     s.stop
-                                        || s.pending.as_ref().is_some_and(|r| {
-                                            r.key.manifest != manifest
-                                                || r.key.origin != request.key.origin
-                                        })
+                                        || s.pending
+                                            .as_ref()
+                                            .is_some_and(|r| !r.key.same_geometry(request.key))
                                 },
                             )
                         } else {
-                            request
+                            Ok(request
                                 .collision
                                 .iter()
                                 .map(|(k, g)| (*k, 0, g.clone()))
-                                .collect()
+                                .collect())
                         };
+                    let meshes = match meshes {
+                        Ok(meshes) => meshes,
+                        Err(error) => {
+                            shared.0.lock().unwrap().failed = Some((request.key, error));
+                            continue;
+                        }
+                    };
                     let meshes = if let Some(terrain) = terrain.as_ref() {
                         edges.prepare(meshes, terrain)
                     } else {
@@ -140,11 +253,9 @@ impl SectorWorker {
                         {
                             let s = shared.0.lock().unwrap();
                             if s.stop
-                                || s.pending.as_ref().is_some_and(|r| {
-                                    r.key.world != request.key.world
-                                        || r.key.manifest != manifest
-                                        || r.key.origin != request.key.origin
-                                })
+                                || s.pending
+                                    .as_ref()
+                                    .is_some_and(|r| !r.key.same_geometry(request.key))
                             {
                                 cancelled = true;
                                 break;
@@ -156,8 +267,9 @@ impl SectorWorker {
                         {
                             prepared.remove(&(key, lod));
                         }
+                        let new_patch = !prepared.contains_key(&(key, lod));
                         let item = prepared.entry((key, lod)).or_insert_with(|| {
-                            Arc::new(PreparedSector::new(
+                            Arc::new(PreparedSector::new_with_clipped_ocean(
                                 key,
                                 lod,
                                 mesh,
@@ -170,8 +282,32 @@ impl SectorWorker {
                                 },
                                 edges.ocean(key, lod),
                                 request.key.origin,
+                                request.water.as_ref().map(|water| {
+                                    (
+                                        &*water.catalog,
+                                        &*water.snapshot,
+                                        water.interface_boxes.as_slice(),
+                                    )
+                                }),
                             ))
                         });
+                        if water_changed || new_patch {
+                            if let Some(ocean) = edges.ocean(key, lod) {
+                                Arc::make_mut(item).ocean = Arc::new(
+                                    minimium_renderer::prepared_sector::clipped_ocean_vertices(
+                                        ocean,
+                                        request.key.origin,
+                                        request.water.as_ref().map(|water| {
+                                            (
+                                                &*water.catalog,
+                                                &*water.snapshot,
+                                                water.interface_boxes.as_slice(),
+                                            )
+                                        }),
+                                    ),
+                                );
+                            }
+                        }
                         patches.push(item.clone());
                     }
                     if cancelled {
@@ -179,26 +315,26 @@ impl SectorWorker {
                     }
                     let mut s = shared.0.lock().unwrap();
                     if !s.stop
-                        && s.pending.as_ref().is_none_or(|r| {
-                            r.key.world == request.key.world
-                                && r.key.manifest == manifest
-                                && r.key.origin == request.key.origin
-                        })
+                        && s.pending
+                            .as_ref()
+                            .is_none_or(|r| r.key.same_geometry(request.key))
                     {
                         s.completed = Some(Arc::new(PreparedScene {
                             key: request.key,
                             patches,
+                            water_vertices,
                             build_ms: started.elapsed().as_secs_f64() * 1000.0,
                             cache_bytes: geometry.bytes(),
                         }));
+                        prepared_water_revision = Some(request.key.water_level_revision);
                     }
                 }
             })
-            .expect("terrain presentation worker");
-        Self {
+            .map_err(SectorWorkerError::ThreadSpawn)?;
+        Ok(Self {
             state,
             thread: Some(thread),
-        }
+        })
     }
     pub fn poll(
         &self,
@@ -206,29 +342,44 @@ impl SectorWorker {
         manifest: WorldManifest,
         view: minimium_renderer::terrain_view::TerrainView,
         origin: [f32; 3],
+        origin_generation: u64,
+        water: Option<WaterPresentation>,
         collision: &[(SectorKey, Arc<SectorGeometry>)],
-        geography: Option<Arc<dyn PreparedGeography>>,
-    ) -> Option<Arc<PreparedScene>> {
+        geography: minimium_procgen::TerrainInputs,
+    ) -> Result<Option<Arc<PreparedScene>>, SectorWorkerError> {
         let key = Key {
+            terrain_revision: geography.revision(),
             world,
             manifest,
             view,
             origin,
+            origin_generation,
+            water_level_revision: water.as_ref().map_or(0, |water| water.level_revision),
+            fluid_revision: water.as_ref().map_or(0, |water| water.fluid_revision),
         };
         let mut s = self.state.0.lock().unwrap();
-        let completed = s.completed.take().filter(|r| {
-            r.key.world == world && r.key.manifest == manifest && r.key.origin == origin
-        });
+        if s.stop || self.thread.as_ref().is_none_or(JoinHandle::is_finished) {
+            return Err(SectorWorkerError::WorkerStopped(Vec::new()));
+        }
+        // A newer wave must not repeatedly cancel a complete, still-current
+        // terrain scene. Publish this water frame, then prepare the latest one.
+        let completed = s.completed.take().filter(|r| r.key.same_geometry(key));
+        if let Some((failed_key, error)) = s.failed.take() {
+            if failed_key == key {
+                return Err(SectorWorkerError::Geometry(error));
+            }
+        }
         if s.requested != Some(key) {
             s.pending = Some(Request {
                 key,
                 collision: collision.to_vec(),
                 geography,
+                water,
             });
             s.requested = Some(key);
             self.state.1.notify_one();
         }
-        completed
+        Ok(completed)
     }
 }
 impl Drop for SectorWorker {
@@ -237,8 +388,6 @@ impl Drop for SectorWorker {
             self.state.0.lock().unwrap().stop = true;
             self.state.1.notify_one();
         }
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
-        }
+        self.thread.take();
     }
 }

@@ -1,20 +1,24 @@
+mod time;
+
 use crate::session::{ClientSession, QueueError, SessionEvent, SessionState};
+use crate::world_content::WorldContentResolver;
+use crate::ControllerError;
 use crate::{
     bootstrap::{LocalServer, LocalServerLaunchConfig},
     connector::{AttemptId, Connector, PollEvent, StartError},
 };
-use minimium_core::identity::PlayerProfileId;
 use minimium_platform::admin_client;
 use minimium_protocol::ClientMessage;
-use minimium_world::world::WorldInstanceId;
 use std::{
-    collections::HashMap,
     io,
+    path::PathBuf,
+    sync::Arc,
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 const ATTEMPT_TIMEOUT: Duration = Duration::from_secs(10);
+const LOCAL_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(35);
 
 pub enum ConnectionEvent {
     Idle,
@@ -29,46 +33,104 @@ pub enum ConnectionEvent {
 /// Owns the connector, session and any local process independently of a UI.
 pub struct ConnectionController {
     presentation: Option<bool>,
-    pub movement: minimium_simulation::MovementSettings,
+    pub movement: minimium_simulation::MovementPolicy,
+    pub flight_enabled: bool,
     connector: Connector,
     active: Option<AttemptId>,
     session: Option<ClientSession>,
     local_server: Option<LocalServer>,
     session_owns_server: bool,
-    time_scale_request: Option<JoinHandle<io::Result<String>>>,
-    cleanup: Option<JoinHandle<Result<(), String>>>,
-    profile: PlayerProfileId,
-    fingerprint: u64,
-    world_fingerprints: HashMap<WorldInstanceId, u64>,
+    admin_request: Option<JoinHandle<Result<String, ControllerError>>>,
+    cleanup: Option<JoinHandle<io::Result<()>>>,
+    authentication: Option<crate::authentication::ClientAuthentication>,
+    content_cache_dir: Option<PathBuf>,
+    content_cache_limit_bytes: u64,
+    world_content_resolver: Option<Arc<dyn WorldContentResolver>>,
+    diagnostic_logger: Option<minimium_diagnostics::DomainLogger>,
+    replica_schemas: Vec<(
+        minimium_world::entity::ComponentTypeId,
+        minimium_world::entity::SchemaVersion,
+    )>,
 }
 
 impl ConnectionController {
-    pub fn new(profile: PlayerProfileId, fingerprint: u64) -> Self {
+    pub fn new() -> Self {
         Self {
             presentation: None,
             movement: Default::default(),
+            flight_enabled: false,
             connector: Connector::default(),
             active: None,
             session: None,
             local_server: None,
             session_owns_server: false,
-            time_scale_request: None,
+            admin_request: None,
             cleanup: None,
-            profile,
-            fingerprint,
-            world_fingerprints: HashMap::from([(
-                WorldInstanceId::new(1).expect("primary ID is nonzero"),
-                fingerprint,
-            )]),
+            authentication: None,
+            content_cache_dir: None,
+            content_cache_limit_bytes: minimium_asset_io::DEFAULT_CACHE_LIMIT_BYTES,
+            world_content_resolver: None,
+            diagnostic_logger: None,
+            replica_schemas: Vec::new(),
         }
     }
 
-    pub fn set_world_fingerprints(&mut self, fingerprints: HashMap<WorldInstanceId, u64>) {
-        self.world_fingerprints = fingerprints;
+    pub fn set_diagnostic_logger(&mut self, logger: minimium_diagnostics::DomainLogger) {
+        self.diagnostic_logger = Some(logger);
+    }
+
+    pub fn register_replica_schema(
+        &mut self,
+        kind: minimium_world::entity::ComponentTypeId,
+        schema: minimium_world::entity::SchemaVersion,
+    ) -> Result<(), crate::ReplicaError> {
+        if self
+            .replica_schemas
+            .iter()
+            .any(|(registered, value)| *registered == kind && *value != schema)
+        {
+            return Err(crate::ReplicaError::SchemaConflict);
+        }
+        if !self
+            .replica_schemas
+            .iter()
+            .any(|(registered, _)| *registered == kind)
+        {
+            self.replica_schemas.push((kind, schema));
+        }
+        Ok(())
+    }
+
+    pub fn record_diagnostic_failure(&self, code: &'static str, reason: impl std::fmt::Display) {
+        crate::diagnostics::emit(
+            self.diagnostic_logger.as_ref(),
+            minimium_diagnostics::Level::Error,
+            code,
+            [crate::diagnostics::field("reason", reason.to_string())],
+        );
+    }
+
+    pub fn set_world_content_resolver(&mut self, resolver: Arc<dyn WorldContentResolver>) {
+        self.world_content_resolver = Some(resolver);
     }
 
     pub fn set_presentation(&mut self, compressed: bool) {
         self.presentation = Some(compressed);
+    }
+
+    pub fn set_content_cache_dir(&mut self, cache_dir: PathBuf) {
+        self.content_cache_dir = Some(cache_dir);
+    }
+
+    pub fn set_content_cache_limit(&mut self, maximum_bytes: u64) {
+        self.content_cache_limit_bytes = maximum_bytes.max(1);
+    }
+
+    pub fn set_authentication(
+        &mut self,
+        authentication: crate::authentication::ClientAuthentication,
+    ) {
+        self.authentication = Some(authentication);
     }
 
     pub fn busy(&self) -> bool {
@@ -77,6 +139,14 @@ impl ConnectionController {
 
     pub fn session(&self) -> Option<&ClientSession> {
         self.session.as_ref()
+    }
+
+    pub fn awaiting_owned_welcome(&self) -> bool {
+        self.session_owns_server
+            && self
+                .session
+                .as_ref()
+                .is_some_and(|session| session.state() == SessionState::AwaitingWelcome)
     }
 
     pub fn session_mut(&mut self) -> Option<&mut ClientSession> {
@@ -89,87 +159,22 @@ impl ConnectionController {
     }
 
     /// Sends a server-authoritative time change without blocking the UI loop.
-    pub fn request_time_scale(&mut self, value: String) -> Result<(), String> {
-        minimium_environment::parse_scale_ppm(&value)?;
-        self.request_time_command(format!("time scale {value}"))
-    }
-
-    pub fn request_time_mode(&mut self, mode: &str) -> Result<(), String> {
-        if !matches!(mode, "real_time" | "time_scale") {
-            return Err("time mode must be real_time or time_scale".into());
-        }
-        self.request_time_command(format!("time mode {mode}"))
-    }
-
-    pub fn request_time_offline_policy(&mut self, policy: &str) -> Result<(), String> {
-        if !matches!(policy, "pause" | "advance") {
-            return Err("offline policy must be pause or advance".into());
-        }
-        self.request_time_command(format!("time offline {policy}"))
-    }
-
-    pub fn request_set_time(&mut self, minute: u16, longitude_rad: f64) -> Result<(), String> {
-        let current = self
-            .session
-            .as_ref()
-            .and_then(|session| session.environment_frame().estimated_world_utc_ms)
-            .ok_or("synchronized world time is unavailable")?;
-        let target =
-            minimium_environment::clock_command::utc_at_time(current, minute, longitude_rad)?;
-        let date = crate::environment::format_utc(target)
-            .replace(" UTC", "Z")
-            .replace(' ', "T");
-        self.request_time_command(format!("time set {date}"))
-    }
-
-    fn request_time_command(&mut self, command: String) -> Result<(), String> {
-        if !self
-            .session
-            .as_ref()
-            .is_some_and(|session| session.state() == SessionState::Connected)
-            || !self.session_owns_server
-        {
-            return Err(String::from(
-                "time changes require a connection to a server started by this client",
-            ));
-        }
-        if self.time_scale_request.is_some() {
-            return Err(String::from("a time scale request is already in progress"));
-        }
-        let endpoint = self
-            .local_server
-            .as_mut()
-            .ok_or("owned server is unavailable")?
-            .owned_admin_endpoint()
-            .map_err(|error| error.to_string())?
-            .ok_or("owned server is not running")?;
-        self.time_scale_request = Some(thread::spawn(move || {
-            admin_client::request(&endpoint, &command)
-        }));
-        Ok(())
-    }
-
-    pub fn poll_time_scale_result(&mut self) -> Option<Result<String, String>> {
-        if !self
-            .time_scale_request
-            .as_ref()
-            .is_some_and(JoinHandle::is_finished)
-        {
-            return None;
-        }
-        let worker = self.time_scale_request.take()?;
-        Some(match worker.join() {
-            Ok(Ok(response)) => Ok(response),
-            Ok(Err(error)) => Err(error.to_string()),
-            Err(_) => Err(String::from("time scale request worker panicked")),
-        })
-    }
-
     pub fn queue(&mut self, message: &ClientMessage) -> Result<(), QueueError> {
         self.session
             .as_mut()
             .ok_or(QueueError::Disconnected)?
             .queue(message)
+    }
+
+    pub fn queue_world_input(
+        &mut self,
+        input: minimium_protocol::ClientWorldInput,
+    ) -> Result<(), QueueError> {
+        self.session
+            .as_mut()
+            .ok_or(QueueError::Disconnected)?
+            .queue_world_input(input)
+            .map(|_| ())
     }
 
     pub fn cancel_transition(&mut self) -> bool {
@@ -183,8 +188,9 @@ impl ConnectionController {
         Ok(())
     }
 
-    pub fn start_local(&mut self, config: LocalServerLaunchConfig) -> Result<(), StartError> {
-        self.active = Some(self.connector.start_local(config, ATTEMPT_TIMEOUT)?);
+    pub fn start_local(&mut self, mut config: LocalServerLaunchConfig) -> Result<(), StartError> {
+        config.diagnostic_logger = self.diagnostic_logger.clone();
+        self.active = Some(self.connector.start_local(config, LOCAL_ATTEMPT_TIMEOUT)?);
         Ok(())
     }
 
@@ -193,8 +199,18 @@ impl ConnectionController {
             if let Some(handle) = self.cleanup.take() {
                 match handle.join() {
                     Ok(Ok(())) => {}
-                    Ok(Err(error)) => eprintln!("local server guard cleanup failed: {error}"),
-                    Err(_) => eprintln!("local server cleanup worker panicked"),
+                    Ok(Err(error)) => crate::diagnostics::emit(
+                        self.diagnostic_logger.as_ref(),
+                        minimium_diagnostics::Level::Error,
+                        "client_runtime.local_server_cleanup_failed",
+                        [crate::diagnostics::field("reason", error)],
+                    ),
+                    Err(_) => crate::diagnostics::emit(
+                        self.diagnostic_logger.as_ref(),
+                        minimium_diagnostics::Level::Error,
+                        "client_runtime.local_server_cleanup_panicked",
+                        [],
+                    ),
                 }
             }
         }
@@ -232,14 +248,29 @@ impl ConnectionController {
                 if let Some(server) = local_server {
                     self.retain_local_server(server);
                 }
-                match ClientSession::with_presentation(
-                    stream,
-                    self.profile,
-                    self.fingerprint,
-                    self.presentation,
-                ) {
+                let Some(authentication) = self.authentication.clone() else {
+                    self.session_owns_server = false;
+                    return ConnectionEvent::SetupFailed(io::Error::other(
+                        "client authentication was not configured",
+                    ));
+                };
+                match ClientSession::with_presentation(stream, authentication, self.presentation) {
                     Ok(mut session) => {
-                        session.set_world_fingerprints(self.world_fingerprints.clone());
+                        session.set_content_cache_dir(self.content_cache_dir.clone());
+                        session.set_content_cache_limit(self.content_cache_limit_bytes);
+                        session.set_diagnostic_logger(self.diagnostic_logger.clone());
+                        for (kind, schema) in &self.replica_schemas {
+                            if let Err(error) = session.register_replica_schema(*kind, *schema) {
+                                self.session_owns_server = false;
+                                return ConnectionEvent::SetupFailed(io::Error::other(format!(
+                                    "replica schema configuration failed: {error:?}"
+                                )));
+                            }
+                        }
+                        session.set_world_content_resolver(
+                            attempt_id.get(),
+                            self.world_content_resolver.clone(),
+                        );
                         self.session = Some(session);
                         ConnectionEvent::SessionStarted
                     }
@@ -258,8 +289,17 @@ impl ConnectionController {
     }
 
     pub fn poll_session(&mut self, events: &mut Vec<SessionEvent>) {
+        let first_new_event = events.len();
         if let Some(session) = self.session.as_mut() {
             session.poll(events);
+        }
+        for event in &events[first_new_event..] {
+            if let SessionEvent::Message(minimium_protocol::ServerMessage::MovementPolicy(policy)) =
+                event
+            {
+                self.movement = *policy;
+                self.flight_enabled = policy.can_fly;
+            }
         }
     }
 
@@ -270,30 +310,44 @@ impl ConnectionController {
     }
 
     pub fn finish(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.finish_until(Instant::now() + Duration::from_secs(28))
+    }
+
+    pub fn finish_until(&mut self, deadline: Instant) -> Result<(), Box<dyn std::error::Error>> {
         self.cancel();
-        self.connector.finish_on_exit();
+        let mut unfinished = self.connector.finish_on_exit_until(deadline);
         if let Some(mut session) = self.session.take() {
             session.close();
         }
-        let cleanup_result = self
-            .cleanup
-            .take()
-            .map_or(Ok(()), |worker| match worker.join() {
-                Ok(Ok(())) => Ok(()),
-                Ok(Err(error)) => Err(io::Error::other(error)),
-                Err(_) => Err(io::Error::other("local server cleanup worker panicked")),
-            });
-        let server_result = self
-            .local_server
-            .take()
-            .map_or(Ok(()), |mut server| server.shutdown());
+        let cleanup_result = self.cleanup.take().map_or(Ok(()), |worker| {
+            wait_for_cleanup(worker, deadline, &mut unfinished)
+        });
+        let server_result = self.local_server.take().map_or(Ok(()), |mut server| {
+            let worker = thread::spawn(move || server.shutdown());
+            wait_for_cleanup(worker, deadline, &mut unfinished)
+        });
         if let Err(error) = &server_result {
             if cleanup_result.is_err() {
-                eprintln!("local server shutdown also failed: {error}");
+                crate::diagnostics::emit(
+                    self.diagnostic_logger.as_ref(),
+                    minimium_diagnostics::Level::Error,
+                    "client_runtime.local_server_shutdown_failed",
+                    [crate::diagnostics::field("reason", error)],
+                );
             }
         }
         cleanup_result?;
-        server_result
+        if !unfinished.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!(
+                    "client shutdown exceeded deadline: {}",
+                    unfinished.join(",")
+                ),
+            )
+            .into());
+        }
+        server_result.map_err(Into::into)
     }
 
     fn retain_local_server(&mut self, new_server: LocalServer) {
@@ -302,7 +356,12 @@ impl ConnectionController {
                 match server.is_owned_process_running() {
                     Ok(running) => !running,
                     Err(error) => {
-                        eprintln!("local server process check failed: {error}");
+                        crate::diagnostics::emit(
+                            self.diagnostic_logger.as_ref(),
+                            minimium_diagnostics::Level::Error,
+                            "client_runtime.local_server_process_check_failed",
+                            [crate::diagnostics::field("reason", error)],
+                        );
                         false
                     }
                 }
@@ -316,18 +375,49 @@ impl ConnectionController {
                 }
                 // At most one cleanup can be outstanding: busy() prevents a rehost.
                 debug_assert!(self.cleanup.is_none());
-                self.cleanup = Some(thread::spawn(move || {
-                    old.shutdown().map_err(|error| error.to_string())
-                }));
+                self.cleanup = Some(thread::spawn(move || old.shutdown()));
             }
         }
     }
 }
 
+fn wait_for_cleanup<T: Send + 'static>(
+    worker: JoinHandle<io::Result<T>>,
+    deadline: Instant,
+    unfinished: &mut Vec<String>,
+) -> io::Result<T> {
+    let name = worker
+        .thread()
+        .name()
+        .unwrap_or("client-cleanup")
+        .to_owned();
+    let worker = worker;
+    while !worker.is_finished() && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(5));
+    }
+    if worker.is_finished() {
+        return match worker.join() {
+            Ok(result) => result,
+            Err(_) => Err(io::Error::other("client cleanup worker panicked")),
+        };
+    }
+    unfinished.push(name);
+    drop(worker);
+    Err(io::Error::new(
+        io::ErrorKind::TimedOut,
+        "client cleanup worker exceeded shutdown deadline",
+    ))
+}
+
 impl Drop for ConnectionController {
     fn drop(&mut self) {
         if let Err(error) = self.finish() {
-            eprintln!("local server guard cleanup failed: {error}");
+            crate::diagnostics::emit(
+                self.diagnostic_logger.as_ref(),
+                minimium_diagnostics::Level::Error,
+                "client_runtime.local_server_guard_cleanup_failed",
+                [crate::diagnostics::field("reason", error)],
+            );
         }
     }
 }

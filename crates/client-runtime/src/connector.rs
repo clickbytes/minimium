@@ -6,6 +6,7 @@
 //! the connector remains busy until that worker exits.
 
 use crate::bootstrap::{self, LocalServerLaunchConfig};
+mod worker;
 use std::{
     io,
     net::{SocketAddr, TcpStream, ToSocketAddrs},
@@ -17,6 +18,7 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
+use worker::{finalize_discard, run_operation, take_finished, timed_out_error};
 
 /// Stable, monotonically increasing identifier for a connection attempt.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -38,6 +40,40 @@ pub enum StartError {
     AttemptIdsExhausted,
     /// The operating system could not create the worker thread.
     WorkerSpawn(io::Error),
+}
+
+impl StartError {
+    pub const fn code(&self) -> &'static str {
+        match self {
+            Self::Busy { .. } => "client_runtime.connection_busy",
+            Self::AttemptIdsExhausted => "client_runtime.attempt_ids_exhausted",
+            Self::WorkerSpawn(_) => "client_runtime.worker_spawn_failed",
+        }
+    }
+}
+
+impl std::fmt::Display for StartError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Busy { active_attempt } => write!(
+                formatter,
+                "{}: attempt {} is still active",
+                self.code(),
+                active_attempt.get()
+            ),
+            Self::AttemptIdsExhausted => formatter.write_str(self.code()),
+            Self::WorkerSpawn(error) => write!(formatter, "{}: {error}", self.code()),
+        }
+    }
+}
+
+impl std::error::Error for StartError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::WorkerSpawn(error) => Some(error),
+            Self::Busy { .. } | Self::AttemptIdsExhausted => None,
+        }
+    }
 }
 
 /// A single event from [`Connector::poll`].
@@ -231,7 +267,8 @@ impl Connector {
 
     /// Wait for a local bootstrap worker on exit so an owned child cannot
     /// outlive this process while its cancelled result is being cleaned up.
-    pub fn finish_on_exit(&mut self) {
+    pub fn finish_on_exit_until(&mut self, deadline: Instant) -> Vec<String> {
+        let mut unfinished = Vec::new();
         if let Some(mut active) = self.active.take() {
             active.abandoned.store(true, Ordering::SeqCst);
             if active.local {
@@ -240,17 +277,26 @@ impl Connector {
                 match active.receiver.try_recv() {
                     Ok(result) => finalize_discard(&mut active, result),
                     Err(TryRecvError::Empty) => {
-                        if let Ok(result) = active.receiver.recv() {
+                        let remaining = deadline.saturating_duration_since(Instant::now());
+                        if let Ok(result) = active.receiver.recv_timeout(remaining) {
                             finalize_discard(&mut active, result);
                         }
                     }
                     Err(TryRecvError::Disconnected) => {}
                 }
-                if let Some(worker) = active.worker.take() {
+            }
+            if let Some(worker) = active.worker.take() {
+                while !worker.is_finished() && Instant::now() < deadline {
+                    thread::sleep(Duration::from_millis(5));
+                }
+                if worker.is_finished() {
                     let _ = worker.join();
+                } else {
+                    unfinished.push(format!("connector-attempt-{}", active.id.get()));
                 }
             }
         }
+        unfinished
     }
 
     /// Polls without blocking. Timeout/cancel events are delivered once; while
@@ -354,113 +400,4 @@ impl Connector {
             }
         }
     }
-}
-
-fn take_finished(active: &mut ActiveAttempt) -> Option<()> {
-    match active.receiver.try_recv() {
-        Ok(result) => {
-            if active.local {
-                finalize_discard(active, result);
-                None
-            } else {
-                drop(result);
-                Some(())
-            }
-        }
-        Err(TryRecvError::Disconnected)
-            if active.worker.as_ref().is_some_and(JoinHandle::is_finished) =>
-        {
-            if let Some(worker) = active.worker.take() {
-                let _ = worker.join();
-            }
-            Some(())
-        }
-        Err(TryRecvError::Disconnected) => None,
-        Err(TryRecvError::Empty) if active.worker.as_ref().is_some_and(JoinHandle::is_finished) => {
-            if let Some(worker) = active.worker.take() {
-                let _ = worker.join();
-            }
-            Some(())
-        }
-        Err(TryRecvError::Empty) => None,
-    }
-}
-
-/// Returns a discarded local result to its worker so its guard is dropped
-/// away from the polling thread.
-fn finalize_discard(active: &mut ActiveAttempt, result: WorkerResult) {
-    if let Some(finalize) = active.finalize.take() {
-        let _ = finalize.send(WorkerFinalization::Discard(result));
-    }
-}
-
-fn run_operation(operation: WorkerOperation, deadline: Instant) -> io::Result<ConnectedSocket> {
-    if Instant::now() >= deadline {
-        return Err(timed_out_error());
-    }
-    match operation {
-        WorkerOperation::Remote(address) => Ok(ConnectedSocket {
-            stream: connect_all(&address, deadline)?,
-            local_server: None,
-        }),
-        WorkerOperation::Local(config) => {
-            let (stream, local_server) = bootstrap::connect_or_start_until(&config, deadline)
-                .map_err(|error| {
-                    io::Error::other(format!("local server startup failed: {error}"))
-                })?;
-            Ok(ConnectedSocket {
-                stream,
-                local_server: Some(local_server),
-            })
-        }
-    }
-}
-
-fn connect_all(address: &str, deadline: Instant) -> io::Result<TcpStream> {
-    if Instant::now() >= deadline {
-        return Err(timed_out_error());
-    }
-
-    let addresses: Vec<SocketAddr> = address.to_socket_addrs()?.collect();
-    if addresses.is_empty() {
-        return Err(io::Error::new(
-            io::ErrorKind::AddrNotAvailable,
-            format!("no socket addresses resolved for {address:?}"),
-        ));
-    }
-
-    let mut last_error = None;
-    let mut attempted = 0usize;
-    for socket in addresses {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            return Err(timed_out_error());
-        }
-        attempted += 1;
-        match TcpStream::connect_timeout(&socket, remaining) {
-            Ok(stream) if Instant::now() < deadline => return Ok(stream),
-            Ok(_) => return Err(timed_out_error()),
-            Err(_error) if Instant::now() >= deadline => return Err(timed_out_error()),
-            Err(error) => {
-                last_error = Some(io::Error::new(
-                    error.kind(),
-                    format!("connection to {socket} failed: {error}"),
-                ));
-            }
-        }
-    }
-
-    Err(last_error.unwrap_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::AddrNotAvailable,
-            format!("no socket address could be attempted for {address:?} ({attempted} tried)"),
-        )
-    }))
-}
-
-fn timed_out_error() -> io::Error {
-    io::Error::new(
-        io::ErrorKind::TimedOut,
-        "connection deadline expired during DNS or socket connection",
-    )
 }

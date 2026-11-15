@@ -10,7 +10,7 @@ From the repository root, run:
 python scripts/check_file_lengths.py
 ```
 
-The checker walks the working tree, so it checks both tracked and untracked source files. It excludes version-control metadata, build output (`target`, `build`, `dist`), dependency/vendor trees, and conventional local cache/runtime artifact directories. Its source suffix list and exclusions are explicit in the script. Extend those lists when the repository adopts another source format or a new generated/local artifact directory.
+The checker walks the working tree, so it checks both tracked and untracked source files. It excludes version-control metadata, build output (`target`, `build`, `dist`), dependency/vendor trees, and conventional hidden local cache/runtime artifact directories. It does not exclude source folders merely named `runtime`. Its source suffix list and exclusions are explicit in the script. Extend those lists when the repository adopts another source format or a new generated/local artifact directory.
 
 Failures list each offending path and physical line count. Split the file or record a narrow, justified exception below. Exceptions must identify the exact repository-relative source path and explain why splitting it is impractical. A stale exception (the file is gone or no longer exceeds the limit), malformed entry, or duplicate entry also fails the check.
 

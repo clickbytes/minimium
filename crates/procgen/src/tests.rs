@@ -8,7 +8,7 @@ use std::collections::HashSet;
 fn generation(seed: u128) -> GenerationSpec {
     GenerationSpec::new(
         WorldSeed::new(seed),
-        GenerationRevision::new(1).unwrap(),
+        GenerationRevision::new(5).unwrap(),
         10,
     )
     .unwrap()

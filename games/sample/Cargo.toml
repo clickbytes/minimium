@@ -13,5 +13,6 @@ minimium-world = { path = "../../crates/world" }
 minimium-procgen = { path = "../../crates/procgen" }
 minimium-environment = { path = "../../crates/environment" }
 minimium-simulation = { path = "../../crates/simulation" }
+minimium-gameplay = { path = "../../crates/gameplay" }
 ron = "0.12.3"
 serde = { version = "1", features = ["derive"] }

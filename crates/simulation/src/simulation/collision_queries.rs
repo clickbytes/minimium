@@ -8,6 +8,8 @@ use minimium_world::world::{cell_for, Aabb, Cell, MapTriangle};
 
 #[derive(Default)]
 pub struct CollisionQuery {
+    pub(super) partition_candidates: Vec<usize>,
+    pub(super) partition_query: Option<Box<CollisionQuery>>,
     pub(super) candidates: Vec<Aabb>,
     pub(super) seen: Vec<u32>,
     pub(super) surface_candidates: Vec<MapTriangle>,
@@ -55,6 +57,9 @@ impl CollisionQuery {
         state: CharacterState,
         delta_seconds: f32,
     ) -> CollisionQueryStats {
+        if !index.partitions.is_empty() {
+            return self.fill_partitions(index, state, delta_seconds, PLAYER_MOVE_SPEED);
+        }
         self.fill_for_speed(index, state, delta_seconds, PLAYER_MOVE_SPEED)
     }
 
@@ -65,6 +70,9 @@ impl CollisionQuery {
         delta_seconds: f32,
         speed: f32,
     ) -> CollisionQueryStats {
+        if !index.partitions.is_empty() {
+            return self.fill_partitions(index, state, delta_seconds, speed);
+        }
         let mut stats = CollisionQueryStats {
             queries: 1,
             ..CollisionQueryStats::default()

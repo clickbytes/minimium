@@ -2,7 +2,12 @@
 
 ## Purpose / Non-goals
 
-Owns shared identity and identifier primitives. It has no project dependencies and must not acquire world runtime, physics, clock policy, filesystem, network, process or GPU responsibilities.
+Owns shared identifiers, player profiles, authenticated principal values and server-granted permission bits. It has no project dependencies and must not acquire world runtime, physics, clock policy, filesystem, network, process or GPU responsibilities.
+
+The Principal permission set is supplied by the server's authentication
+provider, never by client wire data. Gameplay, flight, movement-policy and
+teleport permissions are separate bits; local administrative commands use the
+platform's authenticated admin endpoint rather than a gameplay Principal.
 
 ## Public API
 

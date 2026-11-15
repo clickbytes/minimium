@@ -1,5 +1,6 @@
 use super::{EnvironmentFrame, StarFrameStamp};
 use crate::renderer::{environment_gpu, GpuResources};
+use minimium_renderer::meteors::MeteorFrame;
 use minimium_renderer::stars::{StarInstanceGpu, STAR_GPU_RECORD_COUNT};
 use minimium_renderer::RenderFrame;
 
@@ -18,9 +19,13 @@ pub(in crate::renderer) struct PreparedStarUpload {
 }
 
 impl PreparedEnvironmentFrame {
+    /// The meteor frame is built once per frame by the client-local runtime
+    /// (`crate::renderer::meteors`) and consumed here; the environment frame
+    /// still carries the manifest-resolved surface scale at the same seam.
     pub(in crate::renderer) fn new(
         frame: EnvironmentFrame,
         stars: Option<PreparedStarUpload>,
+        meteors: MeteorFrame,
     ) -> Self {
         let uniform = environment_gpu::environment_uniform(&frame);
         let render_frame = RenderFrame::new(
@@ -28,7 +33,8 @@ impl PreparedEnvironmentFrame {
             frame.camera_uniform,
             uniform,
             frame.halo_count,
-        );
+        )
+        .with_meteors(meteors);
         Self {
             frame,
             render_frame,

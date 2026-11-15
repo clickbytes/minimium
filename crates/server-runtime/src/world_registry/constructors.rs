@@ -2,17 +2,17 @@ use super::*;
 use crate::environment::profile_for_manifest;
 
 impl WorldRegistry {
-    pub(crate) fn legacy_primary(map: WorldMap) -> Self {
-        let definition = WorldDefinitionId::new(1).expect("legacy definition ID is nonzero");
-        let instance = WorldInstanceId::new(1).expect("legacy instance ID is nonzero");
+    pub(crate) fn authored_primary(map: WorldMap) -> Self {
+        let definition = WorldDefinitionId::new(1).expect("authored definition ID is nonzero");
+        let instance = WorldInstanceId::new(1).expect("authored instance ID is nonzero");
         let generation = GenerationSpec::new(
             WorldSeed::new(0),
-            GenerationRevision::new(1).expect("legacy generator revision is nonzero"),
+            GenerationRevision::new(6).expect("current generator revision is nonzero"),
             1,
         )
-        .expect("legacy position quantum is nonzero");
-        let revision = WorldContentRevision::new(1).expect("legacy content revision is nonzero");
-        let digest = GeneratorDigest::legacy_map_fingerprint(map.fingerprint());
+        .expect("authored position quantum is nonzero");
+        let revision = WorldContentRevision::new(1).expect("authored content revision is nonzero");
+        let digest = GeneratorDigest::authored_map_fingerprint(map.fingerprint());
         let manifest = WorldManifest::new(
             definition,
             WorldTopology::Dungeon,
@@ -29,11 +29,18 @@ impl WorldRegistry {
             WorldInstance {
                 clock_id: ClockId::MVP,
                 environment_profile: profile_for_manifest(manifest),
+                collision_tickets: Default::default(),
+                volumes: None,
+                terrain: Arc::new(minimium_terrain::TerrainSnapshot::empty(10000.0)),
+                remnants: Arc::new(minimium_world::remnants::RemnantSnapshot::empty(10000.0)),
                 manifest,
                 map,
                 world,
+                collision_source_revision: 0,
+                collision_installed_revision: 0,
                 entities: minimium_world::entity::EntityStore::default(),
-                portal: None,
+                content_initialized: false,
+                initial_entities: Vec::new(),
             },
         );
         Self {
@@ -45,8 +52,6 @@ impl WorldRegistry {
             next_transition: 1,
             sector_states: BTreeMap::new(),
             persisted_totals: super::sector_state::PersistedTotals::default(),
-            entity_sectors: BTreeMap::new(),
-            entity_origins: BTreeMap::new(),
         }
     }
 
@@ -56,8 +61,12 @@ impl WorldRegistry {
         manifest: WorldManifest,
         map: WorldMap,
     ) -> Result<(), RegistryError> {
+        validate_manifest_map(manifest, &map)?;
         if self.instances.contains_key(&instance) {
             return Err(RegistryError::DuplicateInstance);
+        }
+        if self.instances.len() >= minimium_storage::MAX_SNAPSHOT_WORLDS {
+            return Err(RegistryError::WorldLimitExceeded);
         }
         let mut world = World::default();
         world.load_map_streamed(&map);
@@ -72,11 +81,26 @@ impl WorldRegistry {
             WorldInstance {
                 clock_id: ClockId::MVP,
                 environment_profile,
+                collision_tickets: Default::default(),
+                volumes: None,
+                terrain: Arc::new(minimium_terrain::TerrainSnapshot::empty(
+                    manifest
+                        .planet()
+                        .map_or(10000.0, |p| p.radius_mm as f64 / 1000.0),
+                )),
+                remnants: Arc::new(minimium_world::remnants::RemnantSnapshot::empty(
+                    manifest
+                        .planet()
+                        .map_or(10000.0, |p| p.radius_mm as f64 / 1000.0),
+                )),
                 manifest,
                 map,
                 world,
+                collision_source_revision: 0,
+                collision_installed_revision: 0,
                 entities: minimium_world::entity::EntityStore::default(),
-                portal: None,
+                content_initialized: false,
+                initial_entities: Vec::new(),
             },
         );
         Ok(())
@@ -87,6 +111,7 @@ impl WorldRegistry {
     ) -> Result<Self, RegistryError> {
         let mut worlds = worlds.into_iter();
         let primary = worlds.next().ok_or(RegistryError::EmptyWorlds)?;
+        validate_manifest_map(primary.manifest, &primary.map)?;
         let primary_id = primary.instance;
         let mut registry = Self::from_definition(primary);
         for world in worlds {
@@ -116,11 +141,28 @@ impl WorldRegistry {
             WorldInstance {
                 clock_id: ClockId::MVP,
                 environment_profile: profile_for_manifest(world.manifest),
+                collision_tickets: Default::default(),
+                volumes: None,
+                terrain: Arc::new(minimium_terrain::TerrainSnapshot::empty(
+                    world
+                        .manifest
+                        .planet()
+                        .map_or(10000.0, |p| p.radius_mm as f64 / 1000.0),
+                )),
+                remnants: Arc::new(minimium_world::remnants::RemnantSnapshot::empty(
+                    world
+                        .manifest
+                        .planet()
+                        .map_or(10000.0, |p| p.radius_mm as f64 / 1000.0),
+                )),
                 manifest: world.manifest,
                 map,
                 world: simulation,
+                collision_source_revision: 0,
+                collision_installed_revision: 0,
                 entities: minimium_world::entity::EntityStore::default(),
-                portal: world.portal,
+                content_initialized: false,
+                initial_entities: world.initial_entities,
             },
         );
         Self {
@@ -132,19 +174,30 @@ impl WorldRegistry {
             next_transition: 1,
             sector_states: BTreeMap::new(),
             persisted_totals: super::sector_state::PersistedTotals::default(),
-            entity_sectors: BTreeMap::new(),
-            entity_origins: BTreeMap::new(),
         }
     }
 
     fn register_definition(&mut self, world: WorldDefinition) -> Result<(), RegistryError> {
         let instance = world.instance;
-        let portal = world.portal;
+        let initial_entities = world.initial_entities;
         self.register(instance, world.manifest, world.map)?;
-        self.instances
+        let owner = self
+            .instances
             .get_mut(&instance)
-            .expect("newly registered instance exists")
-            .portal = portal;
+            .expect("newly registered instance exists");
+        owner.initial_entities = initial_entities;
         Ok(())
     }
+}
+
+fn validate_manifest_map(manifest: WorldManifest, map: &WorldMap) -> Result<(), RegistryError> {
+    minimium_procgen::validate_world_manifest(manifest)
+        .map_err(|_| RegistryError::InvalidManifest)?;
+    if manifest.source() == minimium_world::world::WorldSource::Authored
+        && manifest.generator_digest()
+            != GeneratorDigest::authored_map_fingerprint(map.fingerprint())
+    {
+        return Err(RegistryError::InvalidManifest);
+    }
+    Ok(())
 }

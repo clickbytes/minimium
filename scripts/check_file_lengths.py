@@ -23,13 +23,13 @@ SOURCE_SUFFIXES = {
     ".tf", ".ts", ".tsx", ".vue", ".wgsl", ".xml", ".yaml", ".yml",
 }
 
-# Build output and local runtime/cache directories are excluded wherever they
-# occur. Ordinary source directories are traversed, including untracked files.
+# Build output and hidden local cache/runtime directories are excluded wherever
+# they occur. Ordinary source directories, including `runtime`, are traversed.
 EXCLUDED_DIRS = {
     ".git", ".hg", ".svn", ".venv", "__pycache__", ".pytest_cache",
     ".mypy_cache", ".ruff_cache", ".tox", ".cache", ".local", ".runtime",
     "target", "node_modules", "vendor", "dist", "build", "coverage",
-    "runtime", "local-artifacts",
+    "local-artifacts",
 }
 
 EXCEPTION_RE = re.compile(

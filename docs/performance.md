@@ -139,3 +139,60 @@ Final verification must also compare authoritative outcomes under lanes 1, 2, an
 `input_wait_*` spans decode to application in a simulation tick, excluding server-generated Leave events. `input_*` measures execution of that batch, and `simulation_*` measures the movement/collision phase. `oldest_output_age_us` is the age of the oldest still-unsent admitted frame after flushing, zero for an empty queue. Timestamp entries are removed only as their bytes are fully written. `tick_*` covers commands, input application and simulation; `loop_*` also includes the current poll and any scheduled snapshot preparation. Network and snapshot work may occur outside a tick.
 
 Each client output is capped at 64 KiB. Frame timestamp metadata has at most one entry per queued application frame, with a separate cap of 256 entries per client (admission fails at either the byte or frame limit). During a poll, the server writes at most 16 KiB for one client and 256 KiB total. It rotates the first client considered by one position on each poll, so the first client does not always consume the shared budget. Reads are capped at 1 KiB and 32 decoded messages per client per poll. Pending world input plus live client count is capped at 4096, reserving room for one Leave per live client. The admin dispatcher queue and terminal adapter queue each hold at most 64 commands; at most eight dispatch per tick. Admin has at most eight connections, four accepts per poll, 512-byte lines, two-second request and reply deadlines, 64 KiB response cap, and 4 KiB writes per client per poll. The interactive client's `ClientSession` retains at most 64 KiB for each send/receive buffer and reads at most 16 KiB per poll. Endpoint reads are capped at 256 bytes and shutdown result reads at 4096. Linux process text samples are capped at 64 KiB per file.
+
+## E047 meteor budgets (static, runtime measurements pending)
+
+| Resource | Bound / allocation |
+|---|---|
+| Active events | 8, 2 long afterglows; one history initialization per frame |
+| Histories | 8 x 512 x 8 x sizeof(Body); Body 104 B = 3,407,872 B |
+| Deposition | 8 events x 4 rings x 64 points, embedded in pooled metadata |
+| Frame contract | 16 ranked cores, 128 points, 4 lights; fixed arrays |
+| GPU instances | 144 x 64 B = 9,216 B, allocated once |
+| Shared light uniform | 2,288 B: 4 lights + 32 ellipsoid proxies |
+| Cloud publication mirror | max 8,192 x 96 B = 786,432 B CPU, preallocated |
+| Selection cache | fixed 4 x 8 optional record indices plus keys; sizeof reported |
+| Shared finite emission layer | 34 B/pixel, resized to <=64 MiB, reused by legacy bolids |
+| Audio | pending 16, worker commands 8, voices 4; 144,000 f32/voice = <=2,304,000 B PCM |
+
+Runtime status prints sizeof-derived history/metadata/frame/cache bytes (allocator,
+driver and audio-library overhead excluded). Weather OIT retains its independent
+64 MiB cap; scene HDR and atmosphere resources are unchanged and must not be
+counted as new per-meteor allocations. There is no per-light shadow texture.
+
+Standard admits 16 cores / 144 segment slots and eight cloud proxies per light.
+Low admits the first eight importance-ranked cores and at most five trail points
+per core (<=48 segment slots), disables optical halos and cross-cloud light-path
+proxies, and retains the 20 km visibility floor and cheap cloud self-extinction.
+Both retain surface/planet depth rejection. CPU capsule/screen bounds reject
+segments conservatively before upload; near-plane crossings survive, halo margins
+are included. GPU ribbon bounds and early radial discard limit pixel work.
+
+Cloud selection scans the already-published bounded snapshot at most once per
+500 ms for an unchanged source set, publication revision, origin and nearby camera.
+Birth/death, revision/origin change or >1 km camera move invalidates selection.
+Brightness rank swaps reuse selections by ID. Only <=32 selected transforms and
+ages refresh each intervening frame. Moving lights can temporarily miss newly
+intersected clouds until reselection: this is an explicit temporal approximation.
+Low/zero-light frames do no selection scan. No morphology request, LUT rebuild,
+weather throttling or atlas change is caused by a flash.
+
+Diagnostics distinguish active solids/grain packets, accepted GPU segments/dust,
+low-altitude rejection, culling, quality drops, upload bytes, CPU preparation and
+cloud scan/reuse counters. These are submitted/potentially visible geometry, not
+pixel-accurate visibility. Meteor GPU duration reports n/a (not instrumented);
+existing atmosphere timestamps are asynchronous and cover only their named passes.
+No synchronous readback or FPS claim is introduced.
+
+Resources are owned by the existing GPU lifetime; resize recreates the shared
+layer once, camera rebases invalidate selection, world reset yields zero counts,
+and GPU recreation constructs a fresh cache/buffers. HDR/analytic fallback uses
+the same emission contract. The pre-existing shared layer requires renderable,
+blendable RGBA16F/R16F; low mode does not claim support for devices lacking those
+baseline requirements. Runtime device-loss/recreation is still an acceptance item.
+
+Final gate scenarios: idle vs eight simultaneous events; all 20 presets; low vs
+standard; HDR vs analytic fallback; cloud clear/partial/overcast/interior; horizon
+and orbital camera; resize/rebase/world transfer; no audio vs audio. Record CPU
+median/p95 and asynchronous GPU pass times where available, frame percentiles and
+memory after repeated spawn/clear/resize. No such benchmark has been run here.

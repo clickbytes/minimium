@@ -55,9 +55,12 @@ impl ClientClock {
                     self.smoothing_bias_ms = 0.0;
                     self.smoothing_started_at_ms = None;
                     self.resync_stale_until_ms = Some(now_ms.saturating_add(2_000));
-                    eprintln!(
-                        "clock_resync revision={revision} error_world_ms={:.1}",
-                        error
+                    self.log_event(
+                        "client_runtime.clock_resync",
+                        &[
+                            ("revision", revision.to_string()),
+                            ("error_world_ms", format!("{error:.1}")),
+                        ],
                     );
                     return raw_world_ms;
                 }
@@ -76,7 +79,13 @@ impl ClientClock {
             self.smoothing_bias_ms = 0.0;
             self.smoothing_started_at_ms = None;
             self.resync_stale_until_ms = Some(now_ms.saturating_add(2_000));
-            eprintln!("clock_resync revision={revision} reason=smoothing_timeout");
+            self.log_event(
+                "client_runtime.clock_resync",
+                &[
+                    ("revision", revision.to_string()),
+                    ("reason", "smoothing_timeout".to_owned()),
+                ],
+            );
             return raw_world_ms;
         }
         let correction = self.smoothing_bias_ms * (1.0 - (-dt_s / SMOOTHING_TAU_S).exp());

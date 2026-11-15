@@ -1,6 +1,7 @@
 use super::theme::MAX_INPUT;
 use std::ops::Range;
 use std::time::Instant;
+use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Clone)]
 struct Snapshot {
@@ -11,6 +12,8 @@ struct Snapshot {
 
 pub(crate) struct Editor {
     pub text: String,
+    pub preedit: String,
+    composing: bool,
     pub cursor: usize,
     pub anchor: usize,
     pub scroll: usize,
@@ -24,6 +27,8 @@ impl Editor {
     pub fn new() -> Self {
         Self {
             text: String::with_capacity(MAX_INPUT),
+            preedit: String::new(),
+            composing: false,
             cursor: 0,
             anchor: 0,
             scroll: 0,
@@ -59,6 +64,7 @@ impl Editor {
     }
 
     pub fn set_text(&mut self, text: &str) {
+        self.clear_preedit();
         self.undo.clear();
         self.redo.clear();
         self.text.clear();
@@ -70,6 +76,7 @@ impl Editor {
     }
 
     pub fn clear(&mut self) -> String {
+        self.clear_preedit();
         self.undo.clear();
         self.redo.clear();
         self.scroll = 0;
@@ -79,38 +86,71 @@ impl Editor {
     }
 
     pub fn replace_selection(&mut self, input: &str) {
+        self.clear_preedit();
         let range = self.selection();
         let capacity = MAX_INPUT - (self.text.len() - range.len());
+        let filtered: String = input.chars().filter(|ch| !ch.is_control()).collect();
         let mut clean = String::new();
-        for ch in input.chars().filter(|ch| !ch.is_control()) {
-            if clean.len() + ch.len_utf8() > capacity {
+        for grapheme in filtered.graphemes(true) {
+            if clean.len() + grapheme.len() > capacity {
                 break;
             }
-            clean.push(ch);
+            clean.push_str(grapheme);
         }
         if range.is_empty() && clean.is_empty() {
             return;
         }
         self.record();
         self.text.replace_range(range.clone(), &clean);
-        self.cursor = range.start + clean.len();
+        self.cursor = self.next_grapheme_boundary(range.start + clean.len());
         self.anchor = self.cursor;
         self.changed_at = Instant::now();
     }
 
     pub fn replace_range(&mut self, range: Range<usize>, replacement: &str) {
+        if range.start > range.end
+            || !self.is_grapheme_boundary(range.start)
+            || !self.is_grapheme_boundary(range.end)
+        {
+            return;
+        }
         if self.text.len() - range.len() + replacement.len() > MAX_INPUT {
             return;
         }
         self.record();
         self.text.replace_range(range.clone(), replacement);
-        self.cursor = range.start + replacement.len();
+        self.cursor = self.next_grapheme_boundary(range.start + replacement.len());
         self.anchor = self.cursor;
         self.changed_at = Instant::now();
     }
 
+    fn is_grapheme_boundary(&self, at: usize) -> bool {
+        at == self.text.len()
+            || self
+                .text
+                .grapheme_indices(true)
+                .any(|(index, _)| index == at)
+    }
+
+    fn next_grapheme_boundary(&self, at: usize) -> usize {
+        self.text
+            .grapheme_indices(true)
+            .map(|(index, _)| index)
+            .find(|index| *index >= at)
+            .unwrap_or(self.text.len())
+    }
+
     pub fn move_to(&mut self, target: usize, select: bool) {
-        self.cursor = target.min(self.text.len());
+        self.cursor = self
+            .text
+            .grapheme_indices(true)
+            .map(|(index, _)| index)
+            .take_while(|index| *index <= target)
+            .last()
+            .unwrap_or(0);
+        if target >= self.text.len() {
+            self.cursor = self.text.len();
+        }
         if !select {
             self.anchor = self.cursor;
         }
@@ -142,34 +182,33 @@ impl Editor {
 
     fn previous(&self) -> usize {
         self.text[..self.cursor]
-            .char_indices()
+            .grapheme_indices(true)
             .last()
             .map_or(0, |(at, _)| at)
     }
 
     fn next(&self) -> usize {
-        self.cursor
-            + self.text[self.cursor..]
-                .chars()
-                .next()
-                .map_or(0, char::len_utf8)
+        self.text[self.cursor..]
+            .graphemes(true)
+            .next()
+            .map_or(self.cursor, |grapheme| self.cursor + grapheme.len())
     }
 
     fn word_left(&self) -> usize {
         let mut pos = self.cursor;
         while pos > 0 {
-            let ch = self.text[..pos].chars().next_back().unwrap();
-            if !ch.is_whitespace() {
+            let grapheme = self.text[..pos].graphemes(true).next_back().unwrap();
+            if !grapheme.chars().all(char::is_whitespace) {
                 break;
             }
-            pos -= ch.len_utf8();
+            pos -= grapheme.len();
         }
         while pos > 0 {
-            let ch = self.text[..pos].chars().next_back().unwrap();
-            if ch.is_whitespace() {
+            let grapheme = self.text[..pos].graphemes(true).next_back().unwrap();
+            if grapheme.chars().any(char::is_whitespace) {
                 break;
             }
-            pos -= ch.len_utf8();
+            pos -= grapheme.len();
         }
         pos
     }
@@ -177,18 +216,18 @@ impl Editor {
     fn word_right(&self) -> usize {
         let mut pos = self.cursor;
         while pos < self.text.len() {
-            let ch = self.text[pos..].chars().next().unwrap();
-            if ch.is_whitespace() {
+            let grapheme = self.text[pos..].graphemes(true).next().unwrap();
+            if grapheme.chars().any(char::is_whitespace) {
                 break;
             }
-            pos += ch.len_utf8();
+            pos += grapheme.len();
         }
         while pos < self.text.len() {
-            let ch = self.text[pos..].chars().next().unwrap();
-            if !ch.is_whitespace() {
+            let grapheme = self.text[pos..].graphemes(true).next().unwrap();
+            if !grapheme.chars().all(char::is_whitespace) {
                 break;
             }
-            pos += ch.len_utf8();
+            pos += grapheme.len();
         }
         pos
     }
@@ -222,6 +261,29 @@ impl Editor {
         self.changed_at = Instant::now();
     }
 
+    pub fn set_preedit(&mut self, text: &str) {
+        self.preedit.clear();
+        self.composing = !text.is_empty();
+        let range = self.selection();
+        let capacity = MAX_INPUT.saturating_sub(self.text.len().saturating_sub(range.len()));
+        for grapheme in text.graphemes(true) {
+            if self.preedit.len() + grapheme.len() > capacity {
+                break;
+            }
+            self.preedit.push_str(grapheme);
+        }
+        self.changed_at = Instant::now();
+    }
+
+    pub fn is_composing(&self) -> bool {
+        self.composing
+    }
+
+    pub fn clear_preedit(&mut self) {
+        self.preedit.clear();
+        self.composing = false;
+    }
+
     pub fn undo(&mut self) {
         if let Some(snapshot) = self.undo.pop() {
             self.redo.push(self.snapshot());
@@ -244,7 +306,7 @@ impl Editor {
     }
 
     pub fn ensure_visible(&mut self, columns: usize) {
-        let cursor = self.text[..self.cursor].chars().count();
+        let cursor = self.text[..self.cursor].graphemes(true).count();
         if cursor < self.scroll {
             self.scroll = cursor;
         }
@@ -253,7 +315,7 @@ impl Editor {
         }
         self.scroll = self.scroll.min(
             self.text
-                .chars()
+                .graphemes(true)
                 .count()
                 .saturating_add(1)
                 .saturating_sub(columns),

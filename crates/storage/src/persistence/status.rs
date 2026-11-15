@@ -1,5 +1,6 @@
 use crate::compact_error;
-use std::io;
+use crate::StorageError;
+use minimium_diagnostics::{DomainLogger, EventCode, Level};
 
 enum SaveStatus {
     Never,
@@ -22,37 +23,42 @@ impl std::fmt::Display for SaveStatus {
 pub(super) struct SaveBookkeeping {
     pending_saves: usize,
     last_save: SaveStatus,
-}
-
-impl Default for SaveBookkeeping {
-    fn default() -> Self {
-        Self {
-            pending_saves: 0,
-            last_save: SaveStatus::Never,
-        }
-    }
+    logger: DomainLogger,
 }
 
 impl SaveBookkeeping {
+    pub(super) fn new(logger: DomainLogger) -> Self {
+        Self {
+            pending_saves: 0,
+            last_save: SaveStatus::Never,
+            logger,
+        }
+    }
     pub(super) fn record_queued(&mut self) {
         self.pending_saves = self.pending_saves.saturating_add(1);
         self.last_save = SaveStatus::Pending;
+        self.emit("storage.save_queued", Level::Info, "pending".to_owned());
     }
 
-    pub(super) fn record_enqueue_failure(&mut self, error: &io::Error) {
+    pub(super) fn record_enqueue_failure(&mut self, error: &StorageError) {
         self.last_save = SaveStatus::Failed(compact_error(error));
+        self.emit(
+            "storage.save_enqueue_failed",
+            Level::Error,
+            compact_error(error),
+        );
     }
 
-    pub(super) fn record_completion(&mut self, result: io::Result<()>) {
+    pub(super) fn record_completion(&mut self, result: Result<(), StorageError>) {
         self.pending_saves = self.pending_saves.saturating_sub(1);
         match result {
             Ok(()) => {
                 self.last_save = SaveStatus::Complete;
-                println!("world save completed");
+                self.emit("storage.save_completed", Level::Info, "ok".to_owned());
             }
             Err(error) => {
                 self.last_save = SaveStatus::Failed(compact_error(&error));
-                eprintln!("world save failed: {error}");
+                self.emit("storage.save_failed", Level::Error, compact_error(&error));
             }
         }
     }
@@ -61,7 +67,11 @@ impl SaveBookkeeping {
         if self.pending_saves > 0 {
             self.pending_saves = 0;
             self.last_save = SaveStatus::Failed(String::from("world_storage_worker_stopped"));
-            eprintln!("world storage worker stopped before completing a save");
+            self.emit(
+                "storage.worker_stopped",
+                Level::Error,
+                "pending_save_lost".to_owned(),
+            );
         }
     }
 
@@ -74,5 +84,13 @@ impl SaveBookkeeping {
             "save_pending={} save_last={}",
             self.pending_saves, self.last_save
         )
+    }
+
+    pub(super) fn emit(&self, code: &'static str, level: Level, result: String) {
+        let Ok(code) = EventCode::new(code) else {
+            return;
+        };
+        self.logger
+            .emit(self.logger.event(level, code).field("result", &result));
     }
 }

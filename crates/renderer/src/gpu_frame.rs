@@ -40,6 +40,10 @@ pub struct EnvironmentUniform {
     pub moon_orbit_world: [f32; 4],
     pub halo_count: [u32; 4],
     pub halo_sources: [HaloSource; MAX_HALO_BODIES],
+    pub bolid_position_intensity: [f32; 4],
+    /// RGB emission tint; w is the analytic-output exposure compensation.
+    pub bolid_rgb: [f32; 4],
+    pub render_origin: [f32; 4],
 }
 use bytemuck::{Pod, Zeroable};
 
@@ -109,7 +113,7 @@ const _: () = {
     assert!(std::mem::offset_of!(CameraUniform, eye_world) == 208);
     assert!(std::mem::size_of::<HaloSource>() == 64);
     assert!(std::mem::align_of::<HaloSource>() == 16);
-    assert!(std::mem::size_of::<EnvironmentUniform>() == 880);
+    assert!(std::mem::size_of::<EnvironmentUniform>() == 928);
     assert!(std::mem::align_of::<EnvironmentUniform>() == 16);
     assert!(std::mem::offset_of!(EnvironmentUniform, sun_geometric_world) == 0);
     assert!(std::mem::offset_of!(EnvironmentUniform, sun_apparent_world) == 16);
@@ -132,4 +136,5 @@ const _: () = {
     assert!(std::mem::offset_of!(EnvironmentUniform, moon_orbit_world) == 336);
     assert!(std::mem::offset_of!(EnvironmentUniform, halo_count) == 352);
     assert!(std::mem::offset_of!(EnvironmentUniform, halo_sources) == 368);
+    assert!(std::mem::offset_of!(EnvironmentUniform, bolid_position_intensity) == 880);
 };

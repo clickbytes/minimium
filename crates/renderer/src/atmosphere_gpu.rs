@@ -122,6 +122,9 @@ impl AtmosphereGpu {
                     4
                 }
     }
+    pub fn optical_uniform(&self) -> &crate::AtmosphereUniform {
+        &self.last_view
+    }
     pub fn is_active(&self) -> bool {
         self.active
     }
@@ -170,7 +173,9 @@ impl AtmosphereGpu {
             self.debug,
             self.active,
         );
-        if self.active && (self.last_radius - value.radii[0] as f64).abs() > 0.1 {
+        // Fallback dust also samples this CPU-built optical-depth table.
+        // Its radius must follow the view even when compute/HDR is disabled.
+        if radius > 0.0 && (self.last_radius - value.radii[0] as f64).abs() > 0.1 {
             self.last_radius = value.radii[0] as f64;
             let mut profile = crate::atmosphere::EARTH;
             profile.radius_m = self.last_radius.max(1.0);

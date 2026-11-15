@@ -14,8 +14,8 @@ pub fn layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("regional cloud resources"),
         entries: &[
-            buffer(0, wgpu::BufferBindingType::Uniform, 256),
-            buffer(1, wgpu::BufferBindingType::Storage { read_only: true }, 80),
+            buffer(0, wgpu::BufferBindingType::Uniform, 320),
+            buffer(1, wgpu::BufferBindingType::Storage { read_only: true }, 96),
             wgpu::BindGroupLayoutEntry {
                 binding: 2,
                 visibility: wgpu::ShaderStages::FRAGMENT,
@@ -64,10 +64,19 @@ pub fn create(
     format: wgpu::TextureFormat,
     oit: bool,
     debug: bool,
+    mask: Option<bool>,
 ) -> wgpu::RenderPipeline {
+    let bolid_mask = mask.is_some();
+    let inside_mask = mask == Some(true);
+    let distance_layout = crate::bolid_layer::texture_layout(device, 1);
+    let groups = if bolid_mask {
+        vec![Some(frame), Some(cloud), Some(&distance_layout)]
+    } else {
+        vec![Some(frame), Some(cloud)]
+    };
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("cloud pipeline layout"),
-        bind_group_layouts: &[Some(frame), Some(cloud)],
+        bind_group_layouts: &groups,
         immediate_size: 0,
     });
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -91,7 +100,24 @@ pub fn create(
             write_mask: wgpu::ColorWrites::ALL,
         })
     };
-    let targets = if oit {
+    let targets = if bolid_mask {
+        vec![
+            target(
+                wgpu::TextureFormat::R16Float,
+                wgpu::BlendState {
+                    color: reveal,
+                    alpha: reveal,
+                },
+            ),
+            target(
+                wgpu::TextureFormat::Rgba16Float,
+                wgpu::BlendState {
+                    color: additive,
+                    alpha: additive,
+                },
+            ),
+        ]
+    } else if oit {
         vec![
             target(
                 wgpu::TextureFormat::Rgba16Float,
@@ -121,13 +147,21 @@ pub fn create(
         layout: Some(&layout),
         vertex: wgpu::VertexState {
             module: &shader,
-            entry_point: Some(if debug { "vs_debug" } else { "vs_cloud" }),
+            entry_point: Some(if debug || inside_mask {
+                "vs_debug"
+            } else {
+                "vs_cloud"
+            }),
             compilation_options: Default::default(),
-            buffers: if debug { &[] } else { &buffers },
+            buffers: if debug || inside_mask { &[] } else { &buffers },
         },
         fragment: Some(wgpu::FragmentState {
             module: &shader,
-            entry_point: Some(if debug {
+            entry_point: Some(if inside_mask {
+                "fs_inside_mask"
+            } else if bolid_mask {
+                "fs_bolid_mask"
+            } else if debug {
                 "fs_debug"
             } else if oit {
                 "fs_oit"

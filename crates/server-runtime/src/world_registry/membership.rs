@@ -120,6 +120,21 @@ impl WorldRegistry {
         self.context_for_player(id) == Some(context)
     }
 
+    pub(crate) fn player_position_in_context(
+        &self,
+        id: PlayerId,
+        context: WorldContext,
+    ) -> Option<[f32; 3]> {
+        if !self.context_matches(id, context) {
+            return None;
+        }
+        self.instances
+            .get(&context.instance())?
+            .world
+            .player(id)
+            .map(|player| player.position)
+    }
+
     pub(crate) fn instance_for_player(&self, id: PlayerId) -> Option<WorldInstanceId> {
         self.memberships
             .get(&id)

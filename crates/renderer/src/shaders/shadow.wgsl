@@ -20,6 +20,10 @@ struct ShadowVertexOutput {
 
 @vertex fn vs_shadow(input: ShadowVertexInput) -> ShadowVertexOutput {
     var output: ShadowVertexOutput;
-    output.clip_position = shadow.light_view_projection * vec4<f32>(input.position, 1.0);
+    var position = input.position;
+    if shadow.flags.y == 3u {
+        position -= shadow.receiver_center_relative_radius.xyz;
+    }
+    output.clip_position = shadow.light_view_projection * vec4<f32>(position, 1.0);
     return output;
 }

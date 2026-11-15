@@ -21,12 +21,12 @@ fn star_prominence(visual_magnitude: f32) -> f32 {
 }
 
 fn star_core_radius_pixels(visual_magnitude: f32) -> f32 {
-    return mix(1.4, 6.5, pow(star_prominence(visual_magnitude), 1.1));
+    return mix(1.2, 4.2, pow(star_prominence(visual_magnitude), 1.1));
 }
 
 fn star_radius_pixels(visual_magnitude: f32) -> f32 {
     return star_core_radius_pixels(visual_magnitude)
-        + mix(1.5, 3.5, star_prominence(visual_magnitude));
+        + mix(1.2, 2.0, star_prominence(visual_magnitude));
 }
 
 fn star_hash(id: u32) -> f32 {
@@ -95,13 +95,13 @@ fn star_hash(id: u32) -> f32 {
     let inner_position = input.local_position * (radius_pixels / core_radius_pixels);
     let inner_radius_squared = dot(inner_position, inner_position);
     let core = exp(-9.0 * inner_radius_squared);
-    let glow = prominence * 0.34 * exp(-3.5 * inner_radius_squared);
-    let glint = pow(prominence, 4.0) * 0.28
+    let glow = prominence * 0.20 * exp(-3.5 * inner_radius_squared);
+    let glint = pow(prominence, 4.0) * 0.15
         * exp(-42.0 * min(abs(inner_position.x), abs(inner_position.y)))
         * exp(-3.0 * inner_radius_squared);
     let inner_profile = (core + glow + glint)
         * (1.0 - smoothstep(0.72, 1.0, inner_radius_squared));
-    let micro_halo = 0.055 * prominence * prominence * exp(-3.0 * radius_squared)
+    let micro_halo = 0.025 * prominence * prominence * exp(-3.0 * radius_squared)
         * (1.0 - smoothstep(0.75, 1.0, radius_squared));
     let profile = inner_profile + micro_halo;
     let area_compensation = inverseSqrt(core_radius_pixels * 0.5);
@@ -109,13 +109,16 @@ fn star_hash(id: u32) -> f32 {
     let seed = star_hash(input.catalog_star_id);
     let second_seed = star_hash(input.catalog_star_id ^ 0x68bc21ebu);
     let altitude = clamp(dot(normalize(environment.observer_up_horizon_cos.xyz), ray_world), 0.0, 1.0);
-    var air_density=1.0;
-    if atmosphere.config.x>0.0 {air_density=exp(-max(atmosphere.up_height.w,0.0)/8000.0);}
-    let twinkle_strength = mix(0.28, 0.08, altitude)*air_density;
+    var air_density = 0.0;
+    if !overview && atmosphere.config.x > 0.0 {
+        air_density = exp(-max(atmosphere.up_height.w, 0.0) / 8000.0);
+    }
+    let twinkle_strength = mix(0.24, 0.035, sqrt(altitude)) * air_density;
     let time = environment.star_animation.x;
     let twinkle = 1.0 + twinkle_strength * (
-        0.7 * sin(time * (5.0 + 5.0 * seed) + 6.2831853 * second_seed)
-        + 0.3 * sin(time * (10.0 + 7.0 * second_seed) + 6.2831853 * seed)
+        0.55 * sin(time * (4.0 + 5.0 * seed) + 6.2831853 * second_seed)
+        + 0.30 * sin(time * (6.0 + 7.0 * second_seed) + 6.2831853 * seed)
+        + 0.15 * sin(time * (2.0 + 3.0 * star_hash(input.catalog_star_id ^ 0xa511e9b3u)) + 13.0 * seed)
     );
     let base = tone_map_linear(background);
     let star_radiance = input.color_linear * relative_flux * STAR_RADIANCE_SCALE

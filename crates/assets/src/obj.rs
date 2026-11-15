@@ -159,6 +159,7 @@ pub fn parse_obj_triangles(
                         precise_vertices: None,
                         color,
                         solid,
+                        surface: None,
                     });
                     added_triangles += 1;
                 }

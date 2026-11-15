@@ -1,0 +1,10 @@
+[package]
+name = "minimium-localization"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+fluent-bundle = "0.15"
+unic-langid = "0.9"
+minimium-diagnostics = { path = "../diagnostics" }

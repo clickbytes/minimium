@@ -3,10 +3,10 @@ use std::borrow::Cow;
 
 /// Font atlas, overlay pipeline and reusable UI vertex buffer.
 pub struct UiGpuResources {
-    pub pipeline: wgpu::RenderPipeline,
-    pub output_pipeline: Option<wgpu::RenderPipeline>,
-    pub bind_group: wgpu::BindGroup,
-    pub vertex_buffer: wgpu::Buffer,
+    pipeline: wgpu::RenderPipeline,
+    output_pipeline: Option<wgpu::RenderPipeline>,
+    bind_group: wgpu::BindGroup,
+    vertex_buffer: wgpu::Buffer,
     vertex_count: u32,
 }
 
@@ -42,6 +42,19 @@ impl UiGpuResources {
 
     pub fn vertex_count(&self) -> u32 {
         self.vertex_count
+    }
+
+    pub fn pipeline(&self) -> &wgpu::RenderPipeline {
+        &self.pipeline
+    }
+    pub fn output_pipeline(&self) -> Option<&wgpu::RenderPipeline> {
+        self.output_pipeline.as_ref()
+    }
+    pub fn bind_group(&self) -> &wgpu::BindGroup {
+        &self.bind_group
+    }
+    pub fn vertex_buffer(&self) -> &wgpu::Buffer {
+        &self.vertex_buffer
     }
 }
 

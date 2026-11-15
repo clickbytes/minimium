@@ -50,8 +50,8 @@ struct InflightProbe {
     sent_at_ms: u64,
 }
 
-/// Owns all per-connection monotonic clock estimation and render-date smoothing.
 pub(super) struct ClientClock {
+    diagnostic_logger: Option<minimium_diagnostics::DomainLogger>,
     epoch: Instant,
     session_nonce: Option<minimium_environment::time::SessionNonce>,
     probe_baseline_at_ms: Option<u64>,
@@ -77,8 +77,16 @@ pub(super) struct ClientClock {
 }
 
 impl ClientClock {
-    pub(super) fn new(epoch: Instant) -> Self {
+    pub(super) fn server_monotonic_ms(&self) -> Option<u64> {
+        let offset = self.best_offset()?.offset_twice_ms / 2;
+        u64::try_from(i128::from(self.local_monotonic_ms()).checked_add(offset)?).ok()
+    }
+    pub(super) fn new(
+        epoch: Instant,
+        diagnostic_logger: Option<minimium_diagnostics::DomainLogger>,
+    ) -> Self {
         Self {
+            diagnostic_logger,
             epoch,
             session_nonce: None,
             probe_baseline_at_ms: None,
@@ -104,6 +112,24 @@ impl ClientClock {
         }
     }
 
+    pub(super) fn set_logger(
+        &mut self,
+        diagnostic_logger: Option<minimium_diagnostics::DomainLogger>,
+    ) {
+        self.diagnostic_logger = diagnostic_logger;
+    }
+
+    pub(super) fn log_event(&self, code: &'static str, fields: &[(&str, String)]) {
+        crate::diagnostics::emit(
+            self.diagnostic_logger.as_ref(),
+            minimium_diagnostics::Level::Warn,
+            code,
+            fields
+                .iter()
+                .map(|(key, value)| crate::diagnostics::field(key, value)),
+        );
+    }
+
     pub(super) fn frame(&self) -> EnvironmentFrameInput {
         self.frame
     }
@@ -114,7 +140,8 @@ impl ClientClock {
 
     pub(super) fn begin_session(&mut self, sample: ClockSample) {
         let epoch = self.epoch;
-        *self = Self::new(epoch);
+        let diagnostic_logger = self.diagnostic_logger.clone();
+        *self = Self::new(epoch, diagnostic_logger);
         let now_ms = self.local_monotonic_ms();
         self.session_nonce = Some(sample.session_nonce());
         self.probe_baseline_at_ms = Some(now_ms);
@@ -259,7 +286,8 @@ impl ClientClock {
     }
 
     pub(super) fn reset(&mut self) {
-        *self = Self::new(Instant::now());
+        let diagnostic_logger = self.diagnostic_logger.clone();
+        *self = Self::new(Instant::now(), diagnostic_logger);
     }
 
     pub(super) fn update_frame(
@@ -457,7 +485,10 @@ impl ClientClock {
             .last_diagnostic_at_ms
             .is_none_or(|previous| now_ms.saturating_sub(previous) >= 1_000);
         if log_allowed {
-            eprintln!("clock_probe_ignored reason={reason}");
+            self.log_event(
+                "client_runtime.clock_probe_ignored",
+                &[("reason", reason.to_owned())],
+            );
             self.last_diagnostic_at_ms = Some(now_ms);
         }
     }

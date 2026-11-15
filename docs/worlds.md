@@ -1,9 +1,10 @@
 # World model and generation
 
-Epic 003 introduces a versioned world contract shared by the server and client.
+The current world contract is shared by the server and both client frontends.
 New data directories build a seeded procedural planet with a radius in the
-617.5–682.5 km range and a connected dungeon. Existing revision-2 directories
-retain their 10 km planet.
+617.5–682.5 km range and a connected dungeon. Generated manifests require
+generator revision 5; other generated revisions are rejected rather than
+reinterpreted. Authored worlds use their explicit content fingerprint.
 `minimium-server run --seed DECIMAL|0xHEX` chooses the seed for a new generated
 world. Without it, the server samples a random seed once. The server records it
 in `world.seed` and rejects a different seed on
@@ -13,13 +14,13 @@ The server owns memberships, simulation state, sector tickets and transfers;
 `procgen` is pure, `assets` validates authored definitions, and the client owns
 scene, prediction and renderer resources.
 
-Revision 3 introduces a versioned RON planet preset and stores its resolved
-definition in `world.planet.ron`. Presets can use `extends` up to eight levels;
-cycles and changes to an existing definition are rejected. The Earth preset
+The versioned RON planet preset is resolved and stored in `world.planet.ron`.
+Presets can use `extends` up to eight levels; cycles and changes to an existing
+definition are rejected. The Earth preset
 reads a separately imported GEBCO 2026 ice-surface package and uses generator
-revision 4 for new directories, with a GEBCO land spawn near Bergen. Saved
-resolved definitions without `generator_revision` remain revision 3; existing
-coordinates, generation geometry and player positions are preserved. The default
+revision 5 for new directories, with a GEBCO land spawn near Bergen. Saved
+resolved definitions carry the generator revision and digest; unsupported
+generated definitions fail validation. The default
 `third_party/gebco-2026` package uses a 1-arcminute overview (about 467 MB)
 streamed from the Australian Antarctic Division's COG mirror. The full
 15-arcsecond netCDF import remains available; its coasts and heights are more
@@ -141,7 +142,7 @@ use the same clock evaluation and astronomical model. Physics, cooldowns and
 network deadlines continue on real time. Interior instances retain the shared
 clock identity even when their profile does not render the planetary sky.
 
-The protocol v13 client estimator uses one local monotonic epoch per
+The protocol v18 client estimator uses one local monotonic epoch per
 `ClientSession` and exposes one immutable `EnvironmentFrameInput` after polling
 and portal installation. Its date, active descriptor, context, clock revision,
 rate and synchronization quality are shared by renderer environment consumers.
@@ -161,20 +162,18 @@ digest, then waits for target sector data, collision and GPU buffers before
 acknowledging readiness. It switches its active sector scene and input state
 without recreating the window, GPU device or TCP session.
 
-Protocol v13 wraps gameplay inputs and snapshots in instance, content revision and
+Protocol v18 wraps gameplay inputs and snapshots in instance, content revision and
 membership epoch. Inputs and snapshots from an older membership context are
-discarded. Save v9 records every loaded world's manifest and map fingerprint,
+discarded. Save v10 records every loaded world's manifest and map fingerprint,
 each player's instance, millimeter position, orientation, health and return
-location, revisioned sector state, and the shared world clock. v2/v3 snapshots
-are attached only to a loaded legacy map with a matching fingerprint; they are
-never guessed onto the procedural planet. The intermediate v4 format is accepted
-only for locations in the primary instance, because it did not pin manifests for
-target worlds. Every valid v2–v7 snapshot remains readable and starts a RealTime
-clock at current UTC; its data is rewritten as v9 only when the next snapshot
-completes.
+location, revisioned sector state, world-clock state, and persistent entity
+records including entity counters and content-initialization markers. Older and
+unknown save versions are rejected before a persistence worker starts; no
+migration is provided. Use a separate data directory when moving older data to
+the current format.
 
-The v8/v9 `CLOCK` record is stored after `WORLD` records and before sector or player
-records in the same atomic snapshot. RealTime uses the current UTC after restart.
+The v10 `CLOCK` record is stored after `WORLD` records and before sector, entity
+or player records in the same atomic snapshot. RealTime uses the current UTC after restart.
 TimeScale/Pause resumes `saved_world_utc_ms`; TimeScale/Advance adds
 `floor(max(0, current_wall_utc_ms - saved_wall_utc_ms) * rate_ppm / 1_000_000)`
 with checked arithmetic. If wall UTC moved backwards, offline advance is zero
@@ -195,24 +194,24 @@ levels for revision 2. Revision 3 selects quadtree patches to the computed
 horizon and uses edge skirts where patch sizes differ. Portal
 readiness waits for target data, collision and GPU
 buffers before the client acknowledges. The client retains source maps in CPU
-memory so it can create deterministic sectors locally. An existing v1 demo
-snapshot is loaded with its original generator, copied to
-`world.snapshot.legacy-v1`, and rewritten with positions projected along their
-saved radial directions. Save v9 stores complete,
-revisioned logical object-state sets by sector; the server registry checks
-topology, revision order and size limits when committing or restoring them. The
-demo currently has no interaction that changes sector objects. Geometry edits
-and network replication of object state remain future work.
+memory so it can create deterministic sectors locally. Save v10 stores complete, revisioned logical
+object-state sets by sector and persistent component entities. Entity mutation
+reserves storage budget before publication; the server captures the complete
+entity set for autosave and shutdown. Protocol v18 synchronizes bounded entity
+replicas through a per-client journal and applies full/delta images atomically
+on the client. Component schemas and replication visibility are registered by
+the host application. Geometry edits remain future work.
 
 ## Component and universe catalogs
 
-`EntityStore` holds component blobs per world instance. Components use stable nonzero entity/type IDs, a schema version and a bounded payload. The `MEC1` envelope is opt-in inside the existing opaque world-object data; unrecognized legacy objects are left to their prior decoder. Rehydration validates registered types and supported schema upgrades before restoring the entity and sector ownership. Replication policy is explicit (`ServerOnly` by default). Changed replicated components can be collected as a bounded staging view, but that view is not attached to snapshots and no component wire message exists.
+`EntityStore` holds component blobs per world instance. Components use stable nonzero entity/type IDs, a schema version and a bounded payload. Startup validates registered component schemas before loading and restores entities, counters and initialization markers transactionally. Replication policy is explicit (`ServerOnly` by default); visible components are published through bounded per-client full/delta synchronization, and the client commits only complete validated transfers before acknowledging them.
 
 `UniverseCatalog` is a bounded in-memory solar-system graph. It validates body IDs, parent ownership/cycles, finite values and body limits, then evaluates fixed positions or simplified circular orbits into observations. It is a catalog for renderer inputs, not a persisted world definition, a precise astronomy engine, or an N-body simulation. The client adapts observations from the existing astronomy `SkyState` path for sky rendering.
 
 Planet movement derives local up from the radial direction, uses a tangent
 movement frame and substeps collision checks. Dungeon movement keeps fixed Y-up.
-Collision bounds use the corresponding capsule orientation. Workspace tests now
-exercise the generated planet-to-dungeon route, portal return, save migration,
-and restoration of the saved player profile. A wire-level restart/reconnect demo
-also passed. A visual review of the rendered client transfer remains outstanding.
+Collision bounds use the corresponding capsule orientation. Source review of
+the generated planet-to-dungeon route, portal return and v10 save/restore is
+recorded in the E046 issue reports. Existing test and demo results predate this
+worktree and do not verify it. Save migration is not provided; old formats are
+rejected. Runtime restart/reconnect and rendered transfer remain unverified.

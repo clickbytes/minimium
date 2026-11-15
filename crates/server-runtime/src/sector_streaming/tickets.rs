@@ -12,6 +12,7 @@ pub(super) fn reconcile_active_requests(
     active_tickets: &mut HashMap<PlayerId, Vec<SectorTicket>>,
     previous_active: HashMap<PlayerId, Vec<SectorTicket>>,
     requests: Vec<PlayerSectorRequest>,
+    logger: &minimium_diagnostics::DomainLogger,
 ) -> Vec<PlayerReadiness> {
     let mut previous_active = previous_active;
     let mut readiness = Vec::with_capacity(requests.len());
@@ -24,6 +25,7 @@ pub(super) fn reconcile_active_requests(
             request.keys,
             request.generation,
             request.content,
+            logger,
         );
         active_tickets.insert(request.player, tickets.clone());
         readiness.push(PlayerReadiness {
@@ -42,6 +44,7 @@ pub(super) fn reconcile_transfer_requests(
     previous_transfers: HashMap<PlayerId, Vec<SectorTicket>>,
     requests: Vec<TransferSectorRequest>,
     worlds: &WorldRegistry,
+    logger: &minimium_diagnostics::DomainLogger,
 ) -> Vec<TransferReadiness> {
     let mut previous_transfers = previous_transfers;
     let mut readiness = Vec::with_capacity(requests.len());
@@ -69,6 +72,7 @@ pub(super) fn reconcile_transfer_requests(
             minimium_procgen::sector_neighborhood_for(manifest, request.position),
             request.generation,
             request.content,
+            logger,
         );
         transfer_tickets.insert(request.player, tickets.clone());
         readiness.push(TransferReadiness {
@@ -89,6 +93,7 @@ fn reconcile_tickets(
     keys: Vec<SectorKey>,
     generation: GenerationRevision,
     content: WorldContentRevision,
+    logger: &minimium_diagnostics::DomainLogger,
 ) -> (Vec<SectorTicket>, bool) {
     let mut seen = HashSet::with_capacity(keys.len());
     let desired: Vec<_> = keys.into_iter().filter(|key| seen.insert(*key)).collect();
@@ -98,13 +103,17 @@ fn reconcile_tickets(
         let matches = ticket.instance() == instance
             && ticket.generation() == generation
             && ticket.content_revision() == content
-            && desired_keys.contains(&ticket.key());
+            && desired_keys.contains(&ticket.key())
+            && sectors.state(ticket) != Some(minimium_sectors::SectorState::Failed);
         if matches {
             if let Some(displaced) = retained.insert(ticket.key(), ticket) {
                 sectors.unpin(displaced);
             }
         } else {
             sectors.unpin(ticket);
+            if sectors.state(ticket) == Some(minimium_sectors::SectorState::Failed) {
+                let _ = sectors.evict(ticket);
+            }
         }
     }
 
@@ -115,7 +124,8 @@ fn reconcile_tickets(
             tickets.push(ticket);
             continue;
         }
-        let Some(ticket) = request_sector(sectors, instance, key, generation, content) else {
+        let Some(ticket) = request_sector(sectors, instance, key, generation, content, logger)
+        else {
             complete = false;
             continue;
         };
@@ -150,12 +160,40 @@ fn request_sector(
     key: SectorKey,
     generation: GenerationRevision,
     content: WorldContentRevision,
+    logger: &minimium_diagnostics::DomainLogger,
 ) -> Option<SectorTicket> {
     match sectors.request(instance, key, generation, content) {
         Ok(ticket) => Some(ticket),
         Err(RequestError::CacheFull) if sectors.evict_oldest() => {
-            sectors.request(instance, key, generation, content).ok()
+            match sectors.request(instance, key, generation, content) {
+                Ok(ticket) => Some(ticket),
+                Err(error) => {
+                    log_request_failure(logger, instance, key, &error);
+                    None
+                }
+            }
         }
-        Err(_) => None,
+        Err(error) => {
+            log_request_failure(logger, instance, key, &error);
+            None
+        }
     }
+}
+
+fn log_request_failure(
+    logger: &minimium_diagnostics::DomainLogger,
+    instance: WorldInstanceId,
+    key: SectorKey,
+    error: &RequestError,
+) {
+    crate::diagnostics::emit(
+        logger,
+        minimium_diagnostics::Level::Warn,
+        "sectors.request_failed",
+        &[
+            ("world_instance", instance.to_string()),
+            ("sector", format!("{key:?}")),
+            ("reason", format!("{error:?}")),
+        ],
+    );
 }

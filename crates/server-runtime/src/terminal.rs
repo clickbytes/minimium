@@ -9,15 +9,15 @@ const TERMINAL_QUEUE_CAPACITY: usize = 64;
 const MAX_TERMINAL_LINE_BYTES: usize = 512;
 const READ_BUFFER_BYTES: usize = 256;
 
-pub fn spawn() -> io::Result<Receiver<ServerCommand>> {
+pub fn spawn(logger: minimium_diagnostics::DomainLogger) -> io::Result<Receiver<ServerCommand>> {
     let (sender, receiver) = mpsc::sync_channel(TERMINAL_QUEUE_CAPACITY);
     thread::Builder::new()
         .name("minimium-console-input".to_owned())
-        .spawn(move || read_commands(sender))?;
+        .spawn(move || read_commands(sender, logger))?;
     Ok(receiver)
 }
 
-fn read_commands(sender: SyncSender<ServerCommand>) {
+fn read_commands(sender: SyncSender<ServerCommand>, logger: minimium_diagnostics::DomainLogger) {
     let stdin = io::stdin();
     let mut input = stdin.lock();
     let mut buffer = [0u8; READ_BUFFER_BYTES];
@@ -28,21 +28,26 @@ fn read_commands(sender: SyncSender<ServerCommand>) {
         let count = match input.read(&mut buffer) {
             Ok(0) => {
                 if !line.is_empty() || overlong {
-                    submit_line(&sender, &mut line, &mut overlong);
+                    submit_line(&sender, &mut line, &mut overlong, &logger);
                 }
                 return;
             }
             Ok(count) => count,
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
             Err(error) => {
-                eprintln!("ERR terminal input: {error}");
+                emit(
+                    &logger,
+                    minimium_diagnostics::Level::Error,
+                    "server.console_input_failed",
+                    Some(error.to_string()),
+                );
                 return;
             }
         };
 
         for byte in buffer[..count].iter().copied() {
             if byte == b'\n' {
-                submit_line(&sender, &mut line, &mut overlong);
+                submit_line(&sender, &mut line, &mut overlong, &logger);
             } else if !overlong {
                 if line.len() == MAX_TERMINAL_LINE_BYTES {
                     line.clear();
@@ -55,9 +60,19 @@ fn read_commands(sender: SyncSender<ServerCommand>) {
     }
 }
 
-fn submit_line(sender: &SyncSender<ServerCommand>, line: &mut Vec<u8>, overlong: &mut bool) {
+fn submit_line(
+    sender: &SyncSender<ServerCommand>,
+    line: &mut Vec<u8>,
+    overlong: &mut bool,
+    logger: &minimium_diagnostics::DomainLogger,
+) {
     if *overlong {
-        eprintln!("ERR terminal command exceeds 512 bytes");
+        emit(
+            logger,
+            minimium_diagnostics::Level::Warn,
+            "server.console_command_too_large",
+            None,
+        );
         line.clear();
         *overlong = false;
         return;
@@ -68,7 +83,12 @@ fn submit_line(sender: &SyncSender<ServerCommand>, line: &mut Vec<u8>, overlong:
     let command_line = match std::str::from_utf8(line) {
         Ok(command_line) => command_line,
         Err(_) => {
-            eprintln!("ERR terminal command is not UTF-8");
+            emit(
+                logger,
+                minimium_diagnostics::Level::Warn,
+                "server.console_command_invalid_encoding",
+                None,
+            );
             line.clear();
             return;
         }
@@ -80,10 +100,37 @@ fn submit_line(sender: &SyncSender<ServerCommand>, line: &mut Vec<u8>, overlong:
     match ServerCommand::parse(command_line) {
         Ok(command) => match sender.try_send(command) {
             Ok(()) => {}
-            Err(TrySendError::Full(_)) => eprintln!("ERR command queue full; command dropped"),
-            Err(TrySendError::Disconnected(_)) => eprintln!("ERR command queue closed"),
+            Err(TrySendError::Full(_)) => emit(
+                logger,
+                minimium_diagnostics::Level::Warn,
+                "server.console_queue_full",
+                None,
+            ),
+            Err(TrySendError::Disconnected(_)) => emit(
+                logger,
+                minimium_diagnostics::Level::Error,
+                "server.console_queue_closed",
+                None,
+            ),
         },
-        Err(error) => eprintln!("ERR command: {error}"),
+        Err(error) => emit(
+            logger,
+            minimium_diagnostics::Level::Warn,
+            "server.console_command_invalid",
+            Some(error.to_string()),
+        ),
     }
     line.clear();
+}
+
+fn emit(
+    logger: &minimium_diagnostics::DomainLogger,
+    level: minimium_diagnostics::Level,
+    code: &'static str,
+    reason: Option<String>,
+) {
+    let fields = reason
+        .map(|reason| vec![("reason", reason)])
+        .unwrap_or_default();
+    crate::diagnostics::emit(logger, level, code, &fields);
 }

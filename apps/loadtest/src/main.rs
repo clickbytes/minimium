@@ -40,6 +40,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         ParseOutcome::Config(config) => config,
     };
+    let paths = minimium_platform::app_paths::AppPaths::resolve(
+        config
+            .server_data_dir
+            .as_deref()
+            .unwrap_or(std::path::Path::new(".")),
+        std::path::Path::new("."),
+        std::path::Path::new("."),
+        std::path::Path::new("."),
+        config.log_dir.as_deref(),
+    )?;
+    let mut diagnostics = minimium_telemetry::logging::DiagnosticsRuntime::start(&paths.log_dir)?;
+    let logger = diagnostics.logger(minimium_diagnostics::DomainId::Platform);
+    logger.emit(logger.event(
+        minimium_diagnostics::Level::Info,
+        minimium_diagnostics::EventCode::new("loadtest.starting")?,
+    ));
+    let resolved_server_data_dir = config
+        .server_data_dir
+        .as_ref()
+        .map(|_| paths.data_dir.clone());
     let worker_count = config.worker_count();
     let thread_mode = config.thread_mode();
     let StartupConfig {
@@ -51,9 +71,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         cpu_label,
         cpu_mhz,
         scenario_id,
-        server_data_dir,
+        server_data_dir: _,
+        log_dir: _,
         ..
     } = config;
+    let server_data_dir = resolved_server_data_dir;
     let mut metadata =
         report::ReportMetadata::new(scenario_id.unwrap_or_else(|| scenario.name().to_owned()));
     metadata.cpu_label = cpu_label;
@@ -66,7 +88,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             Ok(sample) => metadata.server_before = Some(sample),
             Err(_) => {
                 metadata.reject_server_samples();
-                eprintln!("server sample before unavailable: address match or endpoint continuity could not be verified; all server samples are unavailable");
+                emit_loadtest_event(
+                    &logger,
+                    "loadtest.server_sample_unavailable",
+                    "before_measurement",
+                );
             }
         }
     }
@@ -76,24 +102,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .as_nanos()
         .to_le_bytes();
     let ping_frame = encode_client(&ClientMessage::Ping)?;
-    let movement_frames = MOVEMENT_DIRECTIONS
-        .map(|direction| {
-            encode_client(&ClientMessage::Move {
-                direction,
-                jump: false,
-            })
-        })
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()?;
-    let fire_frames = MOVEMENT_DIRECTIONS
-        .map(|direction| {
-            encode_client(&ClientMessage::Fire {
-                direction: [direction[0], 0.0, direction[1]],
-            })
-        })
-        .into_iter()
-        .collect::<Result<Vec<_>, _>>()?;
-    let chat_frame = encode_client(&ClientMessage::Chat(String::from("load test message")))?;
+    let movement_directions = MOVEMENT_DIRECTIONS.to_vec();
     let (ready_sender, ready_receiver) = mpsc::channel();
     let abort_setup = Arc::new(AtomicBool::new(false));
     let setup_started_at = Instant::now();
@@ -107,9 +116,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         let (start_sender, start_receiver) = mpsc::channel();
         start_senders.push(start_sender);
         let ping_frame = ping_frame.clone();
-        let movement_frames = movement_frames.clone();
-        let fire_frames = fire_frames.clone();
-        let chat_frame = chat_frame.clone();
+        let movement_directions = movement_directions.clone();
         workers.push(thread::spawn(move || {
             run_worker(
                 client_ids,
@@ -120,9 +127,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     scenario,
                     total_clients: clients,
                     ping_frame,
-                    movement_frames,
-                    fire_frames,
-                    chat_frame,
+                    movement_directions,
                     ready_sender,
                     start_receiver,
                     abort_setup,
@@ -174,7 +179,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             Ok(sample) => metadata.server_measurement_start = Some(sample),
             Err(_) => {
                 metadata.reject_server_samples();
-                eprintln!("server sample at measurement start unavailable: address match or endpoint continuity could not be verified; all server samples are unavailable");
+                emit_loadtest_event(
+                    &logger,
+                    "loadtest.server_sample_unavailable",
+                    "measurement_start",
+                );
             }
         }
     }
@@ -214,12 +223,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             Ok(sample) => metadata.server_after = Some(sample),
             Err(_) => {
                 metadata.reject_server_samples();
-                eprintln!("server sample after unavailable: address match or endpoint continuity could not be verified; all server samples are unavailable");
+                emit_loadtest_event(
+                    &logger,
+                    "loadtest.server_sample_unavailable",
+                    "after_measurement",
+                );
             }
         }
     }
     if !metadata.validate_server_identity() {
-        eprintln!("server report samples unavailable: endpoint identity consistency could not be verified across samples");
+        emit_loadtest_event(&logger, "loadtest.server_identity_unverified", "report");
     }
     report::print_report(
         output_format,
@@ -230,5 +243,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         &stats,
         &metadata,
     );
+    drop(logger);
+    diagnostics.shutdown_until(std::time::Instant::now() + std::time::Duration::from_secs(2))?;
     Ok(())
+}
+
+fn emit_loadtest_event(
+    logger: &minimium_diagnostics::DomainLogger,
+    code: &'static str,
+    phase: &str,
+) {
+    if let Ok(code) = minimium_diagnostics::EventCode::new(code) {
+        logger.emit(
+            logger
+                .event(minimium_diagnostics::Level::Warn, code)
+                .field("phase", phase),
+        );
+    }
 }

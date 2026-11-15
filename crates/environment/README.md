@@ -64,3 +64,8 @@ both source and effective climate elevations for renderer interpolation.
 Cloud clearance and fog placement follow the actual displayed ground; astronomical
 height anchors use the same relief mapping while retaining source Earth altitude.
 This remains a heuristic climate model, not observed regional Earth weather.
+
+Cosmetic ambient meteors (`docs/adr/0013-ambient-meteors.md`) are outside this
+crate's responsibility. They add no weather, clock, observer or universe
+vocabulary here; hosts gate meteor exposure with the existing observer/UTC/terrain
+outputs, and the future tracked-object rendering adapter adds no domain state.

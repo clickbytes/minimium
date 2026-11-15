@@ -117,9 +117,19 @@ fn apply(setting: Setting, context: &mut CommandContext<'_>) -> CommandResult {
     let change = match setting {
         Setting::Fly(value) => {
             if let Some(value) = value {
-                settings.fly = value;
+                if let Err(error) = context
+                    .connection
+                    .queue_world_input(minimium_protocol::ClientWorldInput::SetFlightEnabled(value))
+                {
+                    return CommandResult::QueueError(error);
+                }
+                return CommandResult::Action(FrontendAction::Print(format_movement(
+                    settings,
+                    context.connection.flight_enabled,
+                    true,
+                )));
             }
-            value.is_some()
+            false
         }
         Setting::Speed(value) => {
             if let Some(value) = value {
@@ -135,44 +145,53 @@ fn apply(setting: Setting, context: &mut CommandContext<'_>) -> CommandResult {
         }
     };
     let queued = if change {
-        let input = minimium_simulation::CharacterInput {
-            movement: settings,
-            ..Default::default()
-        };
-        if let Err(error) = context
-            .connection
-            .queue(&minimium_protocol::ClientMessage::Motion(input))
-        {
+        if let Err(error) = context.connection.queue_world_input(
+            minimium_protocol::ClientWorldInput::SetMovementPolicy {
+                speed: settings.speed,
+                accel: settings.accel,
+            },
+        ) {
             return CommandResult::QueueError(error);
         }
-        context.connection.movement = settings;
         true
     } else {
         false
     };
-    CommandResult::Action(FrontendAction::Print(format_movement(settings, queued)))
+    CommandResult::Action(FrontendAction::Print(format_movement(
+        settings,
+        context.connection.flight_enabled,
+        queued,
+    )))
 }
 
 fn report(key: Key, context: &CommandContext<'_>) -> CommandResult {
     let settings = context.connection.movement;
     let value = match key {
-        Key::MovementFly => settings.fly.to_string(),
+        Key::MovementFly => context.connection.flight_enabled.to_string(),
         Key::MovementSpeed => settings.speed.to_string(),
         Key::MovementAccel => settings.accel.to_string(),
         _ => unreachable!("movement property key was matched"),
     };
     CommandResult::Action(FrontendAction::Print(format!(
-        "{} requested={} effective={} source=local_input queue=not_submitted server_confirmation=unavailable",
-        key.key(), value, value
+        "{} requested={} effective={} source=server_policy revision={}",
+        key.key(),
+        value,
+        value,
+        settings.revision
     )))
 }
 
-fn format_movement(settings: minimium_simulation::MovementSettings, queued: bool) -> String {
+fn format_movement(
+    settings: minimium_simulation::MovementPolicy,
+    flight_enabled: bool,
+    queued: bool,
+) -> String {
     format!(
-        "movement: fly={} (noclip), speed={} m/s, accel={} m/s² source=local_input queue={} server_confirmation=unavailable (shared by walk and fly; range 0..10000)",
-        settings.fly,
+        "movement: fly={} (noclip), speed={} m/s, accel={} m/s² source=server_policy revision={} request={}",
+        flight_enabled && settings.can_fly,
         settings.speed,
         settings.accel,
+        settings.revision,
         if queued { "accepted" } else { "unchanged" }
     )
 }

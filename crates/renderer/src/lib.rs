@@ -4,7 +4,6 @@
 //! this crate owns renderer-specific geometry layouts, resources and pipelines. Window
 //! lifecycle, sessions, simulation and frame scheduling remain application concerns.
 
-#[cfg(feature = "gpu")]
 pub mod atmosphere;
 pub mod atmosphere_debug;
 #[cfg(feature = "gpu")]
@@ -21,6 +20,12 @@ mod atmosphere_timing;
 pub mod atmosphere_uniform;
 #[cfg(feature = "gpu")]
 pub mod atmosphere_view;
+#[cfg(feature = "gpu")]
+mod bolid_dust;
+#[cfg(feature = "gpu")]
+mod bolid_layer;
+#[cfg(feature = "gpu")]
+pub mod bolid_light;
 #[cfg(feature = "gpu")]
 pub mod catalogue;
 #[cfg(feature = "gpu")]
@@ -53,8 +58,16 @@ pub mod geometry_gpu;
 pub mod gpu_bindings;
 #[cfg(feature = "gpu")]
 pub mod gpu_frame;
+pub mod held_tool;
+#[cfg(feature = "gpu")]
+pub mod held_tool_gpu;
 #[cfg(feature = "gpu")]
 pub mod lighting;
+pub mod meteors;
+#[cfg(feature = "gpu")]
+mod meteors_culling;
+#[cfg(feature = "gpu")]
+pub mod meteors_gpu;
 #[cfg(feature = "gpu")]
 pub mod milky_way_gpu;
 #[cfg(feature = "gpu")]
@@ -79,6 +92,8 @@ pub mod prepared_sector;
 pub mod profiles;
 pub mod quality;
 #[cfg(feature = "gpu")]
+mod render_contours;
+#[cfg(feature = "gpu")]
 pub mod render_frame;
 #[cfg(feature = "gpu")]
 pub mod render_patch_cache;
@@ -96,6 +111,8 @@ pub mod shadow_settings;
 pub mod shadow_target;
 #[cfg(feature = "gpu")]
 pub mod shadow_uniform;
+#[cfg(feature = "gpu")]
+mod shoreline;
 #[cfg(feature = "gpu")]
 pub mod star_gpu;
 #[cfg(feature = "gpu")]
@@ -116,13 +133,21 @@ pub mod terrain_geometry;
 #[cfg(feature = "gpu")]
 pub mod terrain_gpu;
 #[cfg(feature = "gpu")]
+mod terrain_occlusion;
+#[cfg(feature = "gpu")]
 mod terrain_palette;
 #[cfg(feature = "gpu")]
 pub mod terrain_view;
 #[cfg(feature = "gpu")]
+pub mod transient_cloud_cache;
+#[cfg(feature = "gpu")]
+mod transient_clouds;
+pub mod transient_lighting;
+#[cfg(feature = "gpu")]
 pub mod ui_pipeline;
 #[cfg(feature = "gpu")]
 pub mod ui_vertex;
+pub mod water_surface;
 #[cfg(feature = "gpu")]
 pub mod world_geometry_gpu;
 #[cfg(feature = "gpu")]

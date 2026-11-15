@@ -1,18 +1,32 @@
-//! Budgeted staging and atomic publication of a complete presentation selection.
+//! Budgeted staging; visible buffers change only at complete scene publication.
 use super::*;
 use crate::prepared_sector::PreparedSector;
 
+mod publication;
+
 pub(super) struct PendingGeometry {
-    pub shadow: wgpu::Buffer,
-    count: u32,
-    pub terrain: Option<TerrainBuffers>,
-    bounds: Option<ShadowBounds>,
-    source: Arc<SectorGeometry>,
+    shadow: Option<wgpu::Buffer>,
+    surface: Option<wgpu::Buffer>,
+    ocean: Option<wgpu::Buffer>,
+    objects: Option<wgpu::Buffer>,
+    source: Arc<PreparedSector>,
+    pub origin_generation: u64,
 }
 
 impl PendingGeometry {
+    pub fn buffers(&self) -> impl Iterator<Item = (&wgpu::Buffer, RebaseLayout)> {
+        [
+            (self.shadow.as_ref(), RebaseLayout::Object),
+            (self.surface.as_ref(), RebaseLayout::Terrain),
+            (self.ocean.as_ref(), RebaseLayout::Water),
+            (self.objects.as_ref(), RebaseLayout::Object),
+        ]
+        .into_iter()
+        .filter_map(|(buffer, layout)| buffer.map(|buffer| (buffer, layout)))
+    }
+
     pub fn bytes(&self) -> u64 {
-        self.shadow.size() + self.terrain.as_ref().map_or(0, TerrainBuffers::bytes)
+        self.buffers().map(|(buffer, _)| buffer.size()).sum()
     }
 }
 
@@ -25,6 +39,7 @@ impl WorldGeometryGpu {
         content_revision: WorldContentRevision,
         patches: &[Arc<PreparedSector>],
         active: &[(SectorKey, u8)],
+        origin_generation: u64,
     ) -> GeometryCacheResult {
         let version = (generation, content_revision);
         let mut released = if self.versions.get(&instance).is_some_and(|v| *v != version) {
@@ -35,51 +50,50 @@ impl WorldGeometryGpu {
         self.versions.insert(instance, version);
         let required: HashMap<_, _> = patches.iter().map(|p| ((p.key, p.lod), p)).collect();
         let protected: HashSet<_> = active.iter().copied().collect();
-        self.pending.retain(|(owner, key, lod), p| {
+        self.pending.retain(|(owner, key, lod), pending| {
             let keep = *owner != instance
-                || required
-                    .get(&(*key, *lod))
-                    .is_some_and(|next| Arc::ptr_eq(&next.geometry, &p.source));
+                || (pending.origin_generation == origin_generation
+                    && required
+                        .get(&(*key, *lod))
+                        .is_some_and(|next| Arc::ptr_eq(next, &pending.source)));
             if !keep {
-                released += p.bytes();
+                released += pending.bytes();
             }
             keep
         });
-        self.catalog.retain(|(owner, key, lod), (b, _)| {
+        self.catalog.retain(|(owner, key, lod), (buffer, _)| {
             let keep = *owner != instance
                 || required.contains_key(&(*key, *lod))
                 || protected.contains(&(*key, *lod));
             if !keep {
-                released += b.size();
+                released += buffer.size();
             }
             keep
         });
-        self.terrain.retain(|k, b| {
-            let keep = self.catalog.contains_key(k);
-            if !keep {
-                released += b.bytes();
-            }
-            keep
-        });
-        self.sources.retain(|k, _| self.catalog.contains_key(k));
-        self.bounds.retain(|k, _| self.catalog.contains_key(k));
+        released += self.retain_resident_channels();
         let mut allocated = 0;
         for patch in patches {
             let key = (instance, patch.key, patch.lod);
-            let current = self
-                .sources
-                .get(&key)
-                .is_some_and(|s| Arc::ptr_eq(s, &patch.geometry));
-            let staged = self
-                .pending
-                .get(&key)
-                .is_some_and(|s| Arc::ptr_eq(&s.source, &patch.geometry));
+            let current_origin =
+                self.catalog_origin_generation.get(&key) == Some(&origin_generation);
+            let previous = self.prepared_sources.get(&key).filter(|_| current_origin);
+            let current = previous.is_some_and(|source| Arc::ptr_eq(source, patch));
+            let staged = self.pending.get(&key).is_some_and(|pending| {
+                pending.origin_generation == origin_generation
+                    && Arc::ptr_eq(&pending.source, patch)
+            });
             if current || staged {
                 continue;
             }
             if self.budget.patches == 0 || self.budget.bytes == 0 {
                 break;
             }
+            let shadow_changed = !previous.is_some_and(|p| Arc::ptr_eq(&p.shadow, &patch.shadow));
+            let surface_changed =
+                !previous.is_some_and(|p| Arc::ptr_eq(&p.surface, &patch.surface));
+            let ocean_changed = !previous.is_some_and(|p| Arc::ptr_eq(&p.ocean, &patch.ocean));
+            let objects_changed =
+                !previous.is_some_and(|p| Arc::ptr_eq(&p.objects, &patch.objects));
             let make = |label, bytes: &[u8]| {
                 device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some(label),
@@ -87,83 +101,61 @@ impl WorldGeometryGpu {
                     usage: self.usage(),
                 })
             };
-            let terrain = patch.terrain.then(|| TerrainBuffers {
-                surface: make("prepared terrain", bytemuck::cast_slice(&patch.surface)),
-                surface_count: patch.surface.len() as u32,
-                ocean: make("prepared ocean", bytemuck::cast_slice(&patch.ocean)),
-                ocean_count: patch.ocean.len() as u32,
-                objects: make("prepared objects", bytemuck::cast_slice(&patch.objects)),
-                object_count: patch.objects.len() as u32,
-            });
             let next = PendingGeometry {
-                shadow: make(
-                    "prepared shadow geometry",
-                    bytemuck::cast_slice(&patch.shadow),
-                ),
-                count: patch.shadow.len() as u32,
-                terrain,
-                bounds: patch.bounds,
-                source: patch.geometry.clone(),
+                shadow: shadow_changed
+                    .then(|| make("prepared shadow", bytemuck::cast_slice(&patch.shadow))),
+                surface: (patch.terrain && surface_changed)
+                    .then(|| make("prepared terrain", bytemuck::cast_slice(&patch.surface))),
+                ocean: (patch.terrain && ocean_changed)
+                    .then(|| make("prepared ocean", bytemuck::cast_slice(&patch.ocean))),
+                objects: (patch.terrain && objects_changed)
+                    .then(|| make("prepared objects", bytemuck::cast_slice(&patch.objects))),
+                source: Arc::clone(patch),
+                origin_generation,
             };
             let bytes = next.bytes();
             allocated += bytes;
             self.budget.patches -= 1;
+            // As in the existing uploader, one oversized patch consumes the
+            // entire frame allowance; subsequent patches wait for another frame.
             self.budget.bytes = self.budget.bytes.saturating_sub(bytes);
             self.pending.insert(key, next);
         }
         let ready = !patches.is_empty()
-            && patches.iter().all(|p| {
-                let key = (instance, p.key, p.lod);
-                self.sources
-                    .get(&key)
-                    .is_some_and(|s| Arc::ptr_eq(s, &p.geometry))
-                    || self
-                        .pending
-                        .get(&key)
-                        .is_some_and(|s| Arc::ptr_eq(&s.source, &p.geometry))
-            });
-        if ready {
-            for patch in patches {
+            && patches.iter().all(|patch| {
                 let key = (instance, patch.key, patch.lod);
-                let Some(next) = self.pending.remove(&key) else {
-                    continue;
-                };
-                if let Some((old, _)) = self.catalog.insert(key, (next.shadow, next.count)) {
-                    released += old.size();
-                }
-                if let Some(old) = self.terrain.remove(&key) {
-                    released += old.bytes();
-                }
-                if let Some(terrain) = next.terrain {
-                    self.terrain.insert(key, terrain);
-                }
-                self.bounds.remove(&key);
-                if let Some(bounds) = next.bounds {
-                    self.bounds.insert(key, bounds);
-                }
-                self.sources.insert(key, next.source);
-            }
-            self.catalog.retain(|(owner, key, lod), (b, _)| {
-                let keep = *owner != instance || required.contains_key(&(*key, *lod));
-                if !keep {
-                    released += b.size();
-                }
-                keep
+                let active = self.prepared_sources.get(&key).is_some_and(|source| {
+                    Arc::ptr_eq(source, patch)
+                        && self.catalog_origin_generation.get(&key) == Some(&origin_generation)
+                });
+                let staged = self.pending.get(&key).is_some_and(|pending| {
+                    pending.origin_generation == origin_generation
+                        && Arc::ptr_eq(&pending.source, patch)
+                });
+                active || staged
             });
-            self.terrain.retain(|key, b| {
-                let keep = self.catalog.contains_key(key);
-                if !keep {
-                    released += b.bytes();
-                }
-                keep
-            });
-            self.sources.retain(|key, _| self.catalog.contains_key(key));
-            self.bounds.retain(|key, _| self.catalog.contains_key(key));
-        }
         GeometryCacheResult {
             ready,
             allocated_bytes: allocated,
             released_bytes: released,
         }
+    }
+
+    fn retain_resident_channels(&mut self) -> u64 {
+        let mut released = 0;
+        self.terrain.retain(|key, buffers| {
+            let keep = self.catalog.contains_key(key);
+            if !keep {
+                released += buffers.bytes();
+            }
+            keep
+        });
+        self.sources.retain(|key, _| self.catalog.contains_key(key));
+        self.prepared_sources
+            .retain(|key, _| self.catalog.contains_key(key));
+        self.bounds.retain(|key, _| self.catalog.contains_key(key));
+        self.catalog_origin_generation
+            .retain(|key, _| self.catalog.contains_key(key));
+        released
     }
 }

@@ -8,6 +8,8 @@ Owns world manifests, topology, addressing, map geometry, entities and neutral c
 
 The `world` module exposes manifests, maps, topology/addressing, collision geometry and the current `World` state API. The `entity` module exposes the world-scoped component registry and entity store.
 
+Component schemas require an exact registered version; the world crate does not migrate older component payloads. Replicated descriptors explicitly declare either a spatial position decoder or global visibility; spatial entities are filtered through active sectors, and global visibility is never inferred from a missing position. Payloads are limited to 2048 bytes, each entity to 16 components, and each store to 16,384 entities; storage/runtime enforces the 4 MiB aggregate snapshot component payload cap across worlds. Store mutations advance a monotone revision and remain available through `changes_since`; component removal and entity despawn are explicit change records. Component persistence belongs to storage/runtime composition and is not encoded into sector object blobs.
+
 ## Dependencies
 
 Depends only on core identity values. It has no dependency on client/server adapters or generation packages.
@@ -41,3 +43,21 @@ exponent 1..8, source start/full thresholds up to 12000 m). It uses a smoothstep
 weight raised to an integer power, retaining identity below the threshold and
 bounded gain above the reference height. PlanetDefinition owns the curve and
 the pure Earth height/datum conversion. Identity preserves legacy arithmetic.
+
+## Persistent impact domain
+
+`impact::BodyState` is a validated world-scoped entity component (type 0x100,
+schema 1); its neutral 162-byte record is shared by storage and protocol adapters.
+It carries immutable world seed, physical parameters, SI velocity, game-space
+position, lifetime, fragmentation and flight/landed/collected phase. `follows`
+rejects identity changes, phase regression and changes to committed craters.
+`minimium_terrain::TerrainSnapshot` now owns the indexed crater field. World
+retains neutral crater stamp values and the independent `RemnantSnapshot` object
+view. Removing a remnant does not mutate terrain or advance its revision.
+`terrain`, `items` and `fluid` define world-space query, inventory/action and water
+observation contracts; they contain no storage or solver implementation.
+Tool outcomes distinguish a blocking first hit (`Obstructed`) from a rejected
+terrain/collision join (`UnsafeGeometry`) so presentation can explain the refusal.
+`MapTriangle.surface` optionally carries terrain normals and six material
+fractions for generated ground and excavation surfaces. Static authored geometry
+leaves this field absent.

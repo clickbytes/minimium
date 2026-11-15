@@ -14,15 +14,22 @@ impl ServerRuntime {
         &self,
         instance_id: minimium_world::world::WorldInstanceId,
         now: Instant,
-    ) -> Result<(ClockSample, EnvironmentDescriptor), String> {
-        let instance = self
-            .game
-            .worlds
-            .get(instance_id)
-            .ok_or_else(|| "environment world instance is unavailable".to_owned())?;
+    ) -> Result<(ClockSample, EnvironmentDescriptor), crate::environment::EnvironmentClockError>
+    {
+        let instance = self.game.worlds.get(instance_id).ok_or_else(|| {
+            crate::environment::EnvironmentClockError::new(
+                crate::environment::EnvironmentClockErrorKind::InvalidConfiguration,
+                "environment world instance is unavailable",
+            )
+        })?;
         let identity = minimium_assets::embedded_sky_catalog_identity();
-        let catalogue_id = CatalogueId::try_from(identity.catalogue_id)
-            .map_err(|error| format!("embedded sky catalogue identity: {error}"))?;
+        let catalogue_id = CatalogueId::try_from(identity.catalogue_id).map_err(|error| {
+            crate::environment::EnvironmentClockError::caused_by(
+                crate::environment::EnvironmentClockErrorKind::InvalidConfiguration,
+                "embedded sky catalogue identity is invalid",
+                error,
+            )
+        })?;
         let descriptor = EnvironmentDescriptor::new(
             instance.clock_id,
             instance.environment_profile,
@@ -30,21 +37,67 @@ impl ServerRuntime {
             catalogue_id,
             CatalogueSha256::new(identity.sha256),
         );
-        let monotonic = self.monotonic_ms(now).map_err(|error| error.to_string())?;
+        let monotonic = self.monotonic_ms(now).map_err(|error| {
+            crate::environment::EnvironmentClockError::caused_by(
+                crate::environment::EnvironmentClockErrorKind::InvalidConfiguration,
+                "server monotonic clock failed",
+                error,
+            )
+        })?;
         let sample = self.environment_clock.sample(monotonic)?;
         descriptor
             .validate_clock(sample.clock_id())
-            .map_err(|error| error.to_string())?;
+            .map_err(|error| {
+                crate::environment::EnvironmentClockError::caused_by(
+                    crate::environment::EnvironmentClockErrorKind::InvalidConfiguration,
+                    "environment descriptor does not match clock",
+                    error,
+                )
+            })?;
         Ok((sample, descriptor))
     }
 
     pub(super) fn replicate_environment(&mut self) {
         let now = Instant::now();
-        let Ok(monotonic) = self.monotonic_ms(now) else {
-            return;
+        let monotonic = match self.monotonic_ms(now) {
+            Ok(monotonic) => monotonic,
+            Err(error) => {
+                crate::diagnostics::emit(
+                    &self.environment_logger,
+                    minimium_diagnostics::Level::Error,
+                    "environment.replication_clock_failed",
+                    &[("reason", error.to_string())],
+                );
+                return;
+            }
         };
-        let Ok(sample) = self.environment_clock.sample(monotonic) else {
-            return;
+        let sample = match self.environment_clock.sample(monotonic) {
+            Ok(sample) => sample,
+            Err(error) => {
+                crate::diagnostics::emit(
+                    &self.environment_logger,
+                    minimium_diagnostics::Level::Error,
+                    "environment.replication_sample_failed",
+                    &[
+                        ("error_code", error.code().to_owned()),
+                        ("reason", error.to_string()),
+                    ],
+                );
+                return;
+            }
+        };
+        let identity = minimium_assets::embedded_sky_catalog_identity();
+        let catalogue_id = match CatalogueId::try_from(identity.catalogue_id) {
+            Ok(catalogue_id) => catalogue_id,
+            Err(error) => {
+                crate::diagnostics::emit(
+                    &self.environment_logger,
+                    minimium_diagnostics::Level::Error,
+                    "environment.catalogue_identity_invalid",
+                    &[("reason", error.to_string())],
+                );
+                return;
+            }
         };
 
         for index in 0..self.connections.clients.len() {
@@ -65,10 +118,6 @@ impl ServerRuntime {
             let Some(instance) = self.game.worlds.get(context.instance()) else {
                 continue;
             };
-            let identity = minimium_assets::embedded_sky_catalog_identity();
-            let Ok(catalogue_id) = CatalogueId::try_from(identity.catalogue_id) else {
-                continue;
-            };
             let descriptor = EnvironmentDescriptor::new(
                 instance.clock_id,
                 instance.environment_profile,
@@ -76,8 +125,14 @@ impl ServerRuntime {
                 catalogue_id,
                 CatalogueSha256::new(identity.sha256),
             );
-            if descriptor.validate_clock(sample.clock_id()).is_err() {
-                continue;
+            if let Err(error) = descriptor.validate_clock(sample.clock_id()) {
+                crate::diagnostics::emit(
+                    &self.environment_logger,
+                    minimium_diagnostics::Level::Error,
+                    "environment.sync_descriptor_invalid",
+                    &[("reason", error.to_string())],
+                );
+                return;
             }
             let client = &self.connections.clients[index];
             let revision_changed = client.last_environment_revision != Some(sample.revision());

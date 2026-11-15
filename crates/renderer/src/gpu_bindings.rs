@@ -11,6 +11,7 @@ pub struct EnvironmentGpuBindings {
     pub camera_buffer: wgpu::Buffer,
     /// Environment uniform buffer.
     pub environment_buffer: wgpu::Buffer,
+    pub transient_buffer: wgpu::Buffer,
     /// Bind group containing both uniform buffers.
     pub bind_group: wgpu::BindGroup,
 }
@@ -31,7 +32,15 @@ impl EnvironmentGpuBindings {
             contents: bytemuck::bytes_of(&EnvironmentUniform::default()),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
+        let transient_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("transient-light-uniform"),
+            contents: bytemuck::bytes_of(
+                &crate::transient_lighting::TransientLightUniform::default(),
+            ),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
         let mut entries = vec![
+            uniform_entry(11, crate::transient_lighting::TransientLightUniform::BYTES),
             uniform_entry(0, std::mem::size_of::<CameraUniform>() as u64),
             uniform_entry(1, std::mem::size_of::<EnvironmentUniform>() as u64),
         ];
@@ -49,6 +58,10 @@ impl EnvironmentGpuBindings {
             binding: 1,
             resource: environment_buffer.as_entire_binding(),
         });
+        resources.push(wgpu::BindGroupEntry {
+            binding: 11,
+            resource: transient_buffer.as_entire_binding(),
+        });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("world-frame-bind-group"),
             layout: &layout,
@@ -58,6 +71,7 @@ impl EnvironmentGpuBindings {
             layout,
             camera_buffer,
             environment_buffer,
+            transient_buffer,
             bind_group,
         }
     }

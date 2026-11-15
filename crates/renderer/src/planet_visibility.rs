@@ -7,56 +7,14 @@ use std::sync::Arc;
 
 const MAX_VISIBLE_SECTORS: usize = 512;
 
-pub fn render_patches(
-    manifest: WorldManifest,
-    position: [f32; 3],
-    collision: &[(SectorKey, Arc<SectorGeometry>)],
-    geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
-) -> Vec<(SectorKey, u8, Arc<SectorGeometry>)> {
-    render_patches_cached(
-        manifest,
-        position,
-        collision,
-        geography,
-        &mut crate::render_patch_cache::RenderPatchCache::default(),
-    )
-}
-
-pub fn render_patches_cached(
-    manifest: WorldManifest,
-    position: [f32; 3],
-    collision: &[(SectorKey, Arc<SectorGeometry>)],
-    geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
-    cache: &mut crate::render_patch_cache::RenderPatchCache,
-) -> Vec<(SectorKey, u8, Arc<SectorGeometry>)> {
-    render_patches_cancellable(manifest, position, collision, geography, cache, &|| false)
-}
-pub fn render_patches_cancellable(
-    manifest: WorldManifest,
-    position: [f32; 3],
-    collision: &[(SectorKey, Arc<SectorGeometry>)],
-    geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
-    cache: &mut crate::render_patch_cache::RenderPatchCache,
-    cancelled: &dyn Fn() -> bool,
-) -> Vec<(SectorKey, u8, Arc<SectorGeometry>)> {
-    render_patches_for_view(
-        manifest,
-        crate::terrain_view::TerrainView::legacy(position),
-        collision,
-        geography,
-        cache,
-        cancelled,
-    )
-}
-
 pub fn render_patches_for_view(
     manifest: WorldManifest,
     view: crate::terrain_view::TerrainView,
     collision: &[(SectorKey, Arc<SectorGeometry>)],
-    geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
+    geography: minimium_procgen::TerrainInputs,
     cache: &mut crate::render_patch_cache::RenderPatchCache,
     cancelled: &dyn Fn() -> bool,
-) -> Vec<(SectorKey, u8, Arc<SectorGeometry>)> {
+) -> Result<Vec<(SectorKey, u8, Arc<SectorGeometry>)>, minimium_procgen::ExcavationGeometryError> {
     let position = view.position;
     if manifest.planet().is_some() {
         return dense_render_patches(manifest, view, collision, geography, cache, cancelled);
@@ -66,9 +24,7 @@ pub fn render_patches_for_view(
     if let Some(definition) = manifest.planet() {
         terrain = terrain.with_definition(definition);
     }
-    if let Some(geography) = geography.clone() {
-        terrain = terrain.with_geography(geography);
-    }
+    terrain = terrain.with_inputs(geography.clone());
     let radius = planet_surface_for(manifest).radius_mm() as f32 / 1000.0;
     let altitude_radius = position.iter().map(|x| x * x).sum::<f32>().sqrt();
     let horizon = (altitude_radius * altitude_radius - radius * radius)
@@ -78,12 +34,12 @@ pub fn render_patches_for_view(
     let count = minimium_procgen::planet_sector_count(manifest);
     let mut queue = VecDeque::from([PlanetSectorKey::from_direction_with_count(position, count)]);
     let mut visited = HashSet::new();
-    let mut patches = Vec::new();
+    let mut regions = Vec::new();
     while let Some(key) = queue.pop_front() {
         if cancelled() {
             break;
         }
-        if !visited.insert(key) || patches.len() >= MAX_VISIBLE_SECTORS {
+        if !visited.insert(key) || regions.len() >= MAX_VISIBLE_SECTORS {
             continue;
         }
         let sample = key
@@ -112,42 +68,76 @@ pub fn render_patches_for_view(
         } else {
             2
         };
-        let sector = SectorKey::Planet(key);
-        let patch = cache.get(sector, subdivisions as u8, || {
-            let mut patch = minimium_procgen::generate_planet_render_patch_with_geography(
-                manifest,
-                key,
-                subdivisions,
-                geography.clone(),
-            );
-            if let Some((_, g)) = collision.iter().find(|(k, _)| *k == sector) {
-                patch.boxes = g.boxes.clone();
-            }
-            patch
+        regions.push(crate::render_contours::RenderRegion {
+            sector: key,
+            span: 1,
+            lod: subdivisions as u8,
         });
+        queue.extend(key.neighbors_with_count(count));
+    }
+    let bases = crate::render_contours::prepare(
+        manifest,
+        &geography,
+        &regions,
+        crate::render_contours::RenderMeshKind::Patch,
+        cache,
+    )?;
+    let mut patches = Vec::with_capacity(regions.len());
+    for region in regions {
+        let sector = SectorKey::Planet(region.sector);
+        let patch = if let Some(prepared) = bases.region(region) {
+            cache.get_revision_result(sector, region.lod, prepared.cache_revision, || {
+                let contours = bases.contours(&prepared);
+                let mut geometry = minimium_procgen::integrate_volume_sector_with_contours(
+                    &terrain,
+                    region.sector,
+                    count,
+                    &prepared.geometry,
+                    &contours,
+                    1.5,
+                )?;
+                if let Some((_, collision_geometry)) =
+                    collision.iter().find(|(key, _)| *key == sector)
+                {
+                    geometry.boxes = collision_geometry.boxes.clone();
+                }
+                Ok(geometry)
+            })?
+        } else {
+            let revision = terrain.inputs().sector_revision(sector, 1, count);
+            cache.get_revision_result(sector, region.lod, revision, || {
+                Ok(
+                    minimium_procgen::generate_planet_render_patch_with_geography(
+                        manifest,
+                        region.sector,
+                        u32::from(region.lod),
+                        geography.clone(),
+                    ),
+                )
+            })?
+        };
         let patch = cache.with_boxes(
             sector,
-            subdivisions as u8,
+            region.lod,
             patch,
             collision
                 .iter()
-                .find(|(k, _)| *k == sector)
-                .map(|(_, g)| g.boxes.as_slice()),
+                .find(|(key, _)| *key == sector)
+                .map(|(_, geometry)| geometry.boxes.as_slice()),
         );
-        patches.push((sector, subdivisions as u8, patch));
-        queue.extend(key.neighbors_with_count(count));
+        patches.push((sector, region.lod, patch));
     }
-    patches
+    Ok(patches)
 }
 
 fn dense_render_patches(
     manifest: WorldManifest,
     view: crate::terrain_view::TerrainView,
     collision: &[(SectorKey, Arc<SectorGeometry>)],
-    geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
+    geography: minimium_procgen::TerrainInputs,
     cache: &mut crate::render_patch_cache::RenderPatchCache,
     cancelled: &dyn Fn() -> bool,
-) -> Vec<(SectorKey, u8, Arc<SectorGeometry>)> {
+) -> Result<Vec<(SectorKey, u8, Arc<SectorGeometry>)>, minimium_procgen::ExcavationGeometryError> {
     let count = minimium_procgen::planet_sector_count(manifest);
     let radius = minimium_procgen::planet_surface_for(manifest).radius_mm() as f64 / 1000.0;
     let camera = view.position.map(f64::from);
@@ -168,12 +158,17 @@ fn dense_render_patches(
     if let Some(d) = manifest.planet() {
         terrain = terrain.with_definition(d);
     }
-    if let Some(g) = geography.clone() {
-        terrain = terrain.with_geography(g);
-    }
+    terrain = terrain.with_inputs(geography.clone());
     let cell_width = radius * 2.0
         / f64::from(count)
         / f64::from(minimium_procgen::PLANET_RENDER_BLOCK_SUBDIVISIONS);
+    let guard = view.ground_detail_radius(radius * 2.0 / f64::from(count));
+    let guard = if (camera_radius - visibility_radius).abs() <= guard {
+        guard
+    } else {
+        0.0
+    };
+    let surface_eye = glam::DVec3::from_array(camera).normalize_or_zero() * visibility_radius;
     let coasts = &mut cache.coasts;
     let mut candidate = |face: PlanetFace, u: u16, v: u16, span: u16| {
         let scale = PLANET_SAMPLE_COORDINATE_SCALE as i64;
@@ -210,6 +205,19 @@ fn dense_render_patches(
         if terrain.is_earth() && span > 1 && score > view.cell_error_limit() * 0.75 / max_priority {
             score *= view.surface_priority(coasts.classify(&terrain, (face, u, v, span), count));
         }
+        if guard > 0.0 && span > 1 {
+            let surface_center = glam::DVec3::from_array(sample.coordinates().map(f64::from))
+                .normalize()
+                * visibility_radius;
+            let separation = surface_center.distance(surface_eye);
+            let patch_bound = radius * 1.5 * f64::from(span) / f64::from(count);
+            if separation <= guard + patch_bound {
+                // Resolve nearby shores before distant terrain competes for leaves.
+                // The guard extends past the player, so walking across a sector
+                // boundary does not change the lattice beneath a nearby pond.
+                score = score.max(1e6 / (1.0 + separation / guard));
+            }
+        }
         Some((face, u, v, span, score))
     };
     let mut leaves: Vec<_> = PlanetFace::ALL
@@ -220,7 +228,7 @@ fn dense_render_patches(
     // children fit, so the budget cannot create holes or truncate coverage.
     while leaves.len() + 3 <= view.patch_budget() {
         if cancelled() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let next = leaves
             .iter()
@@ -233,19 +241,36 @@ fn dense_render_patches(
                 };
                 n.3 > 1 && n.4 > view.cell_error_limit() * hysteresis
             })
-            .max_by(|(_, a), (_, b)| a.4.total_cmp(&b.4))
+            .max_by(|(_, a), (_, b)| {
+                let priority = |n: &(PlanetFace, u16, u16, u16, f64)| {
+                    n.4 * if cache.refined.contains(&(n.0, n.1, n.2, n.3)) {
+                        1.25
+                    } else {
+                        1.0
+                    }
+                };
+                priority(a).total_cmp(&priority(b))
+            })
             .map(|(i, _)| i);
         let Some(index) = next else {
             break;
         };
         let (face, u, v, span, _) = leaves.swap_remove(index);
         let half = span / 2;
+        let mut children = Vec::with_capacity(4);
         for dy in [0, half] {
             for dx in [0, half] {
                 if let Some(child) = candidate(face, u + dx, v + dy, half) {
-                    leaves.push(child);
+                    children.push(child);
                 }
             }
+        }
+        if children.len() == 4 {
+            leaves.extend(children);
+        } else {
+            // Culling only some children would expose a square hole where the
+            // parent used to cover the globe edge.
+            leaves.push((face, u, v, span, 0.0));
         }
     }
     let selected: Vec<_> = leaves
@@ -261,42 +286,80 @@ fn dense_render_patches(
             parent *= 2;
         }
     }
-    selected
+    let regions: Vec<_> = selected
         .into_iter()
-        .take_while(|_| !cancelled())
-        .map(|(face, u, v, span)| {
-            let key = SectorKey::Planet(PlanetSectorKey::new(face, u, v).expect("valid leaf"));
-            let lod = 16 + span.trailing_zeros() as u8;
-            let geometry = cache.get(key, lod, || {
-                let mut geometry = minimium_procgen::generate_planet_render_block_with_geography(
-                    manifest,
-                    face,
+        .map(|(face, u, v, span)| crate::render_contours::RenderRegion {
+            sector: PlanetSectorKey::new(face, u, v).expect("valid leaf"),
+            span,
+            lod: 16 + span.trailing_zeros() as u8,
+        })
+        .collect();
+    let bases = crate::render_contours::prepare(
+        manifest,
+        &geography,
+        &regions,
+        crate::render_contours::RenderMeshKind::Block,
+        cache,
+    )?;
+    let mut output = Vec::with_capacity(regions.len());
+    for region in regions {
+        if cancelled() {
+            break;
+        }
+        let key = SectorKey::Planet(region.sector);
+        let geometry = if let Some(prepared) = bases.region(region) {
+            cache.get_revision_result(key, region.lod, prepared.cache_revision, || {
+                let contours = bases.contours(&prepared);
+                let (u, v) = region.sector.coordinates();
+                let mut geometry = minimium_procgen::integrate_volume_region_with_contours(
+                    &terrain,
+                    region.sector.face(),
                     u,
                     v,
-                    span,
-                    geography.clone(),
-                );
-                if span == 1 {
-                    if let Some((_, g)) = collision.iter().find(|(k, _)| *k == key) {
-                        geometry.boxes = g.boxes.clone();
+                    region.span,
+                    count,
+                    &prepared.geometry,
+                    &contours,
+                    1.5,
+                )?;
+                if region.span == 1 {
+                    if let Some((_, collision_geometry)) =
+                        collision.iter().find(|(candidate, _)| *candidate == key)
+                    {
+                        geometry.boxes = collision_geometry.boxes.clone();
                     }
                 }
-                geometry
-            });
-            let geometry = cache.with_boxes(
-                key,
-                lod,
-                geometry,
-                if span == 1 {
-                    collision
-                        .iter()
-                        .find(|(k, _)| *k == key)
-                        .map(|(_, g)| g.boxes.as_slice())
-                } else {
-                    None
-                },
-            );
-            (key, lod, geometry)
-        })
-        .collect()
+                Ok(geometry)
+            })?
+        } else {
+            let revision = terrain.inputs().sector_revision(key, region.span, count);
+            cache.get_revision_result(key, region.lod, revision, || {
+                Ok(
+                    minimium_procgen::generate_planet_render_block_with_geography(
+                        manifest,
+                        region.sector.face(),
+                        region.sector.coordinates().0,
+                        region.sector.coordinates().1,
+                        region.span,
+                        geography.clone(),
+                    ),
+                )
+            })?
+        };
+        let geometry = cache.with_boxes(
+            key,
+            region.lod,
+            geometry,
+            if region.span == 1 {
+                collision
+                    .iter()
+                    .find(|(candidate, _)| *candidate == key)
+                    .map(|(_, geometry)| geometry.boxes.as_slice())
+            } else {
+                None
+            },
+        );
+        output.push((key, region.lod, geometry));
+    }
+    Ok(output)
 }

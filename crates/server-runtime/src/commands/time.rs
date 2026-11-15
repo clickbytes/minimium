@@ -14,6 +14,7 @@ pub(super) fn execute(
                 success: true,
                 text: clock.status(monotonic_ms),
                 stop: false,
+                error_code: None,
             };
         }
         TimeCommand::Mode(mode) => clock.set_mode(monotonic_ms, mode),
@@ -26,11 +27,13 @@ pub(super) fn execute(
             success: true,
             text: clock.status(monotonic_ms),
             stop: false,
+            error_code: None,
         },
         Err(error) => CommandReply {
             success: false,
-            text: error,
+            text: error.to_string(),
             stop: false,
+            error_code: Some(error.code()),
         },
     }
 }

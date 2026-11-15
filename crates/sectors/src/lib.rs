@@ -8,6 +8,7 @@ use std::{
     sync::Arc,
 };
 
+mod prepared;
 #[cfg(test)]
 mod tests;
 
@@ -47,6 +48,7 @@ impl SectorTicket {
 pub enum SectorState {
     Queued,
     Generating,
+    Failed,
     DataReady,
     Installed,
 }
@@ -63,6 +65,13 @@ pub enum RequestError {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum InstallResult {
     Installed,
+    Stale,
+    WrongState,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TicketResult {
+    Resolved,
     Stale,
     WrongState,
 }
@@ -88,6 +97,21 @@ pub struct SectorManager<T> {
 }
 
 impl<T> SectorManager<T> {
+    /// Explicit local terrain mutation invalidates even pinned data. Old task serials
+    /// cannot install after this removal; owners reacquire their affected tickets.
+    pub fn invalidate_where(
+        &mut self,
+        instance: WorldInstanceId,
+        mut affected: impl FnMut(SectorKey) -> bool,
+    ) {
+        self.entries
+            .retain(|address, _| address.instance != instance || !affected(address.key));
+        self.pending.retain(|ticket| {
+            self.entries
+                .get(&ticket.address)
+                .is_some_and(|e| e.ticket == *ticket)
+        });
+    }
     pub fn new(cache_capacity: usize, queue_capacity: usize) -> Result<Self, RequestError> {
         if cache_capacity == 0 || queue_capacity == 0 {
             return Err(RequestError::InvalidCapacity);
@@ -111,7 +135,10 @@ impl<T> SectorManager<T> {
         let address = SectorAddress { instance, key };
         let existing = self.entries.get(&address);
         if let Some(existing) = existing {
-            if existing.ticket.generation == generation && existing.ticket.content == content {
+            if existing.ticket.generation == generation
+                && existing.ticket.content == content
+                && existing.state != SectorState::Failed
+            {
                 return Ok(existing.ticket);
             }
             if existing.pins > 0 || existing.dirty {
@@ -132,7 +159,7 @@ impl<T> SectorManager<T> {
             .ok_or(RequestError::TicketSpaceExhausted)?;
         if let Some(existing) = existing {
             // Replacing a generating entry invalidates its ticket. A worker may
-            // still return later, but install_data will reject that stale result.
+            // still return later, but complete will reject that stale result.
             self.pending.retain(|ticket| *ticket != existing.ticket);
             self.entries.remove(&address);
         }
@@ -171,7 +198,7 @@ impl<T> SectorManager<T> {
         None
     }
 
-    pub fn install_data(
+    pub fn complete(
         &mut self,
         ticket: SectorTicket,
         revision: SectorRevision,
@@ -190,6 +217,40 @@ impl<T> SectorManager<T> {
         entry.revision = Some(revision);
         entry.state = SectorState::DataReady;
         InstallResult::Installed
+    }
+
+    pub fn fail(&mut self, ticket: SectorTicket) -> TicketResult {
+        let Some(entry) = self.entries.get_mut(&ticket.address) else {
+            return TicketResult::Stale;
+        };
+        if entry.ticket != ticket {
+            return TicketResult::Stale;
+        }
+        if entry.state != SectorState::Generating {
+            return TicketResult::WrongState;
+        }
+        entry.state = SectorState::Failed;
+        entry.payload = None;
+        entry.revision = None;
+        entry.collision_ready = false;
+        TicketResult::Resolved
+    }
+
+    /// Cancels queued or active work and releases its cache and queue capacity.
+    /// Late worker results become stale because the ticket's entry is removed.
+    pub fn cancel(&mut self, ticket: SectorTicket) -> TicketResult {
+        let Some(entry) = self.entries.get(&ticket.address) else {
+            return TicketResult::Stale;
+        };
+        if entry.ticket != ticket {
+            return TicketResult::Stale;
+        }
+        if !matches!(entry.state, SectorState::Queued | SectorState::Generating) {
+            return TicketResult::WrongState;
+        }
+        self.pending.retain(|pending| *pending != ticket);
+        self.entries.remove(&ticket.address);
+        TicketResult::Resolved
     }
 
     pub fn install_collision(&mut self, ticket: SectorTicket) -> InstallResult {
@@ -243,6 +304,12 @@ impl<T> SectorManager<T> {
         self.entries
             .get(&ticket.address)
             .is_some_and(|entry| entry.ticket == ticket && entry.collision_ready)
+    }
+
+    pub fn is_pinned(&self, ticket: SectorTicket) -> bool {
+        self.entries
+            .get(&ticket.address)
+            .is_some_and(|entry| entry.ticket == ticket && entry.pins > 0)
     }
 
     pub fn mark_dirty(&mut self, ticket: SectorTicket) -> bool {

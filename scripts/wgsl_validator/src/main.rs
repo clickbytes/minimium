@@ -8,12 +8,18 @@ fn main() {
             "geometry_rebase",
             include_str!("../../../crates/renderer/src/shaders/geometry_rebase.wgsl").to_owned(),
         ),
+        (
+            "shadow",
+            include_str!("../../../crates/renderer/src/shaders/shadow.wgsl").to_owned(),
+        ),
         ("clouds", source::clouds()),
+        ("meteors", source::meteors()),
         ("cloud_composite", source::cloud_composite()),
         ("world", source::world()),
         ("terrain", source::terrain()),
         ("ocean", source::ocean()),
         ("sky", source::sky()),
+        ("bolid_composite", source::bolid_composite()),
         ("sun", source::sun()),
         ("stars", source::stars()),
         ("moon", source::moon()),
@@ -31,6 +37,10 @@ fn main() {
         ("encode_output", source::encode_output()),
         ("ui_output_srgb", source::ui_output(true)),
         ("ui_output_linear", source::ui_output(false)),
+        (
+            "held_tool",
+            include_str!("../../../crates/renderer/src/shaders/held_tool.wgsl").to_owned(),
+        ),
     ];
     for (name, code) in variants {
         let module = naga::front::wgsl::parse_str(&code)
@@ -45,15 +55,85 @@ fn main() {
             name,
             "atmosphere" | "atmosphere_sky_lut" | "atmosphere_aerial_lut" | "atmosphere_multi_lut"
         ) {
-            atmosphere_contract(&module, &info, name == "globe");
+            atmosphere_contract(&module, &info);
         }
         if name == "clouds" {
             cloud_contract(&module, &info);
         }
+        if name == "geometry_rebase" {
+            rebase_contract(&module);
+        }
+        if name == "sky" {
+            bolid_contract(&module, &info);
+        }
         if matches!(name, "terrain" | "ocean") {
             terrain_contract(&module, &info);
         }
+        transient_contract(&module, &info);
         println!("{name}: valid");
+    }
+}
+
+fn rebase_contract(module: &naga::Module) {
+    let (_, parameters) = module
+        .types
+        .iter()
+        .find(|(_, ty)| ty.name.as_deref() == Some("Parameters"))
+        .expect("geometry rebase parameters");
+    let naga::TypeInner::Struct { members, span } = &parameters.inner else {
+        panic!("expected geometry rebase uniform struct");
+    };
+    // Rust uploads eight words: delta, stride, triangle width, normal offset, padding.
+    assert_eq!(*span, 32);
+    assert_eq!(
+        members
+            .iter()
+            .map(|member| member.offset)
+            .collect::<Vec<_>>(),
+        [0, 12, 16, 20, 24]
+    );
+}
+
+fn bolid_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
+    for (_, ty) in module.types.iter() {
+        let expected = match ty.name.as_deref() {
+            Some("BolidGpuEvent") => Some((
+                1824,
+                vec![0, 16, 32, 48, 64, 80, 96, 112, 416, 736, 1056, 1440],
+            )),
+            Some("BolidGpuFrame") => Some((14608, vec![0, 14592])),
+            _ => None,
+        };
+        if let Some((size, offsets)) = expected {
+            let naga::TypeInner::Struct { members, span } = &ty.inner else {
+                panic!("expected bolid uniform struct");
+            };
+            assert_eq!(*span, size);
+            assert_eq!(
+                members.iter().map(|m| m.offset).collect::<Vec<_>>(),
+                offsets
+            );
+        }
+    }
+    for (index, entry) in module.entry_points.iter().enumerate() {
+        for (handle, global) in module.global_variables.iter() {
+            if info.get_entry_point(index)[handle].is_empty() {
+                continue;
+            }
+            let Some(binding) = global.binding else {
+                continue;
+            };
+            let visible = match (binding.group, binding.binding) {
+                (0, 0..=2) | (1, 2) => true,
+                (0, 3..=10) | (1, 0..=1) | (2, 0) => entry.stage == naga::ShaderStage::Fragment,
+                _ => false,
+            };
+            assert!(
+                visible,
+                "sky binding {binding:?} unavailable in {:?}",
+                entry.stage
+            );
+        }
     }
 }
 
@@ -80,7 +160,7 @@ fn terrain_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
             };
             let visible = match (binding.group, binding.binding) {
                 (0, 0..=2) => true,
-                (0, 3..=10) => entry.stage != naga::ShaderStage::Vertex,
+                (0, 3..=11) => entry.stage != naga::ShaderStage::Vertex,
                 (1, 4) => true,
                 (1, 0..=3) | (1, 5..=6) | (2, 0..=2) => entry.stage == naga::ShaderStage::Fragment,
                 _ => false,
@@ -97,8 +177,8 @@ fn terrain_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
 fn cloud_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
     for (_, ty) in module.types.iter() {
         let (expected_span, offsets): (u32, &[u32]) = match ty.name.as_deref() {
-            Some("CloudUniform") => (256, &[0, 64, 128, 192, 208, 224, 240]),
-            Some("CloudRecord") => (80, &[0, 16, 32, 48, 64]),
+            Some("CloudUniform") => (320, &[0, 64, 128, 192, 208, 224, 240, 256]),
+            Some("CloudRecord") => (96, &[0, 16, 32, 48, 64, 80]),
             _ => continue,
         };
         let naga::TypeInner::Struct { members, span } = &ty.inner else {
@@ -120,8 +200,12 @@ fn cloud_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
             };
             let visible = match (binding.group, binding.binding) {
                 (0, 0..=2) | (1, 0..=1) => true,
-                (0, 3..=10) => entry.stage != naga::ShaderStage::Vertex,
+                (0, 3..=11) => entry.stage != naga::ShaderStage::Vertex,
                 (1, 2) => entry.stage == naga::ShaderStage::Fragment,
+                (2, 0) => {
+                    matches!(entry.name.as_str(), "fs_bolid_mask" | "fs_inside_mask")
+                        && entry.stage == naga::ShaderStage::Fragment
+                }
                 _ => false,
             };
             assert!(
@@ -133,7 +217,7 @@ fn cloud_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
     }
 }
 
-fn atmosphere_contract(module: &naga::Module, info: &naga::valid::ModuleInfo, globe: bool) {
+fn atmosphere_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
     for (_, ty) in module.types.iter() {
         let expected = match ty.name.as_deref() {
             Some("AtmosphereUniform") => 256,
@@ -157,10 +241,9 @@ fn atmosphere_contract(module: &naga::Module, info: &naga::valid::ModuleInfo, gl
             };
             let visible = match (binding.group, binding.binding) {
                 (0, 0..=2) => true,
-                (0, 3..=10) => entry.stage != naga::ShaderStage::Vertex,
+                (0, 3..=11) => entry.stage != naga::ShaderStage::Vertex,
                 (1, 0..=1) | (2, 0) => entry.stage != naga::ShaderStage::Vertex,
-                (1, 2) if !globe => entry.stage == naga::ShaderStage::Fragment,
-                (2, 1..=2) if globe => entry.stage == naga::ShaderStage::Fragment,
+                (1, 2) => entry.stage == naga::ShaderStage::Fragment,
                 _ => false,
             };
             assert!(
@@ -168,6 +251,49 @@ fn atmosphere_contract(module: &naga::Module, info: &naga::valid::ModuleInfo, gl
                 "binding {:?} is unavailable in {:?}",
                 binding, entry.stage
             );
+        }
+    }
+}
+
+fn transient_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
+    for (_, ty) in module.types.iter() {
+        let (size, offsets): (u32, &[u32]) = match ty.name.as_deref() {
+            Some("TransientLight") => (48, &[0, 16, 32]),
+            Some("TransientLightUniform") => (2288, &[0, 16, 32, 48, 240]),
+            Some("CloudLightOccluder") => (64, &[0, 16, 32, 48]),
+            _ => continue,
+        };
+        let naga::TypeInner::Struct { members, span } = &ty.inner else {
+            panic!("expected transient uniform");
+        };
+        assert_eq!(*span, size);
+        assert_eq!(
+            members
+                .iter()
+                .map(|member| member.offset)
+                .collect::<Vec<_>>(),
+            offsets
+        );
+    }
+    for (index, entry) in module.entry_points.iter().enumerate() {
+        for (handle, global) in module.global_variables.iter() {
+            if global.name.as_deref() != Some("transient_lights") {
+                continue;
+            }
+            assert_eq!(
+                global.binding,
+                Some(naga::ResourceBinding {
+                    group: 0,
+                    binding: 11
+                })
+            );
+            assert_eq!(global.space, naga::AddressSpace::Uniform);
+            if !info.get_entry_point(index)[handle].is_empty() {
+                assert!(matches!(
+                    entry.stage,
+                    naga::ShaderStage::Vertex | naga::ShaderStage::Fragment
+                ));
+            }
         }
     }
 }

@@ -1,6 +1,7 @@
 //! Immutable CPU-owned presentation data for one frame.
 use crate::{
     gpu_frame::{CameraUniform, EnvironmentUniform},
+    meteors::{MeteorDisabledReason, MeteorFrame},
     RenderViewFrame, UiVertex,
 };
 use minimium_world::world::WorldInstanceId;
@@ -21,6 +22,9 @@ pub struct RenderFrame {
     pub camera: CameraUniform,
     pub environment: EnvironmentUniform,
     pub halo_count: u32,
+    /// Bounded CPU-only meteor contract (ADR 0013); carried explicitly even
+    /// while zero active so later passes consume one stable seam.
+    pub meteors: MeteorFrame,
     /// Client presentation context attached by the application adapter.
     pub client: Option<ClientFrameState>,
     ui_vertices: Vec<UiVertex>,
@@ -39,9 +43,16 @@ impl RenderFrame {
             camera,
             environment,
             halo_count,
+            meteors: MeteorFrame::disabled(MeteorDisabledReason::NoEnvironment),
             client: None,
             ui_vertices: Vec::new(),
         }
+    }
+
+    /// Attaches the bounded meteor contract built for this prepared frame.
+    pub fn with_meteors(mut self, meteors: MeteorFrame) -> Self {
+        self.meteors = meteors;
+        self
     }
 
     /// Attaches the immutable client state mapped from `ClientView` by the host.
@@ -61,13 +72,9 @@ impl RenderFrame {
         std::mem::take(&mut self.ui_vertices)
     }
 
-    /// Uploads this frame's bounded overlay batch and returns its vertex count.
-    pub fn upload_ui(&self, queue: &wgpu::Queue, buffer: &wgpu::Buffer) -> u32 {
-        if self.ui_vertices.is_empty() {
-            return 0;
-        }
-        queue.write_buffer(buffer, 0, bytemuck::cast_slice(&self.ui_vertices));
-        self.ui_vertices.len() as u32
+    /// Borrows the prepared overlay values for the GPU adapter to upload.
+    pub fn ui_vertices(&self) -> &[UiVertex] {
+        &self.ui_vertices
     }
 
     /// Resolves output exposure once from immutable camera/lighting metadata.
@@ -86,27 +93,5 @@ impl RenderFrame {
             );
         }
         environment
-    }
-
-    /// Uploads this frame's camera, environment and overlay values to caller-owned GPU buffers.
-    pub fn upload(
-        &self,
-        queue: &wgpu::Queue,
-        camera_buffer: &wgpu::Buffer,
-        environment_buffer: &wgpu::Buffer,
-        ui_buffer: &wgpu::Buffer,
-        hdr_enabled: bool,
-        physical_atmosphere: bool,
-        output: Option<&crate::OutputEncoder>,
-    ) -> u32 {
-        queue.write_buffer(camera_buffer, 0, bytemuck::bytes_of(&self.camera));
-        let environment = self.presentation_environment(hdr_enabled, physical_atmosphere);
-        queue.write_buffer(environment_buffer, 0, bytemuck::bytes_of(&environment));
-        if let Some(output) = output {
-            // HDR scene values are already exposed before storage. Only tone
-            // mapping remains here; diagnostics and display-referred UI stay stable.
-            output.update_exposure(queue, 1.0);
-        }
-        self.upload_ui(queue, ui_buffer)
     }
 }

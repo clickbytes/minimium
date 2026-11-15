@@ -123,8 +123,14 @@ astronomical state to sky, terrain, water and globe shading.
 
 ### Versioning and persistence
 
-- E004-04 and E004-03 delivered protocol v12 and save v8. The current
-  implementation uses protocol v13 and save v9 for the wider time scale;
+This section records the protocol and save versions used when this decision was
+implemented. The current contract is protocol v18, save v10 and generator
+revision 5; older saves and generated revisions are rejected without migration.
+See [current protocol](../protocol.md), [world model](../worlds.md), and
+`crates/storage/README.md` for current behavior.
+
+- E004-04 and E004-03 delivered protocol v12 and save v8. The E004
+  implementation then used protocol v13 and save v9 for the wider time scale;
   protocol v12 peers are rejected.
 - Save v9 stores a clock anchor and offline policy without process nonce or
   monotonic timestamp. Migration preserves all existing player, manifest and
@@ -166,7 +172,8 @@ of scope.
 
 ## Consequences and risks
 
-- Requires checked time conversions, protocol v13 and save v9 migrations.
+- At E004 implementation time, this required checked time conversions and
+  protocol v13/save v9 migrations.
 - Windows target `x86_64-pc-windows-msvc` compiled and linked the pinned C
   backend in E004-07 (PR #77), including a workspace release build. The earlier
   E004-00 shell PATH did not expose `cl.exe`; that historical observation is not

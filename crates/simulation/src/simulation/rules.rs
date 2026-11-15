@@ -30,11 +30,10 @@ pub struct ShotOutcome {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct CharacterInput {
+pub struct MovementIntent {
     pub direction: [f32; 2],
     pub jump: bool,
     pub vertical: f32,
-    pub movement: super::MovementSettings,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -63,38 +62,53 @@ impl CharacterState {
 
 pub(super) fn step_character_once(
     state: &mut CharacterState,
-    input: CharacterInput,
+    input: MovementIntent,
+    policy: super::MovementPolicy,
     colliders: &[Aabb],
     surfaces: &[MapTriangle],
     delta_seconds: f32,
+    water: Option<minimium_world::fluid::WaterSample>,
 ) {
     if !delta_seconds.is_finite() || delta_seconds <= 0.0 {
         return;
     }
-    if !input.movement.valid() || !input.vertical.is_finite() {
+    if !policy.valid() || !input.vertical.is_finite() {
         return;
     }
-    if input.movement.fly {
-        state.velocity = super::movement::velocity(*state, input, delta_seconds);
+    let water = water.filter(|sample| sample.valid());
+    if policy.can_fly {
+        state.velocity = super::movement::velocity(*state, input, policy, delta_seconds);
         state.position = add(state.position, scale(state.velocity, delta_seconds));
         state.grounded = false;
         return;
     }
     if matches!(state.gravity, CharacterGravity::Radial { .. }) {
-        step_radial_character(state, input, colliders, surfaces, delta_seconds);
+        step_radial_character(
+            state,
+            input,
+            policy,
+            colliders,
+            surfaces,
+            delta_seconds,
+            water,
+        );
         return;
     }
 
-    let velocity = super::movement::velocity(*state, input, delta_seconds);
+    let velocity = super::swimming::movement_velocity(*state, input, policy, delta_seconds, water);
     state.velocity[0] = velocity[0];
     state.velocity[2] = velocity[2];
 
-    let should_jump = input.jump && state.grounded;
+    let swimming = water.is_some_and(|sample| sample.submerged_fraction > 0.5);
+    let should_jump = input.jump && state.grounded && !swimming;
     state.grounded = false;
     if should_jump {
         state.velocity[1] = PLAYER_JUMP_SPEED;
     }
     state.velocity[1] = (state.velocity[1] - GRAVITY * delta_seconds).max(-MAX_FALL_SPEED);
+    if let Some(sample) = water {
+        super::swimming::apply_swimming(state, input, sample, delta_seconds);
+    }
 
     let old_y = state.position[1];
     let mut next_y = old_y + state.velocity[1] * delta_seconds;
@@ -236,12 +250,15 @@ pub(super) fn step_character_once(
 
 fn step_radial_character(
     state: &mut CharacterState,
-    input: CharacterInput,
+    input: MovementIntent,
+    policy: super::MovementPolicy,
     colliders: &[Aabb],
     surfaces: &[MapTriangle],
     delta_seconds: f32,
+    water: Option<minimium_world::fluid::WaterSample>,
 ) {
-    let should_jump = input.jump && state.grounded;
+    let swimming = water.is_some_and(|sample| sample.submerged_fraction > 0.5);
+    let should_jump = input.jump && state.grounded && !swimming;
     state.grounded = false;
     let mut vertical_speed = dot(
         state.velocity,
@@ -250,7 +267,7 @@ fn step_radial_character(
     if should_jump {
         vertical_speed = PLAYER_JUMP_SPEED;
     }
-    let steps = (input.movement.speed * delta_seconds / (PLAYER_RADIUS * 0.5))
+    let steps = (policy.speed * delta_seconds / (PLAYER_RADIUS * 0.5))
         .ceil()
         .clamp(1.0, 8.0) as u32;
     let step_seconds = delta_seconds / steps as f32;
@@ -258,24 +275,46 @@ fn step_radial_character(
     for _ in 0..steps {
         state.grounded = false;
         vertical_speed = (vertical_speed - GRAVITY * step_seconds).max(-MAX_FALL_SPEED);
-        let (up, right, forward) = character_frame(state.gravity, state.position);
-        let _ = (right, forward);
-        tangent_velocity = super::movement::velocity(*state, input, delta_seconds);
+        let up = character_frame(state.gravity, state.position).0;
+        tangent_velocity =
+            super::swimming::movement_velocity(*state, input, policy, step_seconds, water);
+        tangent_velocity = remove_up_component(tangent_velocity, up).1;
+        state.velocity = add(tangent_velocity, scale(up, vertical_speed));
+        if let Some(sample) = water {
+            super::swimming::apply_swimming(state, input, sample, step_seconds);
+        }
+        vertical_speed = dot(state.velocity, up);
         let old_position = state.position;
-        let mut candidate = add(
-            add(old_position, scale(tangent_velocity, step_seconds)),
-            scale(up, vertical_speed * step_seconds),
-        );
+        let mut candidate = add(old_position, scale(state.velocity, step_seconds));
+        let mut landed = false;
         if vertical_speed <= 0.0 {
             if let Some(distance) = nearest_surface_distance(candidate, up, surfaces) {
-                if distance >= -MAX_STEP_UP
-                    && distance <= input.movement.speed * step_seconds + MAX_STEP_UP
+                if distance >= -MAX_STEP_UP && distance <= policy.speed * step_seconds + MAX_STEP_UP
                 {
                     candidate = add(candidate, scale(up, distance));
-                    vertical_speed = 0.0;
                     state.grounded = true;
+                    landed = true;
                 }
             }
+        }
+        let motion = super::radial_collision::sweep_capsule(
+            old_position,
+            character_frame(state.gravity, old_position).0,
+            subtract(candidate, old_position),
+            state.velocity,
+            surfaces,
+        );
+        candidate = motion.position;
+        state.velocity = motion.velocity;
+        if landed {
+            vertical_speed = 0.0;
+        } else {
+            vertical_speed = dot(state.velocity, up);
+        }
+        tangent_velocity = remove_up_component(state.velocity, up).1;
+        if motion.blocked_upward {
+            vertical_speed = 0.0;
+            state.velocity = tangent_velocity;
         }
         let candidate_up = character_frame(state.gravity, candidate).0;
         if colliders
@@ -293,6 +332,11 @@ fn step_radial_character(
     if state.grounded {
         state.velocity = tangent_velocity;
     }
+}
+
+fn remove_up_component(velocity: [f32; 3], up: [f32; 3]) -> (f32, [f32; 3]) {
+    let vertical = dot(velocity, up);
+    (vertical, subtract(velocity, scale(up, vertical)))
 }
 
 fn nearest_surface_distance(

@@ -43,6 +43,8 @@ pub struct MainScenePass<'a> {
     pub overview_buffers: &'a OverviewGpuBuffers,
     pub world_vertices: &'a wgpu::Buffer,
     pub world_vertex_count: u32,
+    pub local_water_buffer: Option<&'a wgpu::Buffer>,
+    pub local_water_vertex_count: u32,
     pub remote_vertices: &'a wgpu::Buffer,
     pub remote_vertex_count: u32,
     pub world_vertex_catalog: &'a HashMap<(WorldInstanceId, SectorKey, u8), (wgpu::Buffer, u32)>,
@@ -217,6 +219,13 @@ fn encode_terrain<'a>(
                     pass.draw(0..buffers.ocean_count, 0..1);
                     stats.draws += 1;
                 }
+            }
+        }
+        if frame.local_water_vertex_count > 0 {
+            if let Some(buffer) = frame.local_water_buffer {
+                pass.set_vertex_buffer(0, buffer.slice(..));
+                pass.draw(0..frame.local_water_vertex_count, 0..1);
+                stats.draws += 1;
             }
         }
     }

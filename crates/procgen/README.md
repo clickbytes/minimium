@@ -28,6 +28,9 @@ assign the same grass-dominated mixture to all low-elevation land.
 
 See the re-exports in `src/lib.rs`, including sector materialization, planet sampling, dungeon generation, generator contract validation and addressable randomness. `PreparedGeography` is the host port for immutable geographic samples; `PlanetTerrain::with_geography` carries it into terrain and weather sampling. Sample world composition belongs to `minimium-game-sample`.
 
+Excavation collision preflight and render contour preparation share projected
+chunk bounds. Neighbor queries match canonical cube corners across face seams.
+
 ## Dependencies
 
 Depends on `minimium-core` and `minimium-world` plus serialization, hashing and memory mapping libraries; world supplies manifests and neutral dungeon layout types. It has no dependency on sample-game content.
@@ -42,15 +45,14 @@ Generation functions are called by client/server owners or their scheduled work.
 
 ## Invariants and errors
 
-Preserve seeds, address calculations, rounding, scales and algorithm order. Generation must remain reproducible for the same inputs.
+Preserve seeds, address calculations, rounding, scales and algorithm order. Generation must remain reproducible for the same inputs. Manifest validation and map materialization return `GenerationError` with a stable code and concrete category rather than requiring callers to parse an error string.
 
 Render patches and coarse blocks sample signed ground heights through
 PlanetTerrain::ground_sample; Earth bathymetry remains below sea level.
 PlanetTerrain::sea_position supplies canonical sea-level vertices for presentation.
 The renderer owns the separate ocean mesh and its intersection with ground.
 The earlier binary shoreline clipping is removed. PlanetTerrain::sample and
-collision sector generation retain their original sea-clamped results and rounding;
-no generator revision, save migration or world reset is required.
+collision sector generation retain their original sea-clamped results and rounding.
 
 ## Commands
 
@@ -64,12 +66,54 @@ Change terrain or dungeon algorithms here. Keep file discovery and persistent da
 
 Run `rtk cargo check -p minimium-procgen` and `rtk python scripts/check_architecture.py`. Runtime acceptance is deferred.
 
-Opt-in Earth generator v5 applies PlanetDefinition::earth_elevation_mm to the
-shared collision, presentation and traversal height. The v5 generator digest is
-distinct; v3/v4 retain neutral relief and their original digest/sampling.
+Generator revision 6 preserves PlanetDefinition::earth_elevation_mm for ground
+while separating the water surface from collision and introducing the immutable
+0.5 m excavation lattice. The v6 digest is the accepted generated-world contract.
+World kind selects the
+procedural planet, Earth, or dungeon algorithm explicitly.
 Source geography remains available for climate independently of shaped terrain.
 Height derivatives and both planet views follow the same mapped field.
+
+`WaterCatalog` samples a bounded canonical cube-face grid and flood-fills wet
+components across shared face-edge sample keys. Its largest connected component
+uses a stable ocean ID; finite components publish sampled level-volume curves
+and a digest. Curves and shoreline assignment are a bounded terrain catalogue
+approximation, not a high-resolution hydrology solver.
 
 PLANET_RENDER_BLOCK_SUBDIVISIONS publishes the unchanged 16-cell presentation
 lattice to renderer coast probes, projected-cell scoring and edge conformance.
 Collision subdivisions remain independent; generation output is unchanged.
+
+Generated manifests require revision 6, a topology-matching generator digest,
+and topology-specific planet settings. Authored manifests use an `AUTH`
+fingerprint marker; hosting and client composition verify it against the
+materialized map before publishing or installing that content.
+
+## Committed terrain overlays
+
+`TerrainInputs` explicitly carries geography, terrain edits, remnant objects and
+an optional immutable volume store. Its revision tuple carries each source
+separately; sector revision includes only nearby loaded volume chunks.
+`PreparedGeography` no longer exposes terrain state.
+Height, normals, exposed rock/soil coverage, collision, render patches, teleport
+ground queries and remnant placement sample that same overlay. The base geography
+is immutable. `SectorGeometry::object_triangles` keeps
+the collidable seeded meteorite mesh separate from terrain material sampling;
+both geometry consumers include it. Remnants have independent spatial/revision
+queries. `PlanetVolumeBase` supplies generated ground and an explicit soil depth
+to `minimium-terrain`. `validate_volume_geometry` preflights affected collision
+sectors: it clips old triangles from activated chunk boxes, extracts canonical
+box-face contours, zippers matching Marching Cubes loops and returns an error for
+open, unmatched or degenerate transitions. Render workers use
+`integrate_volume_sector_with_contours` with their LOD mesh and neighboring face
+triangles. Transition strips are intersection-checked against other loop pairs
+before they can be returned for publication. `terrain_clip::clip_triangle_outside_boxes`
+is the shared exact triangle/voxel-box subtraction hook for renderer sea meshes.
+Collision, render invalidation and contour preparation share the same chunk-key
+selector. Contour source sectors come from exact cube-face UV bounds of each
+selected chunk AABB (with positive-denominator extrema at its corners), expanded
+by one sector; center-crossing or over-limit footprints fail closed. Render
+contours use selected LOD bases where available and bounded guard bases elsewhere.
+Teleport surface queries intersect the integrated mesh and choose the outermost
+exposed hit; the runtime applies its player clearance above that point. GPU
+runtime acceptance is pending.

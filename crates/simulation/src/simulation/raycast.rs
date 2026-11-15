@@ -43,6 +43,9 @@ impl PlayerRayQuery {
 
 #[derive(Default)]
 pub(super) struct MapRayQuery {
+    pub(super) partition_candidates: Vec<usize>,
+    pub(super) partition_query: Option<Box<MapRayQuery>>,
+    pub(super) partition_hit: Option<f32>,
     pub(super) collider_candidates: Vec<usize>,
     pub(super) seen_colliders: Vec<u32>,
     pub(super) surface_candidates: Vec<usize>,
@@ -84,6 +87,10 @@ impl MapRayQuery {
     ) {
         self.collider_candidates.clear();
         self.surface_candidates.clear();
+        if !index.partitions.is_empty() {
+            self.fill_partitions(index, origin, direction, maximum_distance);
+            return;
+        }
         let mut reset_generation = false;
         if self.seen_colliders.len() != index.colliders.len() {
             self.seen_colliders.resize(index.colliders.len(), 0);
@@ -158,6 +165,9 @@ impl MapRayQuery {
         direction: [f32; 3],
         maximum_distance: f32,
     ) -> Option<f32> {
+        if !index.partitions.is_empty() {
+            return self.partition_hit;
+        }
         let collider_distance = self
             .collider_candidates
             .iter()

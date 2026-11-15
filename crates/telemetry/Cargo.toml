@@ -7,3 +7,6 @@ license.workspace = true
 [features]
 default = []
 allocation-metrics = []
+
+[dependencies]
+minimium-diagnostics = { path = "../diagnostics" }

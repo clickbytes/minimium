@@ -123,6 +123,7 @@ pub fn parse_map_with_mesh_loader(
                     precise_vertices: None,
                     color,
                     solid,
+                    surface: None,
                 });
             }
             Some("triangle") => {

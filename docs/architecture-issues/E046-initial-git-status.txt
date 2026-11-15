@@ -1,0 +1,365 @@
+﻿ M Cargo.lock
+ M Cargo.toml
+ M apps/client/Cargo.toml
+ M apps/client/README.md
+ D apps/client/assets/fonts/console-atlas.bin
+ M apps/client/src/client_commands.rs
+ M apps/client/src/client_commands/gameplay.rs
+ M apps/client/src/client_commands/movement.rs
+ M apps/client/src/client_commands/properties.rs
+ M apps/client/src/client_commands/properties/catalog.rs
+ M apps/client/src/config.rs
+ M apps/client/src/console.rs
+ M apps/client/src/console/atlas.rs
+ M apps/client/src/console/editor.rs
+ M apps/client/src/console/history.rs
+ M apps/client/src/console/hud.rs
+ M apps/client/src/console/input_draw.rs
+ M apps/client/src/console/state.rs
+ M apps/client/src/console/suggestions.rs
+ M apps/client/src/console/text.rs
+ M apps/client/src/console/theme.rs
+ M apps/client/src/environment.rs
+ M apps/client/src/main.rs
+ M apps/client/src/messages.rs
+ M apps/client/src/options.rs
+ M apps/client/src/options/catalog.rs
+ M apps/client/src/renderer.rs
+ M apps/client/src/renderer/camera.rs
+ D apps/client/src/renderer/client_game.rs
+ M apps/client/src/renderer/clouds/runtime.rs
+ M apps/client/src/renderer/clouds/worker.rs
+ M apps/client/src/renderer/collision_worker.rs
+ M apps/client/src/renderer/console_events.rs
+ M apps/client/src/renderer/controller.rs
+ M apps/client/src/renderer/diagnostics.rs
+ M apps/client/src/renderer/environment/clock.rs
+ M apps/client/src/renderer/environment/observer.rs
+ M apps/client/src/renderer/environment/runtime.rs
+ M apps/client/src/renderer/gpu.rs
+ M apps/client/src/renderer/init.rs
+ M apps/client/src/renderer/materials.rs
+ M apps/client/src/renderer/overview.rs
+ M apps/client/src/renderer/quality.rs
+ M apps/client/src/renderer/render.rs
+ M apps/client/src/renderer/scene_bridge.rs
+ M apps/client/src/renderer/sector_scene.rs
+ M apps/client/src/renderer/sector_worker.rs
+ M apps/client/src/renderer/session.rs
+ M apps/client/src/renderer/session/message_handling.rs
+ M apps/client/src/renderer/session/message_handling/connection.rs
+ M apps/client/src/renderer/session/message_handling/gameplay.rs
+ M apps/client/src/renderer/session/message_handling/transitions.rs
+ M apps/client/src/renderer/session/sector_readiness.rs
+ M apps/client/src/renderer/session/world_install.rs
+ M apps/client/src/renderer/settings.rs
+ M apps/client/src/renderer/shadow_gpu.rs
+ M apps/client/src/renderer/shadow_map_cache.rs
+ M apps/client/src/renderer/terrain_status.rs
+ M apps/client/src/renderer/window.rs
+ M apps/client/src/renderer/window_events.rs
+ M apps/client/src/terminal_client.rs
+ M apps/client/src/terminal_client/properties.rs
+ M apps/ctl/Cargo.toml
+ M apps/ctl/src/main.rs
+ M apps/loadtest/Cargo.toml
+ M apps/loadtest/README.md
+ M apps/loadtest/src/client_setup.rs
+ M apps/loadtest/src/config.rs
+ M apps/loadtest/src/main.rs
+ M apps/loadtest/src/worker.rs
+ M apps/server/Cargo.toml
+ M apps/server/README.md
+ M apps/server/src/composition.rs
+ M apps/server/src/main.rs
+ M architecture.toml
+ M crates/asset-io/Cargo.toml
+ M crates/asset-io/README.md
+ M crates/asset-io/src/geography.rs
+ M crates/asset-io/src/land_cover.rs
+ M crates/asset-io/src/lib.rs
+ M crates/asset-io/src/material_http.rs
+ M crates/asset-io/src/materials.rs
+ M crates/client-runtime/Cargo.toml
+ M crates/client-runtime/README.md
+ M crates/client-runtime/src/bootstrap.rs
+ M crates/client-runtime/src/bootstrap/diagnostics.rs
+ M crates/client-runtime/src/bootstrap/launch_config.rs
+ M crates/client-runtime/src/connection_controller.rs
+ M crates/client-runtime/src/connector.rs
+ M crates/client-runtime/src/environment.rs
+ M crates/client-runtime/src/lib.rs
+ M crates/client-runtime/src/prediction.rs
+ M crates/client-runtime/src/session.rs
+ M crates/client-runtime/src/session/clock.rs
+ M crates/client-runtime/src/session/clock/smoothing.rs
+ M crates/client-runtime/src/session/content.rs
+ D crates/client-runtime/src/session/contextualize.rs
+ M crates/client-runtime/src/session/receive.rs
+ M crates/client-runtime/src/session/receive/decode.rs
+ M crates/client-runtime/src/session/receive/decode/dispatch.rs
+ M crates/core/README.md
+ M crates/core/src/identity.rs
+ M crates/platform/Cargo.toml
+ M crates/platform/README.md
+ M crates/platform/src/files.rs
+ M crates/platform/src/lib.rs
+ M crates/procgen/README.md
+ M crates/procgen/src/generator_contract.rs
+ M crates/procgen/src/lib.rs
+ M crates/procgen/src/materialize.rs
+ M crates/procgen/src/planet.rs
+ M crates/procgen/src/tests.rs
+ M crates/protocol/README.md
+ M crates/protocol/src/decoding/client.rs
+ M crates/protocol/src/decoding/server.rs
+ M crates/protocol/src/encoding/client.rs
+ M crates/protocol/src/encoding/server.rs
+ M crates/protocol/src/kinds.rs
+ M crates/protocol/src/lib.rs
+ M crates/protocol/src/limits.rs
+ M crates/protocol/src/models.rs
+ M crates/protocol/src/movement_codec.rs
+ M crates/protocol/src/reading.rs
+ M crates/protocol/src/tests.rs
+ M crates/renderer/README.md
+ M crates/renderer/src/planet_visibility.rs
+ M crates/renderer/src/render_frame.rs
+ M crates/renderer/src/shaders/shadow_sampling.wgsl
+ M crates/renderer/src/stars.rs
+ M crates/renderer/src/terrain_view.rs
+ M crates/renderer/src/ui_pipeline.rs
+ M crates/renderer/src/world_geometry_gpu.rs
+ M crates/renderer/src/world_geometry_gpu/prepared_upload.rs
+ M crates/sectors/README.md
+ M crates/sectors/src/lib.rs
+ M crates/sectors/src/tests.rs
+ M crates/server-runtime/Cargo.toml
+ M crates/server-runtime/README.md
+ M crates/server-runtime/src/accept.rs
+ M crates/server-runtime/src/admin.rs
+ M crates/server-runtime/src/commands.rs
+ M crates/server-runtime/src/commands/time.rs
+ M crates/server-runtime/src/commands/world.rs
+ M crates/server-runtime/src/composition.rs
+ M crates/server-runtime/src/config.rs
+ M crates/server-runtime/src/config/parse.rs
+ M crates/server-runtime/src/config/parse/values.rs
+ M crates/server-runtime/src/connection.rs
+ M crates/server-runtime/src/content.rs
+ M crates/server-runtime/src/environment/clock.rs
+ M crates/server-runtime/src/environment/mod.rs
+ M crates/server-runtime/src/executor.rs
+ M crates/server-runtime/src/lib.rs
+ M crates/server-runtime/src/lifecycle.rs
+ M crates/server-runtime/src/metrics.rs
+ M crates/server-runtime/src/modules.rs
+ M crates/server-runtime/src/replication.rs
+ M crates/server-runtime/src/runtime.rs
+ M crates/server-runtime/src/runtime/admission.rs
+ M crates/server-runtime/src/runtime/admission/actions/movement.rs
+ M crates/server-runtime/src/runtime/admission/dispatch.rs
+ M crates/server-runtime/src/runtime/admission/identity.rs
+ M crates/server-runtime/src/runtime/admission/routing.rs
+ M crates/server-runtime/src/runtime/admission/technical.rs
+ M crates/server-runtime/src/runtime/admission/world_control.rs
+ M crates/server-runtime/src/runtime/altitude.rs
+ M crates/server-runtime/src/runtime/environment.rs
+ M crates/server-runtime/src/runtime/inputs.rs
+ M crates/server-runtime/src/runtime/network.rs
+ M crates/server-runtime/src/runtime/operations.rs
+ M crates/server-runtime/src/runtime/schedule.rs
+ M crates/server-runtime/src/runtime/tick.rs
+ M crates/server-runtime/src/runtime/tick/properties.rs
+ M crates/server-runtime/src/sector_streaming.rs
+ M crates/server-runtime/src/sector_streaming/collision.rs
+ D crates/server-runtime/src/sector_streaming/install.rs
+ M crates/server-runtime/src/sector_streaming/readiness.rs
+ M crates/server-runtime/src/sector_streaming/tickets.rs
+ M crates/server-runtime/src/server_command.rs
+ M crates/server-runtime/src/simulation.rs
+ M crates/server-runtime/src/startup.rs
+ M crates/server-runtime/src/storage.rs
+ M crates/server-runtime/src/storage_tests.rs
+ M crates/server-runtime/src/terminal.rs
+ M crates/server-runtime/src/world_inputs.rs
+ M crates/server-runtime/src/world_registry.rs
+ M crates/server-runtime/src/world_registry/accessors.rs
+ M crates/server-runtime/src/world_registry/constructors.rs
+ M crates/server-runtime/src/world_registry/entity_state.rs
+ M crates/server-runtime/src/world_registry/membership.rs
+ M crates/server-runtime/src/world_registry/sector_state.rs
+ M crates/server-runtime/src/world_registry/tests.rs
+ M crates/server-runtime/src/world_registry/transfers.rs
+ M crates/simulation/README.md
+ M crates/simulation/src/lib.rs
+ M crates/simulation/src/simulation.rs
+ M crates/simulation/src/simulation/movement.rs
+ M crates/simulation/src/simulation/precise_step.rs
+ M crates/simulation/src/simulation/rules.rs
+ M crates/simulation/src/simulation/step_batch.rs
+ M crates/simulation/src/simulation/world_state.rs
+ M crates/storage/Cargo.toml
+ M crates/storage/README.md
+ M crates/storage/src/format.rs
+ M crates/storage/src/format/clock.rs
+ M crates/storage/src/format/load.rs
+ M crates/storage/src/format/load/header.rs
+ M crates/storage/src/format/locations.rs
+ M crates/storage/src/format/worlds.rs
+ M crates/storage/src/format/write.rs
+ M crates/storage/src/lib.rs
+ M crates/storage/src/loaded_state.rs
+ M crates/storage/src/persistence.rs
+ M crates/storage/src/persistence/status.rs
+ M crates/storage/src/player_store.rs
+ D crates/storage/src/player_store/migration.rs
+ M crates/storage/src/player_store/profiles.rs
+ M crates/storage/src/player_store/snapshot.rs
+ M crates/telemetry/Cargo.toml
+ M crates/telemetry/README.md
+ M crates/telemetry/src/lib.rs
+ M crates/world/README.md
+ M crates/world/src/entity.rs
+ M crates/world/src/world.rs
+ M crates/world/src/world/model.rs
+ M docs/adr/0006-world-time-and-sky.md
+ M docs/architecture.md
+ M docs/atmosphere.md
+ M docs/commands.md
+ M docs/plan/criteria.md
+ M docs/plan/file-length-policy.md
+ M docs/protocol.md
+ M docs/prototype.md
+ M docs/terrain-materials.md
+ M docs/vision.md
+ M docs/worlds.md
+ M games/sample/Cargo.toml
+ M games/sample/README.md
+ M games/sample/src/lib.rs
+ M games/sample/src/planet_config.rs
+ M games/sample/src/scenario.rs
+ M scripts/check_architecture.py
+ M scripts/check_file_lengths.py
+ M scripts/check_static_refactor.py
+ D scripts/generate_console_atlas.py
+ M scripts/wgsl_validator/src/main.rs
+?? apps/client/assets/fonts/README.md
+?? apps/client/src/application.rs
+?? apps/client/src/application/game.rs
+?? apps/client/src/application/settings.rs
+?? apps/client/src/application/transitions.rs
+?? apps/client/src/application/ui.rs
+?? apps/client/src/client_commands/help.rs
+?? apps/client/src/client_commands/properties/types.rs
+?? apps/client/src/client_commands/tests.rs
+?? apps/client/src/console/glyph_atlas.rs
+?? apps/client/src/diagnostics.rs
+?? apps/client/src/input.rs
+?? apps/client/src/options/paths.rs
+?? apps/client/src/renderer/gameplay_presentation.rs
+?? apps/client/src/renderer/shadow_prepare.rs
+?? apps/client/src/terminal_client/actions.rs
+?? apps/client/src/terminal_client/events.rs
+?? apps/client/src/terminal_client/world_setup.rs
+?? apps/client/src/world_content.rs
+?? apps/server/src/developer_auth.rs
+?? concat.txt
+?? crates/asset-io/src/content_cache.rs
+?? crates/asset-io/src/error.rs
+?? crates/asset-io/src/material_server.rs
+?? crates/client-runtime/src/authentication.rs
+?? crates/client-runtime/src/bootstrap/process.rs
+?? crates/client-runtime/src/connection_controller/time.rs
+?? crates/client-runtime/src/connector/worker.rs
+?? crates/client-runtime/src/controller_error.rs
+?? crates/client-runtime/src/diagnostics.rs
+?? crates/client-runtime/src/replicas.rs
+?? crates/client-runtime/src/session/receive/decode/dispatch/manifest.rs
+?? crates/client-runtime/src/session/receive/decode/dispatch/time_probe.rs
+?? crates/client-runtime/src/session/replication.rs
+?? crates/client-runtime/src/session/tests.rs
+?? crates/client-runtime/src/world_content.rs
+?? crates/diagnostics/Cargo.toml
+?? crates/diagnostics/README.md
+?? crates/diagnostics/src/lib.rs
+?? crates/gameplay/Cargo.toml
+?? crates/gameplay/README.md
+?? crates/gameplay/src/effects.rs
+?? crates/gameplay/src/lib.rs
+?? crates/gameplay/src/system.rs
+?? crates/localization/Cargo.toml
+?? crates/localization/README.md
+?? crates/localization/locales/en.ftl
+?? crates/localization/locales/pl.ftl
+?? crates/localization/src/lib.rs
+?? crates/localization/src/messages.rs
+?? crates/platform/src/app_paths.rs
+?? crates/platform/src/startup_status.rs
+?? crates/procgen/src/error.rs
+?? crates/server-runtime/src/authentication.rs
+?? crates/server-runtime/src/config/parse/keys.rs
+?? crates/server-runtime/src/config/parse/offline.rs
+?? crates/server-runtime/src/connection/output.rs
+?? crates/server-runtime/src/connection/tests.rs
+?? crates/server-runtime/src/diagnostics.rs
+?? crates/server-runtime/src/environment/climate_config.rs
+?? crates/server-runtime/src/environment/error.rs
+?? crates/server-runtime/src/process_error.rs
+?? crates/server-runtime/src/replication/geometry.rs
+?? crates/server-runtime/src/replication/player_diff.rs
+?? crates/server-runtime/src/runtime/clock.rs
+?? crates/server-runtime/src/runtime/diagnostics.rs
+?? crates/server-runtime/src/sector_streaming/workers.rs
+?? crates/simulation/src/simulation/world_state/movement.rs
+?? crates/storage/src/budget.rs
+?? crates/storage/src/error.rs
+?? crates/storage/src/format/load/entities.rs
+?? crates/telemetry/src/logging.rs
+?? crates/telemetry/src/logging/run.rs
+?? crates/telemetry/src/logging/writer.rs
+?? crates/world/src/entity/changes.rs
+?? crates/world/src/entity/ids.rs
+?? crates/world/src/entity/registry.rs
+?? crates/world/src/entity/store.rs
+?? docs/architecture-execution.md
+?? docs/architecture-issues/E046-01.md
+?? docs/architecture-issues/E046-02.md
+?? docs/architecture-issues/E046-03.md
+?? docs/architecture-issues/E046-04.md
+?? docs/architecture-issues/E046-05.md
+?? docs/architecture-issues/E046-06.md
+?? docs/architecture-issues/E046-07.md
+?? docs/architecture-issues/E046-08.md
+?? docs/architecture-issues/E046-09.md
+?? docs/architecture-issues/E046-10.md
+?? docs/architecture-issues/E046-11.md
+?? docs/architecture-issues/E046-12.md
+?? docs/architecture-issues/E046-13.md
+?? docs/architecture-issues/E046-14.md
+?? docs/architecture-issues/E046-15.md
+?? docs/architecture-issues/E046-16.md
+?? docs/architecture-issues/E046-17.md
+?? docs/architecture-issues/E046-18.md
+?? docs/architecture-issues/history/2026-11-07-before-backlog-reconciliation/E046-01.md
+?? docs/architecture-issues/history/2026-11-07-before-backlog-reconciliation/E046-02.md
+?? docs/architecture-issues/history/2026-11-07-before-backlog-reconciliation/E046-03.md
+?? docs/architecture-issues/history/2026-11-07-before-backlog-reconciliation/E046-04.md
+?? docs/architecture-issues/history/2026-11-07-before-backlog-reconciliation/E046-05.md
+?? docs/architecture-issues/history/2026-11-07-before-backlog-reconciliation/E046-06.md
+?? docs/architecture-issues/history/2026-11-07-before-backlog-reconciliation/E046-07.md
+?? docs/architecture-issues/history/2026-11-07-before-backlog-reconciliation/E046-08.md
+?? docs/architecture-issues/history/2026-11-07-before-backlog-reconciliation/E046-09.md
+?? docs/architecture-issues/history/2026-11-07-before-backlog-reconciliation/E046-10.md
+?? docs/architecture-issues/history/2026-11-07-before-backlog-reconciliation/E046-11.md
+?? docs/architecture-issues/history/2026-11-07-before-backlog-reconciliation/E046-12.md
+?? docs/architecture-issues/history/2026-11-07-before-backlog-reconciliation/E046-13.md
+?? docs/architecture-issues/history/2026-11-07-before-backlog-reconciliation/E046-14.md
+?? docs/architecture-issues/history/2026-11-07-before-backlog-reconciliation/E046-15.md
+?? docs/architecture-issues/history/2026-11-07-before-backlog-reconciliation/E046-16.md
+?? docs/architecture-issues/history/2026-11-07-before-backlog-reconciliation/E046-17.md
+?? docs/architecture-issues/history/2026-11-07-before-backlog-reconciliation/E046-18.md
+?? docs/architecture-issues/history/2026-11-07-before-backlog-reconciliation/README.md
+?? docs/architecture-issues/history/2026-11-07-before-backlog-reconciliation/architecture-review-epic.md
+?? docs/architecture-review-epic.md
+?? games/sample/src/portal.rs

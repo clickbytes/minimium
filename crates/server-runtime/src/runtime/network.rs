@@ -11,11 +11,16 @@ impl ServerRuntime {
     pub(super) fn poll_network(&mut self) -> std::io::Result<()> {
         let network_phase = allocations::enter(Phase::Network);
         let network_started = Instant::now();
+        let Some(listener) = self.game_listener.as_ref() else {
+            return Ok(());
+        };
         accept::accept_clients(
-            &self.game_listener,
+            listener,
             &mut self.connections.clients,
             self.max_client_connections,
             self.game.pending_world_inputs.len(),
+            &self.transport_logger,
+            &self.protocol_logger,
         )?;
 
         receive::poll_clients(
@@ -65,12 +70,9 @@ impl ServerRuntime {
                 continue;
             }
             let handshake_timed_out = client.player_id().is_none()
-                && activity_check_at.duration_since(client.connected_at)
-                    >= if client.pending_profile.is_some() {
-                        Duration::from_secs(300)
-                    } else {
-                        CLIENT_HANDSHAKE_TIMEOUT
-                    };
+                && client
+                    .admission_deadline()
+                    .is_some_and(|deadline| activity_check_at >= deadline);
             let idle_timed_out = client.player_id().is_some()
                 && activity_check_at.duration_since(client.last_message_at) >= CLIENT_IDLE_TIMEOUT;
             if (handshake_timed_out || idle_timed_out)
@@ -104,9 +106,13 @@ impl ServerRuntime {
         for index in self.connections.disconnected.drain(..).rev() {
             if index < self.connections.clients.len() {
                 let client = self.connections.clients.swap_remove(index);
+                if let Some(attempt) = client.authentication_attempt_for_cancel() {
+                    self.authentication_provider.cancel(attempt);
+                }
                 if let Some(identity) = client.identity() {
                     let player_id = identity.player;
-                    let profile_id = identity.profile;
+                    self.game.player_movement_policies.remove(&player_id);
+                    let profile_id = identity.principal.profile();
                     self.connections.client_indices_by_player.remove(&player_id);
                     // Release the active claim immediately, but reject a rejoin
                     // until Leave has applied all preceding queued inputs.
@@ -119,7 +125,12 @@ impl ServerRuntime {
                                     instance_id,
                                     gravity,
                                 ) {
-                                    eprintln!("could not capture disconnect state: {error}");
+                                    crate::diagnostics::emit(
+                                        &self.transport_logger,
+                                        minimium_diagnostics::Level::Error,
+                                        "server.disconnect_save_failed",
+                                        &[("reason", error.to_string())],
+                                    );
                                 }
                             }
                         }
@@ -129,11 +140,26 @@ impl ServerRuntime {
                     self.game
                         .pending_world_inputs
                         .push((WorldInput::Leave(player_id), None));
-                    println!("player {player_id} disconnected reason={:?} bytes_in={} bytes_out={} decoded_frames={} queued_frames={} encoding_us={}", client.reason(), client.bytes_in, client.bytes_out, client.frames_in, client.frames_out, client.encoding_us);
+                    crate::diagnostics::emit(
+                        &self.transport_logger,
+                        minimium_diagnostics::Level::Info,
+                        "transport.player_disconnected",
+                        &[
+                            ("player_id", player_id.to_string()),
+                            ("reason", format!("{:?}", client.reason())),
+                            ("bytes_in", client.bytes_in.to_string()),
+                            ("bytes_out", client.bytes_out.to_string()),
+                            ("decoded_frames", client.frames_in.to_string()),
+                            ("queued_frames", client.frames_out.to_string()),
+                            ("encoding_us", client.encoding_us.to_string()),
+                        ],
+                    );
                 } else {
-                    println!(
-                        "unidentified client disconnected reason={:?}",
-                        client.reason()
+                    crate::diagnostics::emit(
+                        &self.transport_logger,
+                        minimium_diagnostics::Level::Info,
+                        "transport.unidentified_client_disconnected",
+                        &[("reason", format!("{:?}", client.reason()))],
                     );
                 }
                 if index < self.connections.clients.len() {

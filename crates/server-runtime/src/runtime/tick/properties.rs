@@ -12,6 +12,11 @@ impl ServerRuntime {
             success,
             text,
             stop: false,
+            error_code: if success {
+                None
+            } else {
+                Some("server.property.operation_failed")
+            },
         };
         match command {
             ServerPropertyCommand::Get(key) => reply(true, self.property_report(key)),
@@ -37,6 +42,21 @@ impl ServerRuntime {
                     .then_some(Instant::now() + self.scheduler.autosave_interval);
                 self.autosave_session_override = false;
                 reply(true, self.property_report("server.autosave_interval"))
+            }
+            ServerPropertyCommand::SetBolidInterval(interval) => {
+                self.bolid_interval = *interval;
+                self.bolid_session_override = true;
+                self.schedule_next_bolid(Instant::now());
+                reply(true, self.property_report("server.sky.bolid_interval"))
+            }
+            ServerPropertyCommand::ResetBolidInterval => {
+                self.bolid_interval = crate::config::parse_bolid_interval(
+                    &self.resolved_settings["server.sky.bolid_interval"].requested,
+                )
+                .expect("startup interval was validated");
+                self.bolid_session_override = false;
+                self.schedule_next_bolid(Instant::now());
+                reply(true, self.property_report("server.sky.bolid_interval"))
             }
             ServerPropertyCommand::List(prefix) => {
                 let lines = crate::server_command::server_properties()
@@ -88,6 +108,17 @@ impl ServerRuntime {
     }
 
     pub(super) fn property_report(&self, key: &str) -> String {
+        if key == "server.sky.bolid_interval" {
+            let effective = self
+                .bolid_interval
+                .map_or_else(|| "off".to_owned(), |(a, b)| format!("{a}..{b}"));
+            let source = if self.bolid_session_override {
+                "session"
+            } else {
+                self.resolved_settings[key].source.as_str()
+            };
+            return format!("{key} requested={effective} effective={effective} default=120..300 source={source} reason=none");
+        }
         if matches!(
             key,
             "world.seed" | "world.generation_revision" | "world.generator_digest"
@@ -139,13 +170,18 @@ impl ServerRuntime {
             );
         }
         if key.starts_with("world.time.") {
-            let value = self
-                .monotonic_ms(Instant::now())
-                .map_err(|error| error.to_string())
-                .and_then(|now| self.environment_clock.property_snapshot(now))
-                .ok();
-            let Some(clock) = value else {
-                return format!("{key} requested=unavailable effective=unavailable default=n/a source=unavailable reason=clock sample unavailable");
+            let clock = match self.monotonic_ms(Instant::now()) {
+                Ok(now) => self
+                    .environment_clock
+                    .property_snapshot(now)
+                    .map_err(|error| error.to_string()),
+                Err(error) => Err(format!("runtime.monotonic_clock_failed: {error}")),
+            };
+            let clock = match clock {
+                Ok(clock) => clock,
+                Err(reason) => {
+                    return format!("{key} requested=unavailable effective=unavailable default=n/a source=unavailable reason={reason}");
+                }
             };
             let current = match key {
                 "world.time.mode" => clock.mode.to_owned(),

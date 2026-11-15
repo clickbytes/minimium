@@ -6,7 +6,7 @@ Owns bounded sector request queues, generation tickets, readiness, installation,
 
 ## Public API
 
-The public manager and ticket/state/result types are defined in `src/lib.rs`. Consumers request work, install results, inspect readiness and manage pins.
+The public manager and ticket/state/result types are defined in `src/lib.rs`. Consumers request work, begin it with a ticket, then resolve it with `complete`, `fail`, or `cancel`. Tickets bind the world instance, sector, generation revision, content revision, and unique task serial. Consumers inspect readiness and manage pins.
 
 ## Dependencies
 
@@ -22,7 +22,7 @@ The manager is mutable state owned by its calling runtime lane. Workers return r
 
 ## Invariants and errors
 
-Stale tickets cannot install results; generating, dirty or pinned entries cannot be evicted.
+Stale tickets cannot install results. Failed entries can be requested again, while cancellation removes queued or active tickets so their cache and queue capacity can be reused. Generating, dirty or pinned entries cannot be evicted. A late result for a cancelled or replaced task is stale.
 
 ## Commands
 
@@ -35,3 +35,15 @@ Change lifecycle transitions here. Keep generation policy in procgen and renderi
 ## Verification
 
 Run `rtk cargo check -p minimium-sectors` and `rtk python scripts/check_architecture.py`. Runtime acceptance is deferred.
+
+## Terrain revision invalidation
+
+`invalidate_where` retires matching tickets, including pinned tickets, after an
+authoritative terrain change. Replacement requests receive new serials; old
+worker results cannot install over new geometry. Callers retain unaffected
+sectors and refresh only interests whose tickets were invalidated.
+
+`publish_prepared` atomically replaces cached affected payloads after the host's
+durable acknowledgement. It preflights ticket space, retires pending old work,
+preserves cache bounds and returns ready tickets. Each server payload carries its
+prepared immutable collision leaf; root composition shares unchanged leaves.

@@ -1,7 +1,5 @@
 use super::editor::Editor;
-use crate::client_commands::{
-    command_specs, format_property_help, property_spec, property_specs, CommandSpec,
-};
+use crate::client_commands::{command_specs, property_spec, property_specs, CommandSpec};
 use minimium_commands::PropertyType;
 
 pub(super) struct Suggestions {
@@ -23,7 +21,12 @@ impl Suggestions {
         }
     }
 
-    pub fn refresh(&mut self, editor: &Editor) {
+    pub fn refresh(
+        &mut self,
+        editor: &Editor,
+        localizer: &minimium_localization::Localizer,
+        locale: minimium_localization::Locale,
+    ) {
         if self.index.is_some() {
             return;
         }
@@ -35,17 +38,17 @@ impl Suggestions {
         if query.is_empty() {
             return;
         }
-        if property_suggestions(self, query) {
+        if property_suggestions(self, query, localizer, locale) {
             return;
         }
         let specs = command_specs();
-        if command_argument_suggestions(self, query, specs) {
+        if command_argument_suggestions(self, query, specs, localizer, locale) {
             return;
         }
         self.usage = specs
             .iter()
             .find(|spec| matches_arguments(query, spec))
-            .map(|spec| spec.format_help());
+            .map(|spec| crate::client_commands::command_help(spec.name, localizer, locale));
         if self.usage.is_some() {
             return;
         }
@@ -65,9 +68,15 @@ impl Suggestions {
         lines
     }
 
-    pub fn cycle(&mut self, editor: &mut Editor, reverse: bool) {
+    pub fn cycle(
+        &mut self,
+        editor: &mut Editor,
+        reverse: bool,
+        localizer: &minimium_localization::Localizer,
+        locale: minimium_localization::Locale,
+    ) {
         if self.index.is_none() {
-            self.refresh(editor);
+            self.refresh(editor, localizer, locale);
             if self.choices.is_empty() {
                 return;
             }
@@ -91,13 +100,23 @@ impl Suggestions {
         self.index = Some(next);
     }
 
-    pub fn edited(&mut self, editor: &Editor) {
+    pub fn edited(
+        &mut self,
+        editor: &Editor,
+        localizer: &minimium_localization::Localizer,
+        locale: minimium_localization::Locale,
+    ) {
         self.index = None;
-        self.refresh(editor);
+        self.refresh(editor, localizer, locale);
     }
 }
 
-fn property_suggestions(suggestions: &mut Suggestions, query: &str) -> bool {
+fn property_suggestions(
+    suggestions: &mut Suggestions,
+    query: &str,
+    localizer: &minimium_localization::Localizer,
+    locale: minimium_localization::Locale,
+) -> bool {
     let words = query.split_whitespace().collect::<Vec<_>>();
     let Some(verb) = words.first().copied() else {
         return false;
@@ -123,7 +142,14 @@ fn property_suggestions(suggestions: &mut Suggestions, query: &str) -> bool {
             );
         }
         if let Some(spec) = property_spec(prefix) {
-            suggestions.usage = Some(format_property_help(spec));
+            suggestions.usage = Some(crate::client_commands::format_property_help_localized(
+                spec, localizer, locale,
+            ));
+        } else if verb == "help" {
+            suggestions.usage = command_specs()
+                .iter()
+                .find(|spec| spec.name == prefix || spec.alias == Some(prefix))
+                .map(|spec| crate::client_commands::command_help(spec.name, localizer, locale));
         }
         return true;
     }
@@ -160,7 +186,9 @@ fn property_suggestions(suggestions: &mut Suggestions, query: &str) -> bool {
                 }
             }
             if suggestions.choices.is_empty() {
-                suggestions.usage = Some(format_property_help(spec));
+                suggestions.usage = Some(crate::client_commands::format_property_help_localized(
+                    spec, localizer, locale,
+                ));
             }
         }
         return true;
@@ -183,6 +211,8 @@ fn command_argument_suggestions(
     suggestions: &mut Suggestions,
     query: &str,
     specs: &[CommandSpec],
+    localizer: &minimium_localization::Localizer,
+    locale: minimium_localization::Locale,
 ) -> bool {
     let Ok(words) = minimium_commands::lex_command_line(query) else {
         return false;
@@ -223,6 +253,8 @@ fn command_argument_suggestions(
             );
         }
     }
-    suggestions.usage = Some(spec.format_help());
+    suggestions.usage = Some(crate::client_commands::command_help(
+        spec.name, localizer, locale,
+    ));
     true
 }

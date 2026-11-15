@@ -5,7 +5,21 @@ pub fn clouds() -> String {
         include_str!("shaders/atmosphere_common.wgsl"),
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
+        include_str!("shaders/transient_lighting.wgsl"),
         include_str!("shaders/clouds.wgsl"),
+    ])
+}
+
+pub fn meteors() -> String {
+    combine(&[
+        include_str!("shaders/frame.wgsl"),
+        include_str!("shaders/atmosphere_frame.wgsl"),
+        include_str!("shaders/atmosphere_common.wgsl"),
+        include_str!("shaders/output_color.wgsl"),
+        include_str!("shaders/sky_common.wgsl"),
+        include_str!("shaders/transient_lighting.wgsl"),
+        include_str!("shaders/meteor_optics.wgsl"),
+        include_str!("shaders/meteors.wgsl"),
     ])
 }
 
@@ -20,6 +34,7 @@ pub fn world() -> String {
         include_str!("shaders/atmosphere_common.wgsl"),
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
+        include_str!("shaders/transient_lighting.wgsl"),
         include_str!("shaders/shadow_sampling.wgsl"),
         include_str!("shaders/world.wgsl"),
     ])
@@ -32,6 +47,7 @@ pub fn terrain() -> String {
         include_str!("shaders/atmosphere_common.wgsl"),
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
+        include_str!("shaders/transient_lighting.wgsl"),
         include_str!("shaders/shadow_sampling.wgsl"),
         include_str!("shaders/terrain_material.wgsl"),
         include_str!("shaders/terrain_patch.wgsl"),
@@ -45,8 +61,11 @@ pub fn sky() -> String {
     combine(&[
         include_str!("shaders/frame.wgsl"),
         include_str!("shaders/atmosphere_frame.wgsl"),
+        include_str!("shaders/atmosphere_common.wgsl"),
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
+        include_str!("shaders/bolid.wgsl"),
+        include_str!("shaders/bolid_primitives.wgsl"),
         include_str!("shaders/sky.wgsl"),
     ])
 }
@@ -58,6 +77,7 @@ pub fn ocean() -> String {
         include_str!("shaders/atmosphere_common.wgsl"),
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
+        include_str!("shaders/transient_lighting.wgsl"),
         include_str!("shaders/shadow_sampling.wgsl"),
         include_str!("shaders/terrain_material.wgsl"),
         include_str!("shaders/ocean.wgsl"),
@@ -183,5 +203,12 @@ pub fn atmosphere_compute(kind: &str) -> String {
         include_str!("shaders/atmosphere_frame.wgsl"),
         include_str!("shaders/atmosphere_common.wgsl"),
         &body,
+    ])
+}
+
+pub fn bolid_composite() -> String {
+    combine(&[
+        include_str!("shaders/output_color.wgsl"),
+        include_str!("shaders/bolid_composite.wgsl"),
     ])
 }

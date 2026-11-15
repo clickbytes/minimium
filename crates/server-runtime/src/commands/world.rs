@@ -16,7 +16,8 @@ const WORLD_INSPECT_ARGUMENTS: &[minimium_commands::CommandArgumentSpec] =
         None,
         "world instance identifier",
     )];
-use crate::runtime::schedule::{ServerSystemContext, SystemFn};
+use crate::runtime::schedule::SystemFn;
+use minimium_gameplay::GameplaySystemContext;
 
 pub(super) struct WorldCommands;
 
@@ -60,16 +61,17 @@ impl EngineModule<ModuleHandler, SystemFn> for WorldCommands {
         registry.system(SystemDefinition {
             id: "world-instance-count",
             stage: Stage::Startup,
+            before: &[],
+            after: &[],
             handler: record_instance_count,
         })
     }
 }
 
-fn record_instance_count(context: &mut ServerSystemContext<'_>) {
-    debug_assert_eq!(context.stage, Stage::Startup);
-    context.diagnostics.world_instance_count = context.worlds.iter().count();
-    context.diagnostics.startup_system_runs =
-        context.diagnostics.startup_system_runs.saturating_add(1);
+fn record_instance_count(context: &mut dyn GameplaySystemContext) {
+    debug_assert_eq!(context.stage(), Stage::Startup);
+    let world_count = context.world_count();
+    context.record_startup_run(world_count);
 }
 
 fn success(text: String) -> CommandReply {
@@ -77,6 +79,7 @@ fn success(text: String) -> CommandReply {
         success: true,
         text,
         stop: false,
+        error_code: None,
     }
 }
 
@@ -85,6 +88,7 @@ fn invalid(usage: &'static str) -> CommandReply {
         success: false,
         text: usage.into(),
         stop: false,
+        error_code: Some("server.command.invalid_arguments"),
     }
 }
 
