@@ -24,6 +24,13 @@ cloud GPU upload is accepted. Cloud/morph count mismatches and upload-limit/inde
 errors produce diagnostics while keeping the previous complete publication.
 Context changes still invalidate old clouds; stale worker results are discarded.
 
+Remote-player GPU geometry carries the exact active world context (including
+membership epoch) and full geometry publication stamp. Missing or mismatched
+contexts/publications clear its selection; scene encoding checks the stamp again.
+An origin or publication change rebuilds even stationary player geometry, and
+disconnect/reset invalidates the stamp together with the buffer. Waiting scenes
+cannot draw players retained from a previous world.
+
 The desktop renderer reads the confirmed equipped tool from the active client
 session and passes its neutral `ToolKind` to the first-person viewmodel pass.
 Shovels and pickaxes are presentation-only low-poly meshes; gameplay tool use
