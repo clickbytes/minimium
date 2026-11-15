@@ -72,9 +72,12 @@ the scene snapshot adds about 15.8 MiB at 1080p or 63.3 MiB at 4K.
 Runtime image/performance acceptance is pending.
 
 `held_tool` defines a bounded GPU-independent camera-local vertex/model input;
-it does not define game-specific shapes. The application adapts sample model
-vertices and supplies a bounded model catalog to `HeldToolGpu`. A model index
-selects one uploaded mesh; invalid indices draw nothing. The no-depth viewmodel
+it does not define game-specific shapes. Models require nonempty triangle lists
+with finite positions/colors, at most 512 vertices each. `HeldToolGpu` accepts
+1..=8 models and at most 4096 total vertices, checking catalog bounds before
+pipeline or buffer allocation. The application adapts sample model vertices and
+supplies the catalog. A model index selects one uploaded mesh; invalid indices
+draw nothing. The no-depth viewmodel
 pass remains after atmosphere and cloud composition and before UI/output. The
 application chooses the index from confirmed inventory and sample content; no
 equipped model means no draw. Coordinates remain camera-relative screen geometry,

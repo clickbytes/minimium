@@ -33,7 +33,7 @@ impl std::error::Error for HeldToolModelError {}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct HeldToolModel {
-    vertices: Vec<HeldToolVertex>,
+    vertices: Box<[HeldToolVertex]>,
 }
 
 impl HeldToolModel {
@@ -50,7 +50,9 @@ impl HeldToolModel {
         {
             return Err(HeldToolModelError::InvalidVertices);
         }
-        Ok(Self { vertices })
+        Ok(Self {
+            vertices: vertices.into_boxed_slice(),
+        })
     }
 
     pub fn vertices(&self) -> &[HeldToolVertex] {
