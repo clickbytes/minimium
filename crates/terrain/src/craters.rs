@@ -79,30 +79,6 @@ impl TerrainSnapshot {
         }
         (displacement, exposed)
     }
-
-    fn candidates(&self, center: [f64; 3], bound: f64) -> Vec<usize> {
-        let lo = cell(center.map(|x| x - bound));
-        let hi = cell(center.map(|x| x + bound));
-        let volume = (0..3)
-            .map(|i| i64::from(hi[i]) - i64::from(lo[i]) + 1)
-            .fold(1_i64, i64::saturating_mul);
-        if volume > 512 {
-            return (0..self.edits.len()).collect();
-        }
-        let mut indices = Vec::new();
-        for x in lo[0]..=hi[0] {
-            for y in lo[1]..=hi[1] {
-                for z in lo[2]..=hi[2] {
-                    if let Some(cell) = self.cells.get(&[x, y, z]) {
-                        indices.extend_from_slice(cell);
-                    }
-                }
-            }
-        }
-        indices.sort_unstable();
-        indices.dedup();
-        indices
-    }
 }
 
 fn cell(p: [f64; 3]) -> [i32; 3] {

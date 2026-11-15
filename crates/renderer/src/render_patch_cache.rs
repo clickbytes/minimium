@@ -5,11 +5,53 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
+
+/// Revision identity for a rendered patch, including its selected contour
+/// source regions when the mesh depends on neighboring base geometry.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct RenderPatchVersion {
+    content: SectorContentVersion,
+    contour_layout: Option<(
+        crate::render_contours::RegionKey,
+        Vec<crate::render_contours::RegionKey>,
+    )>,
+}
+
+impl RenderPatchVersion {
+    pub(crate) fn with_contour_layout(
+        content: SectorContentVersion,
+        region: crate::render_contours::RegionKey,
+        sources: Vec<crate::render_contours::RegionKey>,
+    ) -> Self {
+        Self {
+            content,
+            contour_layout: Some((region, sources)),
+        }
+    }
+
+    fn accounted_bytes(&self) -> usize {
+        self.contour_layout.as_ref().map_or(0, |(_, sources)| {
+            sources
+                .capacity()
+                .saturating_mul(std::mem::size_of::<crate::render_contours::RegionKey>())
+        })
+    }
+}
+
+impl From<SectorContentVersion> for RenderPatchVersion {
+    fn from(content: SectorContentVersion) -> Self {
+        Self {
+            content,
+            contour_layout: None,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct RenderPatchCache {
     context: Option<(WorldInstanceId, WorldManifest)>,
-    revisions: HashMap<(SectorKey, u8), SectorContentVersion>,
-    entries: HashMap<(SectorKey, u8), (SectorContentVersion, Arc<SectorGeometry>)>,
+    revisions: HashMap<(SectorKey, u8), RenderPatchVersion>,
+    entries: HashMap<(SectorKey, u8), (u64, Arc<SectorGeometry>)>,
     base_entries: HashMap<(SectorKey, u8), (SectorContentVersion, u64, Arc<SectorGeometry>)>,
     tick: u64,
     pub refined: HashSet<(minimium_world::world::PlanetFace, u16, u16, u16)>,
@@ -82,6 +124,7 @@ impl RenderPatchCache {
         revision: SectorContentVersion,
         build: impl FnOnce() -> SectorGeometry,
     ) -> Arc<SectorGeometry> {
+        let revision = RenderPatchVersion::from(revision);
         if self.revisions.get(&(key, lod)) != Some(&revision) {
             self.entries.remove(&(key, lod));
         }
@@ -95,9 +138,10 @@ impl RenderPatchCache {
         &mut self,
         key: SectorKey,
         lod: u8,
-        revision: SectorContentVersion,
+        revision: impl Into<RenderPatchVersion>,
         build: impl FnOnce() -> Result<SectorGeometry, E>,
     ) -> Result<Arc<SectorGeometry>, E> {
+        let revision = revision.into();
         self.tick = self.tick.wrapping_add(1);
         if self.revisions.get(&(key, lod)) == Some(&revision) {
             if let Some((age, geometry)) = self.entries.get_mut(&(key, lod)) {
@@ -125,6 +169,11 @@ impl RenderPatchCache {
     }
     pub fn bytes(&self) -> usize {
         self.base_bytes()
+            + self
+                .revisions
+                .values()
+                .map(RenderPatchVersion::accounted_bytes)
+                .sum::<usize>()
             + self
                 .entries
                 .values()

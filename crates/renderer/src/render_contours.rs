@@ -27,7 +27,7 @@ pub(crate) struct RenderRegion {
 pub(crate) struct PreparedRenderRegion {
     pub geometry: Arc<SectorGeometry>,
     contour_sources: Vec<RegionKey>,
-    pub cache_revision: minimium_procgen::SectorContentVersion,
+    pub cache_revision: crate::render_patch_cache::RenderPatchVersion,
 }
 
 pub(crate) struct RenderContourPrepass {
@@ -36,7 +36,7 @@ pub(crate) struct RenderContourPrepass {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct RegionKey {
+pub(crate) struct RegionKey {
     sector: PlanetSectorKey,
     span: u16,
     lod: u8,
@@ -186,7 +186,12 @@ impl RenderContourPrepass {
         let region_key = key(region);
         let (_, geometry) = self.bases.get(&region_key)?;
         let source_keys = self.sources.get(&region_key)?;
-        let cache_revision = self.bases[source_keys.first()?].0;
+        let content = self.bases[source_keys.first()?].0;
+        let cache_revision = crate::render_patch_cache::RenderPatchVersion::with_contour_layout(
+            content,
+            region_key,
+            source_keys.clone(),
+        );
         Some(PreparedRenderRegion {
             geometry: geometry.clone(),
             contour_sources: source_keys.clone(),

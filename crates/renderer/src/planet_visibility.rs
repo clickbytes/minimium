@@ -88,7 +88,7 @@ pub fn render_patches_for_view(
     for region in regions {
         let sector = SectorKey::Planet(region.sector);
         let patch = if let Some(prepared) = bases.region(region) {
-            cache.get_revision_result(sector, region.lod, prepared.cache_revision, || {
+            cache.get_revision_result(sector, region.lod, prepared.cache_revision.clone(), || {
                 let contours = bases.contours(&prepared);
                 let mut geometry = minimium_procgen::integrate_volume_sector_with_contours(
                     &terrain,
@@ -310,7 +310,7 @@ fn dense_render_patches(
         }
         let key = SectorKey::Planet(region.sector);
         let geometry = if let Some(prepared) = bases.region(region) {
-            cache.get_revision_result(key, region.lod, prepared.cache_revision, || {
+            cache.get_revision_result(key, region.lod, prepared.cache_revision.clone(), || {
                 let contours = bases.contours(&prepared);
                 let (u, v) = region.sector.coordinates();
                 let mut geometry = minimium_procgen::integrate_volume_region_with_contours(

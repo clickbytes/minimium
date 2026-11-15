@@ -1005,8 +1005,9 @@ planet occlusion, cloud composition and HDR/output paths. Low quality retains
 ground-impact effects instead of applying the cosmetic high-atmosphere gate.
 The client delays the impact burst until the corresponding terrain presentation
 revision is installed. RenderPatchCache keys use separate monotone terrain source
-revisions within a world instance and manifest context; source mutations may
-invalidate unaffected patches. Collidable remnant object triangles use the object/shadow pipeline,
+revisions within a world instance and manifest context; contour patches also key
+their ordered source-region layout. Source mutations may invalidate unaffected
+patches. Collidable remnant object triangles use the object/shadow pipeline,
 not terrain coverage. Lighting and plume values still require visual acceptance
 and performance measurement in the final verification phase.
 
