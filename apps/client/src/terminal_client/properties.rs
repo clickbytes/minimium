@@ -2,6 +2,7 @@ use crate::{
     application::SettingsStore,
     client_commands::{
         format_time_value, property_spec, ClientPropertyCommand, ClientPropertyKey as Key,
+        ClientPropertyValue as Value,
     },
     options::ClientOptions,
 };
@@ -14,47 +15,12 @@ pub(super) struct TextProperties {
 
 impl TextProperties {
     pub fn new(options: &ClientOptions) -> Self {
-        let startup = [
-            Key::Locale,
-            Key::CameraFov,
-            Key::MouseSensitivity,
-            Key::InputBindings,
-            Key::SkyQuality,
-            Key::SkyNames,
-            Key::MeteorEnabled,
-            Key::MeteorRate,
-            Key::MeteorQuality,
-            Key::MeteorSeed,
-            Key::MeteorAudio,
-            Key::MeteorVolume,
-            Key::CloudDetail,
-            Key::AtmosphereDebug,
-            Key::TerrainDebug,
-            Key::CloudDebug,
-            Key::SkyDemo,
-        ]
-        .into_iter()
-        .map(|key| (key.key().to_owned(), current_value(key, options)))
-        .collect();
-        let mut settings = SettingsStore::new(startup, options.preference_sources.clone());
-        for key in [
-            Key::CameraFov,
-            Key::MouseSensitivity,
-            Key::SkyQuality,
-            Key::SkyNames,
-            Key::MeteorEnabled,
-            Key::MeteorRate,
-            Key::MeteorQuality,
-            Key::MeteorSeed,
-            Key::MeteorAudio,
-            Key::MeteorVolume,
-            Key::CloudDetail,
-            Key::AtmosphereDebug,
-            Key::TerrainDebug,
-            Key::CloudDebug,
-            Key::SkyDemo,
-        ] {
-            settings.set_unavailable(key.key(), "text frontend has no renderer".to_owned());
+        let mut settings = SettingsStore::new(&options.startup_settings);
+        for value in options.startup_settings.iter() {
+            let key = value.key();
+            if !matches!(key, Key::Locale | Key::InputBindings) {
+                settings.set_unavailable(key.key(), "text frontend has no renderer".to_owned());
+            }
         }
         Self { settings }
     }
@@ -124,29 +90,26 @@ impl TextProperties {
             ClientPropertyCommand::Set(value) => match value {
                 crate::client_commands::ClientPropertyValue::Locale(locale) => {
                     options.locale = locale;
-                    self.settings
-                        .set(Key::Locale.key(), current_locale(locale).to_owned());
+                    self.settings.set(Value::Locale(locale));
                     Ok(self.get(Key::Locale, options))
                 }
                 crate::client_commands::ClientPropertyValue::InputBindings(bindings) => {
                     options.input_bindings = bindings.clone();
-                    self.settings.set(Key::InputBindings.key(), bindings);
+                    self.settings.set(Value::InputBindings(bindings));
                     Ok(self.get(Key::InputBindings, options))
                 }
                 other => Err(unsupported_context(other.key().key())),
             },
             ClientPropertyCommand::Reset(key) => {
-                if key == Key::Locale {
-                    options.locale = options.startup_locale;
-                    self.settings.reset(Key::Locale.key());
-                    Ok(self.get(Key::Locale, options))
-                } else if key == Key::InputBindings {
-                    options.input_bindings = options.startup_input_bindings.clone();
-                    self.settings.reset(Key::InputBindings.key());
-                    Ok(self.get(Key::InputBindings, options))
-                } else {
-                    Err(unsupported_context(key.key()))
+                if !matches!(key, Key::Locale | Key::InputBindings) {
+                    return Err(unsupported_context(key.key()));
                 }
+                match self.settings.reset(key.key()) {
+                    Some(Value::Locale(locale)) => options.locale = locale,
+                    Some(Value::InputBindings(bindings)) => options.input_bindings = bindings,
+                    _ => unreachable!("local startup setting is validated"),
+                }
+                Ok(self.get(key, options))
             }
             ClientPropertyCommand::Help(key) => {
                 Ok(crate::client_commands::format_property_help_localized(
@@ -173,12 +136,12 @@ impl TextProperties {
         }
     }
 
-    fn get(&self, key: Key, options: &ClientOptions) -> String {
+    fn get(&self, key: Key, _options: &ClientOptions) -> String {
         let requested = self
             .settings
             .requested(key.key())
             .map(str::to_owned)
-            .unwrap_or_else(|| current_value(key, options));
+            .expect("local setting is present in the startup catalog");
         let source = self.settings.source(key.key());
         let effective = self.settings.effective(key.key()).unwrap_or("unavailable");
         let reason = self.settings.difference_reason(key.key()).unwrap_or("none");
@@ -218,93 +181,4 @@ fn unsupported_context(key: &str) -> CommandError {
         "renderer preference cannot be applied by the text frontend",
         Some("use the desktop renderer or config validate/show"),
     )
-}
-
-fn current_value(key: Key, options: &ClientOptions) -> String {
-    match key {
-        Key::Locale => current_locale(options.locale).to_owned(),
-        Key::CameraFov => options.startup_fov.to_string(),
-        Key::MouseSensitivity => options.startup_mouse_sensitivity.to_string(),
-        Key::InputBindings => options.input_bindings.clone(),
-        Key::SkyQuality => options.sky_quality.label().to_owned(),
-        Key::SkyNames => options.startup_sky_names.to_string(),
-        Key::MeteorEnabled
-        | Key::MeteorRate
-        | Key::MeteorQuality
-        | Key::MeteorSeed
-        | Key::MeteorAudio => options
-            .meteor_preferences
-            .get(key.key())
-            .cloned()
-            .unwrap_or_else(|| {
-                match key {
-                    Key::MeteorEnabled => "true",
-                    Key::MeteorRate => "1",
-                    Key::MeteorQuality => "standard",
-                    Key::MeteorSeed => "none",
-                    _ => "false",
-                }
-                .into()
-            }),
-        Key::MeteorVolume => "0.25".into(),
-        Key::CloudDetail => options.startup_cloud_detail.to_string(),
-        Key::AtmosphereDebug => atmosphere(options.startup_atmosphere_debug).to_owned(),
-        Key::TerrainDebug => terrain(options.startup_terrain_debug).to_owned(),
-        Key::CloudDebug => clouds(options.startup_cloud_debug).to_owned(),
-        Key::SkyDemo => options.startup_sky_demo.to_string(),
-        Key::MovementFly
-        | Key::MovementSpeed
-        | Key::MovementAccel
-        | Key::WorldTimeMode
-        | Key::WorldTimeScale
-        | Key::WorldTimeOfflinePolicy
-        | Key::WorldTimeUtc
-        | Key::WorldTimeRevision => "unavailable".to_owned(),
-    }
-}
-
-fn current_locale(locale: minimium_localization::Locale) -> &'static str {
-    match locale {
-        minimium_localization::Locale::English => "en",
-        minimium_localization::Locale::Polish => "pl",
-    }
-}
-
-fn atmosphere(value: minimium_renderer::atmosphere_debug::AtmosphereDebug) -> &'static str {
-    use minimium_renderer::atmosphere_debug::AtmosphereDebug as D;
-    match value {
-        D::Off => "off",
-        D::Transmission => "transmission",
-        D::Scattering => "scattering",
-        D::OpticalDepth => "optical_depth",
-        D::Distance => "distance",
-        D::Fog => "fog",
-    }
-}
-
-fn terrain(value: minimium_renderer::terrain_debug::TerrainDebug) -> &'static str {
-    use minimium_renderer::terrain_debug::TerrainDebug as D;
-    match value {
-        D::Off => "off",
-        D::Albedo => "albedo",
-        D::Normals => "normals",
-        D::Depth => "depth",
-        D::Shadow => "shadow",
-        D::BaseColor => "base_color",
-        D::Coverage => "coverage",
-        D::Habitat => "habitat",
-        D::Source => "source",
-    }
-}
-
-fn clouds(value: minimium_environment::weather::CloudDebug) -> &'static str {
-    use minimium_environment::weather::CloudDebug as D;
-    match value {
-        D::Off => "off",
-        D::Regions => "regions",
-        D::Layers => "layers",
-        D::Wind => "wind",
-        D::Kinds => "kinds",
-        D::Detail => "detail",
-    }
 }
