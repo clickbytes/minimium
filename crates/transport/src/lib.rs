@@ -20,6 +20,7 @@ pub use host::{
 pub enum QueueError {
     UnknownConnection,
     UnknownAdminRequest,
+    AdminReplyTooLarge,
     Backpressure,
     Closed,
     Encoding,

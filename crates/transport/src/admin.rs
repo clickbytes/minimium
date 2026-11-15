@@ -5,6 +5,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::QueueError;
+
 const MAX_ACTIVE_CLIENTS: usize = 8;
 const MAX_ACCEPTS_PER_POLL: usize = 4;
 const MAX_LINE_BYTES: usize = 512;
@@ -247,11 +249,18 @@ impl AdminState {
         Ok(events)
     }
 
-    pub(crate) fn respond(&mut self, id: AdminRequestId, response: AdminResponse) -> bool {
+    pub(crate) fn respond(
+        &mut self,
+        id: AdminRequestId,
+        response: AdminResponse,
+    ) -> Result<(), QueueError> {
+        let now = Instant::now();
         let Some(client) = self.clients.iter_mut().find(|client| {
-            client.id == Some(id) && matches!(client.phase, Phase::AwaitingResponse)
+            client.id == Some(id)
+                && matches!(client.phase, Phase::AwaitingResponse)
+                && now < client.deadline
         }) else {
-            return false;
+            return Err(QueueError::UnknownAdminRequest);
         };
         let detail_bytes = response
             .text
@@ -260,8 +269,8 @@ impl AdminState {
             .saturating_add(response.usage.as_ref().map_or(0, String::len))
             .saturating_add(response.error_code.as_ref().map_or(0, String::len));
         if detail_bytes > MAX_REPLY_BYTES {
-            queue_reply(client, b"ERR reply exceeds size limit\n", Instant::now());
-            return true;
+            queue_reply(client, b"ERR reply exceeds size limit\n", now);
+            return Err(QueueError::AdminReplyTooLarge);
         }
         let text = if response.success {
             format!("OK {}", response.text)
@@ -278,13 +287,13 @@ impl AdminState {
             )
         };
         if text.len().saturating_add(1) > MAX_REPLY_BYTES {
-            queue_reply(client, b"ERR reply exceeds size limit\n", Instant::now());
-            return true;
+            queue_reply(client, b"ERR reply exceeds size limit\n", now);
+            return Err(QueueError::AdminReplyTooLarge);
         }
         let mut bytes = text.into_bytes();
         bytes.push(b'\n');
-        queue_reply(client, &bytes, Instant::now());
-        true
+        queue_reply(client, &bytes, now);
+        Ok(())
     }
 
     pub(crate) fn stop_admission(&mut self) {

@@ -53,6 +53,13 @@ pub(crate) fn poll_game(
             {
                 break;
             }
+            if state
+                .connections
+                .get(&id)
+                .is_some_and(|socket| socket.close_after_flush.is_some())
+            {
+                break;
+            }
             let decoded = {
                 let Some(socket) = state.connections.get(&id) else {
                     break;
@@ -148,6 +155,7 @@ pub(crate) fn poll_game(
                             socket.output.extend_from_slice(&frame);
                             socket.output_frames.push_back((frame.len(), now));
                             socket.close_after_flush = Some(now + Duration::from_secs(2));
+                            socket.explicit_close = true;
                             socket.close_reason = Some(GameDisconnectReason::Rejected);
                             socket.stats.frames_out = socket.stats.frames_out.saturating_add(1);
                             true
@@ -253,7 +261,8 @@ pub(crate) fn flush_game(state: &Arc<Mutex<GameState>>, now: Instant) -> Vec<Gam
         .filter_map(|(id, socket)| {
             (socket.write_failed
                 || socket.close_after_flush.is_some_and(|deadline| {
-                    (!socket.peer_eof
+                    (socket.explicit_close
+                        || !socket.peer_eof
                         || !matches!(minimium_protocol::decode_client(&socket.input), Ok(Some(_))))
                         && (socket.output_offset == socket.output.len() || now >= deadline)
                 }))
@@ -323,6 +332,7 @@ fn accept_clients(
                         output_offset: 0,
                         output_frames: VecDeque::new(),
                         close_after_flush: None,
+                        explicit_close: false,
                         close_reason: None,
                         last_message_at: now,
                         peer_eof: false,

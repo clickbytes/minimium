@@ -42,6 +42,7 @@ pub(crate) struct GameSocket {
     pub(crate) output_offset: usize,
     pub(crate) output_frames: VecDeque<(usize, Instant)>,
     pub(crate) close_after_flush: Option<Instant>,
+    pub(crate) explicit_close: bool,
     pub(crate) close_reason: Option<GameDisconnectReason>,
     pub(crate) last_message_at: Instant,
     pub(crate) peer_eof: bool,
@@ -117,6 +118,7 @@ impl TransportSender {
             socket.stats.frames_out = socket.stats.frames_out.saturating_add(1);
             socket.encoding_time = socket.encoding_time.saturating_add(encoding_time);
             socket.close_after_flush = output.close_after_flush;
+            socket.explicit_close = output.close_after_flush.is_some();
             socket.close_reason = output.close_reason;
             QueuedFrame {
                 encoded_bytes: frame.len(),
@@ -174,6 +176,7 @@ impl TransportSender {
             .get_mut(&id)
         {
             socket.close_after_flush = Some(Instant::now());
+            socket.explicit_close = true;
         }
     }
 }

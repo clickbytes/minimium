@@ -176,11 +176,7 @@ impl HostTransport {
         id: AdminRequestId,
         response: AdminResponse,
     ) -> Result<(), QueueError> {
-        if self.admin.respond(id, response) {
-            Ok(())
-        } else {
-            Err(QueueError::UnknownAdminRequest)
-        }
+        self.admin.respond(id, response)
     }
 
     pub fn reject_admin_pending(&mut self) {
