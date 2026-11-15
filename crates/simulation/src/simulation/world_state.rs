@@ -1,3 +1,4 @@
+mod geometry;
 mod movement;
 
 use super::collision_index::CollisionIndex;
@@ -7,15 +8,14 @@ use super::raycast::{MapRayQuery, PlayerRayQuery};
 use super::rules::{CharacterState, MovementIntent, Player};
 use super::snapshot::WorldSnapshot;
 use super::spatial::update_cell_index;
+use super::spatial_geometry::SpatialGeometryPublication;
 use super::{
     MAX_PLAYER_NAME_CHARS, PARALLEL_SIMULATION_MIN_PLAYERS, PLAYERS_PER_SIMULATION_BATCH,
     PLAYER_MAX_HEALTH,
 };
 use minimium_core::ids::PlayerId;
 use minimium_world::world::geometry::{intersects_player, oriented_capsule_intersects};
-use minimium_world::world::{
-    cell_for, character_frame, Aabb, Cell, CharacterGravity, MapTriangle, Position3Mm, WorldMap,
-};
+use minimium_world::world::{cell_for, character_frame, Cell, CharacterGravity, Position3Mm};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -49,8 +49,7 @@ pub struct World {
     pub(super) players: Arc<HashMap<PlayerId, Player>>,
     pub(super) cells: Arc<HashMap<Cell, Vec<PlayerId>>>,
     pub(super) player_cells: Arc<HashMap<PlayerId, Cell>>,
-    pub(super) collision_index: Arc<CollisionIndex>,
-    pub(super) combat_index: Arc<CollisionIndex>,
+    pub(super) spatial_geometry: Arc<SpatialGeometryPublication>,
     pub(super) collision_query: CollisionQuery,
     pub(super) combat_player_query: PlayerRayQuery,
     pub(super) combat_map_query: MapRayQuery,
@@ -153,12 +152,14 @@ impl World {
             && match self.gravity {
                 CharacterGravity::Radial { .. } => {
                     let up = character_frame(self.gravity, position).0;
-                    self.collision_index
+                    self.spatial_geometry
+                        .movement
                         .all_colliders()
                         .all(|collider| !oriented_capsule_intersects(position, up, *collider))
                 }
                 CharacterGravity::FixedY => self
-                    .collision_index
+                    .spatial_geometry
+                    .movement
                     .all_colliders()
                     .all(|collider| !intersects_player(position, *collider)),
             };
@@ -237,7 +238,7 @@ impl World {
             players,
             cells,
             player_cells,
-            collision_index,
+            spatial_geometry,
             collision_query,
             gravity,
             movement_policy,
@@ -264,7 +265,7 @@ impl World {
                 .copied()
                 .unwrap_or(*movement_policy);
             collision_stats.accumulate(collision_query.fill_for_speed(
-                collision_index,
+                &spatial_geometry.movement,
                 state,
                 delta_seconds,
                 policy.speed,
@@ -423,56 +424,6 @@ impl World {
 
     pub fn gravity(&self) -> CharacterGravity {
         self.gravity
-    }
-
-    pub fn set_precise_positions(&mut self, enabled: bool) {
-        self.precise_positions = enabled;
-    }
-
-    pub fn add_collider(&mut self, collider: Aabb) {
-        Arc::make_mut(&mut self.collision_index).add(collider);
-        Arc::make_mut(&mut self.combat_index).add(collider);
-    }
-
-    pub fn load_map(&mut self, map: &WorldMap) {
-        self.spawn = map.spawn();
-        self.spawn_mm = map.spawn_position_mm();
-        let index = Arc::new(CollisionIndex::from_geometry(
-            map.solid_colliders(),
-            map.solid_triangles(),
-        ));
-        self.collision_index = Arc::clone(&index);
-        self.combat_index = index;
-        self.reset_collision_queries();
-    }
-
-    /// Loads map metadata while keeping movement collision dependent on the
-    /// sectors installed by the owning server.
-    pub fn load_map_streamed(&mut self, map: &WorldMap) {
-        self.spawn = map.spawn();
-        self.spawn_mm = map.spawn_position_mm();
-        self.collision_index = Arc::new(CollisionIndex::default());
-        self.combat_index = Arc::new(CollisionIndex::from_geometry(
-            map.solid_colliders(),
-            map.solid_triangles(),
-        ));
-        self.reset_collision_queries();
-    }
-
-    pub fn replace_streamed_collision(&mut self, colliders: Vec<Aabb>, surfaces: Vec<MapTriangle>) {
-        self.collision_index = Arc::new(CollisionIndex::from_geometry(colliders, surfaces));
-        self.reset_streamed_collision_queries();
-    }
-
-    /// Atomically swaps a complete, externally prepared streamed collision index.
-    pub fn install_streamed_collision_index(&mut self, index: Arc<CollisionIndex>) {
-        self.collision_index = index;
-        self.reset_streamed_collision_queries();
-    }
-
-    fn reset_streamed_collision_queries(&mut self) {
-        self.collision_query = CollisionQuery::default();
-        self.simulation_batches.clear();
     }
 
     fn reset_collision_queries(&mut self) {

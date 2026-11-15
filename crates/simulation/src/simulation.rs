@@ -29,6 +29,7 @@ mod raycast;
 mod rules;
 mod snapshot;
 mod spatial;
+mod spatial_geometry;
 mod step_batch;
 mod swimming;
 mod tool_raycast;
@@ -36,7 +37,7 @@ mod world_state;
 
 pub use collision_index::CollisionIndex;
 pub use collision_queries::{CollisionQuery, CollisionQueryStats};
-pub use combat::CombatSettings;
+pub use combat::{CombatSettings, ShotReadinessError};
 pub use movement::step_character_with_water;
 pub use movement::{step_character, MovementPolicy, MOVEMENT_LIMIT};
 pub use precise_step::step_character_mm;
@@ -44,6 +45,9 @@ pub use precise_step::step_character_mm_with_water;
 pub use raycast::SkyCoverQuery;
 pub use rules::{CharacterState, MovementIntent, Player, ShotOutcome};
 pub use snapshot::WorldSnapshot;
+pub use spatial_geometry::{
+    CombatCoveragePlan, CombatRaySectorInterval, SpatialGeometryPublication,
+};
 pub use step_batch::step_batch;
 pub use tool_raycast::ToolRayCapsule;
 pub use world_state::{SimulationBatch, World};

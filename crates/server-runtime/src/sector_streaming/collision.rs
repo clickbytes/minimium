@@ -22,6 +22,8 @@ struct CollisionResult {
     instance: WorldInstanceId,
     revision: u64,
     index: Arc<minimium_simulation::CollisionIndex>,
+    replacements:
+        BTreeMap<minimium_world::world::SectorKey, Arc<minimium_simulation::CollisionIndex>>,
 }
 
 #[derive(Default)]
@@ -183,7 +185,11 @@ pub(super) fn update_changed_instances(
         if owner.collision_source_revision != result.revision {
             continue;
         }
-        owner.world.install_streamed_collision_index(result.index);
+        owner.world.install_streamed_spatial_geometry(
+            result.index,
+            result.replacements,
+            result.revision,
+        );
         owner.collision_tickets = result.tickets;
         owner.collision_installed_revision = result.revision;
     }
@@ -229,11 +235,17 @@ fn collision_loop(shared: Arc<(Mutex<State>, Condvar)>) {
             .iter()
             .map(|(_, payload)| payload.collision.clone())
             .collect();
+        let replacements = job
+            .sectors
+            .iter()
+            .map(|(ticket, payload)| (ticket.key(), Arc::clone(&payload.collision)))
+            .collect();
         let result = CollisionResult {
             tickets,
             instance: job.instance,
             revision: job.revision,
             index: Arc::new(minimium_simulation::CollisionIndex::from_partitions(parts)),
+            replacements,
         };
         let mut state = shared.0.lock().unwrap();
         state.active = None;

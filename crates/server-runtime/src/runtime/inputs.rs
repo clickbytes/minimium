@@ -223,54 +223,7 @@ impl ServerRuntime {
                 self.apply_excavation(id, context, input);
             }
             WorldInput::Fire(id, direction) => {
-                if self.player_inventory(id).tool().is_some() {
-                    return None;
-                }
-                self.metrics.shots_fired = self.metrics.shots_fired.saturating_add(1);
-                let instance = self.game.worlds.instance_for_player(id)?;
-                let manifest = self.game.worlds.get(instance)?.manifest;
-                let outcome = {
-                    let world = &mut self.game.worlds.get_mut(instance)?.world;
-                    if manifest.planet().is_some() {
-                        world.fire_hitscan_deferred_respawn(id, direction, self.combat)?
-                    } else {
-                        world.fire_hitscan(id, direction, self.combat)?
-                    }
-                };
-                if outcome.killed && manifest.planet().is_some() {
-                    if let Some(respawn_mm) = super::gameplay_terrain::safe_planet_spawn(
-                        &self.game.worlds,
-                        instance,
-                        self.prepared_geography.as_ref(),
-                        self.excavation.soil_depth_m(),
-                    ) {
-                        let respawn = respawn_mm.0.map(|value| value as f32 / 1000.0);
-                        if let (Some(target), Some(world)) =
-                            (outcome.target_id, self.game.worlds.get_mut(instance))
-                        {
-                            world.world.set_position(target, respawn);
-                            world.world.restore_position_mm(target, respawn_mm);
-                        }
-                    }
-                }
-                let target_health = outcome.target_id.and_then(|target| {
-                    self.game
-                        .worlds
-                        .get(instance)
-                        .and_then(|owner| owner.world.player_health(target))
-                });
-                if outcome.target_id.is_some() {
-                    self.metrics.shots_hit = self.metrics.shots_hit.saturating_add(1);
-                    if outcome.killed {
-                        self.metrics.player_kills = self.metrics.player_kills.saturating_add(1);
-                    }
-                }
-                return Some(WorldEvent::Shot {
-                    instance,
-                    shooter: id,
-                    outcome,
-                    target_health,
-                });
+                return self.apply_fire_input(id, direction);
             }
             WorldInput::Chat(id, text) => {
                 if !self.operations.player_store.is_active(id) {
