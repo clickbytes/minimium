@@ -1,0 +1,32 @@
+name: Agent contract static check
+
+on:
+  pull_request:
+    paths:
+      - 'AGENTS.md'
+      - '**/AGENTS.md'
+      - '.agents/skills/**'
+      - 'docs/agent-workflow.md'
+      - 'docs/adr/0014-agent-engineering-governance.md'
+      - 'scripts/check_agent_contracts.py'
+  push:
+    branches: [main]
+    paths:
+      - 'AGENTS.md'
+      - '**/AGENTS.md'
+      - '.agents/skills/**'
+      - 'docs/agent-workflow.md'
+      - 'docs/adr/0014-agent-engineering-governance.md'
+      - 'scripts/check_agent_contracts.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-agent-contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate AGENTS and SKILL contracts (static only)
+        run: python3 scripts/check_agent_contracts.py
