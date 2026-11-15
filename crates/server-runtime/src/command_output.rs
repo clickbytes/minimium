@@ -1,4 +1,4 @@
-use crate::commands::{BoundedText, CommandPayload, PropertyReport, StatusReport};
+use crate::commands::{BoundedText, CommandPayload, CommandReply, PropertyReport, StatusReport};
 use std::fmt::Write as _;
 
 pub(crate) fn render(payload: &CommandPayload) -> BoundedText {
@@ -128,6 +128,36 @@ pub(crate) fn render(payload: &CommandPayload) -> BoundedText {
                 out.push_str("; [truncated]");
             }
         }
+        CommandPayload::EntityInspect {
+            world,
+            entity,
+            rows,
+            truncated,
+        } => {
+            let _ = write!(out, "world={world} entity={}", entity.get());
+            if rows.is_empty() {
+                out.push_str(" components=none");
+            }
+            for row in rows {
+                let _ = write!(
+                    out,
+                    " component={}:schema={}:bytes={}",
+                    row.kind.get(),
+                    row.schema.get(),
+                    row.bytes
+                );
+            }
+            if *truncated {
+                out.push_str(" [truncated]");
+            }
+        }
+        CommandPayload::EntityDespawn { world, entity } => {
+            let _ = write!(
+                out,
+                "world={world} entity={} despawn requested",
+                entity.get()
+            );
+        }
         CommandPayload::Bolid {
             id,
             kind,
@@ -228,6 +258,71 @@ pub(crate) fn render(payload: &CommandPayload) -> BoundedText {
         }
     }
     out
+}
+
+pub(crate) fn render_reply(reply: &CommandReply) -> BoundedText {
+    let mut out = reply
+        .payload()
+        .map(render)
+        .unwrap_or_else(|| BoundedText::new(reply.detail().unwrap_or("command failed")));
+    if let Some(outcome) = reply.effect_outcome() {
+        if !out.as_str().is_empty() {
+            out.push_str("; ");
+        }
+        out.push_str("effects=");
+        for (index, result) in outcome.results().iter().enumerate() {
+            if index > 0 {
+                out.push_str(",");
+            }
+            let _ = write!(out, "{index}:");
+            match result {
+                crate::modules::WorldEffectOutcome::EntityApplied => out.push_str("entity_applied"),
+                crate::modules::WorldEffectOutcome::EntityRejected(reason) => {
+                    let _ = write!(out, "entity_rejected_{}", entity_rejection_label(*reason));
+                }
+                crate::modules::WorldEffectOutcome::Transfer(
+                    crate::modules::TransferOutcome::Started,
+                ) => {
+                    out.push_str("transfer_started_prepare_queued_readiness_pending_not_committed")
+                }
+                crate::modules::WorldEffectOutcome::Transfer(
+                    crate::modules::TransferOutcome::Rejected(reason),
+                ) => {
+                    let _ = write!(
+                        out,
+                        "transfer_rejected_{}",
+                        transfer_rejection_label(*reason)
+                    );
+                }
+                crate::modules::WorldEffectOutcome::StageRejected => out.push_str("stage_rejected"),
+            }
+        }
+        if outcome.rejected_pushes() > 0 {
+            let _ = write!(out, ",rejected_pushes={}", outcome.rejected_pushes());
+        }
+        if outcome.has_rejections() {
+            out.push_str(" [not all effects applied]");
+        }
+    }
+    out
+}
+
+fn entity_rejection_label(reason: crate::modules::EntityEffectRejection) -> &'static str {
+    match reason {
+        crate::modules::EntityEffectRejection::Validation => "validation",
+        crate::modules::EntityEffectRejection::StorageBudget => "storage_budget",
+    }
+}
+
+fn transfer_rejection_label(reason: crate::modules::TransferRejection) -> &'static str {
+    match reason {
+        crate::modules::TransferRejection::Validation => "validation",
+        crate::modules::TransferRejection::AlreadyPending => "already_pending",
+        crate::modules::TransferRejection::IdentifierSpaceExhausted => "identifier_space_exhausted",
+        crate::modules::TransferRejection::ClientUnavailable => "client_unavailable",
+        crate::modules::TransferRejection::EnvironmentUnavailable => "environment_unavailable",
+        crate::modules::TransferRejection::Backpressure => "backpressure",
+    }
 }
 
 pub(crate) fn format_clock_scale(rate: u64) -> String {

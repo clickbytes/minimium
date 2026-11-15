@@ -408,8 +408,8 @@ impl ServerRuntime {
                     &self.game.gameplay_events,
                     Some((instance, lifecycle)),
                 );
-                let outcome = self.commit_system_batch(batch)?;
-                self.report_system_batch_outcome(stage, &outcome);
+                let outcome = self.commit_effect_batch(batch)?;
+                self.report_effect_batch_outcome(&format!("{stage:?}"), &outcome);
                 if outcome.has_rejections() {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
@@ -428,8 +428,8 @@ impl ServerRuntime {
             &self.game.gameplay_events,
             None,
         );
-        let outcome = self.commit_system_batch(batch)?;
-        self.report_system_batch_outcome(stage, &outcome);
+        let outcome = self.commit_effect_batch(batch)?;
+        self.report_effect_batch_outcome(&format!("{stage:?}"), &outcome);
         Ok(())
     }
 }
