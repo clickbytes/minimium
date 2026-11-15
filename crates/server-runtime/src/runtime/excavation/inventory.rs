@@ -74,7 +74,7 @@ impl ServerRuntime {
         {
             return;
         }
-        let now = Instant::now();
+        let now = self.now;
         if self
             .excavation
             .state

@@ -79,6 +79,7 @@ impl Excavation {
         journal: Box<dyn ExcavationJournalPort>,
         restored: ExcavationRestore,
         config: crate::composition::ExcavationConfig,
+        now: Instant,
     ) -> io::Result<Self> {
         if !config.valid() {
             return Err(io::Error::other("invalid excavation configuration"));
@@ -98,7 +99,7 @@ impl Excavation {
                 water_catalogs: HashMap::new(),
                 water_jobs: HashMap::new(),
                 water_failures: HashMap::new(),
-                next_water_step: Instant::now(),
+                next_water_step: now,
                 water_checkpoint_due: HashMap::new(),
             },
         })

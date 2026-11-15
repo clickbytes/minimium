@@ -163,7 +163,7 @@ impl ServerRuntime {
                                 fluid_region.0,
                                 fluid_region.1,
                             ) else {
-                                reject_oversized_fluid_replica(client, &mut self.metrics);
+                                reject_oversized_fluid_replica(client, &mut self.metrics, self.now);
                                 rejected_players.push(player);
                                 continue;
                             };
@@ -200,7 +200,7 @@ impl ServerRuntime {
                         fluid_region.0,
                         fluid_region.1,
                     ) else {
-                        reject_oversized_fluid_replica(client, &mut self.metrics);
+                        reject_oversized_fluid_replica(client, &mut self.metrics, self.now);
                         rejected_players.push(player);
                         continue;
                     };
@@ -254,6 +254,7 @@ impl ServerRuntime {
 fn reject_oversized_fluid_replica(
     client: &mut crate::connection::Client,
     metrics: &mut crate::metrics::RuntimeMetrics,
+    now: Instant,
 ) {
     if let Some(logger) = &client.protocol_logger {
         crate::diagnostics::emit(
@@ -270,7 +271,7 @@ fn reject_oversized_fluid_replica(
         client,
         metrics,
         ServerMessage::Error(ServerErrorCode::Busy),
-        Instant::now(),
+        now,
     );
 }
 

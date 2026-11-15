@@ -42,13 +42,13 @@ impl Executor {
 
     /// `lanes` counts the main server lane. One lane executes work inline;
     /// additional lanes are persistent worker threads.
-    pub fn new(lanes: usize) -> Self {
+    pub fn new(lanes: usize) -> std::io::Result<Self> {
         let worker_count = lanes.saturating_sub(1);
         if worker_count == 0 {
-            return Self {
+            return Ok(Self {
                 sender: None,
                 workers: Vec::new(),
-            };
+            });
         }
         let (sender, receiver) = mpsc::sync_channel::<Job>(worker_count.saturating_mul(2).max(1));
         let receiver = Arc::new(Mutex::new(receiver));
@@ -63,14 +63,13 @@ impl Executor {
                         Ok(job) => job(),
                         Err(_) => break,
                     }
-                })
-                .expect("failed to create worker thread");
+                })?;
             workers.push(thread);
         }
-        Self {
+        Ok(Self {
             sender: Some(sender),
             workers,
-        }
+        })
     }
 
     pub fn lane_count(&self) -> usize {

@@ -25,6 +25,18 @@ pub(super) fn load(
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(LoadedState::empty()),
         Err(error) => return Err(error),
     };
+    load_bytes(bytes, worlds, components_registry)
+        .map_err(|error| io::Error::new(error.kind(), format!("{}: {error}", path.display())))
+}
+
+pub(crate) fn load_bytes(
+    bytes: Vec<u8>,
+    worlds: &[(WorldInstanceId, WorldMap, WorldManifest)],
+    components_registry: &minimium_world::entity::ComponentRegistry,
+) -> io::Result<LoadedState> {
+    if worlds.len() > crate::MAX_SNAPSHOT_WORLDS || bytes.len() > MAX_WORLD_SNAPSHOT_BYTES {
+        return Err(crate::snapshot_limit_exceeded());
+    }
     let source = String::from_utf8(bytes)
         .map_err(|_| invalid_world_snapshot("snapshot is not valid UTF-8"))?;
     let mut lines = source.lines();
@@ -220,9 +232,7 @@ pub(super) fn load(
             return Err(invalid_world_snapshot("missing CLOCK record in snapshot"));
         }
         player_records_started = true;
-        parse_player_record(line, worlds, &saved_world_instances, &mut store).map_err(|error| {
-            io::Error::new(error.kind(), format!("{}: {error}", path.display()))
-        })?;
+        parse_player_record(line, worlds, &saved_world_instances, &mut store)?;
     }
     if saved_clock.is_none() {
         return Err(invalid_world_snapshot("missing CLOCK record in snapshot"));

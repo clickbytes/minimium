@@ -6,7 +6,7 @@ use minimium_telemetry::allocations::{self, Phase};
 
 impl ServerRuntime {
     pub(super) fn tick(&mut self) {
-        if Instant::now() >= self.scheduler.next_tick {
+        if self.now >= self.scheduler.next_tick {
             let tick_started = Instant::now();
             self.scheduler.simulation_tick = self.scheduler.simulation_tick.saturating_add(1);
             let mut index = 0;
@@ -20,7 +20,7 @@ impl ServerRuntime {
             self.metrics.last_tick = tick_started.elapsed();
             self.metrics.tick.record(self.metrics.last_tick);
             self.scheduler.next_tick += TICK;
-            let now = Instant::now();
+            let now = self.now;
             if now > self.scheduler.next_tick + TICK {
                 let late_by = now.duration_since(self.scheduler.next_tick).as_nanos();
                 self.metrics.missed_ticks = self
@@ -72,15 +72,15 @@ impl ServerRuntime {
             let Some((request_id, command)) = self.operations.command_queue.pop_front() else {
                 break;
             };
-            if request_id.is_some_and(|id| {
+            if matches!(request_id, CommandOrigin::Admin(id) if {
                 !self
                     .operations
                     .transport
-                    .is_admin_pending(id, Instant::now())
+                    .is_admin_pending(id, self.now)
             }) {
                 continue;
             }
-            let monotonic_ms = self.monotonic_ms(Instant::now());
+            let monotonic_ms = self.monotonic_ms(self.now);
             let schedule_diagnostics = self.schedule.diagnostics();
             let runtime_status = command
                 .is_status()
@@ -142,7 +142,7 @@ impl ServerRuntime {
                     )],
                 );
             }
-            if let Some(id) = request_id {
+            if let CommandOrigin::Admin(id) = request_id {
                 if let Err(error) = self
                     .operations
                     .transport
@@ -155,7 +155,7 @@ impl ServerRuntime {
                         &[("reason", error.to_string())],
                     );
                 }
-            } else {
+            } else if matches!(request_id, CommandOrigin::Console) {
                 let prefix = match reply.error_code() {
                     Some(code) => format!("ERR {code}"),
                     None => String::from("ERR"),
@@ -188,6 +188,11 @@ impl ServerRuntime {
             }
             if reply.should_stop() {
                 self.shutdown_request.request();
+            }
+            if let CommandOrigin::Host(id) = request_id {
+                self.operations
+                    .host_outcomes
+                    .push(crate::CommandExecution { id, reply });
             }
             if self.shutdown_request.is_requested() {
                 break;
@@ -227,7 +232,7 @@ impl ServerRuntime {
     fn apply_world_inputs(&mut self) {
         let input_phase = allocations::enter(Phase::Input);
         let input_apply_started = Instant::now();
-        self.expire_pending_transfers(Instant::now());
+        self.expire_pending_transfers(self.now);
         self.apply_inputs();
         self.metrics
             .input_apply
@@ -248,14 +253,13 @@ impl ServerRuntime {
                     (*instance, read as &dyn minimium_world::terrain::TerrainRead)
                 })
                 .collect();
-        let (committed, cancelled) = self.game.worlds.commit_ready_transfers_with_terrain(
-            sector_ready,
-            &reads,
-            Instant::now(),
-        );
+        let (committed, cancelled) =
+            self.game
+                .worlds
+                .commit_ready_transfers_with_terrain(sector_ready, &reads, self.now);
         let mut committed_players = HashSet::with_capacity(committed.len());
         if !committed.is_empty() {
-            self.scheduler.next_snapshot = Instant::now();
+            self.scheduler.next_snapshot = self.now;
         }
         for transfer in committed {
             committed_players.insert(transfer.player);
@@ -277,7 +281,7 @@ impl ServerRuntime {
         );
         self.game
             .input_last_received
-            .insert(transfer.player, Instant::now());
+            .insert(transfer.player, self.now);
         self.game.pending_world_inputs.retain(|(input, _)| {
             !matches!(input, crate::world_inputs::WorldInput::Move(player, _) if *player == transfer.player)
         });
@@ -293,28 +297,27 @@ impl ServerRuntime {
         else {
             return;
         };
-        let (clock_sample, environment) = match self
-            .environment_state_for_instance(transfer.context.instance(), Instant::now())
-        {
-            Ok(state) => state,
-            Err(error) => {
-                crate::diagnostics::emit(
-                    &self.server_logger,
-                    minimium_diagnostics::Level::Error,
-                    "server.transfer_environment_failed",
-                    &[
-                        ("player_id", transfer.player.to_string()),
-                        ("error_code", error.code().to_owned()),
-                    ],
-                );
-                if let Some(client) = self.connections.clients.get_mut(index) {
-                    client.disconnect_reason =
-                        Some(crate::connection::CloseReason::InvalidSequence);
+        let (clock_sample, environment) =
+            match self.environment_state_for_instance(transfer.context.instance(), self.now) {
+                Ok(state) => state,
+                Err(error) => {
+                    crate::diagnostics::emit(
+                        &self.server_logger,
+                        minimium_diagnostics::Level::Error,
+                        "server.transfer_environment_failed",
+                        &[
+                            ("player_id", transfer.player.to_string()),
+                            ("error_code", error.code().to_owned()),
+                        ],
+                    );
+                    if let Some(client) = self.connections.clients.get_mut(index) {
+                        client.disconnect_reason =
+                            Some(crate::connection::CloseReason::InvalidSequence);
+                    }
+                    self.connections.disconnected.push(index);
+                    return;
                 }
-                self.connections.disconnected.push(index);
-                return;
-            }
-        };
+            };
         let Some(client) = self.connections.clients.get_mut(index) else {
             return;
         };
@@ -345,7 +348,7 @@ impl ServerRuntime {
             client.disconnect_reason = Some(crate::connection::CloseReason::Backpressure);
             self.connections.disconnected.push(index);
         } else {
-            client.mark_environment_sent(transfer.context, clock_sample.revision(), Instant::now());
+            client.mark_environment_sent(transfer.context, clock_sample.revision(), self.now);
         }
     }
     fn simulate_tick(&mut self) {
@@ -450,13 +453,12 @@ impl ServerRuntime {
         }
     }
     pub(super) fn replicate(&mut self) {
-        if Instant::now() >= self.scheduler.next_snapshot {
+        if self.now >= self.scheduler.next_snapshot {
             let _snapshot_phase = allocations::enter(Phase::Snapshot);
             let snapshot_started = Instant::now();
             let server_time_ms = self
-                .scheduler
-                .server_started
-                .elapsed()
+                .now
+                .saturating_duration_since(self.scheduler.server_started)
                 .as_millis()
                 .min(u64::MAX as u128) as u64;
             replication::replicate_entities(
@@ -465,6 +467,7 @@ impl ServerRuntime {
                 &self.game.active_sector_tickets,
                 &mut self.connections.clients,
                 &mut self.metrics,
+                self.now,
             );
             replication::replicate_snapshots(
                 &self.game.worlds,
@@ -484,6 +487,7 @@ impl ServerRuntime {
                 &mut self.scheduler.next_snapshot,
                 SNAPSHOT_INTERVAL,
                 &mut self.metrics,
+                self.now,
             );
         }
     }

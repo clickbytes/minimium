@@ -126,7 +126,7 @@ pub(super) fn checkpoint_size(
     Ok(bytes)
 }
 
-fn fluid_size(fluid: &FluidSnapshot) -> io::Result<usize> {
+pub(super) fn fluid_size(fluid: &FluidSnapshot) -> io::Result<usize> {
     let cell_bytes = fluid
         .cells()
         .len()

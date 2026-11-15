@@ -18,6 +18,16 @@ For repository-wide agent policy and domain-local instructions start at [AGENTS.
 
 Local play launches the server as a child process and connects through the normal game protocol. The admin endpoint is separate, binds to loopback, and uses an OS-generated secret stored in an endpoint file. `minimium-server run --headless` disables stdin commands for a service manager; `minimiumctl` still connects to the same command registry. The server stays in the foreground so the service manager can own its lifetime.
 
+The authoritative owner also exposes `ServerRuntime::submit/query/step` for an
+embedded host. Both hosts use the same command validation, bounded queue,
+simulation schedule and publication path. The host prepares world state, modules,
+execution resources and explicit transport, persistence, content and lifecycle
+services, and supplies monotonic/UTC clock samples. The constructor starts no
+threads, TCP listeners or filesystem operations. The bounded memory backend uses
+the existing save/journal contracts and acknowledges in-memory commits; it makes
+no claim of durability across process exit. A compileable local host example and
+the contract are in [ADR 0015](adr/0015-host-driven-authoritative-runtime.md).
+
 ## Current ownership and target boundaries
 
 The current wire contract is protocol v21; save files use format v11 and

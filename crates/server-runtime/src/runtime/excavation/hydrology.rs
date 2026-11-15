@@ -72,7 +72,7 @@ impl ServerRuntime {
             self.excavation
                 .state
                 .water_checkpoint_due
-                .insert(world, Instant::now() + Duration::from_secs(1));
+                .insert(world, self.now + Duration::from_secs(1));
         }
         let cells: usize = self
             .excavation
@@ -121,7 +121,7 @@ impl ServerRuntime {
         if self.excavation.coordinator.failure().is_some() {
             return;
         }
-        let now = Instant::now();
+        let now = self.now;
         if now >= self.excavation.state.next_water_step {
             self.excavation.state.next_water_step = now + Duration::from_millis(100);
             let worlds: Vec<_> = self.excavation.state.waters.keys().copied().collect();
@@ -205,7 +205,7 @@ impl ServerRuntime {
             .state
             .water_failures
             .get(&world)
-            .is_some_and(|failure| Instant::now() < failure.retry_at)
+            .is_some_and(|failure| self.now < failure.retry_at)
         {
             return;
         }
@@ -275,7 +275,7 @@ impl ServerRuntime {
             world,
             WaterFailure {
                 error,
-                retry_at: Instant::now() + Duration::from_secs(5),
+                retry_at: self.now + Duration::from_secs(5),
             },
         );
     }

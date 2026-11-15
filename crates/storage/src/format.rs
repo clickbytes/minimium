@@ -31,6 +31,8 @@ mod locations;
 mod sectors;
 mod worlds;
 mod write;
+pub(crate) use load::load_bytes;
+pub(crate) use write::encode_bytes;
 
 use clock::{parse_saved_clock, write_saved_clock};
 use locations::{parse_location, position_from_location, write_location};
