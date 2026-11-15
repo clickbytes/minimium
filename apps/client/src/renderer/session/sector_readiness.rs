@@ -166,6 +166,11 @@ impl Renderer {
     pub(in crate::renderer) fn advance_pending_transitions(&mut self) {
         let pending = self.application.pending_transition_preparations();
         for (transition_id, pending) in pending {
+            let ticket =
+                minimium_client_runtime::TransferTicket::new(transition_id, pending.context);
+            if self.application.connection.host_readiness_requested(ticket) {
+                continue;
+            }
             let instance = pending.context.instance();
             let Some(terrain_inputs) = self
                 .application
@@ -215,16 +220,10 @@ impl Renderer {
             if !self.gpu.cache_sector_scene(instance, &scene) {
                 continue;
             }
-            let Some(session) = self.application.connection.session_mut() else {
-                continue;
-            };
-            if session
-                .queue_transition_ready(transition_id, pending.context)
-                .is_ok()
-            {
-                // Keep the target until Commit/Cancel so cancellation can release its pins.
-                self.application.mark_transition_ready(transition_id);
-            }
+            let _ = self
+                .application
+                .connection
+                .report_transfer_host_ready(ticket);
         }
     }
 

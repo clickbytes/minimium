@@ -116,6 +116,25 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                     SessionEvent::Message(message @ ServerMessage::Snapshot { .. }) => {
                         last_snapshot = Some(message);
                     }
+                    SessionEvent::Message(
+                        message @ ServerMessage::TransitionPrepare {
+                            transition_id,
+                            target_context,
+                            ..
+                        },
+                    ) => {
+                        let ticket = minimium_client_runtime::TransferTicket::new(
+                            transition_id,
+                            target_context,
+                        );
+                        let _ = connection.report_transfer_host_ready(ticket);
+                        events::print_session_event(
+                            SessionEvent::Message(message),
+                            false,
+                            &localizer,
+                            options.locale,
+                        );
+                    }
                     other => events::print_session_event(other, false, &localizer, options.locale),
                 }
             }

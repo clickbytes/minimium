@@ -264,6 +264,7 @@ impl ClientSession {
             return self.state;
         }
 
+        self.pump_transition_readiness();
         self.flush_send(events);
         if self.state == SessionState::Disconnected {
             return self.state;
