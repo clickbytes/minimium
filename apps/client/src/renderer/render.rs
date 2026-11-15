@@ -220,6 +220,10 @@ impl GpuResources {
             local_water_vertex_count,
             remote_vertices: self.remote_vertices.buffer(),
             remote_vertex_count: self.remote_vertices.vertex_count(),
+            remote_publication_matches: self.remote_stamp.is_some_and(|stamp| {
+                Some(stamp.context) == snapshot.context
+                    && Some(stamp.publication) == publication_stamp
+            }),
             world_vertex_catalog: self.world_geometry.catalog(),
             instance,
             sector_hints: publication_keys,
