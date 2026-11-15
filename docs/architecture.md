@@ -45,7 +45,19 @@ skips material cooking and consumes only CPU camera/quality/debug contracts from
 the renderer with its `gpu` feature disabled. This provides a terminal Cargo
 graph without wgpu/winit in addition to the existing `--console` desktop mode.
 
-`architecture.toml` is the machine-readable declaration of current Cargo package responsibilities and selected forbidden dependencies. `scripts/check_architecture.py` rejects duplicate, missing and stale package declarations, then checks resolved all-feature normal/build edges including target-specific and activated optional dependencies; dev edges are reported separately. Role rules prohibit sample-game dependencies in domains/runtimes, GPU dependencies in the server and window/transport/storage/platform dependencies in the renderer. A source scan derives each package root from Cargo metadata and scans Rust sources in every declared domain/runtime plus the server application for filesystem/process/network/GPU/FFI effects that Cargo edges cannot express. This regex guardrail is not a Rust parser or proof: macro-generated code, dynamically constructed names and indirect wrappers may escape it, while matching comments or strings can require review. `scripts/check_static_refactor.py` checks Rust/WGSL layouts and symbol owners; Cargo dependency rules live only in the architecture checker.
+`architecture.toml` is the machine-readable declaration of current Cargo package responsibilities and selected forbidden dependencies. `scripts/check_architecture.py` rejects duplicate, missing and stale package declarations, then checks resolved all-feature normal/build edges including target-specific and activated optional dependencies; dev edges are reported separately. Role rules prohibit sample-game dependencies in domains/runtimes, GPU dependencies in the server and window/transport/storage/platform dependencies in the renderer. A source scan derives each package root from Cargo metadata and scans Rust sources in every declared domain/runtime plus the server application for filesystem/process/network/GPU/FFI effects that Cargo edges cannot express. This regex guardrail is not a Rust parser or proof: macro-generated code, dynamically constructed names and indirect wrappers may escape it, while matching comments or strings can require review. `scripts/check_static_refactor.py` compares selected Rust/WGSL fields, declaration locations and replaced paths; it does not prove mutable-state ownership or GPU ABI correctness.
+
+The architecture checker also inspects each declared `feature_contract` independently
+with Cargo's normal/build graph across all target conditions: renderer CPU,
+terminal client and embedded server. It rejects forbidden packages and activated
+features, including invalid declarations. `python scripts/check_feature_contracts.py`
+additionally compiles the real `cpu_frame` and `embedded_host` examples and the
+terminal client with their declared features. `--target-dir` selects a build cache;
+`--graph-only` explicitly skips compilation. Compilation uses the installed host
+target, not every target represented in the dependency graph. Examples and
+applications are never executed. `.github/workflows/engine-boundaries.yml` runs
+these static checks in CI. Rust privacy, constrained APIs and source/caller review
+establish the ownership boundary; these scripts cannot establish runtime behavior.
 
 Current packages and responsibilities:
 

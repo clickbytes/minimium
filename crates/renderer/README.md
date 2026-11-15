@@ -225,6 +225,9 @@ Change frame metadata, camera preparation, geometry conversion, quality profiles
 
 Run `rtk cargo check -p minimium-renderer -p minimium-client` and `rtk python scripts/check_architecture.py`. Runtime visual acceptance is deferred.
 
+`rtk proxy python scripts/check_feature_contracts.py` also checks the independent
+CPU dependency graph and compiles the `cpu_frame` consumer without executing it.
+
 
 Flight presentation uses a complete, priority-refined quadtree capped at 256
 leaves; overview uses up to 512 leaves within a guarded camera frustum. The highest projected cell error is refined first, with no truncation of

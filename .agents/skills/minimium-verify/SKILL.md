@@ -36,9 +36,10 @@ This skill is a **verification procedure**, not a claim that checks have run. Fo
 | Rust edits | `cargo fmt --all -- --check` | Formatting only, not tests |
 | Production Rust/dependencies | `cargo check --workspace --locked` | Compile/type validation, not runtime |
 | Terminal/no-GPU client boundary | `cargo check -p minimium-client --no-default-features --locked` | Required when that feature graph can be affected |
-| Cargo domain ownership | `python scripts/check_architecture.py` | Uses Cargo metadata; needs installed Cargo |
+| Cargo domain ownership | `python scripts/check_architecture.py` | All-feature metadata plus independent declared feature graphs; needs installed Cargo |
+| CPU/hosted exports or Cargo features | `python scripts/check_feature_contracts.py` | Checks declared graphs and compiles CPU renderer, terminal client and embedded-host consumers; never executes them |
 | Hand-maintained source/shaders | `python scripts/check_file_lengths.py` | Enforces 500 physical lines / documented exceptions |
-| Selected shader exports/layouts | `python scripts/check_static_refactor.py` | Narrow static checker, not a universal SRP proof |
+| Selected shader exports/layouts | `python scripts/check_static_refactor.py` | Declaration/field comparison, not semantic ownership or GPU ABI proof |
 | Agent policy/skills, once added | `python scripts/check_agent_contracts.py` | Structure and local references only |
 | WGSL changes | Existing WGSL static validator, **only after inspecting available script/tool invocation** | A successful validation is not a visual pass |
 | Optional Rust lints | `cargo clippy --workspace --locked -- -D warnings` if installed/appropriate | Report unsupported environment instead of requiring a new tool |

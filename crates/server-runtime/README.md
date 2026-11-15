@@ -236,6 +236,9 @@ unused offer aliases and broad dead-code/import allowances are removed.
 
 Run `rtk cargo check -p minimium-server-runtime -p minimium-server` and architecture/file-length checks. Runtime acceptance is deferred.
 
+`rtk proxy python scripts/check_feature_contracts.py` checks the production host
+graph and compiles `embedded_host` without running a host or opening its services.
+
 Compile the actual external consumer with `rtk proxy cargo check -p
 minimium-server-runtime --example embedded_host --locked`. It uses local-only
 host services and `MemoryStorageBackend` to submit/query/step, save, shut down

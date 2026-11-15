@@ -1,0 +1,44 @@
+name: Engine boundary static checks
+
+on:
+  pull_request:
+    paths:
+      - '**/Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'architecture.toml'
+      - 'crates/**'
+      - 'apps/**'
+      - 'games/**'
+      - 'scripts/**'
+      - '.github/workflows/engine-boundaries.yml'
+  push:
+    branches: [main]
+    paths:
+      - '**/Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'architecture.toml'
+      - 'crates/**'
+      - 'apps/**'
+      - 'games/**'
+      - 'scripts/**'
+      - '.github/workflows/engine-boundaries.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-engine-boundaries:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate actual Cargo roles and feature graphs
+        run: python3 scripts/check_architecture.py
+      - name: Compile real CPU and hosted consumers (never execute)
+        run: python3 scripts/check_feature_contracts.py
+      - name: Validate source lengths and selected structural contracts
+        run: |
+          python3 scripts/check_file_lengths.py
+          python3 scripts/check_static_refactor.py

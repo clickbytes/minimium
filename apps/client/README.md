@@ -335,6 +335,9 @@ To add an input action, extend `InputAction::parse` and the default/context bind
 
 Run `rtk cargo check -p minimium-client` and `rtk python scripts/check_architecture.py`. Runtime acceptance is deferred.
 
+`rtk proxy python scripts/check_feature_contracts.py` independently checks and
+compiles the terminal feature selection without GPU/window dependencies.
+
 
 Terrain presentation uses a latest-request worker per interested world; immutable
 geometry and prepared vertices are cached outside the render loop. The renderer

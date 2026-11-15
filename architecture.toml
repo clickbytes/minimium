@@ -1,5 +1,33 @@
 version = 1
 
+# Independently resolved production feature graphs and actual compile consumers.
+# These are complementary to the all-feature package rules below.
+[[feature_contract]]
+name = "renderer-cpu"
+package = "minimium-renderer"
+no_default_features = true
+features = []
+example = "cpu_frame"
+forbidden_dependencies = ["wgpu", "wgpu-core", "wgpu-hal", "winit", "minimium-astronomy"]
+forbidden_package_features = { minimium-renderer = ["gpu"] }
+
+[[feature_contract]]
+name = "terminal-client"
+package = "minimium-client"
+no_default_features = true
+features = []
+forbidden_dependencies = ["wgpu", "wgpu-core", "wgpu-hal", "winit", "minimium-astronomy"]
+forbidden_package_features = { minimium-client = ["desktop", "desktop-audio"], minimium-renderer = ["gpu"] }
+
+[[feature_contract]]
+name = "embedded-server"
+package = "minimium-server-runtime"
+no_default_features = true
+features = []
+example = "embedded_host"
+forbidden_dependencies = ["minimium-game-sample", "minimium-renderer", "wgpu", "wgpu-core", "wgpu-hal", "winit", "minimium-astronomy"]
+forbidden_package_features = {}
+
 [[package]]
 name = "minimium-terrain"
 role = "engine-domain"
