@@ -5,8 +5,13 @@ use minimium_commands::{lex_command_line, CommandArgumentSpec};
 use minimium_world::entity::ComponentDescriptor;
 use std::collections::{BTreeMap, BTreeSet};
 
+mod commands;
 mod effects;
 mod system;
+pub use commands::{
+    CommandPlayerView, CommandViewError, CommandViewPage, CommandWorldView, ModuleCommandContext,
+    ModuleCommandReadView,
+};
 pub use effects::{
     ComponentValue, ComponentView, EffectBatchOutcome, EffectBufferError, EffectOutcomeError,
     EntityEffectRejection, GameplayEvent, InitialComponentView, InitialEntityView, TransferOutcome,
