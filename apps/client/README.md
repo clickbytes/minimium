@@ -307,6 +307,13 @@ keyboard and mouse controls. Bindings are validated while loading configuration
 and can be changed/reset with the local property command; the desktop replaces
 the active mapper atomically, and the text frontend can save an override for a
 later desktop launch. Physical controls remain separate from text and IME input.
+`input::PhysicalControl` is the shared configuration/device catalog: named
+keyboard controls retain their existing names, and mouse controls are
+`MouseLeft`, `MouseRight`, `MouseMiddle`, `MouseBack`, and `MouseForward`.
+Unknown names are rejected before replacing the mapper. Both devices use the
+same typed press/release and action dispatch; for example,
+`gameplay.fire=MouseRight` keeps the existing click-to-capture behavior. Left
+click selection in the console and map dragging take priority over bindings.
 
 The F1 console displays a bordered overlay with scrollable command output;
 PageUp/PageDown and the mouse wheel scroll history. `help` lists short command

@@ -12,78 +12,17 @@ pub(super) fn keyboard(
     modifiers: winit::keyboard::ModifiersState,
 ) {
     if let PhysicalKey::Code(code) = event.physical_key {
-        if event.state == ElementState::Released {
-            renderer.application.input.key_up(format!("{code:?}"));
-        }
+        let control = crate::input::PhysicalControl::from_keyboard(code);
         let context = input_context(renderer);
-        let action = match event.state {
-            ElementState::Pressed => renderer
-                .application
-                .input
-                .key_down(format!("{code:?}"), context),
-            ElementState::Released => None,
-        };
-        if let Some(action) = action {
-            if event.state == ElementState::Pressed {
-                match action {
-                    crate::input::InputAction::ToggleFullscreen if !event.repeat => {
-                        super::window_mode::toggle(window, event_loop);
-                    }
-                    crate::input::InputAction::ToggleConsole if !event.repeat => {
-                        renderer.application.input.clear_held();
-                        renderer.application.ui.console.open =
-                            !renderer.application.ui.console.open;
-                        renderer.application.ui.console.clear_preedit();
-                        window.set_ime_allowed(renderer.application.ui.console.open);
-                        let reset_cursor_position = !renderer.application.overview().is_open();
-                        release_cursor(renderer, window, true, true, reset_cursor_position);
-                    }
-                    crate::input::InputAction::ToggleMap if !event.repeat => {
-                        renderer.application.input.clear_held();
-                        renderer.toggle_overview();
-                        release_cursor(renderer, window, true, true, true);
-                    }
-                    crate::input::InputAction::Cancel if !event.repeat => {
-                        if renderer.application.ui.console.open {
-                            if renderer.application.ui.console.editor.is_composing() {
-                                renderer.application.ui.console.clear_preedit();
-                            } else {
-                                renderer.application.input.clear_held();
-                                renderer.application.ui.console.open = false;
-                                renderer.application.ui.console.clear_preedit();
-                                window.set_ime_allowed(false);
-                            }
-                        } else if renderer.application.overview().is_open() {
-                            renderer.application.input.clear_held();
-                            renderer.toggle_overview();
-                        } else {
-                            renderer.application.connection.cancel_transition();
-                            release_cursor(renderer, window, false, false, true);
-                        }
-                    }
-                    crate::input::InputAction::Jump if !event.repeat => {
-                        renderer.input.jump_pending = true;
-                    }
-                    crate::input::InputAction::Interact if !event.repeat => {
-                        renderer.queue_portal();
-                    }
-                    crate::input::InputAction::Fire if !event.repeat => {
-                        if renderer.input.cursor_locked {
-                            renderer.queue_fire();
-                        }
-                    }
-                    crate::input::InputAction::EquipShovel if !event.repeat => {
-                        renderer.equip_tool(Some(0));
-                    }
-                    crate::input::InputAction::EquipPickaxe if !event.repeat => {
-                        renderer.equip_tool(Some(1));
-                    }
-                    crate::input::InputAction::StowTool if !event.repeat => {
-                        renderer.equip_tool(None);
-                    }
-                    _ => {}
-                }
+        let action = control.and_then(|control| match event.state {
+            ElementState::Pressed => renderer.application.input.press(control, context),
+            ElementState::Released => {
+                renderer.application.input.release(control);
+                None
             }
+        });
+        if let Some(action) = action {
+            apply_action(renderer, window, event_loop, action, event.repeat);
             return;
         }
         if renderer.application.ui.console.open {
@@ -115,6 +54,72 @@ pub(super) fn keyboard(
     }
 }
 
+fn apply_action(
+    renderer: &mut Renderer,
+    window: &Window,
+    event_loop: &ActiveEventLoop,
+    action: crate::input::InputAction,
+    repeat: bool,
+) {
+    match action {
+        crate::input::InputAction::ToggleFullscreen if !repeat => {
+            super::window_mode::toggle(window, event_loop);
+        }
+        crate::input::InputAction::ToggleConsole if !repeat => {
+            renderer.application.input.clear_held();
+            renderer.application.ui.console.open = !renderer.application.ui.console.open;
+            renderer.application.ui.console.clear_preedit();
+            window.set_ime_allowed(renderer.application.ui.console.open);
+            let reset_cursor_position = !renderer.application.overview().is_open();
+            release_cursor(renderer, window, true, true, reset_cursor_position);
+        }
+        crate::input::InputAction::ToggleMap if !repeat => {
+            renderer.application.input.clear_held();
+            renderer.toggle_overview();
+            release_cursor(renderer, window, true, true, true);
+        }
+        crate::input::InputAction::Cancel if !repeat => {
+            if renderer.application.ui.console.open {
+                if renderer.application.ui.console.editor.is_composing() {
+                    renderer.application.ui.console.clear_preedit();
+                } else {
+                    renderer.application.input.clear_held();
+                    renderer.application.ui.console.open = false;
+                    renderer.application.ui.console.clear_preedit();
+                    window.set_ime_allowed(false);
+                }
+            } else if renderer.application.overview().is_open() {
+                renderer.application.input.clear_held();
+                renderer.toggle_overview();
+            } else {
+                renderer.application.connection.cancel_transition();
+                release_cursor(renderer, window, false, false, true);
+            }
+        }
+        crate::input::InputAction::Jump if !repeat => {
+            renderer.input.jump_pending = true;
+        }
+        crate::input::InputAction::Interact if !repeat => {
+            renderer.queue_portal();
+        }
+        crate::input::InputAction::Fire if !repeat => {
+            if renderer.input.cursor_locked {
+                renderer.queue_fire();
+            }
+        }
+        crate::input::InputAction::EquipShovel if !repeat => {
+            renderer.equip_tool(Some(0));
+        }
+        crate::input::InputAction::EquipPickaxe if !repeat => {
+            renderer.equip_tool(Some(1));
+        }
+        crate::input::InputAction::StowTool if !repeat => {
+            renderer.equip_tool(None);
+        }
+        _ => {}
+    }
+}
+
 fn input_context(renderer: &Renderer) -> crate::input::InputContext {
     if renderer.application.ui.console.open {
         crate::input::InputContext::Console
@@ -128,14 +133,13 @@ fn input_context(renderer: &Renderer) -> crate::input::InputContext {
 pub(super) fn mouse_input(
     renderer: &mut Renderer,
     window: &Window,
+    event_loop: &ActiveEventLoop,
     state: ElementState,
     button: MouseButton,
 ) {
-    if state == ElementState::Released {
-        renderer
-            .application
-            .input
-            .mouse_up(format!("Mouse{button:?}"));
+    let control = crate::input::PhysicalControl::from_mouse(button);
+    if let (ElementState::Released, Some(control)) = (state, control) {
+        renderer.application.input.release(control);
     }
     match (state, button) {
         (ElementState::Pressed, MouseButton::Left) => {
@@ -180,22 +184,6 @@ pub(super) fn mouse_input(
                 renderer.application.overview_begin_drag();
                 return;
             }
-            if !renderer.application.ui.console.open && !renderer.application.overview().is_open() {
-                let action = renderer.application.input.mouse_down(
-                    format!("Mouse{button:?}"),
-                    crate::input::InputContext::Gameplay,
-                );
-                if action == Some(crate::input::InputAction::Fire) && renderer.input.cursor_locked {
-                    renderer.queue_fire();
-                } else if action == Some(crate::input::InputAction::Fire)
-                    && (window.set_cursor_grab(CursorGrabMode::Locked).is_ok()
-                        || window.set_cursor_grab(CursorGrabMode::Confined).is_ok())
-                {
-                    window.set_cursor_visible(false);
-                    renderer.input.cursor_locked = true;
-                    renderer.input.last_cursor = None;
-                }
-            }
         }
         (ElementState::Released, MouseButton::Left) => {
             renderer.application.ui.console.editor.dragging = false;
@@ -210,6 +198,22 @@ pub(super) fn mouse_input(
             }
         }
         _ => {}
+    }
+    if let (ElementState::Pressed, Some(control)) = (state, control) {
+        let context = input_context(renderer);
+        if let Some(action) = renderer.application.input.press(control, context) {
+            if action == crate::input::InputAction::Fire && !renderer.input.cursor_locked {
+                if window.set_cursor_grab(CursorGrabMode::Locked).is_ok()
+                    || window.set_cursor_grab(CursorGrabMode::Confined).is_ok()
+                {
+                    window.set_cursor_visible(false);
+                    renderer.input.cursor_locked = true;
+                    renderer.input.last_cursor = None;
+                }
+            } else {
+                apply_action(renderer, window, event_loop, action, false);
+            }
+        }
     }
 }
 
