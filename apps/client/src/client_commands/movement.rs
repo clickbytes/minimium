@@ -117,9 +117,11 @@ fn apply(setting: Setting, context: &mut CommandContext<'_>) -> CommandResult {
     let change = match setting {
         Setting::Fly(value) => {
             if let Some(value) = value {
-                if let Err(error) = context
-                    .connection
-                    .queue_world_input(minimium_protocol::ClientWorldInput::SetFlightEnabled(value))
+                if let crate::application::LocalActionOutcome::Rejected { error, .. } =
+                    context.action_executor.execute(
+                        context.connection,
+                        crate::application::ClientAction::SetFlightEnabled(value),
+                    )
                 {
                     return CommandResult::QueueError(error);
                 }
@@ -145,12 +147,15 @@ fn apply(setting: Setting, context: &mut CommandContext<'_>) -> CommandResult {
         }
     };
     let queued = if change {
-        if let Err(error) = context.connection.queue_world_input(
-            minimium_protocol::ClientWorldInput::SetMovementPolicy {
-                speed: settings.speed,
-                accel: settings.accel,
-            },
-        ) {
+        if let crate::application::LocalActionOutcome::Rejected { error, .. } =
+            context.action_executor.execute(
+                context.connection,
+                crate::application::ClientAction::SetMovementPolicy {
+                    speed: settings.speed,
+                    accel: settings.accel,
+                },
+            )
+        {
             return CommandResult::QueueError(error);
         }
         true

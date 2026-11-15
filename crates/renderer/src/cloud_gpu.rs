@@ -8,6 +8,64 @@ use minimium_environment::weather::MAX_CLOUDS;
 
 const _: () = assert!(std::mem::size_of::<Face>() == 48);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CloudUploadError {
+    TooManyFaces { count: usize, limit: usize },
+    TooManyRecords { count: usize, limit: usize },
+    InvalidFaceRecord { face: usize },
+    TooManyInsideRecords { count: u32 },
+    InvalidInsideRecord { slot: usize, record: u32 },
+}
+
+impl std::fmt::Display for CloudUploadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "cloud upload rejected: {self:?}")
+    }
+}
+
+impl std::error::Error for CloudUploadError {}
+
+fn validate_upload(
+    faces: &[Face],
+    records: &[CloudRecord],
+    uniform: &CloudUniform,
+) -> Result<(), CloudUploadError> {
+    if faces.len() > MAX_CLOUD_FACES {
+        return Err(CloudUploadError::TooManyFaces {
+            count: faces.len(),
+            limit: MAX_CLOUD_FACES,
+        });
+    }
+    if records.len() > MAX_CLOUDS {
+        return Err(CloudUploadError::TooManyRecords {
+            count: records.len(),
+            limit: MAX_CLOUDS,
+        });
+    }
+    for (face, value) in faces.iter().enumerate() {
+        let record = value.center[3];
+        if !record.is_finite()
+            || record < 0.0
+            || record.fract() != 0.0
+            || record >= records.len() as f32
+        {
+            return Err(CloudUploadError::InvalidFaceRecord { face });
+        }
+    }
+    if uniform.config[3] > 16 {
+        return Err(CloudUploadError::TooManyInsideRecords {
+            count: uniform.config[3],
+        });
+    }
+    for slot in 0..uniform.config[3] as usize {
+        let record = uniform.inside[slot / 4][slot % 4];
+        if record as usize >= records.len() {
+            return Err(CloudUploadError::InvalidInsideRecord { slot, record });
+        }
+    }
+    Ok(())
+}
+
 pub struct CloudGpu {
     pub pipeline: wgpu::RenderPipeline,
     pub debug_pipeline: wgpu::RenderPipeline,
@@ -24,7 +82,7 @@ pub struct CloudGpu {
     pub records: wgpu::Buffer,
     pub faces: wgpu::Buffer,
     pub count: u32,
-    pub revision: u64,
+    revision: Option<u64>,
     pub debug: bool,
     pub oit: bool,
     layout: wgpu::BindGroupLayout,
@@ -113,7 +171,7 @@ impl CloudGpu {
             records,
             faces,
             count: 0,
-            revision: 0,
+            revision: None,
             debug: false,
             oit,
             layout,
@@ -121,30 +179,43 @@ impl CloudGpu {
         }
     }
 
-    pub fn update_faces(&mut self, queue: &wgpu::Queue, faces: &[Face], revision: u64) {
-        if self.revision == revision {
-            return;
-        }
-        if !faces.is_empty() {
-            queue.write_buffer(&self.faces, 0, bytemuck::cast_slice(faces));
-        }
-        self.count = faces.len() as u32;
-        self.revision = revision;
-    }
-
+    /// Rejects the complete frame before any GPU write or publication mutation.
+    /// Reused revisions identify the same immutable face geometry.
     pub fn upload_frame(
         &mut self,
         queue: &wgpu::Queue,
+        faces: &[Face],
+        revision: u64,
         records: &[CloudRecord],
         uniform: &CloudUniform,
-    ) {
-        self.inside_count = uniform.config[3];
-        self.light_records.clear();
-        self.light_records.extend_from_slice(records);
+    ) -> Result<(), CloudUploadError> {
+        validate_upload(faces, records, uniform)?;
+        if self.revision != Some(revision) && !faces.is_empty() {
+            queue.write_buffer(&self.faces, 0, bytemuck::cast_slice(faces));
+        }
         if !records.is_empty() {
             queue.write_buffer(&self.records, 0, bytemuck::cast_slice(records));
         }
         queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(uniform));
+        self.count = faces.len() as u32;
+        self.revision = Some(revision);
+        self.inside_count = uniform.config[3];
+        self.light_records.clear();
+        self.light_records.extend_from_slice(records);
+        Ok(())
+    }
+
+    /// Invalidates the previous context without publishing replacement data.
+    pub fn clear(&mut self) {
+        self.revision = None;
+        self.count = 0;
+        self.inside_count = 0;
+        self.light_records.clear();
+        self.debug = false;
+    }
+
+    pub fn revision(&self) -> Option<u64> {
+        self.revision
     }
 
     /// Encodes the cloud face, transparency composite and optional debug passes.

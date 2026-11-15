@@ -1,3 +1,4 @@
+mod action_state;
 mod admission;
 mod altitude;
 mod bolid;
@@ -74,6 +75,8 @@ struct GameState {
     last_input_seq: HashMap<PlayerId, u64>,
     pending_input_seqs: HashMap<PlayerId, std::collections::BTreeSet<u64>>,
     resolved_input_seq: HashMap<PlayerId, u64>,
+    actor_action_cooldowns: HashMap<PlayerId, action_state::ActorActionCooldowns>,
+    fire_cooldown: Duration,
     last_global_chat_at: Option<Instant>,
 }
 struct ConnectionState {
@@ -140,7 +143,6 @@ pub(crate) struct ServerRuntime {
     lanes: usize,
     combat: CombatSettings,
     movement_policy: minimium_simulation::MovementPolicy,
-    shot_cooldown: Duration,
     autosave_seconds: u64,
     resolved_settings: std::collections::BTreeMap<String, minimium_commands::ResolvedConfigValue>,
     autosave_session_override: bool,
@@ -272,6 +274,8 @@ impl ServerRuntime {
             last_input_seq: HashMap::with_capacity(config.max_players),
             pending_input_seqs: HashMap::with_capacity(config.max_players),
             resolved_input_seq: HashMap::with_capacity(config.max_players),
+            actor_action_cooldowns: HashMap::with_capacity(config.max_players),
+            fire_cooldown: Duration::from_millis(combat.fire_cooldown_ms),
             last_global_chat_at: None,
         };
         let movement_policy = minimium_simulation::MovementPolicy::default();
@@ -355,7 +359,6 @@ impl ServerRuntime {
             lanes,
             combat: combat.hitscan,
             movement_policy,
-            shot_cooldown: Duration::from_millis(combat.fire_cooldown_ms),
             autosave_seconds: config.autosave_seconds,
             resolved_settings,
             autosave_session_override: false,

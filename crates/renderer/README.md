@@ -6,6 +6,19 @@ Owns presentation contracts, reusable rendering primitives and pass encoding: ca
 
 ## Public API
 
+`CloudGpu::upload_frame` accepts faces, records and uniforms together. It checks
+both fixed capacities and all face/interior record indices before any queue write
+or publication mutation, returning `CloudUploadError` on rejection. The previous
+accepted count, revision, light records and GPU bytes remain active. Reused
+revisions identify immutable face geometry; explicit context invalidation clears
+that identity, so the next accepted frame uploads geometry even at revision zero.
+Cloud record/face/uniform byte layouts and allocation limits are unchanged.
+
+The main scene pass draws remote players only when the scene is visible and the
+host confirms their uploaded context/publication stamp matches this frame.
+Overview mode still suppresses this draw. The renderer consumes that prepared
+decision without depending on client-runtime or protocol types.
+
 CPU terrain preparation (`PreparedSector`, edge conformance, visibility and
 contours) propagates `GenerationError` or its `ExcavationGeometryError` wrapper.
 Render-patch cache entries are replaced only after successful construction.

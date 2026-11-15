@@ -39,8 +39,6 @@ const CLIENT_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const CLIENT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 const CLIENT_AUTHENTICATION_TIMEOUT: Duration = Duration::from_secs(10);
 const CLIENT_CONTENT_TIMEOUT: Duration = Duration::from_secs(300);
-const CHAT_COOLDOWN: Duration = Duration::from_secs(1);
-const GLOBAL_CHAT_COOLDOWN: Duration = Duration::from_millis(50);
 mod runtime;
 
 pub use commands::{CommandContext as ModuleCommandContext, CommandReply as ModuleCommandReply};

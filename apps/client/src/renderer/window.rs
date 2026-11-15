@@ -159,6 +159,7 @@ impl ApplicationHandler for App {
                     &prepared_environment,
                     &renderer.prepared_shadow,
                     renderer.gpu.world_geometry.publication().cloned(),
+                    renderer.application.game.session_context(),
                 );
                 let submerged = renderer
                     .application

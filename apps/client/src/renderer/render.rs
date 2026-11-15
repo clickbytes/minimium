@@ -100,13 +100,14 @@ impl GpuResources {
         if !self.transient_enabled {
             lights.count[0] = 0;
         }
+        let cloud_revision = self.cloud_gpu.revision().unwrap_or_default();
         self.cloud_gpu.light_cache.attach(
             &mut lights,
             &self.cloud_gpu.light_records,
             minimium_renderer::transient_cloud_cache::CloudLightQuery {
                 ids: std::array::from_fn(|i| meteors.lights().get(i).map_or(0, |light| light.id)),
                 origin: render_frame.view.render_origin_m,
-                revision: self.cloud_gpu.revision,
+                revision: cloud_revision,
                 now: std::time::Instant::now(),
                 eye: std::array::from_fn(|i| {
                     (render_frame.view.camera_eye_world_m[i] - render_frame.view.render_origin_m[i])
@@ -219,6 +220,10 @@ impl GpuResources {
             local_water_vertex_count,
             remote_vertices: self.remote_vertices.buffer(),
             remote_vertex_count: self.remote_vertices.vertex_count(),
+            remote_publication_matches: self.remote_stamp.is_some_and(|stamp| {
+                Some(stamp.context) == snapshot.context
+                    && Some(stamp.publication) == publication_stamp
+            }),
             world_vertex_catalog: self.world_geometry.catalog(),
             instance,
             sector_hints: publication_keys,

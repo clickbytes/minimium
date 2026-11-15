@@ -7,7 +7,6 @@ impl GameplayPresentation {
         self.remote_vertices.clear();
         self.remote_shadow_vertices.clear();
         self.remote_geometry_dirty = false;
-        self.last_shot_sent_at = None;
         self.hit_confirmation_until = None;
     }
 

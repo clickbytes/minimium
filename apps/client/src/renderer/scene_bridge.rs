@@ -8,6 +8,7 @@ pub(super) struct RenderSceneSnapshot<'a> {
     pub(super) environment: &'a PreparedEnvironmentFrame,
     pub(super) shadow: &'a PreparedShadowFrame,
     pub(super) publication: Option<GeometryPublication>,
+    pub(super) context: Option<minimium_protocol::WorldContext>,
 }
 
 impl<'a> RenderSceneSnapshot<'a> {
@@ -16,12 +17,14 @@ impl<'a> RenderSceneSnapshot<'a> {
         environment: &'a PreparedEnvironmentFrame,
         shadow: &'a PreparedShadowFrame,
         publication: Option<GeometryPublication>,
+        context: Option<minimium_protocol::WorldContext>,
     ) -> Self {
         Self {
             bolids,
             environment,
             shadow,
             publication,
+            context,
         }
     }
 
