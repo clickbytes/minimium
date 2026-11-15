@@ -18,6 +18,11 @@ result in the terminal client.
 
 ## Public API
 
+Cloud debug properties use the renderer's CPU `cloud_presentation::CloudDebug`
+catalog. The bounded cloud mesh cache asks `CloudTessellation` for the observer-
+and settings-selected sampling grid; it retains worker cancellation, sample/face
+budgets and publication ownership. Domain weather supplies physical clouds only.
+
 Executable entry point is `src/main.rs`; internal modules provide startup and front-end behavior.
 
 Terrain and weather workers propagate geographic sampling errors to session

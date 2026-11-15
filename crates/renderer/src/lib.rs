@@ -38,6 +38,7 @@ pub mod cloud_gpu;
 pub mod cloud_mesh;
 #[cfg(feature = "gpu")]
 pub mod cloud_pipeline;
+pub mod cloud_presentation;
 #[cfg(feature = "gpu")]
 pub mod cloud_targets;
 #[cfg(feature = "gpu")]

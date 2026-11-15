@@ -94,7 +94,7 @@ impl StartupSettings {
     getter!(
         cloud_debug,
         CloudDebug,
-        minimium_environment::weather::CloudDebug
+        minimium_renderer::cloud_presentation::CloudDebug
     );
     #[cfg(feature = "desktop")]
     getter!(sky_demo, SkyDemo, bool);

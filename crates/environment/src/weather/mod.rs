@@ -26,18 +26,6 @@ pub enum SeasonalProfile {
     Seasonal,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[repr(u32)]
-pub enum CloudDebug {
-    #[default]
-    Off,
-    Regions,
-    Layers,
-    Wind,
-    Kinds,
-    Detail,
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct LayerConditions {
     pub coverage: f64,
@@ -65,10 +53,10 @@ pub struct Cloud {
     pub direction: DVec3,
     pub base_m: f64,
     pub kind: CloudKind,
-    /// Bounds include all deformation; the lattice is nested at every level.
+    /// Physical support bounds, including all deformation.
     pub size_m: DVec3,
-    pub min_level: u8,
-    pub max_level: u8,
+    /// Quantum used when generating the physical support, in metres.
+    pub support_quantum_m: f64,
     pub opacity: f32,
 }
 
@@ -86,16 +74,6 @@ impl Cloud {
 
     pub fn extent_m(self) -> f64 {
         self.size_m.x.hypot(self.size_m.z) * 0.5
-    }
-
-    pub fn grid(self, level: u8) -> ([usize; 3], f64) {
-        let cell = self.size_m.max_element() / f64::from(1_u32 << level);
-        (
-            self.size_m
-                .to_array()
-                .map(|v| (v / cell).round().max(1.0) as usize),
-            cell,
-        )
     }
 
     /// Per-cloud windows avoid a simultaneous whole-sky mesh transition.

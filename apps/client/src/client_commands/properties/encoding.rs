@@ -1,9 +1,8 @@
 use super::ClientPropertyValue as Value;
-use minimium_environment::{
-    time::{ClockMode, OfflinePolicy},
-    weather::CloudDebug,
+use minimium_environment::time::{ClockMode, OfflinePolicy};
+use minimium_renderer::{
+    atmosphere_debug::AtmosphereDebug, cloud_presentation::CloudDebug, terrain_debug::TerrainDebug,
 };
-use minimium_renderer::{atmosphere_debug::AtmosphereDebug, terrain_debug::TerrainDebug};
 
 impl Value {
     /// Stable configuration/command encoding, independent of Rust Debug names.
