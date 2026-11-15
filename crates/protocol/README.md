@@ -15,7 +15,10 @@ geometry join, separately from a blocking first hit (tag 4). Rebuild both endpoi
 when updating this codec; the save format is unchanged.
 The scenario is a validated binary record with at most 32 circular regions.
 
-`ClientMessage`, `ServerMessage`, `WorldContext`, protocol limits and encode/decode functions are re-exported from `src/lib.rs`.
+`ClientMessage`, `ServerMessage`, `WorldContext`, protocol limits, encode/decode
+functions and the shared `is_unit_direction`/`valid_chat` content validators are
+re-exported from `src/lib.rs`. The validators expose existing codec rules for
+owner-side checks without changing encoded frames or protocol version.
 
 Movement samples carry a nonzero sequence and target simulation tick. Welcome
 and snapshots report the server tick; snapshots also carry the active server

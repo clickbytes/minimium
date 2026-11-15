@@ -1,9 +1,9 @@
-use crate::{connection::queue_message, runtime::ServerRuntime, world_inputs::WorldInput};
+use crate::runtime::{
+    action_state::ActorAction, action_state::ActorActionAdmission, ServerRuntime,
+};
 use minimium_core::ids::PlayerId;
-use minimium_protocol::{ServerErrorCode, ServerMessage};
+use minimium_protocol::ServerErrorCode;
 use std::time::Instant;
-
-use super::super::queue;
 
 pub(in crate::runtime::admission) fn admit_fire(
     runtime: &mut ServerRuntime,
@@ -13,28 +13,22 @@ pub(in crate::runtime::admission) fn admit_fire(
     decoded_at: Instant,
 ) {
     let now = Instant::now();
-    if runtime.connections.clients[index]
-        .last_fire_at
-        .is_some_and(|last_fire| now.saturating_duration_since(last_fire) < runtime.shot_cooldown)
-    {
-        runtime.metrics.rejected_inputs = runtime.metrics.rejected_inputs.saturating_add(1);
-        if !queue_message(
-            &mut runtime.connections.clients[index],
-            &mut runtime.metrics,
-            ServerMessage::Error(ServerErrorCode::RateLimit),
-        ) {
-            runtime.metrics.dropped_messages = runtime.metrics.dropped_messages.saturating_add(1);
+    let reserved_transport_inputs = super::super::queue::reserved_transport_inputs(runtime);
+    match runtime.game.admit_actor_action(
+        player,
+        ActorAction::Fire(direction),
+        decoded_at,
+        now,
+        reserved_transport_inputs,
+    ) {
+        ActorActionAdmission::Queued => {}
+        ActorActionAdmission::InvalidIntent => super::reject_invalid_action(runtime, index),
+        ActorActionAdmission::ActorUnavailable => {
+            runtime.metrics.rejected_inputs = runtime.metrics.rejected_inputs.saturating_add(1);
         }
-    } else if queue::try_queue(runtime, WorldInput::Fire(player, direction), decoded_at) {
-        runtime.connections.clients[index].last_fire_at = Some(now);
-    } else {
-        runtime.metrics.rejected_inputs = runtime.metrics.rejected_inputs.saturating_add(1);
-        if !queue_message(
-            &mut runtime.connections.clients[index],
-            &mut runtime.metrics,
-            ServerMessage::Error(ServerErrorCode::Busy),
-        ) {
-            runtime.metrics.dropped_messages = runtime.metrics.dropped_messages.saturating_add(1);
+        ActorActionAdmission::RateLimited => {
+            super::reject(runtime, index, ServerErrorCode::RateLimit)
         }
+        ActorActionAdmission::Busy => super::reject(runtime, index, ServerErrorCode::Busy),
     }
 }
