@@ -14,7 +14,13 @@ pub const BODY_SCHEMA: crate::entity::SchemaVersion = match crate::entity::Schem
     None => unreachable!(),
 };
 
-pub fn component_descriptor() -> crate::entity::ComponentDescriptor {
+pub fn register_component(
+    registry: &mut crate::entity::ComponentRegistry,
+) -> Result<(), crate::entity::ComponentError> {
+    registry.register(component_descriptor())
+}
+
+fn component_descriptor() -> crate::entity::ComponentDescriptor {
     crate::entity::ComponentDescriptor {
         id: BODY_COMPONENT,
         name: "engine.impact_body",
