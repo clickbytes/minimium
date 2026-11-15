@@ -184,11 +184,21 @@ impl ConnectionController {
     }
 
     pub fn start_remote(&mut self, address: String) -> Result<(), StartError> {
+        if self.busy() {
+            return Err(StartError::Busy {
+                active_attempt: self.active,
+            });
+        }
         self.active = Some(self.connector.start(address, ATTEMPT_TIMEOUT)?);
         Ok(())
     }
 
     pub fn start_local(&mut self, mut config: LocalServerLaunchConfig) -> Result<(), StartError> {
+        if self.busy() {
+            return Err(StartError::Busy {
+                active_attempt: self.active,
+            });
+        }
         config.diagnostic_logger = self.diagnostic_logger.clone();
         self.active = Some(self.connector.start_local(config, LOCAL_ATTEMPT_TIMEOUT)?);
         Ok(())

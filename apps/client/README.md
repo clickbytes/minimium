@@ -64,6 +64,10 @@ Front ends resolve profile, server-data, material-cache, config and log paths on
 
 The front-end loop owns UI and polls the runtime connection controller; the runtime owns its socket, bounded protocol state and local-server guard, while background connector work reports typed results.
 
+Both frontends display the controller's typed busy rejection. Desktop switches
+its scene to connecting only after an attempt is accepted; a rejected restart
+keeps the active environment and geometry visible.
+
 `ClientApplication` owns the connection controller, client gameplay/session
 state, input action mapper, settings, UI model, world catalog, overview model,
 typed connection status and `WorldTransitionController`. Transfer tickets move
