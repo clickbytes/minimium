@@ -128,6 +128,7 @@ impl MeteorGpu {
         &mut self,
         queue: &wgpu::Queue,
         frame: &MeteorFrame,
+        lights: &crate::transient_lighting::TransientLightFrame,
         view: &crate::RenderViewFrame,
     ) {
         let started = std::time::Instant::now();
@@ -170,7 +171,7 @@ impl MeteorGpu {
             let optical_source = if low {
                 0.0
             } else {
-                frame
+                lights
                     .lights()
                     .iter()
                     .position(|light| light.id == core.id)

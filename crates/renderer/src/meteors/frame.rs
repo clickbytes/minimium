@@ -4,20 +4,20 @@
 //! (ambient cosmetic runtime arrives E047-02) and the renderer passes
 //! (emission layers E047-03, transient-light uniform E047-09). Validated
 //! samples enter here as physical-metre `f64` values and leave adapted through
-//! [`crate::meteors::coords`] as origin-relative `f32` render geometry. All
+//! [`crate::planet_coordinates`] as origin-relative `f32` render geometry. All
 //! arrays are fixed, sorted and never allocated on the render path: cores by
 //! `(importance desc, id asc)`, trails by `(id asc, serial asc)` and lights by
 //! `(received luminance desc, id asc)`. Pushes are rejected in disabled states,
 //! above the caps or on any contract violation; nothing panics and nothing
 //! stores NaN. With all counts zero the frame costs the renderer no extra work.
 //!
-use crate::meteors::coords::{render_relative_m, PlanetSurfaceScale};
-use crate::meteors::model::{MeteorId, MeteorSample, MeteorTrailSample, TransientLightSample};
+use crate::meteors::model::{MeteorId, MeteorSample, MeteorTrailSample};
 use crate::meteors::{
     MeteorCore, MeteorDisabledReason, MeteorFrameState, MeteorRenderStatus, TrailPoint,
-    TransientLightMoment, MAX_METEOR_CORES, MAX_TRAIL_POINTS, MAX_TRAIL_POINTS_PER_CORE,
-    MAX_TRANSIENT_LIGHTS,
+    MAX_METEOR_CORES, MAX_TRAIL_POINTS, MAX_TRAIL_POINTS_PER_CORE,
 };
+use crate::planet_coordinates::{physical_position_relative_m, PlanetSurfaceScale};
+use crate::transient_lighting::{TransientLightContext, TransientLightFrame, TransientLightSample};
 
 /// Squared-distance floor below the importance denominators to keep them
 /// finite at zero separation.
@@ -50,14 +50,10 @@ pub struct MeteorFrame {
     core_count: usize,
     trails: [TrailPoint; MAX_TRAIL_POINTS],
     trail_count: usize,
-    lights: [TransientLightMoment; MAX_TRANSIENT_LIGHTS],
-    light_count: usize,
+    lights: TransientLightFrame,
 }
 
 impl MeteorFrame {
-    pub fn lights(&self) -> &[TransientLightMoment] {
-        &self.lights[..self.light_count]
-    }
     pub fn context(&self) -> MeteorFrameContext {
         MeteorFrameContext {
             camera_eye_world_m: std::array::from_fn(|i| {
@@ -70,6 +66,9 @@ impl MeteorFrame {
     }
     pub fn with_quality(mut self, quality: crate::quality::SkyQuality) -> Self {
         self.visibility = super::visibility::VisibilityPolicy::from_quality(quality);
+        self.lights = self
+            .lights
+            .with_cloud_occlusion(self.visibility.minimum_height_m() == 0.0);
         self
     }
 
@@ -81,7 +80,12 @@ impl MeteorFrame {
         let eye = std::array::from_fn(|i| self.render_origin_m[i] + self.eye_rel_m[i]);
         let source =
             std::array::from_fn(|i| self.render_origin_m[i] + f64::from(core.position_rel_m[i]));
-        super::visibility::head_visible(eye, source, self.game_radius_m, f64::from(core.radius_m))
+        crate::planet_coordinates::sphere_source_visible(
+            eye,
+            source,
+            self.game_radius_m,
+            f64::from(core.radius_m),
+        )
     }
     pub fn cores(&self) -> &[MeteorCore] {
         &self.cores[..self.core_count]
@@ -120,6 +124,14 @@ impl MeteorFrame {
         {
             return Self::disabled(MeteorDisabledReason::NoEnvironment);
         }
+        let Ok(lights) = TransientLightFrame::new(TransientLightContext {
+            camera_eye_world_m: std::array::from_fn(|i| context.render_origin_m[i] + eye_rel_m[i]),
+            render_origin_m: context.render_origin_m,
+            game_radius_m: context.game_radius_m,
+            surface_scale: context.surface_scale,
+        }) else {
+            return Self::disabled(MeteorDisabledReason::NoEnvironment);
+        };
         Self {
             visibility: super::visibility::VisibilityPolicy::FiniteDistance,
             state: MeteorFrameState::Ready,
@@ -131,8 +143,7 @@ impl MeteorFrame {
             core_count: 0,
             trails: [EMPTY_TRAIL; MAX_TRAIL_POINTS],
             trail_count: 0,
-            lights: [EMPTY_LIGHT; MAX_TRANSIENT_LIGHTS],
-            light_count: 0,
+            lights,
         }
     }
 
@@ -151,8 +162,7 @@ impl MeteorFrame {
             core_count: 0,
             trails: [EMPTY_TRAIL; MAX_TRAIL_POINTS],
             trail_count: 0,
-            lights: [EMPTY_LIGHT; MAX_TRANSIENT_LIGHTS],
-            light_count: 0,
+            lights: TransientLightFrame::empty(),
         }
     }
 
@@ -168,14 +178,16 @@ impl MeteorFrame {
             MeteorFrameState::Ready => {
                 let core_count = self.core_count;
                 let trail_count = self.trail_count;
-                let light_count = self.light_count;
+                let light_count = self.lights.lights().len();
                 let contract_ok = self.cores[..core_count]
                     .iter()
                     .all(|core| core.is_finite_contract())
                     && self.trails[..trail_count]
                         .iter()
                         .all(|trail| trail.is_finite_contract())
-                    && self.lights[..light_count]
+                    && self
+                        .lights
+                        .lights()
                         .iter()
                         .all(|light| light.is_finite_contract());
                 MeteorRenderStatus::Ready {
@@ -188,7 +200,7 @@ impl MeteorFrame {
         }
     }
 
-    /// Adapts one validated physical sample through [`crate::meteors::coords`]
+    /// Adapts one validated physical sample through [`crate::planet_coordinates`]
     /// and inserts it with deterministic priority. Returns `false` (nothing
     /// changed) while disabled, on any contract violation, a below-surface
     /// position or a duplicate identity.
@@ -252,33 +264,20 @@ impl MeteorFrame {
         self.insert_trail(candidate)
     }
 
-    /// Adapts one validated transient light and inserts it by received
-    /// luminance with the identity tie-breaker. Returns `false` (nothing
-    /// changed) while disabled, on contract violations or on a duplicate
-    /// identity; when the frame is full the lowest-ranked light is evicted
-    /// deterministically to make room.
+    /// Meteor producer adapter into the shared neutral light owner.
     pub fn push_light(&mut self, sample: TransientLightSample) -> bool {
-        if self.state != MeteorFrameState::Ready {
-            return false;
-        }
-        if sample.validate().is_err() {
-            return false;
-        }
-        let Some(position_rel_m) = self.relative_world_position(sample.position_phys_m) else {
-            return false;
-        };
-        let candidate = TransientLightMoment {
-            id: sample.id,
-            position_rel_m,
-            linear_rgb: sample.linear_rgb.map(|value| value as f32),
-            luminous_intensity: sample.luminous_intensity.max(0.0),
-            range_m: sample.range_m.max(0.0) as f32,
-            ttl_s: sample.ttl_s.max(0.0) as f32,
-        };
-        if !candidate.is_finite_contract() {
-            return false;
-        }
-        self.insert_light(candidate)
+        self.lights.push(sample)
+    }
+    /// Finalized light frame; core eviction keeps the previous radius fallback.
+    pub fn transient_lights(&self) -> TransientLightFrame {
+        let mut lights = self.lights;
+        lights.resolve_radii(|id| {
+            self.cores()
+                .iter()
+                .find(|core| core.id == id)
+                .map_or(1.0, |core| core.radius_m)
+        });
+        lights
     }
 
     /// Inserts a core by `(importance desc, id asc)`; a full frame evicts the
@@ -330,45 +329,6 @@ impl MeteorFrame {
         true
     }
 
-    /// Inserts a light by `(received luminance desc, id asc)`; a full frame
-    /// evicts the lowest-ranked slot first. Duplicates rejected earlier.
-    fn insert_light(&mut self, candidate: TransientLightMoment) -> bool {
-        let context = self.context();
-        let slot_rank =
-            |slot: &TransientLightMoment| crate::transient_lighting::score(slot, context);
-        let candidate_rank = slot_rank(&candidate);
-        if candidate_rank <= 0.0 || self.lights().iter().any(|light| light.id == candidate.id) {
-            return false;
-        }
-        if self.light_count == MAX_TRANSIENT_LIGHTS {
-            let lowest = &self.lights[MAX_TRANSIENT_LIGHTS - 1];
-            let keep_new = candidate_rank > slot_rank(lowest)
-                || (candidate_rank == slot_rank(lowest) && candidate.id < lowest.id);
-            if !keep_new {
-                return false;
-            }
-            self.light_count -= 1;
-        }
-        let mut insert_at = self.light_count;
-        for index in 0..self.light_count {
-            let rank = slot_rank(&self.lights[index]);
-            if candidate_rank > rank
-                || (candidate_rank == rank && candidate.id < self.lights[index].id)
-            {
-                insert_at = index;
-                break;
-            }
-        }
-        let mut shift = self.light_count;
-        while shift > insert_at {
-            self.lights[shift] = self.lights[shift - 1];
-            shift -= 1;
-        }
-        self.lights[insert_at] = candidate;
-        self.light_count += 1;
-        true
-    }
-
     /// Inserts an ordered trail point; caps are checked by the caller.
     fn insert_trail(&mut self, candidate: TrailPoint) -> bool {
         let mut insert_at = self.trail_count;
@@ -417,25 +377,12 @@ impl MeteorFrame {
     /// direction) or physically below the game planet radius; producers cull
     /// far-away sources before the push anyway.
     fn relative_world_position(&self, position_phys_m: [f64; 3]) -> Option<[f32; 3]> {
-        let radius_phys_m = magnitude(position_phys_m)?;
-        if radius_phys_m < self.game_radius_m {
-            return None;
-        }
-        let direction = [
-            position_phys_m[0] / radius_phys_m,
-            position_phys_m[1] / radius_phys_m,
-            position_phys_m[2] / radius_phys_m,
-        ];
-        let game_radial_m = self.game_radius_m
-            + self
-                .surface_scale
-                .radial_offset_m(radius_phys_m - self.game_radius_m);
-        let world_m = [
-            direction[0] * game_radial_m,
-            direction[1] * game_radial_m,
-            direction[2] * game_radial_m,
-        ];
-        Some(render_relative_m(world_m, self.render_origin_m))
+        physical_position_relative_m(
+            position_phys_m,
+            self.game_radius_m,
+            self.surface_scale,
+            self.render_origin_m,
+        )
     }
 }
 
@@ -458,15 +405,6 @@ const EMPTY_TRAIL: TrailPoint = TrailPoint {
     opacity: 0.0,
     kind: crate::meteors::trail::TrailKind::Wake,
     intensity: 0.0,
-};
-
-const EMPTY_LIGHT: TransientLightMoment = TransientLightMoment {
-    id: 0,
-    position_rel_m: [0.0; 3],
-    linear_rgb: [0.0; 3],
-    luminous_intensity: 0.0,
-    range_m: 0.0,
-    ttl_s: 0.0,
 };
 
 /// `|v|`; `None` at zero length (the direction is undefined there).

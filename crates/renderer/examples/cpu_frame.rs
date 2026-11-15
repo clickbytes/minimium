@@ -3,14 +3,18 @@
 use minimium_procgen::SectorGeometry;
 use minimium_renderer::{
     gpu_frame::{camera_uniform, EnvironmentUniform},
+    planet_coordinates::PlanetSurfaceScale,
     prepared_sector::PreparedSector,
     render_frame::ClientFrameState,
+    transient_lighting::{
+        TransientLightContext, TransientLightFrame, TransientLightSample, TransientLightUniform,
+    },
     RenderFrame, RenderViewFrame, UiVertex,
 };
 use minimium_world::world::{MapBox, SectorKey, WorldInstanceId};
 use std::sync::Arc;
 
-fn main() -> Result<(), minimium_procgen::GenerationError> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let geometry = Arc::new(SectorGeometry {
         boxes: vec![MapBox {
             center: [0.0, 0.5, 0.0],
@@ -29,12 +33,34 @@ fn main() -> Result<(), minimium_procgen::GenerationError> {
         None,
         [0.0; 3],
     )?;
-    let view = RenderViewFrame::default();
+    let view = RenderViewFrame {
+        game_planet_radius_m: 6_371_000.0,
+        camera_eye_world_m: [0.0, 6_371_002.0, 0.0],
+        render_origin_m: [0.0, 6_371_000.0, 0.0],
+        ..Default::default()
+    };
+    // A short-lived lamp uses the same source budget without any meteor object.
+    let mut lights = TransientLightFrame::new(TransientLightContext {
+        camera_eye_world_m: view.camera_eye_world_m,
+        render_origin_m: view.render_origin_m,
+        game_radius_m: view.game_planet_radius_m,
+        surface_scale: PlanetSurfaceScale::UNIT,
+    })?;
+    let accepted = lights.push(TransientLightSample::new(
+        7,
+        [4.0, 6_371_004.0, 0.0],
+        [1.0, 0.7, 0.3],
+        100.0,
+        50.0,
+        2.0,
+        0.1,
+    )?);
     let environment = EnvironmentUniform {
         ambient_rgb_exposure: [0.1, 0.1, 0.1, 1.0],
         ..Default::default()
     };
     let mut frame = RenderFrame::new(view, camera_uniform(view), environment, 0)
+        .with_transient_lights(lights)
         .with_client_state(ClientFrameState {
             world_instance: WorldInstanceId::new(1).expect("nonzero example world"),
             player_position_m: [0.0, 1.0, 0.0],
@@ -52,6 +78,11 @@ fn main() -> Result<(), minimium_procgen::GenerationError> {
     // A CPU host may inspect prepared bounds, vertex data and output exposure,
     // then hand the unchanged values to a renderer host or retain them offline.
     let environment = frame.presentation_environment(true, true);
+    let light_uniform = TransientLightUniform::from_frame(&frame.transient_lights);
+    println!(
+        "lamp accepted={accepted}, selected={}",
+        light_uniform.count[0]
+    );
     println!(
         "sector={:?} vertices={} bounds={:?} ui={} exposure={}",
         sector.key,

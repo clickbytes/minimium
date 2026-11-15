@@ -81,6 +81,7 @@ mod ocean_pipeline;
 pub mod output;
 #[cfg(feature = "gpu")]
 pub mod overview_gpu;
+pub mod planet_coordinates;
 #[cfg(feature = "gpu")]
 pub mod planet_visibility;
 pub mod prepared_sector;

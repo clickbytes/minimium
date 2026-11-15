@@ -23,7 +23,7 @@ pub(super) fn camera_reference(
 ) -> Result<
     (
         Position3Mm,
-        minimium_renderer::meteors::coords::PlanetSurfaceScale,
+        minimium_renderer::planet_coordinates::PlanetSurfaceScale,
     ),
     ObserverError,
 > {
@@ -38,12 +38,12 @@ pub(super) fn camera_reference(
             let reference =
                 minimium_procgen::earth_height_reference(actual, definition, geography)?;
             let scale = if definition.peak_relief.enabled() {
-                minimium_renderer::meteors::coords::PlanetSurfaceScale::from_earth(
+                minimium_renderer::planet_coordinates::PlanetSurfaceScale::from_earth(
                     definition.height_scale_permille,
                     reference,
                 )
             } else {
-                minimium_renderer::meteors::coords::PlanetSurfaceScale::from_permille(
+                minimium_renderer::planet_coordinates::PlanetSurfaceScale::from_permille(
                     definition.height_scale_permille,
                 )
             }
@@ -59,7 +59,7 @@ pub(super) fn camera_reference(
         // (`earth_elevation_mm` scales by `height_scale_permille`), so the
         // meteor mapping reuses it instead of assuming a constant.
         Some(other) => {
-            let scale = minimium_renderer::meteors::coords::PlanetSurfaceScale::from_permille(
+            let scale = minimium_renderer::planet_coordinates::PlanetSurfaceScale::from_permille(
                 other.height_scale_permille,
             )
             .ok_or(ObserverError::InvalidPlanet)?;
@@ -68,7 +68,7 @@ pub(super) fn camera_reference(
         // No planet definition: the radial game metres stay 1:1 physical.
         None => (
             (eye.length() - radius).clamp(-1000.0, 80000.0),
-            minimium_renderer::meteors::coords::PlanetSurfaceScale::UNIT,
+            minimium_renderer::planet_coordinates::PlanetSurfaceScale::UNIT,
         ),
     };
     Ok((

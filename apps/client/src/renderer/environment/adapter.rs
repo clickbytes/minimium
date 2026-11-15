@@ -257,7 +257,7 @@ pub(super) fn interior(
             star_frame: None,
         },
         status: EnvironmentFrameStatus::Interior,
-        meteor_surface_scale: minimium_renderer::meteors::coords::PlanetSurfaceScale::UNIT,
+        meteor_surface_scale: minimium_renderer::planet_coordinates::PlanetSurfaceScale::UNIT,
         camera_uniform: camera_uniform(render_view),
         environment_uniform: EnvironmentUniform {
             ambient_rgb_exposure: color_exposure(settings.ambient, settings.exposure)?,
@@ -289,7 +289,7 @@ pub(super) fn unavailable(render_view: RenderViewFrame) -> EnvironmentFrame {
         local_moon: None,
         diagnostics: EnvironmentFrameDiagnostics::default(),
         status: EnvironmentFrameStatus::Unavailable,
-        meteor_surface_scale: minimium_renderer::meteors::coords::PlanetSurfaceScale::UNIT,
+        meteor_surface_scale: minimium_renderer::planet_coordinates::PlanetSurfaceScale::UNIT,
         camera_uniform: camera_uniform(render_view),
         environment_uniform: EnvironmentUniform {
             ambient_rgb_exposure: [0.08, 0.09, 0.12, 1.0],
