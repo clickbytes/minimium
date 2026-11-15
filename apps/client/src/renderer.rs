@@ -1,6 +1,6 @@
 use crate::application::PendingSectorTransition;
 use crate::{
-    client_commands::{self, CommandContext, FrontendAction},
+    client_commands::{self, FrontendAction},
     console::Console,
     environment::{EnvironmentFrameInput, LocalDemoEnvironment},
     session::{ClientSession, DisconnectReason, SessionEvent, SessionState},
@@ -9,7 +9,7 @@ use minimium_client_runtime::{connector::StartError, ConnectionEvent};
 use minimium_protocol::{ServerMessage, MAX_VISIBLE_PLAYERS};
 use minimium_simulation::{CharacterState, CollisionQuery, MovementIntent, PLAYER_MAX_HEALTH};
 use minimium_world::world::{
-    character_frame, CharacterGeometry, CharacterGravity, WorldManifest, WorldMap, WorldTopology,
+    character_frame, CharacterGeometry, CharacterGravity, WorldManifest, WorldTopology,
 };
 use std::{
     error::Error,

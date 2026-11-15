@@ -51,18 +51,40 @@ impl DesktopHost {
             Key::CloudDebug => self.stored_property(key),
             Key::SkyDemo => self.stored_property(key),
             Key::MovementFly => (
-                self.application.connection.flight_enabled.to_string(),
-                self.application.connection.flight_enabled.to_string(),
+                self.application
+                    .connection_view()
+                    .flight_enabled
+                    .to_string(),
+                self.application
+                    .connection_view()
+                    .flight_enabled
+                    .to_string(),
                 Some("local queued input; server confirmation is unavailable".to_owned()),
             ),
             Key::MovementSpeed => (
-                self.application.connection.movement.speed.to_string(),
-                self.application.connection.movement.speed.to_string(),
+                self.application
+                    .connection_view()
+                    .movement
+                    .speed
+                    .to_string(),
+                self.application
+                    .connection_view()
+                    .movement
+                    .speed
+                    .to_string(),
                 Some("local queued input; server confirmation is unavailable".to_owned()),
             ),
             Key::MovementAccel => (
-                self.application.connection.movement.accel.to_string(),
-                self.application.connection.movement.accel.to_string(),
+                self.application
+                    .connection_view()
+                    .movement
+                    .accel
+                    .to_string(),
+                self.application
+                    .connection_view()
+                    .movement
+                    .accel
+                    .to_string(),
                 Some("local queued input; server confirmation is unavailable".to_owned()),
             ),
             Key::WorldTimeMode

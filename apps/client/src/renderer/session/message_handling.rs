@@ -16,12 +16,12 @@ impl DesktopHost {
                 live,
                 ..
             } => {
-                if Some(context) == self.application.game.session_context() {
+                if Some(context) == self.application.game_view().session_context() {
                     self.impacts.observe(context, body, live);
                 }
             }
             ServerMessage::Bolid { context, event } => {
-                if Some(context) != self.application.game.session_context() {
+                if Some(context) != self.application.game_view().session_context() {
                     return;
                 }
                 self.bolids.retain(|(existing, bolid, at, _)| {
@@ -122,18 +122,8 @@ impl DesktopHost {
             message @ ServerMessage::TransitionCommitted {
                 transition_id,
                 context,
-                map_fingerprint,
-                destination,
-                manifest,
                 ..
-            } => self.handle_transition_committed(
-                message,
-                transition_id,
-                context,
-                map_fingerprint,
-                destination,
-                manifest,
-            ),
+            } => self.handle_transition_committed(message, transition_id, context),
             message @ ServerMessage::TransitionCancelled {
                 transition_id,
                 context,

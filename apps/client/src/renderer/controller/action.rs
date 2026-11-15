@@ -25,7 +25,7 @@ pub(super) fn execute(
             output.push_client_text(Text::ConsoleHistoryHelp, false);
         }
         FrontendAction::Connect(address) => {
-            if renderer.application.connection.busy() {
+            if renderer.application.connection_view().busy() {
                 output.push_client_text(Text::DisconnectOrWait, true);
             } else {
                 output
@@ -35,7 +35,7 @@ pub(super) fn execute(
             }
         }
         FrontendAction::HostLocal(lane) => {
-            if renderer.application.connection.busy() {
+            if renderer.application.connection_view().busy() {
                 output.push_client_text(Text::DisconnectOrWait, true);
             } else {
                 output
@@ -45,7 +45,7 @@ pub(super) fn execute(
             }
         }
         FrontendAction::Disconnect => {
-            renderer.application.connection.cancel();
+            renderer.application.cancel_connection_attempt();
             renderer.clear_connection();
             output.push_client_text(Text::Disconnected, false);
         }
@@ -57,7 +57,7 @@ pub(super) fn execute(
         FrontendAction::NetStats => {
             let metrics = renderer
                 .application
-                .connection
+                .connection_view()
                 .session()
                 .map(ClientSession::metrics)
                 .unwrap_or_default();
@@ -75,7 +75,7 @@ pub(super) fn execute(
                     nearby_players: Some(
                         renderer
                             .application
-                            .game
+                            .game_view()
                             .gameplay
                             .reconciliation
                             .player_count(),
@@ -88,15 +88,15 @@ pub(super) fn execute(
             Text::PlayerState {
                 position: renderer
                     .application
-                    .game
+                    .game_view()
                     .gameplay
                     .prediction
                     .character
                     .position,
-                health: renderer.application.game.gameplay.health,
+                health: renderer.application.game_view().gameplay.health,
                 nearby_players: renderer
                     .application
-                    .game
+                    .game_view()
                     .gameplay
                     .reconciliation
                     .player_count(),
@@ -122,10 +122,9 @@ pub(super) fn execute(
                     ))
                 }
                 Err(error) => {
-                    renderer.application.connection.record_diagnostic_failure(
-                        "storage.config_save_failed",
-                        &error.to_string(),
-                    );
+                    renderer
+                        .application
+                        .record_diagnostic_failure("storage.config_save_failed", &error);
                     output.push_ui_error_message(
                         minimium_localization::UiMessage::ConfigurationSaveFailed,
                     );
@@ -133,7 +132,7 @@ pub(super) fn execute(
             }
         }
         FrontendAction::SetTime { minute, local } => {
-            let [x, _, z] = renderer.application.game.view().player_position_m;
+            let [x, _, z] = renderer.application.game_view().view().player_position_m;
             let result = if local && (!renderer.is_earth_world() || x.hypot(z) < 1.0e-6) {
                 Err(minimium_client_runtime::ControllerError::new(
                     "client.local_time_unavailable",
@@ -142,7 +141,6 @@ pub(super) fn execute(
             } else {
                 renderer
                     .application
-                    .connection
                     .request_set_time(minute, if local { z.atan2(x) } else { 0.0 })
             };
             match result {
@@ -159,7 +157,6 @@ pub(super) fn execute(
                 Err(error) => {
                     renderer
                         .application
-                        .connection
                         .record_diagnostic_failure("client.time_request_failed", &error);
                     output.push_ui_error_message(minimium_localization::UiMessage::Notice(
                         minimium_localization::UiNotice::TimeRequestFailed,
@@ -172,29 +169,26 @@ pub(super) fn execute(
             .ui
             .console
             .push_line(renderer.environment_frame.time_status_line()),
-        FrontendAction::TimeScale(value) => {
-            match renderer.application.connection.request_time_scale(value) {
-                Ok(()) => renderer
+        FrontendAction::TimeScale(value) => match renderer.application.request_time_scale(value) {
+            Ok(()) => renderer
+                .application
+                .ui
+                .console
+                .push_line(renderer.localizer.format(
+                    renderer.application.settings.locale,
+                    &minimium_localization::UiMessage::Notice(
+                        minimium_localization::UiNotice::TimeScaleRequestSent,
+                    ),
+                )),
+            Err(error) => {
+                renderer
                     .application
-                    .ui
-                    .console
-                    .push_line(renderer.localizer.format(
-                        renderer.application.settings.locale,
-                        &minimium_localization::UiMessage::Notice(
-                            minimium_localization::UiNotice::TimeScaleRequestSent,
-                        ),
-                    )),
-                Err(error) => {
-                    renderer
-                        .application
-                        .connection
-                        .record_diagnostic_failure("client.time_scale_request_failed", &error);
-                    output.push_ui_error_message(minimium_localization::UiMessage::Notice(
-                        minimium_localization::UiNotice::TimeScaleRequestFailed,
-                    ));
-                }
+                    .record_diagnostic_failure("client.time_scale_request_failed", &error);
+                output.push_ui_error_message(minimium_localization::UiMessage::Notice(
+                    minimium_localization::UiNotice::TimeScaleRequestFailed,
+                ));
             }
-        }
+        },
         FrontendAction::SpawnRandomBolid(count) => {
             // Publish the current gaze before the separate admin request, also
             // when already connected and the camera just moved.
@@ -203,41 +197,34 @@ pub(super) fn execute(
             renderer.bolid_notice(minimium_localization::UiNotice::BolidRequestQueued);
         }
         FrontendAction::SpawnRandomMeteorid => {
-            let text = match renderer.application.connection.request_random_meteorid() {
+            let text = match renderer.application.request_random_meteorid() {
                 Ok(()) => "Meteorite request sent".to_owned(),
                 Err(error) => format!("spawn_random_meteorid: {error}"),
             };
             output.push_line(text);
         }
-        FrontendAction::TimeMode(mode) => {
-            match renderer.application.connection.request_time_mode(&mode) {
-                Ok(()) => renderer
-                    .application
-                    .ui
-                    .console
-                    .push_line(renderer.localizer.format(
-                        renderer.application.settings.locale,
-                        &minimium_localization::UiMessage::Notice(
-                            minimium_localization::UiNotice::TimeModeRequestSent,
-                        ),
-                    )),
-                Err(error) => {
-                    renderer
-                        .application
-                        .connection
-                        .record_diagnostic_failure("client.time_mode_request_failed", &error);
-                    output.push_ui_error_message(minimium_localization::UiMessage::Notice(
-                        minimium_localization::UiNotice::TimeModeRequestFailed,
-                    ));
-                }
-            }
-        }
-        FrontendAction::TimeOfflinePolicy(policy) => {
-            match renderer
+        FrontendAction::TimeMode(mode) => match renderer.application.request_time_mode(&mode) {
+            Ok(()) => renderer
                 .application
-                .connection
-                .request_time_offline_policy(&policy)
-            {
+                .ui
+                .console
+                .push_line(renderer.localizer.format(
+                    renderer.application.settings.locale,
+                    &minimium_localization::UiMessage::Notice(
+                        minimium_localization::UiNotice::TimeModeRequestSent,
+                    ),
+                )),
+            Err(error) => {
+                renderer
+                    .application
+                    .record_diagnostic_failure("client.time_mode_request_failed", &error);
+                output.push_ui_error_message(minimium_localization::UiMessage::Notice(
+                    minimium_localization::UiNotice::TimeModeRequestFailed,
+                ));
+            }
+        },
+        FrontendAction::TimeOfflinePolicy(policy) => {
+            match renderer.application.request_time_offline_policy(&policy) {
                 Ok(()) => renderer
                     .application
                     .ui
@@ -251,7 +238,6 @@ pub(super) fn execute(
                 Err(error) => {
                     renderer
                         .application
-                        .connection
                         .record_diagnostic_failure("client.time_policy_request_failed", &error);
                     output.push_ui_error_message(minimium_localization::UiMessage::Notice(
                         minimium_localization::UiNotice::TimeOfflinePolicyRequestFailed,

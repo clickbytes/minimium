@@ -18,7 +18,7 @@ impl DesktopHost {
         context: WorldContext,
         message: &ExcavationMessage,
     ) {
-        if Some(context) != self.application.game.session_context() {
+        if Some(context) != self.application.game_view().session_context() {
             return;
         }
         if self.excavation_debug.context != Some(context) {
@@ -69,7 +69,7 @@ impl DesktopHost {
         view: &minimium_renderer::RenderViewFrame,
     ) -> Option<crate::console::ToolOverlay> {
         let application_view = self.application.desktop_render_view();
-        let session = self.application.connection.session()?;
+        let session = self.application.connection_view().session()?;
         let selected_definition = application_view.equipped_tool_profile;
         if !application_view.has_tools
             || self.application.overview().is_open()
@@ -78,7 +78,7 @@ impl DesktopHost {
             return None;
         }
         let ready = self.renderer.scene_visible
-            && self.application.game.gameplay.sectors_ready
+            && self.application.game_view().gameplay.sectors_ready
             && session.excavation_ready();
         let query_reach = selected_definition
             .map_or(application_view.max_tool_reach_m, |definition| {
@@ -139,10 +139,11 @@ impl DesktopHost {
             color,
             controls: self.tool_notice(ToolNotice::Controls),
             preview: self.tool_notice(ToolNotice::Preview),
-            result: (self.excavation_debug.context == self.application.game.session_context())
-                .then_some(self.excavation_debug.last_result)
-                .flatten()
-                .map(|result| format(self.tool_result_message(result))),
+            result: (self.excavation_debug.context
+                == self.application.game_view().session_context())
+            .then_some(self.excavation_debug.last_result)
+            .flatten()
+            .map(|result| format(self.tool_result_message(result))),
             outline: hit.map_or_else(Vec::new, |hit| {
                 outline(
                     hit,
@@ -156,7 +157,7 @@ impl DesktopHost {
     }
 
     fn preview_tool_hit(&self, reach_m: f64) -> Option<SurfaceHit> {
-        let gameplay = &self.application.game.gameplay;
+        let gameplay = &self.application.game_view().gameplay;
         let character = gameplay.prediction.character;
         let feet = gameplay
             .prediction
@@ -181,19 +182,19 @@ impl DesktopHost {
                     .map(|geometry| minimium_simulation::ToolRayCapsule { geometry })
             });
         let mut hit = gameplay.collision_index.tool_surface_hit(
-            self.application.game.current_instance,
+            self.application.game_view().current_instance,
             eye,
             direction,
             reach_m,
             blockers,
         )?;
         if let SurfaceTarget::Terrain(_) = hit.target {
-            let session = self.application.connection.session()?;
+            let session = self.application.connection_view().session()?;
             let manifest = *self
                 .application
-                .game
+                .game_view()
                 .world_manifests
-                .get(&self.application.game.current_instance)?;
+                .get(&self.application.game_view().current_instance)?;
             let inputs = session.terrain_inputs();
             let store = inputs.volumes.clone()?;
             let terrain = minimium_procgen::PlanetTerrain::for_manifest(manifest, inputs).ok()?;

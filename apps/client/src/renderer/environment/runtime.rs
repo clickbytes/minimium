@@ -27,7 +27,7 @@ impl DesktopHost {
             .build_frame(&self.render_environment_frame)
             .with_quality(self.meteors.effective_quality(self.sky_quality.effective));
         self.impacts.append(
-            self.application.game.session_context(),
+            self.application.game_view().session_context(),
             &mut meteors,
             self.meteors.now_s(),
             &mut self.meteors.audio,
@@ -88,15 +88,15 @@ impl DesktopHost {
         };
         let Some(manifest) = self
             .application
-            .game
+            .game_view()
             .world_manifests
-            .get(&self.application.game.current_instance)
+            .get(&self.application.game_view().current_instance)
             .copied()
         else {
             self.publish_unavailable(render_view, "world manifest is unavailable");
             return None;
         };
-        if context.instance() != self.application.game.current_instance
+        if context.instance() != self.application.game_view().current_instance
             || context.content_revision() != manifest.content_revision()
         {
             self.publish_unavailable(
@@ -126,7 +126,7 @@ impl DesktopHost {
                 manifest,
                 render_view,
                 self.application
-                    .connection
+                    .connection_view()
                     .session()
                     .and_then(|session| session.prepared_geography()),
             ),
@@ -149,7 +149,7 @@ impl DesktopHost {
     ) -> Option<PreparedStarUpload> {
         let mut feet_position_mm = self
             .application
-            .game
+            .game_view()
             .gameplay
             .prediction
             .position_mm
@@ -158,7 +158,12 @@ impl DesktopHost {
                     == crate::environment::SynchronizationQuality::LocalDemo)
                     .then(|| {
                         demo_position_mm(
-                            self.application.game.gameplay.prediction.character.position,
+                            self.application
+                                .game_view()
+                                .gameplay
+                                .prediction
+                                .character
+                                .position,
                         )
                     })
                     .flatten()
@@ -316,7 +321,7 @@ impl DesktopHost {
         let reason = reason.into();
         if self.environment_error.as_deref() != Some(reason.as_str()) {
             self.application
-                .connection
+                .connection_view()
                 .record_diagnostic_failure("renderer.environment_unavailable", &reason);
             self.application.ui.console.push_ui_error_message(
                 minimium_localization::UiMessage::Notice(

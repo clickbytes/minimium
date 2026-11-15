@@ -31,6 +31,51 @@ pub(crate) struct TransferPresentationReady {
     terrain_revision: minimium_procgen::SectorContentVersion,
 }
 
+/// Active collision content reported by presentation for the exact terrain inputs it consumed.
+#[derive(Clone)]
+pub(crate) struct ActiveSceneReady {
+    identity: ActiveSceneIdentity,
+    terrain_revision: minimium_procgen::SectorContentVersion,
+    collision_revision: u64,
+    collision_index: minimium_simulation::CollisionIndex,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ActiveSceneIdentity {
+    Session(WorldContext),
+    Bootstrap {
+        instance: WorldInstanceId,
+        manifest: minimium_world::world::WorldManifest,
+        map_fingerprint: u64,
+    },
+}
+
+impl ActiveSceneReady {
+    pub(crate) fn new(
+        context: Option<WorldContext>,
+        instance: WorldInstanceId,
+        manifest: minimium_world::world::WorldManifest,
+        map_fingerprint: u64,
+        terrain_revision: minimium_procgen::SectorContentVersion,
+        collision_revision: u64,
+        collision_index: minimium_simulation::CollisionIndex,
+    ) -> Self {
+        Self {
+            identity: context.map_or(
+                ActiveSceneIdentity::Bootstrap {
+                    instance,
+                    manifest,
+                    map_fingerprint,
+                },
+                ActiveSceneIdentity::Session,
+            ),
+            terrain_revision,
+            collision_revision,
+            collision_index,
+        }
+    }
+}
+
 impl TransferPresentationReady {
     pub(crate) fn new(
         ticket: TransferTicket,
@@ -106,5 +151,42 @@ impl ClientApplication {
             return false;
         }
         self.report_transfer_host_ready(ticket).is_ok()
+    }
+
+    /// Install CPU collision readiness only for the active context and exact terrain version.
+    pub(crate) fn report_active_scene_ready(&mut self, report: ActiveSceneReady) -> bool {
+        match report.identity {
+            ActiveSceneIdentity::Session(context) => {
+                if self.game.session_context() != Some(context)
+                    || self.connection.session().is_none_or(|session| {
+                        session
+                            .terrain_inputs_for_context(context)
+                            .is_none_or(|terrain| terrain.revision() != report.terrain_revision)
+                    })
+                {
+                    return false;
+                }
+            }
+            ActiveSceneIdentity::Bootstrap {
+                instance,
+                manifest,
+                map_fingerprint,
+            } => {
+                if self.game.session_context().is_some()
+                    || self.game.current_instance != instance
+                    || self.game.world_manifests.get(&instance) != Some(&manifest)
+                    || self
+                        .world_catalog
+                        .get(&instance)
+                        .is_none_or(|map| map.fingerprint() != map_fingerprint)
+                {
+                    return false;
+                }
+            }
+        }
+        self.game.gameplay.collision_index = report.collision_index;
+        self.game.gameplay.collision_revision = report.collision_revision;
+        self.game.gameplay.sectors_ready = true;
+        true
     }
 }

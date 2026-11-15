@@ -6,11 +6,11 @@ impl DesktopHost {
         context: minimium_protocol::WorldContext,
         position_mm: Option<minimium_world::world::Position3Mm>,
     ) {
-        if Some(context) != self.application.game.session_context() {
+        if !self.application.apply_altitude_result(context, position_mm) {
             return;
         }
-        if let Some(position) = position_mm {
-            self.apply_altitude_position(position);
+        if position_mm.is_some() {
+            self.refresh_after_position_change();
             self.application.ui.console.push_ui_message(
                 minimium_localization::UiMessage::AltitudeResult(true),
                 &self.localizer,
@@ -29,27 +29,22 @@ impl DesktopHost {
         &mut self,
         position_mm: Option<minimium_world::world::Position3Mm>,
     ) {
-        self.application.resolve_map_teleport();
-        if let Some(position_mm) = position_mm {
+        if !self.application.apply_map_teleport_position(position_mm) {
+            return;
+        }
+        if position_mm.is_some() {
             self.meteors.audio.clear();
-            self.application.game.gameplay.prediction.reset();
-            self.application.game.gameplay.prediction.position_mm = Some(position_mm);
-            self.application.game.gameplay.prediction.character.position =
-                position_mm.0.map(|coordinate| coordinate as f32 / 1000.0);
-            let origin = self
+            let position = self
                 .application
-                .game
+                .game_view()
                 .gameplay
                 .prediction
                 .character
-                .position
-                .map(|coordinate| (coordinate / 256.0).round() * 256.0);
+                .position;
+            let origin = position.map(|coordinate| (coordinate / 256.0).round() * 256.0);
             self.renderer.set_render_origin(origin);
             self.shadow_state
                 .invalidate(super::super::super::shadows::ShadowInvalidReason::StaleContext);
-            self.application.game.gameplay.prediction.character.velocity = [0.0; 3];
-            self.application.game.gameplay.prediction.character.grounded = false;
-            self.application.game.gameplay.sectors_ready = false;
             self.application.set_loading(true);
             self.renderer.scene_visible = false;
             self.last_render_position = [f32::INFINITY; 3];
@@ -117,7 +112,9 @@ impl DesktopHost {
     }
 
     pub(super) fn handle_health_update(&mut self, health: u16) {
-        self.application.game.gameplay.health = health;
+        if !self.application.apply_health_update(health) {
+            return;
+        }
         if self.application.ui.console.open {
             self.application.ui.console.push_client_text(
                 Text::Health { health },

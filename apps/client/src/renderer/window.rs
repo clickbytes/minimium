@@ -165,7 +165,7 @@ impl ApplicationHandler for App {
                 );
                 let submerged = renderer
                     .application
-                    .game
+                    .game_view()
                     .gameplay
                     .prediction
                     .submerged_fraction();
@@ -214,7 +214,7 @@ impl ApplicationHandler for App {
                     {
                         let [x, y, z] = renderer
                             .application
-                            .game
+                            .game_view()
                             .gameplay
                             .prediction
                             .character
@@ -233,7 +233,7 @@ impl ApplicationHandler for App {
                         "{} | {}{} | {}",
                         Text::WindowTitleStatus {
                             fps,
-                            health: renderer.application.game.gameplay.health
+                            health: renderer.application.game_view().gameplay.health
                         }
                         .localized(&renderer.localizer, renderer.application.settings.locale),
                         renderer

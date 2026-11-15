@@ -2,24 +2,22 @@ use super::*;
 use crate::messages::ClientText as Text;
 
 mod character;
-pub(super) use character::{
-    camera_direction, camera_direction_from_geometry, gravity_for_manifest,
-};
+pub(super) use character::{camera_direction, camera_direction_from_geometry};
 
 impl DesktopHost {
     pub(super) fn update(&mut self) -> environment::PreparedEnvironmentFrame {
         self.update_tool_use();
         self.renderer.held_tool_kind = self
             .application
-            .connection
+            .connection_view()
             .session()
             .and_then(|session| session.inventory().tool());
-        self.renderer.held_tool_visible = self.application.game.gameplay.sectors_ready
+        self.renderer.held_tool_visible = self.application.game_view().gameplay.sectors_ready
             && !self.application.ui.console.open
             && !self.application.overview().is_open();
         if self.application.overview().is_open()
             && self.application.overview().instance()
-                != Some(self.application.game.current_instance)
+                != Some(self.application.game_view().current_instance)
         {
             self.application.overview_close();
             self.renderer.overview_active = false;
@@ -31,43 +29,38 @@ impl DesktopHost {
             .as_secs_f32()
             .min(minimium_simulation::SIMULATION_STEP_SECONDS);
         self.metrics.last_frame = now;
-        let water_read = self
-            .application
-            .connection
-            .session()
-            .and_then(|session| session.water_read());
-        self.application
-            .game
-            .gameplay
-            .prediction
-            .set_water_read(water_read);
-        let direction = if (self.application.game.gameplay.sectors_ready
-            || self.application.connection.movement.can_fly
-            || self.application.game.gameplay.prediction.is_submerged())
+        self.application.refresh_prediction_water_read();
+        let direction = if (self.application.game_view().gameplay.sectors_ready
+            || self.application.connection_view().movement.can_fly
+            || self
+                .application
+                .game_view()
+                .gameplay
+                .prediction
+                .is_submerged())
             && !self.application.overview().is_open()
         {
             self.input.movement(
                 &self.application.input,
                 self.application.ui.console.open,
-                self.application.game.gameplay.prediction.character,
+                self.application.game_view().gameplay.prediction.character,
                 self.is_earth_world(),
             )
         } else {
             [0.0; 2]
         };
-        self.application.game.accumulate_prediction_time(dt);
-        let manifest = self
-            .application
-            .game
-            .world_manifests
-            .get(&self.application.game.current_instance)
-            .copied();
-        while let Some(predicted) = self.application.game.predict_next(
+        self.application.accumulate_prediction_time(dt);
+        while let Some(predicted) = self.application.predict_next(
             direction,
             if self.application.ui.console.open
                 || self.application.overview().is_open()
-                || (!self.application.connection.flight_enabled
-                    && !self.application.game.gameplay.prediction.is_submerged())
+                || (!self.application.connection_view().flight_enabled
+                    && !self
+                        .application
+                        .game_view()
+                        .gameplay
+                        .prediction
+                        .is_submerged())
             {
                 0.0
             } else {
@@ -86,37 +79,29 @@ impl DesktopHost {
                             .is_active(crate::input::InputAction::MoveDown),
                     ) as f32
             },
-            self.application.connection.movement,
             self.input.jump_pending,
-            (self.application.game.gameplay.sectors_ready
-                || self.application.connection.movement.can_fly)
+            (self.application.game_view().gameplay.sectors_ready
+                || self.application.connection_view().movement.can_fly)
                 && !self.application.overview().is_open(),
-            manifest,
-            self.application
-                .connection
-                .session()
-                .and_then(|session| session.prepared_geography()),
         ) {
             let mut input = predicted.input;
             self.input.jump_pending = false;
-            if !self.refresh_active_sector_scene() && !self.application.connection.movement.can_fly
+            if !self.refresh_active_sector_scene()
+                && !self.application.connection_view().movement.can_fly
             {
-                self.application.game.gameplay.prediction.character = predicted.previous_state;
-                self.application.game.gameplay.prediction.position_mm = predicted.previous_mm;
+                self.application.rollback_prediction(&predicted);
                 input = MovementIntent::default();
             }
             if self
                 .application
-                .connection
+                .connection_view()
                 .session()
                 .is_some_and(|session| session.state() == SessionState::Connected)
             {
-                let policy = self.application.connection.movement;
-                let collision_revision = self.application.game.gameplay.collision_revision;
-                match self.application.action_executor.execute(
-                    &mut self.application.connection,
-                    crate::application::ClientAction::Motion(input),
-                ) {
+                match self
+                    .application
+                    .execute_action(crate::application::ClientAction::Motion(input))
+                {
                     crate::application::LocalActionOutcome::Rejected { error, .. } => self
                         .fail_connection(
                             Text::CouldNotQueueMovement(error.into())
@@ -126,11 +111,7 @@ impl DesktopHost {
                         movement: Some(sample),
                         ..
                     } => {
-                        self.application.game.gameplay.prediction.record_input(
-                            sample,
-                            policy,
-                            collision_revision,
-                        );
+                        self.application.record_movement_input(sample);
                     }
                     _ => {}
                 }
@@ -140,12 +121,18 @@ impl DesktopHost {
             self.renderer.render_origin
         } else if self
             .application
-            .game
+            .game_view()
             .world_manifests
-            .get(&self.application.game.current_instance)
+            .get(&self.application.game_view().current_instance)
             .is_some_and(|manifest| manifest.planet().is_some())
         {
-            let position = self.application.game.gameplay.prediction.character.position;
+            let position = self
+                .application
+                .game_view()
+                .gameplay
+                .prediction
+                .character
+                .position;
             if position
                 .iter()
                 .zip(self.renderer.render_origin)
@@ -182,12 +169,7 @@ impl DesktopHost {
         self.flush_pending_bolid(now);
         self.update_remote_player_rendering(Instant::now());
 
-        let visual_offset = self
-            .application
-            .game
-            .gameplay
-            .prediction
-            .take_visual_offset(dt);
+        let visual_offset = self.application.take_prediction_visual_offset(dt);
         let (view, far) = if self.application.overview().is_open() {
             let (view, far) = self.overview_camera();
             (
@@ -197,10 +179,10 @@ impl DesktopHost {
                 far,
             )
         } else {
-            let character = self.application.game.gameplay.prediction.character;
+            let character = self.application.game_view().gameplay.prediction.character;
             let feet_m = self
                 .application
-                .game
+                .game_view()
                 .gameplay
                 .prediction
                 .position_mm
@@ -234,16 +216,16 @@ impl DesktopHost {
                 + glam::Vec3::from_array(visual_offset);
             let far = if self
                 .application
-                .game
+                .game_view()
                 .world_manifests
-                .get(&self.application.game.current_instance)
+                .get(&self.application.game_view().current_instance)
                 .is_some_and(|manifest| manifest.topology() == WorldTopology::Planet)
             {
                 let radius = self
                     .application
-                    .game
+                    .game_view()
                     .world_manifests
-                    .get(&self.application.game.current_instance)
+                    .get(&self.application.game_view().current_instance)
                     .map(|manifest| {
                         minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0
                     })
@@ -269,16 +251,16 @@ impl DesktopHost {
         let near = if self.application.overview().is_open()
             && self
                 .application
-                .game
+                .game_view()
                 .world_manifests
-                .get(&self.application.game.current_instance)
+                .get(&self.application.game_view().current_instance)
                 .is_some_and(|manifest| manifest.topology() == WorldTopology::Planet)
         {
             let radius = self
                 .application
-                .game
+                .game_view()
                 .world_manifests
-                .get(&self.application.game.current_instance)
+                .get(&self.application.game_view().current_instance)
                 .map(|manifest| {
                     minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0
                 })
@@ -286,7 +268,7 @@ impl DesktopHost {
             radius * ((self.application.overview().zoom() - 1.0) * 0.08).max(0.001)
         } else {
             let terrain_near = self.renderer.world_geometry.surface_near(
-                self.application.game.current_instance,
+                self.application.game_view().current_instance,
                 &self
                     .renderer
                     .world_geometry
@@ -295,7 +277,7 @@ impl DesktopHost {
                 camera_eye_world,
             );
             self.application
-                .game
+                .game_view()
                 .gameplay
                 .reconciliation
                 .tracks()
@@ -327,9 +309,9 @@ impl DesktopHost {
         );
         let game_planet_radius_m = self
             .application
-            .game
+            .game_view()
             .world_manifests
-            .get(&self.application.game.current_instance)
+            .get(&self.application.game_view().current_instance)
             .filter(|manifest| manifest.topology() == WorldTopology::Planet)
             .map(|manifest| {
                 manifest
@@ -375,7 +357,7 @@ impl DesktopHost {
         self.update_weather(&prepared_environment.frame);
         let player_position = self
             .application
-            .game
+            .game_view()
             .gameplay
             .prediction
             .character
@@ -395,18 +377,18 @@ impl DesktopHost {
                 game_planet_radius_m
                     + self
                         .application
-                        .game
+                        .game_view()
                         .world_manifests
-                        .get(&self.application.game.current_instance)
+                        .get(&self.application.game_view().current_instance)
                         .and_then(|m| m.planet())
                         .map_or(0.0, |p| p.sea_level_mm as f64 / 1000.0)
             } else {
                 0.0
             },
             self.application
-                .game
+                .game_view()
                 .world_manifests
-                .get(&self.application.game.current_instance)
+                .get(&self.application.game_view().current_instance)
                 .and_then(|m| m.planet())
                 .filter(|p| p.mode == 1)
                 .map_or(1.0, |p| p.height_scale_permille as f64 / 1000.0),
@@ -434,7 +416,7 @@ impl DesktopHost {
         self.application.ui.console.build_vertices(
             self.renderer.size.width,
             self.renderer.size.height,
-            self.application.game.gameplay.health,
+            self.application.game_view().gameplay.health,
             self.input.cursor_locked && !self.application.ui.console.open,
             self.gameplay_presentation
                 .hit_confirmation_until

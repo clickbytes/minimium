@@ -18,7 +18,7 @@ pub(super) fn restore(
     let mut output = Vec::new();
     let Some(start_monotonic_ms) = renderer
         .application
-        .connection
+        .connection_view()
         .session()
         .and_then(|session| session.server_monotonic_ms())
     else {

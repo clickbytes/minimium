@@ -25,12 +25,7 @@ pub(super) fn open_offline_materials(
 
 impl DesktopHost {
     pub(super) fn prepare_session_materials(&mut self) {
-        let Some(session) = self
-            .application
-            .connection
-            .session_mut()
-            .filter(|s| s.content_awaiting_gpu())
-        else {
+        let Some(package) = self.application.take_material_package_if_awaiting_gpu() else {
             return;
         };
         self.renderer.scene_visible = false;
@@ -43,7 +38,7 @@ impl DesktopHost {
             .features()
             .contains(wgpu::Features::TEXTURE_COMPRESSION_BC)
             && self.renderer.device.limits().max_texture_dimension_2d >= 4096;
-        let package = session.take_material_package().map(Ok).unwrap_or_else(|| {
+        let package = package.map(Ok).unwrap_or_else(|| {
             open_offline_materials(compressed).map_err(|error| error.to_string())
         });
         let result = package.and_then(|package| {
@@ -68,7 +63,7 @@ impl DesktopHost {
                     .saturating_sub(self.renderer.terrain_gpu.bytes)
                     + resources.bytes;
                 self.renderer.terrain_gpu = resources;
-                if let Err(error) = session.finish_content() {
+                if let Some(Err(error)) = self.application.finish_material_content() {
                     self.fail_connection(error.to_string());
                 }
             }

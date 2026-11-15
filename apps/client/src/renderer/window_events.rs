@@ -92,7 +92,7 @@ fn apply_action(
                 renderer.application.input.clear_held();
                 renderer.toggle_overview();
             } else {
-                renderer.application.connection.cancel_transition();
+                renderer.application.cancel_transition_request();
                 release_cursor(renderer, window, false, false, true);
             }
         }

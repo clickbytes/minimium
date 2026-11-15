@@ -16,6 +16,18 @@ pub(crate) struct ApplicationTransferPreparation {
     pub(crate) manifest: minimium_world::world::WorldManifest,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct WorldContextChange {
+    pub(crate) previous_context: Option<minimium_protocol::WorldContext>,
+    pub(crate) previous_instance: minimium_world::world::WorldInstanceId,
+    pub(crate) context: minimium_protocol::WorldContext,
+    pub(crate) map_fingerprint: u64,
+    pub(crate) position: [f32; 3],
+    pub(crate) position_mm: minimium_world::world::Position3Mm,
+    pub(crate) health: u16,
+    pub(crate) manifest: minimium_world::world::WorldManifest,
+}
+
 impl ClientApplication {
     /// Apply session data that changes the CPU game view. Host presentation
     /// effects such as GPU installation remain separate from this state update.
@@ -24,47 +36,8 @@ impl ClientApplication {
         message: &ServerMessage,
     ) -> Result<(), ApplicationMessageError> {
         match message {
-            ServerMessage::Welcome {
-                context,
-                map_fingerprint,
-                position,
-                position_mm,
-                health,
-                manifest,
-                ..
-            } => self.apply_world_context(
-                *context,
-                *map_fingerprint,
-                *position,
-                *position_mm,
-                *health,
-                *manifest,
-            ),
-            ServerMessage::TransitionCommitted {
-                transition_id,
-                context,
-                map_fingerprint,
-                destination,
-                destination_mm,
-                health,
-                manifest,
-                ..
-            } => {
-                let result = self.apply_world_context(
-                    *context,
-                    *map_fingerprint,
-                    *destination,
-                    *destination_mm,
-                    *health,
-                    *manifest,
-                );
-                if self.pending_transfer.is_some_and(|preparation| {
-                    preparation.ticket.transition_id() == *transition_id
-                        && preparation.ticket.context() == *context
-                }) {
-                    self.pending_transfer = None;
-                }
-                result
+            ServerMessage::Welcome { .. } | ServerMessage::TransitionCommitted { .. } => {
+                self.apply_world_message(message).map(|_| ())
             }
             ServerMessage::TransitionPrepare {
                 transition_id,
@@ -146,6 +119,58 @@ impl ClientApplication {
         }
     }
 
+    pub(crate) fn apply_world_message(
+        &mut self,
+        message: &ServerMessage,
+    ) -> Result<WorldContextChange, ApplicationMessageError> {
+        let change = match message {
+            ServerMessage::Welcome {
+                context,
+                map_fingerprint,
+                position,
+                position_mm,
+                health,
+                manifest,
+                ..
+            } => self.apply_world_context(
+                *context,
+                *map_fingerprint,
+                *position,
+                *position_mm,
+                *health,
+                *manifest,
+            )?,
+            ServerMessage::TransitionCommitted {
+                transition_id,
+                context,
+                map_fingerprint,
+                destination,
+                destination_mm,
+                health,
+                manifest,
+                ..
+            } => {
+                let change = self.apply_world_context(
+                    *context,
+                    *map_fingerprint,
+                    *destination,
+                    *destination_mm,
+                    *health,
+                    *manifest,
+                )?;
+                if self.pending_transfer.is_some_and(|preparation| {
+                    preparation.ticket.transition_id() == *transition_id
+                        && preparation.ticket.context() == *context
+                }) {
+                    self.pending_transfer = None;
+                }
+                change
+            }
+            _ => return Err(ApplicationMessageError::StaleWorldContext),
+        };
+        Ok(change)
+    }
+
     fn apply_world_context(
         &mut self,
         context: minimium_protocol::WorldContext,
@@ -154,7 +179,7 @@ impl ClientApplication {
         position_mm: minimium_world::world::Position3Mm,
         health: u16,
         manifest: minimium_world::world::WorldManifest,
-    ) -> Result<(), ApplicationMessageError> {
+    ) -> Result<WorldContextChange, ApplicationMessageError> {
         let content = self
             .connection
             .session()
@@ -163,6 +188,8 @@ impl ClientApplication {
         if content.manifest != manifest || content.map.fingerprint() != map_fingerprint {
             return Err(ApplicationMessageError::WorldContentMismatch);
         }
+        let previous_context = self.game.session_context();
+        let previous_instance = self.game.current_instance;
         self.world_catalog
             .insert(context.instance(), (*content.map).clone());
         self.game
@@ -178,13 +205,19 @@ impl ClientApplication {
         self.game.gameplay.prediction.character =
             minimium_simulation::CharacterState::at_spawn_with_gravity(position, gravity);
         self.game.gameplay.prediction.position_mm = manifest.planet().map(|_| position_mm);
-        #[cfg(not(feature = "desktop"))]
-        {
-            self.game.gameplay.collision_index = minimium_simulation::CollisionIndex::default();
-            self.game.gameplay.collision_revision =
-                self.game.gameplay.collision_revision.wrapping_add(1).max(1);
-        }
+        self.game.gameplay.collision_index = minimium_simulation::CollisionIndex::default();
+        self.game.gameplay.collision_revision =
+            self.game.gameplay.collision_revision.wrapping_add(1).max(1);
         self.game.gameplay.sectors_ready = false;
-        Ok(())
+        Ok(WorldContextChange {
+            previous_context,
+            previous_instance,
+            context,
+            map_fingerprint,
+            position,
+            position_mm,
+            health,
+            manifest,
+        })
     }
 }

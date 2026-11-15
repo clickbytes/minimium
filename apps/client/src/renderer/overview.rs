@@ -4,9 +4,9 @@ use minimium_procgen::SectorGeometry;
 impl DesktopHost {
     pub(super) fn is_earth_world(&self) -> bool {
         self.application
-            .game
+            .game_view()
             .world_manifests
-            .get(&self.application.game.current_instance)
+            .get(&self.application.game_view().current_instance)
             .is_some_and(|manifest| manifest.planet().is_some_and(|planet| planet.mode == 1))
     }
 
@@ -22,17 +22,17 @@ impl DesktopHost {
         }
         let Some(manifest) = self
             .application
-            .game
+            .game_view()
             .world_manifests
-            .get(&self.application.game.current_instance)
+            .get(&self.application.game_view().current_instance)
             .copied()
         else {
             return;
         };
         let Some(map) = self
             .application
-            .world_catalog
-            .get(&self.application.game.current_instance)
+            .world_catalog_view()
+            .get(&self.application.game_view().current_instance)
         else {
             return;
         };
@@ -59,14 +59,24 @@ impl DesktopHost {
             &mut marker_vertices,
             (glam::Vec3::from_array(if earth {
                 let radial = glam::Vec3::from_array(
-                    self.application.game.gameplay.prediction.character.position,
+                    self.application
+                        .game_view()
+                        .gameplay
+                        .prediction
+                        .character
+                        .position,
                 )
                 .normalize_or_zero();
                 let radius =
                     minimium_procgen::planet_surface_for(manifest).radius_mm() as f32 / 1000.0;
                 (radial * radius * (1.0 + self.marker_height())).to_array()
             } else {
-                self.application.game.gameplay.prediction.character.position
+                self.application
+                    .game_view()
+                    .gameplay
+                    .prediction
+                    .character
+                    .position
             }) - glam::Vec3::from_array(self.renderer.render_origin))
             .to_array(),
             marker_size,
@@ -80,7 +90,7 @@ impl DesktopHost {
                     * u64::from(self.renderer.size.height.max(1))
                     * 4,
         );
-        let instance = self.application.game.current_instance;
+        let instance = self.application.game_view().current_instance;
         self.application.overview_open(instance);
         self.renderer.overview_active = true;
     }
@@ -97,9 +107,9 @@ impl DesktopHost {
         self.application.overview().is_open()
             && self
                 .application
-                .game
+                .game_view()
                 .world_manifests
-                .get(&self.application.game.current_instance)
+                .get(&self.application.game_view().current_instance)
                 .is_some_and(|manifest| manifest.topology() == WorldTopology::Planet)
     }
 
@@ -119,16 +129,22 @@ impl DesktopHost {
         }
         let Some(manifest) = self
             .application
-            .game
+            .game_view()
             .world_manifests
-            .get(&self.application.game.current_instance)
+            .get(&self.application.game_view().current_instance)
         else {
             return;
         };
         let radius = minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0;
-        let radial =
-            glam::Vec3::from_array(self.application.game.gameplay.prediction.character.position)
-                .normalize_or_zero();
+        let radial = glam::Vec3::from_array(
+            self.application
+                .game_view()
+                .gameplay
+                .prediction
+                .character
+                .position,
+        )
+        .normalize_or_zero();
         let mut vertices = Vec::new();
         cube(
             &mut vertices,
@@ -160,11 +176,11 @@ impl DesktopHost {
         }
         let manifest = self
             .application
-            .game
+            .game_view()
             .world_manifests
-            .get(&self.application.game.current_instance)
+            .get(&self.application.game_view().current_instance)
             .copied();
-        let session_present = self.application.connection.session().is_some();
+        let session_present = self.application.connection_view().session().is_some();
         if session_present && manifest.is_none() {
             self.application.status = crate::application::ClientStatus::Status(
                 minimium_localization::UiStatus::EarthLoading,
@@ -190,7 +206,7 @@ impl DesktopHost {
             );
             return;
         }
-        if !self.renderer.scene_visible || !self.application.game.gameplay.sectors_ready {
+        if !self.renderer.scene_visible || !self.application.game_view().gameplay.sectors_ready {
             self.application.status = crate::application::ClientStatus::Status(
                 minimium_localization::UiStatus::EarthLoading,
             );
@@ -225,9 +241,9 @@ impl DesktopHost {
         };
         let Some(manifest) = self
             .application
-            .game
+            .game_view()
             .world_manifests
-            .get(&self.application.game.current_instance)
+            .get(&self.application.game_view().current_instance)
         else {
             return;
         };
@@ -260,10 +276,10 @@ impl DesktopHost {
             return;
         }
         let direction = (eye + ray * distance).normalize().to_array();
-        match self.application.action_executor.execute(
-            &mut self.application.connection,
-            crate::application::ClientAction::MapTeleport { direction },
-        ) {
+        match self
+            .application
+            .execute_action(crate::application::ClientAction::MapTeleport { direction })
+        {
             crate::application::LocalActionOutcome::Queued { .. } => {
                 self.application.request_map_teleport();
                 self.application.status = crate::application::ClientStatus::Status(
@@ -298,7 +314,12 @@ impl DesktopHost {
             );
         }
         minimium_renderer::terrain_view::TerrainView::new(
-            self.application.game.gameplay.prediction.character.position,
+            self.application
+                .game_view()
+                .gameplay
+                .prediction
+                .character
+                .position,
             self.fov_degrees.to_radians(),
             self.renderer.size.height,
         )
@@ -307,13 +328,18 @@ impl DesktopHost {
     pub(super) fn overview_camera(&self) -> (glam::Mat4, f32) {
         let topology = self
             .application
-            .game
+            .game_view()
             .world_manifests
-            .get(&self.application.game.current_instance)
+            .get(&self.application.game_view().current_instance)
             .map(|manifest| manifest.topology());
         if topology == Some(WorldTopology::Planet) {
             let radial = glam::Vec3::from_array(
-                self.application.game.gameplay.prediction.character.position,
+                self.application
+                    .game_view()
+                    .gameplay
+                    .prediction
+                    .character
+                    .position,
             )
             .normalize_or_zero();
             let radial = if radial.length_squared() > 0.0 {
@@ -324,9 +350,9 @@ impl DesktopHost {
             let up = glam::Vec3::Y;
             let radius = self
                 .application
-                .game
+                .game_view()
                 .world_manifests
-                .get(&self.application.game.current_instance)
+                .get(&self.application.game_view().current_instance)
                 .map(|manifest| {
                     minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0
                 })
@@ -351,8 +377,8 @@ impl DesktopHost {
         } else {
             let Some(map) = self
                 .application
-                .world_catalog
-                .get(&self.application.game.current_instance)
+                .world_catalog_view()
+                .get(&self.application.game_view().current_instance)
             else {
                 return (glam::Mat4::IDENTITY, 1000.0);
             };

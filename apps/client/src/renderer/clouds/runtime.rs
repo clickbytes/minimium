@@ -50,9 +50,9 @@ impl DesktopHost {
         // The inexpensive seasonal fallback is available even before cloud publication.
         if let (Some(manifest), Some(utc)) = (
             self.application
-                .game
+                .game_view()
                 .world_manifests
-                .get(&self.application.game.current_instance),
+                .get(&self.application.game_view().current_instance),
             self.environment_frame.render_world_utc_ms,
         ) {
             let utc = utc as f64 / 1000.0;
@@ -63,7 +63,7 @@ impl DesktopHost {
                 DVec3::from_array(frame.render_view.camera_eye_world_m).normalize_or_zero();
             let scenario = self
                 .application
-                .connection
+                .connection_view()
                 .session()
                 .map(|s| s.climate_scenario())
                 .unwrap_or_default();
@@ -77,9 +77,9 @@ impl DesktopHost {
         }
         let inputs = self
             .application
-            .game
+            .game_view()
             .world_manifests
-            .get(&self.application.game.current_instance)
+            .get(&self.application.game_view().current_instance)
             .copied()
             .zip(self.environment_frame.context)
             .zip(self.environment_frame.revision)
@@ -103,7 +103,7 @@ impl DesktopHost {
         };
         let terrain_inputs = self
             .application
-            .connection
+            .connection_view()
             .session()
             .map(|session| {
                 let mut inputs =
@@ -135,7 +135,7 @@ impl DesktopHost {
         if let Some((failed_stamp, error)) = self.weather.worker.take_failure() {
             if failed_stamp == stamp {
                 self.application
-                    .connection
+                    .connection_view()
                     .record_diagnostic_failure(error.code(), &error.to_string());
             }
         }
@@ -163,7 +163,7 @@ impl DesktopHost {
             self.weather.worker.submit(Request {
                 climate: self
                     .application
-                    .connection
+                    .connection_view()
                     .session()
                     .map(|s| s.climate_scenario())
                     .unwrap_or_default(),
@@ -184,9 +184,9 @@ impl DesktopHost {
             return;
         };
         if publication.snapshot.clouds.len() != publication.morphs.len() {
-            self.application.connection.record_diagnostic_failure(
+            self.application.record_diagnostic_failure(
                 "renderer.cloud_publication_invalid",
-                "Cloud publication has mismatched cloud and morph counts",
+                &"Cloud publication has mismatched cloud and morph counts",
             );
             return;
         }
@@ -265,7 +265,7 @@ impl DesktopHost {
             &uniform,
         ) {
             self.application
-                .connection
+                .connection_view()
                 .record_diagnostic_failure("renderer.cloud_upload_rejected", &error.to_string());
             return;
         }
@@ -281,7 +281,7 @@ impl DesktopHost {
         };
         let view = self.render_environment_frame.render_view;
         let eye = DVec3::from_array(view.camera_eye_world_m);
-        let character = self.application.game.gameplay.prediction.character;
+        let character = self.application.game_view().gameplay.prediction.character;
         let forward = super::super::camera::camera_direction(character, 0.0, 0.0).as_dvec3();
         let right =
             super::super::camera::camera_direction(character, std::f32::consts::FRAC_PI_2, 0.0)
@@ -442,8 +442,7 @@ impl DesktopHost {
                 s.observer
                     .dot(
                         DVec3::from_array(
-                            self.application
-                                .game
+                            self.application.game_view()
                                 .gameplay
                                 .prediction
                                 .character

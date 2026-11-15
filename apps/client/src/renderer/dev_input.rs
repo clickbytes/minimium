@@ -188,7 +188,7 @@ fn replay_bolid(
 ) {
     let now = renderer
         .application
-        .connection
+        .connection_view()
         .session()
         .and_then(|session| session.server_monotonic_ms());
     let context = renderer.render_environment_frame.context;
@@ -264,10 +264,10 @@ fn goto(renderer: &mut DesktopHost, latitude: f32, longitude: f32, lines: &mut V
         latitude.sin(),
         latitude.cos() * longitude.sin(),
     ];
-    match renderer.application.action_executor.execute(
-        &mut renderer.application.connection,
-        crate::application::ClientAction::MapTeleport { direction },
-    ) {
+    match renderer
+        .application
+        .execute_action(crate::application::ClientAction::MapTeleport { direction })
+    {
         crate::application::LocalActionOutcome::Queued { .. } => {
             renderer.application.arm_map_teleport();
             renderer.application.request_map_teleport();

@@ -18,7 +18,7 @@ impl DesktopHost {
         };
         if self
             .application
-            .connection
+            .connection_view()
             .session()
             .is_some_and(|session| session.state() == SessionState::Connected)
             && self
@@ -26,7 +26,7 @@ impl DesktopHost {
                 .is_some_and(|at| now.saturating_duration_since(at) >= Duration::from_millis(200))
         {
             self.pending_bolid_request = None;
-            match self.application.connection.request_random_bolid(count) {
+            match self.application.request_random_bolid(count) {
                 Ok(()) => self.bolid_notice(minimium_localization::UiNotice::BolidRequestSent),
                 Err(error) => self
                     .application
@@ -34,7 +34,7 @@ impl DesktopHost {
                     .console
                     .push_line(format!("spawn_random_bolid: {error}")),
             }
-        } else if self.application.connection.session().is_none() {
+        } else if self.application.connection_view().session().is_none() {
             self.pending_bolid_request = None;
             self.application
                 .ui
@@ -60,24 +60,15 @@ impl DesktopHost {
             return;
         }
         let direction = camera::camera_direction(
-            self.application.game.gameplay.prediction.character,
+            self.application.game_view().gameplay.prediction.character,
             self.input.yaw,
             self.input.pitch,
         )
         .normalize()
         .to_array();
         let night = sky.sun.apparent_altitude_rad < (-6.0_f64).to_radians();
-        if let Some(session) = self.application.connection.session_mut() {
-            if session
-                .queue(&minimium_protocol::ClientMessage::SkyView {
-                    context,
-                    direction,
-                    night,
-                })
-                .is_ok()
-            {
-                self.last_sky_view_at = Some(now);
-            }
+        if self.application.report_sky_view(context, direction, night) {
+            self.last_sky_view_at = Some(now);
         }
     }
 
@@ -86,9 +77,9 @@ impl DesktopHost {
         let context = self.render_environment_frame.context;
         let length_scale = self
             .application
-            .game
+            .game_view()
             .world_manifests
-            .get(&self.application.game.current_instance)
+            .get(&self.application.game_view().current_instance)
             .and_then(|m| m.planet())
             .filter(|p| p.mode == 1)
             .map_or(1.0, |p| f64::from(p.height_scale_permille) / 1000.0);
@@ -111,7 +102,7 @@ impl DesktopHost {
         }
         let server_now = self
             .application
-            .connection
+            .connection_view()
             .session()
             .and_then(|session| session.server_monotonic_ms());
         for (event_context, event, received_at, cached) in &mut self.bolids {
