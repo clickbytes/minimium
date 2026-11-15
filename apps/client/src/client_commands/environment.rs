@@ -270,8 +270,12 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
             SkyQuality::parse(value).map_err(|_| ParseError::SkyQualityUsage)?,
         )),
         ("sky quality", _) => Err(ParseError::SkyQualityUsage),
-        ("sky info", []) => Ok(ClientCommand::SkyInfo),
-        ("sky bodies", []) => Ok(ClientCommand::SkyBodies),
+        ("sky info", []) => Ok(ClientCommand::Presentation(
+            super::PresentationOperation::SkyInfo,
+        )),
+        ("sky bodies", []) => Ok(ClientCommand::Presentation(
+            super::PresentationOperation::SkyBodies,
+        )),
         ("sky demo", ["on"]) => Ok(ClientCommand::SkyDemo(true)),
         ("sky demo", ["off"]) => Ok(ClientCommand::SkyDemo(false)),
         ("sky meteors seed", [seed]) => {
@@ -281,40 +285,48 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
             )))
         }
         ("sky meteors seed", _) => Err(ParseError::Usage("sky meteors seed VALUE (decimal u64)")),
-        ("sky meteors debug", [mode]) => Ok(ClientCommand::SkyMeteorsDebug(
-            super::MeteorDebug::parse(mode).ok_or(ParseError::Usage(
-                "sky meteors debug off|light|occlusion|paths|budget",
-            ))?,
+        ("sky meteors debug", [mode]) => Ok(ClientCommand::Presentation(
+            super::PresentationOperation::MeteorDebug(super::MeteorDebug::parse(mode).ok_or(
+                ParseError::Usage("sky meteors debug off|light|occlusion|paths|budget"),
+            )?),
         )),
         ("sky meteors debug", _) => Err(ParseError::Usage(
             "sky meteors debug off|light|occlusion|paths|budget",
         )),
-        ("sky meteors status", []) => Ok(ClientCommand::SkyMeteorsStatus),
-        ("sky meteors spawn", [value]) => Ok(ClientCommand::SkyMeteorsSpawn(
-            MeteorPreset::parse(value).ok_or(ParseError::MeteorUsage)?,
-            None,
+        ("sky meteors status", []) => Ok(ClientCommand::Presentation(
+            super::PresentationOperation::MeteorStatus,
         )),
-        ("sky meteors spawn", [value, seed]) => Ok(ClientCommand::SkyMeteorsSpawn(
-            MeteorPreset::parse(value).ok_or(ParseError::MeteorUsage)?,
-            Some(seed.parse().map_err(|_| ParseError::MeteorUsage)?),
+        ("sky meteors spawn", [value]) => Ok(ClientCommand::Presentation(
+            super::PresentationOperation::MeteorSpawn(
+                MeteorPreset::parse(value).ok_or(ParseError::MeteorUsage)?,
+                None,
+            ),
+        )),
+        ("sky meteors spawn", [value, seed]) => Ok(ClientCommand::Presentation(
+            super::PresentationOperation::MeteorSpawn(
+                MeteorPreset::parse(value).ok_or(ParseError::MeteorUsage)?,
+                Some(seed.parse().map_err(|_| ParseError::MeteorUsage)?),
+            ),
         )),
         ("sky meteors spawn", _) => Err(ParseError::MeteorUsage),
-        ("sky meteors debug light", []) => {
-            Ok(ClientCommand::SkyMeteorsDebug(super::MeteorDebug::Light))
-        }
-        ("sky meteors debug light", ["on"]) => {
-            Ok(ClientCommand::SkyMeteorsLight(super::MeteorLightDebug::On))
-        }
-        ("sky meteors debug light", ["off"]) => {
-            Ok(ClientCommand::SkyMeteorsLight(super::MeteorLightDebug::Off))
-        }
-        ("sky meteors debug light", ["transmission"]) => Ok(ClientCommand::SkyMeteorsLight(
-            super::MeteorLightDebug::Transmission,
+        ("sky meteors debug light", []) => Ok(ClientCommand::Presentation(
+            super::PresentationOperation::MeteorDebug(super::MeteorDebug::Light),
+        )),
+        ("sky meteors debug light", ["on"]) => Ok(ClientCommand::Presentation(
+            super::PresentationOperation::MeteorLight(super::MeteorLightDebug::On),
+        )),
+        ("sky meteors debug light", ["off"]) => Ok(ClientCommand::Presentation(
+            super::PresentationOperation::MeteorLight(super::MeteorLightDebug::Off),
+        )),
+        ("sky meteors debug light", ["transmission"]) => Ok(ClientCommand::Presentation(
+            super::PresentationOperation::MeteorLight(super::MeteorLightDebug::Transmission),
         )),
         ("sky meteors debug light", _) => Err(ParseError::Usage(
             "sky meteors debug light on|off|transmission",
         )),
-        ("sky meteors clear", []) => Ok(ClientCommand::SkyMeteorsClear),
+        ("sky meteors clear", []) => Ok(ClientCommand::Presentation(
+            super::PresentationOperation::MeteorClear,
+        )),
         ("camera fov", []) => Ok(ClientCommand::Fov(None)),
         ("camera fov", [value]) => Ok(ClientCommand::Fov(Some(parse_fov_value(value)?))),
         ("camera fov", _) => Err(ParseError::FovUsage),

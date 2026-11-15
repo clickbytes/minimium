@@ -1,7 +1,8 @@
 use super::Renderer;
 use crate::environment::SkyDiagnosticsSnapshot;
 
-pub(super) fn status(renderer: &mut Renderer) {
+pub(super) fn status(renderer: &mut Renderer) -> Vec<String> {
+    let mut output = Vec::new();
     use crate::client_commands::{ClientPropertyCommand as Command, ClientPropertyKey as Key};
     for key in [
         Key::MeteorEnabled,
@@ -11,33 +12,39 @@ pub(super) fn status(renderer: &mut Renderer) {
         Key::MeteorAudio,
     ] {
         let line = renderer.apply_property(Command::Get(key));
-        renderer.application.ui.console.push_line(line);
+        output.push(line);
     }
     let gpu = &renderer.gpu.milky_way.meteors;
-    renderer.application.ui.console.push_line(format!("meteor upload CPU {} us; culled segments {}; quality-dropped cores {}; cloud scans {} / reused {}; proxy cache {} bytes", gpu.prepare_us, gpu.culled_segments, gpu.dropped_cores, renderer.gpu.cloud_gpu.light_cache.scans, renderer.gpu.cloud_gpu.light_cache.reused, std::mem::size_of::<minimium_renderer::transient_cloud_cache::CloudLightCache>()));
-    renderer.application.ui.console.push_line(format!(
+    output.push(format!("meteor upload CPU {} us; culled segments {}; quality-dropped cores {}; cloud scans {} / reused {}; proxy cache {} bytes", gpu.prepare_us, gpu.culled_segments, gpu.dropped_cores, renderer.gpu.cloud_gpu.light_cache.scans, renderer.gpu.cloud_gpu.light_cache.reused, std::mem::size_of::<minimium_renderer::transient_cloud_cache::CloudLightCache>()));
+    output.push(format!(
         "meteor GPU: cores {}, segments {}, dust {}, culled low {}, upload {} bytes, persistent {} bytes, lights {}",
         renderer.gpu.meteors_status.core_count(), gpu.count, gpu.dust_segments,
         gpu.rejected_low, gpu.upload_bytes,
         minimium_renderer::meteors_gpu::MeteorGpu::BYTES + renderer.gpu.transient_buffer.size(),
         renderer.gpu.transient_count,
     ));
+    output
 }
 
-pub(super) fn debug(renderer: &mut Renderer, mode: crate::client_commands::MeteorDebug) {
+pub(super) fn debug(
+    renderer: &mut Renderer,
+    mode: crate::client_commands::MeteorDebug,
+) -> Vec<String> {
+    let mut output = Vec::new();
     use crate::client_commands::MeteorDebug;
     renderer.gpu.transient_enabled = true;
     renderer.gpu.transient_transmission = mode == MeteorDebug::Occlusion;
     match mode {
         MeteorDebug::Paths => {
             for line in renderer.meteors.path_lines() {
-                renderer.application.ui.console.push_line(line);
+                output.push(line);
             }
         }
-        MeteorDebug::Budget | MeteorDebug::Light => status(renderer),
+        MeteorDebug::Budget | MeteorDebug::Light => output.extend(status(renderer)),
         _ => {}
     }
-    renderer.application.ui.console.push_line(format!("meteor diagnostic {mode:?}; paths/budget/light print a snapshot; occlusion persists until debug off"));
+    output.push(format!("meteor diagnostic {mode:?}; paths/budget/light print a snapshot; occlusion persists until debug off"));
+    output
 }
 
 pub(super) fn push(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
