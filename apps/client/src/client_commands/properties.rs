@@ -8,12 +8,24 @@ use minimium_renderer::{
 };
 
 mod catalog;
+mod encoding;
 mod types;
 pub(crate) use types::{ClientPropertyCommand, ClientPropertyKey, ClientPropertyValue};
 
-#[cfg(feature = "desktop")]
 pub(crate) fn property_specs() -> impl Iterator<Item = &'static minimium_commands::PropertySpec> {
     catalog::registry().specs()
+}
+
+/// Canonical, local startup settings. Aliases and authoritative world properties
+/// remain available to commands but do not create duplicate startup records.
+pub(crate) fn local_setting_specs() -> impl Iterator<Item = &'static minimium_commands::PropertySpec>
+{
+    property_specs().filter(|spec| {
+        spec.permission == minimium_commands::PropertyPermission::Local
+            && spec.lifecycle == minimium_commands::PropertyLifecycle::Live
+            && spec.default.is_some()
+            && ClientPropertyKey::parse(spec.key).is_some_and(|key| key.key() == spec.key)
+    })
 }
 
 pub(crate) fn property_spec(key: &str) -> Option<&'static minimium_commands::PropertySpec> {
@@ -217,15 +229,9 @@ fn parse_value(key: ClientPropertyKey, value: &str) -> Result<ClientPropertyValu
         )
     };
     match key {
-        ClientPropertyKey::Locale => match value {
-            "en" => Ok(ClientPropertyValue::Locale(
-                minimium_localization::Locale::English,
-            )),
-            "pl" => Ok(ClientPropertyValue::Locale(
-                minimium_localization::Locale::Polish,
-            )),
-            _ => Err(invalid("locale must be en or pl".into())),
-        },
+        ClientPropertyKey::Locale => minimium_localization::Locale::from_setting(value)
+            .map(ClientPropertyValue::Locale)
+            .ok_or_else(|| invalid("locale must be en or pl".into())),
         ClientPropertyKey::CameraFov => super::parse_fov_degrees(value)
             .map(ClientPropertyValue::CameraFov)
             .map_err(|error| invalid(error.to_owned())),

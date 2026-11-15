@@ -17,23 +17,10 @@ pub(super) struct RendererSetup {
     pub(super) map_path: Option<PathBuf>,
     pub(super) world_definition_path: Option<PathBuf>,
     pub(super) local_server_config: minimium_client_runtime::LocalServerLaunchConfig,
-    pub(super) sky_quality: minimium_renderer::quality::SkyQuality,
-    pub(super) startup_fov: f32,
-    pub(super) startup_mouse_sensitivity: f32,
-    pub(super) startup_input_bindings: String,
-    pub(super) startup_sky_names: bool,
-    pub(super) startup_cloud_detail: u8,
-    pub(super) startup_atmosphere_debug: minimium_renderer::atmosphere_debug::AtmosphereDebug,
-    pub(super) startup_terrain_debug: minimium_renderer::terrain_debug::TerrainDebug,
-    pub(super) startup_cloud_debug: minimium_environment::weather::CloudDebug,
-    pub(super) startup_sky_demo: bool,
-    pub(super) meteor_preferences: std::collections::BTreeMap<String, String>,
-    pub(super) preference_sources:
-        std::collections::BTreeMap<String, minimium_commands::PropertySource>,
+    pub(super) startup_settings: crate::application::StartupSettings,
     pub(super) config_file_settings: std::collections::BTreeMap<String, String>,
     pub(super) require_earth: bool,
     pub(super) demo: bool,
-    pub(super) locale: minimium_localization::Locale,
 }
 
 impl Renderer {
@@ -52,23 +39,13 @@ impl Renderer {
             map_path,
             world_definition_path,
             local_server_config,
-            sky_quality,
-            startup_fov,
-            startup_mouse_sensitivity,
-            startup_input_bindings,
-            startup_sky_names,
-            startup_cloud_detail,
-            startup_atmosphere_debug,
-            startup_terrain_debug,
-            startup_cloud_debug,
-            startup_sky_demo,
-            meteor_preferences,
-            preference_sources,
+            startup_settings,
             config_file_settings,
             require_earth,
             demo,
-            locale,
         } = setup;
+        let locale = startup_settings.locale();
+        let sky_quality = startup_settings.sky_quality();
         let localizer = minimium_localization::Localizer::new(Some(diagnostic_logger.clone()))
             .map_err(std::io::Error::other)?;
         let map_fingerprint = map.fingerprint();
@@ -116,8 +93,8 @@ impl Renderer {
             effective_quality,
             gpu.shadow_gpu.fallback_reason,
         );
-        gpu.atmosphere_gpu.debug = startup_atmosphere_debug as u32;
-        gpu.terrain_gpu.uniform.debug[0] = startup_terrain_debug as u32;
+        gpu.atmosphere_gpu.debug = startup_settings.atmosphere_debug() as u32;
+        gpu.terrain_gpu.uniform.debug[0] = startup_settings.terrain_debug() as u32;
         // Pending collision jobs and bounded GPU uploads complete in the frame loop.
         let gpu_ready = initial_scene.as_ref().is_some_and(|scene| {
             gpu.cache_sector_scene(current_instance, scene)
@@ -202,58 +179,13 @@ impl Renderer {
                 .contains(wgpu::Features::TEXTURE_COMPRESSION_BC)
                 && gpu.device.limits().max_texture_dimension_2d >= 4096,
         );
-        let mut setting_values = crate::application::SettingsStore::new(
-            [
-                (
-                    "ui.locale".to_owned(),
-                    match locale {
-                        minimium_localization::Locale::English => "en".to_owned(),
-                        minimium_localization::Locale::Polish => "pl".to_owned(),
-                    },
-                ),
-                ("client.camera.fov".to_owned(), startup_fov.to_string()),
-                (
-                    "client.input.mouse_sensitivity".to_owned(),
-                    startup_mouse_sensitivity.to_string(),
-                ),
-                (
-                    "client.input.bindings".to_owned(),
-                    startup_input_bindings.clone(),
-                ),
-                (
-                    "client.graphics.sky_quality".to_owned(),
-                    sky_quality.label().to_owned(),
-                ),
-                ("client.sky.names".to_owned(), startup_sky_names.to_string()),
-                (
-                    "client.weather.cloud_detail".to_owned(),
-                    startup_cloud_detail.to_string(),
-                ),
-                (
-                    "client.debug.atmosphere".to_owned(),
-                    format!("{startup_atmosphere_debug:?}").to_ascii_lowercase(),
-                ),
-                (
-                    "client.debug.terrain".to_owned(),
-                    format!("{startup_terrain_debug:?}").to_ascii_lowercase(),
-                ),
-                (
-                    "client.debug.clouds".to_owned(),
-                    format!("{startup_cloud_debug:?}").to_ascii_lowercase(),
-                ),
-                ("client.sky.demo".to_owned(), startup_sky_demo.to_string()),
-            ]
-            .into_iter()
-            .chain(meteor_preferences.clone())
-            .collect(),
-            preference_sources,
-        );
+        let mut setting_values = crate::application::SettingsStore::new(&startup_settings);
         setting_values.set_effective(
-            "client.graphics.sky_quality",
-            sky_quality_state.effective.label().to_owned(),
+            crate::client_commands::ClientPropertyValue::SkyQuality(sky_quality_state.effective),
             sky_quality_state.fallback_reason.map(str::to_owned),
         );
-        let input_mapper = crate::input::InputMapper::from_setting(&startup_input_bindings)?;
+        let input_mapper =
+            crate::input::InputMapper::from_setting(&startup_settings.input_bindings())?;
         Ok(Self {
             bolids: Vec::with_capacity(minimium_renderer::milky_way_gpu::MAX_BOLIDS),
             bolid_worker: bolids::BolidWorker::new()?,
@@ -284,25 +216,25 @@ impl Renderer {
                 previous_bytes_sent: 0,
                 previous_bytes_received: 0,
             },
-            demo_universe_enabled: startup_sky_demo,
-            fov_degrees: startup_fov,
-            mouse_sensitivity: startup_mouse_sensitivity,
-            show_celestial_names: startup_sky_names,
-            atmosphere_debug: startup_atmosphere_debug,
-            terrain_debug: startup_terrain_debug,
+            demo_universe_enabled: startup_settings.sky_demo(),
+            fov_degrees: startup_settings.fov(),
+            mouse_sensitivity: startup_settings.mouse_sensitivity(),
+            show_celestial_names: startup_settings.sky_names(),
+            atmosphere_debug: startup_settings.atmosphere_debug(),
+            terrain_debug: startup_settings.terrain_debug(),
             sky_quality: sky_quality_state,
             environment_frame: EnvironmentFrameInput::unavailable(),
             render_environment_frame: EnvironmentFrame::unavailable(RenderViewFrame::default()),
             environment_observer: environment::observer::ObserverAdapter::default(),
-            meteors: meteors::MeteorRuntime::configured(&meteor_preferences),
+            meteors: meteors::MeteorRuntime::configured(&startup_settings),
             impacts: Default::default(),
             sky_calculator: minimium_astronomy::SkyCalculator::default(),
             sky_catalogue,
             environment_error: None,
             weather: {
                 let mut weather = clouds::WeatherState::new();
-                weather.set_detail(startup_cloud_detail);
-                weather.debug = startup_cloud_debug;
+                weather.set_detail(startup_settings.cloud_detail());
+                weather.debug = startup_settings.cloud_debug();
                 weather
             },
             demo_environment: demo.then(LocalDemoEnvironment::new).flatten(),

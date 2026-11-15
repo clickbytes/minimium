@@ -4,9 +4,8 @@ mod diagnostic_input;
 mod paths;
 use catalog::OPTIONS;
 use minimium_commands::{
-    format_cli_help, parse_cli, CliParseOutcome, CommandError, CommandErrorCode, PropertySource,
+    format_cli_help, parse_cli, CliParseOutcome, CommandError, CommandErrorCode,
 };
-use minimium_renderer::quality::SkyQuality;
 use std::{collections::BTreeMap, path::PathBuf};
 
 const DEFAULT_LOCAL_DATA_DIR: &str = ".minimium-local";
@@ -15,7 +14,6 @@ const DEFAULT_LOCAL_DATA_DIR: &str = ".minimium-local";
 #[derive(Clone, Debug, PartialEq)]
 pub struct ClientOptions {
     pub locale: minimium_localization::Locale,
-    pub startup_locale: minimium_localization::Locale,
     pub connect: Option<String>,
     pub map_path: Option<PathBuf>,
     pub world_definition_path: Option<PathBuf>,
@@ -28,7 +26,6 @@ pub struct ClientOptions {
     pub help: bool,
     pub version: bool,
     pub threads: ThreadLane,
-    pub sky_quality: SkyQuality,
     pub profile_dir: Option<PathBuf>,
     pub log_dir: Option<PathBuf>,
     pub cache_dir: PathBuf,
@@ -40,18 +37,8 @@ pub struct ClientOptions {
     pub server_settings: BTreeMap<String, String>,
     pub server_environment: BTreeMap<String, String>,
     pub threads_explicit: bool,
-    pub startup_fov: f32,
-    pub startup_mouse_sensitivity: f32,
     pub input_bindings: String,
-    pub startup_input_bindings: String,
-    pub startup_sky_names: bool,
-    pub startup_cloud_detail: u8,
-    pub startup_atmosphere_debug: minimium_renderer::atmosphere_debug::AtmosphereDebug,
-    pub startup_terrain_debug: minimium_renderer::terrain_debug::TerrainDebug,
-    pub startup_cloud_debug: minimium_environment::weather::CloudDebug,
-    pub startup_sky_demo: bool,
-    pub meteor_preferences: BTreeMap<String, String>,
-    pub preference_sources: BTreeMap<String, PropertySource>,
+    pub(crate) startup_settings: crate::application::StartupSettings,
     pub config_file_settings: BTreeMap<String, String>,
     working_dir: Option<PathBuf>,
 }
@@ -257,11 +244,12 @@ impl ClientOptions {
                 ));
             }
         }
-        if values.contains("--sky-quality") && settings.contains_key("client.graphics.sky_quality")
+        if values.contains("--sky-quality")
+            && settings.contains_key(crate::client_commands::ClientPropertyKey::SkyQuality.key())
         {
             return Err(cli_error(
                 CommandErrorCode::ConflictingOptions,
-                "client.graphics.sky_quality",
+                crate::client_commands::ClientPropertyKey::SkyQuality.key(),
                 "--sky-quality conflicts with --set for the same setting",
             ));
         }
@@ -269,30 +257,18 @@ impl ClientOptions {
             return Ok(options);
         }
         if let Some(quality) = values.get("--sky-quality") {
-            settings.insert("client.graphics.sky_quality".to_owned(), quality.to_owned());
+            settings.insert(
+                crate::client_commands::ClientPropertyKey::SkyQuality
+                    .key()
+                    .to_owned(),
+                quality.to_owned(),
+            );
         }
         let preferences =
             crate::config::resolve_preferences(options.config_path.as_deref(), &settings)?;
-        options.startup_fov = preferences.fov_degrees;
-        options.locale = preferences.locale;
-        options.startup_locale = preferences.locale;
-        options.startup_mouse_sensitivity = preferences.mouse_sensitivity;
-        options.input_bindings = preferences.input_bindings.clone();
-        options.startup_input_bindings = preferences.input_bindings;
-        options.sky_quality = preferences.sky_quality;
-        options.startup_sky_names = preferences.sky_names;
-        options.startup_cloud_detail = preferences.cloud_detail;
-        options.startup_atmosphere_debug = preferences.atmosphere_debug;
-        options.startup_terrain_debug = preferences.terrain_debug;
-        options.startup_cloud_debug = preferences.cloud_debug;
-        options.startup_sky_demo = preferences.sky_demo;
-        options.meteor_preferences = preferences
-            .resolved_values
-            .iter()
-            .filter(|(key, _)| key.starts_with("client.sky.meteors."))
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        options.preference_sources = preferences.sources;
+        options.locale = preferences.startup.locale();
+        options.input_bindings = preferences.startup.input_bindings();
+        options.startup_settings = preferences.startup;
         options.config_file_settings = preferences.file_settings;
 
         if options.demo && options.connect.is_some() {
@@ -354,9 +330,9 @@ impl ClientOptions {
     }
 
     fn defaults(help: bool) -> Self {
+        let startup_settings = crate::application::StartupSettings::defaults();
         Self {
-            locale: minimium_localization::Locale::English,
-            startup_locale: minimium_localization::Locale::English,
+            locale: startup_settings.locale(),
             connect: None,
             map_path: None,
             world_definition_path: None,
@@ -369,7 +345,6 @@ impl ClientOptions {
             help,
             version: false,
             threads: ThreadLane::One,
-            sky_quality: SkyQuality::Standard,
             profile_dir: None,
             log_dir: None,
             cache_dir: PathBuf::from(DEFAULT_LOCAL_DATA_DIR).join("minimium/materials"),
@@ -381,18 +356,8 @@ impl ClientOptions {
             server_settings: BTreeMap::new(),
             server_environment: BTreeMap::new(),
             threads_explicit: false,
-            startup_fov: 70.0,
-            startup_mouse_sensitivity: 0.0025,
-            input_bindings: String::new(),
-            startup_input_bindings: String::new(),
-            startup_sky_names: false,
-            startup_cloud_detail: 6,
-            startup_atmosphere_debug: minimium_renderer::atmosphere_debug::AtmosphereDebug::Off,
-            startup_terrain_debug: minimium_renderer::terrain_debug::TerrainDebug::Off,
-            startup_cloud_debug: minimium_environment::weather::CloudDebug::Off,
-            startup_sky_demo: false,
-            meteor_preferences: BTreeMap::new(),
-            preference_sources: BTreeMap::new(),
+            input_bindings: startup_settings.input_bindings(),
+            startup_settings,
             config_file_settings: BTreeMap::new(),
             working_dir: None,
         }
