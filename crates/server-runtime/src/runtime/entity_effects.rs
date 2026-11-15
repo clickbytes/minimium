@@ -96,7 +96,7 @@ impl ServerRuntime {
         stage: crate::modules::Stage,
         outcome: &EffectBatchOutcome,
     ) {
-        let mut counts = [0usize; 6];
+        let mut counts = [0usize; 8];
         for result in outcome.results() {
             let index = match result {
                 WorldEffectOutcome::EntityRejected(EntityEffectRejection::Validation) => Some(0),
@@ -105,14 +105,20 @@ impl ServerRuntime {
                     TransferRejection::Validation,
                 )) => Some(2),
                 WorldEffectOutcome::Transfer(TransferOutcome::Rejected(
-                    TransferRejection::ClientUnavailable,
+                    TransferRejection::AlreadyPending,
                 )) => Some(3),
                 WorldEffectOutcome::Transfer(TransferOutcome::Rejected(
-                    TransferRejection::EnvironmentUnavailable,
+                    TransferRejection::IdentifierSpaceExhausted,
                 )) => Some(4),
                 WorldEffectOutcome::Transfer(TransferOutcome::Rejected(
-                    TransferRejection::Backpressure,
+                    TransferRejection::ClientUnavailable,
                 )) => Some(5),
+                WorldEffectOutcome::Transfer(TransferOutcome::Rejected(
+                    TransferRejection::EnvironmentUnavailable,
+                )) => Some(6),
+                WorldEffectOutcome::Transfer(TransferOutcome::Rejected(
+                    TransferRejection::Backpressure,
+                )) => Some(7),
                 _ => None,
             };
             if let Some(index) = index {
@@ -124,6 +130,8 @@ impl ServerRuntime {
             ("entity", "validation"),
             ("entity", "storage_budget"),
             ("transfer", "validation"),
+            ("transfer", "already_pending"),
+            ("transfer", "identifier_space_exhausted"),
             ("transfer", "client_unavailable"),
             ("transfer", "environment_unavailable"),
             ("transfer", "backpressure"),

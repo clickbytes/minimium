@@ -84,6 +84,8 @@ pub enum EntityEffectRejection {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TransferRejection {
     Validation,
+    AlreadyPending,
+    IdentifierSpaceExhausted,
     ClientUnavailable,
     EnvironmentUnavailable,
     Backpressure,

@@ -2,9 +2,16 @@ use super::{Membership, TerrainReads, WorldRegistry};
 use minimium_core::ids::PlayerId;
 use minimium_protocol::WorldContext;
 use minimium_world::world::{
-    Position3Mm, TransitionId, WorldInstanceId, WorldLocation, WorldManifest,
+    MembershipEpoch, Position3Mm, TransitionId, WorldInstanceId, WorldLocation, WorldManifest,
 };
 use std::collections::HashSet;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TransferRequestRejection {
+    AlreadyPending,
+    Validation,
+    IdentifierSpaceExhausted,
+}
 
 #[derive(Clone, Copy)]
 pub(crate) struct TransferOffer {
@@ -35,62 +42,6 @@ pub(super) struct PendingTransfer {
 }
 
 impl WorldRegistry {
-    pub(crate) fn validate_transfer_batch(
-        &self,
-        requests: &[(
-            PlayerId,
-            WorldContext,
-            WorldInstanceId,
-            [f32; 3],
-            Option<WorldLocation>,
-        )],
-    ) -> bool {
-        let mut players = HashSet::with_capacity(requests.len());
-        if self.next_epoch.checked_add(requests.len() as u64).is_none()
-            || self
-                .next_transition
-                .checked_add(requests.len() as u128)
-                .is_none()
-        {
-            return false;
-        }
-        requests.iter().all(
-            |(player, source, target_instance, requested, return_location)| {
-                if !players.insert(*player)
-                    || self.transfers.contains_key(player)
-                    || !self.context_matches(*player, *source)
-                    || requested.iter().any(|value| !value.is_finite())
-                {
-                    return false;
-                }
-                let Some(target) = self.instances.get(target_instance) else {
-                    return false;
-                };
-                let destination = return_location
-                    .filter(|location| location.instance() == *target_instance)
-                    .map(|location| location.position())
-                    .unwrap_or_else(|| {
-                        if *requested == target.map.spawn() {
-                            target.map.spawn_position_mm().unwrap_or_else(|| {
-                                Position3Mm(
-                                    requested
-                                        .map(|value| (f64::from(value) * 1000.0).round() as i64),
-                                )
-                            })
-                        } else {
-                            Position3Mm(
-                                requested.map(|value| (f64::from(value) * 1000.0).round() as i64),
-                            )
-                        }
-                    });
-                let destination = destination.0.map(|value| value as f32 / 1000.0);
-                target
-                    .map
-                    .can_place_player_with_gravity(destination, target.world.gravity())
-            },
-        )
-    }
-
     #[cfg(test)]
     pub(crate) fn prepare_entity_transfer(
         &mut self,
@@ -108,6 +59,7 @@ impl WorldRegistry {
             return_location,
             None,
         )
+        .ok()
     }
 
     pub(crate) fn prepare_entity_transfer_with_terrain(
@@ -118,7 +70,7 @@ impl WorldRegistry {
         requested_destination: [f32; 3],
         return_location: Option<WorldLocation>,
         reads: &TerrainReads<'_>,
-    ) -> Option<TransferOffer> {
+    ) -> Result<TransferOffer, TransferRequestRejection> {
         self.prepare_entity_transfer_checked(
             player,
             source_context,
@@ -137,14 +89,19 @@ impl WorldRegistry {
         requested_destination: [f32; 3],
         return_location: Option<WorldLocation>,
         reads: Option<&TerrainReads<'_>>,
-    ) -> Option<TransferOffer> {
-        if self.transfers.contains_key(&player)
-            || !self.context_matches(player, source_context)
+    ) -> Result<TransferOffer, TransferRequestRejection> {
+        if self.transfers.contains_key(&player) {
+            return Err(TransferRequestRejection::AlreadyPending);
+        }
+        if !self.context_matches(player, source_context)
             || requested_destination.iter().any(|value| !value.is_finite())
         {
-            return None;
+            return Err(TransferRequestRejection::Validation);
         }
-        let target = self.instances.get(&target_instance)?;
+        let target = self
+            .instances
+            .get(&target_instance)
+            .ok_or(TransferRequestRejection::Validation)?;
         let target_manifest = target.manifest;
         let target_fingerprint = target.map.fingerprint();
         let return_destination = return_location
@@ -179,11 +136,22 @@ impl WorldRegistry {
         };
         let safe = static_safe && terrain_safe;
         if !safe {
-            return None;
+            return Err(TransferRequestRejection::Validation);
         }
-        let target_epoch = self.allocate_epoch().ok()?;
-        let transition_id = TransitionId::new(self.next_transition)?;
-        self.next_transition = self.next_transition.checked_add(1)?;
+        let epoch_value = self.next_epoch;
+        let next_epoch = epoch_value
+            .checked_add(1)
+            .ok_or(TransferRequestRejection::IdentifierSpaceExhausted)?;
+        let target_epoch = MembershipEpoch::new(epoch_value)
+            .ok_or(TransferRequestRejection::IdentifierSpaceExhausted)?;
+        let transition_id = TransitionId::new(self.next_transition)
+            .ok_or(TransferRequestRejection::IdentifierSpaceExhausted)?;
+        let next_transition = self
+            .next_transition
+            .checked_add(1)
+            .ok_or(TransferRequestRejection::IdentifierSpaceExhausted)?;
+        self.next_epoch = next_epoch;
+        self.next_transition = next_transition;
         let offer = TransferOffer {
             transition_id,
             source_context,
@@ -204,7 +172,7 @@ impl WorldRegistry {
                 ready: false,
             },
         );
-        Some(offer)
+        Ok(offer)
     }
 
     pub(crate) fn mark_transfer_ready(

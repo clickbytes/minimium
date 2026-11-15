@@ -334,15 +334,6 @@ impl ServerRuntime {
         use crate::modules::{TransferOutcome, TransferRejection};
 
         let return_location = self.operations.player_store.return_location_for(id);
-        if !self.game.worlds.validate_transfer_batch(&[(
-            id,
-            source_context,
-            target_world,
-            destination,
-            return_location,
-        )]) {
-            return TransferOutcome::Rejected(TransferRejection::Validation);
-        }
         let terrain = super::gameplay_terrain::build(
             &self.game.worlds,
             self.prepared_geography.as_ref(),
@@ -363,8 +354,17 @@ impl ServerRuntime {
             return_location,
             &reads,
         );
-        let Some(offer) = offer else {
-            return TransferOutcome::Rejected(TransferRejection::Validation);
+        let offer = match offer {
+            Ok(offer) => offer,
+            Err(crate::world_registry::TransferRequestRejection::AlreadyPending) => {
+                return TransferOutcome::Rejected(TransferRejection::AlreadyPending)
+            }
+            Err(crate::world_registry::TransferRequestRejection::Validation) => {
+                return TransferOutcome::Rejected(TransferRejection::Validation)
+            }
+            Err(crate::world_registry::TransferRequestRejection::IdentifierSpaceExhausted) => {
+                return TransferOutcome::Rejected(TransferRejection::IdentifierSpaceExhausted)
+            }
         };
         let Some(index) = self.connections.client_indices_by_player.get(&id).copied() else {
             self.game.worlds.cancel_transfer(id, offer.transition_id);

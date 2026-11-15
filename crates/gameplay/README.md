@@ -38,9 +38,11 @@ Effect overflow rejects the stage as a whole; concrete world, budget, placement
 and transfer checks remain with the server host. The host commits entity effects
 as one atomic subgroup and reports the same typed rejection for each member if
 validation or storage reservation fails. Transfer effects report Started only
-after the prepare message is queued, or a typed rejection. Starting a transfer
-does not report transition readiness or world commit, and mixed batches do not
-promise atomicity between entity storage and transport.
+after the prepare message is queued, or a typed rejection distinguishing
+validation, an existing pending transfer, identifier exhaustion, unavailable
+client/environment, and backpressure. Starting a transfer does not report
+transition readiness or world commit, and mixed batches do not promise
+atomicity between entity storage and transport.
 
 ## Commands
 
