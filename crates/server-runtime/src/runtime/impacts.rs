@@ -15,6 +15,7 @@ use std::collections::BTreeMap;
 
 pub(super) struct Impacts {
     pub(super) profile: Option<minimium_world::impact::ImpactProfile>,
+    async_work_policy: crate::AsyncWorkPolicy,
     journal: Box<dyn minimium_storage::ImpactJournalPort>,
     bodies: BTreeMap<(WorldInstanceId, u64), BodyState>,
     pending: BTreeMap<(WorldInstanceId, u64), BodyState>,
@@ -36,6 +37,7 @@ impl Impacts {
         journal: Box<dyn minimium_storage::ImpactJournalPort>,
         restored: Vec<BodyState>,
         profile: Option<minimium_world::impact::ImpactProfile>,
+        async_work_policy: crate::AsyncWorkPolicy,
     ) -> io::Result<Self> {
         if profile.is_some_and(|p| !p.valid()) {
             return Err(io::Error::other("invalid impact configuration"));
@@ -58,6 +60,7 @@ impl Impacts {
         }
         Ok(Self {
             profile,
+            async_work_policy,
             journal,
             bodies: restored.into_iter().map(|b| ((b.world, b.id), b)).collect(),
             pending: BTreeMap::new(),
@@ -184,7 +187,14 @@ impl ServerRuntime {
                 manifest: owner.manifest,
                 geography,
             };
-            let result = minimium_simulation::impact::step_body(&mut body, 0.05, &environment);
+            let result = minimium_simulation::impact::step_body(
+                &mut body,
+                self.impacts
+                    .async_work_policy
+                    .impact_fixed_step()
+                    .as_secs_f64(),
+                &environment,
+            );
             if let Some(mut fragment) = result.fragment {
                 let result = self.reserve_body_entity(fragment.world).and_then(|id| {
                     fragment.id = id;
@@ -202,14 +212,24 @@ impl ServerRuntime {
                         return;
                     }
                 }
-            } else if (body.age_s / 5.0).floor()
+            } else if (body.age_s
+                / self
+                    .impacts
+                    .async_work_policy
+                    .impact_checkpoint_age()
+                    .as_secs_f64())
+            .floor()
                 > (self
                     .impacts
                     .body(&key)
                     .expect("selected body remains owned")
                     .age_s
-                    / 5.0)
-                    .floor()
+                    / self
+                        .impacts
+                        .async_work_policy
+                        .impact_checkpoint_age()
+                        .as_secs_f64())
+                .floor()
             {
                 if let Err(error) = self.queue_body(body) {
                     self.impact_failure(error);

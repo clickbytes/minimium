@@ -1,7 +1,7 @@
 //! Inputs prepared by a process or embedded host before constructing the owner.
 use crate::{
     authentication,
-    composition::{ExcavationConfig, ServerCombatConfig, ShutdownRequest},
+    composition::{AsyncWorkPolicy, ExcavationConfig, ServerCombatConfig, ShutdownRequest},
     executor,
     modules::ModuleRegistry,
     runtime, sector_streaming, server_command, ModuleCommandHandler, ServerGameplayModule,
@@ -119,6 +119,7 @@ pub struct RuntimeComposition {
     pub combat: ServerCombatConfig,
     pub impacts: Option<minimium_world::impact::ImpactProfile>,
     pub excavation: ExcavationConfig,
+    pub async_work_policy: AsyncWorkPolicy,
     pub modules: RuntimeModules,
     pub loggers: RuntimeLoggers,
     pub authentication: authentication::SharedAuthenticationProvider,

@@ -69,10 +69,15 @@ impl ServerRuntime {
                 .map_err(|error| io::Error::other(format!("water reservation: {error:?}")))?;
             owner.world.set_water_read(Some(water.water_read()));
             self.excavation.state.waters.insert(world, water);
-            self.excavation
-                .state
-                .water_checkpoint_due
-                .insert(world, self.now + Duration::from_secs(1));
+            self.excavation.state.water_checkpoint_due.insert(
+                world,
+                self.now
+                    + self
+                        .excavation
+                        .state
+                        .async_work_policy
+                        .water_checkpoint_cadence(),
+            );
         }
         let cells: usize = self
             .excavation
@@ -123,7 +128,8 @@ impl ServerRuntime {
         }
         let now = self.now;
         if now >= self.excavation.state.next_water_step {
-            self.excavation.state.next_water_step = now + Duration::from_millis(100);
+            self.excavation.state.next_water_step =
+                now + self.excavation.state.async_work_policy.hydrology_cadence();
             let worlds: Vec<_> = self.excavation.state.waters.keys().copied().collect();
             for world in worlds {
                 if !self.excavation_reserves(world)
@@ -150,10 +156,14 @@ impl ServerRuntime {
                 if let Err(error) = self.submit_water_checkpoint(world) {
                     self.water_failure(format!("water checkpoint refused: {error}"));
                 } else {
-                    self.excavation
-                        .state
-                        .water_checkpoint_due
-                        .insert(world, now + Duration::from_secs(1));
+                    self.excavation.state.water_checkpoint_due.insert(
+                        world,
+                        now + self
+                            .excavation
+                            .state
+                            .async_work_policy
+                            .water_checkpoint_cadence(),
+                    );
                 }
             }
         }
@@ -220,6 +230,7 @@ impl ServerRuntime {
         let owner = self.game.worlds.get(world).unwrap();
         let manifest = owner.manifest;
         let store = owner.volumes.clone().unwrap();
+        let async_work_policy = self.excavation.state.async_work_policy;
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
         if self
             .sector_workers
@@ -231,7 +242,12 @@ impl ServerRuntime {
                     let base = terrain
                         .volume_base()
                         .ok_or(minimium_fluids::FluidError::Invalid)?;
-                    water.step_terrain(&store.view(&base), [0.0; 3], 9.81, 0.1)?;
+                    water.step_terrain(
+                        &store.view(&base),
+                        [0.0; 3],
+                        9.81,
+                        async_work_policy.hydrology_fixed_step().as_secs_f64(),
+                    )?;
                     Ok((water, started.elapsed()))
                 }))
                 .unwrap_or(Err(minimium_fluids::FluidError::Unavailable));
@@ -275,7 +291,12 @@ impl ServerRuntime {
             world,
             WaterFailure {
                 error,
-                retry_at: self.now + Duration::from_secs(5),
+                retry_at: self.now
+                    + self
+                        .excavation
+                        .state
+                        .async_work_policy
+                        .hydrology_retry_delay(),
             },
         );
     }

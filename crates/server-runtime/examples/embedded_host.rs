@@ -80,6 +80,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             fire_cooldown_ms: 500,
         },
         impacts: None,
+        async_work_policy: AsyncWorkPolicy::default(),
         excavation: ExcavationConfig {
             terrain: minimium_terrain::TerrainConfig {
                 max_chunks: 64,
