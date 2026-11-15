@@ -37,9 +37,15 @@ that current signed field, retaining a saved tunnel position only while it is cl
 
 `WorldRegistry` is the stable runtime façade for world instances. Its `membership.rs` module owns membership and epoch changes, `transfers.rs` owns staged and committed transfers, and `accessors.rs` owns read-only queries and save snapshots. Constructors and entity, sector, environment, and diagnostic operations stay in their dedicated modules.
 
-Gameplay systems receive the owner-lane simulation tick, read-only component/event views, and a per-world New/Restored lifecycle during Startup. Startup runs once after each world is restored and before initial entities are marked initialized; saved initialization markers prevent portal reseeding. Systems return bounded effects. The runtime rejects a stage if the effect buffer limit or any entity, snapshot-budget, world-context, target-placement, or transfer-ID check fails. Entity stores, replication journals and snapshot budgets publish together only after batch validation. Transfer requests are preflighted with the same stage before entity effects commit.
+Gameplay systems receive the owner-lane simulation tick, read-only component/event views, and a per-world New/Restored lifecycle during Startup. Startup runs once after each world is restored and before initial entities are marked initialized; saved initialization markers prevent portal reseeding. Systems return bounded effects and the runtime produces an aligned, bounded outcome for each retained effect. Entity mutations form one atomic subgroup: validation or storage failure rejects each entity member without publishing any member, while success publishes stores, replication journals and snapshot budgets together. Transfers are processed independently in their original order. Each reports Started only after the pending prepare message is queued, or a typed rejection for validation, an existing pending transfer, exhausted identifiers, missing client, unavailable environment, or backpressure. Any pending transfer created before a later client, environment or output failure is cancelled. Started is not transition readiness or world commit. Mixed entity and transfer outcomes are partial by design and do not claim transport/entity atomicity. Buffer-rejected pushes remain a saturating aggregate and reject the retained stage effects as a whole.
 
 `sector_streaming.rs` coordinates the per-tick pipeline. `sector_streaming/requests.rs` collects read-only player and transfer requests; `tickets.rs` owns retain/pin/release reconciliation; `workers.rs` dispatches generation to a fixed worker pool with a 64-job bound and installs up to eight completed results per tick; `readiness.rs` evaluates collision-ready players and transfers; and `collision.rs` rebuilds changed instances from installed payloads. Worker count defaults to `min(max(available_parallelism - 1, 1), 4)` and `--sector-workers` or `server.sector_workers` accepts 1..16 or `auto`.
+
+Combat readiness computes closed ray/sector intervals after normalizing the ray
+with the simulation's f32 hitscan rule. It rejects rays exceeding 512 m, more
+than 4,096 intersected sectors, or more than 65,536 conservative candidate
+cells before sector iteration. Those capacity failures return Busy without
+applying the shot; the next attempt can request a new bounded demand.
 
 Persistent sector replacements validate new totals and reserve the exact encoded record size before publication. Startup restores the complete sector set with staged state and budget copies, so a rejected restore leaves both unchanged. Startup also restores component entities against the already-registered exact component schemas using staged per-world stores, entity counters and content-initialization markers; a rejected entity restore leaves the live registry unchanged. All live entity spawn, update, component removal and despawn effects use one staged batch path that reserves encoded record bytes and aggregate raw component payload bytes before publishing the world stores, journal and budget together. A failed batch changes none of those states. The saved entity list is recaptured from the current registry on every autosave and final shutdown capture, including entities with zero components.
 
@@ -155,6 +161,17 @@ Streamed sector geometry is captured as an immutable per-world snapshot and a
 revisioned collision index is built by a fixed worker. Pending snapshots for a
 world coalesce to the newest revision; stale results are discarded. Movement
 and transfer readiness wait until the matching complete index is installed.
+
+The worker publishes movement collision and exact-sector combat replacements
+together with the full-map combat baseline in one `SpatialGeometryPublication`.
+Excavation swaps the same bundle only after durable acknowledgement; restore
+rebuilds current sector payloads through ordinary bounded streaming. A hitscan
+computes a conservative set of sectors across its full configured ray range.
+Missing sectors create one bounded demand per actor/context, pinned through the
+existing sector manager and worker pool. Combat demand has separate tickets and
+readiness from movement; demand is released on a successful later shot, actor
+removal or context change. Capacity failure returns `Busy` with diagnostics,
+and the original shot is not replayed.
 
 Movement acknowledgements are a safe resolved prefix. Admission tracks every
 accepted sequence while it remains executable in the bounded world-input queue

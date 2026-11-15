@@ -2,6 +2,7 @@ mod admission;
 mod altitude;
 mod bolid;
 mod clock;
+mod combat;
 mod diagnostics;
 mod entity_effects;
 mod environment;
@@ -57,6 +58,8 @@ struct GameState {
     sectors: minimium_sectors::SectorManager<SectorPayload>,
     active_sector_tickets: HashMap<PlayerId, Vec<minimium_sectors::SectorTicket>>,
     transfer_sector_tickets: HashMap<PlayerId, Vec<minimium_sectors::SectorTicket>>,
+    combat_sector_demands: HashMap<PlayerId, crate::sector_streaming::CombatSectorDemand>,
+    combat_sector_tickets: HashMap<PlayerId, Vec<minimium_sectors::SectorTicket>>,
     pending_world_inputs: Vec<(WorldInput, Option<Instant>)>,
     gameplay_events: Vec<crate::modules::GameplayEvent>,
     pending_departures: HashSet<PlayerProfileId>,
@@ -254,6 +257,8 @@ impl ServerRuntime {
                 .expect("sector cache and queue capacities are valid"),
             active_sector_tickets: HashMap::with_capacity(config.max_players),
             transfer_sector_tickets: HashMap::with_capacity(config.max_players),
+            combat_sector_demands: HashMap::with_capacity(config.max_players),
+            combat_sector_tickets: HashMap::with_capacity(config.max_players),
             pending_world_inputs: Vec::new(),
             gameplay_events: Vec::with_capacity(MAX_PENDING_WORLD_INPUTS),
             pending_departures: HashSet::new(),
@@ -395,13 +400,14 @@ impl ServerRuntime {
                     &self.game.gameplay_events,
                     Some((instance, lifecycle)),
                 );
-                if batch.rejected > 0 {
+                let outcome = self.commit_system_batch(batch)?;
+                self.report_system_batch_outcome(stage, &outcome);
+                if outcome.has_rejections() {
                     return Err(io::Error::new(
                         io::ErrorKind::InvalidData,
-                        "startup system effect limit exceeded",
+                        "startup system effect batch rejected",
                     ));
                 }
-                self.commit_system_batch(batch)?;
             }
             self.game.worlds.initialize_new_content();
             return Ok(());
@@ -415,14 +421,8 @@ impl ServerRuntime {
             &self.game.gameplay_events,
             None,
         );
-        if batch.rejected > 0 {
-            emit_system_effect_diagnostic(
-                &self.world_logger,
-                "buffer",
-                &format!("{} effects rejected by stage limits", batch.rejected),
-            );
-            return Ok(());
-        }
-        self.commit_system_batch(batch)
+        let outcome = self.commit_system_batch(batch)?;
+        self.report_system_batch_outcome(stage, &outcome);
+        Ok(())
     }
 }

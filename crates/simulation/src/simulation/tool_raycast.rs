@@ -89,7 +89,8 @@ impl World {
                         .0
                         .map(f64::from),
                 });
-        self.collision_index
+        self.spatial_geometry
+            .movement
             .tool_surface_hit(world, origin, direction, reach, blockers)
     }
 }

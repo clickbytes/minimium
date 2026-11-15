@@ -223,54 +223,7 @@ impl ServerRuntime {
                 self.apply_excavation(id, context, input);
             }
             WorldInput::Fire(id, direction) => {
-                if self.player_inventory(id).tool().is_some() {
-                    return None;
-                }
-                self.metrics.shots_fired = self.metrics.shots_fired.saturating_add(1);
-                let instance = self.game.worlds.instance_for_player(id)?;
-                let manifest = self.game.worlds.get(instance)?.manifest;
-                let outcome = {
-                    let world = &mut self.game.worlds.get_mut(instance)?.world;
-                    if manifest.planet().is_some() {
-                        world.fire_hitscan_deferred_respawn(id, direction, self.combat)?
-                    } else {
-                        world.fire_hitscan(id, direction, self.combat)?
-                    }
-                };
-                if outcome.killed && manifest.planet().is_some() {
-                    if let Some(respawn_mm) = super::gameplay_terrain::safe_planet_spawn(
-                        &self.game.worlds,
-                        instance,
-                        self.prepared_geography.as_ref(),
-                        self.excavation.soil_depth_m(),
-                    ) {
-                        let respawn = respawn_mm.0.map(|value| value as f32 / 1000.0);
-                        if let (Some(target), Some(world)) =
-                            (outcome.target_id, self.game.worlds.get_mut(instance))
-                        {
-                            world.world.set_position(target, respawn);
-                            world.world.restore_position_mm(target, respawn_mm);
-                        }
-                    }
-                }
-                let target_health = outcome.target_id.and_then(|target| {
-                    self.game
-                        .worlds
-                        .get(instance)
-                        .and_then(|owner| owner.world.player_health(target))
-                });
-                if outcome.target_id.is_some() {
-                    self.metrics.shots_hit = self.metrics.shots_hit.saturating_add(1);
-                    if outcome.killed {
-                        self.metrics.player_kills = self.metrics.player_kills.saturating_add(1);
-                    }
-                }
-                return Some(WorldEvent::Shot {
-                    instance,
-                    shooter: id,
-                    outcome,
-                    target_health,
-                });
+                return self.apply_fire_input(id, direction);
             }
             WorldInput::Chat(id, text) => {
                 if !self.operations.player_store.is_active(id) {
@@ -330,7 +283,10 @@ impl ServerRuntime {
         source_context: minimium_protocol::WorldContext,
         target_world: minimium_world::world::WorldInstanceId,
         destination: [f32; 3],
-    ) {
+    ) -> crate::modules::TransferOutcome {
+        use crate::modules::{TransferOutcome, TransferRejection};
+
+        let return_location = self.operations.player_store.return_location_for(id);
         let terrain = super::gameplay_terrain::build(
             &self.game.worlds,
             self.prepared_geography.as_ref(),
@@ -343,19 +299,29 @@ impl ServerRuntime {
                     (*instance, read as &dyn minimium_world::terrain::TerrainRead)
                 })
                 .collect();
-        let Some(offer) = self.game.worlds.prepare_entity_transfer_with_terrain(
+        let offer = self.game.worlds.prepare_entity_transfer_with_terrain(
             id,
             source_context,
             target_world,
             destination,
-            self.operations.player_store.return_location_for(id),
+            return_location,
             &reads,
-        ) else {
-            return;
+        );
+        let offer = match offer {
+            Ok(offer) => offer,
+            Err(crate::world_registry::TransferRequestRejection::AlreadyPending) => {
+                return TransferOutcome::Rejected(TransferRejection::AlreadyPending)
+            }
+            Err(crate::world_registry::TransferRequestRejection::Validation) => {
+                return TransferOutcome::Rejected(TransferRejection::Validation)
+            }
+            Err(crate::world_registry::TransferRequestRejection::IdentifierSpaceExhausted) => {
+                return TransferOutcome::Rejected(TransferRejection::IdentifierSpaceExhausted)
+            }
         };
         let Some(index) = self.connections.client_indices_by_player.get(&id).copied() else {
             self.game.worlds.cancel_transfer(id, offer.transition_id);
-            return;
+            return TransferOutcome::Rejected(TransferRejection::ClientUnavailable);
         };
         let (clock_sample, environment) = match self
             .environment_state_for_instance(offer.target_context.instance(), Instant::now())
@@ -373,28 +339,33 @@ impl ServerRuntime {
                     ],
                 );
                 self.game.worlds.cancel_transfer(id, offer.transition_id);
-                return;
+                return TransferOutcome::Rejected(TransferRejection::EnvironmentUnavailable);
             }
         };
-        if let Some(client) = self.connections.clients.get_mut(index) {
-            if !queue_message(
-                client,
-                &mut self.metrics,
-                minimium_protocol::ServerMessage::TransitionPrepare {
-                    transition_id: offer.transition_id,
-                    source_context: offer.source_context,
-                    target_context: offer.target_context,
-                    map_fingerprint: offer.map_fingerprint,
-                    destination: offer.destination,
-                    destination_mm: offer.destination_mm,
-                    manifest: offer.manifest,
-                    clock_sample,
-                    environment,
-                },
-            ) {
-                self.game.worlds.cancel_transfer(id, offer.transition_id);
-                self.metrics.dropped_messages = self.metrics.dropped_messages.saturating_add(1);
-            }
+        let Some(client) = self.connections.clients.get_mut(index) else {
+            self.game.worlds.cancel_transfer(id, offer.transition_id);
+            return TransferOutcome::Rejected(TransferRejection::ClientUnavailable);
+        };
+        if queue_message(
+            client,
+            &mut self.metrics,
+            minimium_protocol::ServerMessage::TransitionPrepare {
+                transition_id: offer.transition_id,
+                source_context: offer.source_context,
+                target_context: offer.target_context,
+                map_fingerprint: offer.map_fingerprint,
+                destination: offer.destination,
+                destination_mm: offer.destination_mm,
+                manifest: offer.manifest,
+                clock_sample,
+                environment,
+            },
+        ) {
+            TransferOutcome::Started
+        } else {
+            self.game.worlds.cancel_transfer(id, offer.transition_id);
+            self.metrics.dropped_messages = self.metrics.dropped_messages.saturating_add(1);
+            TransferOutcome::Rejected(TransferRejection::Backpressure)
         }
     }
 
