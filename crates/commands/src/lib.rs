@@ -18,8 +18,8 @@ pub use property::{
     PropertyRequest, PropertySource, PropertySpec, PropertyType, PropertyValue,
 };
 pub use registry::{
-    format_command_help, CommandArgumentSpec, CommandArgumentType, CommandOutcome, CommandRegistry,
-    CommandRegistryError, CommandSpec,
+    format_command_help, write_command_help, CommandArgumentSpec, CommandArgumentType,
+    CommandOutcome, CommandRegistry, CommandRegistryError, CommandSpec,
 };
 pub use syntax::{
     format_command_arguments, lex_command_line, lex_command_line_with_spans, CommandToken,

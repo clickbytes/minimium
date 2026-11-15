@@ -1,4 +1,5 @@
 //! Small static command metadata registry shared by interactive front ends.
+use std::fmt::Write as _;
 
 /// One command declaration and its domain-owned parser.
 pub struct CommandSpec<T, E> {
@@ -79,7 +80,17 @@ impl<T, E> CommandSpec<T, E> {
 }
 
 pub fn format_command_help(usage: &str, arguments: &[CommandArgumentSpec]) -> String {
-    let mut output = usage.to_owned();
+    let mut output = String::new();
+    let _ = write_command_help(&mut output, usage, arguments);
+    output
+}
+
+pub fn write_command_help(
+    output: &mut impl std::fmt::Write,
+    usage: &str,
+    arguments: &[CommandArgumentSpec],
+) -> std::fmt::Result {
+    output.write_str(usage)?;
     for argument in arguments {
         let optional = if argument.optional { "optional " } else { "" };
         let rest = if argument.rest {
@@ -87,28 +98,31 @@ pub fn format_command_help(usage: &str, arguments: &[CommandArgumentSpec]) -> St
         } else {
             ""
         };
-        let choices = argument.choices.map(|values| values.join("|"));
         let constraints = argument.constraints.unwrap_or("");
-        let unit = argument
-            .unit
-            .map(|value| format!(" {value}"))
-            .unwrap_or_default();
-        let choices = choices
-            .map(|value| format!(" choices={value}"))
-            .unwrap_or_default();
-        let constraints = if constraints.is_empty() {
-            String::new()
-        } else {
-            format!(" {constraints}")
-        };
-        output.push_str(&format!(
-            "\n  {}: {optional}{}{unit}{constraints}{choices}{rest} — {}",
+        write!(
+            output,
+            "\n  {}: {optional}{}",
             argument.name,
-            argument.value_type.label(),
-            argument.description
-        ));
+            argument.value_type.label()
+        )?;
+        if let Some(unit) = argument.unit {
+            write!(output, " {unit}")?;
+        }
+        if !constraints.is_empty() {
+            write!(output, " {constraints}")?;
+        }
+        if let Some(choices) = argument.choices {
+            output.write_str(" choices=")?;
+            for (index, choice) in choices.iter().enumerate() {
+                if index != 0 {
+                    output.write_str("|")?;
+                }
+                output.write_str(choice)?;
+            }
+        }
+        write!(output, "{rest} — {}", argument.description)?;
     }
-    output
+    Ok(())
 }
 
 impl<T, E> Copy for CommandSpec<T, E> {}

@@ -14,6 +14,7 @@ use std::{
 };
 
 mod status;
+pub use status::{PersistenceStatus, SaveStatus};
 
 use status::SaveBookkeeping;
 
@@ -140,8 +141,8 @@ impl PersistenceWorker {
         self.status.has_pending_save()
     }
 
-    pub fn summary(&self) -> String {
-        self.status.summary()
+    pub fn status(&self) -> PersistenceStatus {
+        self.status.snapshot()
     }
 
     pub fn shutdown_until(

@@ -10,12 +10,18 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 const SYSTEM_CLOCK_CHECK_MS: i128 = 250;
 
+#[derive(Clone, Debug)]
 pub(crate) struct ClockPropertySnapshot {
+    pub(crate) clock_id: u64,
+    pub(crate) session_nonce: [u8; minimium_environment::time::SESSION_NONCE_BYTES],
     pub(crate) mode: &'static str,
-    pub(crate) scale: String,
+    pub(crate) rate_ppm: u64,
     pub(crate) offline_policy: &'static str,
     pub(crate) utc_ms: i64,
     pub(crate) revision: u64,
+    pub(crate) fault: &'static str,
+    pub(crate) correction_ms: Option<i128>,
+    pub(crate) dirty_revision: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -192,45 +198,6 @@ impl EnvironmentClock {
         }
     }
 
-    pub(crate) fn status(&self, now: MonotonicMs) -> String {
-        let world_utc_ms = self
-            .sample(now)
-            .map(|sample| sample.world_utc_ms().get())
-            .unwrap_or(self.last_valid_world_time.get());
-        let fault = self.fault.map(ClockFault::code).unwrap_or_else(|| {
-            if matches!(
-                evaluate_clock(self.anchor, now),
-                Err(TimeError::OutOfSupportedRange(_))
-            ) {
-                "time_range_exhausted_pending"
-            } else {
-                "none"
-            }
-        });
-        let correction = self
-            .last_correction_ms
-            .map(format_correction)
-            .unwrap_or_else(|| "none".to_owned());
-        let dirty = self
-            .dirty_revision
-            .map(|revision| revision.get().to_string())
-            .unwrap_or_else(|| "none".to_owned());
-        format!(
-            "clock_id={} revision={} session_nonce={} mode={} world_utc_ms={} rate_ppm={} rate={} offline_policy={} fault={} last_utc_correction_ms={} sync_dirty_revision={}",
-            self.anchor.clock_id().get(),
-            self.anchor.revision().get(),
-            nonce_hex(self.session_nonce),
-            mode_name(self.anchor.mode()),
-            world_utc_ms,
-            self.anchor.rate_ppm().get(),
-            format_scale(self.anchor.rate_ppm()),
-            policy_name(self.anchor.offline_policy()),
-            fault,
-            correction,
-            dirty,
-        )
-    }
-
     pub(crate) fn sample(&self, now: MonotonicMs) -> Result<ClockSample, EnvironmentClockError> {
         if self.fault == Some(ClockFault::RevisionExhausted) {
             return Err(EnvironmentClockError::fault(
@@ -247,11 +214,25 @@ impl EnvironmentClock {
     ) -> Result<ClockPropertySnapshot, EnvironmentClockError> {
         let sample = self.sample(now)?;
         Ok(ClockPropertySnapshot {
+            clock_id: sample.clock_id().get(),
+            session_nonce: *self.session_nonce.as_bytes(),
             mode: mode_name(sample.mode()),
-            scale: format_scale(sample.rate_ppm()),
+            rate_ppm: sample.rate_ppm().get(),
             offline_policy: policy_name(sample.offline_policy()),
             utc_ms: sample.world_utc_ms().get(),
             revision: sample.revision().get(),
+            fault: self.fault.map(ClockFault::code).unwrap_or_else(|| {
+                if matches!(
+                    evaluate_clock(self.anchor, now),
+                    Err(TimeError::OutOfSupportedRange(_))
+                ) {
+                    "time_range_exhausted_pending"
+                } else {
+                    "none"
+                }
+            }),
+            correction_ms: self.last_correction_ms,
+            dirty_revision: self.dirty_revision.map(|revision| revision.get()),
         })
     }
 
@@ -437,23 +418,4 @@ fn policy_name(policy: OfflinePolicy) -> &'static str {
         OfflinePolicy::Pause => "pause",
         OfflinePolicy::Advance => "advance",
     }
-}
-
-fn format_scale(rate: TimeScalePpm) -> String {
-    let whole = rate.get() / 1_000_000;
-    let fraction = rate.get() % 1_000_000;
-    format!("{whole}.{fraction:06}x")
-}
-
-fn format_correction(offset_ms: i128) -> String {
-    format!("{offset_ms:+}")
-}
-
-fn nonce_hex(nonce: SessionNonce) -> String {
-    let mut text = String::with_capacity(32);
-    for byte in nonce.as_bytes() {
-        use std::fmt::Write as _;
-        let _ = write!(text, "{byte:02x}");
-    }
-    text
 }

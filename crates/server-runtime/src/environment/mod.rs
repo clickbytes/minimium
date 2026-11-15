@@ -1,5 +1,6 @@
 mod climate_config;
 mod clock;
+pub(crate) use clock::ClockPropertySnapshot;
 mod config;
 mod error;
 mod profiles;

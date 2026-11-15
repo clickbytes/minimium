@@ -15,6 +15,12 @@ Coordinates world, simulation, environment, protocol, transport, storage, platfo
 ## Data flow
 
 The process preflights snapshot and excavation journal versions before creating its data lock, composes and loads saved world state read-only, then acquires the lock and revalidates persistent format headers and world seed/planet inputs before any startup cleanup or writes. The application owns saved planet and snapshot seed discovery and requests randomness only when no seed is available. The world impact owner registers its ServerOnly body descriptor in the base component registry before application module schemas; the complete registry is ready before `PlayerStore::load`. The storage parser validates saved component types and versions before publishing `LoadedState`. The runtime restores the complete entity set, counters and initialization markers into staged world stores, then applies bounded network inputs on the owner lane. Live entity effects also stage ordered neutral changes alongside cloned world stores; storage prepares encoded-record and aggregate-payload reservations, and the owner commits both candidates in one operation before later effects run. Workers publish typed results back to the runtime; immutable, revisioned save snapshots cross into storage.
+
+Administrative execution returns a typed success payload or a typed failure code and bounded detail. Built-in commands return structured reports and immutable owner snapshots; the shared command output adapter formats them for both terminal and admin responses. Only extension module text uses the bounded opaque text payload. The admin wire envelope, permissions and stable error codes remain owned by their existing adapters.
+
+Rendered command text, module text and failure details are capped at 8 KiB with a UTF-8-safe `[truncated]` marker. This leaves room for worst-case JSON escaping within the existing 64 KiB admin reply cap. List snapshots have separate row caps and report truncation explicitly; metrics client rows are capped at 512.
+
+Property reads preserve their existing successful response for unknown keys and unavailable clock properties through typed `UnknownProperty` and `UnavailableProperty` query results. Mutation validation failures continue to use the established typed error codes.
 The world registry validates every composed manifest before publishing an instance:
 generated content requires revision 6 and the matching generator digest; authored
 content must additionally match the materialized map fingerprint.

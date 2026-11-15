@@ -6,7 +6,7 @@ Owns generic command parsing, typed parse outcomes and errors, property metadata
 
 ## Public API
 
-`CommandRegistry<T, E>` and `CommandSpec<T, E>` provide longest-name/alias matching, atomic name registration, parser dispatch and declarative argument metadata. `CommandArgumentSpec` records each argument's name, type, optional/rest behavior, enum choices or constraints, unit and description. Hosts render command help from these descriptors. `CommandOutcome` distinguishes an unknown name from a recognized command with invalid arguments. `PropertyRegistry` validates and lists static property descriptors without owning values. `PropertyRequest` parses `get`, `set`, `reset`, `list` and `help`; the requesting host checks access and calls the domain handler. `CommandError` carries a stable code, subject, reason and usage.
+`CommandRegistry<T, E>` and `CommandSpec<T, E>` provide longest-name/alias matching, atomic name registration, parser dispatch and declarative argument metadata. `CommandArgumentSpec` records each argument's name, type, optional/rest behavior, enum choices or constraints, unit and description. Hosts render command help from these descriptors with `write_command_help` into a bounded writer or `format_command_help` into a `String`. `CommandOutcome` distinguishes an unknown name from a recognized command with invalid arguments. `PropertyRegistry` validates and lists static property descriptors without owning values. `PropertyRequest` parses `get`, `set`, `reset`, `list` and `help`; the requesting host checks access and calls the domain handler. `CommandError` carries a stable code, subject, reason and usage.
 
 ## Dependencies
 
