@@ -56,40 +56,8 @@ impl TerrainInputs {
         if count == 0 {
             return Vec::new();
         }
-        let neighbors = sector.neighbors_with_count(count);
-        store
-            .chunks()
-            .filter_map(|chunk| {
-                let coordinates = chunk.key().coordinates;
-                let nearby = (0..8).any(|corner| {
-                    let point = std::array::from_fn(|axis| {
-                        (f64::from(coordinates[axis]) * 32.0
-                            + if corner & (1 << axis) == 0 { 0.0 } else { 32.0 })
-                            * 0.5
-                    });
-                    let length = point.iter().map(|v| v * v).sum::<f64>().sqrt();
-                    if length < 1.0 {
-                        return true;
-                    }
-                    let candidate =
-                        minimium_world::world::PlanetSectorKey::from_direction_with_count(
-                            point.map(|v| (v / length) as f32),
-                            count,
-                        );
-                    if candidate == sector || neighbors.contains(&candidate) {
-                        return true;
-                    }
-                    if span > 1 && candidate.face() == sector.face() {
-                        let (u, v) = sector.coordinates();
-                        let (cu, cv) = candidate.coordinates();
-                        cu.abs_diff(u) <= span && cv.abs_diff(v) <= span
-                    } else {
-                        false
-                    }
-                });
-                nearby.then_some(chunk.key())
-            })
-            .collect()
+        let (u, v) = sector.coordinates();
+        crate::volume_chunk_keys_near_region(store, sector.face(), u, v, span.max(1), count)
     }
 
     fn volume_sector_revision(&self, key: SectorKey, span: u16, count: u16) -> u64 {

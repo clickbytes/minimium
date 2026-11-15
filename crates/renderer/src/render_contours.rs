@@ -1,10 +1,10 @@
-//! Bounded prepass that gives excavation seams the same base LOD mesh that is
-//! rendered, plus a one-sector guard ring for closed contours at patch edges.
+//! Bounded prepass that gives excavation seams the rendered base LOD over the
+//! exact projected chunk footprint and its one-sector UV guard.
 use crate::render_patch_cache::RenderPatchCache;
 use minimium_procgen::SectorGeometry;
 use minimium_world::world::{MapTriangle, PlanetSectorKey, SectorKey, WorldManifest};
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{BTreeSet, HashMap},
     hash::{Hash, Hasher},
     sync::Arc,
 };
@@ -95,7 +95,23 @@ pub(crate) fn prepare(
         let target = key(*region);
         needed.insert(target);
         let mut target_sources = BTreeSet::from([target]);
-        for neighbor in boundary_neighbors(*region, count) {
+        let contour_sectors = inputs
+            .volumes
+            .as_deref()
+            .map(|store| {
+                let (u, v) = region.sector.coordinates();
+                minimium_procgen::volume_contour_sectors(
+                    store,
+                    region.sector.face(),
+                    u,
+                    v,
+                    region.span,
+                    count,
+                )
+            })
+            .transpose()?
+            .unwrap_or_default();
+        for neighbor in contour_sectors {
             if let Some(source) = coverage.get(&neighbor) {
                 target_sources.insert(*source);
                 needed.insert(*source);
@@ -241,37 +257,4 @@ fn generate_base(
             inputs,
         ),
     }
-}
-
-fn covers(region: RegionKey, sector: PlanetSectorKey) -> bool {
-    if region.sector.face() != sector.face() {
-        return false;
-    }
-    let (u, v) = region.sector.coordinates();
-    let (su, sv) = sector.coordinates();
-    su >= u && su < u.saturating_add(region.span) && sv >= v && sv < v.saturating_add(region.span)
-}
-
-fn boundary_neighbors(region: RenderRegion, count: u16) -> HashSet<PlanetSectorKey> {
-    let (u, v) = region.sector.coordinates();
-    let mut result = HashSet::new();
-    for offset in 0..region.span {
-        for (x, y) in [
-            (u + offset, v),
-            (u + offset, v + region.span - 1),
-            (u, v + offset),
-            (u + region.span - 1, v + offset),
-        ] {
-            let Some(edge) = PlanetSectorKey::new(region.sector.face(), x, y) else {
-                continue;
-            };
-            for neighbor in minimium_procgen::planet_sector_neighborhood_with_diagonals(edge, count)
-            {
-                if !covers(key(region), neighbor) {
-                    result.insert(neighbor);
-                }
-            }
-        }
-    }
-    result
 }

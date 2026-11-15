@@ -97,7 +97,7 @@ pub fn materialize_world_sector_with_geography_and_soil(
             crate::generate_planet_sector_with_geography(manifest, planet, inputs.clone());
         geometry.triangles.extend(generated.triangles);
         geometry.object_triangles.extend(generated.object_triangles);
-        if inputs.volumes.is_some() {
+        if let Some(store) = inputs.volumes.as_deref() {
             let mut terrain = crate::PlanetTerrain::new(
                 manifest.generation(),
                 crate::planet_surface_for(manifest),
@@ -107,9 +107,15 @@ pub fn materialize_world_sector_with_geography_and_soil(
             if let Some(definition) = manifest.planet() {
                 terrain = terrain.with_definition(definition);
             }
-            let mut contour_source = Vec::new();
             let count = crate::planet_sector_count(manifest);
-            for adjacent in crate::planet_sector_neighborhood_with_diagonals(planet, count) {
+            let (u, v) = planet.coordinates();
+            let contour_sectors =
+                crate::volume_contour_sectors(store, planet.face(), u, v, 1, count)?;
+            if contour_sectors.is_empty() {
+                return Ok(geometry);
+            }
+            let mut contour_source = Vec::new();
+            for adjacent in contour_sectors {
                 let context = crate::generate_planet_sector_with_geography(
                     manifest,
                     adjacent,

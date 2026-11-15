@@ -1,5 +1,5 @@
 use minimium_world::world::{
-    PlanetEdge, PlanetSectorKey, SectorKey, WorldManifest, WorldTopology, PLANET_SECTORS_PER_FACE,
+    PlanetSectorKey, SectorKey, WorldManifest, WorldTopology, PLANET_SECTORS_PER_FACE,
 };
 
 pub const DUNGEON_SECTOR_EDGE: u16 = 16;
@@ -9,20 +9,40 @@ pub fn planet_sector_neighborhood_with_diagonals(
     center: PlanetSectorKey,
     count: u16,
 ) -> Vec<PlanetSectorKey> {
-    let cardinal = center.neighbors_with_count(count);
-    let mut result = vec![center];
-    result.extend(cardinal);
-    for (index, neighbor) in cardinal.into_iter().enumerate() {
-        let sides = if index < 2 {
-            [PlanetEdge::VNegative, PlanetEdge::VPositive]
-        } else {
-            [PlanetEdge::UNegative, PlanetEdge::UPositive]
-        };
-        result.extend(sides.map(|edge| neighbor.neighbor_with_count(edge, count)));
+    if count == 0 {
+        return vec![center];
     }
-    result.sort_unstable();
-    result.dedup();
-    result
+    let cardinal = center.neighbors_with_count(count);
+    let mut candidates = vec![center];
+    candidates.extend(cardinal);
+    for neighbor in cardinal {
+        candidates.extend(neighbor.neighbors_with_count(count));
+    }
+    candidates.sort_unstable();
+    candidates.dedup();
+    let corners = sector_corners(center, count);
+    candidates
+        .into_iter()
+        .filter(|candidate| {
+            *candidate == center
+                || sector_corners(*candidate, count)
+                    .iter()
+                    .any(|corner| corners.contains(corner))
+        })
+        .collect()
+}
+
+fn sector_corners(
+    sector: PlanetSectorKey,
+    count: u16,
+) -> [minimium_world::world::CubeSampleKey; 4] {
+    [
+        sector.cube_sample_with_count(0, 0, 1, count),
+        sector.cube_sample_with_count(1, 0, 1, count),
+        sector.cube_sample_with_count(1, 1, 1, count),
+        sector.cube_sample_with_count(0, 1, 1, count),
+    ]
+    .map(|corner| corner.expect("valid sector corner"))
 }
 
 /// Returns the server/client collision neighborhood for a topology.

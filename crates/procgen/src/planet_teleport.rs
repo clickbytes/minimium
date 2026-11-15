@@ -54,17 +54,34 @@ fn planet_position_at_direction(
     } else {
         Vec::new()
     };
-    let mut bases = std::collections::BTreeMap::new();
-    bases.insert(
-        key,
-        generate_planet_sector_with_geography(manifest, key, inputs.clone()),
-    );
-    for adjacent in &neighbors {
-        bases.insert(
-            *adjacent,
-            generate_planet_sector_with_geography(manifest, *adjacent, inputs.clone()),
-        );
+    let mut base_sectors = std::collections::BTreeSet::from([key]);
+    base_sectors.extend(neighbors.iter().copied());
+    if let Some(store) = inputs.volumes.as_deref() {
+        let integrated_targets = if safe_spawn {
+            std::iter::once(key)
+                .chain(neighbors.iter().copied())
+                .collect::<Vec<_>>()
+        } else {
+            vec![key]
+        };
+        for target in integrated_targets {
+            let (u, v) = target.coordinates();
+            base_sectors
+                .extend(crate::volume_contour_sectors(store, target.face(), u, v, 1, count).ok()?);
+            if base_sectors.len() > 256 {
+                return None;
+            }
+        }
     }
+    let bases: std::collections::BTreeMap<_, _> = base_sectors
+        .into_iter()
+        .map(|sector| {
+            (
+                sector,
+                generate_planet_sector_with_geography(manifest, sector, inputs.clone()),
+            )
+        })
+        .collect();
     let contours: Vec<_> = bases
         .values()
         .flat_map(|geometry| geometry.triangles.iter().copied())
@@ -149,14 +166,7 @@ fn bounded_neighbors(
     direction: [f32; 3],
     count: u16,
 ) -> Vec<PlanetSectorKey> {
-    let cardinal = center.neighbors_with_count(count);
-    let mut candidates = vec![center];
-    candidates.extend(cardinal.iter().copied());
-    for (index, neighbor) in cardinal.iter().copied().enumerate() {
-        let side_edges = if index < 2 { [2, 3] } else { [0, 1] };
-        let diagonal = neighbor.neighbors_with_count(count);
-        candidates.extend(side_edges.map(|edge| diagonal[edge]));
-    }
+    let mut candidates = crate::planet_sector_neighborhood_with_diagonals(center, count);
     candidates.sort_unstable();
     candidates.dedup();
     candidates.retain(|key| *key != center);

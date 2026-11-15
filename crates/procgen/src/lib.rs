@@ -40,7 +40,8 @@ pub use earth_observer::earth_height_reference;
 pub use error::{GenerationError, GenerationErrorKind};
 pub use excavation_geometry::{
     integrate_volume_region_with_contours, integrate_volume_sector,
-    integrate_volume_sector_with_contours, validate_volume_geometry,
+    integrate_volume_sector_with_contours, validate_volume_geometry, volume_chunk_keys_near_region,
+    volume_contour_sectors,
 };
 pub use generator_contract::{generator_digest, validate_world_manifest};
 pub use geography::{EarthSampleError, PreparedGeography};

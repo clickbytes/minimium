@@ -3,13 +3,165 @@ use crate::{
     planet_sector_count, sector_clip, terrain_seam::replace_chunk_domain, ExcavationGeometryError,
     PlanetTerrain, SectorGeometry,
 };
-use minimium_terrain::{TerrainMesh, TerrainVertex};
+use minimium_terrain::{TerrainMesh, TerrainStore, TerrainVertex};
 use minimium_world::{
     terrain::{TerrainChunkKey, TerrainMaterial, TERRAIN_CHUNK_M},
     world::{
         MapSurfaceKind, MapSurfaceVertex, MapTriangle, PlanetSectorKey, SectorKey, WorldManifest,
     },
 };
+
+const MAX_VOLUME_CONTOUR_SECTORS: usize = 128;
+
+/// The exact voxel keys used by both MC replacement and overlay invalidation.
+pub fn volume_chunk_keys_near_region(
+    store: &TerrainStore,
+    face: minimium_world::world::PlanetFace,
+    u: u16,
+    v: u16,
+    span: u16,
+    count: u16,
+) -> Vec<TerrainChunkKey> {
+    if span == 0 || count == 0 {
+        return Vec::new();
+    }
+    let mut keys: Vec<_> = store
+        .chunks()
+        .map(|chunk| chunk.key())
+        .filter(|key| chunk_near_region(*key, face, u, v, span, count))
+        .collect();
+    let core = keys.clone();
+    for key in core {
+        for axis in 0..3 {
+            for side in [-1, 1] {
+                let mut adjacent = key.coordinates;
+                adjacent[axis] += side;
+                let neighbor = TerrainChunkKey {
+                    world: key.world,
+                    coordinates: adjacent,
+                };
+                if store.chunk(neighbor).is_some() && !keys.contains(&neighbor) {
+                    keys.push(neighbor);
+                }
+            }
+        }
+    }
+    keys.sort_unstable();
+    keys
+}
+
+/// Base sectors that can contribute contours on the selected voxel domains.
+/// For a positive face denominator, each projected UV coordinate is linear
+/// fractional over the box, so its extrema occur at one of the eight corners.
+pub fn volume_contour_sectors(
+    store: &TerrainStore,
+    face: minimium_world::world::PlanetFace,
+    u: u16,
+    v: u16,
+    span: u16,
+    count: u16,
+) -> Result<Vec<PlanetSectorKey>, ExcavationGeometryError> {
+    let mut sectors = std::collections::BTreeSet::new();
+    let keys = volume_chunk_keys_near_region(store, face, u, v, span, count);
+    for key in &keys {
+        let origin = key.origin_m();
+        let corners: [[f64; 3]; 8] = std::array::from_fn(|corner| {
+            std::array::from_fn(|axis| {
+                origin[axis]
+                    + if corner & (1 << axis) == 0 {
+                        0.0
+                    } else {
+                        TERRAIN_CHUNK_M
+                    }
+            })
+        });
+        let mut projected = false;
+        for candidate_face in minimium_world::world::PlanetFace::ALL {
+            let (normal, u_axis, v_axis) = face_basis(candidate_face);
+            let normal_values = corners.map(|point| dot_axes(point, normal));
+            let u_values = corners.map(|point| dot_axes(point, u_axis));
+            let v_values = corners.map(|point| dot_axes(point, v_axis));
+            let max_normal = normal_values
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, f64::max);
+            let min_normal = normal_values.iter().copied().fold(f64::INFINITY, f64::min);
+            let min_abs = |values: &[f64; 8]| {
+                let minimum = values.iter().copied().fold(f64::INFINITY, f64::min);
+                let maximum = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                if minimum <= 0.0 && maximum >= 0.0 {
+                    0.0
+                } else {
+                    minimum.abs().min(maximum.abs())
+                }
+            };
+            if max_normal <= 0.0
+                || max_normal < min_abs(&u_values)
+                || max_normal < min_abs(&v_values)
+            {
+                continue;
+            }
+            if min_normal <= 0.0 {
+                return Err(ExcavationGeometryError::UnavailableSurface);
+            }
+            projected = true;
+            let u_ratio =
+                std::array::from_fn::<_, 8, _>(|index| u_values[index] / normal_values[index]);
+            let v_ratio =
+                std::array::from_fn::<_, 8, _>(|index| v_values[index] / normal_values[index]);
+            let u_min = u_ratio
+                .iter()
+                .copied()
+                .fold(f64::INFINITY, f64::min)
+                .clamp(-1.0, 1.0);
+            let u_max = u_ratio
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, f64::max)
+                .clamp(-1.0, 1.0);
+            let v_min = v_ratio
+                .iter()
+                .copied()
+                .fold(f64::INFINITY, f64::min)
+                .clamp(-1.0, 1.0);
+            let v_max = v_ratio
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, f64::max)
+                .clamp(-1.0, 1.0);
+            if u_min > u_max || v_min > v_max {
+                continue;
+            }
+            let coordinate = |ratio: f64| {
+                ((((ratio + 1.0) * 0.5 * f64::from(count)).floor() as i64)
+                    .clamp(0, i64::from(count - 1))) as u16
+            };
+            let lo_u = coordinate(u_min).saturating_sub(1);
+            let hi_u = coordinate(u_max).saturating_add(1).min(count - 1);
+            let lo_v = coordinate(v_min).saturating_sub(1);
+            let hi_v = coordinate(v_max).saturating_add(1).min(count - 1);
+            for sector_u in lo_u..=hi_u {
+                for sector_v in lo_v..=hi_v {
+                    let Some(sector) = PlanetSectorKey::new(candidate_face, sector_u, sector_v)
+                    else {
+                        continue;
+                    };
+                    sectors.insert(sector);
+                    if sectors.len() > MAX_VOLUME_CONTOUR_SECTORS {
+                        return Err(ExcavationGeometryError::UnavailableSurface);
+                    }
+                }
+            }
+        }
+        if !projected {
+            return Err(ExcavationGeometryError::UnavailableSurface);
+        }
+    }
+    if sectors.is_empty() && !keys.is_empty() {
+        return Err(ExcavationGeometryError::UnavailableSurface);
+    }
+    Ok(sectors.into_iter().collect())
+}
 
 /// Replaces the old terrain surface with voxel Marching Cubes and checked zipper
 /// strips for the chunks projected into this sector's guarded neighborhood.
@@ -73,30 +225,7 @@ pub fn integrate_volume_region_with_contours(
     let Some(base) = terrain.volume_base(soil_depth_m) else {
         return Err(ExcavationGeometryError::UnavailableSurface);
     };
-    let candidates: Vec<_> = store.chunks().map(|c| c.key()).collect();
-    let mut keys: Vec<_> = candidates
-        .iter()
-        .copied()
-        .filter(|key| chunk_near_region(*key, face, u, v, span, count))
-        .collect();
-    // Include the complete stored face-neighborhood so mesh and contour edges
-    // use canonical samples even when a chunk center lies across a sector edge.
-    let core = keys.clone();
-    for key in core {
-        for axis in 0..3 {
-            for side in [-1, 1] {
-                let mut adjacent = key.coordinates;
-                adjacent[axis] += side;
-                let neighbor = TerrainChunkKey {
-                    world: key.world,
-                    coordinates: adjacent,
-                };
-                if store.chunk(neighbor).is_some() && !keys.contains(&neighbor) {
-                    keys.push(neighbor);
-                }
-            }
-        }
-    }
+    let mut keys = volume_chunk_keys_near_region(store, face, u, v, span, count);
     if keys.is_empty() {
         return Ok(base_geometry.clone());
     }
@@ -182,29 +311,41 @@ fn chunk_near_region(
     let u_max = -1.0 + 2.0 * f64::from(u + span) / f64::from(count) + 2.0 / f64::from(count);
     let v_min = -1.0 + 2.0 * f64::from(v) / f64::from(count) - 2.0 / f64::from(count);
     let v_max = -1.0 + 2.0 * f64::from(v + span) / f64::from(count) + 2.0 / f64::from(count);
-    let minimum = key.origin_m();
-    (0..8).any(|corner| {
-        let world = std::array::from_fn(|axis| {
-            minimum[axis]
+    let origin = key.origin_m();
+    let corners: [[f64; 3]; 8] = std::array::from_fn(|corner| {
+        std::array::from_fn(|axis| {
+            origin[axis]
                 + if corner & (1 << axis) == 0 {
                     0.0
                 } else {
                     TERRAIN_CHUNK_M
                 }
-        });
-        let length = world.iter().map(|v| v * v).sum::<f64>().sqrt();
-        if length < 1.0 {
-            return true;
-        }
-        let point = world.map(|v| v / length);
-        let denominator = dot_axes(point, normal);
-        if denominator <= 0.0 {
-            return false;
-        }
-        let pu = dot_axes(point, u_axis) / denominator;
-        let pv = dot_axes(point, v_axis) / denominator;
-        pu >= u_min && pu <= u_max && pv >= v_min && pv <= v_max
-    })
+        })
+    });
+    let normal_values = corners.map(|point| dot_axes(point, normal));
+    if normal_values
+        .iter()
+        .copied()
+        .fold(f64::NEG_INFINITY, f64::max)
+        <= 0.0
+    {
+        return false;
+    }
+    // These independent half-space maxima conservatively detect intersection
+    // of the projected AABB with the region rectangle, including interior hits
+    // where none of the AABB corners lies inside the rectangle.
+    let linear_max = |axis_a: [i8; 3], scale_a: f64, axis_b: [i8; 3], scale_b: f64| {
+        corners
+            .iter()
+            .map(|point| scale_a * dot_axes(*point, axis_a) + scale_b * dot_axes(*point, axis_b))
+            .fold(f64::NEG_INFINITY, f64::max)
+    };
+    let possible = |axis: [i8; 3], lo: f64, hi: f64| {
+        linear_max(axis, 1.0, normal, -lo) >= 0.0 && linear_max(normal, hi, axis, -1.0) >= 0.0
+    };
+    let u_possible = possible(u_axis, u_min, u_max);
+    let v_possible = possible(v_axis, v_min, v_max);
+    u_possible && v_possible
 }
 
 fn face_basis(face: minimium_world::world::PlanetFace) -> ([i8; 3], [i8; 3], [i8; 3]) {

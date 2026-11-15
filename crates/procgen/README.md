@@ -28,8 +28,8 @@ assign the same grass-dominated mixture to all low-elevation land.
 
 See the re-exports in `src/lib.rs`, including sector materialization, planet sampling, dungeon generation, generator contract validation and addressable randomness. `PreparedGeography` is the host port for immutable geographic samples; `PlanetTerrain::with_geography` carries it into terrain and weather sampling. Sample world composition belongs to `minimium-game-sample`.
 
-Excavation collision preflight and render contour preparation share an
-8-connected sector neighborhood, including diagonals across cube-face corners.
+Excavation collision preflight and render contour preparation share projected
+chunk bounds. Neighbor queries match canonical cube corners across face seams.
 
 ## Dependencies
 
@@ -109,6 +109,11 @@ open, unmatched or degenerate transitions. Render workers use
 triangles. Transition strips are intersection-checked against other loop pairs
 before they can be returned for publication. `terrain_clip::clip_triangle_outside_boxes`
 is the shared exact triangle/voxel-box subtraction hook for renderer sea meshes.
+Collision, render invalidation and contour preparation share the same chunk-key
+selector. Contour source sectors come from exact cube-face UV bounds of each
+selected chunk AABB (with positive-denominator extrema at its corners), expanded
+by one sector; center-crossing or over-limit footprints fail closed. Render
+contours use selected LOD bases where available and bounded guard bases elsewhere.
 Teleport surface queries intersect the integrated mesh and choose the outermost
 exposed hit; the runtime applies its player clearance above that point. GPU
 runtime acceptance is pending.
