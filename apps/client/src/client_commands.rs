@@ -2,15 +2,17 @@
 //!
 //! [`parse_command`] accepts the union of the terminal and F1 console commands.
 //! A startup registry is the source for help, aliases, and completion. Execution
-//! queues protocol messages directly and reports UI/process work as a typed
+//! sends world-action intents through the application executor and reports UI/process work as a typed
 //! [`FrontendAction`], leaving each front end in control of its own event loop.
 
+#[cfg(feature = "desktop")]
+use crate::application::SuppressionReason;
+use crate::application::{ClientAction, ClientActionExecutor, LocalActionOutcome};
 use crate::{options::ThreadLane, session::QueueError};
 use minimium_commands::{
     lex_command_line_with_spans, CommandError, CommandErrorCode, CommandOutcome,
     CommandRegistry as SharedCommandRegistry, CommandSpec as SharedCommandSpec,
 };
-use minimium_protocol::{ClientMessage, ClientWorldInput};
 use minimium_renderer::quality::SkyQuality;
 use std::sync::OnceLock;
 
@@ -239,6 +241,7 @@ pub(crate) fn parse_command_typed(input: &str) -> Result<Option<ClientCommand>, 
 
 pub(crate) struct CommandContext<'a> {
     pub connection: &'a mut minimium_client_runtime::ConnectionController,
+    pub action_executor: &'a mut ClientActionExecutor,
     /// Direction used for `fire`; terminal callers pass [1, 0, 0].
     pub fire_direction: [f32; 3],
     pub player_position: Option<[f32; 3]>,
@@ -283,16 +286,13 @@ pub(crate) enum FrontendAction {
 pub(crate) enum CommandResult {
     Sent,
     QueueError(QueueError),
+    #[cfg(feature = "desktop")]
+    Suppressed(SuppressionReason),
     Action(FrontendAction),
 }
 
-enum OutgoingCommand {
-    Control(ClientMessage),
-    World(ClientWorldInput),
-}
-
 pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) -> CommandResult {
-    let message = match command {
+    let action = match command {
         ClientCommand::AtmosphereDebug(mode) => {
             return CommandResult::Action(FrontendAction::Property(ClientPropertyCommand::Set(
                 ClientPropertyValue::AtmosphereDebug(mode),
@@ -307,7 +307,7 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
                     minimium_localization::UiNotice::AltitudeRequiresFlight,
                 ));
             }
-            OutgoingCommand::World(ClientWorldInput::SetAltitude { km })
+            ClientAction::SetAltitude { km }
         }
         ClientCommand::ConfigSave(path) => {
             return CommandResult::Action(FrontendAction::ConfigSave(path))
@@ -334,20 +334,18 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
                 ClientPropertyValue::CloudDetail(level),
             )))
         }
-        ClientCommand::Ping => OutgoingCommand::Control(ClientMessage::Ping),
-        ClientCommand::Move(direction) => OutgoingCommand::World(ClientWorldInput::Motion(
-            minimium_protocol::MovementSample::new(minimium_simulation::MovementIntent {
+        ClientCommand::Ping => ClientAction::Ping,
+        ClientCommand::Move(direction) => {
+            ClientAction::Motion(minimium_simulation::MovementIntent {
                 direction,
                 ..Default::default()
-            }),
-        )),
-        ClientCommand::Jump => OutgoingCommand::World(ClientWorldInput::Motion(
-            minimium_protocol::MovementSample::new(minimium_simulation::MovementIntent {
-                jump: true,
-                vertical: 1.0,
-                ..Default::default()
-            }),
-        )),
+            })
+        }
+        ClientCommand::Jump => ClientAction::Motion(minimium_simulation::MovementIntent {
+            jump: true,
+            vertical: 1.0,
+            ..Default::default()
+        }),
         ClientCommand::InteractPortal => {
             let Some(position) = context.player_position else {
                 return CommandResult::Action(FrontendAction::Notice(
@@ -364,17 +362,15 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
                     minimium_localization::UiNotice::PortalUnavailable,
                 ));
             };
-            OutgoingCommand::World(ClientWorldInput::InteractEntity { entity })
+            ClientAction::InteractEntity { entity }
         }
         ClientCommand::MapTeleport => return CommandResult::Action(FrontendAction::MapTeleport),
-        ClientCommand::Fire => OutgoingCommand::World(ClientWorldInput::Fire {
+        ClientCommand::Fire => ClientAction::FireWeapon {
             direction: context.fire_direction,
-        }),
-        ClientCommand::GrantTools => OutgoingCommand::World(ClientWorldInput::Excavation(
-            minimium_protocol::excavation::ExcavationInput::GrantTools,
-        )),
-        ClientCommand::Chat(text) => OutgoingCommand::World(ClientWorldInput::Chat(text)),
-        ClientCommand::SetName(name) => OutgoingCommand::World(ClientWorldInput::SetName(name)),
+        },
+        ClientCommand::GrantTools => ClientAction::GrantTools,
+        ClientCommand::Chat(text) => ClientAction::Chat(text),
+        ClientCommand::SetName(name) => ClientAction::SetName(name),
         ClientCommand::Help => return CommandResult::Action(FrontendAction::Help),
         ClientCommand::Connect(address) => {
             return CommandResult::Action(FrontendAction::Connect(address))
@@ -476,13 +472,12 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
             return CommandResult::Action(FrontendAction::SpawnRandomMeteorid)
         }
     };
-    let result = match message {
-        OutgoingCommand::Control(message) => context.connection.queue(&message),
-        OutgoingCommand::World(input) => context.connection.queue_world_input(input),
-    };
+    let result = context.action_executor.execute(context.connection, action);
     match result {
-        Ok(()) => CommandResult::Sent,
-        Err(error) => CommandResult::QueueError(error),
+        LocalActionOutcome::Queued { .. } => CommandResult::Sent,
+        LocalActionOutcome::Rejected { error, .. } => CommandResult::QueueError(error),
+        #[cfg(feature = "desktop")]
+        LocalActionOutcome::Suppressed(reason) => CommandResult::Suppressed(reason),
     }
 }
 
