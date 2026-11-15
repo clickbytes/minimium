@@ -73,6 +73,7 @@ impl Renderer {
                 self.application
                     .connection
                     .record_diagnostic_failure(error.code(), &error.to_string());
+                self.gpu.release_scene_stage(instance, owner);
                 return false;
             }
         };
@@ -80,6 +81,9 @@ impl Renderer {
             self.gpu.cache_sector_scene(instance, scene)
                 && self.gpu.activate_sector_scene(instance, scene, fingerprint)
         });
+        if !gpu_ready {
+            self.gpu.release_scene_stage(instance, owner);
+        }
         self.application.set_loading(!gpu_ready);
         self.gpu.scene_visible = gpu_ready;
         let previous_instance = self.application.game.current_instance;
@@ -129,12 +133,20 @@ impl Renderer {
         self.application.input.clear_held();
         self.input.jump_pending = false;
         self.application.activate_world(instance);
+        self.gpu.release_scene_stage(
+            instance,
+            super::super::sector_scene::SceneInterestOwner::Active(context),
+        );
         if let Some(source) = previous_context {
             self.sector_cache.promote_interest(
                 owner,
                 super::super::sector_scene::SceneInterestOwner::Active(context),
             );
             self.sector_cache.release_interest(
+                super::super::sector_scene::SceneInterestOwner::Active(source),
+            );
+            self.gpu.release_scene_stage(
+                source.instance(),
                 super::super::sector_scene::SceneInterestOwner::Active(source),
             );
         }

@@ -3,7 +3,7 @@ use crate::{geometry, geometry_rebase::RebaseLayout, shadow_geometry::ShadowBoun
 use minimium_procgen::SectorGeometry;
 use minimium_world::world::{GenerationRevision, SectorKey, WorldContentRevision, WorldInstanceId};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     sync::Arc,
 };
 use wgpu::util::DeviceExt;
@@ -13,6 +13,29 @@ mod local_water;
 mod prepared_upload;
 
 type CatalogKey = (WorldInstanceId, SectorKey, u8);
+type PreparedStageKey = (WorldInstanceId, GeometryStageId, SectorKey, u8);
+type SceneStageKey = (WorldInstanceId, GeometryStageId);
+const MAX_STAGED_SCENE_OWNERS: usize = 2;
+const FRAME_UPLOAD_PATCH_BUDGET: u32 = 8;
+const FRAME_UPLOAD_BYTE_BUDGET: u64 = 4 * 1024 * 1024;
+
+/// Identifies one active or pending scene's upload staging area within a world.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct GeometryStageId {
+    kind: u8,
+    primary: u128,
+    secondary: u128,
+}
+
+impl GeometryStageId {
+    pub const fn new(kind: u8, primary: u128, secondary: u128) -> Self {
+        Self {
+            kind,
+            primary,
+            secondary,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GeometryPublicationStamp {
@@ -42,7 +65,14 @@ pub struct WorldGeometryGpu {
     bounds: HashMap<CatalogKey, ShadowBounds>,
     sources: HashMap<CatalogKey, Arc<SectorGeometry>>,
     prepared_sources: HashMap<CatalogKey, Arc<crate::prepared_sector::PreparedSector>>,
-    pending: HashMap<CatalogKey, prepared_upload::PendingGeometry>,
+    pending: HashMap<PreparedStageKey, prepared_upload::PendingGeometry>,
+    pending_raw: HashMap<PreparedStageKey, prepared_upload::PendingRawGeometry>,
+    staged_versions:
+        HashMap<(WorldInstanceId, GeometryStageId), (GenerationRevision, WorldContentRevision)>,
+    stage_order: VecDeque<SceneStageKey>,
+    priority_cursor: Option<SceneStageKey>,
+    priority_stage: Option<SceneStageKey>,
+    priority_stage_serviced: bool,
     water: HashMap<WorldInstanceId, local_water::LocalWaterSlot>,
     released_publication_bytes: u64,
     publication: Option<GeometryPublication>,
@@ -57,8 +87,8 @@ struct UploadBudget {
 impl Default for UploadBudget {
     fn default() -> Self {
         Self {
-            patches: 8,
-            bytes: 4 * 1024 * 1024,
+            patches: FRAME_UPLOAD_PATCH_BUDGET,
+            bytes: FRAME_UPLOAD_BYTE_BUDGET,
         }
     }
 }
@@ -85,6 +115,41 @@ pub struct GeometryCacheResult {
 }
 
 impl WorldGeometryGpu {
+    pub(super) fn can_stage(&self, instance: WorldInstanceId, stage: GeometryStageId) -> bool {
+        self.staged_versions.contains_key(&(instance, stage))
+            || self.staged_versions.len() < MAX_STAGED_SCENE_OWNERS
+    }
+
+    pub(super) fn register_stage(&mut self, instance: WorldInstanceId, stage: GeometryStageId) {
+        let key = (instance, stage);
+        if !self.staged_versions.contains_key(&key) {
+            self.stage_order.push_back(key);
+        }
+    }
+
+    pub(super) fn stage_can_upload(
+        &mut self,
+        instance: WorldInstanceId,
+        stage: GeometryStageId,
+    ) -> bool {
+        let key = (instance, stage);
+        if self.priority_stage.is_none() {
+            self.priority_stage = Some(key);
+            self.priority_cursor = Some(key);
+        }
+        if self.priority_stage_serviced {
+            self.priority_stage != Some(key)
+        } else {
+            self.priority_stage == Some(key)
+        }
+    }
+
+    pub fn finish_scene_upload(&mut self, instance: WorldInstanceId, stage: GeometryStageId) {
+        if self.priority_stage == Some((instance, stage)) {
+            self.priority_stage_serviced = true;
+        }
+    }
+
     pub fn publication(&self) -> Option<&GeometryPublication> {
         self.publication.as_ref()
     }
@@ -100,28 +165,38 @@ impl WorldGeometryGpu {
     pub fn publish_scene(
         &mut self,
         instance: WorldInstanceId,
+        stage: GeometryStageId,
         fingerprint: u64,
         keys: &[(SectorKey, u8)],
     ) -> bool {
-        let Some((generation, content_revision)) = self.versions.get(&instance).copied() else {
+        let Some((generation, content_revision)) =
+            self.staged_versions.get(&(instance, stage)).copied()
+        else {
             return false;
         };
         let complete = !keys.is_empty()
             && keys.iter().all(|(key, lod)| {
                 let catalog_key = (instance, *key, *lod);
                 self.pending
-                    .get(&catalog_key)
+                    .get(&(instance, stage, *key, *lod))
                     .is_some_and(|pending| pending.origin_generation == self.origin_generation)
+                    || self
+                        .pending_raw
+                        .get(&(instance, stage, *key, *lod))
+                        .is_some_and(|pending| pending.origin_generation == self.origin_generation)
                     || (self.catalog.contains_key(&catalog_key)
+                        && self.versions.get(&instance) == Some(&(generation, content_revision))
                         && self.catalog_origin_generation.get(&catalog_key)
                             == Some(&self.origin_generation))
             });
         if !complete {
-            self.publication = None;
             return false;
         }
-        let geometry_changed = self.publish_prepared(instance, keys);
-        self.publish_local_water(instance);
+        let geometry_changed =
+            self.publish_prepared(instance, stage, keys) || self.publish_raw(instance, stage, keys);
+        self.versions
+            .insert(instance, (generation, content_revision));
+        self.publish_local_water(instance, stage);
         if !geometry_changed
             && self.publication.as_ref().is_some_and(|publication| {
                 publication.stamp.instance == instance
@@ -150,11 +225,65 @@ impl WorldGeometryGpu {
             },
             keys: keys.to_vec(),
         });
+        let released = self.release_scene_stage(instance, stage);
+        self.released_publication_bytes = self.released_publication_bytes.saturating_add(released);
         true
+    }
+
+    /// Drops all unpublished geometry and water uploads for one scene owner.
+    pub fn release_scene_stage(
+        &mut self,
+        instance: WorldInstanceId,
+        stage: GeometryStageId,
+    ) -> u64 {
+        let mut released = 0;
+        self.pending.retain(|(owner, candidate, _, _), image| {
+            if *owner == instance && *candidate == stage {
+                released += image.bytes();
+                false
+            } else {
+                true
+            }
+        });
+        self.pending_raw.retain(|(owner, candidate, _, _), image| {
+            if *owner == instance && *candidate == stage {
+                released += image.bytes();
+                false
+            } else {
+                true
+            }
+        });
+        if let Some(slot) = self.water.get_mut(&instance) {
+            released += slot.release_stage(stage);
+        }
+        self.staged_versions.remove(&(instance, stage));
+        self.stage_order.retain(|key| *key != (instance, stage));
+        if self.priority_stage == Some((instance, stage)) {
+            self.priority_stage = None;
+            self.priority_stage_serviced = false;
+        }
+        released
     }
 
     pub fn begin_frame(&mut self) {
         self.budget = UploadBudget::default();
+        self.stage_order
+            .retain(|key| self.staged_versions.contains_key(key));
+        self.priority_stage = if self.stage_order.is_empty() {
+            None
+        } else {
+            let cursor = self.priority_cursor.and_then(|key| {
+                self.stage_order
+                    .iter()
+                    .position(|candidate| *candidate == key)
+            });
+            let next = cursor.map_or(0, |index| (index + 1) % self.stage_order.len());
+            self.stage_order.get(next).copied()
+        };
+        if let Some(stage) = self.priority_stage {
+            self.priority_cursor = Some(stage);
+        }
+        self.priority_stage_serviced = false;
     }
     pub fn new(device: &wgpu::Device, compute: bool) -> Self {
         Self {
@@ -184,6 +313,10 @@ impl WorldGeometryGpu {
             ]
         });
         let pending = self.pending.values().flat_map(|p| p.buffers());
+        let pending_raw = self
+            .pending_raw
+            .values()
+            .map(|pending| (&pending.buffer, RebaseLayout::Object));
         let water = self
             .water
             .values()
@@ -192,13 +325,19 @@ impl WorldGeometryGpu {
             device,
             queue,
             delta,
-            flat.chain(terrain).chain(pending).chain(water),
+            flat.chain(terrain)
+                .chain(pending)
+                .chain(pending_raw)
+                .chain(water),
         );
         self.origin_generation = origin_generation;
         self.catalog_origin_generation
             .values_mut()
             .for_each(|generation| *generation = origin_generation);
         for pending in self.pending.values_mut() {
+            pending.origin_generation = origin_generation;
+        }
+        for pending in self.pending_raw.values_mut() {
             pending.origin_generation = origin_generation;
         }
         for slot in self.water.values_mut() {

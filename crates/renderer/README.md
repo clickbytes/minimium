@@ -80,8 +80,15 @@ Small regions, snow lines and coarse/fine agreement still need visual acceptance
 EdgeConformance moves fine edges onto coarse neighbors and removes radial
 curtains from the dense presentation path. Its cached copies are independent
 of authoritative geometry. Workers prepare matching surface/shadow vertices.
-The prepared_upload module stages new buffers until a complete selection is
-ready, including replacements for active keys. Floating-origin rebasing covers
+Prepared and raw sector uploads stage new buffers by `GeometryStageId` until a
+complete selection is ready, including replacements for active keys. A stage
+publishes into the active catalog only when that exact scene is selected;
+cancelled or failed stages release their unpublished buffers. `WorldGeometryGpu`
+caps concurrent staged owner identities at two; the client owns one active and
+at most one pending scene, with bootstrap handoff using the same bound. Those
+stages share the existing 8-patch/4-MiB frame upload budget. Already-published matching Arc
+geometry is reused. Local water keeps its active image separate from owner-keyed
+pending images and promotes only with the scene. Floating-origin rebasing covers
 active and staged geometry.
 
 - `RenderViewInput` and `RenderViewFrame` carry camera matrices, viewport and world-space presentation metadata. `RenderViewFrame::from_camera` rejects non-finite values and clamps empty viewports to one pixel.
@@ -1020,6 +1027,12 @@ the replacement. GPU visual acceptance remains pending.
 
 `WorldGeometryGpu` stages prepared terrain channels and local water against its
 shared upload budget, then installs the complete scene selection at publication.
+At most two scene owners may be staged at once. Upload priority rotates between
+owners each frame and covers terrain and local water together. Upload accounting
+remains global at 8 patches and 4 MiB per frame; one oversized upload may consume
+the remaining byte allowance, matching the existing geometry policy. A stage
+that misses its turn remains staged and retries on a later frame; explicit owner
+release handles cancellation, replacement and disconnect.
 Prepared channel identities include the shoreline image: changed lake levels
 upload ocean buffers even when the underlying ground geometry is unchanged.
 Water-only updates reuse terrain, objects and shadow buffers. Local water is

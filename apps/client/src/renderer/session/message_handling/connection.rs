@@ -36,9 +36,10 @@ impl Renderer {
             self.fail_connection("saved world instance is not available on this client");
             return;
         }
-        self.sector_cache.release_interest(
-            super::super::super::sector_scene::SceneInterestOwner::Bootstrap(bootstrap_instance),
-        );
+        let bootstrap =
+            super::super::super::sector_scene::SceneInterestOwner::Bootstrap(bootstrap_instance);
+        self.sector_cache.release_interest(bootstrap);
+        self.gpu.release_scene_stage(bootstrap_instance, bootstrap);
         if bootstrap_instance != context.instance() {
             self.release_world_sectors(bootstrap_instance);
         }

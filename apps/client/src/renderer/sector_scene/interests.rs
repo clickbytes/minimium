@@ -8,11 +8,30 @@ pub(in crate::renderer) enum SceneInterestOwner {
 }
 
 impl SceneInterestOwner {
-    pub(super) fn instance(self) -> WorldInstanceId {
+    pub(in crate::renderer) fn instance(self) -> WorldInstanceId {
         match self {
             Self::Bootstrap(instance) => instance,
             Self::Active(context) | Self::Pending(_, context) => context.instance(),
         }
+    }
+
+    pub(in crate::renderer) fn geometry_stage(
+        self,
+    ) -> minimium_renderer::world_geometry_gpu::GeometryStageId {
+        let (kind, primary, secondary) = match self {
+            Self::Bootstrap(_) => (0, 0_u128, 0_u128),
+            Self::Active(context) => (
+                1,
+                u128::from(context.membership_epoch().get()),
+                u128::from(context.content_revision().get()),
+            ),
+            Self::Pending(transition_id, context) => (
+                2,
+                transition_id.get(),
+                u128::from(context.membership_epoch().get()),
+            ),
+        };
+        minimium_renderer::world_geometry_gpu::GeometryStageId::new(kind, primary, secondary)
     }
 }
 

@@ -242,6 +242,10 @@ impl Renderer {
         self.sector_cache.release_interest(
             super::super::sector_scene::SceneInterestOwner::Pending(transition_id, context),
         );
+        self.gpu.release_scene_stage(
+            context.instance(),
+            super::super::sector_scene::SceneInterestOwner::Pending(transition_id, context),
+        );
         if context.instance() != self.application.game.current_instance {
             self.release_world_sectors(context.instance());
         }

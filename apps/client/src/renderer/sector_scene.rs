@@ -86,6 +86,7 @@ struct SectorInterest {
 }
 
 pub(super) struct ClientSectorScene {
+    pub(super) owner: SceneInterestOwner,
     pub(super) prepared: Option<Arc<PreparedScene>>,
     pub(super) origin: [f32; 3],
     pub(super) origin_generation: u64,
@@ -422,6 +423,7 @@ impl ClientSectorCache {
             sectors.iter().map(|(k, g)| (*k, 0, g.clone())).collect()
         };
         Ok(Some(ClientSectorScene {
+            owner,
             prepared,
             origin,
             origin_generation,

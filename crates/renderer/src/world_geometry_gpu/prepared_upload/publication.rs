@@ -4,13 +4,14 @@ impl WorldGeometryGpu {
     pub(in crate::world_geometry_gpu) fn publish_prepared(
         &mut self,
         instance: WorldInstanceId,
+        stage: GeometryStageId,
         keys: &[(SectorKey, u8)],
     ) -> bool {
         let mut changed = false;
         let mut released = 0;
         for &(sector, lod) in keys {
             let key = (instance, sector, lod);
-            let Some(mut next) = self.pending.remove(&key) else {
+            let Some(mut next) = self.pending.remove(&(instance, stage, sector, lod)) else {
                 continue;
             };
             let source = &next.source;
@@ -74,6 +75,53 @@ impl WorldGeometryGpu {
         });
         released += self.retain_resident_channels();
         self.released_publication_bytes += released;
+        changed
+    }
+
+    pub(in crate::world_geometry_gpu) fn publish_raw(
+        &mut self,
+        instance: WorldInstanceId,
+        stage: GeometryStageId,
+        keys: &[(SectorKey, u8)],
+    ) -> bool {
+        let mut changed = false;
+        let mut released = 0;
+        for &(sector, lod) in keys {
+            let staged_key = (instance, stage, sector, lod);
+            let Some(next) = self.pending_raw.remove(&staged_key) else {
+                continue;
+            };
+            let key = (instance, sector, lod);
+            if let Some((old, _)) = self.catalog.insert(key, (next.buffer, next.count)) {
+                released += old.size();
+            }
+            self.catalog_origin_generation
+                .insert(key, next.origin_generation);
+            if let Some(old) = self.terrain.remove(&key) {
+                released += old.bytes();
+            }
+            self.bounds.remove(&key);
+            if let Some(bounds) = crate::shadow_geometry::geometry_bounds(&next.source) {
+                self.bounds.insert(key, bounds);
+            }
+            self.sources.insert(key, next.source);
+            self.prepared_sources.remove(&key);
+            self.bounds.remove(&key);
+            changed = true;
+        }
+        let required: HashSet<_> = keys.iter().copied().collect();
+        self.catalog.retain(|(owner, sector, lod), (buffer, _)| {
+            if *owner != instance || required.contains(&(*sector, *lod)) {
+                true
+            } else {
+                released += buffer.size();
+                false
+            }
+        });
+        released += self.retain_resident_channels();
+        self.released_publication_bytes += released;
+        self.pending_raw
+            .retain(|(owner, candidate, _, _), _| *owner != instance || *candidate != stage);
         changed
     }
 }
