@@ -175,8 +175,7 @@ impl ClientSectorCache {
             .filter(|_| owner.instance() == instance)
             .map(|(map, _)| map)
             .or_else(|| maps.get(&instance));
-        if !interests::ClientSectorCache::material_profile_matches(&geography, manifest, source_map)
-        {
+        if !ClientSectorCache::material_profile_matches(&geography, manifest, source_map) {
             return Err(SectorWorkerError::Geometry(
                 minimium_procgen::ExcavationGeometryError::UnavailableSurface,
             ));

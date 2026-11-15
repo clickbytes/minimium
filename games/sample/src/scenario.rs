@@ -31,9 +31,18 @@ pub struct GeneratedWorld {
 /// generator contract. The application binds it to the resolved map identity.
 pub fn terrain_material_profile(
     manifest: WorldManifest,
-) -> Result<minimium_procgen::TerrainMaterialProfile, GenerationError> {
+    map: &WorldMap,
+) -> Result<minimium_procgen::ResolvedTerrainMaterialProfile, GenerationError> {
     minimium_procgen::validate_world_manifest(manifest)?;
-    Ok(default_terrain_material_profile())
+    if manifest.source() == minimium_world::world::WorldSource::Authored
+        && manifest.generator_digest()
+            != minimium_world::world::GeneratorDigest::authored_map_fingerprint(map.fingerprint())
+    {
+        return Err(GenerationError::invalid_manifest(
+            "authored terrain profile does not match the resolved map fingerprint",
+        ));
+    }
+    Ok(default_terrain_material_profile().bind(manifest, map.fingerprint()))
 }
 
 /// The canonical sample policy selected by the sample application's content

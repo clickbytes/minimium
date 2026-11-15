@@ -216,8 +216,8 @@ fn compose_world(
             manifest: definition.manifest(),
             terrain_material_profile: minimium_game_sample::terrain_material_profile(
                 definition.manifest(),
-            )?
-            .bind(definition.manifest(), map.fingerprint()),
+                &map,
+            )?,
             map: map.clone(),
             initial_entities: Vec::new(),
         };
@@ -337,9 +337,11 @@ fn to_world_definition(world: GeneratedWorld) -> WorldDefinition {
     WorldDefinition {
         instance: world.instance,
         manifest: world.manifest,
-        terrain_material_profile: minimium_game_sample::terrain_material_profile(world.manifest)
-            .expect("sample generated manifest passed the generator contract")
-            .bind(world.manifest, world.map.fingerprint()),
+        terrain_material_profile: minimium_game_sample::terrain_material_profile(
+            world.manifest,
+            &world.map,
+        )
+        .expect("sample generated manifest passed the generator contract"),
         map: world.map,
         initial_entities,
     }

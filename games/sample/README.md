@@ -7,10 +7,11 @@ Owns shared demo map data and sample-game defaults consumed by client and server
 `generate_worlds` derives a complete procedural `PlanetDefinition` from its seed before generating the map. Its manifest carries that definition so the client and server can materialize the same planet without inferring settings from the world instance ID.
 
 The sample content resolver selects one immutable 1500 mm terrain material
-profile for manifests accepted by the current generator contract and binds it
-to the resolved map fingerprint. Position quantum is not restricted by this
-policy. The generic server runtime receives the selected profile through world
-composition and does not expose a competing soil-depth setting.
+profile for manifests accepted by the current generator contract, verifies it
+against the resolved map and returns it bound to both identities. Position
+quantum is not restricted by this policy. The generic server runtime receives
+the selected profile through world composition and does not expose a competing
+soil-depth setting.
 
 ## Public API
 

@@ -31,9 +31,9 @@ fn registry_from_sample(worlds: Vec<minimium_game_sample::GeneratedWorld>) -> Wo
                 manifest: world.manifest,
                 terrain_material_profile: minimium_game_sample::terrain_material_profile(
                     world.manifest,
+                    &world.map,
                 )
-                .unwrap()
-                .bind(world.manifest, world.map.fingerprint()),
+                .unwrap(),
                 map: world.map,
                 initial_entities: Vec::new(),
             })
