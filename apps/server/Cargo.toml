@@ -14,6 +14,7 @@ minimium-asset-io = { path = "../../crates/asset-io" }
 minimium-assets = { path = "../../crates/assets" }
 minimium-game-sample = { path = "../../games/sample" }
 minimium-server-runtime = { path = "../../crates/server-runtime" }
+minimium-transport = { path = "../../crates/transport" }
 minimium-procgen = { path = "../../crates/procgen" }
 minimium-simulation = { path = "../../crates/simulation" }
 minimium-world = { path = "../../crates/world" }

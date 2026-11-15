@@ -25,7 +25,7 @@ use diagnostics::emit_system_effect_diagnostic;
 
 use crate::server_command::ServerCommand;
 use crate::{
-    admin::{AdminServer, RequestId},
+    admin::RequestId,
     composition::ServerCombatConfig,
     config::ServerConfig,
     connection::Client,
@@ -51,7 +51,6 @@ use minimium_world::world::WorldMap;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     io,
-    net::{SocketAddr, TcpListener},
     path::PathBuf,
     sync::{mpsc::Receiver, Arc},
     thread,
@@ -83,12 +82,12 @@ struct GameState {
 struct ConnectionState {
     clients: Vec<Client>,
     client_indices_by_player: HashMap<PlayerId, usize>,
-    first_write_client: usize,
     messages: Vec<(usize, ClientMessage, Instant)>,
     disconnected: Vec<usize>,
+    admin_requests: VecDeque<(RequestId, String)>,
 }
 struct OperationsState {
-    admin: AdminServer,
+    transport: Box<dyn minimium_transport::TransportPort>,
     console_rx: Option<Receiver<ServerCommand>>,
     command_queue: VecDeque<(Option<RequestId>, ServerCommand)>,
     player_store: PlayerStore,
@@ -134,8 +133,7 @@ pub(crate) struct ServerRuntime {
     metrics: RuntimeMetrics,
     map: WorldMap,
     prepared_geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
-    game_listener: Option<TcpListener>,
-    game_address: SocketAddr,
+    game_address: String,
     endpoint: ServerEndpoint,
     data_dir: PathBuf,
     _log_dir: PathBuf,
@@ -208,12 +206,11 @@ impl ServerRuntime {
             entities,
             persistence,
             next_player,
-            game_listener,
+            transport,
             game_address,
             endpoint,
             endpoint_guard,
             data_lock,
-            admin,
             environment_config,
             saved_clock,
             prepared_geography,
@@ -289,12 +286,12 @@ impl ServerRuntime {
         let connections = ConnectionState {
             clients: Vec::with_capacity(max_client_connections),
             client_indices_by_player: HashMap::with_capacity(config.max_players),
-            first_write_client: 0,
             messages: Vec::with_capacity(max_client_connections),
             disconnected: Vec::with_capacity(max_client_connections),
+            admin_requests: VecDeque::with_capacity(64),
         };
         let operations = OperationsState {
-            admin,
+            transport,
             console_rx,
             command_queue: VecDeque::with_capacity(64),
             player_store,
@@ -353,7 +350,6 @@ impl ServerRuntime {
             executor,
             map,
             prepared_geography,
-            game_listener: Some(game_listener),
             game_address,
             endpoint,
             data_dir: config.data_dir,

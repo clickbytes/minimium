@@ -2,15 +2,15 @@
 
 ## Purpose / Non-goals
 
-Provides the server process entry point, selects optional allocation instrumentation, composes sample world and combat content, and forwards command-line arguments to `minimium-server-runtime`. It does not own runtime state or GPU presentation.
+Provides the server process entry point, selects optional allocation instrumentation, binds game/admin listeners, creates the TCP transport adapter, composes sample world and combat content, and forwards command-line arguments to `minimium-server-runtime`. It does not own runtime state or GPU presentation.
 
 ## Public API
 
-The executable entry point is `src/main.rs`. `src/composition.rs` supplies the sample world builder and combat values through the runtime's neutral composition contract.
+The executable entry point is `src/main.rs`. `src/composition.rs` supplies the sample world builder, combat values, and host-created transport port through the runtime's neutral composition contract.
 
 ## Dependencies
 
-Depends on `minimium-server-runtime`, `minimium-platform`, `minimium-diagnostics`, `minimium-telemetry`, `minimium-game-sample` and the asset/world-generation contracts used by the sample builder. Telemetry is also used for process allocation instrumentation when enabled. GPU, windowing and astronomy are forbidden.
+Depends on `minimium-server-runtime`, `minimium-transport`, `minimium-platform`, `minimium-diagnostics`, `minimium-telemetry`, `minimium-game-sample` and the asset/world-generation contracts used by the sample builder. Telemetry is also used for process allocation instrumentation when enabled. GPU, windowing and astronomy are forbidden.
 
 ## Data flow
 

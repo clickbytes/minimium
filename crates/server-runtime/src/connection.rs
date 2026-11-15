@@ -3,27 +3,21 @@ use minimium_core::identity::Principal;
 use minimium_core::ids::PlayerId;
 use minimium_environment::time::ClockRevision;
 use minimium_protocol::WorldContext;
-use minimium_protocol::{encode_server_into, RemotePlayers, ServerMessage, MAX_SERVER_FRAME_BYTES};
-use minimium_transport as network;
+use minimium_protocol::{RemotePlayers, ServerMessage};
+use minimium_transport::{ConnectionId, GameConnectionStats, GameOutput, GameOutputPort};
 mod output;
-use output::account_output;
 pub(crate) use output::{
-    mark_disconnected, queue_close_response, queue_encoded_frame, queue_encoded_frame_with_reserve,
-    queue_message,
+    mark_disconnected, queue_close_response, queue_message, queue_message_with_limit,
+    queue_message_with_reserve,
 };
 
 use std::{
     collections::{BTreeSet, VecDeque},
-    net::TcpStream,
-    sync::atomic::{AtomicU64, Ordering},
     time::{Duration, Instant},
 };
 
-pub(crate) const MAX_QUEUED_OUTPUT_BYTES: usize = 64 * 1024;
-pub(crate) const MAX_QUEUED_OUTPUT_FRAMES: usize = 256;
 pub(crate) const CLIENT_CLOSE_TIMEOUT: Duration = Duration::from_secs(2);
 const TIME_PROBE_WINDOW: Duration = Duration::from_secs(1);
-static NEXT_CONNECTION_ID: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum CloseReason {
@@ -71,21 +65,14 @@ pub(crate) enum ConnectionPhase {
 }
 
 pub(crate) struct Client {
-    connection_id: u64,
+    connection_id: ConnectionId,
+    pub(crate) transport: std::sync::Arc<dyn GameOutputPort>,
     pub(crate) protocol_logger: Option<minimium_diagnostics::DomainLogger>,
     presentation: Option<bool>,
     phase: ConnectionPhase,
     pub(crate) disconnect_reason: Option<CloseReason>,
-    pub(crate) stream: TcpStream,
-    pub(crate) input: Vec<u8>,
-    output: Vec<u8>,
-    output_offset: usize,
-    output_frames: VecDeque<(usize, Instant)>,
-    pub(crate) bytes_in: u64,
-    pub(crate) bytes_out: u64,
-    pub(crate) frames_in: u64,
-    pub(crate) frames_out: u64,
     pub(crate) encoding_us: u64,
+    pub(crate) network_stats: GameConnectionStats,
     pub(crate) replicated_players: RemotePlayers,
     pub(crate) replication_initialized: bool,
     pub(crate) replicated_components: std::collections::BTreeMap<
@@ -98,7 +85,6 @@ pub(crate) struct Client {
     pub(crate) next_entity_sync_id: u64,
     pub(crate) connected_at: Instant,
     pub(crate) last_message_at: Instant,
-    pub(crate) peer_eof: bool,
     pub(crate) pending_health_update: Option<u16>,
     time_probe_received_at: [Option<Instant>; 2],
     pub(crate) last_environment_sync_at: Option<Instant>,
@@ -125,28 +111,22 @@ pub(crate) struct PendingEntitySync {
 
 impl Client {
     pub(crate) fn new(
-        stream: TcpStream,
+        connection_id: ConnectionId,
+        transport: std::sync::Arc<dyn GameOutputPort>,
         connected_at: Instant,
         logger: Option<minimium_diagnostics::DomainLogger>,
     ) -> Self {
         Self {
-            connection_id: NEXT_CONNECTION_ID.fetch_add(1, Ordering::Relaxed),
+            connection_id,
+            transport,
             protocol_logger: logger,
             phase: ConnectionPhase::AwaitPresentation {
                 deadline: connected_at + crate::CLIENT_HANDSHAKE_TIMEOUT,
             },
             presentation: None,
             disconnect_reason: None,
-            stream,
-            input: Vec::with_capacity(512),
-            output: Vec::new(),
-            output_offset: 0,
-            output_frames: VecDeque::new(),
-            bytes_in: 0,
-            bytes_out: 0,
-            frames_in: 0,
-            frames_out: 0,
             encoding_us: 0,
+            network_stats: GameConnectionStats::default(),
             replicated_players: RemotePlayers::default(),
             replication_initialized: false,
             replicated_components: std::collections::BTreeMap::new(),
@@ -156,7 +136,6 @@ impl Client {
             next_entity_sync_id: 0,
             connected_at,
             last_message_at: connected_at,
-            peer_eof: false,
             pending_health_update: None,
             time_probe_received_at: [None; 2],
             last_environment_sync_at: None,
@@ -166,16 +145,18 @@ impl Client {
         }
     }
 
-    pub(crate) const fn connection_id(&self) -> u64 {
+    pub(crate) const fn connection_id(&self) -> ConnectionId {
         self.connection_id
     }
 
     pub(crate) fn pending_output_bytes(&self) -> usize {
-        self.output.len().saturating_sub(self.output_offset)
+        self.transport
+            .pending_output_bytes(self.connection_id)
+            .unwrap_or(0)
     }
 
     pub(crate) fn oldest_output_age(&self) -> Option<Duration> {
-        self.output_frames.front().map(|(_, at)| at.elapsed())
+        self.transport.oldest_output_age(self.connection_id)
     }
     pub(crate) fn identity(&self) -> Option<Identity> {
         match self.phase {
@@ -337,17 +318,6 @@ impl Client {
             ConnectionPhase::Draining { reason, .. } => Some(reason),
             _ => None,
         })
-    }
-
-    pub(crate) fn flush(&mut self, budget: usize) -> network::FlushResult {
-        let result = network::flush(
-            &mut self.stream,
-            &self.output,
-            &mut self.output_offset,
-            budget,
-        );
-        account_output(self, result.written);
-        result
     }
 }
 

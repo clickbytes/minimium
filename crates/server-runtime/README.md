@@ -2,7 +2,7 @@
 
 ## Purpose / Non-goals
 
-Owns the authoritative server lifecycle, world registry, tick, networking coordination, admission and persistence composition. It consumes fixed-domain server, transport, storage, environment, protocol, world and sector diagnostics loggers supplied by the host application. It enforces server-granted principal permissions at mutating input admission. Movement inputs carry intent only; a per-player server-owned policy supplies speed, acceleration and flight to the shared integrator. Privileged policy changes require the matching permission and are returned only to the requesting player. It is headless and has no GPU or window role.
+Owns the authoritative server lifecycle, world registry, tick, typed transport-event coordination, admission and persistence composition. It consumes fixed-domain server, transport, storage, environment, protocol, world and sector diagnostics loggers supplied by the host application. The host supplies a `TransportPort` and typed `GameOutputPort`; this crate owns no listener, socket, byte buffer or codec. It enforces server-granted principal permissions at mutating input admission. Movement inputs carry intent only; a per-player server-owned policy supplies speed, acceleration and flight to the shared integrator. Privileged policy changes require the matching permission and are returned only to the requesting player. It is headless and has no GPU or window role.
 
 ## Public API
 
@@ -33,7 +33,7 @@ an error or partial-effect error rather than a full success. A transfer's
 Started result means its prepare was queued, not that the transition is ready
 or committed.
 
-Rendered command text, module text and failure details are capped at 8 KiB with a UTF-8-safe `[truncated]` marker. This leaves room for worst-case JSON escaping within the existing 64 KiB admin reply cap. List snapshots have separate row caps and report truncation explicitly; metrics client rows are capped at 512.
+Rendered command text, module text and failure details are capped at 8 KiB with a UTF-8-safe `[truncated]` marker. The admin adapter bounds the aggregate response fields before serialization and checks the final JSON against the existing 64 KiB reply cap. List snapshots have separate row caps and report truncation explicitly; metrics client rows are capped at 512.
 
 Property reads preserve their existing successful response for unknown keys and unavailable clock properties through typed `UnknownProperty` and `UnavailableProperty` query results. Mutation validation failures continue to use the established typed error codes.
 The world registry validates every composed manifest before publishing an instance:

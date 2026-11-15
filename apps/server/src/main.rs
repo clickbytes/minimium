@@ -187,25 +187,36 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let shutdown_clock = shutdown_request.clone();
     let signal_shutdown = shutdown_request.clone();
     ctrlc::set_handler(move || signal_shutdown.request()).map_err(std::io::Error::other)?;
-    let result = minimium_server_runtime::run_with_config(
-        config,
-        composition::server_composition(
-            dev_mode,
-            earth_package,
-            logger.clone(),
-            storage_logger,
-            transport_logger,
-            game_sample_logger,
-            environment_logger,
-            protocol_logger,
-            world_logger,
-            sectors_logger,
-            simulation_logger,
-            asset_io_logger,
-            procgen_logger,
-            shutdown_request,
-        ),
+    let admin_token = match config.admin_token.clone() {
+        Some(token) => token,
+        None => minimium_platform::endpoint::new_admin_token()?,
+    };
+    let transport = minimium_transport::HostTransport::bind(minimium_transport::TransportConfig {
+        bind_address: config.bind_address.clone(),
+        game_port: config.game_port,
+        admin_token: admin_token.clone(),
+        max_connections: config.max_players.saturating_add(128),
+    })
+    .map_err(std::io::Error::other)?;
+    config.admin_token = Some(admin_token);
+    let mut server_composition = composition::server_composition(
+        dev_mode,
+        earth_package,
+        logger.clone(),
+        storage_logger,
+        transport_logger,
+        game_sample_logger,
+        environment_logger,
+        protocol_logger,
+        world_logger,
+        sectors_logger,
+        simulation_logger,
+        asset_io_logger,
+        procgen_logger,
+        shutdown_request,
     );
+    server_composition.transport = Some(Box::new(transport));
+    let result = minimium_server_runtime::run_with_config(config, server_composition);
     if let Err(error) = &result {
         logger.emit(
             logger
