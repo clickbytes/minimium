@@ -21,7 +21,7 @@ impl WorldGeometryGpu {
                 false
             }
         });
-        self.pending.retain(|(owner, _, _), pending| {
+        self.pending.retain(|(owner, _, _, _), pending| {
             if *owner == instance {
                 released_bytes += pending.bytes();
                 false
@@ -29,6 +29,30 @@ impl WorldGeometryGpu {
                 true
             }
         });
+        self.pending_raw.retain(|(owner, _, _, _), pending| {
+            if *owner == instance {
+                released_bytes += pending.bytes();
+                false
+            } else {
+                true
+            }
+        });
+        self.staged_versions
+            .retain(|(owner, _), _| *owner != instance);
+        self.stage_order.retain(|(owner, _)| *owner != instance);
+        if self
+            .priority_cursor
+            .is_some_and(|(owner, _)| owner == instance)
+        {
+            self.priority_cursor = None;
+        }
+        if self
+            .priority_stage
+            .is_some_and(|(owner, _)| owner == instance)
+        {
+            self.priority_stage = None;
+            self.priority_stage_serviced = false;
+        }
         self.versions.remove(&instance);
         self.catalog_origin_generation
             .retain(|(owner, _, _), _| *owner != instance);
@@ -61,10 +85,17 @@ impl WorldGeometryGpu {
                 .sum::<u64>();
         let released_bytes = released_bytes
             + self.pending.values().map(|p| p.bytes()).sum::<u64>()
+            + self.pending_raw.values().map(|p| p.bytes()).sum::<u64>()
             + self.water.values().map(|slot| slot.bytes()).sum::<u64>()
             + self.take_released_publication_bytes();
         self.water.clear();
         self.pending.clear();
+        self.pending_raw.clear();
+        self.staged_versions.clear();
+        self.stage_order.clear();
+        self.priority_cursor = None;
+        self.priority_stage = None;
+        self.priority_stage_serviced = false;
         self.sources.clear();
         self.prepared_sources.clear();
         self.terrain.clear();

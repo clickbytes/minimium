@@ -173,6 +173,10 @@ readiness from movement; demand is released on a successful later shot, actor
 removal or context change. Capacity failure returns `Busy` with diagnostics,
 and the original shot is not replayed.
 
+Authoritative hitscan demand and simulation both derive the ray origin from the
+world `CharacterGeometry` eye point. Excavation tool admission uses the same eye
+point and body frame as client tool previews.
+
 Movement acknowledgements are a safe resolved prefix. Admission tracks every
 accepted sequence while it remains executable in the bounded world-input queue
 or target-tick queue; rejection, queue pressure, same-tick replacement and

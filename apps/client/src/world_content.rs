@@ -42,7 +42,7 @@ impl SampleWorldContentResolver {
                 "world-content preparation was cancelled",
             ));
         }
-        let Some((manifest, map)) = self.known.get(&request.ticket.instance) else {
+        let Some((manifest, map)) = self.known.get(&request.ticket.context.instance()) else {
             return Ok(None);
         };
         if *manifest != request.manifest {

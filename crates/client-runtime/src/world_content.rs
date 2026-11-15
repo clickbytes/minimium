@@ -1,5 +1,6 @@
 use crate::SessionFailure;
-use minimium_world::world::{WorldInstanceId, WorldManifest, WorldMap};
+use minimium_protocol::WorldContext;
+use minimium_world::world::{TransitionId, WorldManifest, WorldMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -41,7 +42,8 @@ pub trait WorldContentResolver: Send + Sync {
 pub struct ContentResolutionTicket {
     pub session_id: u64,
     pub request_id: u64,
-    pub instance: WorldInstanceId,
+    pub context: WorldContext,
+    pub transition_id: Option<TransitionId>,
     pub content_revision: u64,
 }
 

@@ -18,6 +18,14 @@ session and passes its neutral `ToolKind` to the first-person viewmodel pass.
 Shovels and pickaxes are presentation-only low-poly meshes; gameplay tool use
 continues through the existing authoritative session action.
 
+Camera and tool-preview rays use the shared world `CharacterGeometry` eye and
+radial frame. Remote body meshes and shadow casters are generated from its
+0.6×1.7×0.6 m local body box, oriented by the same frame used by simulation
+hitscan. FixedY and radial characters at +Y use right +Z, up +Y, and forward
++X; because both horizontal body dimensions are 0.6 m, their spatial boxes
+match the previous axis-aligned bounds. Radial characters rotate with their
+local up direction elsewhere.
+
 ## Dependencies
 
 The default `desktop` feature enables renderer GPU code and the astronomy,
@@ -67,6 +75,17 @@ Front ends resolve profile, server-data, material-cache, config and log paths on
 
 ## Ownership and execution
 
+`ClientBootstrap` composes both hosts without GPU dependencies. It resolves the
+initial map/instance and catalogs, process paths, profile, diagnostics loggers,
+replica schemas, authentication, cache limits and sample content resolver, then
+returns one configured idle controller. The prepared connection is consumed with
+explicit CPU-only or desktop capabilities; desktop compression support comes
+from device features/limits. Bootstrap does not connect or launch a server.
+The hosts retain their diagnostics lifetime and 30-second shutdown deadline.
+Authored instance 1, manual dungeon instance 4 and the sample primary instance
+are selected by the common composition, without a fingerprint-based lookup.
+The former terminal-only world setup and duplicated desktop setup are removed.
+
 The front-end loop owns UI and polls the runtime connection controller; the runtime owns its socket, bounded protocol state and local-server guard, while background connector work reports typed results.
 
 Both frontends display the controller's typed busy rejection. Desktop switches
@@ -77,7 +96,11 @@ keeps the active environment and geometry visible.
 state, input action mapper, settings, UI model, world catalog, overview model,
 typed connection status and `WorldTransitionController`. Transfer tickets move
 through prepare, ready, commit, cancel or fail via application methods, which
-reject stale context/ticket events. The renderer owns only gameplay render
+reject stale context/ticket events. A pending transfer retains its resolved map
+behind its own context and transition ticket; preparing destination geometry
+does not overwrite the active world catalog. The application installs that map
+in the active catalog only after commit. Cancel and failure drop the staged map.
+The renderer owns only gameplay render
 geometry, hit feedback and shot cooldown alongside GPU resources. The application
 has no GPU handle.
 The transition and overview fields are private to `ClientApplication`. Renderer

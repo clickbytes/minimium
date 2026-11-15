@@ -92,6 +92,7 @@ impl Eq for SessionFailure {}
 
 mod clock;
 mod content;
+mod content_access;
 mod environment;
 mod excavation;
 mod impacts;
@@ -187,14 +188,14 @@ pub struct ClientSession {
     world_content_cancel: crate::ContentCancellation,
     world_content_started: Option<Instant>,
     deferred_world_message: Option<(ServerMessage, u64)>,
-    resolved_worlds: HashMap<minimium_world::world::WorldInstanceId, Arc<ResolvedWorldContent>>,
-    water_catalogs:
-        HashMap<minimium_world::world::WorldInstanceId, Arc<minimium_procgen::WaterCatalog>>,
+    active_world_content: Option<ActiveWorldContent>,
+    pending_world_content: Option<PendingWorldContent>,
     replica_schemas: HashMap<ComponentTypeId, SchemaVersion>,
     replica_assembly: Option<crate::replicas::ReplicaAssembly>,
     replicas: crate::replicas::ReplicatedEntities,
     pending_transition: Option<(TransitionId, WorldContext)>,
     ready_transition: Option<(TransitionId, WorldContext)>,
+    cancel_requested_transition: Option<TransitionId>,
     clock_sample: Option<ClockSample>,
     environment_descriptor: Option<EnvironmentDescriptor>,
     pending_environment: Option<(
@@ -212,9 +213,22 @@ pub struct ClientSession {
     send_buffer: Vec<u8>,
     send_offset: usize,
     metrics: SessionMetrics,
-    prepared_geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
     content_cache_dir: Option<std::path::PathBuf>,
     content_cache_limit_bytes: u64,
+}
+
+struct ActiveWorldContent {
+    context: WorldContext,
+    content: Arc<ResolvedWorldContent>,
+    water_catalog: Option<Arc<minimium_procgen::WaterCatalog>>,
+}
+
+struct PendingWorldContent {
+    context: WorldContext,
+    transition_id: TransitionId,
+    ticket: ContentResolutionTicket,
+    content: Arc<ResolvedWorldContent>,
+    water_catalog: Option<Arc<minimium_procgen::WaterCatalog>>,
 }
 
 impl ClientSession {
@@ -266,8 +280,8 @@ impl ClientSession {
             world_content_cancel: crate::ContentCancellation::default(),
             world_content_started: None,
             deferred_world_message: None,
-            resolved_worlds: HashMap::new(),
-            water_catalogs: HashMap::new(),
+            active_world_content: None,
+            pending_world_content: None,
             impacts: Default::default(),
             excavation: Default::default(),
             tools: Default::default(),
@@ -276,6 +290,7 @@ impl ClientSession {
             replicas: crate::replicas::ReplicatedEntities::default(),
             pending_transition: None,
             ready_transition: None,
+            cancel_requested_transition: None,
             clock_sample: None,
             environment_descriptor: None,
             pending_environment: None,
@@ -288,7 +303,6 @@ impl ClientSession {
             send_buffer: Vec::with_capacity(MAX_SESSION_BUFFER_BYTES),
             send_offset: 0,
             metrics: SessionMetrics::default(),
-            prepared_geography: None,
             content_cache_dir: None,
             content_cache_limit_bytes: minimium_asset_io::DEFAULT_CACHE_LIMIT_BYTES,
         };
@@ -328,10 +342,6 @@ impl ClientSession {
         self.metrics
     }
 
-    pub fn prepared_geography(&self) -> Option<Arc<dyn minimium_procgen::PreparedGeography>> {
-        self.prepared_geography.clone()
-    }
-
     pub fn clock_sample(&self) -> Option<ClockSample> {
         self.clock_sample
     }
@@ -348,50 +358,6 @@ impl ClientSession {
         self.clock.frame()
     }
 
-    pub(crate) fn set_world_content_resolver(
-        &mut self,
-        session_id: u64,
-        resolver: Option<Arc<dyn WorldContentResolver>>,
-    ) {
-        self.session_id = session_id;
-        self.world_content_resolver = resolver;
-    }
-
-    pub fn resolved_world_content(
-        &self,
-        instance: minimium_world::world::WorldInstanceId,
-    ) -> Option<Arc<ResolvedWorldContent>> {
-        self.resolved_worlds.get(&instance).cloned()
-    }
-
-    pub fn cancel_pending_transition(&mut self) -> bool {
-        let Some((transition_id, _)) = self.pending_transition else {
-            return false;
-        };
-        self.queue(&ClientMessage::CancelTransition(transition_id))
-            .is_ok()
-    }
-
-    pub fn queue_transition_ready(
-        &mut self,
-        transition_id: TransitionId,
-        target_context: WorldContext,
-    ) -> Result<(), QueueError> {
-        let transition = (transition_id, target_context);
-        if self.pending_transition != Some(transition) {
-            return Err(QueueError::StaleWorldContext);
-        }
-        if self.ready_transition == Some(transition) {
-            return Ok(());
-        }
-        self.queue(&ClientMessage::TransitionReady {
-            transition_id,
-            target_context,
-        })?;
-        self.ready_transition = Some(transition);
-        Ok(())
-    }
-
     /// Close the current socket and discard all buffered data.
     pub fn close(&mut self) {
         self.content = Default::default();
@@ -400,20 +366,20 @@ impl ClientSession {
         self.pending_ping_at = None;
         self.pending_ping_end = None;
         self.world_context = None;
-        self.resolved_worlds.clear();
-        self.water_catalogs.clear();
+        self.active_world_content = None;
+        self.pending_world_content = None;
         self.world_content_cancel.cancel();
         self.world_content_worker = None;
         self.world_content_worker_ticket = None;
         self.world_content_request = None;
         self.world_content_started = None;
         self.deferred_world_message = None;
-        self.prepared_geography = None;
         self.impacts = Default::default();
         self.excavation = Default::default();
         self.tools = Default::default();
         self.pending_transition = None;
         self.ready_transition = None;
+        self.cancel_requested_transition = None;
         self.clock_sample = None;
         self.environment_descriptor = None;
         self.pending_environment = None;

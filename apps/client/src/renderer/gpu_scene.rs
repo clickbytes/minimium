@@ -11,6 +11,7 @@ impl GpuResources {
         if scene.origin != self.render_origin
             || scene.origin_generation != self.world_geometry.origin_generation()
         {
+            self.release_scene_stage(instance, scene.owner);
             return false;
         }
         let mut result = if let Some(prepared) = &scene.prepared {
@@ -22,6 +23,7 @@ impl GpuResources {
             self.world_geometry.cache_prepared(
                 &self.device,
                 instance,
+                scene.owner.geometry_stage(),
                 scene.generation,
                 scene.content_revision,
                 &prepared.patches,
@@ -31,14 +33,14 @@ impl GpuResources {
         } else if scene.render_sectors.is_empty() {
             return false;
         } else {
-            self.world_geometry.cache_scene(
+            self.world_geometry.cache_scene_staged(
                 &self.device,
                 instance,
+                scene.owner.geometry_stage(),
                 scene.generation,
                 scene.content_revision,
                 &scene.render_sectors,
                 self.render_origin,
-                None,
                 scene.origin_generation,
             )
         };
@@ -46,6 +48,7 @@ impl GpuResources {
             let water = self.world_geometry.cache_local_water(
                 &self.device,
                 instance,
+                scene.owner.geometry_stage(),
                 prepared.water_vertices.clone(),
                 scene.origin_generation,
             );
@@ -53,6 +56,8 @@ impl GpuResources {
             result.allocated_bytes += water.allocated_bytes;
             result.released_bytes += water.released_bytes;
         }
+        self.world_geometry
+            .finish_scene_upload(instance, scene.owner.geometry_stage());
         self.fixed_gpu_bytes = self
             .fixed_gpu_bytes
             .saturating_sub(result.released_bytes)
@@ -67,7 +72,9 @@ impl GpuResources {
         fingerprint: u64,
     ) -> bool {
         self.shadow_publish_ready = false;
+        let stage = scene.owner.geometry_stage();
         if scene.origin_generation != self.world_geometry.origin_generation() {
+            self.release_scene_stage(instance, scene.owner);
             return false;
         }
         let keys = scene
@@ -77,11 +84,25 @@ impl GpuResources {
             .collect::<Vec<_>>();
         let ready = self
             .world_geometry
-            .publish_scene(instance, fingerprint, &keys);
+            .publish_scene(instance, stage, fingerprint, &keys);
+        if !ready {
+            self.release_scene_stage(instance, scene.owner);
+        }
         self.fixed_gpu_bytes = self
             .fixed_gpu_bytes
             .saturating_sub(self.world_geometry.take_released_publication_bytes());
         ready
+    }
+
+    pub(super) fn release_scene_stage(
+        &mut self,
+        instance: minimium_world::world::WorldInstanceId,
+        owner: super::sector_scene::SceneInterestOwner,
+    ) {
+        let released = self
+            .world_geometry
+            .release_scene_stage(instance, owner.geometry_stage());
+        self.fixed_gpu_bytes = self.fixed_gpu_bytes.saturating_sub(released);
     }
 
     pub(super) fn release_world_sectors(
@@ -131,6 +152,7 @@ impl Renderer {
         instance: minimium_world::world::WorldInstanceId,
     ) {
         self.shadow_map_preparation.release_world(instance);
+        self.sector_cache.remove_world_data(instance);
         self.gpu.release_world_sectors(instance);
     }
 }

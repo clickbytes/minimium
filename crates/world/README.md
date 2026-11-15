@@ -8,6 +8,14 @@ Owns world manifests, topology, addressing, map geometry, entities and neutral c
 
 The `world` module exposes manifests, maps, topology/addressing, collision geometry and the current `World` state API. The `entity` module exposes the world-scoped component registry and entity store, plus ordered `WorldEntityChange` values for persistence adapters.
 
+`CharacterGeometry` is the shared CPU value for feet position, the FixedY/radial
+frame, 0.3 m radius, 1.7 m body height and 1.6 m eye point. Its local/world
+transforms let collision, rays and presentation use the same oriented body box.
+Both FixedY and radial geometry use the existing `character_frame` basis. At
+FixedY and at radial +Y, that basis is right +Z/up +Y/forward +X, because both
+use the common tangent calculation. The equal horizontal dimensions keep the
+same axis-aligned body bounds at those orientations.
+
 Component schemas require an exact registered version; the world crate does not migrate older component payloads. Every descriptor provides a payload validator, which the registry runs after enforcing size and schema and before creating a component blob. Insert, restore and persistence loading share this validation path; staged effect/store changes are published only after validation succeeds. Replicated descriptors explicitly declare either a spatial position decoder or global visibility; spatial entities are filtered through active sectors, and global visibility is never inferred from a missing position. Payloads are limited to 2048 bytes, each entity to 16 components, and each store to 16,384 entities; storage/runtime enforces the 4 MiB aggregate snapshot component payload cap across worlds. Store mutations advance a monotone revision and remain available through `changes_since`; component removal and entity despawn are explicit change records. Component persistence belongs to storage/runtime composition and is not encoded into sector object blobs.
 
 ## Dependencies

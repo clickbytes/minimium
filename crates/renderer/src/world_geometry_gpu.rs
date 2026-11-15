@@ -3,7 +3,7 @@ use crate::{geometry, geometry_rebase::RebaseLayout, shadow_geometry::ShadowBoun
 use minimium_procgen::SectorGeometry;
 use minimium_world::world::{GenerationRevision, SectorKey, WorldContentRevision, WorldInstanceId};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     sync::Arc,
 };
 use wgpu::util::DeviceExt;
@@ -13,6 +13,29 @@ mod local_water;
 mod prepared_upload;
 
 type CatalogKey = (WorldInstanceId, SectorKey, u8);
+type PreparedStageKey = (WorldInstanceId, GeometryStageId, SectorKey, u8);
+type SceneStageKey = (WorldInstanceId, GeometryStageId);
+const MAX_STAGED_SCENE_OWNERS: usize = 2;
+const FRAME_UPLOAD_PATCH_BUDGET: u32 = 8;
+const FRAME_UPLOAD_BYTE_BUDGET: u64 = 4 * 1024 * 1024;
+
+/// Identifies one active or pending scene's upload staging area within a world.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct GeometryStageId {
+    kind: u8,
+    primary: u128,
+    secondary: u128,
+}
+
+impl GeometryStageId {
+    pub const fn new(kind: u8, primary: u128, secondary: u128) -> Self {
+        Self {
+            kind,
+            primary,
+            secondary,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct GeometryPublicationStamp {
@@ -27,6 +50,7 @@ pub struct GeometryPublicationStamp {
 #[derive(Clone, Debug)]
 pub struct GeometryPublication {
     pub stamp: GeometryPublicationStamp,
+    pub stage: GeometryStageId,
     pub keys: Vec<(SectorKey, u8)>,
 }
 
@@ -42,7 +66,14 @@ pub struct WorldGeometryGpu {
     bounds: HashMap<CatalogKey, ShadowBounds>,
     sources: HashMap<CatalogKey, Arc<SectorGeometry>>,
     prepared_sources: HashMap<CatalogKey, Arc<crate::prepared_sector::PreparedSector>>,
-    pending: HashMap<CatalogKey, prepared_upload::PendingGeometry>,
+    pending: HashMap<PreparedStageKey, prepared_upload::PendingGeometry>,
+    pending_raw: HashMap<PreparedStageKey, prepared_upload::PendingRawGeometry>,
+    staged_versions:
+        HashMap<(WorldInstanceId, GeometryStageId), (GenerationRevision, WorldContentRevision)>,
+    stage_order: VecDeque<SceneStageKey>,
+    priority_cursor: Option<SceneStageKey>,
+    priority_stage: Option<SceneStageKey>,
+    priority_stage_serviced: bool,
     water: HashMap<WorldInstanceId, local_water::LocalWaterSlot>,
     released_publication_bytes: u64,
     publication: Option<GeometryPublication>,
@@ -57,8 +88,8 @@ struct UploadBudget {
 impl Default for UploadBudget {
     fn default() -> Self {
         Self {
-            patches: 8,
-            bytes: 4 * 1024 * 1024,
+            patches: FRAME_UPLOAD_PATCH_BUDGET,
+            bytes: FRAME_UPLOAD_BYTE_BUDGET,
         }
     }
 }
@@ -85,6 +116,41 @@ pub struct GeometryCacheResult {
 }
 
 impl WorldGeometryGpu {
+    pub(super) fn can_stage(&self, instance: WorldInstanceId, stage: GeometryStageId) -> bool {
+        self.staged_versions.contains_key(&(instance, stage))
+            || self.staged_versions.len() < MAX_STAGED_SCENE_OWNERS
+    }
+
+    pub(super) fn register_stage(&mut self, instance: WorldInstanceId, stage: GeometryStageId) {
+        let key = (instance, stage);
+        if !self.staged_versions.contains_key(&key) {
+            self.stage_order.push_back(key);
+        }
+    }
+
+    pub(super) fn stage_can_upload(
+        &mut self,
+        instance: WorldInstanceId,
+        stage: GeometryStageId,
+    ) -> bool {
+        let key = (instance, stage);
+        if self.priority_stage.is_none() {
+            self.priority_stage = Some(key);
+            self.priority_cursor = Some(key);
+        }
+        if self.priority_stage_serviced {
+            self.priority_stage != Some(key)
+        } else {
+            self.priority_stage == Some(key)
+        }
+    }
+
+    pub fn finish_scene_upload(&mut self, instance: WorldInstanceId, stage: GeometryStageId) {
+        if self.priority_stage == Some((instance, stage)) {
+            self.priority_stage_serviced = true;
+        }
+    }
+
     pub fn publication(&self) -> Option<&GeometryPublication> {
         self.publication.as_ref()
     }
@@ -100,31 +166,46 @@ impl WorldGeometryGpu {
     pub fn publish_scene(
         &mut self,
         instance: WorldInstanceId,
+        stage: GeometryStageId,
         fingerprint: u64,
         keys: &[(SectorKey, u8)],
     ) -> bool {
-        let Some((generation, content_revision)) = self.versions.get(&instance).copied() else {
+        let Some((generation, content_revision)) =
+            self.staged_versions.get(&(instance, stage)).copied()
+        else {
             return false;
         };
+        let is_published_stage = self.publication.as_ref().is_some_and(|publication| {
+            publication.stamp.instance == instance && publication.stage == stage
+        });
         let complete = !keys.is_empty()
             && keys.iter().all(|(key, lod)| {
                 let catalog_key = (instance, *key, *lod);
                 self.pending
-                    .get(&catalog_key)
+                    .get(&(instance, stage, *key, *lod))
                     .is_some_and(|pending| pending.origin_generation == self.origin_generation)
-                    || (self.catalog.contains_key(&catalog_key)
+                    || self
+                        .pending_raw
+                        .get(&(instance, stage, *key, *lod))
+                        .is_some_and(|pending| pending.origin_generation == self.origin_generation)
+                    || (is_published_stage
+                        && self.catalog.contains_key(&catalog_key)
+                        && self.versions.get(&instance) == Some(&(generation, content_revision))
                         && self.catalog_origin_generation.get(&catalog_key)
                             == Some(&self.origin_generation))
             });
         if !complete {
-            self.publication = None;
             return false;
         }
-        let geometry_changed = self.publish_prepared(instance, keys);
-        self.publish_local_water(instance);
+        let geometry_changed =
+            self.publish_prepared(instance, stage, keys) || self.publish_raw(instance, stage, keys);
+        self.versions
+            .insert(instance, (generation, content_revision));
+        self.publish_local_water(instance, stage);
         if !geometry_changed
             && self.publication.as_ref().is_some_and(|publication| {
                 publication.stamp.instance == instance
+                    && publication.stage == stage
                     && publication.stamp.generation == generation
                     && publication.stamp.content_revision == content_revision
                     && publication.stamp.world_fingerprint == fingerprint
@@ -148,13 +229,68 @@ impl WorldGeometryGpu {
                 geometry_revision: revision,
                 origin_generation: self.origin_generation,
             },
+            stage,
             keys: keys.to_vec(),
         });
+        let released = self.release_scene_stage(instance, stage);
+        self.released_publication_bytes = self.released_publication_bytes.saturating_add(released);
         true
+    }
+
+    /// Drops all unpublished geometry and water uploads for one scene owner.
+    pub fn release_scene_stage(
+        &mut self,
+        instance: WorldInstanceId,
+        stage: GeometryStageId,
+    ) -> u64 {
+        let mut released = 0;
+        self.pending.retain(|(owner, candidate, _, _), image| {
+            if *owner == instance && *candidate == stage {
+                released += image.bytes();
+                false
+            } else {
+                true
+            }
+        });
+        self.pending_raw.retain(|(owner, candidate, _, _), image| {
+            if *owner == instance && *candidate == stage {
+                released += image.bytes();
+                false
+            } else {
+                true
+            }
+        });
+        if let Some(slot) = self.water.get_mut(&instance) {
+            released += slot.release_stage(stage);
+        }
+        self.staged_versions.remove(&(instance, stage));
+        self.stage_order.retain(|key| *key != (instance, stage));
+        if self.priority_stage == Some((instance, stage)) {
+            self.priority_stage = None;
+            self.priority_stage_serviced = false;
+        }
+        released
     }
 
     pub fn begin_frame(&mut self) {
         self.budget = UploadBudget::default();
+        self.stage_order
+            .retain(|key| self.staged_versions.contains_key(key));
+        self.priority_stage = if self.stage_order.is_empty() {
+            None
+        } else {
+            let cursor = self.priority_cursor.and_then(|key| {
+                self.stage_order
+                    .iter()
+                    .position(|candidate| *candidate == key)
+            });
+            let next = cursor.map_or(0, |index| (index + 1) % self.stage_order.len());
+            self.stage_order.get(next).copied()
+        };
+        if let Some(stage) = self.priority_stage {
+            self.priority_cursor = Some(stage);
+        }
+        self.priority_stage_serviced = false;
     }
     pub fn new(device: &wgpu::Device, compute: bool) -> Self {
         Self {
@@ -184,6 +320,10 @@ impl WorldGeometryGpu {
             ]
         });
         let pending = self.pending.values().flat_map(|p| p.buffers());
+        let pending_raw = self
+            .pending_raw
+            .values()
+            .map(|pending| (&pending.buffer, RebaseLayout::Object));
         let water = self
             .water
             .values()
@@ -192,13 +332,19 @@ impl WorldGeometryGpu {
             device,
             queue,
             delta,
-            flat.chain(terrain).chain(pending).chain(water),
+            flat.chain(terrain)
+                .chain(pending)
+                .chain(pending_raw)
+                .chain(water),
         );
         self.origin_generation = origin_generation;
         self.catalog_origin_generation
             .values_mut()
             .for_each(|generation| *generation = origin_generation);
         for pending in self.pending.values_mut() {
+            pending.origin_generation = origin_generation;
+        }
+        for pending in self.pending_raw.values_mut() {
             pending.origin_generation = origin_generation;
         }
         for slot in self.water.values_mut() {
@@ -275,125 +421,5 @@ impl WorldGeometryGpu {
 
     pub fn contains(&self, instance: WorldInstanceId, key: SectorKey, lod: u8) -> bool {
         self.catalog.contains_key(&(instance, key, lod))
-    }
-
-    pub fn cache_scene(
-        &mut self,
-        device: &wgpu::Device,
-        instance: WorldInstanceId,
-        generation: GenerationRevision,
-        content_revision: WorldContentRevision,
-        sectors: &[(SectorKey, u8, Arc<SectorGeometry>)],
-        render_origin: [f32; 3],
-        terrain: Option<&minimium_procgen::PlanetTerrain>,
-        origin_generation: u64,
-    ) -> GeometryCacheResult {
-        let mut edges = crate::terrain_edges::EdgeConformance::default();
-        let conformed = terrain.map(|t| edges.prepare(sectors.to_vec(), t));
-        let sectors = conformed.as_deref().unwrap_or(sectors);
-        let mut released_bytes = 0_u64;
-        let version = (generation, content_revision);
-        if self
-            .publication
-            .as_ref()
-            .is_some_and(|publication| publication.stamp.instance == instance)
-        {
-            self.publication = None;
-        }
-        if self
-            .versions
-            .get(&instance)
-            .is_some_and(|cached| *cached != version)
-        {
-            released_bytes += self.release_world(instance);
-        }
-        self.versions.insert(instance, version);
-        let required: HashSet<_> = sectors.iter().map(|(key, lod, _)| (*key, *lod)).collect();
-        let mut allocated_bytes = 0_u64;
-        for (key, lod, geometry) in sectors {
-            let catalog_key = (instance, *key, *lod);
-            if self.catalog.contains_key(&catalog_key) {
-                continue;
-            }
-            let vertices = geometry::sector_geometry_relative(geometry, render_origin);
-            if let Some(terrain) = terrain {
-                let surface = crate::terrain_geometry::vertices(geometry, terrain, render_origin);
-                let ocean = edges.ocean(*key, *lod).map_or_else(Vec::new, |g| {
-                    crate::prepared_sector::clipped_ocean_vertices(g, render_origin, None)
-                });
-                let object_count = geometry.boxes.len() * 36;
-                let make_buffer = |label, bytes: &[u8]| {
-                    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some(label),
-                        contents: if bytes.is_empty() { &[0; 4] } else { bytes },
-                        usage: self.usage(),
-                    })
-                };
-                let buffers = TerrainBuffers {
-                    surface: make_buffer("terrain-vertices", bytemuck::cast_slice(&surface)),
-                    surface_count: surface.len() as u32,
-                    ocean: make_buffer("ocean-vertices", bytemuck::cast_slice(&ocean)),
-                    ocean_count: ocean.len() as u32,
-                    objects: make_buffer(
-                        "terrain-objects",
-                        bytemuck::cast_slice(&vertices[..object_count]),
-                    ),
-                    object_count: object_count as u32,
-                };
-                allocated_bytes += buffers.bytes();
-                self.terrain.insert(catalog_key, buffers);
-            }
-            let vertices = if terrain.is_some() {
-                crate::terrain_geometry::shadow_vertices(geometry, vertices)
-            } else {
-                vertices
-            };
-            let empty_vertices = [0.0_f32; 9];
-            let contents = if vertices.is_empty() {
-                bytemuck::cast_slice(&empty_vertices)
-            } else {
-                bytemuck::cast_slice(&vertices)
-            };
-            let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("world-sector-geometry"),
-                contents,
-                usage: self.usage(),
-            });
-            allocated_bytes = allocated_bytes.saturating_add(buffer.size());
-            self.catalog
-                .insert(catalog_key, (buffer, vertices.len() as u32));
-            self.catalog_origin_generation
-                .insert(catalog_key, origin_generation);
-            if let Some(bounds) = crate::shadow_geometry::geometry_bounds(geometry) {
-                self.bounds.insert(catalog_key, bounds);
-            }
-        }
-        self.catalog.retain(|(owner, key, lod), (buffer, _)| {
-            if *owner != instance || required.contains(&(*key, *lod)) {
-                true
-            } else {
-                released_bytes = released_bytes.saturating_add(buffer.size());
-                false
-            }
-        });
-        self.catalog_origin_generation
-            .retain(|key, _| self.catalog.contains_key(key));
-        self.bounds
-            .retain(|(owner, key, lod), _| *owner != instance || required.contains(&(*key, *lod)));
-        self.terrain.retain(|(owner, key, lod), buffers| {
-            let retain = *owner != instance || required.contains(&(*key, *lod));
-            if !retain {
-                released_bytes += buffers.bytes();
-            }
-            retain
-        });
-        let ready = sectors
-            .iter()
-            .all(|(key, lod, _)| self.catalog.contains_key(&(instance, *key, *lod)));
-        GeometryCacheResult {
-            ready,
-            allocated_bytes,
-            released_bytes,
-        }
     }
 }

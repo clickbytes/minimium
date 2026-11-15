@@ -5,7 +5,7 @@ use super::spatial_geometry::CombatCoveragePlan;
 use super::world_state::World;
 use super::{PLAYER_HEIGHT, PLAYER_MAX_HEALTH, PLAYER_RADIUS};
 use minimium_core::ids::PlayerId;
-use minimium_world::world::Aabb;
+use minimium_world::world::{Aabb, CharacterGeometry};
 use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -73,16 +73,22 @@ impl World {
             combat_player_query,
             combat_map_query,
             spawn,
+            gravity,
             ..
         } = self;
         let Some(attacker) = players.get(&attacker_id) else {
             return Ok(None);
         };
-        let origin = [
-            attacker.position[0],
-            attacker.position[1] + PLAYER_HEIGHT * 0.9,
-            attacker.position[2],
-        ];
+        let attacker_feet = attacker.position_mm.map_or_else(
+            || attacker.position.map(f64::from),
+            |position| position.0.map(|value| value as f64 / 1000.0),
+        );
+        let Some(attacker_geometry) = CharacterGeometry::new(attacker_feet, *gravity) else {
+            return Ok(None);
+        };
+        let origin = attacker_geometry
+            .eye_position_m()
+            .map(|coordinate| coordinate as f32);
         if !coverage.matches(spatial_geometry, origin, direction, settings.range) {
             return Err(ShotReadinessError::NotReady);
         }
@@ -97,19 +103,32 @@ impl World {
             let Some(candidate) = players.get(candidate_id) else {
                 continue;
             };
-            let bounds = Aabb {
-                min: [
-                    candidate.position[0] - PLAYER_RADIUS,
-                    candidate.position[1],
-                    candidate.position[2] - PLAYER_RADIUS,
-                ],
-                max: [
-                    candidate.position[0] + PLAYER_RADIUS,
-                    candidate.position[1] + PLAYER_HEIGHT,
-                    candidate.position[2] + PLAYER_RADIUS,
-                ],
+            let feet = candidate.position_mm.map_or_else(
+                || candidate.position.map(f64::from),
+                |position| position.0.map(|value| value as f64 / 1000.0),
+            );
+            let Some(geometry) = CharacterGeometry::new(feet, *gravity) else {
+                continue;
             };
-            let Some(distance) = ray_aabb_distance(origin, direction, bounds, settings.range)
+            let local_origin = geometry
+                .world_to_local_point(origin.map(f64::from))
+                .map(|coordinate| coordinate as f32);
+            let local_direction = geometry.world_to_local_direction(direction.map(f64::from));
+            let local_length = local_direction
+                .iter()
+                .map(|value| value * value)
+                .sum::<f64>()
+                .sqrt();
+            if !local_length.is_finite() || local_length <= 1.0e-8 {
+                continue;
+            }
+            let local_direction = local_direction.map(|value| (value / local_length) as f32);
+            let bounds = Aabb {
+                min: [-PLAYER_RADIUS, 0.0, -PLAYER_RADIUS],
+                max: [PLAYER_RADIUS, PLAYER_HEIGHT, PLAYER_RADIUS],
+            };
+            let Some(distance) =
+                ray_aabb_distance(local_origin, local_direction, bounds, settings.range)
             else {
                 continue;
             };

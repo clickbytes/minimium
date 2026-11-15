@@ -14,7 +14,4 @@ impl ClientSession {
             0
         }
     }
-    pub fn base_geography(&self) -> Option<Arc<dyn minimium_procgen::PreparedGeography>> {
-        self.prepared_geography.clone()
-    }
 }

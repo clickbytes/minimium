@@ -1,19 +1,11 @@
 use super::*;
-use minimium_client_runtime::ConnectionController;
 
 pub(super) struct RendererSetup {
     pub(super) window: Arc<Window>,
-    pub(super) map: WorldMap,
-    pub(super) world_catalog:
-        std::collections::HashMap<minimium_world::world::WorldInstanceId, WorldMap>,
-    pub(super) world_manifests:
-        std::collections::HashMap<minimium_world::world::WorldInstanceId, WorldManifest>,
-    pub(super) profile_id: PlayerProfileId,
+    pub(super) worlds: crate::bootstrap::InitialWorlds,
+    pub(super) connection: crate::bootstrap::ClientConnection,
     pub(super) diagnostic_logger: minimium_diagnostics::DomainLogger,
     pub(super) renderer_logger: minimium_diagnostics::DomainLogger,
-    pub(super) content_cache_dir: PathBuf,
-    pub(super) content_cache_limit_bytes: u64,
-    pub(super) earth_package_dir: PathBuf,
     pub(super) map_path: Option<PathBuf>,
     pub(super) world_definition_path: Option<PathBuf>,
     pub(super) local_server_config: minimium_client_runtime::LocalServerLaunchConfig,
@@ -27,15 +19,10 @@ impl Renderer {
     pub(super) async fn new(setup: RendererSetup) -> Result<Self, Box<dyn Error>> {
         let RendererSetup {
             window,
-            map,
-            world_catalog,
-            world_manifests,
-            profile_id,
+            worlds,
+            connection,
             diagnostic_logger,
             renderer_logger,
-            content_cache_dir,
-            content_cache_limit_bytes,
-            earth_package_dir,
             map_path,
             world_definition_path,
             local_server_config,
@@ -48,22 +35,19 @@ impl Renderer {
         let sky_quality = startup_settings.sky_quality();
         let localizer = minimium_localization::Localizer::new(Some(diagnostic_logger.clone()))
             .map_err(std::io::Error::other)?;
-        let map_fingerprint = map.fingerprint();
-        let current_instance = world_catalog
-            .iter()
-            .find_map(|(instance, candidate)| {
-                (candidate.fingerprint() == map_fingerprint).then_some(*instance)
-            })
-            .unwrap_or_else(|| {
-                minimium_world::world::WorldInstanceId::new(1)
-                    .expect("primary world identifier is nonzero")
-            });
+        let crate::bootstrap::InitialWorlds {
+            instance: current_instance,
+            map,
+            world_catalog,
+            world_manifests,
+        } = worlds;
         let current_manifest = world_manifests
             .get(&current_instance)
             .copied()
             .ok_or("initial world has no generation manifest")?;
         let mut sector_cache = sector_scene::ClientSectorCache::new()?;
         let initial_scene = sector_cache.ensure_scene(
+            sector_scene::SceneInterestOwner::Bootstrap(current_instance),
             current_instance,
             current_manifest,
             map.spawn(),
@@ -72,6 +56,7 @@ impl Renderer {
             0,
             &world_catalog,
             &world_manifests,
+            None,
             Default::default(),
             None,
         )?;
@@ -154,31 +139,13 @@ impl Renderer {
         } else {
             CharacterGravity::FixedY
         };
-        let mut connection = ConnectionController::new();
-        connection.register_replica_schema(
-            minimium_game_sample::PORTAL_COMPONENT,
-            minimium_game_sample::PORTAL_SCHEMA,
-        )?;
-        connection.set_authentication(minimium_client_runtime::ClientAuthentication::new(
-            "dev.profile",
-            profile_id.as_bytes().to_vec(),
-        )?);
-        connection.set_diagnostic_logger(diagnostic_logger);
-        connection.set_content_cache_dir(content_cache_dir);
-        connection.set_content_cache_limit(content_cache_limit_bytes);
-        connection.set_world_content_resolver(Arc::new(
-            crate::world_content::SampleWorldContentResolver::new(
-                world_catalog.clone(),
-                world_manifests.clone(),
-                Some(earth_package_dir),
-            ),
-        ));
-        connection.set_presentation(
-            gpu.device
+        let connection = connection.for_host(crate::bootstrap::HostCapabilities::Desktop {
+            compressed_materials: gpu
+                .device
                 .features()
                 .contains(wgpu::Features::TEXTURE_COMPRESSION_BC)
                 && gpu.device.limits().max_texture_dimension_2d >= 4096,
-        );
+        });
         let mut setting_values = crate::application::SettingsStore::new(&startup_settings);
         setting_values.set_effective(
             crate::client_commands::ClientPropertyValue::SkyQuality(sky_quality_state.effective),

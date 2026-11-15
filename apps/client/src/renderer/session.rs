@@ -189,6 +189,17 @@ impl Renderer {
         self.bolids.clear();
         self.diagnostic_bolid_age = None;
         self.clear_pending_sector_transitions();
+        let bootstrap = super::sector_scene::SceneInterestOwner::Bootstrap(
+            self.application.game.current_instance,
+        );
+        self.sector_cache.release_interest(bootstrap);
+        self.gpu
+            .release_scene_stage(bootstrap.instance(), bootstrap);
+        if let Some(context) = self.application.game.session_context() {
+            let active = super::sector_scene::SceneInterestOwner::Active(context);
+            self.sector_cache.release_interest(active);
+            self.gpu.release_scene_stage(context.instance(), active);
+        }
         if self.application.settings.require_earth {
             self.gpu.scene_visible = false;
             if !self.application.status.is_error() {
@@ -330,8 +341,17 @@ impl Renderer {
         {
             return;
         }
-        let direction = super::camera::camera_direction(
-            self.application.game.gameplay.prediction.character,
+        let prediction = &self.application.game.gameplay.prediction;
+        let character = prediction.character;
+        let feet_m = prediction.position_mm.map_or_else(
+            || character.position.map(f64::from),
+            |position| position.0.map(|value| value as f64 / 1000.0),
+        );
+        let Some(geometry) = CharacterGeometry::new(feet_m, character.gravity) else {
+            return;
+        };
+        let direction = super::camera::camera_direction_from_geometry(
+            geometry,
             self.input.yaw,
             self.input.pitch,
         )
