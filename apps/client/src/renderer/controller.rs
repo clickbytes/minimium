@@ -236,11 +236,11 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
                     .iter()
                     .take(minimium_environment::universe::MAX_CELESTIAL_BODIES + 2)
                 {
-                    let flux: f64 = if body.id == minimium_astronomy::SKY_SUN_ID {
+                    let flux: f64 = if body.id == minimium_environment::universe::SKY_SUN_ID {
                         frame.local_sun.map_or(0.0, |local| {
                             f64::from(local.effective_linear_rgb.iter().sum::<f32>())
                         })
-                    } else if body.id == minimium_astronomy::SKY_MOON_ID {
+                    } else if body.id == minimium_environment::universe::SKY_MOON_ID {
                         frame.local_moon.map_or(0.0, |local| {
                             f64::from(local.effective_linear_rgb.iter().sum::<f32>())
                         })

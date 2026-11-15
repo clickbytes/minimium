@@ -24,6 +24,10 @@ Calculator/cache instances are owned by the client presentation side; FFI remain
 
 Keep the current astronomy algorithms, model revision and coordinate conventions stable.
 
+Sun/Moon observations use the reserved identifiers owned by
+`minimium_environment::universe`. Catalog registration rejects conflicting IDs;
+the adapter does not silently discard catalog bodies to resolve collisions.
+
 ## Commands
 
 None.
