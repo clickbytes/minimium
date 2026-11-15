@@ -29,6 +29,7 @@ pub(crate) fn component_registry(
     modules: &ModuleRegistry<ModuleHandler, SystemFn>,
 ) -> Result<minimium_world::entity::ComponentRegistry, minimium_world::entity::ComponentError> {
     let mut registry = minimium_world::entity::ComponentRegistry::default();
+    minimium_world::impact::register_component(&mut registry)?;
     for component in modules.components() {
         registry.register(component.descriptor)?;
     }

@@ -64,6 +64,10 @@ Front ends resolve profile, server-data, material-cache, config and log paths on
 
 The front-end loop owns UI and polls the runtime connection controller; the runtime owns its socket, bounded protocol state and local-server guard, while background connector work reports typed results.
 
+Both frontends display the controller's typed busy rejection. Desktop switches
+its scene to connecting only after an attempt is accepted; a rejected restart
+keeps the active environment and geometry visible.
+
 `ClientApplication` owns the connection controller, client gameplay/session
 state, input action mapper, settings, UI model, world catalog, overview model,
 typed connection status and `WorldTransitionController`. Transfer tickets move
@@ -299,6 +303,13 @@ keyboard and mouse controls. Bindings are validated while loading configuration
 and can be changed/reset with the local property command; the desktop replaces
 the active mapper atomically, and the text frontend can save an override for a
 later desktop launch. Physical controls remain separate from text and IME input.
+`input::PhysicalControl` is the shared configuration/device catalog: named
+keyboard controls retain their existing names, and mouse controls are
+`MouseLeft`, `MouseRight`, `MouseMiddle`, `MouseBack`, and `MouseForward`.
+Unknown names are rejected before replacing the mapper. Both devices use the
+same typed press/release and action dispatch; for example,
+`gameplay.fire=MouseRight` keeps the existing click-to-capture behavior. Left
+click selection in the console and map dragging take priority over bindings.
 
 The F1 console displays a bordered overlay with scrollable command output;
 PageUp/PageDown and the mouse wheel scroll history. `help` lists short command
@@ -528,6 +539,9 @@ seeded color/flicker, the separately moving fragment, a ground flash, dust/eject
 point illumination and optional desktop-audio sound with propagation delay.
 There is no mining/inventory reward attached to the remnant. Restart both endpoints
 for protocol 21. `start-earth.ps1` rebuilds the matching release executables.
+Tracked engine bodies arrive in typed `ImpactState` protocol messages and are
+decoded as `BodyState`; they are ServerOnly entity components, so client replica
+schema registration remains limited to components carried by entity replication.
 Initial terrain synchronization gates prediction; impact revisions gate replacement
 geometry/collision, and the burst waits for the new presentation. The terminal
 client consumes the same replica without GPU dependencies. Runtime visual/FPS and

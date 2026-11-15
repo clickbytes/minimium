@@ -6,7 +6,7 @@ Owns world manifests, topology, addressing, map geometry, entities and neutral c
 
 ## Public API
 
-The `world` module exposes manifests, maps, topology/addressing, collision geometry and the current `World` state API. The `entity` module exposes the world-scoped component registry and entity store.
+The `world` module exposes manifests, maps, topology/addressing, collision geometry and the current `World` state API. The `entity` module exposes the world-scoped component registry and entity store, plus ordered `WorldEntityChange` values for persistence adapters.
 
 Component schemas require an exact registered version; the world crate does not migrate older component payloads. Every descriptor provides a payload validator, which the registry runs after enforcing size and schema and before creating a component blob. Insert, restore and persistence loading share this validation path; staged effect/store changes are published only after validation succeeds. Replicated descriptors explicitly declare either a spatial position decoder or global visibility; spatial entities are filtered through active sectors, and global visibility is never inferred from a missing position. Payloads are limited to 2048 bytes, each entity to 16 components, and each store to 16,384 entities; storage/runtime enforces the 4 MiB aggregate snapshot component payload cap across worlds. Store mutations advance a monotone revision and remain available through `changes_since`; component removal and entity despawn are explicit change records. Component persistence belongs to storage/runtime composition and is not encoded into sector object blobs.
 
@@ -48,6 +48,10 @@ the pure Earth height/datum conversion. Identity preserves legacy arithmetic.
 
 `impact::BodyState` is a validated world-scoped entity component (type 0x100,
 schema 1); its neutral 162-byte record is shared by storage and protocol adapters.
+The impact owner registers its ServerOnly descriptor through
+`impact::register_component`; server composition installs it before application
+module descriptors so type/name collisions remain typed registry errors. Client
+impact state travels as typed protocol messages rather than entity replication.
 It carries immutable world seed, physical parameters, SI velocity, game-space
 position, lifetime, fragmentation and flight/landed/collected phase. `follows`
 rejects identity changes, phase regression and changes to committed craters.

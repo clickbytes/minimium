@@ -6,34 +6,21 @@ use crate::messages::ClientText as Text;
 
 impl Renderer {
     pub(crate) fn start_remote_attempt(&mut self, address: &str) {
-        self.demo_environment = None;
-        self.environment_frame = crate::environment::EnvironmentFrameInput::unavailable();
-        if self.application.settings.require_earth {
-            self.application.status = crate::application::ClientStatus::Status(
-                minimium_localization::UiStatus::EarthConnecting,
-            );
-            self.gpu.scene_visible = false;
-        }
         match self.application.start_remote(address.to_owned()) {
-            Ok(()) => self.application.ui.console.push_client_text(
-                Text::ConnectingTo(address.to_owned()),
-                false,
-                &self.localizer,
-                self.application.settings.locale,
-            ),
+            Ok(()) => {
+                self.connection_attempt_started();
+                self.application.ui.console.push_client_text(
+                    Text::ConnectingTo(address.to_owned()),
+                    false,
+                    &self.localizer,
+                    self.application.settings.locale,
+                );
+            }
             Err(error) => self.report_start_error(error),
         }
     }
 
     pub(crate) fn start_local_attempt(&mut self, threads: Option<crate::options::ThreadLane>) {
-        self.demo_environment = None;
-        self.environment_frame = crate::environment::EnvironmentFrameInput::unavailable();
-        if self.application.settings.require_earth {
-            self.application.status = crate::application::ClientStatus::Status(
-                minimium_localization::UiStatus::EarthConnecting,
-            );
-            self.gpu.scene_visible = false;
-        }
         let mut config = self.application.settings.local_server_config.clone();
         if let Some(threads) = threads {
             if config
@@ -52,21 +39,40 @@ impl Renderer {
             }
         }
         match self.application.start_local(config) {
-            Ok(()) => self.application.ui.console.push_client_text(
-                Text::StartingLocalServer,
-                false,
-                &self.localizer,
-                self.application.settings.locale,
-            ),
+            Ok(()) => {
+                self.connection_attempt_started();
+                self.application.ui.console.push_client_text(
+                    Text::StartingLocalServer,
+                    false,
+                    &self.localizer,
+                    self.application.settings.locale,
+                );
+            }
             Err(error) => self.report_start_error(error),
+        }
+    }
+
+    fn connection_attempt_started(&mut self) {
+        self.demo_environment = None;
+        self.environment_frame = crate::environment::EnvironmentFrameInput::unavailable();
+        if self.application.settings.require_earth {
+            self.application.status = crate::application::ClientStatus::Status(
+                minimium_localization::UiStatus::EarthConnecting,
+            );
+            self.gpu.scene_visible = false;
         }
     }
 
     fn report_start_error(&mut self, error: StartError) {
         let text = match error {
-            StartError::Busy { active_attempt } => Text::BusyAttempt {
+            StartError::Busy {
+                active_attempt: Some(active_attempt),
+            } => Text::BusyAttempt {
                 attempt_id: active_attempt.get(),
             },
+            StartError::Busy {
+                active_attempt: None,
+            } => Text::DisconnectOrWait,
             StartError::AttemptIdsExhausted => Text::AttemptIdsExhausted,
             StartError::WorkerSpawn(error) => Text::WorkerStartFailed(error.to_string()),
         };

@@ -47,7 +47,9 @@ pub struct WorldSaveEntry {
     pub players: Vec<Player>,
 }
 
-pub use budget::{SnapshotBudget, SnapshotRecordKey, MAX_SNAPSHOT_WORLDS};
+pub use budget::{
+    PreparedEntityReservation, SnapshotBudget, SnapshotRecordKey, MAX_SNAPSHOT_WORLDS,
+};
 pub use error::{StorageError, StorageErrorKind};
 pub use format::SAVE_VERSION;
 pub use loaded_state::LoadedState;
