@@ -26,8 +26,9 @@ impl PreparedEnvironmentFrame {
         frame: EnvironmentFrame,
         stars: Option<PreparedStarUpload>,
         meteors: MeteorFrame,
+        cosmetic_time: std::time::Duration,
     ) -> Self {
-        let uniform = environment_gpu::environment_uniform(&frame);
+        let uniform = environment_gpu::environment_uniform(&frame, cosmetic_time);
         let render_frame = RenderFrame::new(
             frame.render_view,
             frame.camera_uniform,

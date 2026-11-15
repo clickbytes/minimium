@@ -158,8 +158,11 @@ and desktop diagnostics, independent of the astronomy-backed lighting adapter.
 its shadow geometry/bounds, creates a frame with client/UI data and computes
 output exposure. Compile it with `cargo check -p minimium-renderer
 --no-default-features --examples --locked`. This performs no GPU session and is
-not a visual test. The existing cosmetic clock in `gpu_frame::environment_uniform`
-is unchanged here; host-owned cosmetic time belongs to E049-P02.
+not a visual test. `gpu_frame::environment_uniform` takes explicit cosmetic
+`Duration` input and writes its seconds value to the existing star-animation
+uniform lane. The caller owns the monotonic clock; identical input produces the
+same uniform. The desktop host supplies lifetime elapsed time independently of
+world UTC. The CPU example supplies a fixed zero duration.
 
 Uses `glam` for camera and geometry calculations; `bytemuck` and `half` for GPU layouts and optical LUT values; `wgpu` for rendering resources; `pollster` for bounded GPU error-scope resolution; `minimium-assets` for the embedded star catalogue; `minimium-procgen` and `minimium-world` for manifests, geography and generated patches; and public astronomy/environment observations for visual lighting. It has no window, client-runtime, session, protocol, storage or transport dependency.
 
