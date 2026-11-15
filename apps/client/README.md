@@ -55,8 +55,8 @@ local up direction elsewhere.
 
 The default `desktop` feature enables renderer GPU code and the astronomy,
 window and clipboard adapters. `cargo build -p minimium-client --no-default-features`
-builds a terminal-only executable: it defaults to console mode, skips material
-cooking and has no wgpu/winit/astronomy dependency. Renderer quality/debug values
+builds a terminal-only executable: it defaults to console mode, needs no material
+package and has no wgpu/winit/astronomy dependency. Renderer quality/debug values
 remain CPU-only public contracts when its `gpu` feature is disabled.
 
 The renderer's `RenderFrame`, `PreparedSector`, uniform and vertex data are also
@@ -245,7 +245,14 @@ generation revisions or saves, and needs no world reset.
 desktop console. The text frontend reports presentation-only commands without
 constructing GPU resources. Desktop startup loads the cooked offline base set;
 server-required sets are installed before content readiness. Distribute the
-executable with `materials/sample-v1` using `tools/package_client.py`.
+executable with `materials/manifest.ron` and its declared sibling maps using
+`tools/package_client.py --manifest PATH EXECUTABLE NEW_OUTPUT_DIRECTORY`.
+Cargo does not cook materials. Development launches explicitly select a cooked
+manifest through `MINIMIUM_MATERIAL_MANIFEST`; otherwise the desktop loads the
+installed manifest beside its executable. Both startup and session material
+preparation use that same selection and bounded validation. An invalid explicit
+path fails without selecting another recipe. `start-earth.ps1` runs the sample
+cook step explicitly, then passes and restores the manifest environment variable.
 `albedo` retains shaded uniform grey; `base_color` shows actual material color
 without lighting, and `coverage` shows a fixed six-role palette without textures.
 

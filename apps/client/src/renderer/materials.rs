@@ -1,5 +1,28 @@
 use super::*;
 
+pub(super) fn open_offline_materials(
+    compressed: bool,
+) -> Result<minimium_asset_io::materials::MaterialPackage, minimium_asset_io::AssetIoError> {
+    use minimium_asset_io::AssetIoError;
+    let manifest = match std::env::var_os("MINIMIUM_MATERIAL_MANIFEST") {
+        Some(path) => PathBuf::from(path),
+        None => {
+            let executable = std::env::current_exe()
+                .map_err(|error| AssetIoError::io("locate client material manifest", error))?;
+            executable
+                .parent()
+                .ok_or_else(|| {
+                    AssetIoError::invalid_format(
+                        "client material manifest",
+                        "no executable directory",
+                    )
+                })?
+                .join("materials/manifest.ron")
+        }
+    };
+    minimium_asset_io::materials::MaterialPackage::open_manifest(&manifest, compressed)
+}
+
 impl Renderer {
     pub(super) fn prepare_session_materials(&mut self) {
         let Some(session) = self
@@ -21,14 +44,7 @@ impl Renderer {
             .contains(wgpu::Features::TEXTURE_COMPRESSION_BC)
             && self.gpu.device.limits().max_texture_dimension_2d >= 4096;
         let package = session.take_material_package().map(Ok).unwrap_or_else(|| {
-            let installed = std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().map(|p| p.join("materials/sample-v1")));
-            let path = installed
-                .filter(|p| p.exists())
-                .unwrap_or_else(|| PathBuf::from(env!("MINIMIUM_BUILT_MATERIALS")));
-            minimium_asset_io::materials::MaterialPackage::open(&path, compressed)
-                .map_err(|error| error.to_string())
+            open_offline_materials(compressed).map_err(|error| error.to_string())
         });
         let result = package.and_then(|package| {
             self.gpu.terrain_gpu.release_materials();

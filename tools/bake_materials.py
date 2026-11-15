@@ -1,16 +1,13 @@
-"""Build-time KTX2 cooker. Python + numpy; no client startup generation."""
+"""Explicit KTX2 cooker: a recipe path and output directory produce a manifest."""
 import argparse
 import hashlib
 import importlib.util
 from pathlib import Path
 import struct
+import sys
 import tempfile
 import zlib
 import numpy as np
-
-ROOT = Path(__file__).resolve().parents[1]
-RECIPE = ROOT / "games/sample/materials/recipe.py"
-
 
 def blocks(image):
     edge = image.shape[0]
@@ -173,31 +170,33 @@ def write_ktx(path, edge, fmt, layers):
             out.write(payload)
 
 
-def bake(output):
-    spec = importlib.util.spec_from_file_location('recipe', RECIPE)
+def bake(recipe_path, output):
+    recipe_path = Path(recipe_path).resolve(strict=True)
+    output = Path(output).resolve()
+    spec = importlib.util.spec_from_file_location('recipe', recipe_path)
     recipe = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(recipe)
     output.mkdir(parents=True, exist_ok=True)
-    sources = Path(__file__).read_bytes()+b''.join(path.read_bytes() for path in sorted(RECIPE.parent.glob('*.py')))
-    revision = hashlib.sha256(sources+np.__version__.encode()).hexdigest()
+    sources = Path(__file__).read_bytes()+b''.join(path.read_bytes() for path in sorted(recipe_path.parent.glob('*.py')))
+    revision = hashlib.sha256(recipe_path.name.encode()+sources+np.__version__.encode()).hexdigest()
     stamp = output / 'recipe.sha256'
     if stamp.exists() and stamp.read_text() == revision and (output/'manifest.ron').exists():
-        return
+        return output/'manifest.ron'
     variants = []
     # Generate each role once. Temporary byte maps avoid keeping six float arrays live.
     with tempfile.TemporaryDirectory(prefix='.cook-', dir=output) as temporary:
         temporary = Path(temporary)
         for role, name in enumerate(recipe.ROLES):
-            print(f'Baking {name}', flush=True)
+            print(f'Baking {name}', file=sys.stderr, flush=True)
             maps = recipe.maps(role, 4096)
-            previews(output, name, maps[0], maps[1])
+            previews(temporary, name, maps[0], maps[1])
             for index, image in enumerate(maps):
                 np.save(temporary/f'{role}-{index}.npy', np.rint(np.clip(image, 0, 1)*255).astype(np.uint8))
             del maps, image
         for edge, formats in ((4096, (132, 141, 137)), (2048, (43, 37, 37))):
             files = []
             for index, (name, fmt) in enumerate(zip(('albedo', 'normal', 'packed'), formats)):
-                path = output/f'{name}-{edge}.ktx2'
+                path = temporary/f'{name}-{edge}.ktx2'
                 layers = [np.load(temporary/f'{role}-{index}.npy', mmap_mode='r') for role in range(6)]
                 if edge == 2048:
                     layers = [reduce(image, srgb=index == 0, normal=index == 1) for image in layers]
@@ -206,13 +205,24 @@ def bake(output):
                 data = path.read_bytes()
                 files.append(f'(name:"{path.name}",bytes:{len(data)},sha256:"{hashlib.sha256(data).hexdigest()}")')
             variants.append(f'(edge:{edge},compressed:{str(edge == 4096).lower()},maps:('+','.join(files)+'))')
+        # Finish cooking before replacing any published files. The manifest and
+        # cache stamp are written last, so interrupted publication is not a hit.
+        stamp.unlink(missing_ok=True)
+        (output/'previews').mkdir(exist_ok=True)
+        for path in sorted(temporary.glob('*.ktx2')):
+            path.replace(output/path.name)
+        for path in sorted((temporary/'previews').glob('*.png')):
+            path.replace(output/'previews'/path.name)
     roles = ','.join('"'+r+'"' for r in recipe.ROLES)
     scales = ','.join(str(s) for s in recipe.SCALES)
     (output/'manifest.ron').write_text(f'(version:1,roles:({roles}),meters_per_tile:({scales}),height_blend:0.2,variants:('+','.join(variants)+'))')
     stamp.write_text(revision)
+    return output/'manifest.ron'
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--recipe', required=True, type=Path)
     parser.add_argument('output', type=Path)
-    bake(parser.parse_args().output)
+    args = parser.parse_args()
+    print(bake(args.recipe, args.output))

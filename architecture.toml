@@ -63,7 +63,7 @@ forbidden_dependencies = ["minimium-astronomy", "minimium-procgen", "minimium-as
 [[package]]
 name = "minimium-asset-io"
 role = "adapter"
-responsibility = "Bounded authored asset access, typed asset errors, prepared GEBCO/WorldCover geography, bounded material HTTP client/server adapters with private verified file snapshots retained until their workers exit, and an 8-GiB-default leased content cache with cross-process reservation and digest locking."
+responsibility = "Bounded authored asset access, explicit material-manifest loading and validated client packaging, typed asset errors, prepared GEBCO/WorldCover geography, bounded material HTTP client/server adapters with private verified file snapshots retained until their workers exit, and an 8-GiB-default leased content cache with cross-process reservation and digest locking."
 forbidden_dependencies = ["minimium-server", "minimium-client", "minimium-renderer", "wgpu", "winit"]
 
 [[package]]
@@ -147,7 +147,7 @@ forbidden_dependencies = ["minimium-astronomy", "wgpu", "wgpu-core", "wgpu-hal",
 [[package]]
 name = "minimium-game-sample"
 role = "game-content"
-responsibility = "Shared demo map, stable seed, planet presets and relief-curve configuration adapters, deterministic periodic material recipes and physical relief scales, climate scenario presets, sample planet/dungeon scenario including seeded route, spawn, entrance marker and resolved planet relief-sampling policy, demo celestial catalogue, sample gameplay module/component schemas and sample combat balance consumed by applications. Supplies tool profiles, canonical 1500 mm sample terrain material profile, developer tool definitions, rare-impact probability and meteorite physical/gameplay profile."
+responsibility = "Shared demo map, stable seed, planet presets and relief-curve configuration adapters, deterministic periodic material recipes and physical relief scales with explicit sample cook composition, climate scenario presets, sample planet/dungeon scenario including seeded route, spawn, entrance marker and resolved planet relief-sampling policy, demo celestial catalogue, sample gameplay module/component schemas and sample combat balance consumed by applications. Supplies tool profiles, canonical 1500 mm sample terrain material profile, developer tool definitions, rare-impact probability and meteorite physical/gameplay profile."
 forbidden_dependencies = ["minimium-server", "minimium-client", "wgpu", "winit"]
 
 [[package]]

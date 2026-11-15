@@ -62,6 +62,10 @@ $activeClient = Get-Process minimium-client -ErrorAction SilentlyContinue |
 if ($activeClient) {
     throw "Close the running Minimium client (PID $($activeClient.Id -join ', ')) before rebuilding $client."
 }
+$assetPython = if ($env:MINIMIUM_ASSET_PYTHON) { $env:MINIMIUM_ASSET_PYTHON } else { 'python' }
+$materialManifest = & rtk proxy $assetPython (Join-Path $projectRoot 'games/sample/materials/cook.py') (Join-Path $projectRoot 'target/materials/sample-v1')
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+$materialManifest = (Resolve-Path -LiteralPath $materialManifest).Path
 & rtk cargo build --release -p minimium-server -p minimium-client --manifest-path (Join-Path $projectRoot 'Cargo.toml')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if ($RebuildWorld) {
@@ -76,8 +80,10 @@ $previousPackage = [Environment]::GetEnvironmentVariable('MINIMIUM_EARTH_PACKAGE
 $previousConfig = [Environment]::GetEnvironmentVariable('MINIMIUM_LOCAL_PLANET_CONFIG', 'Process')
 $previousSeed = [Environment]::GetEnvironmentVariable('MINIMIUM_LOCAL_SEED', 'Process')
 $previousClimateRelief = [Environment]::GetEnvironmentVariable('MINIMIUM_LOCAL_CLIMATE_RELIEF_INFLUENCE', 'Process')
+$previousMaterialManifest = [Environment]::GetEnvironmentVariable('MINIMIUM_MATERIAL_MANIFEST', 'Process')
 $temporaryPreset = $null
 try {
+    Set-LauncherEnvironmentVariable 'MINIMIUM_MATERIAL_MANIFEST' $materialManifest
     # Ordinary resumes use the immutable saved definition, including its peak curve.
     $planetPreset = if (Test-Path -LiteralPath (Join-Path $DataDir 'world.planet.ron')) {
         $null
@@ -117,6 +123,7 @@ try {
     & $client @arguments
     $exitCode = $LASTEXITCODE
 } finally {
+    Set-LauncherEnvironmentVariable 'MINIMIUM_MATERIAL_MANIFEST' $previousMaterialManifest
     Set-LauncherEnvironmentVariable 'MINIMIUM_EARTH_PACKAGE' $previousPackage
     Set-LauncherEnvironmentVariable 'MINIMIUM_LOCAL_PLANET_CONFIG' $previousConfig
     Set-LauncherEnvironmentVariable 'MINIMIUM_LOCAL_SEED' $previousSeed

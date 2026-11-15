@@ -30,9 +30,12 @@ do not add world parameters or change seed, generator digest or materialized
 map bytes.
 
 `materials/recipe.py` owns deterministic sand, soil, grass, litter, rock and snow
-art recipes. The client build invokes `tools/bake_materials.py` (Python + numpy)
-and caches complete KTX2 arrays in `target/materials/sample-v1`. Recipes do not
-run at client startup. `climate/` contains neutral, warming/drought and cooling
+art recipes. `materials/cook.py OUTPUT` explicitly supplies that recipe to
+`tools/bake_materials.py::bake(recipe_path, output)` (Python + numpy), which returns
+the completed manifest path. Cargo does not cook assets. Cooker stdout contains
+the manifest path; progress goes to stderr. Recipes do not run at client startup.
+The client and packager consume the selected manifest, independent of the sample
+recipe directory. `climate/` contains neutral, warming/drought and cooling
 scenarios with absolute UTC transition windows. See `docs/terrain-materials.md`
 for preparation, packaging, overrides and outstanding visual acceptance.
 
