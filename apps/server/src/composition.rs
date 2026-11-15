@@ -109,6 +109,7 @@ pub(super) fn server_composition(
         authentication_provider: Arc::new(
             super::developer_auth::DeveloperAuthenticationProvider::new(dev_mode),
         ),
+        transport: None,
     }
 }
 

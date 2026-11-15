@@ -1,9 +1,9 @@
 use super::*;
 use crate::{
-    connection::{queue_encoded_frame, queue_message},
+    connection::{queue_message, queue_message_with_reserve},
     world_inputs::WorldEvent,
 };
-use minimium_protocol::{encode_server, ServerMessage};
+use minimium_protocol::ServerMessage;
 
 impl ServerRuntime {
     pub(super) fn emit_world_event(&mut self, event: WorldEvent) {
@@ -65,20 +65,13 @@ impl ServerRuntime {
                     sender_name: name,
                     text,
                 };
-                let encoding_started = Instant::now();
-                let encoded = encode_server(&message);
-                self.metrics.encoding.record(encoding_started.elapsed());
-                let Ok(frame) = encoded else {
-                    self.metrics.dropped_messages = self.metrics.dropped_messages.saturating_add(1);
-                    return;
-                };
                 for client in &mut self.connections.clients {
                     if client.player_id().is_none_or(|player| {
                         self.game.worlds.instance_for_player(player) != Some(instance)
                     }) {
                         continue;
                     }
-                    if !queue_encoded_frame(client, &frame, &mut self.metrics) {
+                    if !queue_message_with_reserve(client, &mut self.metrics, message.clone(), 0) {
                         self.metrics.dropped_messages =
                             self.metrics.dropped_messages.saturating_add(1);
                     }

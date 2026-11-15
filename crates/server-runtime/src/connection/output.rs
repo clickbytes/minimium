@@ -11,7 +11,7 @@ pub(crate) fn queue_close_response(
     } else {
         CloseReason::Rejected
     };
-    if !queue_message(client, metrics, message) {
+    if !queue_message_with_deadline(client, metrics, message, Some(now + CLIENT_CLOSE_TIMEOUT)) {
         metrics.dropped_messages = metrics.dropped_messages.saturating_add(1);
         client.disconnect_reason = Some(CloseReason::Backpressure);
         return false;
@@ -19,13 +19,13 @@ pub(crate) fn queue_close_response(
     client.begin_close(now, reason);
     true
 }
-
 pub(crate) fn mark_disconnected(
     index: usize,
     client: &mut Client,
     disconnected: &mut Vec<usize>,
     reason: Option<CloseReason>,
 ) {
+    client.transport.close(client.connection_id());
     if let Some(reason) = reason {
         client.disconnect_reason = Some(reason);
     }
@@ -37,112 +37,88 @@ pub(crate) fn queue_message(
     metrics: &mut RuntimeMetrics,
     message: ServerMessage,
 ) -> bool {
-    if client.close_deadline().is_some() {
-        return false;
-    }
-    if client.output_frames.len() >= MAX_QUEUED_OUTPUT_FRAMES {
-        return false;
-    }
-    prepare_output(client);
-    if client.output.len() + MAX_SERVER_FRAME_BYTES > MAX_QUEUED_OUTPUT_BYTES {
-        return false;
-    }
-    client.output.reserve_exact(MAX_SERVER_FRAME_BYTES);
-    let frame_start = client.output.len();
-    let encoding_started = Instant::now();
-    let result = encode_server_into(&mut client.output, &message);
-    let encoding_time = encoding_started.elapsed();
-    metrics.encoding.record(encoding_time);
-    client.encoding_us = client
-        .encoding_us
-        .saturating_add(encoding_time.as_micros().min(u64::MAX as u128) as u64);
-    match result {
-        Ok(()) if client.output.len() <= MAX_QUEUED_OUTPUT_BYTES => {
-            client
-                .output_frames
-                .push_back((client.output.len() - frame_start, Instant::now()));
-            client.frames_out += 1;
-            metrics.frames_out += 1;
-            true
-        }
-        Ok(()) => {
-            client.output.truncate(frame_start);
-            false
-        }
-        Err(error) => {
-            client.output.truncate(frame_start);
-            if let Some(logger) = &client.protocol_logger {
-                crate::diagnostics::emit(
-                    logger,
-                    minimium_diagnostics::Level::Error,
-                    "protocol.message_encode_failed",
-                    &[("reason", error.to_string())],
-                );
-            }
-            false
-        }
-    }
+    queue_message_with_deadline(client, metrics, message, None)
 }
 
-pub(crate) fn queue_encoded_frame(
+pub(crate) fn queue_message_with_deadline(
     client: &mut Client,
-    frame: &[u8],
     metrics: &mut RuntimeMetrics,
+    message: ServerMessage,
+    close_after_flush: Option<Instant>,
 ) -> bool {
-    queue_encoded_frame_with_reserve(client, frame, metrics, 0)
+    queue_message_with_limit(
+        client,
+        metrics,
+        message,
+        minimium_protocol::MAX_SERVER_FRAME_BYTES,
+        minimium_protocol::MAX_SERVER_FRAME_BYTES,
+        close_after_flush,
+    )
+    .is_ok()
 }
 
-pub(crate) fn queue_encoded_frame_with_reserve(
+pub(crate) fn queue_message_with_reserve(
     client: &mut Client,
-    frame: &[u8],
     metrics: &mut RuntimeMetrics,
+    message: ServerMessage,
     reserved_bytes: usize,
 ) -> bool {
+    queue_message_with_limit(
+        client,
+        metrics,
+        message,
+        reserved_bytes,
+        minimium_protocol::MAX_SERVER_FRAME_BYTES,
+        None,
+    )
+    .is_ok()
+}
+
+pub(crate) fn queue_message_with_limit(
+    client: &mut Client,
+    metrics: &mut RuntimeMetrics,
+    message: ServerMessage,
+    reserved_bytes: usize,
+    max_frame_bytes: usize,
+    close_after_flush: Option<Instant>,
+) -> Result<usize, minimium_transport::QueueError> {
     if client.close_deadline().is_some() {
-        return false;
+        return Err(minimium_transport::QueueError::Closed);
     }
-    if client.output_frames.len() >= MAX_QUEUED_OUTPUT_FRAMES {
-        return false;
-    }
-    prepare_output(client);
-    if client
-        .output
-        .len()
-        .saturating_add(frame.len())
-        .saturating_add(reserved_bytes)
-        > MAX_QUEUED_OUTPUT_BYTES
-    {
-        return false;
-    }
-    client.output.reserve(frame.len());
-    client.output.extend_from_slice(frame);
-    client
-        .output_frames
-        .push_back((frame.len(), Instant::now()));
-    client.frames_out += 1;
-    metrics.frames_out += 1;
-    true
-}
-
-fn prepare_output(client: &mut Client) {
-    if client.output_offset > 0 {
-        let pending = client.output.len() - client.output_offset;
-        client.output.copy_within(client.output_offset.., 0);
-        client.output.truncate(pending);
-        client.output_offset = 0;
-    }
-}
-
-pub(crate) fn account_output(client: &mut Client, mut written: usize) {
-    while written > 0 {
-        let Some((remaining, _)) = client.output_frames.front_mut() else {
-            break;
-        };
-        let consumed = written.min(*remaining);
-        *remaining -= consumed;
-        written -= consumed;
-        if *remaining == 0 {
-            client.output_frames.pop_front();
+    match client.transport.queue_game(GameOutput {
+        connection_id: client.connection_id,
+        close_reason: close_after_flush.map(|_| {
+            if matches!(&message, ServerMessage::Bye) {
+                minimium_transport::GameDisconnectReason::Quit
+            } else {
+                minimium_transport::GameDisconnectReason::Rejected
+            }
+        }),
+        message,
+        close_after_flush,
+        reserved_bytes,
+        max_frame_bytes,
+    }) {
+        Ok(result) => {
+            metrics.encoding.record(result.encoding_time);
+            client.encoding_us = client
+                .encoding_us
+                .saturating_add(result.encoding_time.as_micros().min(u64::MAX as u128) as u64);
+            metrics.frames_out = metrics.frames_out.saturating_add(1);
+            Ok(result.encoded_bytes)
+        }
+        Err(error) => {
+            if matches!(error, minimium_transport::QueueError::Encoding) {
+                if let Some(logger) = &client.protocol_logger {
+                    crate::diagnostics::emit(
+                        logger,
+                        minimium_diagnostics::Level::Error,
+                        "protocol.message_encode_failed",
+                        &[("reason", error.to_string())],
+                    );
+                }
+            }
+            Err(error)
         }
     }
 }

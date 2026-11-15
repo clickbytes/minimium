@@ -29,7 +29,6 @@ impl ServerRuntime {
             self.metrics.loop_work.record(loop_started.elapsed());
             self.plan_sleep();
         }
-        drop(self.game_listener.take());
         let persistence_deadline = self.shutdown_request.begin_shutdown() - Duration::from_secs(2);
         if let Err(error) = self.shutdown_excavation(persistence_deadline) {
             runtime_error = Some(error);
@@ -39,8 +38,7 @@ impl ServerRuntime {
         }
         lifecycle::shutdown(lifecycle::ShutdownContext {
             shutdown_request: &self.shutdown_request,
-            admin: &mut self.operations.admin,
-            clients: &mut self.connections.clients,
+            transport: &mut *self.operations.transport,
             player_store: &mut self.operations.player_store,
             persistence: &mut self.operations.persistence,
             content: &mut self.content,

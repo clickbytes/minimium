@@ -121,7 +121,6 @@ impl ExcavationConfig {
 }
 
 /// Application-selected world and combat data for one server process.
-#[derive(Clone)]
 pub struct ServerComposition {
     pub excavation: ExcavationConfig,
     pub impact_profile: Option<minimium_world::impact::ImpactProfile>,
@@ -139,4 +138,6 @@ pub struct ServerComposition {
     pub simulation_logger: DomainLogger,
     pub asset_io_logger: DomainLogger,
     pub authentication_provider: crate::authentication::SharedAuthenticationProvider,
+    /// Process-host-created socket adapter; domain runtimes may supply a non-TCP host port.
+    pub transport: Option<Box<dyn minimium_transport::TransportPort>>,
 }

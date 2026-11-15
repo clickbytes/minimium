@@ -52,7 +52,7 @@ impl ServerRuntime {
         }
     }
     fn apply_commands(&mut self) {
-        let game_address = self.game_address;
+        let game_address = self.game_address.clone();
         let max_players = self.max_players;
         let lanes = self.lanes;
         let command_phase = allocations::enter(Phase::Commands);
@@ -60,14 +60,19 @@ impl ServerRuntime {
             let Some((request_id, command)) = self.operations.command_queue.pop_front() else {
                 break;
             };
-            if request_id.is_some_and(|id| !self.operations.admin.is_pending(id, Instant::now())) {
+            if request_id.is_some_and(|id| {
+                !self
+                    .operations
+                    .transport
+                    .is_admin_pending(id, Instant::now())
+            }) {
                 continue;
             }
             let monotonic_ms = self.monotonic_ms(Instant::now());
             let schedule_diagnostics = self.schedule.diagnostics();
             let runtime_status = command
                 .is_status()
-                .then(|| self.runtime_status_snapshot(game_address, max_players));
+                .then(|| self.runtime_status_snapshot(&game_address, max_players));
             let client_traffic = if command.is_metrics() {
                 self.client_traffic_snapshot()
             } else {
@@ -126,7 +131,10 @@ impl ServerRuntime {
                 );
             }
             if let Some(id) = request_id {
-                self.operations.admin.respond_command(id, &reply);
+                let _ = self
+                    .operations
+                    .transport
+                    .respond_admin(id, crate::admin::response(&reply));
             } else {
                 let prefix = match reply.error_code() {
                     Some(code) => format!("ERR {code}"),

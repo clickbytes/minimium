@@ -2,7 +2,7 @@
 
 ## Purpose / Non-goals
 
-Owns the authoritative server lifecycle, world registry, tick, networking coordination, admission and persistence composition. It consumes fixed-domain server, transport, storage, environment, protocol, world and sector diagnostics loggers supplied by the host application. It enforces server-granted principal permissions at mutating input admission. Movement inputs carry intent only; a per-player server-owned policy supplies speed, acceleration and flight to the shared integrator. Privileged policy changes require the matching permission and are returned only to the requesting player. It is headless and has no GPU or window role.
+Owns the authoritative server lifecycle, world registry, tick, typed transport-event coordination, admission and persistence composition. It consumes fixed-domain server, transport, storage, environment, protocol, world and sector diagnostics loggers supplied by the host application. The host supplies a `TransportPort` and typed `GameOutputPort`; this crate owns no listener, socket, byte buffer or codec. It enforces server-granted principal permissions at mutating input admission. Movement inputs carry intent only; a per-player server-owned policy supplies speed, acceleration and flight to the shared integrator. Privileged policy changes require the matching permission and are returned only to the requesting player. It is headless and has no GPU or window role.
 
 ## Public API
 

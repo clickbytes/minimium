@@ -1392,6 +1392,7 @@ dependencies = [
  "minimium-simulation",
  "minimium-telemetry",
  "minimium-terrain",
+ "minimium-transport",
  "minimium-world",
  "ron",
 ]
@@ -1464,6 +1465,11 @@ dependencies = [
 [[package]]
 name = "minimium-transport"
 version = "0.1.0"
+dependencies = [
+ "minimium-protocol",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "minimium-world"

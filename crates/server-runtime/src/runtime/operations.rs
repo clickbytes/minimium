@@ -61,20 +61,33 @@ impl ServerRuntime {
         self.connections.messages.clear();
         self.connections.disconnected.clear();
         let loop_started = Instant::now();
-        let admin_requests = self.operations.admin.poll(Instant::now())?;
-        for request in admin_requests {
+        let admin_requests = self
+            .connections
+            .admin_requests
+            .drain(..)
+            .collect::<Vec<_>>();
+        for (id, line) in admin_requests {
+            let command = match crate::admin::parse(&line) {
+                Ok(command) => command,
+                Err(response) => {
+                    self.operations
+                        .transport
+                        .respond_admin(id, response)
+                        .map_err(std::io::Error::other)?;
+                    continue;
+                }
+            };
             if self.operations.command_queue.len() < 64 {
-                self.operations
-                    .command_queue
-                    .push_back((Some(request.id), request.command));
+                self.operations.command_queue.push_back((Some(id), command));
             } else {
-                self.operations.admin.respond_command(
-                    request.id,
-                    &crate::commands::CommandReply::error(
-                        "server.command.queue_full",
-                        "command queue full",
-                    ),
+                let reply = crate::commands::CommandReply::error(
+                    "server.command.queue_full",
+                    "command queue full",
                 );
+                self.operations
+                    .transport
+                    .respond_admin(id, crate::admin::response(&reply))
+                    .map_err(std::io::Error::other)?;
             }
         }
         if let Some(console_rx) = &self.operations.console_rx {
