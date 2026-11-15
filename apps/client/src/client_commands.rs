@@ -87,7 +87,7 @@ pub(crate) enum ClientCommand {
     SpawnRandomBolid(u16),
     SpawnRandomMeteorid,
     SetTime { minute: u16, local: bool },
-    WeatherDebug(minimium_environment::weather::CloudDebug),
+    WeatherDebug(minimium_renderer::cloud_presentation::CloudDebug),
     WeatherDetail(u8),
 }
 

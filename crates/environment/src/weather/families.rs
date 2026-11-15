@@ -114,18 +114,18 @@ pub(super) fn configure<T: TerrainSampler>(
     let width = width * (0.75 + r * 0.5);
     let height = (height * (0.75 + c.humidity * 0.5)).min((ceiling - cloud.base_m) / model.scale);
     let raw = DVec3::new(width, height.max(100.0), width * aspect) * model.scale;
-    // Dyadic lattice: choose a root size and snap the support inward. At least
-    // two vertical cells preserve thin layers even when detail is budget-limited.
+    // Preserve the generated physical support: clearance, density and extent
+    // already depend on these snapped dimensions. This quantization is fixed,
+    // independent of the renderer's requested detail or sampling budget.
     let root = raw.max_element();
-    let min_level = ((2.0 * root / raw.min_element()).log2().ceil() as u8).clamp(2, 6);
-    let cell = root / f64::from(1_u32 << min_level);
+    let subdivisions = ((2.0 * root / raw.min_element()).log2().ceil() as u8).clamp(2, 6);
+    let cell = root / f64::from(1_u32 << subdivisions);
     cloud.kind = kind;
     cloud.size_m = ((raw / cell) + DVec3::splat(1e-10))
         .floor()
         .max(DVec3::splat(1.0))
         * cell;
-    cloud.min_level = min_level;
-    cloud.max_level = 6;
+    cloud.support_quantum_m = cell;
     cloud.opacity = (optical * (0.4 + layer.coverage * 0.6)) as f32;
     (layer.max_base_m, ceiling)
 }

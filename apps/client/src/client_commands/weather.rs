@@ -2,7 +2,7 @@ use super::{
     ArgumentSpec as Arg, ArgumentType as ArgType, ClientCommand, CommandRegistry, CommandSpec,
     ParseError,
 };
-use minimium_environment::weather::CloudDebug;
+use minimium_renderer::cloud_presentation::CloudDebug;
 
 const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
