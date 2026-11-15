@@ -1,3 +1,4 @@
+mod backend;
 mod budget;
 mod error;
 pub mod excavation;
@@ -47,13 +48,15 @@ pub struct WorldSaveEntry {
     pub players: Vec<Player>,
 }
 
+pub use backend::{FileStorageBackend, StorageBackend, StorageServices};
 pub use budget::{
     PreparedEntityReservation, SnapshotBudget, SnapshotRecordKey, MAX_SNAPSHOT_WORLDS,
 };
 pub use error::{StorageError, StorageErrorKind};
 pub use format::SAVE_VERSION;
+pub use impact_journal::ImpactJournalPort;
 pub use loaded_state::LoadedState;
-pub use persistence::{PersistenceStatus, PersistenceWorker, SaveStatus};
+pub use persistence::{PersistencePort, PersistenceStatus, PersistenceWorker, SaveStatus};
 pub use player_store::{PlayerStore, SaveSnapshot};
 
 /// Checks the saved snapshot version without creating files or loading records.

@@ -1,42 +1,137 @@
 use crate::{
     composition::{WorldComposer, WorldCompositionRequest, WorldDefinition},
     config::ServerConfig,
-    environment::{self, EnvironmentConfig},
-    lifecycle::{remove_if_exists, EndpointGuard},
-    storage::{PersistenceWorker, PlayerStore},
+    content::ContentServer,
+    environment::{self, ClimateConfiguration, EnvironmentConfig},
+    storage::{FileStorageBackend, PersistencePort, PlayerStore, StorageBackend},
 };
+use minimium_environment::climate::ClimateScenario;
 use minimium_environment::time::SavedClockState;
 use minimium_platform::{
     admin_client::{SHUTDOWN_FILE, SHUTDOWN_OWNER_FILE},
     endpoint::ServerEndpoint,
     server_lock::ServerDataLock,
 };
-use minimium_storage::excavation::JOURNAL_FILE_NAME;
 use minimium_world::world::{WorldInstanceId, WorldMap};
 use std::{
+    fs::{self, File},
     io,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
-pub(crate) struct Startup {
-    pub(crate) map: WorldMap,
-    pub(crate) primary_terrain_material_profile: minimium_procgen::TerrainMaterialProfile,
-    pub(crate) worlds: Option<Vec<WorldDefinition>>,
-    pub(crate) player_store: PlayerStore,
-    pub(crate) entity_counters: Vec<(WorldInstanceId, u64)>,
-    pub(crate) world_initialization: Vec<(WorldInstanceId, bool)>,
-    pub(crate) entities: Vec<minimium_storage::PersistedEntity>,
-    pub(crate) persistence: PersistenceWorker,
-    pub(crate) next_player: u64,
-    pub(crate) transport: Box<dyn minimium_transport::TransportPort>,
-    pub(crate) game_address: String,
-    pub(crate) endpoint: ServerEndpoint,
-    pub(crate) endpoint_guard: EndpointGuard,
-    pub(crate) data_lock: ServerDataLock,
-    pub(crate) environment_config: EnvironmentConfig,
-    pub(crate) saved_clock: Option<SavedClockState>,
-    pub(crate) prepared_geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
+pub(crate) struct EndpointGuard {
+    data_dir: PathBuf,
+    endpoint: ServerEndpoint,
+    logger: minimium_diagnostics::DomainLogger,
+}
+
+impl Drop for EndpointGuard {
+    fn drop(&mut self) {
+        if let Err(error) = self.endpoint.remove_if_owned(&self.data_dir) {
+            crate::diagnostics::emit(
+                &self.logger,
+                minimium_diagnostics::Level::Error,
+                "server.endpoint_cleanup_failed",
+                &[("error_kind", format!("{:?}", error.kind()))],
+            );
+        }
+    }
+}
+
+fn write_shutdown_status(
+    data_dir: &Path,
+    endpoint: &ServerEndpoint,
+    result: &io::Result<()>,
+) -> io::Result<()> {
+    use std::io::Write;
+    let admin_port = endpoint.admin_port;
+    let path = data_dir.join(SHUTDOWN_FILE);
+    let temporary_path = data_dir.join("server.shutdown.tmp");
+    let write_result = (|| {
+        let mut file = File::create(&temporary_path)?;
+        match result {
+            Ok(()) => writeln!(file, "{admin_port}\tOK")?,
+            Err(error) => writeln!(
+                file,
+                "{admin_port}\tERR\t{}",
+                crate::storage::compact_error(error)
+            )?,
+        }
+        file.sync_all()?;
+        let owner_path = data_dir.join("server.shutdown.owner.tmp");
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut owner = options.open(owner_path)?;
+        writeln!(owner, "{}", endpoint.token)?;
+        owner.sync_all()?;
+        drop(owner);
+        minimium_platform::files::atomic_replace_file(
+            &data_dir.join("server.shutdown.owner.tmp"),
+            &data_dir.join(SHUTDOWN_OWNER_FILE),
+        )?;
+        minimium_platform::files::atomic_replace_file(&temporary_path, &path)?;
+        Ok(())
+    })();
+    if write_result.is_err() {
+        let _ = fs::remove_file(temporary_path);
+    }
+    write_result
+}
+
+fn remove_if_exists(path: &Path) -> io::Result<()> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
+pub struct PreparedRuntime {
+    pub map: WorldMap,
+    pub primary_terrain_material_profile: minimium_procgen::TerrainMaterialProfile,
+    pub worlds: Option<Vec<WorldDefinition>>,
+    pub player_store: PlayerStore,
+    pub entity_counters: Vec<(WorldInstanceId, u64)>,
+    pub world_initialization: Vec<(WorldInstanceId, bool)>,
+    pub entities: Vec<minimium_storage::PersistedEntity>,
+    pub persistence: Box<dyn PersistencePort>,
+    pub excavation_journal: Box<dyn minimium_storage::excavation::ExcavationJournalPort>,
+    pub excavation_restore: minimium_storage::excavation::ExcavationRestore,
+    pub impact_journal: Box<dyn minimium_storage::ImpactJournalPort>,
+    pub impact_restore: Vec<minimium_world::impact::BodyState>,
+    pub climate: ClimateScenario,
+    pub content: Box<dyn crate::composition::ContentServicePort>,
+    pub next_player: u64,
+    pub transport: Box<dyn minimium_transport::TransportPort>,
+    pub game_address: String,
+    pub endpoint: Option<ServerEndpoint>,
+    pub process_lifecycle: Option<Box<dyn crate::composition::ProcessLifecyclePort>>,
+    pub environment_config: EnvironmentConfig,
+    pub saved_clock: Option<SavedClockState>,
+    pub prepared_geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
+}
+
+struct FileProcessLifecycle {
+    data_dir: PathBuf,
+    endpoint: ServerEndpoint,
+    _endpoint_guard: EndpointGuard,
+    _data_lock: ServerDataLock,
+}
+
+impl crate::composition::ProcessLifecyclePort for FileProcessLifecycle {
+    fn remove_endpoint(&mut self) -> io::Result<()> {
+        self.endpoint.remove_if_owned(&self.data_dir)
+    }
+
+    fn write_shutdown_status(&mut self, result: &io::Result<()>) -> io::Result<()> {
+        write_shutdown_status(&self.data_dir, &self.endpoint, result)
+    }
 }
 
 pub(crate) fn initialize(
@@ -45,15 +140,17 @@ pub(crate) fn initialize(
     component_registry: &minimium_world::entity::ComponentRegistry,
     storage_logger: minimium_diagnostics::DomainLogger,
     server_logger: minimium_diagnostics::DomainLogger,
+    asset_io_logger: minimium_diagnostics::DomainLogger,
     transport: Box<dyn minimium_transport::TransportPort>,
-) -> Result<Startup, Box<dyn std::error::Error>> {
+) -> Result<PreparedRuntime, Box<dyn std::error::Error>> {
     let data_dir = &config.data_dir;
+    let storage_backend = FileStorageBackend::new(data_dir.clone(), storage_logger.clone());
     let requested_seed = config.seed;
     let map_path = config.map_path.as_deref();
     let world_definition_path = config.world_definition_path.as_deref();
     let planet_config_path = config.planet_config_path.as_deref();
 
-    preflight_persistent_formats(data_dir)?;
+    storage_backend.preflight()?;
     if config.environment_config_path.is_some()
         && ["world.seed", "world.planet.ron", "world.snapshot"]
             .iter()
@@ -120,13 +217,9 @@ pub(crate) fn initialize(
             )]
         });
     // Reject incompatible saved worlds before creating the process lock file.
-    drop(PlayerStore::load(
-        data_dir,
-        &world_maps,
-        component_registry,
-    )?);
+    drop(storage_backend.load(&world_maps, component_registry)?);
     let data_lock = ServerDataLock::acquire(data_dir)?;
-    preflight_persistent_formats(data_dir)?;
+    storage_backend.preflight()?;
     if config.environment_config_path.is_some()
         && ["world.seed", "world.planet.ron", "world.snapshot"]
             .iter()
@@ -143,7 +236,7 @@ pub(crate) fn initialize(
         )
         .into());
     }
-    let loaded_state = PlayerStore::load(data_dir, &world_maps, component_registry)?;
+    let loaded_state = storage_backend.load(&world_maps, component_registry)?;
     remove_if_exists(&data_dir.join(SHUTDOWN_FILE))?;
     remove_if_exists(&data_dir.join(SHUTDOWN_OWNER_FILE))?;
     let saved_clock = loaded_state.saved_clock;
@@ -169,7 +262,6 @@ pub(crate) fn initialize(
         )?;
     }
     player_store.reserve_active(config.max_players);
-    let persistence = PersistenceWorker::spawn(data_dir.to_path_buf(), storage_logger.clone())?;
     let next_player = player_store.next_player_id()?;
     let transport_endpoint = transport.endpoint();
     let game_address = transport_endpoint.game_address;
@@ -189,7 +281,18 @@ pub(crate) fn initialize(
         endpoint: endpoint.clone(),
         logger: server_logger,
     };
-    Ok(Startup {
+    let process_lifecycle = Box::new(FileProcessLifecycle {
+        data_dir: PathBuf::from(data_dir),
+        endpoint: endpoint.clone(),
+        _endpoint_guard: endpoint_guard,
+        _data_lock: data_lock,
+    });
+    let climate_config = ClimateConfiguration::load(config)?;
+    let content = ContentServer::new(config, asset_io_logger)?;
+    climate_config.commit()?;
+    let climate = climate_config.scenario;
+    let storage_services = storage_backend.open_services()?;
+    Ok(PreparedRuntime {
         map,
         primary_terrain_material_profile,
         worlds: generated_worlds,
@@ -197,13 +300,18 @@ pub(crate) fn initialize(
         entity_counters,
         world_initialization,
         entities,
-        persistence,
+        persistence: storage_services.persistence,
+        excavation_journal: storage_services.excavation,
+        excavation_restore: storage_services.excavation_restore,
+        impact_journal: storage_services.impacts,
+        impact_restore: storage_services.impact_restore,
+        climate,
+        content: Box::new(content),
         next_player,
         transport,
         game_address,
-        endpoint,
-        endpoint_guard,
-        data_lock,
+        endpoint: Some(endpoint),
+        process_lifecycle: Some(process_lifecycle),
         environment_config,
         saved_clock,
         prepared_geography,
@@ -211,8 +319,7 @@ pub(crate) fn initialize(
 }
 
 pub(crate) fn preflight_persistent_formats(data_dir: &Path) -> io::Result<()> {
-    minimium_storage::preflight_snapshot_version(data_dir)?;
-    minimium_storage::excavation::ExcavationJournal::preflight(&data_dir.join(JOURNAL_FILE_NAME))
+    minimium_storage::FileStorageBackend::preflight_path(data_dir)
 }
 
 fn read_optional_file(path: &Path, maximum: usize) -> io::Result<Option<Vec<u8>>> {

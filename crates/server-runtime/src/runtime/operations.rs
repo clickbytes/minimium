@@ -142,12 +142,11 @@ impl ServerRuntime {
                         let queue_result = save_input
                             .map_err(crate::storage::StorageError::from)
                             .and_then(|input| {
-                                self.operations.persistence.queue_world_save(
-                                    &mut self.operations.player_store,
-                                    input,
-                                    saved_clock,
-                                )
-                            });
+                                self.operations
+                                    .player_store
+                                    .save_snapshot(input, saved_clock)
+                            })
+                            .and_then(|snapshot| self.operations.persistence.queue_save(snapshot));
                         if let Err(error) = queue_result {
                             crate::diagnostics::emit(
                                 &self.server_logger,

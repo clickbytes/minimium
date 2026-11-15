@@ -1,9 +1,5 @@
-use super::{
-    player_store::{PlayerStore, SaveSnapshot},
-    StorageError, WorldSaveInput,
-};
+use super::{player_store::SaveSnapshot, StorageError};
 use minimium_diagnostics::DomainLogger;
-use minimium_environment::time::SavedClockState;
 use minimium_telemetry::allocations::{self, Phase};
 use std::{
     io,
@@ -32,6 +28,48 @@ pub struct PersistenceWorker {
     thread: Option<thread::JoinHandle<()>>,
     status: SaveBookkeeping,
     last_queued_revision: u64,
+}
+
+/// Host-provided durable snapshot service. Queueing is acceptance only; callers
+/// must poll status/completions and must not treat acceptance as durable ACK.
+pub trait PersistencePort: Send {
+    fn queue_save(&mut self, snapshot: SaveSnapshot) -> Result<(), StorageError>;
+    fn poll_completions(&mut self);
+    fn has_pending_save(&self) -> bool;
+    fn reject_pending_save(&mut self) -> StorageError;
+    fn status(&self) -> PersistenceStatus;
+    fn shutdown_until(
+        &mut self,
+        snapshot: Option<SaveSnapshot>,
+        deadline: Instant,
+    ) -> Result<(), StorageError>;
+}
+
+impl PersistencePort for PersistenceWorker {
+    fn queue_save(&mut self, snapshot: SaveSnapshot) -> Result<(), StorageError> {
+        PersistenceWorker::queue_save(self, snapshot)
+    }
+    fn poll_completions(&mut self) {
+        PersistenceWorker::poll_completions(self)
+    }
+    fn has_pending_save(&self) -> bool {
+        PersistenceWorker::has_pending_save(self)
+    }
+    fn reject_pending_save(&mut self) -> StorageError {
+        let error = StorageError::busy("a world save is already pending");
+        self.status.record_enqueue_failure(&error);
+        error
+    }
+    fn status(&self) -> PersistenceStatus {
+        PersistenceWorker::status(self)
+    }
+    fn shutdown_until(
+        &mut self,
+        snapshot: Option<SaveSnapshot>,
+        deadline: Instant,
+    ) -> Result<(), StorageError> {
+        PersistenceWorker::shutdown_until(self, snapshot, deadline)
+    }
 }
 
 impl PersistenceWorker {
@@ -105,21 +143,6 @@ impl PersistenceWorker {
                 Err(error)
             }
         }
-    }
-
-    pub fn queue_world_save(
-        &mut self,
-        player_store: &mut PlayerStore,
-        input: WorldSaveInput,
-        saved_clock: SavedClockState,
-    ) -> Result<(), StorageError> {
-        if self.status.has_pending_save() {
-            let error = StorageError::busy("a world save is already pending");
-            self.status.record_enqueue_failure(&error);
-            return Err(error);
-        }
-        let snapshot = player_store.save_snapshot(input, saved_clock)?;
-        self.queue_save(snapshot)
     }
 
     pub fn poll_completions(&mut self) {

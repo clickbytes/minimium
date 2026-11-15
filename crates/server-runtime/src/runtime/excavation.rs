@@ -16,9 +16,7 @@ mod streaming;
 mod water;
 use super::*;
 use minimium_protocol::{ExcavationInput, ExcavationMessage, ServerMessage, WorldContext};
-use minimium_storage::excavation::{
-    ExcavationJournal, ExcavationRestore, WorldMutation, JOURNAL_FILE_NAME,
-};
+use minimium_storage::excavation::{ExcavationJournalPort, ExcavationRestore, WorldMutation};
 use minimium_terrain::{TerrainEditRequest, TerrainStore};
 use minimium_world::{
     items::{ActionRejection, ActionResult, Inventory, ToolUseIntent},
@@ -77,14 +75,14 @@ struct Prepared {
 }
 
 impl Excavation {
-    pub(super) fn open(
-        path: &std::path::Path,
+    pub(super) fn from_storage(
+        journal: Box<dyn ExcavationJournalPort>,
+        restored: ExcavationRestore,
         config: crate::composition::ExcavationConfig,
     ) -> io::Result<Self> {
         if !config.valid() {
             return Err(io::Error::other("invalid excavation configuration"));
         }
-        let (journal, restored) = ExcavationJournal::open(&path.join(JOURNAL_FILE_NAME))?;
         Ok(Self {
             coordinator: ExcavationCoordinator::new(journal, restored.last_mutation_id),
             state: ExcavationState {

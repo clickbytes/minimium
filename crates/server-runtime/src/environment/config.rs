@@ -5,11 +5,11 @@ use std::{io, path::Path};
 pub(crate) const MAX_CONFIG_BYTES: usize = 16 * 1024;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct EnvironmentConfig {
-    pub(crate) mode: ClockMode,
-    pub(crate) initial_utc: Option<WorldTimeMs>,
-    pub(crate) scale_ppm: TimeScalePpm,
-    pub(crate) offline_policy: OfflinePolicy,
+pub struct EnvironmentConfig {
+    pub mode: ClockMode,
+    pub initial_utc: Option<WorldTimeMs>,
+    pub scale_ppm: TimeScalePpm,
+    pub offline_policy: OfflinePolicy,
 }
 
 impl Default for EnvironmentConfig {

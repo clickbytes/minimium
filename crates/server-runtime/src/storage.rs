@@ -1,5 +1,5 @@
 pub(crate) use minimium_storage::{
-    compact_error, PersistedComponent, PersistedEntity, PersistenceWorker, PlayerStore,
-    SaveSnapshot, SnapshotBudget, SnapshotRecordKey, StorageError, WorldSaveEntry, WorldSaveInput,
-    SAVE_VERSION,
+    compact_error, FileStorageBackend, PersistedComponent, PersistedEntity, PersistencePort,
+    PlayerStore, SaveSnapshot, SnapshotBudget, SnapshotRecordKey, StorageBackend, StorageError,
+    WorldSaveEntry, WorldSaveInput, SAVE_VERSION,
 };

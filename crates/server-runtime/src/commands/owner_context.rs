@@ -2,7 +2,7 @@ use super::{ClientTrafficSnapshot, RuntimeStatusSnapshot, ScheduleDiagnostics};
 use crate::{
     environment::EnvironmentClock,
     metrics::RuntimeMetrics,
-    storage::{PersistenceWorker, PlayerStore},
+    storage::{PersistencePort, PlayerStore},
     world_registry::WorldRegistry,
 };
 use minimium_environment::time::MonotonicMs;
@@ -11,7 +11,7 @@ use minimium_environment::time::MonotonicMs;
 pub(crate) struct OwnerCommandContext<'a> {
     pub(crate) worlds: &'a WorldRegistry,
     pub(crate) player_store: &'a mut PlayerStore,
-    pub(crate) persistence: &'a mut PersistenceWorker,
+    pub(crate) persistence: &'a mut dyn PersistencePort,
     pub(crate) map_fingerprint: u64,
     pub(crate) lanes: usize,
     pub(crate) metrics: &'a RuntimeMetrics,

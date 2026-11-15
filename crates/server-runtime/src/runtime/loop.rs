@@ -37,20 +37,23 @@ impl ServerRuntime {
         if let Err(error) = self.shutdown_impacts(persistence_deadline) {
             runtime_error = Some(error);
         }
+        let process_lifecycle = self
+            .process_lifecycle
+            .as_mut()
+            .map(|service| &mut **service as &mut dyn crate::composition::ProcessLifecyclePort);
         lifecycle::shutdown(lifecycle::ShutdownContext {
             shutdown_request: &self.shutdown_request,
             transport: &mut *self.operations.transport,
             player_store: &mut self.operations.player_store,
-            persistence: &mut self.operations.persistence,
-            content: &mut self.content,
+            persistence: &mut *self.operations.persistence,
+            content: &mut *self.content,
             sector_workers: &mut self.sector_workers,
             executor: &mut self.executor,
             environment_clock: &mut self.environment_clock,
             server_started: self.scheduler.server_started,
             worlds: &self.game.worlds,
             map_fingerprint: self.map.fingerprint(),
-            endpoint: &self.endpoint,
-            data_dir: &self.data_dir,
+            process_lifecycle,
             logger: &self.server_logger,
             runtime_error,
         })

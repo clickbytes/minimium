@@ -234,7 +234,10 @@ impl ServerRuntime {
                         .then_some("auto resolved to the available worker lane count".to_owned()),
                 )
             } else if key == "server.game_port" {
-                let effective = self.endpoint.game_port.to_string();
+                let effective = self.endpoint.as_ref().map_or_else(
+                    || "unavailable".to_owned(),
+                    |endpoint| endpoint.game_port.to_string(),
+                );
                 (
                     configured.to_owned(),
                     effective.clone(),

@@ -15,6 +15,38 @@ pub struct ExcavationJournal {
     config: JournalConfig,
 }
 
+/// Durable mutation journal port. `submit` only confirms bounded queue acceptance;
+/// publication requires the exact `WorldMutation` returned by `poll_durable`.
+pub trait ExcavationJournalPort: Send {
+    fn submit(&self, mutation: WorldMutation) -> io::Result<()>;
+    fn validate(&self, mutation: &WorldMutation) -> io::Result<()>;
+    fn poll_durable(&self) -> Option<io::Result<WorldMutation>>;
+    fn counters(&self) -> (u64, u64);
+    fn journal_bytes(&self) -> io::Result<u64>;
+    fn shutdown_until(&mut self, deadline: Instant) -> io::Result<()>;
+}
+
+impl ExcavationJournalPort for ExcavationJournal {
+    fn submit(&self, mutation: WorldMutation) -> io::Result<()> {
+        ExcavationJournal::submit(self, mutation)
+    }
+    fn validate(&self, mutation: &WorldMutation) -> io::Result<()> {
+        ExcavationJournal::validate(self, mutation)
+    }
+    fn poll_durable(&self) -> Option<io::Result<WorldMutation>> {
+        ExcavationJournal::poll_durable(self)
+    }
+    fn counters(&self) -> (u64, u64) {
+        ExcavationJournal::counters(self)
+    }
+    fn journal_bytes(&self) -> io::Result<u64> {
+        ExcavationJournal::journal_bytes(self)
+    }
+    fn shutdown_until(&mut self, deadline: Instant) -> io::Result<()> {
+        ExcavationJournal::shutdown_until(self, deadline)
+    }
+}
+
 impl ExcavationJournal {
     pub fn preflight(path: &Path) -> io::Result<()> {
         preflight_header(path)

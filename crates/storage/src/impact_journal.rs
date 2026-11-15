@@ -15,7 +15,7 @@ use std::{
 };
 
 const MAGIC: &[u8; 8] = b"MIMPACT1";
-const MAX_BODIES: usize = 4096;
+pub const MAX_BODIES: usize = 4096;
 const COMPACT_BYTES: u64 = 4 * 1024 * 1024;
 // One parent plus one daughter is a single checksummed durable transaction.
 const PAYLOAD_BYTES: usize = 1 + 2 * BODY_RECORD_BYTES;
@@ -30,6 +30,25 @@ pub struct ImpactJournal {
     requests: mpsc::SyncSender<Request>,
     completions: mpsc::Receiver<Result<Vec<BodyState>, io::Error>>,
     worker: Option<thread::JoinHandle<()>>,
+}
+
+/// Bounded durable impact checkpoint port. Queue acceptance is not a durable ACK.
+pub trait ImpactJournalPort: Send {
+    fn submit_batch(&self, batch: Vec<BodyState>) -> io::Result<()>;
+    fn poll(&self) -> Option<io::Result<Vec<BodyState>>>;
+    fn shutdown_until(&mut self, deadline: Instant) -> io::Result<()>;
+}
+
+impl ImpactJournalPort for ImpactJournal {
+    fn submit_batch(&self, batch: Vec<BodyState>) -> io::Result<()> {
+        ImpactJournal::submit_batch(self, batch)
+    }
+    fn poll(&self) -> Option<io::Result<Vec<BodyState>>> {
+        ImpactJournal::poll(self)
+    }
+    fn shutdown_until(&mut self, deadline: Instant) -> io::Result<()> {
+        ImpactJournal::shutdown_until(self, deadline)
+    }
 }
 
 impl ImpactJournal {
