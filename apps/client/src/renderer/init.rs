@@ -64,6 +64,7 @@ impl Renderer {
             .ok_or("initial world has no generation manifest")?;
         let mut sector_cache = sector_scene::ClientSectorCache::new()?;
         let initial_scene = sector_cache.ensure_scene(
+            sector_scene::SceneInterestOwner::Bootstrap(current_instance),
             current_instance,
             current_manifest,
             map.spawn(),
@@ -72,6 +73,7 @@ impl Renderer {
             0,
             &world_catalog,
             &world_manifests,
+            None,
             Default::default(),
             None,
         )?;

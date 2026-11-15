@@ -21,12 +21,14 @@ impl Renderer {
             self.fail_connection("serwer nie udostępnia manifestu Earth");
             return;
         }
-        if !self.load_resolved_catalog(context.instance(), manifest) {
+        let Some(map) = self.resolved_map_for_context(context, manifest) else {
             self.fail_connection("server generation manifest is not supported");
             return;
-        }
+        };
+        let bootstrap_instance = self.application.game.current_instance;
         if !self.install_world(
-            context.instance(),
+            super::super::super::sector_scene::SceneInterestOwner::Active(context),
+            context,
             map_fingerprint,
             Some(position),
             manifest,
@@ -34,6 +36,15 @@ impl Renderer {
             self.fail_connection("saved world instance is not available on this client");
             return;
         }
+        let bootstrap =
+            super::super::super::sector_scene::SceneInterestOwner::Bootstrap(bootstrap_instance);
+        self.sector_cache.release_interest(bootstrap);
+        self.gpu.release_scene_stage(bootstrap_instance, bootstrap);
+        if bootstrap_instance != context.instance() {
+            self.release_world_sectors(bootstrap_instance);
+        }
+        self.application
+            .commit_world_content(context.instance(), manifest, (*map).clone());
         self.application.game.set_session_context(Some(context));
         self.application.game.gameplay.health = health;
         self.gpu.scene_visible = !self.application.is_loading();

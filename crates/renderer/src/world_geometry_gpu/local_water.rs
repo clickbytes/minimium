@@ -10,14 +10,14 @@ struct LocalWaterImage {
 #[derive(Default)]
 pub(super) struct LocalWaterSlot {
     active: Option<LocalWaterImage>,
-    pending: Option<LocalWaterImage>,
+    pending: std::collections::HashMap<GeometryStageId, LocalWaterImage>,
 }
 
 impl LocalWaterSlot {
     pub(super) fn buffers(&self) -> impl Iterator<Item = &wgpu::Buffer> {
         self.active
             .iter()
-            .chain(self.pending.iter())
+            .chain(self.pending.values())
             .filter_map(|image| image.buffer.as_ref())
     }
 
@@ -26,9 +26,16 @@ impl LocalWaterSlot {
     }
 
     pub(super) fn rebase(&mut self, generation: u64) {
-        for image in self.active.iter_mut().chain(self.pending.iter_mut()) {
+        for image in self.active.iter_mut().chain(self.pending.values_mut()) {
             image.origin_generation = generation;
         }
+    }
+
+    pub(super) fn release_stage(&mut self, stage: GeometryStageId) -> u64 {
+        self.pending
+            .remove(&stage)
+            .and_then(|image| image.buffer)
+            .map_or(0, |buffer| buffer.size())
     }
 }
 
@@ -39,15 +46,28 @@ impl WorldGeometryGpu {
         &mut self,
         device: &wgpu::Device,
         instance: WorldInstanceId,
+        stage: GeometryStageId,
         source: Arc<Vec<OceanVertex>>,
         origin_generation: u64,
     ) -> GeometryCacheResult {
+        if !self.staged_versions.contains_key(&(instance, stage)) {
+            return GeometryCacheResult {
+                ready: false,
+                allocated_bytes: 0,
+                released_bytes: 0,
+            };
+        }
+        let is_published_stage = self.publication.as_ref().is_some_and(|publication| {
+            publication.stamp.instance == instance && publication.stage == stage
+        });
         let matches = |image: &LocalWaterImage| {
             image.origin_generation == origin_generation && Arc::ptr_eq(&image.source, &source)
         };
         if let Some(slot) = self.water.get(&instance) {
-            if slot.pending.as_ref().is_some_and(matches)
-                || slot.pending.is_none() && slot.active.as_ref().is_some_and(matches)
+            if slot.pending.get(&stage).is_some_and(matches)
+                || is_published_stage
+                    && !slot.pending.contains_key(&stage)
+                    && slot.active.as_ref().is_some_and(matches)
             {
                 return GeometryCacheResult {
                     ready: true,
@@ -58,8 +78,8 @@ impl WorldGeometryGpu {
         }
         let bytes = (source.len() * std::mem::size_of::<OceanVertex>()) as u64;
         if origin_generation != self.origin_generation
-            || bytes > self.budget.bytes
-            || bytes > 0 && self.budget.patches == 0
+            || bytes > 0 && (self.budget.patches == 0 || self.budget.bytes == 0)
+            || !self.stage_can_upload(instance, stage)
         {
             return GeometryCacheResult {
                 ready: false,
@@ -75,20 +95,23 @@ impl WorldGeometryGpu {
             })
         });
         if bytes > 0 {
-            self.budget.bytes -= bytes;
+            self.budget.bytes = self.budget.bytes.saturating_sub(bytes);
             self.budget.patches -= 1;
         }
         let slot = self.water.entry(instance).or_default();
         let released_bytes = slot
             .pending
-            .as_ref()
+            .get(&stage)
             .and_then(|image| image.buffer.as_ref())
             .map_or(0, wgpu::Buffer::size);
-        slot.pending = Some(LocalWaterImage {
-            source,
-            buffer,
-            origin_generation,
-        });
+        slot.pending.insert(
+            stage,
+            LocalWaterImage {
+                source,
+                buffer,
+                origin_generation,
+            },
+        );
         GeometryCacheResult {
             ready: true,
             allocated_bytes: bytes,
@@ -96,11 +119,15 @@ impl WorldGeometryGpu {
         }
     }
 
-    pub(super) fn publish_local_water(&mut self, instance: WorldInstanceId) -> bool {
+    pub(super) fn publish_local_water(
+        &mut self,
+        instance: WorldInstanceId,
+        stage: GeometryStageId,
+    ) -> bool {
         let Some(slot) = self.water.get_mut(&instance) else {
             return false;
         };
-        let Some(pending) = slot.pending.take() else {
+        let Some(pending) = slot.pending.remove(&stage) else {
             return false;
         };
         self.released_publication_bytes += slot

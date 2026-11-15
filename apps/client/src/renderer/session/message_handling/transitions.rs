@@ -10,28 +10,23 @@ impl Renderer {
         destination: [f32; 3],
         manifest: WorldManifest,
     ) {
-        let instance = target_context.instance();
-        if !self.load_resolved_catalog(instance, manifest) {
+        let Some(map) = self.resolved_map_for_context(target_context, manifest) else {
             self.fail_connection("target generation manifest is not supported");
             return;
-        }
-        let matches_catalog = self
-            .application
-            .world_catalog
-            .get(&instance)
-            .is_some_and(|map| map.fingerprint() == map_fingerprint)
-            && self.application.game.world_manifests.get(&instance) == Some(&manifest);
-        if !matches_catalog {
+        };
+        if map.fingerprint() != map_fingerprint {
             self.fail_connection("target world content does not match the loaded manifest");
             return;
         }
         if !self.application.register_transition(
             transition_id,
             PendingSectorTransition::preparing(
+                transition_id,
                 source_context,
                 target_context,
                 destination,
                 manifest,
+                map,
             ),
         ) {
             self.fail_connection("duplicate world transfer ticket");
@@ -64,12 +59,13 @@ impl Renderer {
             self.fail_connection("world transfer commit has no matching ready ticket");
             return;
         }
-        if !self.load_resolved_catalog(context.instance(), manifest) {
+        let Some(map) = self.resolved_map_for_context(context, manifest) else {
             self.fail_connection("target generation manifest is not supported");
             return;
-        }
+        };
         if !self.install_world(
-            context.instance(),
+            super::super::super::sector_scene::SceneInterestOwner::Pending(transition_id, context),
+            context,
             map_fingerprint,
             Some(destination),
             manifest,
@@ -81,6 +77,8 @@ impl Renderer {
             self.fail_connection("world transfer ticket changed during commit");
             return;
         }
+        self.application
+            .commit_world_content(context.instance(), manifest, (*map).clone());
         self.application.game.set_session_context(Some(context));
         self.application.game.gameplay.health = health;
         self.application.game.gameplay.prediction.position_mm =
@@ -100,7 +98,7 @@ impl Renderer {
         context: minimium_protocol::WorldContext,
     ) {
         if let Some(pending) = self.application.cancel_transition(transition_id, context) {
-            self.release_prepared_target(pending.context.instance());
+            self.release_prepared_target(transition_id, pending.context);
         }
     }
 }

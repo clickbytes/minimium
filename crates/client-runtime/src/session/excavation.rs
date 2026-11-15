@@ -11,7 +11,7 @@ pub(super) struct ToolClientState {
 
 impl ClientSession {
     pub fn terrain_inputs(&self) -> minimium_procgen::TerrainInputs {
-        let mut inputs = minimium_procgen::TerrainInputs::from(self.prepared_geography.clone());
+        let mut inputs = minimium_procgen::TerrainInputs::from(self.prepared_geography());
         if self.impacts.context == self.world_context && self.impacts.ready {
             inputs.remnants = self
                 .impacts
@@ -24,6 +24,22 @@ impl ClientSession {
         inputs
     }
 
+    pub fn terrain_inputs_for_context(
+        &self,
+        context: WorldContext,
+    ) -> Option<minimium_procgen::TerrainInputs> {
+        if self.shares_active_world_state(context) {
+            return Some(self.terrain_inputs());
+        }
+        let pending = self
+            .pending_world_content
+            .as_ref()
+            .filter(|pending| pending.context == context)?;
+        Some(minimium_procgen::TerrainInputs::from(
+            pending.content.geography.clone(),
+        ))
+    }
+
     pub fn excavation_ready(&self) -> bool {
         self.world_context.is_some_and(|c| self.excavation.ready(c))
     }
@@ -32,10 +48,7 @@ impl ClientSession {
         let snapshot = self.excavation.fluids()?;
         let mut replica = crate::WaterReplica::new(snapshot);
         replica.install_region(self.excavation.fluid_region());
-        if let Some(catalog) = self
-            .world_context
-            .and_then(|context| self.water_catalogs.get(&context.instance()).cloned())
-        {
+        if let Some(catalog) = self.water_catalog() {
             replica.install_catalog(catalog);
         }
         replica.as_read()
@@ -56,15 +69,23 @@ impl ClientSession {
     }
 
     pub fn water_catalog(&self) -> Option<std::sync::Arc<minimium_procgen::WaterCatalog>> {
-        let instance = self.world_context?.instance();
-        self.water_catalog_for(instance)
+        self.water_catalog_for_context(self.world_context?)
     }
 
-    pub fn water_catalog_for(
+    pub fn water_catalog_for_context(
         &self,
-        instance: minimium_world::world::WorldInstanceId,
+        context: WorldContext,
     ) -> Option<std::sync::Arc<minimium_procgen::WaterCatalog>> {
-        self.water_catalogs.get(&instance).cloned()
+        self.active_world_content
+            .as_ref()
+            .filter(|bundle| bundle.context == context)
+            .and_then(|bundle| bundle.water_catalog.clone())
+            .or_else(|| {
+                self.pending_world_content
+                    .as_ref()
+                    .filter(|bundle| bundle.context == context)
+                    .and_then(|bundle| bundle.water_catalog.clone())
+            })
     }
 
     pub fn inventory(&self) -> Inventory {
