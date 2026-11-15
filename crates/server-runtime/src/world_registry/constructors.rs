@@ -74,13 +74,15 @@ impl WorldRegistry {
             return Err(RegistryError::InvalidTerrainMaterialProfile);
         }
         validate_relief_policy(manifest, &map, resolved_relief_policy)?;
-        if self.instances.values().any(|owner| {
-            owner.manifest == manifest
-                && owner.map.fingerprint() == map.fingerprint()
-                && (owner.terrain_material_profile != terrain_material_profile
-                    || owner.resolved_relief_policy != resolved_relief_policy)
+        if let Some(owner) = self.instances.values().find(|owner| {
+            owner.manifest == manifest && owner.map.fingerprint() == map.fingerprint()
         }) {
-            return Err(RegistryError::InvalidReliefPolicy);
+            if owner.terrain_material_profile != terrain_material_profile {
+                return Err(RegistryError::InvalidTerrainMaterialProfile);
+            }
+            if owner.resolved_relief_policy != resolved_relief_policy {
+                return Err(RegistryError::InvalidReliefPolicy);
+            }
         }
         if self.instances.contains_key(&instance) {
             return Err(RegistryError::DuplicateInstance);

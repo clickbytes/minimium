@@ -131,7 +131,7 @@ pub fn materialize_manifest_map(
                 geography.into(),
                 relief_policy,
             )?;
-            let landmarks = sample_planet_landmarks(&terrain, definition.mode == 1)?;
+            let landmarks = sample_planet_landmarks(&terrain)?;
             materialize_planet_map(landmarks.spawn, landmarks.entrance)
         }
         WorldTopology::Dungeon => {
@@ -207,10 +207,7 @@ fn generate_worlds_with(
         geography.into(),
         relief_policy,
     )?;
-    let landmarks = sample_planet_landmarks(
-        &terrain,
-        planet_definition.is_some_and(|definition| definition.mode == 1),
-    )?;
+    let landmarks = sample_planet_landmarks(&terrain)?;
     let planet_map = materialize_planet_map(landmarks.spawn, landmarks.entrance)?;
     let resolved_relief_policy = resolved_planet_relief_policy(planet_manifest, &planet_map)?
         .ok_or_else(|| GenerationError::invalid_manifest("sample planet policy was not bound"))?;
@@ -257,10 +254,11 @@ fn generate_worlds_with(
 
 fn sample_planet_landmarks(
     terrain: &PlanetTerrain,
-    earth: bool,
 ) -> Result<SamplePlanetLandmarks, GenerationError> {
     let scale = PLANET_SAMPLE_COORDINATE_SCALE;
-    let (u, start, step) = if earth {
+    // PlanetTerrain::is_earth is exactly the old first `mode == 1` branch;
+    // the later legacy `mode == 1` route branch was unreachable.
+    let (u, start, step) = if terrain.is_earth() {
         let step = scale / 8192;
         (
             (i64::from(scale) * 566 / 1000) as i32,
