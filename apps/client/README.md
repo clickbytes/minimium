@@ -19,6 +19,11 @@ request retains the previous complete publication. Weather atlas, cover and clou
 results each publish only after successful preparation and matching context.
 CPU preparation errors neither upload partial geometry nor synthesize heights.
 
+Cloud worker candidates replace the active CPU publication only after the whole
+cloud GPU upload is accepted. Cloud/morph count mismatches and upload-limit/index
+errors produce diagnostics while keeping the previous complete publication.
+Context changes still invalidate old clouds; stale worker results are discarded.
+
 The desktop renderer reads the confirmed equipped tool from the active client
 session and passes its neutral `ToolKind` to the first-person viewmodel pass.
 Shovels and pickaxes are presentation-only low-poly meshes; gameplay tool use

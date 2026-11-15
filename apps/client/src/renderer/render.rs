@@ -100,13 +100,14 @@ impl GpuResources {
         if !self.transient_enabled {
             lights.count[0] = 0;
         }
+        let cloud_revision = self.cloud_gpu.revision().unwrap_or_default();
         self.cloud_gpu.light_cache.attach(
             &mut lights,
             &self.cloud_gpu.light_records,
             minimium_renderer::transient_cloud_cache::CloudLightQuery {
                 ids: std::array::from_fn(|i| meteors.lights().get(i).map_or(0, |light| light.id)),
                 origin: render_frame.view.render_origin_m,
-                revision: self.cloud_gpu.revision,
+                revision: cloud_revision,
                 now: std::time::Instant::now(),
                 eye: std::array::from_fn(|i| {
                     (render_frame.view.camera_eye_world_m[i] - render_frame.view.render_origin_m[i])
