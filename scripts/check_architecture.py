@@ -8,6 +8,7 @@ import sys
 import tomllib
 from collections import deque
 from pathlib import Path
+from check_feature_contracts import graph_violations
 
 
 def production_graph(metadata: dict) -> dict:
@@ -271,6 +272,7 @@ def main() -> int:
         violations.extend(forbidden_paths(workspace[root], targets, graph, names))
     violations.extend(source_boundary_violations(repository, package_rules, package_metadata))
     violations.extend(sample_content_violations(package_rules, package_metadata))
+    violations.extend(graph_violations(repository, declaration, package_metadata, set(names.values())))
     if violations:
         print("Architecture violations:\n" + "\n".join(violations), file=sys.stderr)
         return 1

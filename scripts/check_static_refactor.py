@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Check real ownership and Rust/WGSL layout boundaries without running code."""
+"""Check selected declaration locations, replaced paths and Rust/WGSL fields.
+
+Regex structure checks do not prove mutable-state ownership, call-path behavior,
+GPU ABI or visual correctness. Rust compilation and code review remain necessary.
+"""
 
 from __future__ import annotations
 
@@ -160,7 +164,7 @@ def main() -> int:
         print("Static refactor check failed:", file=sys.stderr)
         print("\n".join(f"  - {error}" for error in errors), file=sys.stderr)
         return 1
-    print("Static refactor check passed: Rust/WGSL layouts, symbol ownership and replaced-path boundaries.")
+    print("Static refactor check passed: selected Rust/WGSL fields, declaration locations and replaced paths (not semantic ownership proof).")
     return 0
 
 
