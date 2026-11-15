@@ -154,6 +154,7 @@ impl DesktopHost {
         let input_mapper =
             crate::input::InputMapper::from_setting(&startup_settings.input_bindings())?;
         Ok(Self {
+            cosmetic_epoch: Instant::now(),
             bolids: Vec::with_capacity(minimium_renderer::milky_way_gpu::MAX_BOLIDS),
             bolid_worker: bolids::BolidWorker::new()?,
             prepared_bolids: Default::default(),

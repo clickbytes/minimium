@@ -165,6 +165,8 @@ struct FrameMetrics {
 
 /// Desktop event-loop owner that composes the CPU application and GPU renderer.
 struct DesktopHost {
+    /// Monotonic epoch for cosmetic presentation animation; independent of world time.
+    cosmetic_epoch: Instant,
     bolid_worker: bolids::BolidWorker,
     prepared_bolids: minimium_renderer::milky_way_gpu::BolidGpuFrame,
     diagnostic_bolid_age: Option<(minimium_protocol::WorldContext, u64, f32)>,

@@ -32,8 +32,12 @@ impl DesktopHost {
             self.meteors.now_s(),
             &mut self.meteors.audio,
         );
-        let prepared =
-            PreparedEnvironmentFrame::new(self.render_environment_frame.clone(), stars, meteors);
+        let prepared = PreparedEnvironmentFrame::new(
+            self.render_environment_frame.clone(),
+            stars,
+            meteors,
+            self.cosmetic_epoch.elapsed(),
+        );
         self.metrics
             .frame_stats
             .record_environment_cpu(started.elapsed());

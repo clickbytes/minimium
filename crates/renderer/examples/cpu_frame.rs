@@ -2,7 +2,7 @@
 //! Compile with: cargo check -p minimium-renderer --no-default-features --example cpu_frame
 use minimium_procgen::SectorGeometry;
 use minimium_renderer::{
-    gpu_frame::{camera_uniform, EnvironmentUniform},
+    gpu_frame::{camera_uniform, environment_uniform, EnvironmentUniform, MAX_HALO_BODIES},
     planet_coordinates::PlanetSurfaceScale,
     prepared_sector::PreparedSector,
     render_frame::ClientFrameState,
@@ -12,7 +12,7 @@ use minimium_renderer::{
     RenderFrame, RenderViewFrame, UiVertex,
 };
 use minimium_world::world::{MapBox, SectorKey, WorldInstanceId};
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let geometry = Arc::new(SectorGeometry {
@@ -55,10 +55,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         2.0,
         0.1,
     )?);
-    let environment = EnvironmentUniform {
-        ambient_rgb_exposure: [0.1, 0.1, 0.1, 1.0],
-        ..Default::default()
-    };
+    let environment = environment_uniform(
+        EnvironmentUniform {
+            ambient_rgb_exposure: [0.1, 0.1, 0.1, 1.0],
+            ..Default::default()
+        },
+        view,
+        true,
+        0,
+        [Default::default(); MAX_HALO_BODIES],
+        Duration::ZERO,
+    );
     let mut frame = RenderFrame::new(view, camera_uniform(view), environment, 0)
         .with_transient_lights(lights)
         .with_client_state(ClientFrameState {

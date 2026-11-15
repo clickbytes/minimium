@@ -87,15 +87,9 @@ pub fn environment_uniform(
     frame_available: bool,
     halo_count: u32,
     halo_sources: [HaloSource; MAX_HALO_BODIES],
+    cosmetic_time: std::time::Duration,
 ) -> EnvironmentUniform {
-    use std::sync::OnceLock;
-    use std::time::Instant;
-
-    static ANIMATION_EPOCH: OnceLock<Instant> = OnceLock::new();
-    uniform.star_animation[0] = ANIMATION_EPOCH
-        .get_or_init(Instant::now)
-        .elapsed()
-        .as_secs_f32();
+    uniform.star_animation[0] = cosmetic_time.as_secs_f32();
     uniform.flags[1] = view.kind as u32;
     uniform.flags[2] = u32::from(frame_available);
     uniform.flags[3] = u32::from(!view.srgb_surface);

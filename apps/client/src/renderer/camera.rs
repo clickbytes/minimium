@@ -293,6 +293,7 @@ impl DesktopHost {
                     self.render_environment_frame.clone(),
                     None,
                     meteors,
+                    self.cosmetic_epoch.elapsed(),
                 )
             }
         };

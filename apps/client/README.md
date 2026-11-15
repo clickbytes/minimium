@@ -140,6 +140,10 @@ The terminal calls the same step before its existing bounded 25 ms input wait,
 with prediction omitted so it cannot enqueue synthetic movement. The redraw
 callback prepares camera/environment presentation from the latest immutable
 application view and submits it without polling or stepping a session.
+`DesktopHost` also owns one monotonic cosmetic presentation epoch initialized
+with the host. Each prepared frame receives its elapsed `Duration`; redraws,
+resizes and world transfers do not reset it. This clock does not derive from
+world UTC or affect session polling, prediction or simulation.
 
 Both frontends display the controller's typed busy rejection. Desktop switches
 its scene to connecting only after an attempt is accepted; a rejected restart
