@@ -1,8 +1,12 @@
+use minimium_simulation::CombatRaySectorInterval;
 use minimium_world::world::{PlanetFace, SectorKey, WorldManifest, WorldTopology};
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 
 pub(crate) const MAX_COMBAT_RAY_SECTORS: usize = 4096;
 pub(crate) const MAX_PENDING_COMBAT_SECTORS: usize = 8192;
+// A coverage ray may touch few cells while its conservative UV rectangle is
+// enormous. Bound the search itself, not only the accepted result size.
+const MAX_COMBAT_CANDIDATE_CELLS: usize = 65_536;
 const MAX_COMBAT_RAY_RANGE_M: f32 = 512.0;
 const INDEX_BOUNDARY_GUARD: f64 = 1.0e-7;
 
@@ -18,7 +22,7 @@ pub(crate) fn combat_ray_sectors(
     origin: [f32; 3],
     direction: [f32; 3],
     range: f32,
-) -> Option<Vec<SectorKey>> {
+) -> Option<Vec<CombatRaySectorInterval>> {
     if !range.is_finite()
         || range <= 0.0
         || range > MAX_COMBAT_RAY_RANGE_M
@@ -29,20 +33,17 @@ pub(crate) fn combat_ray_sectors(
     {
         return None;
     }
-    let length = direction
-        .iter()
-        .map(|value| f64::from(*value).powi(2))
-        .sum::<f64>()
-        .sqrt();
-    if !length.is_finite() || length <= 1.0e-8 {
+    let length_squared = direction.iter().map(|value| value * value).sum::<f32>();
+    if !length_squared.is_finite() || length_squared <= 1.0e-8 {
         return None;
     }
     if manifest.topology() != WorldTopology::Planet {
         return Some(Vec::new());
     }
 
+    let inverse_length = length_squared.sqrt().recip();
     let origin = origin.map(f64::from);
-    let direction = direction.map(|value| f64::from(value) / length);
+    let direction = direction.map(|value| f64::from(value * inverse_length));
     let range = f64::from(range);
     if passes_through_origin(origin, direction, range) {
         // The sector address is undefined at the planetary center; fail closed
@@ -51,7 +52,8 @@ pub(crate) fn combat_ray_sectors(
     }
 
     let count = minimium_procgen::planet_sector_count(manifest);
-    let mut keys = BTreeSet::new();
+    let mut domains = BTreeMap::new();
+    let mut candidate_cells = 0usize;
     for face in PlanetFace::ALL {
         let (normal, u_axis, v_axis) = face_basis(face);
         let mut interval = (0.0, range);
@@ -62,10 +64,9 @@ pub(crate) fn combat_ray_sectors(
             add(normal, v_axis),
             subtract(normal, v_axis),
         ];
-        if constraints
-            .into_iter()
-            .any(|constraint| !clip_nonnegative(constraint, origin, direction, range, &mut interval))
-        {
+        if constraints.into_iter().any(|constraint| {
+            !clip_nonnegative(constraint, origin, direction, range, &mut interval)
+        }) {
             continue;
         }
         if interval.0 > interval.1 {
@@ -75,16 +76,60 @@ pub(crate) fn combat_ray_sectors(
         let v = projected_range(v_axis, normal, origin, direction, interval)?;
         let u_range = sector_index_range(u, count)?;
         let v_range = sector_index_range(v, count)?;
+        let u_candidates = usize::from(u_range.1 - u_range.0) + 1;
+        let v_candidates = usize::from(v_range.1 - v_range.0) + 1;
+        let candidates = u_candidates.checked_mul(v_candidates)?;
+        candidate_cells = candidate_cells.checked_add(candidates)?;
+        if candidate_cells > MAX_COMBAT_CANDIDATE_CELLS {
+            return None;
+        }
         for u in u_range.0..=u_range.1 {
             for v in v_range.0..=v_range.1 {
-                keys.insert(SectorKey::planet(face, u, v)?);
-                if keys.len() > MAX_COMBAT_RAY_SECTORS {
+                let u_low = 2.0 * f64::from(u) / f64::from(count) - 1.0;
+                let u_high = 2.0 * f64::from(u + 1) / f64::from(count) - 1.0;
+                let v_low = 2.0 * f64::from(v) / f64::from(count) - 1.0;
+                let v_high = 2.0 * f64::from(v + 1) / f64::from(count) - 1.0;
+                let constraints = [
+                    subtract(u_axis, scale(normal, u_low)),
+                    subtract(scale(normal, u_high), u_axis),
+                    subtract(v_axis, scale(normal, v_low)),
+                    subtract(scale(normal, v_high), v_axis),
+                ];
+                let mut sector_interval = interval;
+                if constraints.into_iter().any(|constraint| {
+                    !clip_nonnegative(constraint, origin, direction, range, &mut sector_interval)
+                }) || sector_interval.0 > sector_interval.1
+                {
+                    continue;
+                }
+                let key = SectorKey::planet(face, u, v)?;
+                domains
+                    .entry(key)
+                    .and_modify(|existing: &mut (f64, f64)| {
+                        existing.0 = existing.0.min(sector_interval.0);
+                        existing.1 = existing.1.max(sector_interval.1);
+                    })
+                    .or_insert(sector_interval);
+                if domains.len() > MAX_COMBAT_RAY_SECTORS {
                     return None;
                 }
             }
         }
     }
-    Some(keys.into_iter().collect())
+    let mut result: Vec<_> = domains
+        .into_iter()
+        .map(|(key, (start, end))| CombatRaySectorInterval {
+            key,
+            start_m: start as f32,
+            end_m: end as f32,
+        })
+        .collect();
+    result.sort_by(|left, right| {
+        left.start_m
+            .total_cmp(&right.start_m)
+            .then_with(|| left.key.cmp(&right.key))
+    });
+    Some(result)
 }
 
 fn clip_nonnegative(
@@ -129,7 +174,10 @@ fn projected_range(
     };
     let left = ratio(interval.0)?;
     let right = ratio(interval.1)?;
-    Some((left.min(right).clamp(-1.0, 1.0), left.max(right).clamp(-1.0, 1.0)))
+    Some((
+        left.min(right).clamp(-1.0, 1.0),
+        left.max(right).clamp(-1.0, 1.0),
+    ))
 }
 
 fn sector_index_range(projected: (f64, f64), count: u16) -> Option<(u16, u16)> {
@@ -145,11 +193,7 @@ fn sector_index_range(projected: (f64, f64), count: u16) -> Option<(u16, u16)> {
     (first <= final_index).then_some((first, final_index))
 }
 
-fn passes_through_origin(
-    origin: [f64; 3],
-    direction: [f64; 3],
-    range: f64,
-) -> bool {
+fn passes_through_origin(origin: [f64; 3], direction: [f64; 3], range: f64) -> bool {
     let closest = (-dot(origin, direction)).clamp(0.0, range);
     let distance = std::array::from_fn::<_, 3, _>(|axis| origin[axis] + direction[axis] * closest);
     dot(distance, distance) <= 1.0e-12
@@ -173,6 +217,10 @@ fn add(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
 
 fn subtract(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
     std::array::from_fn(|axis| left[axis] - right[axis])
+}
+
+fn scale(axis: [f64; 3], factor: f64) -> [f64; 3] {
+    axis.map(|component| component * factor)
 }
 
 fn dot(left: [f64; 3], right: [f64; 3]) -> f64 {

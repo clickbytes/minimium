@@ -10,13 +10,13 @@ mod readiness;
 mod requests;
 mod tickets;
 mod workers;
+pub(crate) use combat_coverage::{combat_ray_sectors, MAX_PENDING_COMBAT_SECTORS};
 pub(crate) use workers::SectorGenerationPool;
-pub(crate) use combat_coverage::{combat_ray_sectors, MAX_COMBAT_RAY_SECTORS, MAX_PENDING_COMBAT_SECTORS};
 
 #[derive(Clone)]
 pub(crate) struct CombatSectorDemand {
     pub(crate) context: minimium_protocol::WorldContext,
-    pub(crate) keys: Vec<SectorKey>,
+    pub(crate) domains: Vec<minimium_simulation::CombatRaySectorInterval>,
 }
 
 pub(crate) struct SectorPayload {

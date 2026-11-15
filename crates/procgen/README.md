@@ -22,6 +22,12 @@ physical derivative footprint across sector/face/LOD boundaries. The optional
 otherwise procedural fractions apply. This presentation path leaves `MapTriangle`,
 generation digests, saved geometry and collision sampling unchanged.
 
+Static planet triangles and box faces are clipped to each cube-face cone before
+sector UV bounds are calculated. Cross-seam triangles and boxes spanning many
+sectors are retained in every touched payload; boxes containing the origin are
+included in every sector. Streamed replacements therefore preserve blockers
+from the full-map geometry throughout each ready sector domain.
+
 Without WorldCover, presentation fractions distinguish arid latitude belts,
 temperate ground and alpine rock using physical source elevation. They no longer
 assign the same grass-dominated mixture to all low-elevation land.

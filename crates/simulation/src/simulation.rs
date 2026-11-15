@@ -45,7 +45,9 @@ pub use precise_step::step_character_mm_with_water;
 pub use raycast::SkyCoverQuery;
 pub use rules::{CharacterState, MovementIntent, Player, ShotOutcome};
 pub use snapshot::WorldSnapshot;
-pub use spatial_geometry::{CombatCoveragePlan, SpatialGeometryPublication};
+pub use spatial_geometry::{
+    CombatCoveragePlan, CombatRaySectorInterval, SpatialGeometryPublication,
+};
 pub use step_batch::step_batch;
 pub use tool_raycast::ToolRayCapsule;
 pub use world_state::{SimulationBatch, World};

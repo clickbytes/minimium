@@ -1,7 +1,7 @@
 use super::World;
 use crate::simulation::{
     collision_index::CollisionIndex,
-    spatial_geometry::{CombatCoveragePlan, SpatialGeometryPublication},
+    spatial_geometry::{CombatCoveragePlan, CombatRaySectorInterval, SpatialGeometryPublication},
 };
 use minimium_world::world::{Aabb, SectorKey, WorldMap};
 use std::sync::Arc;
@@ -16,18 +16,18 @@ impl World {
         origin: [f32; 3],
         direction: [f32; 3],
         range: f32,
-        sector_count: u16,
-        required: &[SectorKey],
+        required: &[CombatRaySectorInterval],
     ) -> CombatCoveragePlan {
-        let ready = required
-            .iter()
-            .all(|key| self.spatial_geometry.combat_replacements.contains_key(key));
+        let ready = required.iter().all(|domain| {
+            self.spatial_geometry
+                .combat_replacements
+                .contains_key(&domain.key)
+        });
         CombatCoveragePlan::new(
-            self.spatial_geometry.revision,
+            Arc::clone(&self.spatial_geometry),
             origin,
             direction,
             range,
-            sector_count,
             required.to_vec(),
             ready,
         )
@@ -82,11 +82,6 @@ impl World {
             Arc::clone(&self.spatial_geometry.combat_baseline),
             replacements,
         ));
-        self.reset_collision_queries();
-    }
-
-    pub fn install_spatial_geometry(&mut self, publication: SpatialGeometryPublication) {
-        self.spatial_geometry = Arc::new(publication);
         self.reset_collision_queries();
     }
 }

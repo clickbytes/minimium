@@ -2,6 +2,14 @@ use super::collision_index::CollisionIndex;
 use minimium_world::world::SectorKey;
 use std::{collections::BTreeMap, sync::Arc};
 
+/// Closed interval of one exact planet sector domain along a shot ray.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CombatRaySectorInterval {
+    pub key: SectorKey,
+    pub start_m: f32,
+    pub end_m: f32,
+}
+
 /// Coherent immutable geometry inputs for movement and full-range combat.
 #[derive(Clone)]
 pub struct SpatialGeometryPublication {
@@ -59,25 +67,23 @@ impl SpatialGeometryPublication {
 
 /// Server-certified coverage for one exact shot ray and one publication.
 /// Simulation still rejects a plan whose ray or geometry revision differs.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone)]
 pub struct CombatCoveragePlan {
-    pub(crate) revision: u64,
+    pub(crate) publication: Arc<SpatialGeometryPublication>,
     pub(crate) origin: [f32; 3],
     pub(crate) direction: [f32; 3],
     pub(crate) range: f32,
-    pub(crate) sector_count: u16,
-    pub(crate) sectors: Vec<SectorKey>,
+    pub(crate) domains: Vec<CombatRaySectorInterval>,
     pub(crate) ready: bool,
 }
 
 impl CombatCoveragePlan {
     pub(crate) fn new(
-        revision: u64,
+        publication: Arc<SpatialGeometryPublication>,
         origin: [f32; 3],
         direction: [f32; 3],
         range: f32,
-        sector_count: u16,
-        sectors: Vec<SectorKey>,
+        domains: Vec<CombatRaySectorInterval>,
         ready: bool,
     ) -> Self {
         let length = direction
@@ -92,28 +98,26 @@ impl CombatCoveragePlan {
             direction
         };
         Self {
-            revision,
+            publication,
             origin,
             direction,
             range,
-            sector_count,
-            sectors,
+            domains,
             ready,
         }
     }
 
     pub(crate) fn matches(
         &self,
-        revision: u64,
+        publication: &Arc<SpatialGeometryPublication>,
         origin: [f32; 3],
         direction: [f32; 3],
         range: f32,
     ) -> bool {
-        self.revision == revision
+        Arc::ptr_eq(&self.publication, publication)
             && self.origin == origin
             && self.direction == direction
             && self.range == range
-            && self.sector_count > 0
             && self.ready
     }
 }

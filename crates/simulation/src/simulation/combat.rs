@@ -83,7 +83,7 @@ impl World {
             attacker.position[1] + PLAYER_HEIGHT * 0.9,
             attacker.position[2],
         ];
-        if !coverage.matches(spatial_geometry.revision, origin, direction, settings.range) {
+        if !coverage.matches(spatial_geometry, origin, direction, settings.range) {
             return Err(ShotReadinessError::NotReady);
         }
         let players = Arc::make_mut(players);
@@ -121,43 +121,65 @@ impl World {
             }
         }
 
-        let sector_for_point = |point: [f32; 3]| {
-            let sector = minimium_world::world::PlanetSectorKey::from_direction_with_count(
-                point,
-                coverage.sector_count,
-            );
-            minimium_world::world::SectorKey::planet(
-                sector.face(),
-                sector.coordinates().0,
-                sector.coordinates().1,
-            )
-        };
+        let mut masked_intervals: Vec<_> = coverage
+            .domains
+            .iter()
+            .map(|domain| (domain.start_m, domain.end_m))
+            .collect();
+        masked_intervals.sort_by(|left, right| left.0.total_cmp(&right.0));
+        let mut merged_masks: Vec<(f32, f32)> = Vec::with_capacity(masked_intervals.len());
+        for interval in masked_intervals {
+            if let Some(last) = merged_masks.last_mut() {
+                if interval.0 <= last.1 + 1.0e-4 {
+                    last.1 = last.1.max(interval.1);
+                    continue;
+                }
+            }
+            merged_masks.push(interval);
+        }
         combat_map_query.fill(
             &spatial_geometry.combat_baseline,
             origin,
             direction,
             settings.range,
         );
-        let mut nearest_blocker = combat_map_query.nearest_blocker_where(
+        let mut nearest_blocker = combat_map_query.nearest_blocker_intersection(
             &spatial_geometry.combat_baseline,
             origin,
             direction,
             settings.range,
-            |point| {
-                sector_for_point(point).is_none_or(|sector| !coverage.sectors.contains(&sector))
+            |near, far| {
+                let mut cursor = near;
+                for (mask_start, mask_end) in &merged_masks {
+                    if *mask_end < cursor {
+                        continue;
+                    }
+                    if *mask_start > cursor + 1.0e-4 {
+                        return Some(cursor);
+                    }
+                    cursor = cursor.max(*mask_end + 1.0e-4);
+                    if cursor > far {
+                        return None;
+                    }
+                }
+                (cursor <= far).then_some(cursor)
             },
         );
-        for sector in &coverage.sectors {
-            let Some(index) = spatial_geometry.combat_replacements.get(sector) else {
+        for domain in &coverage.domains {
+            let Some(index) = spatial_geometry.combat_replacements.get(&domain.key) else {
                 return Err(ShotReadinessError::NotReady);
             };
             combat_map_query.fill(index, origin, direction, settings.range);
-            if let Some(hit) = combat_map_query.nearest_blocker_where(
+            if let Some(hit) = combat_map_query.nearest_blocker_intersection(
                 index,
                 origin,
                 direction,
                 settings.range,
-                |point| sector_for_point(point) == Some(*sector),
+                |near, far| {
+                    let start = near.max(domain.start_m);
+                    let end = far.min(domain.end_m);
+                    (start <= end + 1.0e-4).then_some(start)
+                },
             ) {
                 nearest_blocker = Some(nearest_blocker.map_or(hit, |old: f32| old.min(hit)));
             }

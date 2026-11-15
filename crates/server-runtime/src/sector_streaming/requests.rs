@@ -35,7 +35,7 @@ pub(super) fn collect_combat_requests(
         .filter_map(|(player, demand)| {
             let instance = demand.context.instance();
             let manifest = worlds.get(instance)?.manifest;
-            let mut keys = demand.keys.clone();
+            let mut keys: Vec<_> = demand.domains.iter().map(|domain| domain.key).collect();
             keys.sort_unstable();
             keys.dedup();
             Some(PlayerSectorRequest {

@@ -199,19 +199,17 @@ impl MapRayQuery {
         }
     }
 
-    pub(super) fn nearest_blocker_where(
+    pub(super) fn nearest_blocker_intersection(
         &self,
         index: &CollisionIndex,
         origin: [f32; 3],
         direction: [f32; 3],
         maximum_distance: f32,
-        mut accepts: impl FnMut([f32; 3]) -> bool,
+        mut accepted_distance: impl FnMut(f32, f32) -> Option<f32>,
     ) -> Option<f32> {
         if !index.partitions.is_empty() {
             return None;
         }
-        let point_at =
-            |distance: f32| std::array::from_fn(|axis| origin[axis] + direction[axis] * distance);
         let mut nearest: Option<f32> = None;
         for candidate in &self.collider_candidates {
             let Some((near, far)) = ray_aabb_interval(
@@ -222,13 +220,7 @@ impl MapRayQuery {
             ) else {
                 continue;
             };
-            let hit = if accepts(point_at(near)) {
-                Some(near)
-            } else if far > near && far <= maximum_distance && accepts(point_at(far)) {
-                Some(far)
-            } else {
-                None
-            };
+            let hit = accepted_distance(near, far.min(maximum_distance));
             if let Some(hit) = hit {
                 nearest = Some(nearest.map_or(hit, |old| old.min(hit)));
             }
@@ -240,8 +232,8 @@ impl MapRayQuery {
                 index.surfaces[*candidate],
                 maximum_distance,
             ) {
-                if accepts(point_at(distance)) {
-                    nearest = Some(nearest.map_or(distance, |old| old.min(distance)));
+                if let Some(hit) = accepted_distance(distance, distance) {
+                    nearest = Some(nearest.map_or(hit, |old| old.min(hit)));
                 }
             }
         }

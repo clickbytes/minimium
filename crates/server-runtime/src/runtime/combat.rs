@@ -21,23 +21,21 @@ impl ServerRuntime {
             player_state.position[1] + minimium_world::world::PLAYER_HEIGHT * 0.9,
             player_state.position[2],
         ];
-        let keys = crate::sector_streaming::combat_ray_sectors(
+        let coverage_domains = crate::sector_streaming::combat_ray_sectors(
             manifest,
             origin,
             direction,
             self.combat.range,
         );
-        let Some(keys) = keys else {
+        let Some(domains) = coverage_domains else {
             self.report_combat_not_ready(player, instance, "combat_sector_demand_limit");
             return None;
         };
-        let sector_count = minimium_procgen::planet_sector_count(manifest);
         let coverage = self.game.worlds.get(instance)?.world.combat_coverage_plan(
             origin,
             direction,
             self.combat.range,
-            sector_count,
-            &keys,
+            &domains,
         );
         let result = {
             let world = &mut self.game.worlds.get_mut(instance)?.world;
@@ -55,14 +53,16 @@ impl ServerRuntime {
                     .game
                     .combat_sector_demands
                     .values()
-                    .map(|demand| demand.keys.len())
+                    .map(|demand| demand.domains.len())
                     .sum();
                 let replaced = self
                     .game
                     .combat_sector_demands
                     .get(&player)
-                    .map_or(0, |demand| demand.keys.len());
-                if current.saturating_sub(replaced).saturating_add(keys.len())
+                    .map_or(0, |demand| demand.domains.len());
+                if current
+                    .saturating_sub(replaced)
+                    .saturating_add(domains.len())
                     > crate::sector_streaming::MAX_PENDING_COMBAT_SECTORS
                 {
                     self.report_combat_not_ready(player, instance, "combat_sector_demand_capacity");
@@ -70,7 +70,7 @@ impl ServerRuntime {
                 }
                 self.game.combat_sector_demands.insert(
                     player,
-                    crate::sector_streaming::CombatSectorDemand { context, keys },
+                    crate::sector_streaming::CombatSectorDemand { context, domains },
                 );
                 self.report_combat_not_ready(player, instance, "combat_sector_not_ready");
                 return None;
