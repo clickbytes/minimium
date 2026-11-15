@@ -83,10 +83,16 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
     }
 
     loop {
-        let step = application.step(crate::application::ClientStepInput {
+        let input = crate::application::ClientStepInput {
+            #[cfg(feature = "desktop")]
             now: Instant::now(),
+            #[cfg(feature = "desktop")]
             prediction: None,
-        });
+        };
+        #[cfg(feature = "desktop")]
+        let step = application.step(input, |_| Ok(None));
+        #[cfg(not(feature = "desktop"))]
+        let step = application.step(input);
         if let Some(result) = step.admin_result {
             match result {
                 Ok(response) => println!("{}", response.trim()),
@@ -154,14 +160,14 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
             if let Some(ticket) = application.pending_transfer_ticket() {
                 let _ = application.report_transfer_host_ready(ticket);
             }
-            if let Some(mut disconnect) = step.disconnect {
-                #[cfg(not(feature = "desktop"))]
-                let _ = (disconnect.previous_context, disconnect.previous_instance);
-                if let Some(mut session) = disconnect.session.take() {
-                    session.close();
-                }
-                last_snapshot = None;
+        }
+        if let Some(mut disconnect) = step.disconnect {
+            #[cfg(not(feature = "desktop"))]
+            let _ = (disconnect.previous_context, disconnect.previous_instance);
+            if let Some(mut session) = disconnect.session.take() {
+                session.close();
             }
+            last_snapshot = None;
         }
         if let Some(frame) = application
             .session()

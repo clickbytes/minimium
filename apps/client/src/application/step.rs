@@ -3,8 +3,12 @@ use super::{ApplicationMessageError, ClientApplication};
 use crate::session::{SessionEvent, SessionState};
 use minimium_client_runtime::ConnectionEvent;
 use minimium_protocol::ServerMessage;
-use std::time::{Duration, Instant};
+#[cfg(feature = "desktop")]
+use std::time::Duration;
+#[cfg(feature = "desktop")]
+use std::time::Instant;
 
+#[cfg(feature = "desktop")]
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct PredictionInput {
     pub(crate) direction: [f32; 2],
@@ -14,10 +18,31 @@ pub(crate) struct PredictionInput {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ClientStepInput {
+    #[cfg(feature = "desktop")]
     pub(crate) now: Instant,
     /// `None` is the CPU-only host: it polls and applies session state without
     /// synthesizing desktop movement or Motion messages.
+    #[cfg(feature = "desktop")]
     pub(crate) prediction: Option<PredictionInput>,
+}
+
+#[cfg(feature = "desktop")]
+pub(crate) struct PredictionSceneRequest<'a> {
+    pub(crate) context: Option<minimium_protocol::WorldContext>,
+    pub(crate) instance: minimium_world::world::WorldInstanceId,
+    pub(crate) manifest: minimium_world::world::WorldManifest,
+    pub(crate) position: [f32; 3],
+    pub(crate) water_covers_candidate: bool,
+    pub(crate) terrain_inputs: minimium_procgen::TerrainInputs,
+    pub(crate) world_catalog: &'a std::collections::HashMap<
+        minimium_world::world::WorldInstanceId,
+        minimium_world::world::WorldMap,
+    >,
+    pub(crate) world_manifests: &'a std::collections::HashMap<
+        minimium_world::world::WorldInstanceId,
+        minimium_world::world::WorldManifest,
+    >,
+    pub(crate) session_content_ready: bool,
 }
 
 pub(crate) struct AppliedSessionEvent {
@@ -31,9 +56,13 @@ pub(crate) struct ClientStepOutput {
     pub(crate) session_events: Vec<AppliedSessionEvent>,
     pub(crate) disconnect: Option<ClientStepDisconnect>,
     #[cfg(feature = "desktop")]
+    pub(crate) candidate_scene_error: Option<String>,
+    #[cfg(feature = "desktop")]
     pub(crate) movement_queue_error: Option<crate::session::QueueError>,
     #[cfg(feature = "desktop")]
     pub(crate) jump_consumed: bool,
+    #[cfg(feature = "desktop")]
+    pub(crate) candidate_scene_pending: bool,
     #[cfg(feature = "desktop")]
     pub(crate) visual_offset: [f32; 3],
 }
@@ -50,12 +79,32 @@ impl ClientApplication {
     /// Advances application-owned time, prediction and session lifecycles once.
     /// Hosts may prepare presentation/readiness before this call and consume its
     /// typed events afterwards; redraws never poll or step the session.
-    pub(crate) fn step(&mut self, input: ClientStepInput) -> ClientStepOutput {
+    pub(crate) fn step(
+        &mut self,
+        input: ClientStepInput,
+        #[cfg(feature = "desktop")] mut candidate_readiness: impl FnMut(
+            PredictionSceneRequest<'_>,
+        ) -> Result<
+            Option<super::ActiveSceneReady>,
+            String,
+        >,
+    ) -> ClientStepOutput {
+        #[cfg(not(feature = "desktop"))]
+        let _ = input;
+        #[cfg(feature = "desktop")]
         let elapsed = self.elapsed_since_step(input.now);
-        let (movement_queue_error, jump_consumed) =
-            input.prediction.map_or((None, false), |prediction| {
-                self.step_prediction(elapsed, prediction)
-            });
+        #[cfg(feature = "desktop")]
+        let (movement_queue_error, jump_consumed, candidate_scene_pending, candidate_scene_error) =
+            input
+                .prediction
+                .map_or((None, false, false, None::<String>), |prediction| {
+                    self.step_prediction(elapsed, prediction, &mut candidate_readiness)
+                });
+        #[cfg(not(feature = "desktop"))]
+        let (movement_queue_error, jump_consumed): (
+            Option<crate::session::QueueError>,
+            bool,
+        ) = (None, false);
         #[cfg(feature = "desktop")]
         let visual_offset = if input.prediction.is_some() {
             self.game
@@ -70,6 +119,11 @@ impl ClientApplication {
 
         let admin_result = self.poll_admin_result();
         let connection = self.poll_connector();
+        #[cfg(feature = "desktop")]
+        if matches!(connection, ConnectionEvent::SessionStarted) {
+            self.clear_action_input_cooldown();
+            self.game.gameplay.clear_remote_players();
+        }
         let mut polled_events = Vec::with_capacity(16);
         if movement_queue_error.is_none() {
             self.poll_session(&mut polled_events);
@@ -105,9 +159,13 @@ impl ClientApplication {
             session_events,
             disconnect,
             #[cfg(feature = "desktop")]
+            candidate_scene_error,
+            #[cfg(feature = "desktop")]
             movement_queue_error,
             #[cfg(feature = "desktop")]
             jump_consumed,
+            #[cfg(feature = "desktop")]
+            candidate_scene_pending,
             #[cfg(feature = "desktop")]
             visual_offset,
         }
@@ -128,6 +186,7 @@ impl ClientApplication {
         }
     }
 
+    #[cfg(feature = "desktop")]
     fn elapsed_since_step(&mut self, now: Instant) -> Duration {
         let elapsed = self.last_step_at.map_or(Duration::ZERO, |previous| {
             now.checked_duration_since(previous)
@@ -139,11 +198,20 @@ impl ClientApplication {
         ))
     }
 
+    #[cfg(feature = "desktop")]
     fn step_prediction(
         &mut self,
         elapsed: Duration,
         input: PredictionInput,
-    ) -> (Option<crate::session::QueueError>, bool) {
+        candidate_readiness: &mut impl FnMut(
+            PredictionSceneRequest<'_>,
+        ) -> Result<Option<super::ActiveSceneReady>, String>,
+    ) -> (
+        Option<crate::session::QueueError>,
+        bool,
+        bool,
+        Option<String>,
+    ) {
         let delta_seconds = elapsed.as_secs_f32();
         let water_read = self
             .connection
@@ -173,6 +241,8 @@ impl ClientApplication {
         let mut jump_pending = input.jump_pending;
         let mut jump_consumed = false;
         let mut queue_error = None;
+        let mut candidate_scene_pending = false;
+        let mut candidate_scene_error = None;
 
         let manifest = self
             .game
@@ -195,7 +265,70 @@ impl ClientApplication {
             jump_pending = false;
             jump_consumed = input.jump_pending;
             let mut movement = predicted.input;
-            if !self.game.gameplay.sectors_ready && !can_fly {
+            let candidate_position = self.game.gameplay.prediction.character.position;
+            let candidate_manifest = self
+                .game
+                .world_manifests
+                .get(&self.game.current_instance)
+                .copied();
+            let water_covers_candidate = candidate_manifest.is_none_or(|manifest| {
+                manifest.planet().is_none_or(|_| {
+                    let feet = self
+                        .game
+                        .gameplay
+                        .prediction
+                        .position_mm
+                        .map_or(candidate_position.map(f64::from), |position| {
+                            position.0.map(|value| value as f64 / 1000.0)
+                        });
+                    let up = minimium_world::world::character_frame(
+                        self.game.gameplay.prediction.character.gravity,
+                        candidate_position,
+                    )
+                    .0
+                    .map(f64::from);
+                    self.connection
+                        .session()
+                        .is_some_and(|session| session.water_region_covers_capsule(feet, up, 1.7))
+                })
+            });
+            let session_content_ready = self
+                .connection
+                .session()
+                .is_none_or(|session| session.impact_ready() && session.excavation_ready());
+            let candidate_report = candidate_manifest.map(|manifest| {
+                let request = PredictionSceneRequest {
+                    context: self.game.session_context(),
+                    instance: self.game.current_instance,
+                    manifest,
+                    position: candidate_position,
+                    water_covers_candidate,
+                    terrain_inputs: self
+                        .connection
+                        .session()
+                        .map(|session| session.terrain_inputs())
+                        .unwrap_or_default(),
+                    world_catalog: &self.world_catalog,
+                    world_manifests: &self.game.world_manifests,
+                    session_content_ready,
+                };
+                candidate_readiness(request)
+            });
+            let candidate_ready = candidate_report.is_some_and(|result| match result {
+                Ok(Some(report)) => {
+                    report.candidate_position() == Some(candidate_position)
+                        && water_covers_candidate
+                        && session_content_ready
+                        && self.report_active_scene_ready(report)
+                }
+                Ok(None) => false,
+                Err(error) => {
+                    candidate_scene_error = Some(error);
+                    false
+                }
+            });
+            if !candidate_ready && !can_fly {
+                candidate_scene_pending = true;
                 self.game.gameplay.prediction.character = predicted.previous_state;
                 self.game.gameplay.prediction.position_mm = predicted.previous_mm;
                 movement = minimium_simulation::MovementIntent::default();
@@ -228,7 +361,12 @@ impl ClientApplication {
                 }
             }
         }
-        (queue_error, jump_consumed)
+        (
+            queue_error,
+            jump_consumed,
+            candidate_scene_pending,
+            candidate_scene_error,
+        )
     }
 
     fn apply_step_message(
@@ -254,25 +392,13 @@ impl ClientApplication {
         }
     }
 
+    #[cfg(feature = "desktop")]
     fn console_open(&self) -> bool {
-        #[cfg(feature = "desktop")]
-        {
-            self.ui.console.open
-        }
-        #[cfg(not(feature = "desktop"))]
-        {
-            false
-        }
+        self.ui.console.open
     }
 
+    #[cfg(feature = "desktop")]
     fn overview_open_for_step(&self) -> bool {
-        #[cfg(feature = "desktop")]
-        {
-            self.overview.is_open()
-        }
-        #[cfg(not(feature = "desktop"))]
-        {
-            false
-        }
+        self.overview.is_open()
     }
 }

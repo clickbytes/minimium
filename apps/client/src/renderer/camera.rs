@@ -37,21 +37,45 @@ impl DesktopHost {
                     .input
                     .is_active(crate::input::InputAction::MoveDown),
             ) as f32;
-        let output = self.application.step(crate::application::ClientStepInput {
-            now,
-            prediction: Some(crate::application::PredictionInput {
-                direction,
-                vertical,
-                jump_pending: self.input.jump_pending,
-            }),
-        });
+        let context = self.application.game_view().session_context();
+        let water = context.and_then(|context| self.water_presentation_for(context));
+        let fov_degrees = self.fov_degrees;
+        let published_terrain = self.impacts.published_terrain;
+        let application = &mut self.application;
+        let sector_cache = &mut self.sector_cache;
+        let renderer = &mut self.renderer;
+        let output = application.step(
+            crate::application::ClientStepInput {
+                now,
+                prediction: Some(crate::application::PredictionInput {
+                    direction,
+                    vertical,
+                    jump_pending: self.input.jump_pending,
+                }),
+            },
+            |request| {
+                super::session::prepare_prediction_scene(
+                    sector_cache,
+                    renderer,
+                    request,
+                    water.clone(),
+                    fov_degrees,
+                    published_terrain,
+                )
+            },
+        );
+        if let Some(error) = output.candidate_scene_error.as_ref() {
+            self.application
+                .record_diagnostic_failure("client_runtime.candidate_scene_failed", error);
+        }
         self.camera_visual_offset = output.visual_offset;
         self.pending_step_disconnect = output.disconnect;
         if output.jump_consumed {
             self.input.jump_pending = false;
         }
         self.handle_step_connector(output.admin_result, output.connection);
-        self.handle_step_session_events(output.session_events);
+        let disconnecting = self.pending_step_disconnect.is_some();
+        self.handle_step_session_events(output.session_events, disconnecting);
         if self.pending_step_disconnect.is_some() {
             self.clear_connection();
         }
@@ -63,7 +87,8 @@ impl DesktopHost {
         }
 
         self.update_render_origin();
-        if self.refresh_active_sector_scene()
+        if !output.candidate_scene_pending
+            && self.refresh_active_sector_scene()
             && self.application.is_loading()
             && self.last_render_position.iter().all(|p| p.is_finite())
         {

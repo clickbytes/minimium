@@ -77,6 +77,7 @@ impl GameplayState {
     }
 }
 
+#[cfg(feature = "desktop")]
 pub(crate) use minimium_client_runtime::PredictedStep;
 
 impl ClientGameState {
@@ -139,10 +140,12 @@ impl ClientGameState {
         )
     }
 
+    #[cfg(feature = "desktop")]
     pub(crate) fn accumulate_prediction_time(&mut self, delta_seconds: f32) {
         self.gameplay.prediction.accumulate_time(delta_seconds);
     }
 
+    #[cfg(feature = "desktop")]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn predict_next(
         &mut self,

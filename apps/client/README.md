@@ -129,6 +129,13 @@ Session polling and fixed-step progression do not depend on a redraw callback;
 minimized and occluded windows continue the application loop. The step caps
 elapsed prediction time at the existing simulation step, applies prediction
 before polling session messages, and returns typed connector/session updates.
+Desktop candidate movement is retained only after the host has requested and
+prepared the candidate sector scene, the application has accepted its
+context/manifest/terrain-tagged collision report, and planetary water covers
+the candidate capsule. `sectors_ready` continues to describe the currently
+covered region; a blocked candidate keeps its interest for the next scheduled
+step and cannot queue motion, while the covered region remains available to
+retry the same boundary crossing.
 The terminal calls the same step before its existing bounded 25 ms input wait,
 with prediction omitted so it cannot enqueue synthetic movement. The redraw
 callback prepares camera/environment presentation from the latest immutable

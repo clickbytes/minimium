@@ -1,5 +1,6 @@
 mod message_handling;
 mod sector_readiness;
+pub(in crate::renderer) use sector_readiness::prepare_prediction_scene;
 
 use super::*;
 use crate::messages::ClientText as Text;
@@ -124,7 +125,8 @@ impl DesktopHost {
             }
             ConnectionEvent::SessionStarted => {
                 self.clear_pending_sector_transitions();
-                self.reset_remote_gameplay();
+                self.renderer.clear_remote_vertices();
+                self.gameplay_presentation.clear_remote_players();
                 self.application.ui.console.push_client_text(
                     Text::AwaitingWelcome,
                     false,
@@ -156,13 +158,6 @@ impl DesktopHost {
             }
             _ => {}
         }
-    }
-
-    fn reset_remote_gameplay(&mut self) {
-        self.application.clear_action_input_cooldown();
-        self.renderer.clear_remote_vertices();
-        self.application.clear_remote_players();
-        self.gameplay_presentation.clear_remote_players();
     }
 
     pub(crate) fn finish_on_exit(&mut self, deadline: Instant) -> Result<(), Box<dyn Error>> {
@@ -276,6 +271,7 @@ impl DesktopHost {
     pub(super) fn handle_step_session_events(
         &mut self,
         events: Vec<crate::application::AppliedSessionEvent>,
+        disconnecting: bool,
     ) {
         if self.application.connection_view().session().is_some() {
             self.prepare_session_materials();
@@ -330,6 +326,21 @@ impl DesktopHost {
                     self.clear_connection();
                 }
                 SessionEvent::Message(message) => {
+                    if disconnecting {
+                        if let Err(error) = update {
+                            self.handle_detached_message_error(error);
+                        }
+                        if matches!(message, ServerMessage::Bye) && self.application.ui.console.open
+                        {
+                            self.application.ui.console.push_client_text(
+                                Text::ServerClosed,
+                                false,
+                                &self.localizer,
+                                self.application.settings.locale,
+                            );
+                        }
+                        continue;
+                    }
                     self.handle_server_message(message, update);
                     if self.application.connection_view().session().is_none() {
                         break;
@@ -344,6 +355,27 @@ impl DesktopHost {
             .is_some_and(|session| session.state() == SessionState::Disconnected)
         {
             self.clear_connection();
+        }
+    }
+
+    fn handle_detached_message_error(
+        &mut self,
+        error: crate::application::ApplicationMessageError,
+    ) {
+        use crate::application::ApplicationMessageError as MessageError;
+        match error {
+            MessageError::StaleWorldContext => {}
+            MessageError::VisiblePlayerLimitExceeded => self.fail_connection(
+                Text::VisiblePlayerLimitExceeded
+                    .localized(&self.localizer, self.application.settings.locale),
+            ),
+            #[cfg(feature = "desktop")]
+            MessageError::RequiredEarthUnavailable => {
+                self.fail_connection("serwer nie udostępnia manifestu Earth")
+            }
+            MessageError::MissingWorldContent | MessageError::WorldContentMismatch => {
+                self.fail_connection(&format!("server world content is not supported: {error:?}"))
+            }
         }
     }
 

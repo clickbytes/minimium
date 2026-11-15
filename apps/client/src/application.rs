@@ -24,6 +24,8 @@ pub(crate) use settings::ClientSettings;
 pub(crate) use settings::{SettingsStore, StartupSettings};
 pub(crate) use step::ClientStepInput;
 #[cfg(feature = "desktop")]
+pub(crate) use step::PredictionSceneRequest;
+#[cfg(feature = "desktop")]
 pub(crate) use step::{AppliedSessionEvent, ClientStepDisconnect, PredictionInput};
 #[cfg(feature = "desktop")]
 pub(crate) use transitions::{
@@ -55,6 +57,7 @@ pub(crate) struct ClientApplication {
     #[cfg(feature = "desktop")]
     pub(crate) input: crate::input::InputMapper,
     world_catalog: HashMap<WorldInstanceId, WorldMap>,
+    #[cfg(feature = "desktop")]
     last_step_at: Option<std::time::Instant>,
     #[cfg(feature = "desktop")]
     transitions: WorldTransitionController,
@@ -141,6 +144,7 @@ impl ClientApplication {
             settings,
             input,
             world_catalog,
+            #[cfg(feature = "desktop")]
             last_step_at: None,
             transitions,
             overview,
@@ -190,6 +194,7 @@ impl ClientApplication {
             #[cfg(feature = "desktop")]
             input: desktop.2,
             world_catalog: worlds.world_catalog,
+            #[cfg(feature = "desktop")]
             last_step_at: None,
             #[cfg(feature = "desktop")]
             transitions: WorldTransitionController::new(false),
