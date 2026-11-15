@@ -16,7 +16,7 @@ forbidden_dependencies = ["minimium-terrain", "minimium-procgen", "minimium-stor
 [[package]]
 name = "minimium-core"
 role = "engine-domain"
-responsibility = "Foundational identifiers, player profiles, authenticated principal values and server-granted permission bits with no project dependencies."
+responsibility = "Foundational identifiers, player profiles with domain-owned hexadecimal parse errors, authenticated principal values and server-granted permission bits with no project dependencies. File error classification and path context belong to adapters."
 forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-platform", "minimium-assets", "minimium-procgen", "minimium-sectors", "minimium-telemetry", "minimium-commands", "minimium-world", "minimium-environment", "minimium-renderer", "minimium-game-sample"]
 
 [[package]]
