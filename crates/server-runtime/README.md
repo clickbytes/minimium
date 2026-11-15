@@ -33,6 +33,15 @@ that current signed field, retaining a saved tunnel position only while it is cl
 
 `ServerRuntime` owns mutable authoritative state on one lane. Worker threads do not mutate active worlds. Signal, admin `server stop`, and host-owner shutdown converge on the shared `ShutdownRequest`. Shutdown closes game and admin admission, rejects pending admin commands, then keeps the owner lane frozen while bounded workers stop and the final snapshot is captured and persisted. A single absolute deadline is 30 seconds from lifecycle start; worker, save, endpoint/status work has the first 28 seconds and the host diagnostics flush uses the remaining two seconds. A timeout is reported as failure and does not mean blocking operating-system I/O was cancelled. `Attached` client sessions never stop the server; only an `OwnedServer` sends graceful stop and reaps its child.
 
+`GameState` owns actor-keyed fire and per-player chat cooldowns, plus the global
+chat cooldown. The closed `ActorAction` admission operation derives its own
+`WorldInput`, checks cooldowns before queue capacity, and records cooldown time
+only after inserting into the bounded owner-lane queue. Admission supplies the
+transport-capacity result and retains permission/context checks. Action state is
+created only after membership reservation and removed with the actor on Leave;
+transfers retain the same actor cooldown state. Generic queue admission rejects
+Fire and Chat so these actions cannot bypass their policy.
+
 `runtime/operations.rs` keeps the loop order explicit and delegates autosave scheduling/capture to `poll_autosave`. `lifecycle.rs` coordinates admission closure, bounded admin drain, client socket closure, worker stop, final snapshot capture, persistence shutdown, endpoint cleanup and shutdown status in that order. The shared request carries the absolute diagnostics deadline back to the process host. Storage owns snapshot serialization and worker status; the runtime supplies the live world data and final snapshot. Persistence timeout/error and unfinished worker IDs propagate to the process result; the last atomically replaced snapshot remains intact.
 
 `WorldRegistry` is the stable runtime façade for world instances. Its `membership.rs` module owns membership and epoch changes, `transfers.rs` owns staged and committed transfers, and `accessors.rs` owns read-only queries and save snapshots. Constructors and entity, sector, environment, and diagnostic operations stay in their dedicated modules.

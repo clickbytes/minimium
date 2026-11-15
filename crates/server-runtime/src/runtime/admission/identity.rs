@@ -300,6 +300,10 @@ pub(super) fn activate_profile(
             return;
         }
     };
+    if !runtime.game.activate_actor_actions(player.id) {
+        disconnect(runtime, index, Some(CloseReason::InvalidSequence));
+        return;
+    }
     runtime.game.pending_world_inputs.push((
         WorldInput::Join {
             id: player.id,
