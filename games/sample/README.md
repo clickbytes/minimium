@@ -144,3 +144,9 @@ developer inventory's fixed Shovel and Pickaxe slots. Both retain 3 m reach and 
 with one shared 500 ms cooldown; Shovel allows Soil and Pickaxe allows Soil and
 Rock. The terrain crate receives only the selected radius and material set, so
 engine terrain code does not infer gameplay policy from `ToolKind`.
+
+`tool_model_catalog()` supplies the sample's camera-local Shovel and Pickaxe
+viewmodel vertices and linear RGB colors. `tool_model_index()` binds confirmed
+inventory kinds to this ordered catalog. The client adapts these CPU values to
+the renderer's neutral bounded model input; no sample code depends on renderer
+or GPU packages.

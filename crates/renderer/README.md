@@ -71,13 +71,18 @@ LUTs, staging, fog and uniforms use approximately 1.71 MiB in the physical path;
 the scene snapshot adds about 15.8 MiB at 1080p or 63.3 MiB at 4K.
 Runtime image/performance acceptance is pending.
 
-`held_tool` contains small camera-local low-poly shovel and pickaxe meshes.
-`HeldToolGpu` draws the equipped mesh as a no-depth viewmodel after atmosphere
-and cloud composition and before UI/output. The confirmed `ToolKind` comes from
-the client session; no equipped tool means no model. It is hidden while the
-scene is unprepared, in overview/map mode, or under the console. Viewmodel
-coordinates are camera-relative screen geometry, so planet origin rebasing and
-radial camera orientation do not move it or clip it against world depth.
+`held_tool` defines a bounded GPU-independent camera-local vertex/model input;
+it does not define game-specific shapes. Models require nonempty triangle lists
+with finite positions/colors, at most 512 vertices each. `HeldToolGpu` accepts
+1..=8 models and at most 4096 total vertices, checking catalog bounds before
+pipeline or buffer allocation. The application adapts sample model vertices and
+supplies the catalog. A model index selects one uploaded mesh; invalid indices
+draw nothing. The no-depth viewmodel
+pass remains after atmosphere and cloud composition and before UI/output. The
+application chooses the index from confirmed inventory and sample content; no
+equipped model means no draw. Coordinates remain camera-relative screen geometry,
+so planet-origin rebasing and radial camera orientation do not move it or clip
+it against world depth.
 
 TerrainVertex (120 bytes) and TerrainGpu form the shared planet surface path
 for overview and FPP. Both cameras use TerrainView, planet_visibility and the
