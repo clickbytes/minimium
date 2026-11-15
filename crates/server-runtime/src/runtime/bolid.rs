@@ -39,12 +39,7 @@ impl ServerRuntime {
     }
 
     pub(super) fn spawn_bolid(&mut self, manual: bool, scheduled: bool) -> CommandReply {
-        let fail = |text: &str, code| CommandReply {
-            success: false,
-            text: text.to_owned(),
-            stop: false,
-            error_code: Some(code),
-        };
+        let fail = |text: &str, code| CommandReply::error(code, text);
         let now = Instant::now();
         if manual
             && !scheduled
@@ -224,14 +219,18 @@ impl ServerRuntime {
         if manual && !scheduled {
             self.last_manual_bolid_at = Some(now);
         }
-        CommandReply {
-            success: recipients > 0,
-            text: format!(
-                "bolid id={} kind={} recipients={recipients}",
-                event.id, event.kind
-            ),
-            stop: false,
-            error_code: (recipients == 0).then_some("server.bolid.delivery_failed"),
+        if recipients > 0 {
+            CommandReply::success(crate::commands::CommandPayload::Bolid {
+                id: event.id,
+                kind: event.kind,
+                recipients,
+                shower: None,
+            })
+        } else {
+            CommandReply::error(
+                "server.bolid.delivery_failed",
+                &format!("bolid id={} kind={} recipients=0", event.id, event.kind),
+            )
         }
     }
 }

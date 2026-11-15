@@ -8,11 +8,12 @@ impl ServerRuntime {
     ) -> crate::commands::CommandReply {
         let result = self.prepare_meteorid(manual);
         match result {
-            Ok(id) => crate::commands::CommandReply { success: true,
-                text: format!("meteorid {id} accepted; authoritative flight and permanent terrain impact queued"),
-                stop: false, error_code: None },
-            Err(error) => crate::commands::CommandReply { success: false, text: error.to_string(),
-                stop: false, error_code: Some("server.impact.rejected") },
+            Ok(id) => crate::commands::CommandReply::success(
+                crate::commands::CommandPayload::ImpactSpawn { id },
+            ),
+            Err(error) => {
+                crate::commands::CommandReply::error("server.impact.rejected", &error.to_string())
+            }
         }
     }
 

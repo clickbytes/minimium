@@ -22,6 +22,14 @@ pub(super) struct Impacts {
     failure: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ImpactStatus {
+    pub active: usize,
+    pub craters: usize,
+    pub pending: usize,
+    pub ready: bool,
+}
+
 impl Impacts {
     pub(super) fn open(
         path: &std::path::Path,
@@ -44,18 +52,13 @@ impl Impacts {
 }
 
 impl ServerRuntime {
-    pub(super) fn impact_status(&self) -> String {
-        format!(
-            " meteorids_active={} impact_craters={} impact_pending={} impact_storage={}",
-            self.active_body_count(),
-            self.impacts.bodies().filter(|b| b.phase != 0).count(),
-            self.impacts.pending_count(),
-            if self.impacts.failure.is_some() {
-                "failed"
-            } else {
-                "ready"
-            }
-        )
+    pub(crate) fn impact_status_snapshot(&self) -> ImpactStatus {
+        ImpactStatus {
+            active: self.active_body_count(),
+            craters: self.impacts.bodies().filter(|b| b.phase != 0).count(),
+            pending: self.impacts.pending_count(),
+            ready: self.impacts.failure.is_none(),
+        }
     }
 
     pub(super) fn restore_impacts(&mut self) -> io::Result<()> {

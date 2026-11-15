@@ -1,5 +1,6 @@
 //! One bounded, transient administrative shower; no timer thread or saved state.
 use super::{mix, CommandReply, Duration, Instant, ServerRuntime};
+use crate::commands::CommandPayload;
 use minimium_core::ids::PlayerId;
 use minimium_protocol::WorldContext;
 
@@ -23,12 +24,7 @@ fn delay(seed: u64) -> Duration {
 
 impl ServerRuntime {
     pub(in crate::runtime) fn start_bolid_shower(&mut self, count: u16) -> CommandReply {
-        let error = |text: &str, code| CommandReply {
-            success: false,
-            text: text.into(),
-            stop: false,
-            error_code: Some(code),
-        };
+        let error = |text: &str, code| CommandReply::error(code, text);
         if !(1..=64).contains(&count) {
             return error("bolid count must be 1..64", "server.bolid.invalid_count");
         }
@@ -48,10 +44,12 @@ impl ServerRuntime {
             });
         }
         let mut reply = self.spawn_bolid(true, false);
-        if !reply.success {
+        if !reply.is_success() {
             self.bolid_shower = None;
         } else if count > 1 {
-            reply.text.push_str(&format!("; shower accepted: {count} bolids total, first now, remaining {} at irregular 0.9..8 s intervals", count - 1));
+            if let Some(CommandPayload::Bolid { shower, .. }) = reply.payload_mut() {
+                *shower = Some(count as usize);
+            }
         }
         reply
     }
@@ -69,13 +67,16 @@ impl ServerRuntime {
         }
         // At most one event per tick; a stalled server never emits a catch-up burst.
         let reply = self.spawn_bolid(true, true);
-        if !reply.success {
+        if !reply.is_success() {
             self.bolid_shower = None;
             crate::diagnostics::emit(
                 &self.world_logger,
                 minimium_diagnostics::Level::Warn,
                 "bolid.shower_cancelled",
-                &[("reason", reply.text)],
+                &[(
+                    "reason",
+                    reply.detail().unwrap_or("bolid event rejected").to_owned(),
+                )],
             );
             return;
         }

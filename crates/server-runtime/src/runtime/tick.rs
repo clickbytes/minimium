@@ -1,7 +1,7 @@
 use super::*;
 use crate::{commands, replication, simulation};
 mod properties;
-use minimium_protocol::PROTOCOL_VERSION;
+mod status;
 use minimium_telemetry::allocations::{self, Phase};
 
 impl ServerRuntime {
@@ -65,7 +65,15 @@ impl ServerRuntime {
             }
             let monotonic_ms = self.monotonic_ms(Instant::now());
             let schedule_diagnostics = self.schedule.diagnostics();
-            let mut reply = match &command {
+            let runtime_status = command
+                .is_status()
+                .then(|| self.runtime_status_snapshot(game_address, max_players));
+            let client_traffic = if command.is_metrics() {
+                self.client_traffic_snapshot()
+            } else {
+                commands::ClientTrafficSnapshot::default()
+            };
+            let reply = match &command {
                 crate::server_command::ServerCommand::SpawnRandomMeteorid => {
                     self.spawn_meteorid(true)
                 }
@@ -88,45 +96,19 @@ impl ServerRuntime {
                             environment_clock: &mut self.environment_clock,
                             monotonic_ms,
                             schedule_diagnostics,
+                            runtime_status,
+                            client_traffic,
                         },
                         &self.module_registry,
                     ),
-                    Err(error) => commands::CommandReply {
-                        success: false,
-                        text: format!("monotonic clock: {error}"),
-                        stop: false,
-                        error_code: Some("server.monotonic_clock_failed"),
-                    },
+                    Err(error) => commands::CommandReply::error(
+                        "server.monotonic_clock_failed",
+                        &format!("monotonic clock: {error}"),
+                    ),
                 },
             };
             self.environment_dirty_revision = self.environment_clock.dirty_revision();
-            if command.is_status() {
-                use std::fmt::Write as _;
-                let _ = write!(reply.text, " game_address={game_address} max_players={max_players} map_fingerprint={:016x} tick_ms={} snapshot_ms={} autosave_seconds={} protocol_version={PROTOCOL_VERSION} save_version={SAVE_VERSION}", self.map.fingerprint(), TICK.as_millis(), SNAPSHOT_INTERVAL.as_millis(), self.autosave_seconds);
-                reply.text.push_str(" environment_profiles=");
-                reply.text.push_str(&self.game.worlds.environment_summary());
-                reply.text.push_str(&self.impact_status());
-                reply.text.push_str(&self.excavation_status());
-            }
-            if command.is_metrics() {
-                use std::fmt::Write as _;
-                reply.text.push_str(" client_traffic=id:bytes_in:bytes_out:decoded_frames:queued_frames:encoding_us:connected_ms");
-                for client in &self.connections.clients {
-                    if let Some(id) = client.player_id() {
-                        let _ = write!(
-                            reply.text,
-                            " {id}:{}:{}:{}:{}:{}:{}",
-                            client.bytes_in,
-                            client.bytes_out,
-                            client.frames_in,
-                            client.frames_out,
-                            client.encoding_us,
-                            client.connected_at.elapsed().as_millis()
-                        );
-                    }
-                }
-            }
-            if !reply.success {
+            if !reply.is_success() {
                 crate::diagnostics::emit(
                     &self.server_logger,
                     minimium_diagnostics::Level::Warn,
@@ -134,29 +116,34 @@ impl ServerRuntime {
                     &[(
                         "error_code",
                         reply
-                            .error_code
+                            .error_code()
                             .unwrap_or("server.command.failed")
                             .to_owned(),
                     )],
                 );
             }
             if let Some(id) = request_id {
-                self.operations
-                    .admin
-                    .respond(id, reply.success, reply.error_code, &reply.text);
+                self.operations.admin.respond_command(id, &reply);
             } else {
-                let prefix = match reply.error_code {
+                let prefix = match reply.error_code() {
                     Some(code) => format!("ERR {code}"),
                     None => String::from("ERR"),
                 };
+                let text = reply
+                    .payload()
+                    .map(crate::command_output::render)
+                    .map_or_else(
+                        || {
+                            crate::commands::BoundedText::new(
+                                reply.detail().unwrap_or("command failed"),
+                            )
+                        },
+                        |text| text,
+                    );
                 println!(
                     "{} {}",
-                    if reply.success {
-                        "OK".to_owned()
-                    } else {
-                        prefix
-                    },
-                    reply.text
+                    if reply.is_success() { "OK" } else { &prefix },
+                    text.as_str()
                 );
             }
             if command.is_save_or_stop() {
@@ -174,11 +161,11 @@ impl ServerRuntime {
                             })
                             .to_owned(),
                         ),
-                        ("success", reply.success.to_string()),
+                        ("success", reply.is_success().to_string()),
                     ],
                 );
             }
-            if reply.stop {
+            if reply.should_stop() {
                 self.shutdown_request.request();
             }
             if self.shutdown_request.is_requested() {

@@ -155,9 +155,7 @@ pub(super) fn parse_property(line: &str) -> Result<ServerCommand, CommandError> 
         }
         PropertyRequest::Help { target } => {
             if let Some(target) = target.as_deref() {
-                if property_registry().get(target).is_none()
-                    && server_command_usage(target).is_none()
-                {
+                if property_registry().get(target).is_none() && !server_command_exists(target) {
                     return Err(property_error(
                         target,
                         CommandErrorCode::HelpQuery,
