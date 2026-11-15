@@ -8,7 +8,8 @@ pub use simulation::SkyCoverQuery;
 pub use simulation::{
     step_batch, step_character, step_character_mm, step_character_mm_with_water,
     step_character_with_water, CharacterState, CollisionIndex, CollisionQuery, CollisionQueryStats,
-    CombatSettings, MovementIntent, MovementPolicy, Player, ShotOutcome, SimulationBatch,
-    ToolRayCapsule, World, WorldSnapshot, MOVEMENT_LIMIT, PLAYER_MAX_HEALTH,
-    SIMULATION_STEP_MILLISECONDS, SIMULATION_STEP_SECONDS,
+    CombatCoveragePlan, CombatSettings, MovementIntent, MovementPolicy, Player, ShotOutcome,
+    ShotReadinessError, SimulationBatch, SpatialGeometryPublication, ToolRayCapsule, World,
+    WorldSnapshot, MOVEMENT_LIMIT, PLAYER_MAX_HEALTH, SIMULATION_STEP_MILLISECONDS,
+    SIMULATION_STEP_SECONDS,
 };

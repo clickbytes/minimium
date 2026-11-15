@@ -298,12 +298,23 @@ impl ServerRuntime {
                 })
                 .collect();
             let index = Arc::new(minimium_simulation::CollisionIndex::from_partitions(parts));
+            let replacements = tickets
+                .iter()
+                .filter_map(|ticket| {
+                    self.game
+                        .sectors
+                        .payload_arc(*ticket)
+                        .map(|payload| (ticket.key(), Arc::clone(&payload.collision)))
+                })
+                .collect();
             let owner = self.game.worlds.get_mut(mutation.world).unwrap();
             owner.volumes = Some(terrain);
             if let Some(craters) = pending.prepared.craters {
                 owner.terrain = craters;
             }
-            owner.world.install_streamed_collision_index(index);
+            owner
+                .world
+                .install_streamed_spatial_geometry(index, replacements, collision_revision);
             owner.collision_tickets = tickets;
             owner.collision_source_revision = collision_revision;
             owner.collision_installed_revision = collision_revision;

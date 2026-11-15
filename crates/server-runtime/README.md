@@ -156,6 +156,17 @@ revisioned collision index is built by a fixed worker. Pending snapshots for a
 world coalesce to the newest revision; stale results are discarded. Movement
 and transfer readiness wait until the matching complete index is installed.
 
+The worker publishes movement collision and exact-sector combat replacements
+together with the full-map combat baseline in one `SpatialGeometryPublication`.
+Excavation swaps the same bundle only after durable acknowledgement; restore
+rebuilds current sector payloads through ordinary bounded streaming. A hitscan
+computes a conservative set of sectors across its full configured ray range.
+Missing sectors create one bounded demand per actor/context, pinned through the
+existing sector manager and worker pool. Combat demand has separate tickets and
+readiness from movement; demand is released on a successful later shot, actor
+removal or context change. Capacity failure returns `Busy` with diagnostics,
+and the original shot is not replayed.
+
 Movement acknowledgements are a safe resolved prefix. Admission tracks every
 accepted sequence while it remains executable in the bounded world-input queue
 or target-tick queue; rejection, queue pressure, same-tick replacement and
