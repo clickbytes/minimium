@@ -47,10 +47,14 @@ impl ClientSectorCache {
             old.is_some_and(|previous| previous.geography.is_some() != terrain.geography.is_some());
         let changed_material_profile =
             old.is_some_and(|previous| previous.material_profile != terrain.material_profile);
+        let changed_relief_policy = old.is_some_and(|previous| {
+            previous.resolved_relief_policy != terrain.resolved_relief_policy
+        });
         let changed = old.is_none_or(|previous| {
             previous.revision() != terrain.revision()
                 || changed_geometry_source
                 || changed_material_profile
+                || changed_relief_policy
         });
         if changed {
             let count = minimium_procgen::planet_sector_count(manifest);
@@ -58,6 +62,7 @@ impl ClientSectorCache {
                 self.manager.invalidate_where(instance, |key| {
                     changed_geometry_source
                         || changed_material_profile
+                        || changed_relief_policy
                         || previous.sector_version(key, 1, count)
                             != terrain.sector_version(key, 1, count)
                 });
@@ -69,7 +74,7 @@ impl ClientSectorCache {
             .insert(instance, Arc::new(terrain.clone()));
     }
 
-    pub(super) fn material_profile_matches(
+    pub(super) fn content_profiles_match(
         inputs: &minimium_procgen::TerrainInputs,
         manifest: WorldManifest,
         map: Option<&WorldMap>,
@@ -78,6 +83,13 @@ impl ClientSectorCache {
             profile.matches_manifest(manifest)
                 && map.is_some_and(|map| profile.matches(manifest, map.fingerprint()))
         }) && (inputs.volumes.is_none() || inputs.material_profile.is_some())
+            && inputs.resolved_relief_policy.is_none_or(|policy| {
+                policy.matches_manifest(manifest)
+                    && map.is_some_and(|map| policy.matches(manifest, map.fingerprint()))
+            })
+            && (manifest.source() != minimium_world::world::WorldSource::Generated
+                || manifest.topology() != minimium_world::world::WorldTopology::Planet
+                || inputs.resolved_relief_policy.is_some())
     }
 
     pub(super) fn interest_matches(

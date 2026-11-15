@@ -39,6 +39,7 @@ impl WorldRegistry {
                 remnants: Arc::new(minimium_world::remnants::RemnantSnapshot::empty(10000.0)),
                 manifest,
                 terrain_material_profile,
+                resolved_relief_policy: None,
                 map,
                 world,
                 collision_source_revision: 0,
@@ -66,17 +67,22 @@ impl WorldRegistry {
         manifest: WorldManifest,
         map: WorldMap,
         terrain_material_profile: minimium_procgen::ResolvedTerrainMaterialProfile,
+        resolved_relief_policy: Option<minimium_procgen::ResolvedPlanetReliefPolicy>,
     ) -> Result<(), RegistryError> {
         validate_manifest_map(manifest, &map)?;
         if !terrain_material_profile.matches(manifest, map.fingerprint()) {
             return Err(RegistryError::InvalidTerrainMaterialProfile);
         }
-        if self.instances.values().any(|owner| {
-            owner.manifest == manifest
-                && owner.map.fingerprint() == map.fingerprint()
-                && owner.terrain_material_profile != terrain_material_profile
+        validate_relief_policy(manifest, &map, resolved_relief_policy)?;
+        if let Some(owner) = self.instances.values().find(|owner| {
+            owner.manifest == manifest && owner.map.fingerprint() == map.fingerprint()
         }) {
-            return Err(RegistryError::InvalidTerrainMaterialProfile);
+            if owner.terrain_material_profile != terrain_material_profile {
+                return Err(RegistryError::InvalidTerrainMaterialProfile);
+            }
+            if owner.resolved_relief_policy != resolved_relief_policy {
+                return Err(RegistryError::InvalidReliefPolicy);
+            }
         }
         if self.instances.contains_key(&instance) {
             return Err(RegistryError::DuplicateInstance);
@@ -111,6 +117,7 @@ impl WorldRegistry {
                 )),
                 manifest,
                 terrain_material_profile,
+                resolved_relief_policy,
                 map,
                 world,
                 collision_source_revision: 0,
@@ -135,6 +142,11 @@ impl WorldRegistry {
         {
             return Err(RegistryError::InvalidTerrainMaterialProfile);
         }
+        validate_relief_policy(
+            primary.manifest,
+            &primary.map,
+            primary.resolved_relief_policy,
+        )?;
         let primary_id = primary.instance;
         let mut registry = Self::from_definition(primary);
         for world in worlds {
@@ -180,6 +192,7 @@ impl WorldRegistry {
                 )),
                 manifest: world.manifest,
                 terrain_material_profile: world.terrain_material_profile,
+                resolved_relief_policy: world.resolved_relief_policy,
                 map,
                 world: simulation,
                 collision_source_revision: 0,
@@ -209,6 +222,7 @@ impl WorldRegistry {
             world.manifest,
             world.map,
             world.terrain_material_profile,
+            world.resolved_relief_policy,
         )?;
         let owner = self
             .instances
@@ -216,6 +230,22 @@ impl WorldRegistry {
             .expect("newly registered instance exists");
         owner.initial_entities = initial_entities;
         Ok(())
+    }
+}
+
+fn validate_relief_policy(
+    manifest: WorldManifest,
+    map: &WorldMap,
+    policy: Option<minimium_procgen::ResolvedPlanetReliefPolicy>,
+) -> Result<(), RegistryError> {
+    let required = manifest.source() == minimium_world::world::WorldSource::Generated
+        && manifest.topology() == WorldTopology::Planet;
+    match policy {
+        Some(policy) if !policy.matches(manifest, map.fingerprint()) => {
+            Err(RegistryError::InvalidReliefPolicy)
+        }
+        None if required => Err(RegistryError::InvalidReliefPolicy),
+        _ => Ok(()),
     }
 }
 

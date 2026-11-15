@@ -137,15 +137,19 @@ impl ClientSession {
                 .name("world-content-prepare".into())
                 .spawn(move || {
                     let content = resolver.resolve(request, cancellation)?;
-                    let catalog = prepare_water_catalog(manifest, content.geography.clone())
-                        .map_err(|error| {
-                            SessionFailure::caused_by(
-                                error.code(),
-                                "world water catalog preparation failed",
-                                error,
-                            )
-                        })?
-                        .map(Arc::new);
+                    let catalog = prepare_water_catalog(
+                        manifest,
+                        content.geography.clone(),
+                        content.resolved_relief_policy,
+                    )
+                    .map_err(|error| {
+                        SessionFailure::caused_by(
+                            error.code(),
+                            "world water catalog preparation failed",
+                            error,
+                        )
+                    })?
+                    .map(Arc::new);
                     Ok((content, catalog))
                 })
                 .map_err(|error| {
@@ -204,7 +208,8 @@ impl ClientSession {
             .any(|prior| {
                 prior.manifest == manifest
                     && prior.map.fingerprint() == expected_fingerprint
-                    && prior.terrain_material_profile != content.terrain_material_profile
+                    && (prior.terrain_material_profile != content.terrain_material_profile
+                        || prior.resolved_relief_policy != content.resolved_relief_policy)
             });
         if profile_conflicts {
             return Err(SessionFailure::new(
@@ -448,16 +453,16 @@ impl ClientSession {
 fn prepare_water_catalog(
     manifest: minimium_world::world::WorldManifest,
     geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
+    resolved_relief_policy: Option<minimium_procgen::ResolvedPlanetReliefPolicy>,
 ) -> Result<Option<minimium_procgen::WaterCatalog>, minimium_procgen::GenerationError> {
     if manifest.topology() != minimium_world::world::WorldTopology::Planet {
         return Ok(None);
     }
-    let terrain = minimium_procgen::PlanetTerrain::new(
-        manifest.generation(),
-        minimium_procgen::planet_surface_for(manifest),
-        manifest.planet(),
-        geography.into(),
-    )?;
+    let mut inputs = minimium_procgen::TerrainInputs::from(geography);
+    if let Some(policy) = resolved_relief_policy {
+        inputs = inputs.with_resolved_relief_policy(policy);
+    }
+    let terrain = minimium_procgen::PlanetTerrain::for_manifest(manifest, inputs)?;
     minimium_procgen::WaterCatalog::build(
         &terrain,
         minimium_procgen::DEFAULT_WATER_CATALOG_RESOLUTION,

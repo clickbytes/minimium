@@ -34,6 +34,8 @@ assign the same grass-dominated mixture to all low-elevation land.
 
 See the re-exports in `src/lib.rs`, including sector materialization, planet sampling, dungeon generation, generator contract validation and addressable randomness. `PreparedGeography` is the host port for immutable geographic samples. `PlanetTerrain::new` validates generation, surface, optional planet definition and `TerrainInputs`; `PlanetTerrain::for_manifest` additionally binds material and volume queries to the exact immutable manifest. Earth requires geography with the declared package digest. No builder can replace that definition or its inputs after construction. Sample world composition belongs to `minimium-game-sample`.
 
+Generated-planet relief sampling uses a neutral `PlanetReliefSamplingPolicy` supplied by the composing game and a `ResolvedPlanetReliefPolicy` bound to the manifest and map fingerprint. Procedural generated planets require this binding in `for_manifest`; Earth uses identity policy and retains its world-owned `PeakRelief` curve. Procgen evaluates the recipe but owns no scenario face, route, spawn, marker or fallback policy. These content bindings are runtime composition values and add no manifest, save or generator-digest fields.
+
 Excavation collision preflight and render contour preparation share projected
 chunk bounds. Neighbor queries match canonical cube corners across face seams.
 
@@ -53,7 +55,7 @@ Generation functions are called by client/server owners or their scheduled work.
 
 Preserve seeds, address calculations, rounding, scales and algorithm order. Generation must remain reproducible for the same inputs. Manifest validation and map materialization return `GenerationError` with a stable code and concrete category rather than requiring callers to parse an error string.
 
-Terrain, source elevation, bounds, landmarks, meshes and water catalog sampling
+Terrain, source elevation, bounds, meshes and water catalog sampling
 return `GenerationError`; `Sampling(EarthSampleError)` preserves a failed provider
 query, including nonfinite elevation. No failed sample becomes an empty mesh or
 invented height. `ExcavationGeometryError::Generation` carries the cause through

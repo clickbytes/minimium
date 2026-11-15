@@ -175,7 +175,7 @@ impl ClientSectorCache {
             .filter(|_| owner.instance() == instance)
             .map(|(map, _)| map)
             .or_else(|| maps.get(&instance));
-        if !ClientSectorCache::material_profile_matches(&geography, manifest, source_map) {
+        if !ClientSectorCache::content_profiles_match(&geography, manifest, source_map) {
             return Err(SectorWorkerError::Geometry(
                 minimium_procgen::ExcavationGeometryError::UnavailableSurface,
             ));
@@ -356,6 +356,7 @@ impl ClientSectorCache {
         let mut prepared = None;
         let terrain_revision = geography.revision();
         let material_profile = geography.material_profile;
+        let resolved_relief_policy = geography.resolved_relief_policy;
         let render_sectors = if manifest.topology() == minimium_world::world::WorldTopology::Planet
         {
             if let Some(result) = self.worker.poll(
@@ -381,6 +382,7 @@ impl ClientSectorCache {
                     water.as_ref().map_or(0, |water| water.level_revision),
                     water.as_ref().map_or(0, |water| water.fluid_revision),
                     material_profile,
+                    resolved_relief_policy,
                 )
             }) {
                 prepared = Some(result.clone());
@@ -397,6 +399,7 @@ impl ClientSectorCache {
                     origin_generation,
                     terrain_revision,
                     material_profile,
+                    resolved_relief_policy,
                 )
             }) {
                 prepared = Some(previous.clone());

@@ -1,6 +1,6 @@
 use crate::SessionFailure;
 use minimium_protocol::WorldContext;
-use minimium_world::world::{TransitionId, WorldManifest, WorldMap};
+use minimium_world::world::{TransitionId, WorldManifest, WorldMap, WorldSource, WorldTopology};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -29,6 +29,7 @@ pub struct ResolvedWorldContent {
     pub map: Arc<WorldMap>,
     pub geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
     pub terrain_material_profile: minimium_procgen::ResolvedTerrainMaterialProfile,
+    pub resolved_relief_policy: Option<minimium_procgen::ResolvedPlanetReliefPolicy>,
 }
 
 pub trait WorldContentResolver: Send + Sync {
@@ -50,8 +51,16 @@ pub struct ContentResolutionTicket {
 
 impl ResolvedWorldContent {
     pub fn matches(&self, ticket: ContentResolutionTicket, manifest: WorldManifest) -> bool {
+        let relief_matches = match self.resolved_relief_policy {
+            Some(policy) => policy.matches(manifest, self.map.fingerprint()),
+            None => {
+                manifest.source() != WorldSource::Generated
+                    || manifest.topology() != WorldTopology::Planet
+            }
+        };
         self.ticket == ticket
             && self.manifest == manifest
+            && relief_matches
             && self
                 .terrain_material_profile
                 .matches(manifest, self.map.fingerprint())

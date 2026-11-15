@@ -267,6 +267,7 @@ impl SectorGenerationPool {
                 geography: minimium_procgen::TerrainInputs {
                     geography: geography.clone(),
                     material_profile: Some(instance.terrain_material_profile),
+                    resolved_relief_policy: instance.resolved_relief_policy,
                     edits: Some(instance.terrain.clone()),
                     remnants: Some(instance.remnants.clone()),
                     volumes: instance.volumes.clone(),
