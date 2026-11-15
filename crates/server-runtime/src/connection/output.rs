@@ -46,10 +46,11 @@ pub(crate) fn queue_message_with_deadline(
     message: ServerMessage,
     close_after_flush: Option<Instant>,
 ) -> bool {
-    queue_message_with_limit(
+    queue_message_with_budget(
         client,
         metrics,
         message,
+        0,
         minimium_protocol::MAX_SERVER_FRAME_BYTES,
         minimium_protocol::MAX_SERVER_FRAME_BYTES,
         close_after_flush,
@@ -82,6 +83,26 @@ pub(crate) fn queue_message_with_limit(
     max_frame_bytes: usize,
     close_after_flush: Option<Instant>,
 ) -> Result<usize, minimium_transport::QueueError> {
+    queue_message_with_budget(
+        client,
+        metrics,
+        message,
+        reserved_bytes,
+        0,
+        max_frame_bytes,
+        close_after_flush,
+    )
+}
+
+fn queue_message_with_budget(
+    client: &mut Client,
+    metrics: &mut RuntimeMetrics,
+    message: ServerMessage,
+    reserved_bytes: usize,
+    minimum_headroom_bytes: usize,
+    max_frame_bytes: usize,
+    close_after_flush: Option<Instant>,
+) -> Result<usize, minimium_transport::QueueError> {
     if client.close_deadline().is_some() {
         return Err(minimium_transport::QueueError::Closed);
     }
@@ -96,20 +117,8 @@ pub(crate) fn queue_message_with_limit(
         }),
         message,
         close_after_flush,
-        reserved_bytes: if reserved_bytes == minimium_protocol::MAX_SERVER_FRAME_BYTES
-            && max_frame_bytes == minimium_protocol::MAX_SERVER_FRAME_BYTES
-        {
-            0
-        } else {
-            reserved_bytes
-        },
-        minimum_headroom_bytes: if reserved_bytes == minimium_protocol::MAX_SERVER_FRAME_BYTES
-            && max_frame_bytes == minimium_protocol::MAX_SERVER_FRAME_BYTES
-        {
-            minimium_protocol::MAX_SERVER_FRAME_BYTES
-        } else {
-            0
-        },
+        reserved_bytes,
+        minimum_headroom_bytes,
         max_frame_bytes,
     }) {
         Ok(result) => {
