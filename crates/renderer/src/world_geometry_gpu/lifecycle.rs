@@ -39,6 +39,20 @@ impl WorldGeometryGpu {
         });
         self.staged_versions
             .retain(|(owner, _), _| *owner != instance);
+        self.stage_order.retain(|(owner, _)| *owner != instance);
+        if self
+            .priority_cursor
+            .is_some_and(|(owner, _)| owner == instance)
+        {
+            self.priority_cursor = None;
+        }
+        if self
+            .priority_stage
+            .is_some_and(|(owner, _)| owner == instance)
+        {
+            self.priority_stage = None;
+            self.priority_stage_serviced = false;
+        }
         self.versions.remove(&instance);
         self.catalog_origin_generation
             .retain(|(owner, _, _), _| *owner != instance);
@@ -78,6 +92,10 @@ impl WorldGeometryGpu {
         self.pending.clear();
         self.pending_raw.clear();
         self.staged_versions.clear();
+        self.stage_order.clear();
+        self.priority_cursor = None;
+        self.priority_stage = None;
+        self.priority_stage_serviced = false;
         self.sources.clear();
         self.prepared_sources.clear();
         self.terrain.clear();

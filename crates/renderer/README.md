@@ -87,7 +87,9 @@ cancelled or failed stages release their unpublished buffers. `WorldGeometryGpu`
 caps concurrent staged owner identities at two; the client owns one active and
 at most one pending scene, with bootstrap handoff using the same bound. Those
 stages share the existing 8-patch/4-MiB frame upload budget. Already-published matching Arc
-geometry is reused. Local water keeps its active image separate from owner-keyed
+geometry is reused by its published owner. A pending owner stages a self-contained
+prepared patch so a later active update cannot change its publication meaning.
+Local water keeps its active image separate from owner-keyed
 pending images and promotes only with the scene. Floating-origin rebasing covers
 active and staged geometry.
 
@@ -1047,7 +1049,8 @@ that misses its turn remains staged and retries on a later frame; explicit owner
 release handles cancellation, replacement and disconnect.
 Prepared channel identities include the shoreline image: changed lake levels
 upload ocean buffers even when the underlying ground geometry is unchanged.
-Water-only updates reuse terrain, objects and shadow buffers. Local water is
+Water-only updates by the published owner reuse terrain, objects and shadow
+buffers; pending owners stage their complete patch set. Local water is
 meshed on the client worker, never rebuilt or allocated in the drawing loop.
 Excavation contour preparation uses the actual selected LOD bases and their
 bounded neighboring coverage. Those bases share edge conformance before seam

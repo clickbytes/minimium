@@ -51,6 +51,7 @@ pub struct GeometryPublicationStamp {
 #[derive(Clone, Debug)]
 pub struct GeometryPublication {
     pub stamp: GeometryPublicationStamp,
+    pub stage: GeometryStageId,
     pub keys: Vec<(SectorKey, u8)>,
 }
 
@@ -175,6 +176,9 @@ impl WorldGeometryGpu {
         else {
             return false;
         };
+        let is_published_stage = self.publication.as_ref().is_some_and(|publication| {
+            publication.stamp.instance == instance && publication.stage == stage
+        });
         let complete = !keys.is_empty()
             && keys.iter().all(|(key, lod)| {
                 let catalog_key = (instance, *key, *lod);
@@ -185,7 +189,8 @@ impl WorldGeometryGpu {
                         .pending_raw
                         .get(&(instance, stage, *key, *lod))
                         .is_some_and(|pending| pending.origin_generation == self.origin_generation)
-                    || (self.catalog.contains_key(&catalog_key)
+                    || (is_published_stage
+                        && self.catalog.contains_key(&catalog_key)
                         && self.versions.get(&instance) == Some(&(generation, content_revision))
                         && self.catalog_origin_generation.get(&catalog_key)
                             == Some(&self.origin_generation))
@@ -201,6 +206,7 @@ impl WorldGeometryGpu {
         if !geometry_changed
             && self.publication.as_ref().is_some_and(|publication| {
                 publication.stamp.instance == instance
+                    && publication.stage == stage
                     && publication.stamp.generation == generation
                     && publication.stamp.content_revision == content_revision
                     && publication.stamp.world_fingerprint == fingerprint
@@ -224,6 +230,7 @@ impl WorldGeometryGpu {
                 geometry_revision: revision,
                 origin_generation: self.origin_generation,
             },
+            stage,
             keys: keys.to_vec(),
         });
         let released = self.release_scene_stage(instance, stage);

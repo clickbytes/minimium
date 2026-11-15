@@ -50,12 +50,24 @@ impl WorldGeometryGpu {
         source: Arc<Vec<OceanVertex>>,
         origin_generation: u64,
     ) -> GeometryCacheResult {
+        if !self.staged_versions.contains_key(&(instance, stage)) {
+            return GeometryCacheResult {
+                ready: false,
+                allocated_bytes: 0,
+                released_bytes: 0,
+            };
+        }
+        let is_published_stage = self.publication.as_ref().is_some_and(|publication| {
+            publication.stamp.instance == instance && publication.stage == stage
+        });
         let matches = |image: &LocalWaterImage| {
             image.origin_generation == origin_generation && Arc::ptr_eq(&image.source, &source)
         };
         if let Some(slot) = self.water.get(&instance) {
             if slot.pending.get(&stage).is_some_and(matches)
-                || !slot.pending.contains_key(&stage) && slot.active.as_ref().is_some_and(matches)
+                || is_published_stage
+                    && !slot.pending.contains_key(&stage)
+                    && slot.active.as_ref().is_some_and(matches)
             {
                 return GeometryCacheResult {
                     ready: true,
@@ -66,7 +78,7 @@ impl WorldGeometryGpu {
         }
         let bytes = (source.len() * std::mem::size_of::<OceanVertex>()) as u64;
         if origin_generation != self.origin_generation
-            || bytes > 0 && self.budget.patches == 0
+            || bytes > 0 && (self.budget.patches == 0 || self.budget.bytes == 0)
             || !self.stage_can_upload(instance, stage)
         {
             return GeometryCacheResult {

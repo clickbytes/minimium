@@ -74,6 +74,9 @@ impl WorldGeometryGpu {
         }
         self.register_stage(instance, stage);
         self.staged_versions.insert(stage_key, version);
+        let is_published_stage = self.publication.as_ref().is_some_and(|publication| {
+            publication.stamp.instance == instance && publication.stage == stage
+        });
         let required: HashMap<_, _> = patches.iter().map(|p| ((p.key, p.lod), p)).collect();
         let protected: HashSet<_> = active.iter().copied().collect();
         self.pending
@@ -117,7 +120,7 @@ impl WorldGeometryGpu {
                 pending.origin_generation == origin_generation
                     && Arc::ptr_eq(&pending.source, patch)
             });
-            if current || staged {
+            if current && is_published_stage || staged {
                 continue;
             }
             if self.budget.patches == 0 || self.budget.bytes == 0 {
@@ -126,18 +129,22 @@ impl WorldGeometryGpu {
             if !self.stage_can_upload(instance, stage) {
                 break;
             }
-            let shadow_changed = !previous
-                .as_ref()
-                .is_some_and(|p| Arc::ptr_eq(&p.shadow, &patch.shadow));
-            let surface_changed = !previous
-                .as_ref()
-                .is_some_and(|p| Arc::ptr_eq(&p.surface, &patch.surface));
-            let ocean_changed = !previous
-                .as_ref()
-                .is_some_and(|p| Arc::ptr_eq(&p.ocean, &patch.ocean));
-            let objects_changed = !previous
-                .as_ref()
-                .is_some_and(|p| Arc::ptr_eq(&p.objects, &patch.objects));
+            let shadow_changed = !is_published_stage
+                || !previous
+                    .as_ref()
+                    .is_some_and(|p| Arc::ptr_eq(&p.shadow, &patch.shadow));
+            let surface_changed = !is_published_stage
+                || !previous
+                    .as_ref()
+                    .is_some_and(|p| Arc::ptr_eq(&p.surface, &patch.surface));
+            let ocean_changed = !is_published_stage
+                || !previous
+                    .as_ref()
+                    .is_some_and(|p| Arc::ptr_eq(&p.ocean, &patch.ocean));
+            let objects_changed = !is_published_stage
+                || !previous
+                    .as_ref()
+                    .is_some_and(|p| Arc::ptr_eq(&p.objects, &patch.objects));
             let make = |label, bytes: &[u8]| {
                 device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some(label),
@@ -168,11 +175,12 @@ impl WorldGeometryGpu {
         let ready = !patches.is_empty()
             && patches.iter().all(|patch| {
                 let key = (instance, patch.key, patch.lod);
-                let active = self.prepared_sources.get(&key).is_some_and(|source| {
-                    Arc::ptr_eq(source, patch)
-                        && self.versions.get(&instance) == Some(&version)
-                        && self.catalog_origin_generation.get(&key) == Some(&origin_generation)
-                });
+                let active = is_published_stage
+                    && self.prepared_sources.get(&key).is_some_and(|source| {
+                        Arc::ptr_eq(source, patch)
+                            && self.versions.get(&instance) == Some(&version)
+                            && self.catalog_origin_generation.get(&key) == Some(&origin_generation)
+                    });
                 let staged = self
                     .pending
                     .get(&(instance, stage, patch.key, patch.lod))
@@ -219,6 +227,9 @@ impl WorldGeometryGpu {
         }
         self.register_stage(instance, stage);
         self.staged_versions.insert(stage_key, version);
+        let is_published_stage = self.publication.as_ref().is_some_and(|publication| {
+            publication.stamp.instance == instance && publication.stage == stage
+        });
         let required = sectors
             .iter()
             .map(|(key, lod, _)| (*key, *lod))
@@ -240,7 +251,8 @@ impl WorldGeometryGpu {
         let mut allocated = 0;
         for (key, lod, source) in sectors {
             let catalog_key = (instance, *key, *lod);
-            let already_active = self.versions.get(&instance) == Some(&version)
+            let already_active = is_published_stage
+                && self.versions.get(&instance) == Some(&version)
                 && self.sources.get(&catalog_key).is_some_and(|current| {
                     Arc::ptr_eq(current, source)
                         && self.catalog_origin_generation.get(&catalog_key)
@@ -289,7 +301,8 @@ impl WorldGeometryGpu {
         let ready = !sectors.is_empty()
             && sectors.iter().all(|(key, lod, source)| {
                 let catalog_key = (instance, *key, *lod);
-                let active = self.versions.get(&instance) == Some(&version)
+                let active = is_published_stage
+                    && self.versions.get(&instance) == Some(&version)
                     && self.sources.get(&catalog_key).is_some_and(|current| {
                         Arc::ptr_eq(current, source)
                             && self.catalog_origin_generation.get(&catalog_key)

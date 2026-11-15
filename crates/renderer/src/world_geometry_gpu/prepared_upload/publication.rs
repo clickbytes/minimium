@@ -106,7 +106,6 @@ impl WorldGeometryGpu {
             }
             self.sources.insert(key, next.source);
             self.prepared_sources.remove(&key);
-            self.bounds.remove(&key);
             changed = true;
         }
         let required: HashSet<_> = keys.iter().copied().collect();
