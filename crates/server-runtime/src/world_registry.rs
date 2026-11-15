@@ -28,8 +28,8 @@ mod transfers;
 
 use membership::Membership;
 pub(crate) use placement::{terrain_capsule_clear, TerrainReads};
-pub(crate) use transfers::CommittedTransfer;
 use transfers::PendingTransfer;
+pub(crate) use transfers::{CommittedTransfer, TransferRequestRejection};
 
 #[cfg(test)]
 mod tests;

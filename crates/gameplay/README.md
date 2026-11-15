@@ -6,7 +6,7 @@ Owns neutral descriptors and validated registration for modules, commands, syste
 
 ## Public API
 
-`ModuleRegistry`, `EngineModule`, `ModuleRegistrar`, and the command, system and module descriptors define static extension contracts. A host supplies handler types and installs modules in dependency order. Systems use `GameplaySystemContext`, a host-neutral trait, so game packages can implement systems without depending on a server runtime. They declare `before`/`after` constraints and run in stable topological order with system ID as a deterministic tie-break; missing, duplicate and cyclic dependencies return typed registration errors. The bounded `WorldEffectBuffer` carries entity/component changes and transfer requests; it accepts at most 256 operations and 1 MiB of component payload per stage. The context exposes the current simulation tick, stage, optional startup world and New/Restored lifecycle, read-only world/component and initial-entity data, and gameplay events, without process or I/O handles.
+`ModuleRegistry`, `EngineModule`, `ModuleRegistrar`, and the command, system and module descriptors define static extension contracts. A host supplies handler types and installs modules in dependency order. Systems use `GameplaySystemContext`, a host-neutral trait, so game packages can implement systems without depending on a server runtime. They declare `before`/`after` constraints and run in stable topological order with system ID as a deterministic tie-break; missing, duplicate and cyclic dependencies return typed registration errors. The bounded `WorldEffectBuffer` carries entity/component changes and transfer requests; it accepts at most 256 operations and 1 MiB of component payload per stage. Its batch has private bounded contents and a saturating count of pushes rejected by the buffer. `EffectBatchOutcome` returns one ordered result for each retained effect plus that aggregate count. The context exposes the current simulation tick, stage, optional startup world and New/Restored lifecycle, read-only world/component and initial-entity data, and gameplay events, without process or I/O handles.
 
 Startup runs once for each prepared world instance. Startup effects are validated and committed for that world before the runtime marks its initial content as initialized. A restored world receives `WorldLifecycle::Restored`; a world with no saved initialization marker receives `WorldLifecycle::New`.
 
@@ -35,7 +35,14 @@ Startup lifecycle. This crate owns only registration and effect contracts.
 
 Registration errors identify duplicate IDs, missing dependencies or cycles.
 Effect overflow rejects the stage as a whole; concrete world, budget, placement
-and transfer checks remain with the server host.
+and transfer checks remain with the server host. The host commits entity effects
+as one atomic subgroup and reports the same typed rejection for each member if
+validation or storage reservation fails. Transfer effects report Started only
+after the prepare message is queued, or a typed rejection distinguishing
+validation, an existing pending transfer, identifier exhaustion, unavailable
+client/environment, and backpressure. Starting a transfer does not report
+transition readiness or world commit, and mixed batches do not promise
+atomicity between entity storage and transport.
 
 ## Commands
 

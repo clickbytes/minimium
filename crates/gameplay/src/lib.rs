@@ -8,9 +8,10 @@ use std::collections::{BTreeMap, BTreeSet};
 mod effects;
 mod system;
 pub use effects::{
-    ComponentValue, ComponentView, EffectBufferError, GameplayEvent, InitialComponentView,
-    InitialEntityView, WorldEffect, WorldEffectBatch, WorldEffectBuffer, WorldLifecycle,
-    MAX_WORLD_EFFECTS_PER_STAGE, MAX_WORLD_EFFECT_BYTES_PER_STAGE,
+    ComponentValue, ComponentView, EffectBatchOutcome, EffectBufferError, EffectOutcomeError,
+    EntityEffectRejection, GameplayEvent, InitialComponentView, InitialEntityView, TransferOutcome,
+    TransferRejection, WorldEffect, WorldEffectBatch, WorldEffectBuffer, WorldEffectOutcome,
+    WorldLifecycle, MAX_WORLD_EFFECTS_PER_STAGE, MAX_WORLD_EFFECT_BYTES_PER_STAGE,
 };
 pub use system::{GameplaySystem, GameplaySystemContext};
 
