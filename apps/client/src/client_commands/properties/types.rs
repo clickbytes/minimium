@@ -4,99 +4,51 @@ use minimium_renderer::{
     atmosphere_debug::AtmosphereDebug, quality::SkyQuality, terrain_debug::TerrainDebug,
 };
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ClientPropertyKey {
-    Locale,
-    CameraFov,
-    MouseSensitivity,
-    InputBindings,
-    SkyQuality,
-    SkyNames,
-    CloudDetail,
-    MeteorAudio,
-    MeteorVolume,
-    MeteorEnabled,
-    MeteorRate,
-    MeteorQuality,
-    MeteorSeed,
-
-    AtmosphereDebug,
-    TerrainDebug,
-    CloudDebug,
-    SkyDemo,
-    MovementFly,
-    MovementSpeed,
-    MovementAccel,
-    WorldTimeMode,
-    WorldTimeScale,
-    WorldTimeOfflinePolicy,
-    WorldTimeUtc,
-    WorldTimeRevision,
+macro_rules! property_keys {
+    ($($variant:ident => $name:literal),+ $(,)?) => {
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub(crate) enum ClientPropertyKey { $($variant),+ }
+        impl ClientPropertyKey {
+            pub(crate) const fn key(self) -> &'static str {
+                match self { $(Self::$variant => $name),+ }
+            }
+            pub(crate) fn parse(key: &str) -> Option<Self> {
+                match key {
+                    $($name => Some(Self::$variant),)+
+                    "client.audio.meteors" => Some(Self::MeteorAudio),
+                    _ => None,
+                }
+            }
+        }
+    };
 }
 
-impl ClientPropertyKey {
-    pub(crate) fn key(self) -> &'static str {
-        match self {
-            Self::Locale => "ui.locale",
-            Self::CameraFov => "client.camera.fov",
-            Self::MouseSensitivity => "client.input.mouse_sensitivity",
-            Self::InputBindings => "client.input.bindings",
-            Self::SkyQuality => "client.graphics.sky_quality",
-            Self::SkyNames => "client.sky.names",
-            Self::MeteorAudio => "client.sky.meteors.sound",
-            Self::MeteorEnabled => "client.sky.meteors.enabled",
-            Self::MeteorRate => "client.sky.meteors.rate",
-            Self::MeteorQuality => "client.sky.meteors.quality",
-            Self::MeteorSeed => "client.sky.meteors.seed_override",
-            Self::MeteorVolume => "client.audio.meteor_volume",
-            Self::CloudDetail => "client.weather.cloud_detail",
-            Self::AtmosphereDebug => "client.debug.atmosphere",
-            Self::TerrainDebug => "client.debug.terrain",
-            Self::CloudDebug => "client.debug.clouds",
-            Self::SkyDemo => "client.sky.demo",
-            Self::MovementFly => "player.movement.fly",
-            Self::MovementSpeed => "player.movement.speed",
-            Self::MovementAccel => "player.movement.accel",
-            Self::WorldTimeMode => "world.time.mode",
-            Self::WorldTimeScale => "world.time.scale",
-            Self::WorldTimeOfflinePolicy => "world.time.offline_policy",
-            Self::WorldTimeUtc => "world.time.utc",
-            Self::WorldTimeRevision => "world.time.revision",
-        }
-    }
-
-    pub(super) fn parse(key: &str) -> Option<Self> {
-        super::registry().get(key)?;
-        Some(match key {
-            "ui.locale" => Self::Locale,
-            "client.camera.fov" => Self::CameraFov,
-            "client.input.mouse_sensitivity" => Self::MouseSensitivity,
-            "client.input.bindings" => Self::InputBindings,
-            "client.graphics.sky_quality" => Self::SkyQuality,
-            "client.sky.names" => Self::SkyNames,
-            "client.sky.meteors.sound" => Self::MeteorAudio,
-            "client.sky.meteors.enabled" => Self::MeteorEnabled,
-            "client.sky.meteors.rate" => Self::MeteorRate,
-            "client.sky.meteors.quality" => Self::MeteorQuality,
-            "client.sky.meteors.seed_override" => Self::MeteorSeed,
-            "client.audio.meteors" => Self::MeteorAudio,
-            "client.audio.meteor_volume" => Self::MeteorVolume,
-            "client.weather.cloud_detail" => Self::CloudDetail,
-            "client.debug.atmosphere" => Self::AtmosphereDebug,
-            "client.debug.terrain" => Self::TerrainDebug,
-            "client.debug.clouds" => Self::CloudDebug,
-            "client.sky.demo" => Self::SkyDemo,
-            "player.movement.fly" => Self::MovementFly,
-            "player.movement.speed" => Self::MovementSpeed,
-            "player.movement.accel" => Self::MovementAccel,
-            "world.time.mode" => Self::WorldTimeMode,
-            "world.time.scale" => Self::WorldTimeScale,
-            "world.time.offline_policy" => Self::WorldTimeOfflinePolicy,
-            "world.time.utc" => Self::WorldTimeUtc,
-            "world.time.revision" => Self::WorldTimeRevision,
-            _ => return None,
-        })
-    }
+property_keys! {
+    Locale => "ui.locale",
+    CameraFov => "client.camera.fov",
+    MouseSensitivity => "client.input.mouse_sensitivity",
+    InputBindings => "client.input.bindings",
+    SkyQuality => "client.graphics.sky_quality",
+    SkyNames => "client.sky.names",
+    MeteorAudio => "client.sky.meteors.sound",
+    MeteorEnabled => "client.sky.meteors.enabled",
+    MeteorRate => "client.sky.meteors.rate",
+    MeteorQuality => "client.sky.meteors.quality",
+    MeteorSeed => "client.sky.meteors.seed_override",
+    MeteorVolume => "client.audio.meteor_volume",
+    CloudDetail => "client.weather.cloud_detail",
+    AtmosphereDebug => "client.debug.atmosphere",
+    TerrainDebug => "client.debug.terrain",
+    CloudDebug => "client.debug.clouds",
+    SkyDemo => "client.sky.demo",
+    MovementFly => "player.movement.fly",
+    MovementSpeed => "player.movement.speed",
+    MovementAccel => "player.movement.accel",
+    WorldTimeMode => "world.time.mode",
+    WorldTimeScale => "world.time.scale",
+    WorldTimeOfflinePolicy => "world.time.offline_policy",
+    WorldTimeUtc => "world.time.utc",
+    WorldTimeRevision => "world.time.revision",
 }
 
 #[derive(Clone, Debug, PartialEq)]

@@ -14,4 +14,12 @@ Renderer code does not own client sessions, prediction, server authority, storag
 
 ## Consequences
 
+E049-P01 makes the existing `RenderFrame`, `PreparedSector`, uniform/vertex data
+and their CPU preparation dependencies available without the default `gpu`
+feature. Only GPU layout methods, upload/resource owners and backend adapters
+require that feature. Frame exposure preparation lives in `render_frame`, so
+the CPU contract does not import the astronomy-backed `lighting` module. The
+`cpu_frame` example compiles as a consumer of both frame and sector data;
+the existing Rust/WGSL field order and compile-time ABI assertions are preserved.
+
 The camera, visibility, visual lighting, shader-source contracts and scene encoders can be used independently of the client shell; the crate has no window dependency. The client still owns frame scheduling, surface configuration, selected WebGPU resources and scene/caster decisions. The separation preserves current matrix checks, shader uniform layout, sector caps, LOD thresholds and geography inputs.

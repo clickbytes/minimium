@@ -84,7 +84,7 @@ impl GpuResources {
             {
                 1.0
             } else {
-                minimium_renderer::lighting::view_exposure(
+                minimium_renderer::render_frame::view_exposure(
                     render_frame.view,
                     environment_upload.global_sun_direction,
                     1.0,

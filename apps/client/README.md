@@ -26,6 +26,11 @@ builds a terminal-only executable: it defaults to console mode, skips material
 cooking and has no wgpu/winit/astronomy dependency. Renderer quality/debug values
 remain CPU-only public contracts when its `gpu` feature is disabled.
 
+The renderer's `RenderFrame`, `PreparedSector`, uniform and vertex data are also
+available without GPU. Desktop exposure calculation and diagnostics share
+`render_frame::view_exposure` with CPU consumers; upload still uses the same
+renderer data types and feature-gated GPU owners.
+
 Consumes renderer, client-runtime, core, environment, world, assets, asset-io, astronomy, platform, protocol, procgen, sectors, telemetry and sample-game content. The application supplies the client-runtime world-content resolver shared by desktop and terminal frontends. Headless server and ctl must not depend on this package.
 
 ## Data flow
@@ -191,6 +196,23 @@ Client command groups declare specs in `src/client_commands/`; matching and alia
 The client property catalog is registered beside those command groups. It owns live client presentation preferences, local movement input, and the replicated world-time view. Legacy camera, movement, and time commands share property validation and owner handlers. The desktop renderer reports requested/effective values and GPU fallback; the text frontend reports the same requested value and source with effective state marked unavailable when it has no renderer. Help, list, and completion read these registered descriptors, including ranges and enum values.
 
 Client preferences use schema v1 RON and resolve default, file, mapped environment, then CLI input. `config validate` and `config show` run before renderer startup; `config show --sources` reads the same requested/source record and reports effective as unavailable with a configuration-preview reason because no client consumer has applied the value. Live property reads use that record after application and renderer results update effective/reason. `config save PATH` writes only persistent requested values and uses an atomic replacement. Session values reset to the resolved startup layer and are never written to the source file automatically.
+
+The canonical property keys and descriptors also define the complete local
+startup catalog, defaults and persistence flags. `StartupSettings` retains the
+validated `ClientPropertyValue` values and their sources; desktop, terminal,
+configuration preview and `SettingsStore` consume that same immutable set.
+Values encode through the property contract, never Rust `Debug` names. Reset
+restores the typed startup value and source, then reapplies the host operation
+and its effective-value constraint. This includes `optical_depth`, `base_color`
+and `client.audio.meteor_volume` (default 0.25, session/CLI only). The historical
+`client.audio.meteors` command alias maps to the canonical sound key without
+creating another startup record. No protocol, save or content format changes.
+
+C01 runtime acceptance is deferred: check every local property's set/reset,
+both diagnostic modes across reset, a non-default CLI meteor volume followed by
+set/reset, source precedence and persistence, and terminal unavailable reasons.
+Static compilation covers both host feature configurations; it does not prove
+visual or audio behavior.
 
 Local server startup passes a typed launch configuration to client runtime. The runtime asks the sibling server executable for offline `config show --sources --format json`, validates local bind/headless constraints, and uses the same captured environment and argv settings for launch. Explicit startup settings prevent attach to an existing server; `--server-data-dir` remains a target selector.
 
