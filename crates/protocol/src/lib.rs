@@ -29,5 +29,6 @@ pub use models::{
     ExcavationMessage, MovementSample, ProtocolError, RemotePlayer, RemotePlayerIds, RemotePlayers,
     ServerMessage,
 };
+pub use validation::{is_unit_direction, valid_chat};
 pub use world_context::WorldContext;
 mod content_codec;

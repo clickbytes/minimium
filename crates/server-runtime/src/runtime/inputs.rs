@@ -164,6 +164,7 @@ impl ServerRuntime {
                     }
                 }
                 self.game.worlds.leave(id);
+                self.game.remove_actor_actions(id);
                 self.game.active_inputs.remove(&id);
                 self.game.input_last_received.remove(&id);
                 self.game.pending_movement_inputs.remove(&id);

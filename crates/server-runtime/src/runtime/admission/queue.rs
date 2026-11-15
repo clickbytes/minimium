@@ -6,9 +6,10 @@ pub(super) fn try_queue(
     input: WorldInput,
     decoded_at: Instant,
 ) -> bool {
-    if runtime.game.pending_world_inputs.len() + runtime.connections.clients.len()
-        >= MAX_PENDING_WORLD_INPUTS
-    {
+    if matches!(&input, WorldInput::Fire(..) | WorldInput::Chat(..)) {
+        return false;
+    }
+    if !has_capacity(runtime) {
         return false;
     }
     runtime
@@ -16,4 +17,17 @@ pub(super) fn try_queue(
         .pending_world_inputs
         .push((input, Some(decoded_at)));
     true
+}
+
+pub(super) fn has_capacity(runtime: &ServerRuntime) -> bool {
+    runtime
+        .game
+        .pending_world_inputs
+        .len()
+        .saturating_add(reserved_transport_inputs(runtime))
+        < MAX_PENDING_WORLD_INPUTS
+}
+
+pub(super) fn reserved_transport_inputs(runtime: &ServerRuntime) -> usize {
+    runtime.connections.clients.len()
 }
