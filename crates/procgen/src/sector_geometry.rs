@@ -138,61 +138,139 @@ pub fn materialize_world_sector_with_geography_and_soil(
 
 fn planet_box_touches(map_box: MapBox, sector: PlanetSectorKey, count: u16) -> bool {
     let half = map_box.size.map(|value| value.abs() * 0.5);
-    let mut directions = Vec::with_capacity(9);
-    directions.push(map_box.center);
-    for x in [-half[0], half[0]] {
-        for y in [-half[1], half[1]] {
-            for z in [-half[2], half[2]] {
-                directions.push([
-                    map_box.center[0] + x,
-                    map_box.center[1] + y,
-                    map_box.center[2] + z,
-                ]);
-            }
-        }
+    let minimum = std::array::from_fn::<_, 3, _>(|axis| map_box.center[axis] - half[axis]);
+    let maximum = std::array::from_fn::<_, 3, _>(|axis| map_box.center[axis] + half[axis]);
+    if (0..3).all(|axis| minimum[axis] <= 0.0 && maximum[axis] >= 0.0) {
+        // Every ray from the origin intersects a box that contains it.
+        return true;
     }
-    directions.into_iter().any(|direction| {
-        let sample = PlanetSectorKey::from_direction_with_count(direction, count);
-        sample == sector || sample.neighbors_with_count(count).contains(&sector)
+
+    let corners: Vec<[f32; 3]> = (0..8)
+        .map(|mask| {
+            std::array::from_fn(|axis| {
+                if mask & (1 << axis) == 0 {
+                    minimum[axis]
+                } else {
+                    maximum[axis]
+                }
+            })
+        })
+        .collect();
+    // Two triangles cover each of the six closed box faces. Clip those
+    // polygons against each face-sector cone, including cross-face seams.
+    const FACE_TRIANGLES: [[usize; 3]; 12] = [
+        [0, 2, 6],
+        [0, 6, 4],
+        [1, 5, 7],
+        [1, 7, 3],
+        [0, 4, 5],
+        [0, 5, 1],
+        [2, 3, 7],
+        [2, 7, 6],
+        [0, 1, 3],
+        [0, 3, 2],
+        [4, 6, 7],
+        [4, 7, 5],
+    ];
+    FACE_TRIANGLES.into_iter().any(|indices| {
+        planet_triangle_touches(
+            MapTriangle {
+                vertices: indices.map(|index| corners[index]),
+                precise_vertices: None,
+                color: [0.0; 3],
+                solid: false,
+                surface: None,
+            },
+            sector,
+            count,
+        )
     })
 }
 
 fn planet_triangle_touches(triangle: MapTriangle, sector: PlanetSectorKey, count: u16) -> bool {
-    let centroid = std::array::from_fn(|axis| {
-        triangle
-            .vertices
-            .iter()
-            .map(|point| point[axis])
-            .sum::<f32>()
-            / 3.0
-    });
-    let face = PlanetSectorKey::from_direction_with_count(centroid, count).face();
-    if sector.face() != face {
-        return false;
-    }
-
-    let (normal, u_axis, v_axis) = planet_face_basis(face);
-    let component = |point: [f32; 3], axis: [i8; 3]| {
-        point[0] * f32::from(axis[0])
-            + point[1] * f32::from(axis[1])
-            + point[2] * f32::from(axis[2])
-    };
-    let mut minimum = [f32::INFINITY; 2];
-    let mut maximum = [f32::NEG_INFINITY; 2];
-    for point in triangle.vertices {
-        let denominator = component(point, normal);
-        if denominator <= f32::EPSILON {
+    let (normal, u_axis, v_axis) = planet_face_basis(sector.face());
+    let axes = [
+        normal,
+        add_axes(normal, u_axis),
+        subtract_axes(normal, u_axis),
+        add_axes(normal, v_axis),
+        subtract_axes(normal, v_axis),
+    ];
+    let mut polygon: Vec<[f64; 3]> = triangle.vertices.map(|point| point.map(f64::from)).into();
+    for axis in axes {
+        polygon = clip_polygon_to_face(polygon, axis);
+        if polygon.is_empty() {
             return false;
         }
+    }
+    let mut minimum = [f32::INFINITY; 2];
+    let mut maximum = [f32::NEG_INFINITY; 2];
+    for point in polygon {
+        let denominator = axis_component(point, normal);
+        if denominator <= 1.0e-8 {
+            // The origin itself has no UV address. Other clipped vertices
+            // bound the one-sided projected triangle around it.
+            continue;
+        }
         for (axis, basis) in [u_axis, v_axis].into_iter().enumerate() {
-            let coordinate = component(point, basis) / denominator;
+            let coordinate = (axis_component(point, basis) / denominator) as f32;
             minimum[axis] = minimum[axis].min(coordinate);
             maximum[axis] = maximum[axis].max(coordinate);
         }
     }
+    if minimum.iter().any(|value| !value.is_finite()) {
+        return false;
+    }
     let (u, v) = sector.coordinates();
     overlaps_planet_interval(minimum[0], maximum[0], u, count)
         && overlaps_planet_interval(minimum[1], maximum[1], v, count)
+}
+
+fn clip_polygon_to_face(polygon: Vec<[f64; 3]>, axis: [i8; 3]) -> Vec<[f64; 3]> {
+    if polygon.is_empty() {
+        return polygon;
+    }
+    let scale = polygon
+        .iter()
+        .flatten()
+        .map(|value| value.abs())
+        .fold(1.0_f64, f64::max);
+    let tolerance = 2.0 * f64::from(f32::EPSILON) * scale;
+    let signed = |point: [f64; 3]| axis_component(point, axis) + tolerance;
+    let mut output = Vec::with_capacity(polygon.len() + 1);
+    let mut previous = *polygon.last().unwrap();
+    let mut previous_distance = signed(previous);
+    for current in polygon {
+        let current_distance = signed(current);
+        let previous_inside = previous_distance >= 0.0;
+        let current_inside = current_distance >= 0.0;
+        if previous_inside != current_inside {
+            let fraction = previous_distance / (previous_distance - current_distance);
+            output.push(std::array::from_fn(|axis| {
+                previous[axis] + (current[axis] - previous[axis]) * fraction
+            }));
+        }
+        if current_inside {
+            output.push(current);
+        }
+        previous = current;
+        previous_distance = current_distance;
+    }
+    output
+}
+
+fn axis_component(point: [f64; 3], axis: [i8; 3]) -> f64 {
+    (0..3)
+        .map(|dimension| point[dimension] * f64::from(axis[dimension]))
+        .sum()
+}
+
+fn add_axes(left: [i8; 3], right: [i8; 3]) -> [i8; 3] {
+    std::array::from_fn(|axis| left[axis] + right[axis])
+}
+
+fn subtract_axes(left: [i8; 3], right: [i8; 3]) -> [i8; 3] {
+    std::array::from_fn(|axis| left[axis] - right[axis])
 }
 
 fn planet_face_basis(face: PlanetFace) -> ([i8; 3], [i8; 3], [i8; 3]) {

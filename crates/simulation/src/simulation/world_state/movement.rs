@@ -74,7 +74,7 @@ impl World {
         }
 
         Some((
-            Arc::clone(&self.collision_index),
+            Arc::clone(&self.spatial_geometry.movement),
             std::mem::take(simulation_batches),
         ))
     }

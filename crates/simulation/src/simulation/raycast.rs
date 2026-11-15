@@ -198,6 +198,47 @@ impl MapRayQuery {
             (None, None) => None,
         }
     }
+
+    pub(super) fn nearest_blocker_intersection(
+        &self,
+        index: &CollisionIndex,
+        origin: [f32; 3],
+        direction: [f32; 3],
+        maximum_distance: f32,
+        mut accepted_distance: impl FnMut(f32, f32) -> Option<f32>,
+    ) -> Option<f32> {
+        if !index.partitions.is_empty() {
+            return None;
+        }
+        let mut nearest: Option<f32> = None;
+        for candidate in &self.collider_candidates {
+            let Some((near, far)) = ray_aabb_interval(
+                origin,
+                direction,
+                index.colliders[*candidate],
+                maximum_distance,
+            ) else {
+                continue;
+            };
+            let hit = accepted_distance(near, far.min(maximum_distance));
+            if let Some(hit) = hit {
+                nearest = Some(nearest.map_or(hit, |old| old.min(hit)));
+            }
+        }
+        for candidate in &self.surface_candidates {
+            if let Some(distance) = ray_triangle_distance(
+                origin,
+                direction,
+                index.surfaces[*candidate],
+                maximum_distance,
+            ) {
+                if let Some(hit) = accepted_distance(distance, distance) {
+                    nearest = Some(nearest.map_or(hit, |old| old.min(hit)));
+                }
+            }
+        }
+        nearest
+    }
 }
 
 pub(super) fn visit_ray_cells(
@@ -272,8 +313,17 @@ pub(super) fn ray_aabb_distance(
     bounds: Aabb,
     maximum_distance: f32,
 ) -> Option<f32> {
-    let mut near = 0.0f32;
-    let mut far = maximum_distance;
+    ray_aabb_interval(origin, direction, bounds, maximum_distance).map(|(near, _)| near)
+}
+
+fn ray_aabb_interval(
+    origin: [f32; 3],
+    direction: [f32; 3],
+    bounds: Aabb,
+    maximum_distance: f32,
+) -> Option<(f32, f32)> {
+    let mut near = f32::NEG_INFINITY;
+    let mut far = f32::INFINITY;
     for axis in 0..3 {
         if direction[axis].abs() <= 1.0e-8 {
             if origin[axis] < bounds.min[axis] || origin[axis] > bounds.max[axis] {
@@ -293,7 +343,8 @@ pub(super) fn ray_aabb_distance(
             return None;
         }
     }
-    (near <= maximum_distance).then_some(near)
+    let near = near.max(0.0);
+    (far >= near && near <= maximum_distance).then_some((near, far.max(0.0)))
 }
 
 pub(super) fn ray_triangle_distance(

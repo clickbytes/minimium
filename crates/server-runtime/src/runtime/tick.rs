@@ -347,6 +347,8 @@ impl ServerRuntime {
             &mut self.game.active_sector_tickets,
             &mut self.game.transfer_sector_tickets,
             &mut self.sector_workers,
+            &mut self.game.combat_sector_demands,
+            &mut self.game.combat_sector_tickets,
             self.prepared_geography.clone(),
             &self.sectors_logger,
         );

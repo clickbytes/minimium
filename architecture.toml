@@ -28,7 +28,7 @@ forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-p
 [[package]]
 name = "minimium-simulation"
 role = "engine-domain"
-responsibility = "Mutable simulation state, movement, collision indexing/queries, combat, snapshots and step results. Also owns pure SI impact integration through a terrain port, incremental collision partitions and bounded authoritative tool admission rules and shared swimming through neutral water observations."
+responsibility = "Mutable simulation state, movement, collision indexing/queries, combat, snapshots and step results. Owns immutable coherent spatial-geometry publications with movement indices, a full-map combat baseline and exact-sector replacements, and requires a server-certified full-ray coverage plan matched to the publication revision and shot ray before combat mutates health. Also owns pure SI impact integration through a terrain port, incremental collision partitions and bounded authoritative tool admission rules and shared swimming through neutral water observations."
 forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-platform", "minimium-assets", "minimium-procgen", "minimium-sectors", "minimium-telemetry", "minimium-commands", "minimium-environment", "minimium-renderer", "minimium-game-sample"]
 
 [[package]]
@@ -128,7 +128,7 @@ forbidden_dependencies = ["minimium-astronomy", "wgpu", "wgpu-core", "wgpu-hal",
 [[package]]
 name = "minimium-server-runtime"
 role = "runtime"
-responsibility = "Authoritative server lifecycle, nonblocking pluggable authentication admission, server-enforced principal permissions, simulation, transport and persistence, consuming neutral world/combat inputs and fixed-domain diagnostics from the application. Composes the engine impact component before application module schemas and atomically commits staged world entity stores with prepared storage reservations. Owns authoritative impacts and excavation: shared-pool preparation, profile inventories, fluid stepping and checkpoints, durable atomic terrain/collision publication and spatial replication."
+responsibility = "Authoritative server lifecycle, nonblocking pluggable authentication admission, server-enforced principal permissions, simulation, transport and persistence, consuming neutral world/combat inputs and fixed-domain diagnostics from the application. Composes the engine impact component before application module schemas and atomically commits staged world entity stores with prepared storage reservations. Owns authoritative impacts and excavation: shared-pool preparation, profile inventories, fluid stepping and checkpoints, durable atomic terrain/collision publication and spatial replication. Sector streaming publishes movement/tool collision and per-sector combat replacements in one revision-checked spatial bundle; bounded combat-ray demand uses separate sector pins/readiness from movement and returns Busy without replaying a not-ready shot."
 forbidden_dependencies = ["minimium-game-sample", "minimium-astronomy", "wgpu", "wgpu-core", "wgpu-hal", "winit"]
 
 [[package]]

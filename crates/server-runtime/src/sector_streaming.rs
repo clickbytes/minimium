@@ -5,11 +5,19 @@ use minimium_world::world::{GenerationRevision, SectorKey, WorldContentRevision,
 use std::{collections::HashSet, sync::Arc};
 
 mod collision;
+mod combat_coverage;
 mod readiness;
 mod requests;
 mod tickets;
 mod workers;
+pub(crate) use combat_coverage::{combat_ray_sectors, MAX_PENDING_COMBAT_SECTORS};
 pub(crate) use workers::SectorGenerationPool;
+
+#[derive(Clone)]
+pub(crate) struct CombatSectorDemand {
+    pub(crate) context: minimium_protocol::WorldContext,
+    pub(crate) domains: Vec<minimium_simulation::CombatRaySectorInterval>,
+}
 
 pub(crate) struct SectorPayload {
     geometry: minimium_procgen::SectorGeometry,
@@ -100,12 +108,16 @@ pub(crate) fn update(
         minimium_diagnostics::DomainId::Sectors,
         Arc::new(DiscardDiagnostics),
     );
+    let mut combat_demands = std::collections::HashMap::new();
+    let mut combat_tickets = std::collections::HashMap::new();
     update_with_geography(
         worlds,
         sectors,
         active_tickets,
         transfer_tickets,
         workers,
+        &mut combat_demands,
+        &mut combat_tickets,
         None,
         &logger,
     )
@@ -117,11 +129,14 @@ pub(crate) fn update_with_geography(
     active_tickets: &mut std::collections::HashMap<PlayerId, Vec<SectorTicket>>,
     transfer_tickets: &mut std::collections::HashMap<PlayerId, Vec<SectorTicket>>,
     workers: &mut SectorGenerationPool,
+    combat_demands: &mut std::collections::HashMap<PlayerId, CombatSectorDemand>,
+    combat_tickets: &mut std::collections::HashMap<PlayerId, Vec<SectorTicket>>,
     geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
     logger: &minimium_diagnostics::DomainLogger,
 ) -> SectorReadiness {
     let previous_active = std::mem::take(active_tickets);
     let previous_transfers = std::mem::take(transfer_tickets);
+    let previous_combat = std::mem::take(combat_tickets);
     let installed_before = collision::installed_tickets(sectors);
 
     let active_requests = requests::collect_active_requests(worlds);
@@ -139,6 +154,14 @@ pub(crate) fn update_with_geography(
         previous_transfers,
         transfer_requests,
         worlds,
+        logger,
+    );
+    let combat_requests = requests::collect_combat_requests(worlds, combat_demands);
+    let _ = tickets::reconcile_active_requests(
+        sectors,
+        combat_tickets,
+        previous_combat,
+        combat_requests,
         logger,
     );
 

@@ -8,6 +8,14 @@ Owns mutable player state, movement integration, collision indexing and queries,
 
 `World` owns mutable simulation state; `MovementIntent`, `MovementPolicy` and `step_character` provide the shared server/prediction movement path. Intents contain direction, jump and vertical control only. The server owns movement limits and flight policy, which are copied into worker batches before parallel stepping. `step_batch` processes immutable batches, while `CollisionQueryStats` reports bounded query work.
 
+`SpatialGeometryPublication` atomically owns the movement collision index, the
+full-map combat baseline and exact-sector replacement indexes under one revision.
+Hitscan requires a `CombatCoveragePlan` certified for that revision, origin,
+direction and range. Filtered baseline queries continue after masked hits and
+test box entry/exit points, so replacement sectors suppress stale blockers while
+unchanged portions of a box remain solid. A missing replacement returns typed
+`ShotReadinessError::NotReady` before player health changes.
+
 The optional neutral `WaterRead` view feeds the same `step_character_with_water`
 and precise-millimetre integrators used by prediction and authority. It applies
 buoyancy, flow drag and bounded vertical swim control before collision movement;
@@ -33,7 +41,7 @@ Server runtime owns authoritative `World` instances. Client runtime owns predict
 
 ## Invariants and errors
 
-Preserve fixed-step duration, movement range, gravity/collision algorithms, deterministic batch merge order and combat rules.
+Preserve fixed-step duration, movement range, gravity/collision algorithms, deterministic batch merge order and combat rules. Runtime publications retain full-map baseline coverage outside installed replacement sectors; server coverage plans request the complete conservative ray-sector set before a shot can use those replacements.
 
 ## Commands
 
