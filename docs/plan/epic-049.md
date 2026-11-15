@@ -114,4 +114,3 @@ Przez RTK: git diff --check; cargo fmt --all -- --check; scoped cargo check i wo
 Macierz: równoczesne zmiany chunków i movement/tool/hitscan; radialna postać/kamera/cień; transfer obu hostów prepare/ready/commit/cancel/timeout/late; settings/reset/MouseRight/stdin; cache quota/leases/source overwrite; invalid/system components, partial effects/permissions/backpressure; process/embedded parity; formats/save/seeds/digests; CPU build/hidden scene/cloud limits; pełne meteory #384.
 
 Epic otwarty do wszystkich dzieci CLOSED, końcowego odbioru i main verification. Refaktor/static checks raportować osobno od testów/runtime.
-
