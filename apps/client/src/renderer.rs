@@ -1,6 +1,6 @@
 use crate::application::PendingSectorTransition;
 use crate::{
-    client_commands::{self, CommandContext, CommandResult, FrontendAction},
+    client_commands::{self, CommandContext, FrontendAction},
     console::Console,
     environment::{EnvironmentFrameInput, LocalDemoEnvironment},
     session::{ClientSession, DisconnectReason, SessionEvent, SessionState},

@@ -9,6 +9,13 @@ shutdown, so a final save does not leave a frozen frame on screen.
 
 Owns the desktop and text client application shells, input, console, renderer and command presentation. It consumes session, connection and clock synchronization contracts from `minimium-client-runtime`.
 
+Console input, terminal input, and bounded developer stdin use one typed text
+command parser/executor. The executor returns local queue outcomes and typed
+action or presentation results; each host formats those results itself. Developer
+stdin does not edit console text, history, or preedit state. Renderer-only
+diagnostics are explicit presentation operations and return a host-unavailable
+result in the terminal client.
+
 ## Public API
 
 Executable entry point is `src/main.rs`; internal modules provide startup and front-end behavior.

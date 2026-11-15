@@ -74,9 +74,11 @@ impl ApplicationHandler for App {
             Ok(mut renderer) => {
                 if !self.options.demo {
                     if let Some(address) = &self.options.connect {
-                        renderer.start_remote_attempt(address);
+                        let result = renderer.start_remote_attempt(address);
+                        super::controller::format_console_output(&mut renderer, result);
                     } else {
-                        renderer.start_local_attempt(None);
+                        let result = renderer.start_local_attempt(None);
+                        super::controller::format_console_output(&mut renderer, result);
                     }
                 }
                 self.window = Some(window);
@@ -266,7 +268,9 @@ impl ApplicationHandler for App {
         if let (Some(renderer), Some(input)) = (&mut self.renderer, &self.dev_input) {
             if renderer.gpu.scene_visible && !renderer.application.map_teleport_pending() {
                 if let Ok(line) = input.try_recv() {
-                    if super::dev_input::execute(renderer, &line) {
+                    let (exit, result) = super::dev_input::execute(renderer, &line);
+                    super::dev_input::format_output(renderer, result);
+                    if exit {
                         event_loop.exit();
                     }
                 }

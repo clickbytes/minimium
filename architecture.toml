@@ -63,7 +63,7 @@ forbidden_dependencies = ["minimium-astronomy", "minimium-procgen", "minimium-as
 [[package]]
 name = "minimium-asset-io"
 role = "adapter"
-responsibility = "Bounded authored asset access, typed asset errors, prepared GEBCO/WorldCover geography, bounded material HTTP client/server adapters, and an 8-GiB-default leased content cache with cross-process reservation and digest locking."
+responsibility = "Bounded authored asset access, typed asset errors, prepared GEBCO/WorldCover geography, bounded material HTTP client/server adapters with private verified file snapshots retained until their workers exit, and an 8-GiB-default leased content cache with cross-process reservation and digest locking."
 forbidden_dependencies = ["minimium-server", "minimium-client", "minimium-renderer", "wgpu", "winit"]
 
 [[package]]
@@ -136,7 +136,7 @@ name = "minimium-client"
 role = "application"
 # Developer tool HUD adapts confirmed inventory/action results and the shared
 # simulation first-hit query; presentation never authorizes terrain mutations.
-responsibility = "Desktop and terminal client application state (shared canonical property catalog, validated typed startup/settings records, active world catalog, one context/ticket-bound staged transfer data record, overview), GPU-independent ClientBootstrap for world/path/profile/schema/auth/cache/resolver/controller composition with explicit host presentation capabilities, one typed client-action executor shared by input, console and terminal with local queue outcomes distinct from authoritative results, client shell, input with a shared physical-control catalog for configuration and device events, console and optional bounded audio adapter; renderer presentation and bounded materialization/bolid-history workers, including recognized-content profile resolution; local server composition; consumes client runtime transfer lifecycle/readiness contracts without placing GPU handles in application state."
+responsibility = "Desktop and terminal client application state (shared canonical property catalog, validated typed startup/settings records, active world catalog, one context/ticket-bound staged transfer data record, overview), GPU-independent ClientBootstrap for world/path/profile/schema/auth/cache/resolver/controller composition with explicit host presentation capabilities, one typed client-action executor shared by input, console and terminal with local queue outcomes distinct from authoritative results, one typed text command parser/executor shared by console, terminal and bounded developer stdin with caller-owned output formatting, explicit renderer presentation operations with terminal-unavailable results, client shell, input with a shared physical-control catalog for configuration and device events, console and optional bounded audio adapter; renderer presentation and bounded materialization/bolid-history workers, including recognized-content profile resolution; local server composition; consumes client runtime transfer lifecycle/readiness contracts without placing GPU handles in application state."
 
 [[package]]
 name = "minimium-client-runtime"

@@ -115,8 +115,12 @@ pub(super) fn register(registry: &mut CommandRegistry) {
 
 fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
     match words {
-        ["terrain status", ""] => Ok(ClientCommand::TerrainStatus),
-        ["atmosphere status", ""] => Ok(ClientCommand::AtmosphereStatus),
+        ["terrain status", ""] => Ok(ClientCommand::Presentation(
+            super::PresentationOperation::TerrainStatus,
+        )),
+        ["atmosphere status", ""] => Ok(ClientCommand::Presentation(
+            super::PresentationOperation::AtmosphereStatus,
+        )),
         ["atmosphere debug", mode] => {
             use minimium_renderer::atmosphere_debug::AtmosphereDebug as D;
             Ok(ClientCommand::AtmosphereDebug(match *mode {
@@ -144,7 +148,9 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
                 _ => return Err(ParseError::UnknownCommand),
             }))
         }
-        ["weather status", ""] => Ok(ClientCommand::WeatherStatus),
+        ["weather status", ""] => Ok(ClientCommand::Presentation(
+            super::PresentationOperation::WeatherStatus,
+        )),
         ["weather clouds detail", level] => {
             let level = level
                 .parse::<u8>()
