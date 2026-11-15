@@ -202,7 +202,7 @@ impl ServerRuntime {
             if let TransportEvent::Game(GameTransportEvent::Disconnected {
                 connection_id,
                 reason,
-                ..
+                stats,
             }) = event
             {
                 if let Some(index) = self
@@ -211,6 +211,7 @@ impl ServerRuntime {
                     .iter()
                     .position(|client| client.connection_id() == connection_id)
                 {
+                    self.connections.clients[index].network_stats = stats;
                     let close_reason = match reason {
                         GameDisconnectReason::PeerEof => CloseReason::PeerEof,
                         GameDisconnectReason::HandshakeTimeout => CloseReason::HandshakeTimeout,
