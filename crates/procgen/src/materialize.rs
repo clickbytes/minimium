@@ -9,7 +9,9 @@ const WALL_COLOR: [f32; 3] = [0.28, 0.30, 0.33];
 const PLANET_SPAWN_CLEARANCE_MM: i64 = 2_000;
 
 /// Bounded visual overview of all six faces.
-pub fn materialize_planet_overview(terrain: PlanetTerrain) -> Vec<MapTriangle> {
+pub fn materialize_planet_overview(
+    terrain: PlanetTerrain,
+) -> Result<Vec<MapTriangle>, GenerationError> {
     let steps: usize = if terrain.is_earth() { 96 } else { 24 };
     let scale = PLANET_SAMPLE_COORDINATE_SCALE;
     let mut triangles = Vec::with_capacity(6 * steps * steps * 2);
@@ -25,7 +27,7 @@ pub fn materialize_planet_overview(terrain: PlanetTerrain) -> Vec<MapTriangle> {
                         -scale + 2 * scale * v as i32 / steps as i32,
                     )
                     .expect("overview samples lie on a cube face");
-                let point = terrain.sample(sample);
+                let point = terrain.sample(sample)?;
                 points.push(millimeters_to_world(point.position_mm.coordinates()));
                 ocean.push(point.ocean);
                 heights.push(
@@ -69,7 +71,7 @@ pub fn materialize_planet_overview(terrain: PlanetTerrain) -> Vec<MapTriangle> {
             }
         }
     }
-    triangles
+    Ok(triangles)
 }
 
 /// Produces the landing marker. Terrain is generated per sector on demand.

@@ -21,12 +21,12 @@ pub fn render_patches_for_view(
     if manifest.planet().is_some() {
         return dense_render_patches(manifest, view, collision, geography, cache, cancelled);
     }
-    let mut terrain = PlanetTerrain::new(manifest.generation(), planet_surface_for(manifest))
-        .expect("planet manifest is compatible with the surface");
-    if let Some(definition) = manifest.planet() {
-        terrain = terrain.with_definition(definition);
-    }
-    terrain = terrain.with_inputs(geography.clone());
+    let terrain = PlanetTerrain::new(
+        manifest.generation(),
+        planet_surface_for(manifest),
+        manifest.planet(),
+        geography.clone(),
+    )?;
     let radius = planet_surface_for(manifest).radius_mm() as f32 / 1000.0;
     let altitude_radius = position.iter().map(|x| x * x).sum::<f32>().sqrt();
     let horizon = (altitude_radius * altitude_radius - radius * radius)
@@ -48,7 +48,7 @@ pub fn render_patches_for_view(
             .cube_sample_with_count(8, 8, 16, count)
             .expect("sector midpoint is valid");
         let center = terrain
-            .sample(sample)
+            .sample(sample)?
             .position_mm
             .coordinates()
             .map(|x| x as f32 / 1000.0);
@@ -107,19 +107,17 @@ pub fn render_patches_for_view(
                     {
                         geometry.boxes = collision_geometry.boxes.clone();
                     }
-                    Ok(geometry)
+                    Ok::<_, minimium_procgen::ExcavationGeometryError>(geometry)
                 },
             )?
         } else {
             let revision = terrain.inputs().sector_version(sector, 1, count);
             cache.get_revision_result(sector, region.lod, revision, || {
-                Ok(
-                    minimium_procgen::generate_planet_render_patch_with_geography(
-                        manifest,
-                        region.sector,
-                        u32::from(region.lod),
-                        geography.clone(),
-                    ),
+                minimium_procgen::generate_planet_render_patch_with_geography(
+                    manifest,
+                    region.sector,
+                    u32::from(region.lod),
+                    geography.clone(),
                 )
             })?
         };
@@ -160,12 +158,12 @@ fn dense_render_patches(
     let relief = manifest.planet().map_or(100.0, |d| {
         (f64::from(d.mountain_limit_mm) + d.sea_level_mm.unsigned_abs() as f64) / 1000.0
     });
-    let mut terrain = PlanetTerrain::new(manifest.generation(), planet_surface_for(manifest))
-        .expect("valid planet");
-    if let Some(d) = manifest.planet() {
-        terrain = terrain.with_definition(d);
-    }
-    terrain = terrain.with_inputs(geography.clone());
+    let terrain = PlanetTerrain::new(
+        manifest.generation(),
+        planet_surface_for(manifest),
+        manifest.planet(),
+        geography.clone(),
+    )?;
     let cell_width = radius * 2.0
         / f64::from(count)
         / f64::from(minimium_procgen::PLANET_RENDER_BLOCK_SUBDIVISIONS);
@@ -185,7 +183,7 @@ fn dense_render_patches(
         let sample = face
             .cube_sample(coordinate(u), coordinate(v))
             .expect("face sample");
-        let point = terrain.sample(sample);
+        let point = terrain.sample(sample)?;
         let center = point.position_mm.coordinates().map(|x| x as f64 / 1000.0);
         let distance = center
             .iter()
@@ -199,7 +197,7 @@ fn dense_render_patches(
         // compete for detail. The same leaf budget and upload limits still apply.
         let caster_horizon = (2.0 * visibility_radius * relief.max(0.0)).sqrt();
         if distance - bound > horizon + caster_horizon + 100.0 {
-            return None;
+            return Ok(None);
         }
         let mut score = cell_width * f64::from(span) / distance.max(cell_width * 0.5);
         if !view.intersects(center, bound) || distance - bound > horizon + 100.0 {
@@ -210,7 +208,7 @@ fn dense_render_patches(
         // spend detail on coastline silhouettes, then land, before uniform ocean.
         let max_priority = view.surface_priority(crate::coast_probe::SurfaceClass::Coast);
         if terrain.is_earth() && span > 1 && score > view.cell_error_limit() * 0.75 / max_priority {
-            score *= view.surface_priority(coasts.classify(&terrain, (face, u, v, span), count));
+            score *= view.surface_priority(coasts.classify(&terrain, (face, u, v, span), count)?);
         }
         if guard > 0.0 && span > 1 {
             let surface_center = glam::DVec3::from_array(sample.coordinates().map(f64::from))
@@ -225,12 +223,14 @@ fn dense_render_patches(
                 score = score.max(1e6 / (1.0 + separation / guard));
             }
         }
-        Some((face, u, v, span, score))
+        Ok::<_, minimium_procgen::GenerationError>(Some((face, u, v, span, score)))
     };
-    let mut leaves: Vec<_> = PlanetFace::ALL
-        .iter()
-        .filter_map(|f| candidate(*f, 0, 0, count))
-        .collect();
+    let mut leaves = Vec::new();
+    for face in PlanetFace::ALL {
+        if let Some(leaf) = candidate(face, 0, 0, count)? {
+            leaves.push(leaf);
+        }
+    }
     // Refine the most visible error first. Keep every parent until all of its
     // children fit, so the budget cannot create holes or truncate coverage.
     while leaves.len() + 3 <= view.patch_budget() {
@@ -267,7 +267,7 @@ fn dense_render_patches(
         let mut children = Vec::with_capacity(4);
         for dy in [0, half] {
             for dx in [0, half] {
-                if let Some(child) = candidate(face, u + dx, v + dy, half) {
+                if let Some(child) = candidate(face, u + dx, v + dy, half)? {
                     children.push(child);
                 }
             }
@@ -336,20 +336,18 @@ fn dense_render_patches(
                         geometry.boxes = collision_geometry.boxes.clone();
                     }
                 }
-                Ok(geometry)
+                Ok::<_, minimium_procgen::ExcavationGeometryError>(geometry)
             })?
         } else {
             let revision = terrain.inputs().sector_version(key, region.span, count);
             cache.get_revision_result(key, region.lod, revision, || {
-                Ok(
-                    minimium_procgen::generate_planet_render_block_with_geography(
-                        manifest,
-                        region.sector.face(),
-                        region.sector.coordinates().0,
-                        region.sector.coordinates().1,
-                        region.span,
-                        geography.clone(),
-                    ),
+                minimium_procgen::generate_planet_render_block_with_geography(
+                    manifest,
+                    region.sector.face(),
+                    region.sector.coordinates().0,
+                    region.sector.coordinates().1,
+                    region.span,
+                    geography.clone(),
                 )
             })?
         };

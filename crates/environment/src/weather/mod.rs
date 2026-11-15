@@ -131,13 +131,18 @@ pub struct WeatherModel<T: TerrainSampler> {
 }
 
 pub trait TerrainSampler: Send + Sync + 'static {
-    fn sample(&self, direction: DVec3) -> (f64, bool);
+    type Error;
+    fn sample(&self, direction: DVec3) -> Result<(f64, bool), Self::Error>;
     /// Source height above the sea datum, before any relief exaggeration.
-    fn source_elevation_m(&self, _direction: DVec3) -> Option<f64> {
-        None
+    fn source_elevation_m(&self, _direction: DVec3) -> Result<Option<f64>, Self::Error> {
+        Ok(None)
     }
     fn contains_lake(&self, latitude_degrees: f64, longitude_degrees: f64) -> bool;
-    fn earth_elevation_upper_bound_m(&self, direction: DVec3, angle: f64) -> Option<f64>;
+    fn earth_elevation_upper_bound_m(
+        &self,
+        direction: DVec3,
+        angle: f64,
+    ) -> Result<Option<f64>, Self::Error>;
     fn relief_bound_m(&self) -> f64;
 }
 
@@ -173,7 +178,7 @@ impl<T: TerrainSampler> WeatherModel<T> {
         })
     }
 
-    pub fn sample(&self, direction: DVec3, utc: f64) -> Conditions {
+    pub fn sample(&self, direction: DVec3, utc: f64) -> Result<Conditions, T::Error> {
         climate::sample(self, direction.normalize(), utc)
     }
 
@@ -190,13 +195,21 @@ impl<T: TerrainSampler> WeatherModel<T> {
         Ok(())
     }
 
-    pub fn surface_cover(&self, direction: DVec3, utc: f64) -> crate::climate::SurfaceCoverSample {
-        self.surface_state(direction, utc).cover
+    pub fn surface_cover(
+        &self,
+        direction: DVec3,
+        utc: f64,
+    ) -> Result<crate::climate::SurfaceCoverSample, T::Error> {
+        Ok(self.surface_state(direction, utc)?.cover)
     }
 
-    pub fn surface_state(&self, direction: DVec3, utc: f64) -> crate::climate::SurfaceState {
+    pub fn surface_state(
+        &self,
+        direction: DVec3,
+        utc: f64,
+    ) -> Result<crate::climate::SurfaceState, T::Error> {
         let direction = direction.normalize();
-        let site = climate::site(self, direction);
+        let site = climate::site(self, direction)?;
         let at = |time| {
             let (temperature_c, humidity, _) = climate::climate_at(self, direction, time, &site);
             crate::climate::ClimateSample {
@@ -205,40 +218,39 @@ impl<T: TerrainSampler> WeatherModel<T> {
                 seasonality: crate::climate::seasonality(direction, time),
             }
         };
-        crate::climate::SurfaceState {
+        Ok(crate::climate::SurfaceState {
             cover: crate::climate::surface_cover(utc, at),
             climate: at(utc),
-            source_elevation_m: self.ground_elevation_m(direction),
-            climate_elevation_m: self.climate_elevation_m(direction),
-        }
+            source_elevation_m: self.ground_elevation_m(direction)?,
+            climate_elevation_m: self.climate_elevation_m(direction)?,
+        })
     }
 
     /// Physical source elevation for presentation weather, without GPU or I/O.
-    pub fn ground_elevation_m(&self, direction: DVec3) -> f64 {
+    pub fn ground_elevation_m(&self, direction: DVec3) -> Result<f64, T::Error> {
         if let Some(p) = self.manifest.planet().filter(|p| p.peak_relief.enabled()) {
             let direction = direction.normalize();
-            return self
-                .terrain
-                .source_elevation_m(direction)
-                .map(|h| h.max(0.0))
-                .unwrap_or_else(|| p.source_height_above_sea_m(self.terrain(direction).0));
+            return Ok(match self.terrain.source_elevation_m(direction)? {
+                Some(height) => height.max(0.0),
+                None => p.source_height_above_sea_m(self.terrain(direction)?.0),
+            });
         }
-        self.terrain(direction.normalize()).0 / self.elevation_scale
+        Ok(self.terrain(direction.normalize())?.0 / self.elevation_scale)
     }
 
     /// Rendered ground expressed in the linear optical atmosphere coordinate scale.
-    pub fn atmospheric_ground_height_m(&self, direction: DVec3) -> f64 {
-        self.terrain(direction.normalize()).0 / self.elevation_scale
+    pub fn atmospheric_ground_height_m(&self, direction: DVec3) -> Result<f64, T::Error> {
+        Ok(self.terrain(direction.normalize())?.0 / self.elevation_scale)
     }
 
-    pub fn climate_elevation_m(&self, direction: DVec3) -> f64 {
-        let source = self.ground_elevation_m(direction);
+    pub fn climate_elevation_m(&self, direction: DVec3) -> Result<f64, T::Error> {
+        let source = self.ground_elevation_m(direction)?;
         let influence = self.scenario.relief_influence;
-        if influence == 0.0 {
+        Ok(if influence == 0.0 {
             source
         } else {
-            source + (self.atmospheric_ground_height_m(direction) - source) * influence
-        }
+            source + (self.atmospheric_ground_height_m(direction)? - source) * influence
+        })
     }
 
     fn seed(&self) -> u64 {
@@ -246,7 +258,7 @@ impl<T: TerrainSampler> WeatherModel<T> {
         hash(seed as u64) ^ hash((seed >> 64) as u64).rotate_left(17)
     }
 
-    pub fn terrain(&self, direction: DVec3) -> (f64, bool) {
+    pub fn terrain(&self, direction: DVec3) -> Result<(f64, bool), T::Error> {
         self.terrain.sample(direction)
     }
 
@@ -261,7 +273,12 @@ impl<T: TerrainSampler> WeatherModel<T> {
         self.is_earth
     }
 
-    pub fn query(&mut self, observer: DVec3, utc: f64, revision: u64) -> CloudSnapshot {
+    pub fn query(
+        &mut self,
+        observer: DVec3,
+        utc: f64,
+        revision: u64,
+    ) -> Result<CloudSnapshot, T::Error> {
         population::query(self, observer.normalize(), utc, revision)
     }
 }

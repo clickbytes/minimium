@@ -17,7 +17,7 @@ impl SurfaceAtlas {
         model: &WeatherModel<T>,
         utc: f64,
         cancelled: impl Fn() -> bool,
-    ) -> Option<Self> {
+    ) -> Result<Option<Self>, T::Error> {
         let start_utc = (utc / 3600.0).floor() * 3600.0;
         let cells = (WIDTH * HEIGHT) as usize;
         let mut pixels = vec![[half::f16::ZERO; 4]; cells * LAYERS as usize];
@@ -25,7 +25,7 @@ impl SurfaceAtlas {
             let time = start_utc + hour as f64 * 3600.0;
             for y in 0..HEIGHT {
                 if cancelled() {
-                    return None;
+                    return Ok(None);
                 }
                 let latitude = (0.5 - f64::from(y) / f64::from(HEIGHT - 1)) * std::f64::consts::PI;
                 for x in 0..WIDTH {
@@ -41,13 +41,13 @@ impl SurfaceAtlas {
                     let longitude =
                         (f64::from(x) / f64::from(WIDTH - 1) - 0.5) * std::f64::consts::TAU;
                     let direction = direction(latitude, longitude);
-                    let [cover, climate] = sample(model, direction, time);
+                    let [cover, climate] = sample(model, direction, time)?;
                     pixels[hour * 2 * cells + index] = cover;
                     pixels[(hour * 2 + 1) * cells + index] = climate;
                 }
             }
         }
-        Some(Self { start_utc, pixels })
+        Ok(Some(Self { start_utc, pixels }))
     }
 }
 
@@ -63,9 +63,9 @@ pub(crate) fn sample<T: TerrainSampler>(
     model: &WeatherModel<T>,
     direction: DVec3,
     time: f64,
-) -> [[half::f16; 4]; 2] {
-    let state = model.surface_state(direction, time);
-    [
+) -> Result<[[half::f16; 4]; 2], T::Error> {
+    let state = model.surface_state(direction, time)?;
+    Ok([
         [
             state.cover.vegetation,
             state.cover.snow,
@@ -79,5 +79,5 @@ pub(crate) fn sample<T: TerrainSampler>(
             0.0,
         ],
     ]
-    .map(|v| v.map(half::f16::from_f32))
+    .map(|v| v.map(half::f16::from_f32)))
 }

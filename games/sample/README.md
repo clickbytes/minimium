@@ -8,6 +8,11 @@ Owns shared demo map data and sample-game defaults consumed by client and server
 
 ## Public API
 
+Planet scenario composition supplies the definition and prepared geography to
+the validated `PlanetTerrain` constructor together. Landmark and overview
+sampling errors propagate as `GenerationError` before a world is published;
+successful seed, rounding, manifest and fingerprint behavior is unchanged.
+
 `materials/recipe.py` owns deterministic sand, soil, grass, litter, rock and snow
 art recipes. The client build invokes `tools/bake_materials.py` (Python + numpy)
 and caches complete KTX2 arrays in `target/materials/sample-v1`. Recipes do not

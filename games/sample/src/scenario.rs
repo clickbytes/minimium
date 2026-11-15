@@ -48,17 +48,13 @@ pub fn materialize_manifest_map(
             .ok_or_else(|| {
                 GenerationError::invalid_manifest("invalid planet surface in manifest")
             })?;
-            let mut terrain = PlanetTerrain::new(manifest.generation(), surface)
-                .ok_or_else(|| {
-                    GenerationError::invalid_manifest(
-                        "invalid planet generation settings in manifest",
-                    )
-                })?
-                .with_definition(definition);
-            if let Some(geography) = geography {
-                terrain = terrain.with_geography(geography);
-            }
-            let landmarks = terrain.landmarks();
+            let terrain = PlanetTerrain::new(
+                manifest.generation(),
+                surface,
+                Some(definition),
+                geography.into(),
+            )?;
+            let landmarks = terrain.landmarks()?;
             materialize_planet_map(terrain, landmarks)
         }
         WorldTopology::Dungeon => {
@@ -119,16 +115,13 @@ fn generate_worlds_with(
     geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
 ) -> Result<[GeneratedWorld; 2], GenerationError> {
     let planet_generation = generation(seed)?;
-    let mut terrain = PlanetTerrain::new(planet_generation, planet_surface).ok_or_else(|| {
-        GenerationError::invalid_manifest("demo planet generation settings are invalid")
-    })?;
-    if let Some(geography) = geography {
-        terrain = terrain.with_geography(geography);
-    }
-    if let Some(definition) = planet_definition {
-        terrain = terrain.with_definition(definition);
-    }
-    let landmarks = terrain.landmarks();
+    let terrain = PlanetTerrain::new(
+        planet_generation,
+        planet_surface,
+        planet_definition,
+        geography.into(),
+    )?;
+    let landmarks = terrain.landmarks()?;
     let planet_map = materialize_planet_map(terrain, landmarks)?;
 
     let dungeon_generation = generation(seed ^ 0x0030_0000_0000_0003)?;

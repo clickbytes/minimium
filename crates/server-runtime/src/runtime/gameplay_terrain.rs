@@ -107,14 +107,15 @@ pub(super) fn safe_planet_spawn(
     let terrain = PlanetTerrain::new(
         owner.manifest.generation(),
         minimium_procgen::planet_surface_for(owner.manifest),
-    )?
-    .with_definition(definition)
-    .with_inputs(TerrainInputs {
-        geography: geography.cloned(),
-        edits: Some(owner.terrain.clone()),
-        remnants: Some(owner.remnants.clone()),
-        volumes: Some(volumes.clone()),
-    });
+        Some(definition),
+        TerrainInputs {
+            geography: geography.cloned(),
+            edits: Some(owner.terrain.clone()),
+            remnants: Some(owner.remnants.clone()),
+            volumes: Some(volumes.clone()),
+        },
+    )
+    .ok()?;
     let read = CurrentTerrainRead {
         terrain,
         volumes,
@@ -134,14 +135,15 @@ fn planet(
         PlanetTerrain::new(
             manifest.generation(),
             minimium_procgen::planet_surface_for(manifest),
-        )?
-        .with_definition(definition)
-        .with_inputs(TerrainInputs {
-            geography: geography.cloned(),
-            edits: Some(owner.terrain.clone()),
-            remnants: Some(owner.remnants.clone()),
-            volumes: owner.volumes.clone(),
-        }),
+            Some(definition),
+            TerrainInputs {
+                geography: geography.cloned(),
+                edits: Some(owner.terrain.clone()),
+                remnants: Some(owner.remnants.clone()),
+                volumes: owner.volumes.clone(),
+            },
+        )
+        .ok()?,
     )
 }
 

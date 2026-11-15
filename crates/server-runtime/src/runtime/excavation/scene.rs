@@ -16,9 +16,10 @@ pub(super) fn planet(
         minimium_procgen::PlanetTerrain::new(
             manifest.generation(),
             minimium_procgen::planet_surface_for(manifest),
-        )?
-        .with_definition(manifest.planet()?)
-        .with_inputs(inputs),
+            Some(manifest.planet()?),
+            inputs,
+        )
+        .ok()?,
     )
 }
 

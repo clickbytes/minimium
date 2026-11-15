@@ -103,8 +103,8 @@ fn every_cube_face_edge_has_matching_canonical_samples() {
 #[test]
 fn planet_route_is_quantized_traversable_and_has_bounded_height_steps() {
     let surface = PlanetSurfaceSpec::new(100_000, 300).unwrap();
-    let terrain = PlanetTerrain::new(generation(42), surface).unwrap();
-    let landmarks = terrain.landmarks();
+    let terrain = PlanetTerrain::new(generation(42), surface, None, Default::default()).unwrap();
+    let landmarks = terrain.landmarks().unwrap();
     let map = materialize_planet_map(terrain, landmarks).unwrap();
     assert!(
         map.can_place_player_with_gravity(

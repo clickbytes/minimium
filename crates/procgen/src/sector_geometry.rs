@@ -94,19 +94,16 @@ pub fn materialize_world_sector_with_geography_and_soil(
     );
     if let (WorldTopology::Planet, SectorKey::Planet(planet)) = (manifest.topology(), key) {
         let generated =
-            crate::generate_planet_sector_with_geography(manifest, planet, inputs.clone());
+            crate::generate_planet_sector_with_geography(manifest, planet, inputs.clone())?;
         geometry.triangles.extend(generated.triangles);
         geometry.object_triangles.extend(generated.object_triangles);
         if let Some(store) = inputs.volumes.as_deref() {
-            let mut terrain = crate::PlanetTerrain::new(
+            let terrain = crate::PlanetTerrain::new(
                 manifest.generation(),
                 crate::planet_surface_for(manifest),
-            )
-            .expect("validated planet has a compatible surface")
-            .with_inputs(inputs.clone());
-            if let Some(definition) = manifest.planet() {
-                terrain = terrain.with_definition(definition);
-            }
+                manifest.planet(),
+                inputs.clone(),
+            )?;
             let count = crate::planet_sector_count(manifest);
             let (u, v) = planet.coordinates();
             let contour_sectors =
@@ -120,7 +117,7 @@ pub fn materialize_world_sector_with_geography_and_soil(
                     manifest,
                     adjacent,
                     inputs.clone(),
-                );
+                )?;
                 contour_source.extend(context.triangles);
             }
             geometry = crate::integrate_volume_sector_with_contours(

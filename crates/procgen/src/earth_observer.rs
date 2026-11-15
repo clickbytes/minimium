@@ -26,6 +26,8 @@ fn map_sample_error(error: EarthSampleError) -> ObserverError {
     match error {
         EarthSampleError::PackageUnavailable => ObserverError::MissingEarthPackage,
         EarthSampleError::PackageMismatch => ObserverError::PackageMismatch,
-        EarthSampleError::InvalidDirection => ObserverError::NonFinite,
+        EarthSampleError::InvalidDirection | EarthSampleError::InvalidElevation => {
+            ObserverError::NonFinite
+        }
     }
 }

@@ -75,21 +75,21 @@ impl RenderPatchCache {
 
     /// Bounded cache for the unmodified LOD meshes used to construct exact
     /// excavation contours before final meshes replace their chunk domains.
-    pub fn get_base_revision(
+    pub fn get_base_revision<E>(
         &mut self,
         key: SectorKey,
         lod: u8,
         revision: SectorContentVersion,
-        build: impl FnOnce() -> SectorGeometry,
-    ) -> Arc<SectorGeometry> {
+        build: impl FnOnce() -> Result<SectorGeometry, E>,
+    ) -> Result<Arc<SectorGeometry>, E> {
         self.tick = self.tick.wrapping_add(1);
         if let Some((current, age, geometry)) = self.base_entries.get_mut(&(key, lod)) {
             if *current == revision {
                 *age = self.tick;
-                return geometry.clone();
+                return Ok(geometry.clone());
             }
         }
-        let geometry = Arc::new(build());
+        let geometry = Arc::new(build()?);
         self.base_entries.remove(&(key, lod));
         while self.base_entries.len() >= 512 || self.base_bytes() >= 64 * 1024 * 1024 {
             let oldest = self
@@ -102,7 +102,7 @@ impl RenderPatchCache {
         }
         self.base_entries
             .insert((key, lod), (revision, self.tick, geometry.clone()));
-        geometry
+        Ok(geometry)
     }
 
     fn base_bytes(&self) -> usize {

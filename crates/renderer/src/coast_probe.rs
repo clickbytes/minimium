@@ -22,13 +22,18 @@ pub(crate) struct CoastProbeCache {
 }
 
 impl CoastProbeCache {
-    pub fn classify(&mut self, terrain: &PlanetTerrain, key: Key, count: u16) -> SurfaceClass {
+    pub fn classify(
+        &mut self,
+        terrain: &PlanetTerrain,
+        key: Key,
+        count: u16,
+    ) -> Result<SurfaceClass, minimium_procgen::GenerationError> {
         self.tick = self.tick.wrapping_add(1);
         if let Some((age, class)) = self.entries.get_mut(&key) {
             *age = self.tick;
-            return *class;
+            return Ok(*class);
         }
-        let class = classify(terrain, key, count);
+        let class = classify(terrain, key, count)?;
         if self.entries.len() >= MAX_PROBES {
             if let Some(oldest) = self
                 .entries
@@ -40,11 +45,15 @@ impl CoastProbeCache {
             }
         }
         self.entries.insert(key, (self.tick, class));
-        class
+        Ok(class)
     }
 }
 
-fn classify(terrain: &PlanetTerrain, (face, u, v, span): Key, count: u16) -> SurfaceClass {
+fn classify(
+    terrain: &PlanetTerrain,
+    (face, u, v, span): Key,
+    count: u16,
+) -> Result<SurfaceClass, minimium_procgen::GenerationError> {
     let scale = i64::from(PLANET_SAMPLE_COORDINATE_SCALE);
     let coordinate = |start: u16, step: i64| {
         (-scale
@@ -61,19 +70,23 @@ fn classify(terrain: &PlanetTerrain, (face, u, v, span): Key, count: u16) -> Sur
             // Coast identity is independent of peak exaggeration and tiny relief.
             // Direct source sampling avoids full material/normal/noise evaluation.
             let water = terrain
-                .source_elevation_m(key.coordinates().map(f64::from))
-                .expect("Earth coast probes require prepared geography")
+                .source_elevation_m(key.coordinates().map(f64::from))?
+                .ok_or_else(|| {
+                    minimium_procgen::GenerationError::invalid_manifest(
+                        "Earth coast probes require Earth terrain",
+                    )
+                })?
                 < 0.0;
             ocean |= water;
             land |= !water;
             if land && ocean {
-                return SurfaceClass::Coast;
+                return Ok(SurfaceClass::Coast);
             }
         }
     }
-    if land {
+    Ok(if land {
         SurfaceClass::Land
     } else {
         SurfaceClass::Ocean
-    }
+    })
 }

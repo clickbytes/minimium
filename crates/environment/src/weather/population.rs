@@ -5,7 +5,7 @@ pub(super) fn query<T: TerrainSampler>(
     observer: DVec3,
     utc: f64,
     revision: u64,
-) -> CloudSnapshot {
+) -> Result<CloudSnapshot, T::Error> {
     // A cap expanded by lifetime * fastest wind includes every incoming source,
     // including paths across cube faces. Region size is never a weather boundary.
     let sources = region::intersecting(
@@ -37,7 +37,7 @@ pub(super) fn query<T: TerrainSampler>(
                         *cloud
                     } else {
                         let direction = region::point(*source, random(id ^ 2), random(id ^ 3));
-                        let conditions = model.sample(direction, birth);
+                        let conditions = model.sample(direction, birth)?;
                         let mut cloud = Cloud {
                             id,
                             source: *source,
@@ -55,7 +55,7 @@ pub(super) fn query<T: TerrainSampler>(
                             families::configure(model, conditions, &mut cloud);
                         // Coverage controls occurrence as well as optical thickness.
                         if random(id ^ 0x18b7) < conditions.layers[layer].coverage * 0.65 {
-                            cloud.base_m = cloud.base_m.max(trajectory_floor(model, cloud));
+                            cloud.base_m = cloud.base_m.max(trajectory_floor(model, cloud)?);
                             if cloud.base_m > max_base || cloud.base_m + cloud.size_m.y > ceiling {
                                 cloud.opacity = 0.0;
                             }
@@ -90,19 +90,22 @@ pub(super) fn query<T: TerrainSampler>(
     }
     // A fixed ID order makes budget degradation reproducible and independent of view.
     let clouds = clouds.into_values().collect();
-    CloudSnapshot {
+    Ok(CloudSnapshot {
         utc,
         revision,
         observer,
-        conditions: model.sample(observer, utc),
+        conditions: model.sample(observer, utc)?,
         region: region::at(observer),
         regions: region::intersecting(observer, OUTER_ANGLE),
         clouds,
         limited,
-    }
+    })
 }
 
-fn trajectory_floor<T: TerrainSampler>(model: &WeatherModel<T>, cloud: Cloud) -> f64 {
+fn trajectory_floor<T: TerrainSampler>(
+    model: &WeatherModel<T>,
+    cloud: Cloud,
+) -> Result<f64, T::Error> {
     // Bound the entire advected footprint, not only sampled terrain points.
     let midpoint = cloud.direction_at(cloud.birth_utc + LIFETIME * 0.5);
     let angle = cloud.extent_m() / model.radius + WIND[cloud.layer] * LIFETIME * 0.5 / EARTH_RADIUS;
@@ -111,7 +114,7 @@ fn trajectory_floor<T: TerrainSampler>(model: &WeatherModel<T>, cloud: Cloud) ->
         if p.mode == 1 {
             model
                 .terrain
-                .earth_elevation_upper_bound_m(midpoint, angle)
+                .earth_elevation_upper_bound_m(midpoint, angle)?
                 .map(|height| {
                     (p.earth_elevation_mm(height) / 1000.0
                         + f64::from(p.detail_strength_mm) / 1000.0)
@@ -125,5 +128,5 @@ fn trajectory_floor<T: TerrainSampler>(model: &WeatherModel<T>, cloud: Cloud) ->
     } else {
         model.terrain.relief_bound_m()
     };
-    floor.max(0.0) + 500.0 * model.scale
+    Ok(floor.max(0.0) + 500.0 * model.scale)
 }

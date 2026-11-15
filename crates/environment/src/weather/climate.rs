@@ -3,8 +3,12 @@ use super::{
 };
 use glam::DVec3;
 
-pub(super) fn sample<T: TerrainSampler>(model: &WeatherModel<T>, p: DVec3, utc: f64) -> Conditions {
-    sample_at(model, p, utc, &site(model, p))
+pub(super) fn sample<T: TerrainSampler>(
+    model: &WeatherModel<T>,
+    p: DVec3,
+    utc: f64,
+) -> Result<Conditions, T::Error> {
+    Ok(sample_at(model, p, utc, &site(model, p)?))
 }
 
 pub(super) struct Site {
@@ -15,32 +19,34 @@ pub(super) struct Site {
     uplift: f64,
 }
 
-pub(super) fn site<T: TerrainSampler>(model: &WeatherModel<T>, p: DVec3) -> Site {
-    let (ground, ocean) = model.terrain(p);
+pub(super) fn site<T: TerrainSampler>(model: &WeatherModel<T>, p: DVec3) -> Result<Site, T::Error> {
+    let (ground, ocean) = model.terrain(p)?;
     let water = |d: DVec3| {
-        let (_, ocean) = model.terrain(d);
-        f64::from(ocean || (model.is_earth() && model.contains_lake(d)))
+        let (_, ocean) = model.terrain(d)?;
+        Ok::<_, T::Error>(f64::from(
+            ocean || (model.is_earth() && model.contains_lake(d)),
+        ))
     };
     // Moisture is carried eastward from a broad, continuously sampled fetch.
     let east = DVec3::new(-p.z, 0.0, p.x).normalize_or_zero();
     let north = p.cross(east);
-    let mut supply = water(p) * 0.25;
+    let mut supply = water(p)? * 0.25;
     for i in 1..=4 {
         let upstream = (p - east * (i as f64 * 0.006)).normalize();
         for side in [-1.0, 0.0, 1.0] {
-            supply += water((upstream + north * side * 0.002).normalize()) * 0.0625;
+            supply += water((upstream + north * side * 0.002).normalize())? * 0.0625;
         }
     }
-    let climate_ground = model.climate_elevation_m(p);
-    let upstream_ground = model.climate_elevation_m((p - east * 0.004).normalize());
+    let climate_ground = model.climate_elevation_m(p)?;
+    let upstream_ground = model.climate_elevation_m((p - east * 0.004).normalize())?;
     let uplift = ((climate_ground - upstream_ground) / 1800.0).clamp(-1.0, 1.0);
-    Site {
+    Ok(Site {
         ground,
         climate_ground,
         ocean,
         supply,
         uplift,
-    }
+    })
 }
 
 pub(super) fn climate_at<T: TerrainSampler>(

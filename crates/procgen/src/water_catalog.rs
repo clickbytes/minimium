@@ -60,7 +60,10 @@ struct Sample {
 impl WaterCatalog {
     /// Builds connected wet components from terrain shared by collision and presentation.
     /// Resolution is clamped to a conservative 6 * 257² canonical samples.
-    pub fn build(terrain: &PlanetTerrain, requested_resolution: u16) -> Option<Self> {
+    pub fn build(
+        terrain: &PlanetTerrain,
+        requested_resolution: u16,
+    ) -> Result<Self, crate::GenerationError> {
         let resolution = requested_resolution.clamp(8, MAX_WATER_CATALOG_RESOLUTION);
         let n = i32::from(resolution);
         let scale = PLANET_SAMPLE_COORDINATE_SCALE;
@@ -78,9 +81,13 @@ impl WaterCatalog {
                     let v = (-i64::from(scale)
                         + (2 * i64::from(scale) * i64::from(y) / i64::from(n)))
                         as i32;
-                    let key = face.cube_sample(u, v)?;
-                    let index = *ids.entry(key).or_insert_with(|| {
-                        let point = terrain.ground_sample(key);
+                    let key = face.cube_sample(u, v).ok_or_else(|| {
+                        crate::GenerationError::materialization("invalid water catalog cube sample")
+                    })?;
+                    let index = if let Some(index) = ids.get(&key) {
+                        *index
+                    } else {
+                        let point = terrain.ground_sample(key)?;
                         let elevation = point.height_mm as f64;
                         let index = samples.len();
                         samples.push(Sample {
@@ -88,8 +95,9 @@ impl WaterCatalog {
                             elevation_m: elevation / 1000.0,
                             wet: point.ocean,
                         });
+                        ids.insert(key, index);
                         index
-                    });
+                    };
                     grid[(y * (n + 1) + x) as usize] = index;
                 }
             }
@@ -120,7 +128,7 @@ impl WaterCatalog {
             }
         }
         if components.is_empty() {
-            return Some(Self {
+            return Ok(Self {
                 resolution,
                 digest: [0; 32],
                 bodies: Vec::new(),
@@ -136,7 +144,10 @@ impl WaterCatalog {
         let largest = components
             .iter()
             .max_by_key(|(_, nodes)| nodes.len())
-            .map(|(root, _)| *root)?;
+            .map(|(root, _)| *root)
+            .ok_or_else(|| {
+                crate::GenerationError::materialization("water catalog has no largest component")
+            })?;
         let mut bodies = Vec::new();
         let mut root_ids = HashMap::<usize, WaterBodyId>::new();
         for (root, nodes) in components {
@@ -213,7 +224,9 @@ impl WaterCatalog {
         }
         bodies.sort_by_key(|body| body.id);
         if bodies.len() > 65_536 {
-            return None;
+            return Err(crate::GenerationError::materialization(
+                "water catalog exceeds body limit",
+            ));
         }
         let face_bodies: Vec<Vec<WaterBodyId>> = face_samples
             .iter()
@@ -256,7 +269,7 @@ impl WaterCatalog {
                 digest.update(id.0.to_le_bytes());
             }
         }
-        Some(Self {
+        Ok(Self {
             resolution,
             digest: digest.finalize().into(),
             bodies,
@@ -376,7 +389,8 @@ impl WaterCatalog {
         }
         let point = self
             .terrain
-            .ground_sample(crate::terrain_surface::key(direction.map(|v| v / length)));
+            .ground_sample(crate::terrain_surface::key(direction.map(|v| v / length)))
+            .ok()?;
         Some(point.height_mm as f64 / 1000.0)
     }
 

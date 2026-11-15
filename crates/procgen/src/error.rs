@@ -6,6 +6,7 @@ pub enum GenerationErrorKind {
     UnsupportedRevision,
     InvalidBlueprint,
     Materialization,
+    Sampling(crate::EarthSampleError),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -34,6 +35,10 @@ impl GenerationError {
         Self::new(GenerationErrorKind::Materialization, detail)
     }
 
+    pub fn sampling(cause: crate::EarthSampleError) -> Self {
+        Self::new(GenerationErrorKind::Sampling(cause), cause.to_string())
+    }
+
     pub fn kind(&self) -> GenerationErrorKind {
         self.kind
     }
@@ -44,6 +49,7 @@ impl GenerationError {
             GenerationErrorKind::UnsupportedRevision => "procgen.unsupported_revision",
             GenerationErrorKind::InvalidBlueprint => "procgen.invalid_blueprint",
             GenerationErrorKind::Materialization => "procgen.materialization_failed",
+            GenerationErrorKind::Sampling(_) => "procgen.sampling_failed",
         }
     }
 

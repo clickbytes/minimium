@@ -404,18 +404,19 @@ fn volume_payload(vertex: TerrainVertex) -> MapSurfaceVertex {
 fn planet_surface(terrain: &PlanetTerrain, point: [i64; 3]) -> Option<MapSurfaceVertex> {
     let metres = point.map(|v| v as f64 / 1000.0);
     let radius = metres.iter().map(|v| v * v).sum::<f64>().sqrt();
-    (radius > 1.0).then(|| {
-        let sample = terrain.surface_sample(metres.map(|v| v / radius));
-        MapSurfaceVertex {
-            kind: MapSurfaceKind::PlanetGround,
-            normal: sample.normal,
-            coverage: sample.coverage,
-            source_elevation_m: sample.source_elevation_m,
-            surface_elevation_m: sample.elevation_m,
-            slope: sample.slope,
-            water: sample.water,
-            habitat: [sample.landform.retention, sample.landform.exposure, 0.0],
-        }
+    if radius <= 1.0 {
+        return None;
+    }
+    let sample = terrain.surface_sample(metres.map(|v| v / radius)).ok()?;
+    Some(MapSurfaceVertex {
+        kind: MapSurfaceKind::PlanetGround,
+        normal: sample.normal,
+        coverage: sample.coverage,
+        source_elevation_m: sample.source_elevation_m,
+        surface_elevation_m: sample.elevation_m,
+        slope: sample.slope,
+        water: sample.water,
+        habitat: [sample.landform.retention, sample.landform.exposure, 0.0],
     })
 }
 
