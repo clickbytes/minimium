@@ -148,6 +148,7 @@ impl Renderer {
     }
 
     fn reset_remote_gameplay(&mut self) {
+        self.application.action_executor.clear_input_cooldown();
         self.gpu.remote_vertices.clear();
         self.application.game.gameplay.clear_remote_players();
         self.application.game.gameplay.health = PLAYER_MAX_HEALTH;
@@ -183,6 +184,7 @@ impl Renderer {
     }
 
     pub(super) fn clear_connection(&mut self) {
+        self.application.action_executor.clear_input_cooldown();
         self.excavation_debug = Default::default();
         self.pending_bolid_request = None;
         self.last_sky_view_at = None;
@@ -322,25 +324,6 @@ impl Renderer {
     }
 
     pub(super) fn queue_fire(&mut self) {
-        if self.queue_equipped_tool() {
-            return;
-        }
-        if !self
-            .application
-            .connection
-            .session()
-            .is_some_and(|session| session.state() == SessionState::Connected)
-        {
-            return;
-        }
-        let now = Instant::now();
-        if self
-            .gameplay_presentation
-            .last_shot_sent_at
-            .is_some_and(|last_shot| now.saturating_duration_since(last_shot) < SHOT_LOCAL_COOLDOWN)
-        {
-            return;
-        }
         let prediction = &self.application.game.gameplay.prediction;
         let character = prediction.character;
         let feet_m = prediction.position_mm.map_or_else(
@@ -357,30 +340,40 @@ impl Renderer {
         )
         .normalize()
         .to_array();
-        if let Some(session) = self.application.connection.session_mut() {
-            match session.queue_world_input(minimium_protocol::ClientWorldInput::Fire { direction })
-            {
-                Ok(_) => {
-                    self.gameplay_presentation.last_shot_sent_at = Some(now);
-                    if self.application.ui.console.open {
-                        self.application.ui.console.push_client_text(
-                            Text::ShotFired,
-                            false,
-                            &self.localizer,
-                            self.application.settings.locale,
-                        );
-                    }
-                }
-                Err(error) if self.application.ui.console.open => {
+        match self.application.action_executor.execute(
+            &mut self.application.connection,
+            crate::application::ClientAction::UseEquipped {
+                direction,
+                trigger: crate::application::UseTrigger::Pressed,
+            },
+        ) {
+            crate::application::LocalActionOutcome::Queued {
+                kind: crate::application::QueuedActionKind::WeaponFire,
+                ..
+            } => {
+                if self.application.ui.console.open {
                     self.application.ui.console.push_client_text(
-                        Text::CouldNotFire(error.into()),
-                        true,
+                        Text::ShotFired,
+                        false,
                         &self.localizer,
                         self.application.settings.locale,
-                    )
+                    );
                 }
-                Err(_) => {}
             }
+            crate::application::LocalActionOutcome::Rejected {
+                kind: crate::application::QueuedActionKind::ToolUse,
+                error,
+            } => self.fail_connection(format!("Could not use tool: {error:?}")),
+            crate::application::LocalActionOutcome::Rejected {
+                kind: crate::application::QueuedActionKind::WeaponFire,
+                error,
+            } if self.application.ui.console.open => self.application.ui.console.push_client_text(
+                Text::CouldNotFire(error.into()),
+                true,
+                &self.localizer,
+                self.application.settings.locale,
+            ),
+            _ => {}
         }
     }
 
@@ -393,17 +386,15 @@ impl Renderer {
             .and_then(|session| session.replicated_entities())
             .and_then(|replicas| crate::client_commands::nearest_portal_entity(replicas, position));
         let Some(entity) = entity else { return };
-        if let Some(session) = self.application.connection.session_mut() {
-            if session.state() == SessionState::Connected {
-                let _ = session.queue_world_input(
-                    minimium_protocol::ClientWorldInput::InteractEntity { entity },
-                );
-            }
-        }
+        let _ = self.application.action_executor.execute(
+            &mut self.application.connection,
+            crate::application::ClientAction::InteractEntity { entity },
+        );
     }
 
     pub(super) fn update_remote_player_rendering(&mut self, now: Instant) {
         if self.application.connection.session().is_none() {
+            self.application.action_executor.clear_input_cooldown();
             self.application.game.gameplay.clear_remote_players();
             self.gameplay_presentation.clear_remote_players();
             self.gpu.remote_vertices.clear();

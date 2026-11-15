@@ -19,6 +19,11 @@ request retains the previous complete publication. Weather atlas, cover and clou
 results each publish only after successful preparation and matching context.
 CPU preparation errors neither upload partial geometry nor synthesize heights.
 
+Cloud worker candidates replace the active CPU publication only after the whole
+cloud GPU upload is accepted. Cloud/morph count mismatches and upload-limit/index
+errors produce diagnostics while keeping the previous complete publication.
+Context changes still invalidate old clouds; stale worker results are discarded.
+
 The desktop renderer reads the confirmed equipped tool from the active client
 session and passes its neutral `ToolKind` to the first-person viewmodel pass.
 Shovels and pickaxes are presentation-only low-poly meshes; gameplay tool use
@@ -106,9 +111,9 @@ pending transfer retains its resolved map behind its context and transition ID;
 preparing destination geometry does not overwrite the active world catalog.
 The application installs that map in the active catalog only after commit.
 Cancel and failure drop the staged map.
-The renderer owns only gameplay render
-geometry, hit feedback and shot cooldown alongside GPU resources. The application
-has no GPU handle.
+The renderer owns gameplay render geometry, hit feedback and GPU resources. The
+application action executor owns the mouse weapon-fallback cooldown and reports
+the resolved queued action kind; the application has no GPU handle.
 The transition and overview fields are private to `ClientApplication`. Renderer
 consumers read the overview model through an immutable view and request open,
 close, zoom and drag transitions through application methods. Open state is the
@@ -138,6 +143,15 @@ for current presentation; `reset` returns to the resolved startup layer and
 `config save` persists store overrides through the configuration owner.
 Desktop and terminal clients share the command registry/handlers and
 `client-runtime` session and replica contracts.
+
+Client-authored world actions pass through one application-owned typed executor
+shared by desktop input, console commands and the terminal. It validates the
+current session, constructs protocol requests and reports local queue acceptance,
+suppression or rejection; queued requests are not authoritative outcomes. The
+`UseEquipped` input intent resolves confirmed tool inventory in that executor:
+pressed input may fall back to weapon fire, while held repeats only repeat an
+equipped tool. Explicit `combat fire` always requests weapon fire. Renderer code
+supplies CPU movement and aim parameters but does not choose the action rule.
 
 Confirmed developer tool inventory enables the desktop digging overlay. It uses
 the shared simulation first-hit query against published collision and remote-player
@@ -248,7 +262,7 @@ Local server startup passes a typed launch configuration to client runtime. The 
 
 ## Change guide
 
-`ClientApplication` in `src/application.rs` owns logical game/session state, settings, world catalog, UI, input mapping and one bounded staged transfer data record. `ClientGameState` owns current instance and manifest/session context; client-runtime owns transfer lifecycle, readiness queue retry, prediction, reconciliation and remote-player snapshots. `GameplayPresentation` owns renderer-only hit feedback, shot cooldown and geometry. The application owns the shared generated/authored world resolver used by desktop and terminal. `Renderer` owns GPU presentation state; `RenderFrame` is CPU-only input to renderer upload. The application has no GPU handle. `renderer/window_events.rs` maps physical events into `InputAction`s and applies modal priority; text and IME input remain separate. `application/transitions.rs` stages destination content, `session/sector_readiness.rs` prepares and publishes the desktop scene before reporting host readiness, and the terminal reports host readiness when CPU content resolution completes.
+`ClientApplication` in `src/application.rs` owns logical game/session state, settings, world catalog, UI, input mapping and one bounded staged transfer data record. `ClientGameState` owns current instance and manifest/session context; client-runtime owns transfer lifecycle, readiness queue retry, prediction, reconciliation and remote-player snapshots. `GameplayPresentation` owns renderer-only hit feedback and geometry. The application action executor owns client-authored action validation, request construction, queue outcomes and mouse weapon-fallback cooldown; its typed intent path is shared with console and terminal command dispatch. The application owns the shared generated/authored world resolver used by desktop and terminal. `Renderer` owns GPU presentation state; `RenderFrame` is CPU-only input to renderer upload. The application has no GPU handle. `renderer/window_events.rs` maps physical events into `InputAction`s and applies modal priority; text and IME input remain separate. `application/transitions.rs` stages destination content, `session/sector_readiness.rs` prepares and publishes the desktop scene before reporting host readiness, and the terminal reports host readiness when CPU content resolution completes.
 
 To add an input action, extend `InputAction::parse` and the default/context binding table in `src/input.rs`, then route its behavior in `renderer/window_events.rs` or the relevant application handler. Keep binding validation and persistence through `SettingsStore`. Desktop and terminal share configuration; terminal has no renderer event loop. To add a UI sentence, add a typed `UiMessage`/`UiNotice`, English and Polish Fluent entries, and construct the message at its consumer; `Localizer` handles fallback and both frontends format it.
 

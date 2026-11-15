@@ -107,13 +107,6 @@ impl ClientSession {
             .is_some_and(|(context, _)| Some(context) == self.world_context)
     }
 
-    pub fn equip_tool(&mut self, slot: Option<u8>) -> Result<(), QueueError> {
-        self.queue_world_input(ClientWorldInput::Excavation(ExcavationInput::Equip {
-            slot,
-        }))?;
-        Ok(())
-    }
-
     pub fn queue_tool_use(&mut self, direction: [f32; 3]) -> Result<bool, QueueError> {
         let context = self.world_context.ok_or(QueueError::AwaitingWelcome)?;
         if self.pending_transition.is_some() || !self.excavation_ready() {

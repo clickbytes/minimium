@@ -260,24 +260,26 @@ impl Renderer {
             return;
         }
         let direction = (eye + ray * distance).normalize().to_array();
-        match self
-            .application
-            .connection
-            .queue_world_input(minimium_protocol::ClientWorldInput::MapTeleport { direction })
-        {
-            Ok(_) => {
+        match self.application.action_executor.execute(
+            &mut self.application.connection,
+            crate::application::ClientAction::MapTeleport { direction },
+        ) {
+            crate::application::LocalActionOutcome::Queued { .. } => {
                 self.application.request_map_teleport();
                 self.application.status = crate::application::ClientStatus::Status(
                     minimium_localization::UiStatus::EarthMoving,
                 );
                 self.toggle_overview();
             }
-            Err(error) => self.application.ui.console.push_client_text(
-                crate::messages::ClientText::CouldNotQueueCommand(error.into()),
-                true,
-                &self.localizer,
-                self.application.settings.locale,
-            ),
+            crate::application::LocalActionOutcome::Rejected { error, .. } => {
+                self.application.ui.console.push_client_text(
+                    crate::messages::ClientText::CouldNotQueueCommand(error.into()),
+                    true,
+                    &self.localizer,
+                    self.application.settings.locale,
+                )
+            }
+            crate::application::LocalActionOutcome::Suppressed(_) => {}
         }
     }
 

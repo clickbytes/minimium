@@ -303,16 +303,18 @@ fn goto(renderer: &mut Renderer, coordinates: &str) {
         latitude.sin(),
         latitude.cos() * longitude.sin(),
     ];
-    match renderer
-        .application
-        .connection
-        .queue_world_input(minimium_protocol::ClientWorldInput::MapTeleport { direction })
-    {
-        Ok(()) => {
+    match renderer.application.action_executor.execute(
+        &mut renderer.application.connection,
+        crate::application::ClientAction::MapTeleport { direction },
+    ) {
+        crate::application::LocalActionOutcome::Queued { .. } => {
             renderer.application.arm_map_teleport();
             renderer.application.request_map_teleport();
             println!("dev: Earth move requested");
         }
-        Err(error) => println!("dev: Earth move rejected: {error:?}"),
+        crate::application::LocalActionOutcome::Rejected { error, .. } => {
+            println!("dev: Earth move rejected: {error:?}")
+        }
+        crate::application::LocalActionOutcome::Suppressed(_) => {}
     }
 }
