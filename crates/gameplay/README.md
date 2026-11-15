@@ -6,7 +6,7 @@ Owns neutral descriptors and validated registration for modules, commands, syste
 
 ## Public API
 
-`ModuleRegistry`, `EngineModule`, `ModuleRegistrar`, and the command, system and module descriptors define static extension contracts. A host supplies handler types and installs modules in dependency order. Systems use `GameplaySystemContext`, a host-neutral trait, so game packages can implement systems without depending on a server runtime. They declare `before`/`after` constraints and run in stable topological order with system ID as a deterministic tie-break; missing, duplicate and cyclic dependencies return typed registration errors. The bounded `WorldEffectBuffer` carries entity/component changes and transfer requests; it accepts at most 256 operations and 1 MiB of component payload per stage. Its batch has private bounded contents and a saturating count of pushes rejected by the buffer. `EffectBatchOutcome` returns one ordered result for each retained effect plus that aggregate count. The context exposes the current simulation tick, stage, optional startup world and New/Restored lifecycle, read-only world/component and initial-entity data, and gameplay events, without process or I/O handles.
+`ModuleRegistry`, `EngineModule`, `ModuleRegistrar`, and the command, system and module descriptors define static extension contracts. A host supplies handler types and installs modules in dependency order. Systems use `GameplaySystemContext`, a host-neutral trait, so game packages can implement systems without depending on a server runtime. They declare `before`/`after` constraints and run in stable topological order with system ID as a deterministic tie-break; missing, duplicate and cyclic dependencies return typed registration errors. The bounded `WorldEffectBuffer` carries entity/component changes and transfer requests; it accepts at most 256 operations and 1 MiB of component payload per stage. Its batch has private bounded contents and a saturating count of pushes rejected by the buffer. `EffectBatchOutcome` returns one ordered result for each retained effect plus that aggregate count. The system context exposes the current simulation tick, stage, optional startup world and New/Restored lifecycle, read-only world/component and initial-entity data, and gameplay events, without process or I/O handles.
 
 Startup runs once for each prepared world instance. Startup effects are validated and committed for that world before the runtime marks its initial content as initialized. A restored world receives `WorldLifecycle::Restored`; a world with no saved initialization marker receives `WorldLifecycle::New`.
 
@@ -46,8 +46,17 @@ atomicity between entity storage and transport.
 
 ## Commands
 
-Modules can register typed command descriptors and handlers; the host owns
-execution and command permissions.
+Modules can register typed command descriptors and handlers. The host invokes
+them with `ModuleCommandContext`, which exposes only bounded read views and a
+bounded `emit(WorldEffect)` operation. World and entity pages cap at 256 rows;
+player names and component payloads share a 1 MiB byte cap. Read pages report
+truncation, while missing worlds and entities return distinct typed errors.
+The context contains no runtime, registry, storage, or network handle. The host
+owns command permissions and sends emitted effects through the same validated
+executor used by gameplay systems. A handler error discards its whole effect
+buffer. After execution, the command caller receives each effect's applied,
+started, or rejected result; Started does not imply transfer readiness or
+commit.
 
 ## Change guide
 
