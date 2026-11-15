@@ -120,8 +120,7 @@ impl TerrainStore {
         request: TerrainEditRequest,
     ) -> Result<PreparedTerrainEdit, TerrainEditError> {
         if !valid_position(request.center_m)
-            || !(0.25..=self.config.max_edit_radius_m)
-                .contains(&request.deformation.radius_m())
+            || !(0.25..=self.config.max_edit_radius_m).contains(&request.deformation.radius_m())
         {
             return Err(TerrainEditError::Invalid);
         }

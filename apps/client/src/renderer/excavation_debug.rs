@@ -71,7 +71,9 @@ impl Renderer {
         let session = self.application.connection.session()?;
         let inventory = session.inventory();
         let tool_profile = minimium_game_sample::DEFAULT_TOOL_PROFILE;
-        let selected_definition = inventory.tool().and_then(|tool| tool_profile.definition(tool));
+        let selected_definition = inventory
+            .tool()
+            .and_then(|tool| tool_profile.definition(tool));
         if inventory.slots.iter().all(Option::is_none)
             || self.application.overview().is_open()
             || self.application.ui.console.open
@@ -81,11 +83,10 @@ impl Renderer {
         let ready = self.gpu.scene_visible
             && self.application.game.gameplay.sectors_ready
             && session.excavation_ready();
-        let query_reach = selected_definition
-            .map_or(tool_profile.max_reach_m(), |definition| definition.reach_m());
-        let hit = ready
-            .then(|| self.preview_tool_hit(query_reach))
-            .flatten();
+        let query_reach = selected_definition.map_or(tool_profile.max_reach_m(), |definition| {
+            definition.reach_m()
+        });
+        let hit = ready.then(|| self.preview_tool_hit(query_reach)).flatten();
         let (notice, color) = if !ready {
             (ToolNotice::Synchronizing, [1.0, 0.75, 0.25])
         } else if session.tool_action_pending() {
@@ -97,8 +98,9 @@ impl Renderer {
                     (ToolNotice::Obstructed, [1.0, 0.32, 0.26])
                 }
                 Some(hit)
-                    if !selected_definition
-                        .is_some_and(|definition| definition.allowed_materials().contains(hit.material)) =>
+                    if !selected_definition.is_some_and(|definition| {
+                        definition.allowed_materials().contains(hit.material)
+                    }) =>
                 {
                     (ToolNotice::WrongMaterial, [1.0, 0.32, 0.26])
                 }
@@ -255,8 +257,7 @@ fn outline(
             let angle = index as f64 * std::f64::consts::TAU / 32.0;
             let point = center
                 + normal * 0.01
-                + (tangent * angle.cos() + bitangent * angle.sin())
-                    * radius_m;
+                + (tangent * angle.cos() + bitangent * angle.sin()) * radius_m;
             let relative = (point - glam::DVec3::from_array(view.render_origin_m)).as_vec3();
             let clip = matrix * relative.extend(1.0);
             if !clip.is_finite() || clip.w <= 0.0 {

@@ -67,7 +67,11 @@ impl TerrainMaterialSet {
 
     pub const fn new(soil: bool, rock: bool) -> Option<Self> {
         let bits = (soil as u8) * Self::SOIL_BIT | (rock as u8) * Self::ROCK_BIT;
-        if bits == 0 { None } else { Some(Self(bits)) }
+        if bits == 0 {
+            None
+        } else {
+            Some(Self(bits))
+        }
     }
 
     pub const fn contains(self, material: TerrainMaterial) -> bool {

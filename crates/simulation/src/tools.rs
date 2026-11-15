@@ -81,7 +81,9 @@ impl ToolProfile {
     }
 
     pub fn max_reach_m(self) -> f64 {
-        self.definitions[0].reach_m().max(self.definitions[1].reach_m())
+        self.definitions[0]
+            .reach_m()
+            .max(self.definitions[1].reach_m())
     }
 
     pub fn max_radius_m(self) -> f64 {
