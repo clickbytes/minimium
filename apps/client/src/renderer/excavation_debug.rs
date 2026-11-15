@@ -70,6 +70,8 @@ impl Renderer {
     ) -> Option<crate::console::ToolOverlay> {
         let session = self.application.connection.session()?;
         let inventory = session.inventory();
+        let tool_profile = minimium_game_sample::DEFAULT_TOOL_PROFILE;
+        let selected_definition = inventory.tool().and_then(|tool| tool_profile.definition(tool));
         if inventory.slots.iter().all(Option::is_none)
             || self.application.overview().is_open()
             || self.application.ui.console.open
@@ -79,18 +81,25 @@ impl Renderer {
         let ready = self.gpu.scene_visible
             && self.application.game.gameplay.sectors_ready
             && session.excavation_ready();
-        let hit = ready.then(|| self.preview_tool_hit()).flatten();
+        let query_reach = selected_definition
+            .map_or(tool_profile.max_reach_m(), |definition| definition.reach_m());
+        let hit = ready
+            .then(|| self.preview_tool_hit(query_reach))
+            .flatten();
         let (notice, color) = if !ready {
             (ToolNotice::Synchronizing, [1.0, 0.75, 0.25])
         } else if session.tool_action_pending() {
             (ToolNotice::Pending, [1.0, 0.75, 0.25])
-        } else if let Some(tool) = inventory.tool() {
+        } else if selected_definition.is_some() {
             match hit {
                 None => (ToolNotice::NoTarget, [0.85, 0.65, 0.35]),
                 Some(hit) if !matches!(hit.target, SurfaceTarget::Terrain(_)) => {
                     (ToolNotice::Obstructed, [1.0, 0.32, 0.26])
                 }
-                Some(hit) if !tool.removes(hit.material) => {
+                Some(hit)
+                    if !selected_definition
+                        .is_some_and(|definition| definition.allowed_materials().contains(hit.material)) =>
+                {
                     (ToolNotice::WrongMaterial, [1.0, 0.32, 0.26])
                 }
                 Some(_) => (ToolNotice::Ready, [0.25, 0.95, 0.45]),
@@ -134,11 +143,19 @@ impl Renderer {
                 .then_some(self.excavation_debug.last_result)
                 .flatten()
                 .map(|result| format(self.tool_result_message(result))),
-            outline: hit.map_or_else(Vec::new, |hit| outline(hit, view)),
+            outline: hit.map_or_else(Vec::new, |hit| {
+                outline(
+                    hit,
+                    view,
+                    selected_definition.map_or(tool_profile.max_radius_m(), |definition| {
+                        definition.radius_m()
+                    }),
+                )
+            }),
         })
     }
 
-    fn preview_tool_hit(&self) -> Option<SurfaceHit> {
+    fn preview_tool_hit(&self, reach_m: f64) -> Option<SurfaceHit> {
         let gameplay = &self.application.game.gameplay;
         let character = gameplay.prediction.character;
         let feet = gameplay
@@ -167,7 +184,7 @@ impl Renderer {
             self.application.game.current_instance,
             eye,
             direction,
-            minimium_game_sample::DEFAULT_TOOL_PROFILE.reach_m,
+            reach_m,
             blockers,
         )?;
         if let SurfaceTarget::Terrain(_) = hit.target {
@@ -215,7 +232,11 @@ fn rejection_notice(reason: ActionRejection) -> ToolNotice {
     }
 }
 
-fn outline(hit: SurfaceHit, view: &minimium_renderer::RenderViewFrame) -> Vec<Option<[f32; 2]>> {
+fn outline(
+    hit: SurfaceHit,
+    view: &minimium_renderer::RenderViewFrame,
+    radius_m: f64,
+) -> Vec<Option<[f32; 2]>> {
     let center = glam::DVec3::from_array(hit.position_m);
     let mut normal = glam::DVec3::from_array(hit.normal).normalize_or_zero();
     if normal == glam::DVec3::ZERO {
@@ -235,7 +256,7 @@ fn outline(hit: SurfaceHit, view: &minimium_renderer::RenderViewFrame) -> Vec<Op
             let point = center
                 + normal * 0.01
                 + (tangent * angle.cos() + bitangent * angle.sin())
-                    * minimium_game_sample::DEFAULT_TOOL_PROFILE.radius_m;
+                    * radius_m;
             let relative = (point - glam::DVec3::from_array(view.render_origin_m)).as_vec3();
             let clip = matrix * relative.extend(1.0);
             if !clip.is_finite() || clip.w <= 0.0 {

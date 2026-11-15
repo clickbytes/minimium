@@ -1,17 +1,10 @@
 //! Neutral inventory records. Items in a backpack are not world entities.
-use crate::{terrain::TerrainMaterial, world::WorldInstanceId};
+use crate::world::WorldInstanceId;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ToolKind {
     Shovel,
     Pickaxe,
-}
-
-impl ToolKind {
-    pub fn removes(self, material: TerrainMaterial) -> bool {
-        matches!(material, TerrainMaterial::Soil)
-            || self == Self::Pickaxe && material == TerrainMaterial::Rock
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

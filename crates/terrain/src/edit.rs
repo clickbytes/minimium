@@ -1,7 +1,9 @@
 use crate::field::{BaseTerrain, ChunkImage, TerrainStore, SAMPLES_PER_CHUNK};
 use minimium_world::{
-    items::ToolKind,
-    terrain::{valid_position, TerrainChunkKey, TerrainRevision, TERRAIN_CELL_M, TERRAIN_CHUNK_M},
+    terrain::{
+        valid_position, TerrainChunkKey, TerrainMaterialSet, TerrainRevision, TERRAIN_CELL_M,
+        TERRAIN_CHUNK_M,
+    },
     terrain_edits::{length, CraterStamp},
 };
 use std::sync::Arc;
@@ -10,8 +12,47 @@ use std::sync::Arc;
 pub struct TerrainEditRequest {
     pub mutation_id: u64,
     pub center_m: [f64; 3],
-    pub radius_m: f64,
-    pub tool: ToolKind,
+    pub deformation: TerrainDeformation,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TerrainDeformationError {
+    InvalidRadius,
+    InvalidMaterials,
+}
+
+/// Validated generic radial terrain deformation. Tool and material policy
+/// selection belongs to the authoritative gameplay owner.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TerrainDeformation {
+    radius_m: f64,
+    materials: TerrainMaterialSet,
+}
+
+impl TerrainDeformation {
+    pub fn new(
+        radius_m: f64,
+        materials: TerrainMaterialSet,
+    ) -> Result<Self, TerrainDeformationError> {
+        if !radius_m.is_finite() || radius_m < 0.25 {
+            return Err(TerrainDeformationError::InvalidRadius);
+        }
+        if !materials.valid() {
+            return Err(TerrainDeformationError::InvalidMaterials);
+        }
+        Ok(Self {
+            radius_m,
+            materials,
+        })
+    }
+
+    pub const fn radius_m(self) -> f64 {
+        self.radius_m
+    }
+
+    pub const fn materials(self) -> TerrainMaterialSet {
+        self.materials
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -79,7 +120,8 @@ impl TerrainStore {
         request: TerrainEditRequest,
     ) -> Result<PreparedTerrainEdit, TerrainEditError> {
         if !valid_position(request.center_m)
-            || !(0.25..=self.config.max_edit_radius_m).contains(&request.radius_m)
+            || !(0.25..=self.config.max_edit_radius_m)
+                .contains(&request.deformation.radius_m())
         {
             return Err(TerrainEditError::Invalid);
         }
@@ -90,7 +132,7 @@ impl TerrainStore {
             self.world,
             request
                 .center_m
-                .map(|v| v - request.radius_m - TERRAIN_CELL_M),
+                .map(|v| v - request.deformation.radius_m() - TERRAIN_CELL_M),
         )
         .ok_or(TerrainEditError::Invalid)?
         .coordinates;
@@ -98,7 +140,7 @@ impl TerrainStore {
             self.world,
             request
                 .center_m
-                .map(|v| v + request.radius_m + TERRAIN_CELL_M),
+                .map(|v| v + request.deformation.radius_m() + TERRAIN_CELL_M),
         )
         .ok_or(TerrainEditError::Invalid)?
         .coordinates;
@@ -270,10 +312,10 @@ impl TerrainStore {
                 .map(|i| (position[i] - request.center_m[i]).powi(2))
                 .sum::<f64>()
                 .sqrt();
-            let cut = request.radius_m - distance;
+            let cut = request.deformation.radius_m() - distance;
             // Keep the material label behind the boundary for surface shading.
-            if distance <= request.radius_m + TERRAIN_CELL_M
-                && request.tool.removes(sample.material)
+            if distance <= request.deformation.radius_m() + TERRAIN_CELL_M
+                && request.deformation.materials().contains(sample.material)
                 && cut > sample.distance_m
             {
                 sample.distance_m = cut;

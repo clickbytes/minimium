@@ -101,6 +101,12 @@ impl ServerRuntime {
         let manifest = owner.manifest;
         let map = owner.map.clone();
         let store = owner.volumes.clone().ok_or(ActionRejection::Busy)?;
+        let query_reach = inventory
+            .tool()
+            .and_then(|tool| self.excavation.state.config.tools.definition(tool))
+            .map_or(self.excavation.state.config.tools.max_reach_m(), |definition| {
+                definition.reach_m()
+            });
         let terrain =
             scene::planet(manifest, inputs.clone()).ok_or(ActionRejection::InvalidIntent)?;
         let base = terrain
@@ -112,7 +118,7 @@ impl ServerRuntime {
             &store,
             &base,
             direction,
-            self.excavation.state.config.tools.reach_m,
+            query_reach,
         );
         let gate = self
             .excavation
@@ -162,11 +168,15 @@ impl ServerRuntime {
             .excavation
             .allocate_id()
             .ok_or(ActionRejection::Capacity)?;
+        let deformation = minimium_terrain::TerrainDeformation::new(
+            action.definition.radius_m(),
+            action.definition.allowed_materials(),
+        )
+        .map_err(|_| ActionRejection::InvalidIntent)?;
         let request = TerrainEditRequest {
             mutation_id: id,
             center_m: action.hit.position_m,
-            radius_m: action.radius_m,
-            tool: action.tool,
+            deformation,
         };
         let water = self
             .excavation

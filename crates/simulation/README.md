@@ -69,11 +69,15 @@ This is a bounded gameplay approximation, not a hydrodynamic impact solver.
 bounds. Character and ray queries visit nearby partitions; edits rebuild only
 changed leaves and a lightweight root. Static map collision remains connected.
 
-`tools::ToolUseGate` prepares bounded tool actions from server-owned inventory
-and a first-obstacle scene port. It enforces material/reach/cooldown rules and one
-pending action, with monotonically ordered IDs and an explicit completion.
-The server runtime supplies current collision hits and profile inventory, then
-finishes the gate after a durable mutation or a typed refusal. The same exact
+`tools::ToolUseGate` prepares bounded tool actions from server-owned inventory,
+application-supplied `ToolDefinition` values and a first-obstacle scene port.
+`ToolProfile` requires one definition for each current `ToolKind` and keeps one
+shared cooldown. The gate selects a definition from confirmed inventory, checks
+its allowed-material set and reach, and allows only one pending action, with
+monotonically ordered IDs and an explicit completion. The server runtime supplies
+current collision hits and the profile, then finishes the gate after a durable
+mutation or a typed refusal. The resulting definition becomes a validated generic
+terrain deformation; terrain does not branch on tool kind. The same exact
 triangle and player-capsule query blocks digging behind an earlier obstacle.
 `CollisionIndex::tool_surface_hit` exposes that read-only nearest-hit query to
 client previews. Callers pass nearby remote-player `ToolRayCapsule` blockers
