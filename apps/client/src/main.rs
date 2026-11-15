@@ -189,6 +189,7 @@ mod console;
 mod renderer;
 
 mod application;
+mod bootstrap;
 mod client_commands;
 mod config;
 mod diagnostics;

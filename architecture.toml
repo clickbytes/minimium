@@ -136,7 +136,7 @@ name = "minimium-client"
 role = "application"
 # Developer tool HUD adapts confirmed inventory/action results and the shared
 # simulation first-hit query; presentation never authorizes terrain mutations.
-responsibility = "Desktop and terminal client application state (shared canonical property catalog, validated typed startup/settings records, active world catalog, one context/ticket-bound staged transfer data record, overview), client shell, input with a shared physical-control catalog for configuration and device events, console and optional bounded audio adapter; renderer presentation and bounded materialization/bolid-history workers; local server composition; consumes client runtime transfer lifecycle/readiness contracts without placing GPU handles in application state."
+responsibility = "Desktop and terminal client application state (shared canonical property catalog, validated typed startup/settings records, active world catalog, one context/ticket-bound staged transfer data record, overview), GPU-independent ClientBootstrap for world/path/profile/schema/auth/cache/resolver/controller composition with explicit host presentation capabilities, client shell, input with a shared physical-control catalog for configuration and device events, console and optional bounded audio adapter; renderer presentation and bounded materialization/bolid-history workers; local server composition; consumes client runtime transfer lifecycle/readiness contracts without placing GPU handles in application state."
 
 [[package]]
 name = "minimium-client-runtime"
