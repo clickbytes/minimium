@@ -71,6 +71,6 @@ pub use sector_neighborhood::{
     planet_sector_neighborhood_with_diagonals, sector_neighborhood, sector_neighborhood_for,
     DUNGEON_SECTOR_EDGE,
 };
-pub use terrain_overlay::TerrainInputs;
+pub use terrain_overlay::{SectorContentVersion, TerrainInputs};
 pub use terrain_seam::ExcavationGeometryError;
 pub use traversal::can_traverse_surface;

@@ -1,5 +1,5 @@
 //! Committed crater height fields; object/remnant state is owned separately.
-use minimium_world::terrain_edits::{length, project, CraterStamp, MAX_TERRAIN_EDITS};
+use minimium_world::terrain_edits::{project, CraterStamp, MAX_TERRAIN_EDITS};
 use std::collections::BTreeMap;
 const CELL_M: f64 = 512.0;
 
@@ -12,32 +12,6 @@ pub struct TerrainSnapshot {
 }
 
 impl TerrainSnapshot {
-    pub fn sector_revision(
-        &self,
-        key: minimium_world::world::SectorKey,
-        span: u16,
-        count: u16,
-    ) -> u64 {
-        if count == 0 {
-            return 0;
-        }
-        let minimium_world::world::SectorKey::Planet(key) = key else {
-            return 0;
-        };
-        let (u, v) = key.coordinates();
-        let scale = minimium_world::world::PLANET_SAMPLE_COORDINATE_SCALE as i64;
-        let coordinate = |p: u16| {
-            (-scale + scale * (2 * i64::from(p) + i64::from(span)) / i64::from(count)) as i32
-        };
-        key.face()
-            .cube_sample(coordinate(u), coordinate(v))
-            .map_or(0, |sample| {
-                self.patch_revision(
-                    sample.coordinates().map(f64::from),
-                    self.radius_m * 4.0 * f64::from(span) / f64::from(count),
-                )
-            })
-    }
     pub fn empty(radius_m: f64) -> Self {
         Self {
             radius_m,
@@ -104,21 +78,6 @@ impl TerrainSnapshot {
             }
         }
         (displacement, exposed)
-    }
-
-    /// Revision of edits intersecting this spherical patch, including its border.
-    pub fn patch_revision(&self, direction: [f64; 3], bound_m: f64) -> u64 {
-        let p = project(direction, self.radius_m);
-        self.candidates(p, bound_m)
-            .into_iter()
-            .map(|i| &self.edits[i])
-            .filter(|e| {
-                let c = project(e.center, self.radius_m);
-                length(std::array::from_fn(|i| p[i] - c[i])) <= bound_m + e.radius_m * 2.0
-            })
-            .fold(0, |revision, edit| {
-                revision ^ edit.id.wrapping_mul(0x9e3779b97f4a7c15)
-            })
     }
 
     fn candidates(&self, center: [f64; 3], bound: f64) -> Vec<usize> {

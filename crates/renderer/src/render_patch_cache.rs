@@ -1,27 +1,43 @@
-//! Bounded CPU geometry cache; caller resets it for a different world/version.
-use minimium_procgen::SectorGeometry;
-use minimium_world::world::SectorKey;
+//! Bounded CPU geometry cache scoped to one world instance and manifest.
+use minimium_procgen::{SectorContentVersion, SectorGeometry};
+use minimium_world::world::{SectorKey, WorldInstanceId, WorldManifest};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
 #[derive(Default)]
 pub struct RenderPatchCache {
-    revisions: HashMap<(SectorKey, u8), u64>,
-    entries: HashMap<(SectorKey, u8), (u64, Arc<SectorGeometry>)>,
-    base_entries: HashMap<(SectorKey, u8), (u64, u64, Arc<SectorGeometry>)>,
+    context: Option<(WorldInstanceId, WorldManifest)>,
+    revisions: HashMap<(SectorKey, u8), SectorContentVersion>,
+    entries: HashMap<(SectorKey, u8), (SectorContentVersion, Arc<SectorGeometry>)>,
+    base_entries: HashMap<(SectorKey, u8), (SectorContentVersion, u64, Arc<SectorGeometry>)>,
     tick: u64,
     pub refined: HashSet<(minimium_world::world::PlanetFace, u16, u16, u16)>,
     pub(crate) coasts: crate::coast_probe::CoastProbeCache,
 }
 impl RenderPatchCache {
+    /// Bind cached geometry to a world instance and its immutable manifest.
+    /// Reusing a cache for another context drops every context-derived entry.
+    pub fn set_context(&mut self, world: WorldInstanceId, manifest: WorldManifest) {
+        if self.context == Some((world, manifest)) {
+            return;
+        }
+        self.context = Some((world, manifest));
+        self.revisions.clear();
+        self.entries.clear();
+        self.base_entries.clear();
+        self.refined.clear();
+        self.coasts = Default::default();
+        self.tick = 0;
+    }
+
     /// Bounded cache for the unmodified LOD meshes used to construct exact
     /// excavation contours before final meshes replace their chunk domains.
     pub fn get_base_revision(
         &mut self,
         key: SectorKey,
         lod: u8,
-        revision: u64,
+        revision: SectorContentVersion,
         build: impl FnOnce() -> SectorGeometry,
     ) -> Arc<SectorGeometry> {
         self.tick = self.tick.wrapping_add(1);
@@ -63,7 +79,7 @@ impl RenderPatchCache {
         &mut self,
         key: SectorKey,
         lod: u8,
-        revision: u64,
+        revision: SectorContentVersion,
         build: impl FnOnce() -> SectorGeometry,
     ) -> Arc<SectorGeometry> {
         if self.revisions.get(&(key, lod)) != Some(&revision) {
@@ -79,7 +95,7 @@ impl RenderPatchCache {
         &mut self,
         key: SectorKey,
         lod: u8,
-        revision: u64,
+        revision: SectorContentVersion,
         build: impl FnOnce() -> Result<SectorGeometry, E>,
     ) -> Result<Arc<SectorGeometry>, E> {
         self.tick = self.tick.wrapping_add(1);

@@ -4,6 +4,15 @@ use minimium_terrain::{TerrainSnapshot, TerrainStore};
 use minimium_world::{remnants::RemnantSnapshot, world::SectorKey};
 use std::sync::Arc;
 
+/// Independent monotone revisions for the mutable terrain inputs that affect
+/// generated sector and render geometry.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
+pub struct SectorContentVersion {
+    pub edits: u64,
+    pub remnants: u64,
+    pub volume: u64,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct TerrainInputs {
     pub geography: Option<Arc<dyn PreparedGeography>>,
@@ -22,24 +31,18 @@ impl From<Option<Arc<dyn PreparedGeography>>> for TerrainInputs {
 }
 
 impl TerrainInputs {
-    pub fn revision(&self) -> (u64, u64, u64) {
-        (
-            self.edits.as_ref().map_or(0, |t| t.revision()),
-            self.remnants.as_ref().map_or(0, |r| r.revision()),
-            self.volumes.as_ref().map_or(0, |v| v.last_mutation()),
-        )
+    pub fn revision(&self) -> SectorContentVersion {
+        SectorContentVersion {
+            edits: self.edits.as_ref().map_or(0, |t| t.revision()),
+            remnants: self.remnants.as_ref().map_or(0, |r| r.revision()),
+            volume: self.volumes.as_ref().map_or(0, |v| v.last_mutation()),
+        }
     }
 
-    pub fn sector_revision(&self, key: SectorKey, span: u16, count: u16) -> u64 {
-        let edits = self
-            .edits
-            .as_ref()
-            .map_or(0, |t| t.sector_revision(key, span, count));
-        let remnants = self
-            .remnants
-            .as_ref()
-            .map_or(0, |r| r.sector_revision(key, span, count));
-        edits ^ remnants ^ self.volume_sector_revision(key, span, count)
+    /// Returns a conservative sector invalidation version. Each source is
+    /// globally monotone, so unrelated changes may invalidate this sector.
+    pub fn sector_version(&self, _key: SectorKey, _span: u16, _count: u16) -> SectorContentVersion {
+        self.revision()
     }
 
     /// Active chunks whose projected footprints and one-sector halo overlap
@@ -58,21 +61,5 @@ impl TerrainInputs {
         }
         let (u, v) = sector.coordinates();
         crate::volume_chunk_keys_near_region(store, sector.face(), u, v, span.max(1), count)
-    }
-
-    fn volume_sector_revision(&self, key: SectorKey, span: u16, count: u16) -> u64 {
-        let Some(store) = &self.volumes else {
-            return 0;
-        };
-        let mut revision = 0;
-        for key in self.volume_chunks_near_sector(key, span, count) {
-            if let Some(chunk) = store.chunk(key) {
-                let key_hash = key.coordinates.iter().fold(0x9e3779b97f4a7c15_u64, |h, c| {
-                    h.rotate_left(13) ^ (*c as u64).wrapping_mul(0xbf58476d1ce4e5b9)
-                });
-                revision ^= key_hash ^ chunk.revision().0.rotate_left(29);
-            }
-        }
-        revision
     }
 }

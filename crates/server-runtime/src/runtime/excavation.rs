@@ -50,7 +50,7 @@ struct Preparation {
     action_id: Option<u64>,
     world: WorldInstanceId,
     impact_bodies: Vec<minimium_world::impact::BodyState>,
-    input_revision: (u64, u64, u64),
+    input_revision: minimium_procgen::SectorContentVersion,
     receiver: Receiver<Result<Prepared, PreparationError>>,
     started: Instant,
 }

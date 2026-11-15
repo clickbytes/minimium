@@ -53,7 +53,10 @@ position, lifetime, fragmentation and flight/landed/collected phase. `follows`
 rejects identity changes, phase regression and changes to committed craters.
 `minimium_terrain::TerrainSnapshot` now owns the indexed crater field. World
 retains neutral crater stamp values and the independent `RemnantSnapshot` object
-view. Removing a remnant does not mutate terrain or advance its revision.
+view. `RemnantSnapshot` advances its independent monotone revision on insert,
+update and removal; terrain and remnant revisions remain separate inputs to
+procgen's `SectorContentVersion`. Removing a remnant does not mutate terrain or
+advance its revision.
 `terrain`, `items` and `fluid` define world-space query, inventory/action and water
 observation contracts; they contain no storage or solver implementation.
 Tool outcomes distinguish a blocking first hit (`Obstructed`) from a rejected

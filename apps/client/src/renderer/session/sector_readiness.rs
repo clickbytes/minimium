@@ -108,7 +108,9 @@ impl Renderer {
                     self.application
                         .connection
                         .session()
-                        .map_or((0, 0, 0), |s| s.terrain_inputs().revision()),
+                        .map_or(minimium_procgen::SectorContentVersion::default(), |s| {
+                            s.terrain_inputs().revision()
+                        }),
                 )
             });
             if self.impacts.published_terrain != current {

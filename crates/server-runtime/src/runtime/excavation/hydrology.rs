@@ -1,7 +1,7 @@
 use super::*;
 
 pub(super) struct WaterJob {
-    input_revision: (u64, u64, u64),
+    input_revision: minimium_procgen::SectorContentVersion,
     water_revision: u64,
     receiver: Receiver<Result<(water::WaterWorld, Duration), minimium_fluids::FluidError>>,
 }

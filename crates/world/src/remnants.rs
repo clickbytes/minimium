@@ -2,7 +2,6 @@
 use crate::{
     impact::BodyState,
     terrain_edits::{length, project},
-    world::SectorKey,
 };
 use std::collections::BTreeMap;
 
@@ -63,32 +62,5 @@ impl RemnantSnapshot {
             let p = project(body.position, self.radius_m);
             length(std::array::from_fn(|i| p[i] - center[i])) <= bound + body.crater_radius_m * 2.0
         })
-    }
-
-    pub fn patch_revision(&self, direction: [f64; 3], bound: f64) -> u64 {
-        self.nearby(direction, bound)
-            .fold(0, |revision, body| revision ^ body.id.rotate_left(23))
-    }
-
-    pub fn sector_revision(&self, key: SectorKey, span: u16, count: u16) -> u64 {
-        if count == 0 {
-            return 0;
-        }
-        let SectorKey::Planet(key) = key else {
-            return 0;
-        };
-        let (u, v) = key.coordinates();
-        let scale = crate::world::PLANET_SAMPLE_COORDINATE_SCALE as i64;
-        let coordinate = |p: u16| {
-            (-scale + scale * (2 * i64::from(p) + i64::from(span)) / i64::from(count)) as i32
-        };
-        key.face()
-            .cube_sample(coordinate(u), coordinate(v))
-            .map_or(0, |sample| {
-                self.patch_revision(
-                    sample.coordinates().map(f64::from),
-                    self.radius_m * 4.0 * f64::from(span) / f64::from(count),
-                )
-            })
     }
 }

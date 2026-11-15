@@ -267,7 +267,6 @@ impl ServerRuntime {
                     return;
                 }
             }
-            let count = minimium_procgen::planet_sector_count(manifest);
             let mut after = before.clone();
             after.volumes = Some(terrain.clone());
             after.remnants = self
@@ -280,7 +279,7 @@ impl ServerRuntime {
             }
             self.game.sectors.invalidate_where(mutation.world, |key| {
                 !pending.prepared.sectors.contains_key(&key)
-                    && before.sector_revision(key, 1, count) != after.sector_revision(key, 1, count)
+                    && before.revision() != after.revision()
             });
             let tickets: HashSet<_> = self
                 .game

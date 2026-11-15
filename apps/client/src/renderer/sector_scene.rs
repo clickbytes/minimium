@@ -181,11 +181,11 @@ impl ClientSectorCache {
         {
             let terrain = &geography;
             let old = self.terrain_inputs.get(&instance);
-            if old.map_or((0, 0, 0), |t| t.revision()) != terrain.revision() {
+            if old.map_or(Default::default(), |t| t.revision()) != terrain.revision() {
                 let count = minimium_procgen::planet_sector_count(manifest);
                 self.manager.invalidate_where(instance, |key| {
-                    old.map_or(0, |t| t.sector_revision(key, 1, count))
-                        != terrain.sector_revision(key, 1, count)
+                    old.map_or(Default::default(), |t| t.sector_version(key, 1, count))
+                        != terrain.sector_version(key, 1, count)
                 });
                 self.terrain_inputs
                     .insert(instance, Arc::new(terrain.clone()));

@@ -8,6 +8,7 @@ use std::sync::Arc;
 const MAX_VISIBLE_SECTORS: usize = 512;
 
 pub fn render_patches_for_view(
+    world: minimium_world::world::WorldInstanceId,
     manifest: WorldManifest,
     view: crate::terrain_view::TerrainView,
     collision: &[(SectorKey, Arc<SectorGeometry>)],
@@ -15,6 +16,7 @@ pub fn render_patches_for_view(
     cache: &mut crate::render_patch_cache::RenderPatchCache,
     cancelled: &dyn Fn() -> bool,
 ) -> Result<Vec<(SectorKey, u8, Arc<SectorGeometry>)>, minimium_procgen::ExcavationGeometryError> {
+    cache.set_context(world, manifest);
     let position = view.position;
     if manifest.planet().is_some() {
         return dense_render_patches(manifest, view, collision, geography, cache, cancelled);
@@ -104,7 +106,7 @@ pub fn render_patches_for_view(
                 Ok(geometry)
             })?
         } else {
-            let revision = terrain.inputs().sector_revision(sector, 1, count);
+            let revision = terrain.inputs().sector_version(sector, 1, count);
             cache.get_revision_result(sector, region.lod, revision, || {
                 Ok(
                     minimium_procgen::generate_planet_render_patch_with_geography(
@@ -332,7 +334,7 @@ fn dense_render_patches(
                 Ok(geometry)
             })?
         } else {
-            let revision = terrain.inputs().sector_revision(key, region.span, count);
+            let revision = terrain.inputs().sector_version(key, region.span, count);
             cache.get_revision_result(key, region.lod, revision, || {
                 Ok(
                     minimium_procgen::generate_planet_render_block_with_geography(

@@ -92,8 +92,10 @@ materialized map before publishing or installing that content.
 ## Committed terrain overlays
 
 `TerrainInputs` explicitly carries geography, terrain edits, remnant objects and
-an optional immutable volume store. Its revision tuple carries each source
-separately; sector revision includes only nearby loaded volume chunks.
+an optional immutable volume store. `SectorContentVersion` carries separate
+monotone revisions for edits, remnants and volume mutations. Sector cache
+invalidation uses this complete global version, so an unrelated source mutation
+may rebuild more sectors but simultaneous changes cannot cancel each other.
 `PreparedGeography` no longer exposes terrain state.
 Height, normals, exposed rock/soil coverage, collision, render patches, teleport
 ground queries and remnant placement sample that same overlay. The base geography

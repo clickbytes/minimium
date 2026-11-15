@@ -27,7 +27,7 @@ struct Burst {
 }
 #[derive(Default)]
 pub(super) struct TrackedImpacts {
-    pub(super) published_terrain: Option<(WorldContext, (u64, u64, u64))>,
+    pub(super) published_terrain: Option<(WorldContext, minimium_procgen::SectorContentVersion)>,
     pub(super) published_craters: HashSet<u64>,
     context: Option<WorldContext>,
     tracks: BTreeMap<u64, Track>,
