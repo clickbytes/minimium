@@ -22,7 +22,9 @@ Camera and tool-preview rays use the shared world `CharacterGeometry` eye and
 radial frame. Remote body meshes and shadow casters are generated from its
 0.6×1.7×0.6 m local body box, oriented by the same frame used by simulation
 hitscan. The FixedY geometry remains axis-aligned; radial characters rotate with
-their local up direction.
+their local up direction. At +Y, the existing radial frame is right +Z, up +Y,
+forward +X; because both horizontal body dimensions are 0.6 m, its spatial box
+matches the previous axis-aligned +Y bounds while preserving that frame.
 
 ## Dependencies
 

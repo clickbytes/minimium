@@ -3,7 +3,8 @@ use crate::messages::ClientText as Text;
 
 mod character;
 pub(super) use character::{
-    camera_direction, camera_direction_from_geometry, gravity_for_manifest,
+    camera_direction, camera_direction_from_geometry, fallback_character_frame,
+    gravity_for_manifest,
 };
 
 impl Renderer {
@@ -206,17 +207,18 @@ impl Renderer {
                     |position| position.0.map(|value| value as f64 / 1000.0),
                 );
             let geometry = CharacterGeometry::new(feet_m, character.gravity);
-            let fallback_frame = character_frame(character.gravity, character.position);
             let frame = geometry
                 .map(|geometry| geometry.frame())
-                .unwrap_or_else(|| minimium_world::world::CharacterFrame {
-                    up: fallback_frame.0.map(f64::from),
-                    right: fallback_frame.1.map(f64::from),
-                    forward: fallback_frame.2.map(f64::from),
-                });
+                .unwrap_or_else(|| fallback_character_frame(character));
             let up = glam::Vec3::from_array(frame.up.map(|value| value as f32));
-            let direction =
-                camera_direction_from_frame(frame, self.input.yaw, self.input.pitch).normalize();
+            let direction = geometry
+                .map_or_else(
+                    || camera_direction(character, self.input.yaw, self.input.pitch),
+                    |geometry| {
+                        camera_direction_from_geometry(geometry, self.input.yaw, self.input.pitch)
+                    },
+                )
+                .normalize();
             let eye_world = geometry.map_or_else(
                 || {
                     std::array::from_fn(|axis| {

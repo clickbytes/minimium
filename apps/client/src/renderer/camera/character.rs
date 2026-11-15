@@ -1,17 +1,21 @@
 use super::super::*;
 
 pub(super) fn camera_direction(character: CharacterState, yaw: f32, pitch: f32) -> glam::Vec3 {
-    let frame = CharacterGeometry::new(character.position.map(f64::from), character.gravity)
-        .map(|geometry| geometry.frame())
-        .unwrap_or_else(|| {
-            let (up, right, forward) = character_frame(character.gravity, character.position);
-            minimium_world::world::CharacterFrame {
-                up: up.map(f64::from),
-                right: right.map(f64::from),
-                forward: forward.map(f64::from),
-            }
-        });
-    camera_direction_from_frame(frame, yaw, pitch)
+    CharacterGeometry::new(character.position.map(f64::from), character.gravity)
+        .map_or(glam::Vec3::ZERO, |geometry| {
+            camera_direction_from_geometry(geometry, yaw, pitch)
+        })
+}
+
+pub(super) fn fallback_character_frame(
+    character: CharacterState,
+) -> minimium_world::world::CharacterFrame {
+    let (up, right, forward) = character_frame(character.gravity, character.position);
+    minimium_world::world::CharacterFrame {
+        up: up.map(f64::from),
+        right: right.map(f64::from),
+        forward: forward.map(f64::from),
+    }
 }
 
 pub(super) fn camera_direction_from_geometry(

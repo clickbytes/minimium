@@ -87,8 +87,13 @@ fn append_character_mesh(
 ) {
     let first = output.len();
     let size = geometry.body_size_m();
-    let normal_sign = geometry.frame_handedness();
+    let reflected = geometry.frame_handedness() < 0.0;
     cube(output, [0.0, geometry.height_m() * 0.5, 0.0], size, color);
+    if reflected {
+        for triangle in output[first..].chunks_exact_mut(3) {
+            triangle.swap(1, 2);
+        }
+    }
     for vertex in &mut output[first..] {
         let world = geometry.local_to_world_point(vertex.position.map(f64::from));
         vertex.position =
@@ -96,7 +101,7 @@ fn append_character_mesh(
         let normal = geometry.local_to_world_direction(vertex.normal.map(f64::from));
         let length = normal.iter().map(|value| value * value).sum::<f64>().sqrt();
         if length.is_finite() && length > 1.0e-9 {
-            vertex.normal = normal.map(|value| (value / length * normal_sign) as f32);
+            vertex.normal = normal.map(|value| (value / length) as f32);
         }
     }
 }

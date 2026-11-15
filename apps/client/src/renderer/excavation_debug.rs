@@ -149,9 +149,10 @@ impl Renderer {
             });
         let geometry = CharacterGeometry::new(feet, character.gravity)?;
         let eye = geometry.eye_position_m();
-        let direction = camera::camera_direction(character, self.input.yaw, self.input.pitch)
-            .as_dvec3()
-            .to_array();
+        let direction =
+            camera::camera_direction_from_geometry(geometry, self.input.yaw, self.input.pitch)
+                .as_dvec3()
+                .to_array();
         let blockers = gameplay
             .reconciliation
             .tracks()

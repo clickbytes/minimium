@@ -17,7 +17,10 @@ pub struct CharacterGeometry {
 
 impl CharacterGeometry {
     /// Builds the shared character geometry from world-space feet and gravity.
-    /// Invalid or f32-unrepresentable positions have no usable character frame.
+    /// Invalid positions or radial centers have no usable character frame. A
+    /// character exactly at its radial center uses the existing +Y fallback;
+    /// otherwise radial gravity uses the normalized world-to-center direction
+    /// and the same stable tangent basis as `character_frame`.
     pub fn new(feet_m: [f64; 3], gravity: CharacterGravity) -> Option<Self> {
         if !feet_m
             .iter()
@@ -25,7 +28,33 @@ impl CharacterGeometry {
         {
             return None;
         }
-        let (up, right, forward) = character_frame(gravity, feet_m.map(|value| value as f32));
+        let position = feet_m.map(|value| value as f32);
+        if let CharacterGravity::Radial { center } = gravity {
+            if !center.iter().all(|value| value.is_finite()) {
+                return None;
+            }
+            let radial = std::array::from_fn::<_, 3, _>(|axis| position[axis] - center[axis]);
+            if !radial.iter().all(|value| value.is_finite())
+                || !radial
+                    .iter()
+                    .map(|value| value * value)
+                    .sum::<f32>()
+                    .is_finite()
+            {
+                return None;
+            }
+        }
+        let (up, right, forward) = character_frame(gravity, position);
+        let basis = [up, right, forward];
+        if basis.iter().any(|axis| {
+            !axis.iter().all(|value| value.is_finite())
+                || (axis.iter().map(|value| value * value).sum::<f32>() - 1.0).abs() > 1.0e-4
+        }) || dot_f32(up, right).abs() > 1.0e-4
+            || dot_f32(up, forward).abs() > 1.0e-4
+            || dot_f32(right, forward).abs() > 1.0e-4
+        {
+            return None;
+        }
         Some(Self {
             feet_m,
             frame: CharacterFrame {
@@ -56,7 +85,7 @@ impl CharacterGeometry {
         PLAYER_EYE_HEIGHT
     }
 
-    /// Orientation sign for transforming local mesh normals without changing winding.
+    /// Sign of the local-frame determinant; radial frames may reflect the FixedY basis.
     pub fn frame_handedness(self) -> f64 {
         let right_cross_up = cross(self.frame.right, self.frame.up);
         dot(right_cross_up, self.frame.forward).signum()
@@ -117,6 +146,10 @@ impl CharacterGeometry {
 }
 
 fn dot(left: [f64; 3], right: [f64; 3]) -> f64 {
+    (0..3).map(|axis| left[axis] * right[axis]).sum()
+}
+
+fn dot_f32(left: [f32; 3], right: [f32; 3]) -> f32 {
     (0..3).map(|axis| left[axis] * right[axis]).sum()
 }
 
