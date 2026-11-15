@@ -164,17 +164,26 @@ impl ClientSectorCache {
         {
             let terrain = &geography;
             let old = self.terrain_inputs.get(&instance);
-            if old.is_none_or(|previous| previous.revision() != terrain.revision()) {
+            let changed_geometry_source = old.is_some_and(|previous| {
+                previous.geography.is_some() != terrain.geography.is_some()
+            });
+            let changed = old.is_none_or(|previous| {
+                previous.revision() != terrain.revision() || changed_geometry_source
+            });
+            if changed {
                 let count = minimium_procgen::planet_sector_count(manifest);
-                self.manager.invalidate_where(instance, |key| {
-                    old.map_or(Default::default(), |t| t.sector_version(key, 1, count))
-                        != terrain.sector_version(key, 1, count)
-                });
-                self.terrain_inputs
-                    .insert(instance, Arc::new(terrain.clone()));
+                if let Some(previous) = old {
+                    self.manager.invalidate_where(instance, |key| {
+                        changed_geometry_source
+                            || previous.sector_version(key, 1, count)
+                                != terrain.sector_version(key, 1, count)
+                    });
+                }
                 self.presentations
                     .retain(|scene_owner, _| scene_owner.instance() != instance);
             }
+            self.terrain_inputs
+                .insert(instance, Arc::new(terrain.clone()));
         }
         let world_matches = map_override
             .filter(|_| owner.instance() == instance)
@@ -468,6 +477,9 @@ impl ClientSectorCache {
                     *current_manifest == manifest && current.fingerprint() == fingerprint
                 });
         if !unchanged {
+            self.manager.invalidate_where(instance, |_| true);
+            self.presentations
+                .retain(|owner, _| owner.instance() != instance);
             self.world_sources
                 .insert(instance, (Arc::new(map.clone()), manifest));
         }

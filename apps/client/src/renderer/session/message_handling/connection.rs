@@ -25,6 +25,7 @@ impl Renderer {
             self.fail_connection("server generation manifest is not supported");
             return;
         };
+        let bootstrap_instance = self.application.game.current_instance;
         if !self.install_world(
             super::super::super::sector_scene::SceneInterestOwner::Active(context),
             context,
@@ -34,6 +35,12 @@ impl Renderer {
         ) {
             self.fail_connection("saved world instance is not available on this client");
             return;
+        }
+        self.sector_cache.release_interest(
+            super::super::super::sector_scene::SceneInterestOwner::Bootstrap(bootstrap_instance),
+        );
+        if bootstrap_instance != context.instance() {
+            self.release_world_sectors(bootstrap_instance);
         }
         self.application
             .commit_world_content(context.instance(), manifest, (*map).clone());

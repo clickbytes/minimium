@@ -189,6 +189,14 @@ impl Renderer {
         self.bolids.clear();
         self.diagnostic_bolid_age = None;
         self.clear_pending_sector_transitions();
+        self.sector_cache
+            .release_interest(super::sector_scene::SceneInterestOwner::Bootstrap(
+                self.application.game.current_instance,
+            ));
+        if let Some(context) = self.application.game.session_context() {
+            self.sector_cache
+                .release_interest(super::sector_scene::SceneInterestOwner::Active(context));
+        }
         if self.application.settings.require_earth {
             self.gpu.scene_visible = false;
             if !self.application.status.is_error() {

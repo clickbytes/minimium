@@ -230,12 +230,7 @@ impl Renderer {
 
     pub(in crate::renderer) fn clear_pending_sector_transitions(&mut self) {
         for pending in self.application.clear_transitions() {
-            self.sector_cache.release_interest(
-                super::super::sector_scene::SceneInterestOwner::Pending(
-                    pending.transition_id,
-                    pending.context,
-                ),
-            );
+            self.release_prepared_target(pending.transition_id, pending.context);
         }
     }
 
