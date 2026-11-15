@@ -48,10 +48,6 @@ impl ResolvedTerrainMaterialProfile {
         self.manifest
     }
 
-    pub const fn map_fingerprint(self) -> u64 {
-        self.map_fingerprint
-    }
-
     pub fn matches(self, manifest: WorldManifest, map_fingerprint: u64) -> bool {
         self.manifest == manifest && self.map_fingerprint == map_fingerprint
     }
