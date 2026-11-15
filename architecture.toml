@@ -34,7 +34,7 @@ forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-p
 [[package]]
 name = "minimium-environment"
 role = "engine-domain"
-responsibility = "World clock and environment values, renderer-independent sky observations, solar-system catalogue, seasonal/regional climate scenarios, physical elevation scaling, lightweight climate evaluation, independent relief influence on climate and shared site-based replayable surface state. Weather propagates the host terrain port's associated error through climate, cover and cloud preparation."
+responsibility = "World clock and environment values, renderer-independent sky observations, solar-system catalogue, seasonal/regional climate scenarios, physical elevation scaling, lightweight climate evaluation, independent relief influence on climate and shared site-based replayable surface state. WeatherModel owns private source values, derived scales and cloud cache, with validated atomic scenario reconfiguration. Weather propagates the host terrain port's associated error through climate, cover and cloud preparation."
 forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-platform", "minimium-assets", "minimium-procgen", "minimium-sectors", "minimium-telemetry", "minimium-renderer", "minimium-game-sample"]
 
 [[package]]

@@ -149,7 +149,7 @@ impl CloudWorker {
                     }
                     if model
                         .as_ref()
-                        .is_none_or(|m| m.manifest != request.stamp.manifest)
+                        .is_none_or(|m| m.manifest() != request.stamp.manifest)
                     {
                         model = match create_weather_model(
                             request.stamp.manifest,
@@ -261,7 +261,7 @@ impl CloudWorker {
                         build_ms: started.elapsed().as_secs_f64() * 1000.0,
                     };
                     if publication.request.sort {
-                        sort(&mut publication, model.radius);
+                        sort(&mut publication, model.radius_m());
                     }
                     publication.build_ms = started.elapsed().as_secs_f64() * 1000.0;
                     let mut state = shared.0.lock().unwrap();

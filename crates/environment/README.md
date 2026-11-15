@@ -39,6 +39,13 @@ World manifest and observer inputs produce validated observations, catalog looku
 
 Clock values and weather models are deterministic; callers provide monotonic/system samples and a terrain adapter explicitly. The client owns astronomy calculators, GPU resources and worker lifetimes.
 
+`WeatherModel` keeps its manifest, radius, seasonal profile, derived scales and
+cloud cache private. Construction fixes these source values together; external
+consumers read only `manifest()` and `radius_m()`. Changing worlds constructs a
+new model. The used `set_scenario` operation validates first and clears cached
+clouds only when the accepted scenario changes; invalid or identical scenarios
+leave the current cache intact. There are no independent source-field setters.
+
 ## Invariants and errors
 
 Preserve coordinate conventions, catalogue bounds, model revisions and explicit invalid-observer errors.
