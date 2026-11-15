@@ -25,8 +25,8 @@ fn spawned_component_entity_uses_the_budgeted_entity_effect_path() {
         })
         .unwrap();
     let sector = SectorKey::planet(PlanetFace::PositiveY, 3, 4).unwrap();
-    owner
-        .apply_entity_effect_batch(
+    let staged = owner
+        .stage_entity_effect_batch(
             &[crate::modules::WorldEffect::SpawnEntity {
                 world: instance,
                 sector,
@@ -36,10 +36,11 @@ fn spawned_component_entity_uses_the_budgeted_entity_effect_path() {
                     bytes: vec![1, 2, 3],
                 }],
             }],
-            &mut budget,
             &components,
         )
         .unwrap();
+    let reservation = budget.prepare_entity_changes(staged.changes()).unwrap();
+    staged.commit(reservation);
     let entity = owner.get(instance).unwrap().entities.iter().next().unwrap();
     assert_eq!(
         owner

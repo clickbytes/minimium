@@ -1,6 +1,7 @@
 use super::ids::{ComponentTypeId, EntityId};
 use super::registry::ComponentError;
 use super::store::ComponentBlob;
+use crate::world::WorldInstanceId;
 use std::collections::BTreeMap;
 
 /// Maximum encoded change history retained for replication clients.
@@ -12,6 +13,13 @@ pub enum ComponentMutation {
     Upsert(EntityId, ComponentTypeId, ComponentBlob),
     RemoveComponent(EntityId, ComponentTypeId),
     Despawn(EntityId),
+}
+
+/// An ordered, world-scoped entity-store mutation for persistence adapters.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WorldEntityChange {
+    pub world: WorldInstanceId,
+    pub mutation: ComponentMutation,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

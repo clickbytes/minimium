@@ -22,7 +22,7 @@ forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-p
 [[package]]
 name = "minimium-world"
 role = "engine-domain"
-responsibility = "World definitions, topologies, addressing, static geometry, maps, bounded monotone peak-relief definitions, and world-scoped entity/component contracts with exact schemas, required descriptor payload validation and bounded change tracking. Also owns neutral terrain/spatial/tool/water contracts, bounded impact-body components and their owner-side ServerOnly registration, crater stamp values and independent remnant snapshots."
+responsibility = "World definitions, topologies, addressing, static geometry, maps, bounded monotone peak-relief definitions, and world-scoped entity/component contracts with exact schemas, required descriptor payload validation, ordered world-scoped entity changes and bounded change tracking. Also owns neutral terrain/spatial/tool/water contracts, bounded impact-body components and their owner-side ServerOnly registration, crater stamp values and independent remnant snapshots."
 forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-platform", "minimium-assets", "minimium-procgen", "minimium-sectors", "minimium-telemetry", "minimium-commands", "minimium-environment", "minimium-simulation", "minimium-renderer", "minimium-game-sample"]
 
 [[package]]
@@ -81,7 +81,7 @@ forbidden_dependencies = ["minimium-world", "minimium-environment", "minimium-pr
 [[package]]
 name = "minimium-storage"
 role = "adapter"
-responsibility = "Version-11 save format, exact streaming/counting encoders, bounded aggregate component payloads and world metadata, keyed snapshot reservations, immutable revisioned SaveSnapshot values, PlayerStore and bounded persistence worker, emitting storage-domain diagnostics through the neutral contract. Owns bounded flight checkpoints and the excavation result journal with coherent fluid checkpoints, independent crater stamps, impact-body results, catalog integrity, durable acknowledgements, replay and compaction."
+responsibility = "Version-11 save format, exact streaming/counting encoders, bounded aggregate component payloads and world metadata, keyed snapshot reservations and lifetime-bound prepared reservations for ordered entity changes, immutable revisioned SaveSnapshot values, PlayerStore and bounded persistence worker, emitting storage-domain diagnostics through the neutral contract. Owns bounded flight checkpoints and the excavation result journal with coherent fluid checkpoints, independent crater stamps, impact-body results, catalog integrity, durable acknowledgements, replay and compaction."
 forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-procgen", "minimium-sectors", "minimium-server", "minimium-client"]
 
 [[package]]
@@ -128,7 +128,7 @@ forbidden_dependencies = ["minimium-astronomy", "wgpu", "wgpu-core", "wgpu-hal",
 [[package]]
 name = "minimium-server-runtime"
 role = "runtime"
-responsibility = "Authoritative server lifecycle, nonblocking pluggable authentication admission, server-enforced principal permissions, simulation, transport and persistence, consuming neutral world/combat inputs and fixed-domain diagnostics from the application. Composes the engine impact component before application module schemas. Owns authoritative impacts and excavation: shared-pool preparation, profile inventories, fluid stepping and checkpoints, durable atomic terrain/collision publication and spatial replication."
+responsibility = "Authoritative server lifecycle, nonblocking pluggable authentication admission, server-enforced principal permissions, simulation, transport and persistence, consuming neutral world/combat inputs and fixed-domain diagnostics from the application. Composes the engine impact component before application module schemas and atomically commits staged world entity stores with prepared storage reservations. Owns authoritative impacts and excavation: shared-pool preparation, profile inventories, fluid stepping and checkpoints, durable atomic terrain/collision publication and spatial replication."
 forbidden_dependencies = ["minimium-game-sample", "minimium-astronomy", "wgpu", "wgpu-core", "wgpu-hal", "winit"]
 
 [[package]]

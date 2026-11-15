@@ -10,7 +10,7 @@ mod ids;
 mod registry;
 mod store;
 
-pub use changes::{ComponentChange, ComponentMutation};
+pub use changes::{ComponentChange, ComponentMutation, WorldEntityChange};
 pub use ids::{ComponentTypeId, EntityId, SchemaVersion};
 pub use registry::{
     ComponentDescriptor, ComponentError, ComponentRegistry, ReplicationPolicy,

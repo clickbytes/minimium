@@ -328,18 +328,25 @@ impl ServerRuntime {
                 minimium_procgen::planet_sector_count(owner.manifest),
             ),
         );
-        self.game
+        let staged = self
+            .game
             .worlds
-            .apply_entity_effect_batch(
+            .stage_entity_effect_batch(
                 &[crate::modules::WorldEffect::SpawnEntity {
                     world,
                     sector,
                     components: Vec::new(),
                 }],
-                self.operations.player_store.snapshot_budget_mut(),
                 &self.component_registry,
             )
             .map_err(|e| io::Error::other(format!("impact allocation: {e:?}")))?;
+        let reservation = self
+            .operations
+            .player_store
+            .snapshot_budget_mut()
+            .prepare_entity_changes(staged.changes())
+            .map_err(|_| io::Error::other("impact allocation: SnapshotBudgetExceeded"))?;
+        staged.commit(reservation);
         Ok(id)
     }
 
