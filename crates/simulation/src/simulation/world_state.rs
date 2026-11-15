@@ -15,7 +15,9 @@ use super::{
 };
 use minimium_core::ids::PlayerId;
 use minimium_world::world::geometry::{intersects_player, oriented_capsule_intersects};
-use minimium_world::world::{cell_for, character_frame, Cell, CharacterGravity, Position3Mm};
+use minimium_world::world::{
+    cell_for, character_frame, Cell, CharacterGeometry, CharacterGravity, Position3Mm,
+};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -424,6 +426,15 @@ impl World {
 
     pub fn gravity(&self) -> CharacterGravity {
         self.gravity
+    }
+
+    pub fn character_geometry(&self, entity: PlayerId) -> Option<CharacterGeometry> {
+        let player = self.players.get(&entity)?;
+        let feet_m = player.position_mm.map_or_else(
+            || player.position.map(f64::from),
+            |position| position.0.map(|value| value as f64 / 1000.0),
+        );
+        CharacterGeometry::new(feet_m, self.gravity)
     }
 
     fn reset_collision_queries(&mut self) {

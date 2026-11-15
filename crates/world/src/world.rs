@@ -1,9 +1,11 @@
 pub const CELL_SIZE: f32 = 32.0;
 pub const PLAYER_RADIUS: f32 = 0.3;
 pub const PLAYER_HEIGHT: f32 = 1.7;
+pub const PLAYER_EYE_HEIGHT: f32 = 1.6;
 pub const COLLISION_EPSILON: f32 = 0.0001;
 
 mod addressing;
+mod character_geometry;
 mod dungeon;
 pub mod geometry;
 mod gravity_policy;
@@ -18,6 +20,7 @@ pub use addressing::{
     PLANET_COLLISION_CELLS_PER_FACE, PLANET_DENSE_SECTORS_PER_FACE, PLANET_SAMPLE_COORDINATE_SCALE,
     PLANET_SECTORS_PER_FACE,
 };
+pub use character_geometry::{CharacterFrame, CharacterGeometry};
 pub use dungeon::{DungeonBlueprint, DungeonRoom, DungeonTile};
 pub use geometry::{triangle_area_squared, Aabb};
 pub use gravity_policy::{character_frame, CharacterGravity, GravityPolicy};
