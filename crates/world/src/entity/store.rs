@@ -233,6 +233,11 @@ mod tests {
             id: ComponentTypeId::new(id).unwrap(),
             name,
             schema: SchemaVersion::new(2).unwrap(),
+            validate_payload: |bytes| {
+                (bytes.len() == 1)
+                    .then_some(())
+                    .ok_or(ComponentError::InvalidPayload)
+            },
             replication: ReplicationPolicy::default(),
             visibility: ReplicationVisibility::Global,
         }

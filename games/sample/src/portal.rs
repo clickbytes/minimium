@@ -4,7 +4,7 @@ use minimium_gameplay::{
     WorldLifecycle,
 };
 use minimium_world::entity::{
-    ComponentDescriptor, ComponentTypeId, ReplicationPolicy, SchemaVersion,
+    ComponentDescriptor, ComponentError, ComponentTypeId, ReplicationPolicy, SchemaVersion,
 };
 use minimium_world::world::WorldInstanceId;
 
@@ -95,6 +95,11 @@ impl<H> EngineModule<H, GameplaySystem> for SampleGameplayModule {
             id: PORTAL_COMPONENT,
             name: "sample.portal",
             schema: PORTAL_SCHEMA,
+            validate_payload: |bytes| {
+                PortalComponent::decode(bytes)
+                    .map(|_| ())
+                    .ok_or(ComponentError::InvalidPayload)
+            },
             replication: ReplicationPolicy::Replicated,
             visibility: minimium_world::entity::ReplicationVisibility::Spatial {
                 position: portal_position,
