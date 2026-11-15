@@ -47,6 +47,7 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
         command,
         &mut CommandContext {
             connection: &mut renderer.application.connection,
+            action_executor: &mut renderer.application.action_executor,
             fire_direction: direction,
             player_position: Some(player_position),
         },
@@ -70,6 +71,7 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
             );
             return false;
         }
+        CommandResult::Suppressed(_) => return false,
         CommandResult::Action(action) => action,
     };
     match action {

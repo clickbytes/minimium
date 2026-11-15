@@ -37,6 +37,7 @@ pub(crate) struct ClientApplication {
     #[cfg(feature = "desktop")]
     pub(crate) game: ClientGameState,
     pub(crate) connection: ConnectionController,
+    pub(crate) action_executor: ClientActionExecutor,
     pub(crate) settings: ClientSettings,
     pub(crate) input: crate::input::InputMapper,
     pub(crate) world_catalog: HashMap<WorldInstanceId, WorldMap>,
@@ -63,6 +64,7 @@ impl ClientApplication {
             ui,
             game,
             connection,
+            action_executor: ClientActionExecutor::default(),
             settings,
             input,
             world_catalog,
@@ -218,3 +220,7 @@ impl ClientApplication {
         self.world_catalog.insert(instance, map);
     }
 }
+mod actions;
+pub(crate) use actions::{ClientAction, ClientActionExecutor, LocalActionOutcome};
+#[cfg(feature = "desktop")]
+pub(crate) use actions::{QueuedActionKind, SuppressionReason, UseTrigger};

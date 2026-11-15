@@ -113,25 +113,26 @@ impl Renderer {
             {
                 let policy = self.application.connection.movement;
                 let collision_revision = self.application.game.gameplay.collision_revision;
-                if let Some(session) = self.application.connection.session_mut() {
-                    let result =
-                        session.queue_world_input(minimium_protocol::ClientWorldInput::Motion(
-                            minimium_protocol::MovementSample::new(input),
-                        ));
-                    match result {
-                        Err(error) => self.fail_connection(
+                match self.application.action_executor.execute(
+                    &mut self.application.connection,
+                    crate::application::ClientAction::Motion(input),
+                ) {
+                    crate::application::LocalActionOutcome::Rejected { error, .. } => self
+                        .fail_connection(
                             Text::CouldNotQueueMovement(error.into())
                                 .localized(&self.localizer, self.application.settings.locale),
                         ),
-                        Ok(Some(sample)) => {
-                            self.application.game.gameplay.prediction.record_input(
-                                sample,
-                                policy,
-                                collision_revision,
-                            );
-                        }
-                        Ok(None) => {}
+                    crate::application::LocalActionOutcome::Queued {
+                        movement: Some(sample),
+                        ..
+                    } => {
+                        self.application.game.gameplay.prediction.record_input(
+                            sample,
+                            policy,
+                            collision_revision,
+                        );
                     }
+                    _ => {}
                 }
             }
         }

@@ -209,7 +209,6 @@ impl Renderer {
                 remote_vertices: Vec::with_capacity(16 * 36),
                 remote_shadow_vertices: Vec::with_capacity(16 * 36),
                 remote_geometry_dirty: false,
-                last_shot_sent_at: None,
                 hit_confirmation_until: None,
             },
             excavation_debug: Default::default(),
