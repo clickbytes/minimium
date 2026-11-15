@@ -252,10 +252,15 @@ fn portal_transfer_waits_for_readiness_and_round_trips_to_saved_location() {
             cancelled.target_context.content_revision(),
             minimium_world::world::MembershipEpoch::new(999).unwrap(),
         ),
+        std::time::Instant::now(),
     ));
-    assert!(registry.cancel_transfer(player, cancelled.transition_id));
+    assert!(registry
+        .cancel_transfer(player, cancelled.transition_id)
+        .is_some());
     assert_eq!(registry.instance_for_player(player), Some(planet_id));
-    assert!(!registry.cancel_transfer(player, cancelled.transition_id));
+    assert!(registry
+        .cancel_transfer(player, cancelled.transition_id)
+        .is_none());
 
     let offer = registry
         .prepare_entity_transfer(
@@ -266,7 +271,12 @@ fn portal_transfer_waits_for_readiness_and_round_trips_to_saved_location() {
             None,
         )
         .unwrap();
-    assert!(registry.mark_transfer_ready(player, offer.transition_id, offer.target_context));
+    assert!(registry.mark_transfer_ready(
+        player,
+        offer.transition_id,
+        offer.target_context,
+        std::time::Instant::now()
+    ));
     assert!(registry.commit_ready_transfers(&HashSet::new()).is_empty());
     let committed = registry.commit_ready_transfers(&HashSet::from([player]));
     assert_eq!(committed.len(), 1);
@@ -351,7 +361,8 @@ fn portal_transfer_waits_for_readiness_and_round_trips_to_saved_location() {
     assert!(registry.mark_transfer_ready(
         player,
         return_offer.transition_id,
-        return_offer.target_context
+        return_offer.target_context,
+        std::time::Instant::now(),
     ));
     let returned = registry.commit_ready_transfers(&HashSet::from([player]));
     assert_eq!(returned.len(), 1);

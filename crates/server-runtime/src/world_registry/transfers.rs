@@ -5,6 +5,10 @@ use minimium_world::world::{
     MembershipEpoch, Position3Mm, TransitionId, WorldInstanceId, WorldLocation, WorldManifest,
 };
 use std::collections::HashSet;
+use std::time::{Duration, Instant};
+
+/// Independent of connection activity, world UTC and simulation tick cadence.
+const TRANSFER_PREPARATION_TIMEOUT: Duration = Duration::from_secs(300);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum TransferRequestRejection {
@@ -39,6 +43,27 @@ pub(crate) struct CommittedTransfer {
 pub(super) struct PendingTransfer {
     offer: TransferOffer,
     ready: bool,
+    started_at: Instant,
+}
+
+impl PendingTransfer {
+    fn expired(&self, now: Instant) -> bool {
+        now.saturating_duration_since(self.started_at) >= TRANSFER_PREPARATION_TIMEOUT
+    }
+
+    fn cancellation(self, player: PlayerId) -> CancelledTransfer {
+        CancelledTransfer {
+            player,
+            transition_id: self.offer.transition_id,
+            source_context: self.offer.source_context,
+        }
+    }
+}
+
+pub(crate) struct CancelledTransfer {
+    pub(crate) player: PlayerId,
+    pub(crate) transition_id: TransitionId,
+    pub(crate) source_context: WorldContext,
 }
 
 impl WorldRegistry {
@@ -58,6 +83,7 @@ impl WorldRegistry {
             requested_destination,
             return_location,
             None,
+            Instant::now(),
         )
         .ok()
     }
@@ -70,6 +96,7 @@ impl WorldRegistry {
         requested_destination: [f32; 3],
         return_location: Option<WorldLocation>,
         reads: &TerrainReads<'_>,
+        now: Instant,
     ) -> Result<TransferOffer, TransferRequestRejection> {
         self.prepare_entity_transfer_checked(
             player,
@@ -78,6 +105,7 @@ impl WorldRegistry {
             requested_destination,
             return_location,
             Some(reads),
+            now,
         )
     }
 
@@ -89,6 +117,7 @@ impl WorldRegistry {
         requested_destination: [f32; 3],
         return_location: Option<WorldLocation>,
         reads: Option<&TerrainReads<'_>>,
+        now: Instant,
     ) -> Result<TransferOffer, TransferRequestRejection> {
         if self.transfers.contains_key(&player) {
             return Err(TransferRequestRejection::AlreadyPending);
@@ -170,6 +199,7 @@ impl WorldRegistry {
             PendingTransfer {
                 offer,
                 ready: false,
+                started_at: now,
             },
         );
         Ok(offer)
@@ -180,6 +210,7 @@ impl WorldRegistry {
         player: PlayerId,
         transition_id: TransitionId,
         target_context: WorldContext,
+        now: Instant,
     ) -> bool {
         let Some(source_context) = self
             .transfers
@@ -196,6 +227,7 @@ impl WorldRegistry {
         };
         if transfer.offer.transition_id != transition_id
             || transfer.offer.target_context != target_context
+            || transfer.expired(now)
         {
             return false;
         }
@@ -207,17 +239,35 @@ impl WorldRegistry {
         &mut self,
         player: PlayerId,
         transition_id: TransitionId,
-    ) -> bool {
+    ) -> Option<CancelledTransfer> {
         if self
             .transfers
             .get(&player)
             .is_some_and(|transfer| transfer.offer.transition_id == transition_id)
         {
-            self.transfers.remove(&player);
-            true
+            self.transfers
+                .remove(&player)
+                .map(|pending| pending.cancellation(player))
         } else {
-            false
+            None
         }
+    }
+
+    pub(crate) fn expire_transfers(&mut self, now: Instant) -> Vec<CancelledTransfer> {
+        let mut expired: Vec<_> = self
+            .transfers
+            .iter()
+            .filter_map(|(player, pending)| pending.expired(now).then_some(*player))
+            .collect();
+        expired.sort_unstable();
+        expired
+            .into_iter()
+            .filter_map(|player| {
+                self.transfers
+                    .remove(&player)
+                    .map(|pending| pending.cancellation(player))
+            })
+            .collect()
     }
 
     pub(crate) fn pending_transfer_sector_requests(
@@ -245,7 +295,7 @@ impl WorldRegistry {
         &mut self,
         sector_ready: &HashSet<PlayerId>,
     ) -> Vec<CommittedTransfer> {
-        self.commit_ready_transfers_with_terrain(sector_ready, &TerrainReads::new())
+        self.commit_ready_transfers_with_terrain(sector_ready, &TerrainReads::new(), Instant::now())
             .0
     }
 
@@ -253,10 +303,9 @@ impl WorldRegistry {
         &mut self,
         sector_ready: &HashSet<PlayerId>,
         reads: &TerrainReads<'_>,
-    ) -> (
-        Vec<CommittedTransfer>,
-        Vec<(PlayerId, TransitionId, WorldContext)>,
-    ) {
+        now: Instant,
+    ) -> (Vec<CommittedTransfer>, Vec<CancelledTransfer>) {
+        let mut cancelled = self.expire_transfers(now);
         let ready_players: Vec<_> = self
             .transfers
             .iter()
@@ -265,7 +314,6 @@ impl WorldRegistry {
             })
             .collect();
         let mut committed = Vec::with_capacity(ready_players.len());
-        let mut cancelled = Vec::new();
         for player in ready_players {
             let Some(pending) = self.transfers.get(&player) else {
                 continue;
@@ -279,11 +327,7 @@ impl WorldRegistry {
                     .transfers
                     .remove(&player)
                     .expect("pending transfer exists");
-                cancelled.push((
-                    player,
-                    pending.offer.transition_id,
-                    pending.offer.target_context,
-                ));
+                cancelled.push(pending.cancellation(player));
                 continue;
             }
             let Some(transfer) = self.transfers.remove(&player) else {
