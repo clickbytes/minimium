@@ -1,10 +1,7 @@
 use crate::SkyState;
-use minimium_environment::universe::{BodyKind, CelestialBodyId, SolarSystemId, UniverseCatalog};
-
-pub const SKY_SUN_ID: CelestialBodyId =
-    CelestialBodyId::new(1).expect("reserved sky Sun ID is nonzero");
-pub const SKY_MOON_ID: CelestialBodyId =
-    CelestialBodyId::new(2).expect("reserved sky Moon ID is nonzero");
+use minimium_environment::universe::{
+    BodyKind, CelestialBodyId, SolarSystemId, UniverseCatalog, SKY_MOON_ID, SKY_SUN_ID,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ObservedBody {
@@ -57,9 +54,6 @@ pub fn observed_bodies(
     if let Some((catalog, system, observer_m, time_seconds)) = catalog {
         if let Ok(observations) = catalog.observe(system, observer_m, time_seconds) {
             bodies.extend(observations.into_iter().filter_map(|observation| {
-                if observation.id == SKY_SUN_ID || observation.id == SKY_MOON_ID {
-                    return None;
-                }
                 let direction_world =
                     rotate_direction(sky.catalog_epoch_to_world, observation.direction);
                 (direction_world.iter().all(|value| value.is_finite())

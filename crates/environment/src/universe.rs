@@ -5,6 +5,11 @@ use std::{collections::BTreeMap, f64::consts::PI};
 
 pub const MAX_CELESTIAL_BODIES: usize = 256;
 
+/// Reserved identity supplied by the astronomical Sun adapter.
+pub const SKY_SUN_ID: CelestialBodyId = CelestialBodyId(1);
+/// Reserved identity supplied by the astronomical Moon adapter.
+pub const SKY_MOON_ID: CelestialBodyId = CelestialBodyId(2);
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SolarSystemId(u64);
 impl SolarSystemId {
@@ -117,6 +122,7 @@ pub struct CelestialBodyDefinition {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CatalogError {
+    ReservedBodyId(CelestialBodyId),
     BodyLimit,
     UnknownSystem,
     DuplicateSystem,
@@ -186,6 +192,9 @@ impl UniverseCatalog {
     }
 
     pub fn register(&mut self, body: CelestialBodyDefinition) -> Result<(), CatalogError> {
+        if body.id == SKY_SUN_ID || body.id == SKY_MOON_ID {
+            return Err(CatalogError::ReservedBodyId(body.id));
+        }
         if self.bodies.contains_key(&body.id) {
             return Err(CatalogError::DuplicateBody);
         }
@@ -414,8 +423,8 @@ mod tests {
     #[test]
     fn circular_child_position_and_nearer_occluder_are_deterministic() {
         let system = SolarSystemId::new(1).unwrap();
-        let star = CelestialBodyId::new(1).unwrap();
-        let occluder = CelestialBodyId::new(2).unwrap();
+        let star = CelestialBodyId::new(10).unwrap();
+        let occluder = CelestialBodyId::new(20).unwrap();
         let moon = CelestialBodyId::new(3).unwrap();
         let mut catalog = UniverseCatalog::default();
         catalog.add_system(system).unwrap();
