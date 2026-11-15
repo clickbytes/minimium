@@ -19,6 +19,11 @@ pub fn component_descriptor() -> crate::entity::ComponentDescriptor {
         id: BODY_COMPONENT,
         name: "engine.impact_body",
         schema: BODY_SCHEMA,
+        validate_payload: |bytes| {
+            BodyState::decode(bytes)
+                .map(|_| ())
+                .ok_or(crate::entity::ComponentError::InvalidPayload)
+        },
         replication: crate::entity::ReplicationPolicy::ServerOnly,
         visibility: crate::entity::ReplicationVisibility::Spatial {
             position: |bytes| Some(BodyState::decode(bytes)?.position.map(|v| v as f32)),

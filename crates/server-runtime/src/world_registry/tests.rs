@@ -11,6 +11,8 @@ use minimium_world::world::{
 };
 use std::collections::HashSet;
 
+mod spawned_component;
+
 fn near_portal(position: [f32; 3], portal: [f32; 3]) -> bool {
     position
         .iter()
@@ -447,52 +449,4 @@ fn sector_state_revisions_are_monotonic_and_topology_bound() {
         registry.commit_sector_state(planet_id, dungeon_key, &mut budget),
         Err(RegistryError::InvalidSectorState)
     );
-}
-
-#[test]
-fn spawned_component_entity_uses_the_budgeted_entity_effect_path() {
-    let worlds = generate_demo_worlds().unwrap();
-    let instance = worlds[0].instance;
-    let mut owner = registry_from_sample(worlds.to_vec());
-    let mut budget = crate::storage::SnapshotBudget::default();
-    let mut components = ComponentRegistry::default();
-    let kind = ComponentTypeId::new(1).unwrap();
-    let schema = SchemaVersion::new(1).unwrap();
-    components
-        .register(ComponentDescriptor {
-            id: kind,
-            name: "demo.marker",
-            schema,
-            replication: ReplicationPolicy::ServerOnly,
-            visibility: minimium_world::entity::ReplicationVisibility::Global,
-        })
-        .unwrap();
-    let sector = SectorKey::planet(PlanetFace::PositiveY, 3, 4).unwrap();
-    owner
-        .apply_entity_effect_batch(
-            &[crate::modules::WorldEffect::SpawnEntity {
-                world: instance,
-                sector,
-                components: vec![crate::modules::ComponentValue {
-                    kind,
-                    schema,
-                    bytes: vec![1, 2, 3],
-                }],
-            }],
-            &mut budget,
-            &components,
-        )
-        .unwrap();
-    let entity = owner.get(instance).unwrap().entities.iter().next().unwrap();
-    assert_eq!(
-        owner
-            .get(instance)
-            .unwrap()
-            .entities
-            .get(entity, kind)
-            .unwrap()
-            .bytes,
-        vec![1, 2, 3]
-    );
-    assert!(owner.sector_states().is_empty());
 }

@@ -22,7 +22,7 @@ forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-p
 [[package]]
 name = "minimium-world"
 role = "engine-domain"
-responsibility = "World definitions, topologies, addressing, static geometry, maps, bounded monotone peak-relief definitions, and world-scoped entity/component contracts with exact schemas and bounded change tracking. Also owns neutral terrain/spatial/tool/water contracts, bounded impact-body components, crater stamp values and independent remnant snapshots."
+responsibility = "World definitions, topologies, addressing, static geometry, maps, bounded monotone peak-relief definitions, and world-scoped entity/component contracts with exact schemas, required descriptor payload validation and bounded change tracking. Also owns neutral terrain/spatial/tool/water contracts, bounded impact-body components, crater stamp values and independent remnant snapshots."
 forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-platform", "minimium-assets", "minimium-procgen", "minimium-sectors", "minimium-telemetry", "minimium-commands", "minimium-environment", "minimium-simulation", "minimium-renderer", "minimium-game-sample"]
 
 [[package]]
