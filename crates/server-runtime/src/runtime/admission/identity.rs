@@ -2,7 +2,6 @@ use super::routing::RoutingOutcome;
 use crate::{
     authentication::{AuthenticationAttemptId, AuthenticationRequest, AuthenticationStatus},
     connection::{mark_disconnected, queue_close_response, queue_message, CloseReason},
-    content::ContentServer,
     runtime::ServerRuntime,
     world_inputs::WorldInput,
     MAX_PENDING_WORLD_INPUTS,
@@ -43,7 +42,7 @@ pub(super) fn negotiate_content(
         }
         ClientMessage::ContentReady(hash) if player_id.is_none() => {
             let principal = runtime.connections.clients[index].pending_principal();
-            if hash != runtime.content.hash || principal.is_none() {
+            if hash != runtime.content.material_hash() || principal.is_none() {
                 disconnect(runtime, index, None);
                 return RoutingOutcome::Handled;
             }
@@ -186,7 +185,7 @@ pub(super) fn poll_authentication(runtime: &mut ServerRuntime) {
                 } else if !queue_message(
                     &mut runtime.connections.clients[index],
                     &mut runtime.metrics,
-                    content_offer(&runtime.content, &runtime.climate),
+                    content_offer(&*runtime.content, &runtime.climate),
                 ) {
                     disconnect(runtime, index, None);
                 }
@@ -216,12 +215,12 @@ fn connection_id(runtime: &ServerRuntime, index: usize) -> String {
 }
 
 fn content_offer(
-    content: &ContentServer,
+    content: &dyn crate::composition::ContentServicePort,
     climate: &minimium_environment::climate::ClimateScenario,
 ) -> ServerMessage {
     ServerMessage::ContentOffer {
-        material_hash: content.hash,
-        http_port: content.port,
+        material_hash: content.material_hash(),
+        http_port: content.http_port(),
         climate: climate.clone(),
     }
 }

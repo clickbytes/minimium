@@ -109,7 +109,7 @@ impl ServerRuntime {
                         commands::OwnerCommandContext {
                             worlds: &self.game.worlds,
                             player_store: &mut self.operations.player_store,
-                            persistence: &mut self.operations.persistence,
+                            persistence: &mut *self.operations.persistence,
                             map_fingerprint: self.map.fingerprint(),
                             lanes,
                             metrics: &self.metrics,

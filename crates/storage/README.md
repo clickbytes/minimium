@@ -2,11 +2,11 @@
 
 ## Purpose / Non-goals
 
-Owns snapshot serialization and validation, player persistence records and the bounded persistence worker. It does not own live runtime worlds or network transport.
+Owns snapshot serialization and validation, player persistence records, bounded durable workers and public backend/service ports. It does not own live runtime worlds or network transport.
 
 ## Public API
 
-`PlayerStore` loads and updates persistent player state. The server captures immutable `WorldSaveInput` values before handing them to `PersistenceWorker`; the worker writes `SaveSnapshot` values.
+`PlayerStore` loads and updates persistent player state. The server captures immutable `WorldSaveInput` values and `SaveSnapshot` values before handing snapshots to `PersistencePort`; the port's queue acceptance is not a durable acknowledgement. `StorageBackend` exposes preflight, load and open-service operations. `FileStorageBackend` is the explicit path-owning implementation used by the standalone process; a non-file host can implement the same ports without supplying a data directory.
 
 ## Dependencies
 
@@ -14,7 +14,7 @@ Consumes core identity, world and simulation values, environment clock state, th
 
 ## Data flow
 
-The owning server lane builds a snapshot input from world state. `PlayerStore` updates its profile shards and captures immutable `SaveSnapshot` values; the persistence worker queues and writes those snapshots. The format adapter parses the header, then validates clock, world, sector, entity, component, initialization and player records in order, or serializes the same records to a temporary file before atomic replacement.
+The owning server lane builds a snapshot input from world state. `PlayerStore` updates its profile shards and captures immutable `SaveSnapshot` values; `PersistencePort` accepts or rejects bounded enqueue and later exposes typed completion/status. The file backend parses the header, then validates clock, world, sector, entity, component, initialization and player records in order, or serializes the same records to a temporary file before atomic replacement. The excavation and impact journal ports distinguish accepted submissions from exact durable acknowledgements and preserve existing replay/compaction rules.
 
 The current snapshot limit is 128 MiB and 16,384 saved world instances. The encoder first runs against a counting writer, then streams the same encoding to a temporary file through a size-limited writer before atomic replacement. Each world has an explicit entity counter and content-initialization marker; entities and components use independent records, with component bytes hex-encoded and limited to 2048 bytes after decoding. Loading validates duplicate IDs, world references, exact registered component schemas, component counts and the 4 MiB aggregate component-payload limit before publishing a `LoadedState`. `SnapshotBudget` reserves each profile's maximum legal encoded record before a new profile is inserted and rebuilds those reservations while loading; profile reservations are capped at 64 MiB. Its fixed metadata reserve is derived from a 1024-byte per-world cap (checked by counting the actual manifest/counter/initialization encoders) across 16,384 worlds, plus 64 KiB for the primary header and clock. Sector, entity and component record sizes are measured with their format encoders and reserved by stable world/record key. Component raw-payload reservations are tracked alongside encoded record reservations and released on removal. Ordered `WorldEntityChange` batches are measured by the entity/component record encoders and prepared against a cloned budget; the prepared reservation holds an exclusive budget borrow until commit or drop, preventing an intervening budget change from making it stale. The global budget cannot exceed 128 MiB. Multi-record reservations stage against a cloned budget and commit only if every reservation fits.
 
@@ -23,6 +23,8 @@ The current snapshot limit is 128 MiB and 16,384 saved world instances. The enco
 The server owns `PlayerStore` and captures live player and world data on its owner lane. Snapshot capture keeps the public `PlayerStore::save_snapshot` entry point, assigns a monotone process-local revision, and copies the current full entity set so despawned entities cannot return from stale load state. The worker rejects stale revisions; shutdown queues the final higher revision after any earlier autosave and waits for it before joining. Timeout/error is propagated to the server process status and does not claim cancellation of blocked OS I/O; writes use temporary files and atomic replacement so a failed pre-replacement write preserves the prior complete snapshot. The worker owns its bounded request channel, save-status bookkeeping, queued immutable snapshots and configured data directory.
 
 `PersistenceWorker::status` returns a read-only `PersistenceStatus` snapshot containing the pending-save count and typed last-save state. It exposes no worker or filesystem handles; presentation adapters format this immutable data.
+
+`PersistencePort::queue_save` accepts an already captured immutable `SaveSnapshot`; it never receives mutable `PlayerStore` access. A successful enqueue reports acceptance only. Durable completion and shutdown failure remain observable through typed status/completion methods. Journal ports similarly return exact mutation/body acknowledgements only after durable writes. `FileStorageBackend` keeps the current snapshot and journal codecs, locks, bounded worker queues, replay and deadlines behind these contracts.
 
 ## Invariants and errors
 

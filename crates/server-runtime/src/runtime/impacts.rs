@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 
 pub(super) struct Impacts {
     pub(super) profile: Option<minimium_world::impact::ImpactProfile>,
-    journal: minimium_storage::impact_journal::ImpactJournal,
+    journal: Box<dyn minimium_storage::ImpactJournalPort>,
     bodies: BTreeMap<(WorldInstanceId, u64), BodyState>,
     pending: BTreeMap<(WorldInstanceId, u64), BodyState>,
     clients: HashMap<PlayerId, replication::Cursor>,
@@ -32,14 +32,30 @@ pub(crate) struct ImpactStatus {
 }
 
 impl Impacts {
-    pub(super) fn open(
-        path: &std::path::Path,
+    pub(super) fn from_storage(
+        journal: Box<dyn minimium_storage::ImpactJournalPort>,
+        restored: Vec<BodyState>,
         profile: Option<minimium_world::impact::ImpactProfile>,
     ) -> io::Result<Self> {
         if profile.is_some_and(|p| !p.valid()) {
             return Err(io::Error::other("invalid impact configuration"));
         }
-        let (journal, restored) = minimium_storage::impact_journal::ImpactJournal::open(path)?;
+        if restored.len() > minimium_storage::impact_journal::MAX_BODIES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "impact restore exceeds the durable body limit",
+            ));
+        }
+        let mut identities = std::collections::BTreeSet::new();
+        if restored
+            .iter()
+            .any(|body| !body.valid() || !identities.insert((body.world, body.id)))
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "impact restore contains an invalid or duplicate body",
+            ));
+        }
         Ok(Self {
             profile,
             journal,
@@ -344,7 +360,7 @@ impl ServerRuntime {
             if !self.impacts.contains_pending(&(body.world, body.id))
                 && !self.impact_projection_matches(body)
             {
-                self.impacts.journal.submit(body)?;
+                self.impacts.journal.submit_batch(vec![body])?;
             }
         }
         self.impacts.journal.shutdown_until(deadline)?;

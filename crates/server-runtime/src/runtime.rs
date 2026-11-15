@@ -27,16 +27,15 @@ use crate::server_command::ServerCommand;
 use crate::{
     admin::RequestId,
     composition::ServerCombatConfig,
-    config::ServerConfig,
     connection::Client,
     environment::EnvironmentClock,
     executor::Executor,
-    lifecycle::{self, EndpointGuard},
+    lifecycle,
     metrics::RuntimeMetrics,
     sector_streaming::SectorGenerationPool,
     sector_streaming::SectorPayload,
-    startup::Startup,
-    storage::{PersistenceWorker, PlayerStore, SAVE_VERSION},
+    startup::PreparedRuntime,
+    storage::{PersistencePort, PlayerStore, SAVE_VERSION},
     terminal,
     world_inputs::WorldInput,
     world_registry::WorldRegistry,
@@ -44,14 +43,12 @@ use crate::{
 };
 use minimium_core::{identity::PlayerProfileId, ids::PlayerId};
 use minimium_environment::time::MonotonicMs;
-use minimium_platform::{endpoint::ServerEndpoint, server_lock::ServerDataLock};
 use minimium_protocol::ClientMessage;
 use minimium_simulation::{CollisionQueryStats, CombatSettings, MovementIntent};
 use minimium_world::world::WorldMap;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     io,
-    path::PathBuf,
     sync::{mpsc::Receiver, Arc},
     thread,
     time::{Duration, Instant},
@@ -91,7 +88,7 @@ struct OperationsState {
     console_rx: Option<Receiver<ServerCommand>>,
     command_queue: VecDeque<(Option<RequestId>, ServerCommand)>,
     player_store: PlayerStore,
-    persistence: PersistenceWorker,
+    persistence: Box<dyn PersistencePort>,
     next_player: u64,
 }
 struct Scheduler {
@@ -114,7 +111,7 @@ pub(crate) struct ServerRuntime {
     pub(crate) world_logger: minimium_diagnostics::DomainLogger,
     pub(crate) sectors_logger: minimium_diagnostics::DomainLogger,
     pub(crate) simulation_logger: minimium_diagnostics::DomainLogger,
-    content: crate::content::ContentServer,
+    content: Box<dyn crate::composition::ContentServicePort>,
     climate: minimium_environment::climate::ClimateScenario,
     authentication_provider: crate::authentication::SharedAuthenticationProvider,
     next_authentication_attempt: u64,
@@ -134,9 +131,8 @@ pub(crate) struct ServerRuntime {
     map: WorldMap,
     prepared_geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
     game_address: String,
-    endpoint: ServerEndpoint,
-    data_dir: PathBuf,
-    _log_dir: PathBuf,
+    endpoint: Option<minimium_platform::endpoint::ServerEndpoint>,
+    process_lifecycle: Option<Box<dyn crate::composition::ProcessLifecyclePort>>,
     max_players: usize,
     max_client_connections: usize,
     lanes: usize,
@@ -152,15 +148,12 @@ pub(crate) struct ServerRuntime {
     sky_views: HashMap<PlayerId, (minimium_protocol::WorldContext, [f32; 3], bool, Instant)>,
     last_manual_bolid_at: Option<Instant>,
     bolid_shower: Option<bolid::shower::Shower>,
-    // Endpoint must be removed while the data lock is still held.
-    _endpoint_guard: EndpointGuard,
-    _data_lock: ServerDataLock,
 }
 
 impl ServerRuntime {
     pub(crate) fn new(
-        config: ServerConfig,
-        startup: Startup,
+        config: crate::composition::RuntimeSettings,
+        startup: PreparedRuntime,
         combat: ServerCombatConfig,
         impact_profile: Option<minimium_world::impact::ImpactProfile>,
         excavation_config: crate::composition::ExcavationConfig,
@@ -171,7 +164,6 @@ impl ServerRuntime {
         world_logger: minimium_diagnostics::DomainLogger,
         sectors_logger: minimium_diagnostics::DomainLogger,
         simulation_logger: minimium_diagnostics::DomainLogger,
-        asset_io_logger: minimium_diagnostics::DomainLogger,
         authentication_provider: crate::authentication::SharedAuthenticationProvider,
         shutdown_request: crate::composition::ShutdownRequest,
         module_registry: crate::modules::ModuleRegistry<
@@ -180,23 +172,16 @@ impl ServerRuntime {
         >,
         component_registry: minimium_world::entity::ComponentRegistry,
     ) -> io::Result<Self> {
-        let mut excavation_config = excavation_config;
-        excavation_config.fluids.max_active_cells = config.fluid_world_cells;
-        excavation_config.server_fluid_cells = config.fluid_server_cells;
         if !excavation_config.valid() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "invalid excavation or fluid capacity configuration",
             ));
         }
-        let climate_config = crate::environment::ClimateConfiguration::load(&config)?;
-        let content = crate::content::ContentServer::new(&config, asset_io_logger)?;
-        climate_config.commit()?;
-        let climate = climate_config.scenario;
         let sector_workers = SectorGenerationPool::new(config.sector_workers)?;
         let lanes = config.lanes.count();
         let resolved_settings = config.resolved_settings.clone();
-        let Startup {
+        let PreparedRuntime {
             map,
             primary_terrain_material_profile,
             worlds,
@@ -205,12 +190,17 @@ impl ServerRuntime {
             world_initialization,
             entities,
             persistence,
+            excavation_journal,
+            excavation_restore,
+            impact_journal,
+            impact_restore,
+            climate,
+            content,
             next_player,
             transport,
             game_address,
             endpoint,
-            endpoint_guard,
-            data_lock,
+            process_lifecycle,
             environment_config,
             saved_clock,
             prepared_geography,
@@ -313,8 +303,16 @@ impl ServerRuntime {
         })?;
         let autosave_interval = Duration::from_secs(config.autosave_seconds);
         let mut runtime = Self {
-            excavation: excavation::Excavation::open(&config.data_dir, excavation_config)?,
-            impacts: impacts::Impacts::open(&config.data_dir, impact_profile)?,
+            excavation: excavation::Excavation::from_storage(
+                excavation_journal,
+                excavation_restore,
+                excavation_config,
+            )?,
+            impacts: impacts::Impacts::from_storage(
+                impact_journal,
+                impact_restore,
+                impact_profile,
+            )?,
             server_logger,
             shutdown_request,
             transport_logger,
@@ -352,8 +350,7 @@ impl ServerRuntime {
             prepared_geography,
             game_address,
             endpoint,
-            data_dir: config.data_dir,
-            _log_dir: config.log_dir,
+            process_lifecycle,
             max_players: config.max_players,
             max_client_connections,
             lanes,
@@ -371,8 +368,6 @@ impl ServerRuntime {
             sky_views: HashMap::new(),
             last_manual_bolid_at: None,
             bolid_shower: None,
-            _endpoint_guard: endpoint_guard,
-            _data_lock: data_lock,
         };
         runtime.restore_excavation_impacts()?;
         runtime.restore_impacts()?;

@@ -456,12 +456,17 @@ pub fn execute(
             clients_truncated: client_traffic.truncated,
         }),
         ServerCommand::Save => {
+            if persistence.has_pending_save() {
+                let error = persistence.reject_pending_save();
+                return CommandReply::error(error.code(), &error.to_string());
+            }
             let result = match environment_clock.capture_saved_state(monotonic_ms) {
                 Err(error) => Err((error.code(), error.to_string())),
                 Ok(saved_clock) => match worlds.snapshot_for_save(map_fingerprint) {
                     Err(error) => Err(("server.world_snapshot_failed", error.to_string())),
-                    Ok(input) => persistence
-                        .queue_world_save(player_store, input, saved_clock)
+                    Ok(input) => player_store
+                        .save_snapshot(input, saved_clock)
+                        .and_then(|snapshot| persistence.queue_save(snapshot))
                         .map_err(|error| (error.code(), error.to_string())),
                 },
             };

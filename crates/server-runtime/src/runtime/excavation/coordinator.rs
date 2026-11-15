@@ -41,7 +41,7 @@ impl DurablePublication {
 }
 
 pub(super) struct ExcavationCoordinator {
-    journal: ExcavationJournal,
+    journal: Box<dyn minimium_storage::excavation::ExcavationJournalPort>,
     preparing: Option<Preparation>,
     pending: Option<Pending>,
     next_id: u64,
@@ -50,7 +50,10 @@ pub(super) struct ExcavationCoordinator {
 }
 
 impl ExcavationCoordinator {
-    pub(super) fn new(journal: ExcavationJournal, last_id: u64) -> Self {
+    pub(super) fn new(
+        journal: Box<dyn minimium_storage::excavation::ExcavationJournalPort>,
+        last_id: u64,
+    ) -> Self {
         Self {
             journal,
             preparing: None,

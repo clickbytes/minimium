@@ -21,6 +21,33 @@ struct ShutdownState {
 #[derive(Clone, Default)]
 pub struct ShutdownRequest(Arc<ShutdownState>);
 
+/// Process-owned endpoint/status lifecycle. Runtime shutdown invokes these
+/// hooks after simulation workers and durable saves have been drained.
+pub trait ProcessLifecyclePort: Send {
+    fn remove_endpoint(&mut self) -> std::io::Result<()>;
+    fn write_shutdown_status(&mut self, result: &std::io::Result<()>) -> std::io::Result<()>;
+}
+
+/// Host-owned content endpoint consumed by client admission and drained on shutdown.
+pub trait ContentServicePort: Send {
+    fn material_hash(&self) -> [u8; 32];
+    fn http_port(&self) -> u16;
+    fn shutdown(&mut self, timeout: Duration) -> Vec<String>;
+}
+
+/// Path-free simulation settings consumed after host bootstrap has completed.
+#[derive(Clone)]
+pub struct RuntimeSettings {
+    pub lanes: crate::LaneSelection,
+    pub sector_workers: usize,
+    pub max_players: usize,
+    pub autosave_seconds: u64,
+    pub console_enabled: bool,
+    pub bolid_interval: Option<(u64, u64)>,
+    pub resolved_settings:
+        std::collections::BTreeMap<String, minimium_commands::ResolvedConfigValue>,
+}
+
 impl ShutdownRequest {
     pub fn request(&self) {
         self.0.requested.store(true, Ordering::Release);

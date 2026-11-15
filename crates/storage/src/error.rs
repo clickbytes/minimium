@@ -47,7 +47,7 @@ impl StorageError {
         };
         Self { kind, source }
     }
-    pub(crate) fn busy(message: &'static str) -> Self {
+    pub fn busy(message: &'static str) -> Self {
         Self {
             kind: StorageErrorKind::Busy,
             source: io::Error::new(io::ErrorKind::WouldBlock, message),

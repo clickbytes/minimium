@@ -86,6 +86,7 @@ pub struct ExcavationRestore {
 
 mod journal;
 pub use journal::ExcavationJournal;
+pub use journal::ExcavationJournalPort;
 mod budget;
 use budget::checkpoint_size;
 mod validation;

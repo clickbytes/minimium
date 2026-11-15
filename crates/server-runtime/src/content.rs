@@ -15,6 +15,18 @@ impl ContentServer {
     }
 }
 
+impl crate::composition::ContentServicePort for ContentServer {
+    fn material_hash(&self) -> [u8; 32] {
+        self.hash
+    }
+    fn http_port(&self) -> u16 {
+        self.port
+    }
+    fn shutdown(&mut self, timeout: std::time::Duration) -> Vec<String> {
+        ContentServer::shutdown(self, timeout)
+    }
+}
+
 impl ContentServer {
     pub(crate) fn new(
         config: &crate::config::ServerConfig,
