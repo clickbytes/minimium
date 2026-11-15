@@ -75,6 +75,17 @@ Front ends resolve profile, server-data, material-cache, config and log paths on
 
 ## Ownership and execution
 
+`ClientBootstrap` composes both hosts without GPU dependencies. It resolves the
+initial map/instance and catalogs, process paths, profile, diagnostics loggers,
+replica schemas, authentication, cache limits and sample content resolver, then
+returns one configured idle controller. The prepared connection is consumed with
+explicit CPU-only or desktop capabilities; desktop compression support comes
+from device features/limits. Bootstrap does not connect or launch a server.
+The hosts retain their diagnostics lifetime and 30-second shutdown deadline.
+Authored instance 1, manual dungeon instance 4 and the sample primary instance
+are selected by the common composition, without a fingerprint-based lookup.
+The former terminal-only world setup and duplicated desktop setup are removed.
+
 The front-end loop owns UI and polls the runtime connection controller; the runtime owns its socket, bounded protocol state and local-server guard, while background connector work reports typed results.
 
 Both frontends display the controller's typed busy rejection. Desktop switches

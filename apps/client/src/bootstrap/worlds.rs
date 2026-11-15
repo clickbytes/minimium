@@ -4,7 +4,8 @@ use minimium_localization::{Locale, Localizer};
 use minimium_world::world::{WorldInstanceId, WorldManifest, WorldMap};
 use std::{collections::HashMap, error::Error, io};
 
-pub(super) struct WorldSetup {
+pub(crate) struct InitialWorlds {
+    pub instance: WorldInstanceId,
     pub map: WorldMap,
     pub world_catalog: HashMap<WorldInstanceId, WorldMap>,
     pub world_manifests: HashMap<WorldInstanceId, WorldManifest>,
@@ -16,8 +17,10 @@ pub(super) fn resolve(
     procgen_logger: &DomainLogger,
     localizer: &Localizer,
     locale: Locale,
-) -> Result<WorldSetup, Box<dyn Error>> {
-    let (map, world_catalog, world_manifests) = if let Some(path) = options.map_path.as_deref() {
+) -> Result<InitialWorlds, Box<dyn Error>> {
+    let (instance, map, world_catalog, world_manifests) = if let Some(path) =
+        options.map_path.as_deref()
+    {
         let map = minimium_asset_io::load_map(path).map_err(|error| {
             crate::diagnostics::failure(asset_io_logger, error.code(), &error.to_string());
             Text::MapLoadFailed {
@@ -29,6 +32,7 @@ pub(super) fn resolve(
         let instance = WorldInstanceId::new(1).expect("authored world instance is nonzero");
         let manifest = crate::world_content::authored_manifest(instance.get(), &map);
         (
+            instance,
             map.clone(),
             HashMap::from([(instance, map)]),
             HashMap::from([(instance, manifest)]),
@@ -53,6 +57,7 @@ pub(super) fn resolve(
             })?;
         let instance = WorldInstanceId::new(4).expect("manual world instance ID is nonzero");
         (
+            instance,
             map.clone(),
             HashMap::from([(instance, map)]),
             HashMap::from([(instance, definition.manifest())]),
@@ -68,9 +73,15 @@ pub(super) fn resolve(
             catalog.insert(world.instance, world.map.clone());
             manifests.insert(world.instance, world.manifest);
         }
-        (worlds[0].map.clone(), catalog, manifests)
+        (
+            worlds[0].instance,
+            worlds[0].map.clone(),
+            catalog,
+            manifests,
+        )
     };
-    Ok(WorldSetup {
+    Ok(InitialWorlds {
+        instance,
         map,
         world_catalog,
         world_manifests,
