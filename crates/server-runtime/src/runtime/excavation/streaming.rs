@@ -48,6 +48,7 @@ impl ServerRuntime {
             let fluid_region = region_for_chunk(key.coordinates);
             let cursor = self
                 .excavation
+                .state
                 .clients
                 .entry(player)
                 .or_insert_with(|| Cursor::new(context, key.coordinates));
@@ -55,10 +56,10 @@ impl ServerRuntime {
                 *cursor = Cursor::new(context, key.coordinates);
             }
             if let Some((result_context, result)) =
-                self.excavation.action_results.get(&player).copied()
+                self.excavation.state.action_results.get(&player).copied()
             {
                 if result_context != context {
-                    self.excavation.action_results.remove(&player);
+                    self.excavation.state.action_results.remove(&player);
                 } else {
                     let queued = crate::connection::queue_message(
                         client,
@@ -69,7 +70,7 @@ impl ServerRuntime {
                         },
                     );
                     if queued {
-                        self.excavation.action_results.remove(&player);
+                        self.excavation.state.action_results.remove(&player);
                     } else {
                         continue;
                     }
@@ -77,6 +78,7 @@ impl ServerRuntime {
             }
             let inventory = self
                 .excavation
+                .state
                 .inventories
                 .get(&identity.principal.profile())
                 .copied()
@@ -94,7 +96,7 @@ impl ServerRuntime {
                 }
                 cursor.inventory = Some(inventory);
             }
-            let water = self.excavation.waters.get(&context.instance());
+            let water = self.excavation.state.waters.get(&context.instance());
             if cursor.stream.is_none() && cursor.fluid_stream.is_none() {
                 // Keep replicas already seen by this client. Dropping them on an
                 // interest change would restore the original surface at far LOD.
@@ -227,9 +229,10 @@ impl ServerRuntime {
                     cursor.waiting = Some(message);
                     break;
                 }
-                self.excavation.metrics.bytes = self.excavation.metrics.bytes.saturating_add(
-                    client.pending_output_bytes().saturating_sub(queued_before) as u64,
-                );
+                self.excavation.state.metrics.bytes =
+                    self.excavation.state.metrics.bytes.saturating_add(
+                        client.pending_output_bytes().saturating_sub(queued_before) as u64,
+                    );
             }
             if cursor.waiting.is_none()
                 && cursor.batch_end.is_none()
@@ -243,7 +246,7 @@ impl ServerRuntime {
             }
         }
         for player in rejected_players {
-            self.excavation.clients.remove(&player);
+            self.excavation.state.clients.remove(&player);
         }
     }
 }

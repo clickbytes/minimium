@@ -1,5 +1,6 @@
 //! Owner-lane impact lifecycle. Workers return immutable durable acknowledgements.
 mod owner;
+pub(super) mod projection;
 pub(crate) use owner::ProtectedImpactEntities;
 mod replication;
 mod spawn;
@@ -78,96 +79,20 @@ impl ServerRuntime {
         Ok(())
     }
 
-    fn prepare_impact(
-        &self,
-        body: BodyState,
-        restoring: bool,
-    ) -> io::Result<(
-        minimium_world::entity::EntityStore,
-        Arc<RemnantSnapshot>,
-        bool,
-    )> {
-        let owner = self
-            .game
-            .worlds
-            .get(body.world)
-            .ok_or_else(|| io::Error::other("impact world missing"))?;
-        if owner.manifest.generation().seed().get() != body.world_seed
-            || owner
-                .manifest
-                .planet()
-                .is_none_or(|p| (p.radius_mm as f64 / 1000.0 - body.planet_radius_m).abs() > 0.001)
-        {
-            return Err(io::Error::other("impact planet mismatch"));
-        }
-        let mut entities = owner.entities.clone();
-        let mut remnants = owner.remnants.clone();
-        let entity = EntityId::new(body.id).ok_or_else(|| io::Error::other("invalid body ID"))?;
-        if !entities.contains(entity) {
-            entities
-                .restore(entity)
-                .map_err(|e| io::Error::other(format!("impact entity: {e:?}")))?;
-        } else if restoring
-            && owner.entities.get(entity, BODY_COMPONENT).is_none()
-            && owner
-                .entities
-                .iter_components()
-                .any(|(id, _, _)| id == entity)
-        {
-            return Err(io::Error::other(
-                "saved impact ID conflicts with another entity",
-            ));
-        }
-        let bytes = body.encode();
-        entities
-            .insert(
-                &self.component_registry,
-                entity,
-                BODY_COMPONENT,
-                BODY_SCHEMA,
-                &bytes,
-            )
-            .map_err(|e| io::Error::other(format!("impact component: {e:?}")))?;
-        if body.crater().is_some() {
-            Arc::make_mut(&mut remnants)
-                .set(body)
-                .map_err(io::Error::other)?;
-        }
-        let changed = remnants.revision() != owner.remnants.revision();
-        Ok((entities, remnants, changed))
-    }
-
     pub(super) fn publish_impact_projection(
         &mut self,
         body: BodyState,
         restoring: bool,
     ) -> io::Result<()> {
-        self.publish_impact_projection_with_invalidation(body, restoring, true)
-    }
-
-    pub(in crate::runtime) fn validate_impact(&self, body: BodyState) -> io::Result<()> {
-        self.prepare_impact(body, true).map(|_| ())
-    }
-
-    pub(in crate::runtime) fn publish_prepared_impact_projection(
-        &mut self,
-        body: BodyState,
-    ) -> io::Result<()> {
-        self.publish_impact_projection_with_invalidation(body, true, false)
-    }
-
-    fn publish_impact_projection_with_invalidation(
-        &mut self,
-        body: BodyState,
-        restoring: bool,
-        invalidate: bool,
-    ) -> io::Result<()> {
         // Validate every fallible mutation before publishing entity and terrain together.
-        let (entities, remnants, changed) = self.prepare_impact(body, restoring)?;
-        let owner = self.game.worlds.get_mut(body.world).unwrap();
-        owner.entities = entities;
-        owner.remnants = remnants;
-        if changed && !restoring && invalidate {
+        let changed = projection::publish(
+            &mut self.game.worlds,
+            &self.component_registry,
+            body,
+            restoring,
+        )?;
+        let owner = self.game.worlds.get(body.world).unwrap();
+        if changed && !restoring {
             if let Some(stamp) = body.crater() {
                 let manifest = owner.manifest;
                 self.game
@@ -300,7 +225,7 @@ impl ServerRuntime {
             ));
         }
         for body in &batch {
-            self.prepare_impact(*body, false)?;
+            projection::prepare(&self.game.worlds, &self.component_registry, *body, false)?;
             self.reserve_body_budget(*body)?;
         }
         self.impacts.begin_checkpoints(&batch)?;
@@ -404,13 +329,7 @@ impl ServerRuntime {
     }
 
     pub(super) fn impact_failure(&mut self, error: io::Error) {
-        crate::diagnostics::emit(
-            &self.world_logger,
-            minimium_diagnostics::Level::Error,
-            "world.impact_failed",
-            &[("reason", error.to_string())],
-        );
-        self.impacts.failure = Some(error.to_string());
+        self.impacts.fail(&self.world_logger, error);
     }
 
     pub(super) fn shutdown_impacts(&mut self, deadline: Instant) -> io::Result<()> {

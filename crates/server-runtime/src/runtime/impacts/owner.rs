@@ -170,3 +170,19 @@ impl Impacts {
         Ok(())
     }
 }
+
+impl Impacts {
+    pub(in crate::runtime) fn fail(
+        &mut self,
+        logger: &minimium_diagnostics::DomainLogger,
+        error: io::Error,
+    ) {
+        crate::diagnostics::emit(
+            logger,
+            minimium_diagnostics::Level::Error,
+            "world.impact_failed",
+            &[("reason", error.to_string())],
+        );
+        self.failure = Some(error.to_string());
+    }
+}

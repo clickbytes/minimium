@@ -258,6 +258,23 @@ newer live state. Generic entity effects
 cannot spawn, replace or remove the impact component, or despawn a protected
 live or checkpointed impact entity. Restored state is bound to world ID, seed
 and radius before startup systems allocate new entities.
+The private `ExcavationCoordinator` owns the single preparation/durable-write
+slot, mutation IDs, journal acknowledgements, failure and shutdown state. Tool,
+impact, inventory and fluid-checkpoint producers use its controlled operations;
+runtime methods cannot replace its pending state. Its work-submission port uses
+the bounded shared pool and owns impact checkpoint reservation rollback. Its
+publication port receives only the required world/sector/impact services and
+ancillary excavation data, never `ServerRuntime`. A private-constructor
+`DurablePublication` proof is created only after acknowledgement identity and
+impact checkpoint checks; only that proof can invoke live publication.
+
+Stale context/content versions and failed worker results never reach the journal.
+Queue acceptance is distinct from durable acknowledgement. Shutdown drops the
+unsubmitted result receiver and releases its exact impact checkpoint reservations;
+accepted writes still drain under the existing deadline. Inventory, hydrology
+cadence and network cursors remain separate from transaction state. The current
+file journal backend and host shutdown polling remain adapters pending S12.
+
 The shared excavation coordinator prepares replacement geometry, collision leaves
 and displaced water before durable commit. Acknowledgement installs the prepared
 parts together and invalidates intersecting nonresident tickets. Movement and
