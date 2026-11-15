@@ -170,7 +170,6 @@ pub fn integrate_volume_sector(
     sector: PlanetSectorKey,
     count: u16,
     base_geometry: &SectorGeometry,
-    soil_depth_m: f64,
 ) -> Result<SectorGeometry, ExcavationGeometryError> {
     let (u, v) = sector.coordinates();
     integrate_volume_region_with_contours(
@@ -182,7 +181,6 @@ pub fn integrate_volume_sector(
         count,
         base_geometry,
         &base_geometry.triangles,
-        soil_depth_m,
     )
 }
 
@@ -192,7 +190,6 @@ pub fn integrate_volume_sector_with_contours(
     count: u16,
     base_geometry: &SectorGeometry,
     contour_source: &[minimium_world::world::MapTriangle],
-    soil_depth_m: f64,
 ) -> Result<SectorGeometry, ExcavationGeometryError> {
     let (u, v) = sector.coordinates();
     integrate_volume_region_with_contours(
@@ -204,7 +201,6 @@ pub fn integrate_volume_sector_with_contours(
         count,
         base_geometry,
         contour_source,
-        soil_depth_m,
     )
 }
 
@@ -217,12 +213,11 @@ pub fn integrate_volume_region_with_contours(
     count: u16,
     base_geometry: &SectorGeometry,
     contour_source: &[minimium_world::world::MapTriangle],
-    soil_depth_m: f64,
 ) -> Result<SectorGeometry, ExcavationGeometryError> {
     let Some(store) = terrain.inputs().volumes.as_deref() else {
         return Ok(base_geometry.clone());
     };
-    let Some(base) = terrain.volume_base(soil_depth_m) else {
+    let Some(base) = terrain.volume_base() else {
         return Err(ExcavationGeometryError::UnavailableSurface);
     };
     let mut keys = volume_chunk_keys_near_region(store, face, u, v, span, count);
@@ -259,7 +254,6 @@ pub fn validate_volume_geometry(
     manifest: WorldManifest,
     terrain: &PlanetTerrain,
     changed: &[TerrainChunkKey],
-    soil_depth_m: f64,
 ) -> Result<Vec<(SectorKey, SectorGeometry)>, ExcavationGeometryError> {
     let count = planet_sector_count(manifest);
     let mut sectors = std::collections::BTreeSet::new();
@@ -286,12 +280,11 @@ pub fn validate_volume_geometry(
     let mut prepared = Vec::with_capacity(sectors.len());
     for sector in sectors {
         let key = SectorKey::Planet(sector);
-        let geometry = crate::materialize_world_sector_with_geography_and_soil(
+        let geometry = crate::materialize_world_sector_with_geography(
             map,
             manifest,
             key,
             terrain.inputs().clone(),
-            soil_depth_m,
         )?;
         prepared.push((key, geometry));
     }

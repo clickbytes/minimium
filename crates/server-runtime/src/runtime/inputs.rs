@@ -288,11 +288,8 @@ impl ServerRuntime {
         use crate::modules::{TransferOutcome, TransferRejection};
 
         let return_location = self.operations.player_store.return_location_for(id);
-        let terrain = super::gameplay_terrain::build(
-            &self.game.worlds,
-            self.prepared_geography.as_ref(),
-            self.excavation.soil_depth_m(),
-        );
+        let terrain =
+            super::gameplay_terrain::build(&self.game.worlds, self.prepared_geography.as_ref());
         let reads: std::collections::HashMap<_, &dyn minimium_world::terrain::TerrainRead> =
             terrain
                 .iter()
@@ -380,15 +377,17 @@ impl ServerRuntime {
             return None;
         }
         let instance = self.game.worlds.instance_for_player(id)?;
+        let owner = self.game.worlds.get(instance)?;
         let manifest = self.game.worlds.manifest_for_player(id)?;
         if manifest.planet()?.mode != 1 {
             return None;
         }
         let geography = minimium_procgen::TerrainInputs {
             geography: self.prepared_geography.clone(),
-            edits: Some(self.game.worlds.get(instance)?.terrain.clone()),
-            remnants: Some(self.game.worlds.get(instance)?.remnants.clone()),
-            volumes: self.game.worlds.get(instance)?.volumes.clone(),
+            material_profile: Some(owner.terrain_material_profile),
+            edits: Some(owner.terrain.clone()),
+            remnants: Some(owner.remnants.clone()),
+            volumes: owner.volumes.clone(),
         };
         let point = minimium_procgen::planet_point_at_direction_with_geography(
             manifest,

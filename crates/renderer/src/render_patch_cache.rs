@@ -49,7 +49,11 @@ impl From<SectorContentVersion> for RenderPatchVersion {
 
 #[derive(Default)]
 pub struct RenderPatchCache {
-    context: Option<(WorldInstanceId, WorldManifest)>,
+    context: Option<(
+        WorldInstanceId,
+        WorldManifest,
+        Option<minimium_procgen::ResolvedTerrainMaterialProfile>,
+    )>,
     revisions: HashMap<(SectorKey, u8), RenderPatchVersion>,
     entries: HashMap<(SectorKey, u8), (u64, Arc<SectorGeometry>)>,
     base_entries: HashMap<(SectorKey, u8), (SectorContentVersion, u64, Arc<SectorGeometry>)>,
@@ -60,11 +64,16 @@ pub struct RenderPatchCache {
 impl RenderPatchCache {
     /// Bind cached geometry to a world instance and its immutable manifest.
     /// Reusing a cache for another context drops every context-derived entry.
-    pub fn set_context(&mut self, world: WorldInstanceId, manifest: WorldManifest) {
-        if self.context == Some((world, manifest)) {
+    pub fn set_context(
+        &mut self,
+        world: WorldInstanceId,
+        manifest: WorldManifest,
+        material_profile: Option<minimium_procgen::ResolvedTerrainMaterialProfile>,
+    ) {
+        if self.context == Some((world, manifest, material_profile)) {
             return;
         }
-        self.context = Some((world, manifest));
+        self.context = Some((world, manifest, material_profile));
         self.revisions.clear();
         self.entries.clear();
         self.base_entries.clear();

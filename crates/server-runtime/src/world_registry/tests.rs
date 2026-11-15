@@ -29,6 +29,11 @@ fn registry_from_sample(worlds: Vec<minimium_game_sample::GeneratedWorld>) -> Wo
             .map(|world| WorldDefinition {
                 instance: world.instance,
                 manifest: world.manifest,
+                terrain_material_profile: minimium_game_sample::terrain_material_profile(
+                    world.manifest,
+                    &world.map,
+                )
+                .unwrap(),
                 map: world.map,
                 initial_entities: Vec::new(),
             })

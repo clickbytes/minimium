@@ -183,6 +183,35 @@ impl ClientSession {
                 "resolved world map does not match the server fingerprint",
             ));
         }
+        if !content
+            .terrain_material_profile
+            .matches(manifest, expected_fingerprint)
+        {
+            return Err(SessionFailure::new(
+                "session.world_material_profile_mismatch",
+                "resolved terrain material profile does not match the world content identity",
+            ));
+        }
+        let profile_conflicts = self
+            .active_world_content
+            .iter()
+            .map(|bundle| &bundle.content)
+            .chain(
+                self.pending_world_content
+                    .iter()
+                    .map(|bundle| &bundle.content),
+            )
+            .any(|prior| {
+                prior.manifest == manifest
+                    && prior.map.fingerprint() == expected_fingerprint
+                    && prior.terrain_material_profile != content.terrain_material_profile
+            });
+        if profile_conflicts {
+            return Err(SessionFailure::new(
+                "session.world_material_profile_conflict",
+                "the same recognized world content resolved with a conflicting material profile",
+            ));
+        }
         if let Some(planet) = manifest.planet().filter(|planet| planet.mode == 1) {
             let geography = content.geography.as_ref().ok_or_else(|| {
                 SessionFailure::new(

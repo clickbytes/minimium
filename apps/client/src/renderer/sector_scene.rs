@@ -162,30 +162,6 @@ impl ClientSectorCache {
             cached.set_center(position.map(|value| (f64::from(value) / 4.0).floor() * 4.0));
             cached.clone()
         });
-        {
-            let terrain = &geography;
-            let old = self.terrain_inputs.get(&instance);
-            let changed_geometry_source = old.is_some_and(|previous| {
-                previous.geography.is_some() != terrain.geography.is_some()
-            });
-            let changed = old.is_none_or(|previous| {
-                previous.revision() != terrain.revision() || changed_geometry_source
-            });
-            if changed {
-                let count = minimium_procgen::planet_sector_count(manifest);
-                if let Some(previous) = old {
-                    self.manager.invalidate_where(instance, |key| {
-                        changed_geometry_source
-                            || previous.sector_version(key, 1, count)
-                                != terrain.sector_version(key, 1, count)
-                    });
-                }
-                self.presentations
-                    .retain(|scene_owner, _| scene_owner.instance() != instance);
-            }
-            self.terrain_inputs
-                .insert(instance, Arc::new(terrain.clone()));
-        }
         let world_matches = map_override
             .filter(|_| owner.instance() == instance)
             .map(|(_, candidate)| candidate == manifest)
@@ -195,6 +171,16 @@ impl ClientSectorCache {
         if !world_matches {
             return Ok(None);
         }
+        let source_map = map_override
+            .filter(|_| owner.instance() == instance)
+            .map(|(map, _)| map)
+            .or_else(|| maps.get(&instance));
+        if !ClientSectorCache::material_profile_matches(&geography, manifest, source_map) {
+            return Err(SectorWorkerError::Geometry(
+                minimium_procgen::ExcavationGeometryError::UnavailableSurface,
+            ));
+        }
+        self.update_terrain_input(instance, manifest, &geography);
         if let Some((map, source_manifest)) = map_override.filter(|_| owner.instance() == instance)
         {
             self.cache_world_source(instance, map, source_manifest);
@@ -369,6 +355,7 @@ impl ClientSectorCache {
         };
         let mut prepared = None;
         let terrain_revision = geography.revision();
+        let material_profile = geography.material_profile;
         let render_sectors = if manifest.topology() == minimium_world::world::WorldTopology::Planet
         {
             if let Some(result) = self.worker.poll(
@@ -393,6 +380,7 @@ impl ClientSectorCache {
                     origin_generation,
                     water.as_ref().map_or(0, |water| water.level_revision),
                     water.as_ref().map_or(0, |water| water.fluid_revision),
+                    material_profile,
                 )
             }) {
                 prepared = Some(result.clone());
@@ -408,6 +396,7 @@ impl ClientSectorCache {
                     origin,
                     origin_generation,
                     terrain_revision,
+                    material_profile,
                 )
             }) {
                 prepared = Some(previous.clone());

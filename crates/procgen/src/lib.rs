@@ -20,6 +20,7 @@ pub mod surface_habitat;
 pub mod terrain_clip;
 mod terrain_color;
 mod terrain_contours;
+mod terrain_material;
 mod terrain_overlay;
 mod terrain_seam;
 pub mod terrain_surface;
@@ -64,13 +65,14 @@ pub use planet_teleport::{
 };
 pub use random_address::{AddressedRandom, GenerationChannel};
 pub use sector_geometry::{
-    materialize_world_sector, materialize_world_sector_with_geography,
-    materialize_world_sector_with_geography_and_soil, slice_sector_geometry, SectorGeometry,
+    materialize_world_sector, materialize_world_sector_with_geography, slice_sector_geometry,
+    SectorGeometry,
 };
 pub use sector_neighborhood::{
     planet_sector_neighborhood_with_diagonals, sector_neighborhood, sector_neighborhood_for,
     DUNGEON_SECTOR_EDGE,
 };
+pub use terrain_material::{ResolvedTerrainMaterialProfile, TerrainMaterialProfile};
 pub use terrain_overlay::{SectorContentVersion, TerrainInputs};
 pub use terrain_seam::ExcavationGeometryError;
 pub use traversal::can_traverse_surface;

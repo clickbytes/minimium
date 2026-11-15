@@ -32,7 +32,7 @@ Without WorldCover, presentation fractions distinguish arid latitude belts,
 temperate ground and alpine rock using physical source elevation. They no longer
 assign the same grass-dominated mixture to all low-elevation land.
 
-See the re-exports in `src/lib.rs`, including sector materialization, planet sampling, dungeon generation, generator contract validation and addressable randomness. `PreparedGeography` is the host port for immutable geographic samples. `PlanetTerrain::new` validates the generation, surface, optional planet definition and complete `TerrainInputs` together; Earth requires geography with the declared package digest. No builder can replace that definition or its inputs after construction. Sample world composition belongs to `minimium-game-sample`.
+See the re-exports in `src/lib.rs`, including sector materialization, planet sampling, dungeon generation, generator contract validation and addressable randomness. `PreparedGeography` is the host port for immutable geographic samples. `PlanetTerrain::new` validates generation, surface, optional planet definition and `TerrainInputs`; `PlanetTerrain::for_manifest` additionally binds material and volume queries to the exact immutable manifest. Earth requires geography with the declared package digest. No builder can replace that definition or its inputs after construction. Sample world composition belongs to `minimium-game-sample`.
 
 Excavation collision preflight and render contour preparation share projected
 chunk bounds. Neighbor queries match canonical cube corners across face seams.
@@ -106,8 +106,13 @@ materialized map before publishing or installing that content.
 
 ## Committed terrain overlays
 
-`TerrainInputs` explicitly carries geography, terrain edits, remnant objects and
-an optional immutable volume store. `SectorContentVersion` carries separate
+`TerrainInputs` explicitly carries geography, an optional resolved material
+profile, terrain edits, remnant objects and an optional immutable volume store.
+Material profiles use integer millimetres and bind to an exact manifest and map
+fingerprint at content resolution. `volume_base` and volume materialization fail
+when that binding is absent or mismatched; geography-only inputs never invent a
+default profile. The binding lives in runtime composition/session state and adds
+no world-manifest, protocol or save fields. `SectorContentVersion` carries separate
 monotone revisions for edits, remnants and volume mutations. Sector cache
 invalidation uses this complete global version, so an unrelated source mutation
 may rebuild more sectors but simultaneous changes cannot cancel each other.
@@ -117,8 +122,9 @@ ground queries and remnant placement sample that same overlay. The base geograph
 is immutable. `SectorGeometry::object_triangles` keeps
 the collidable seeded meteorite mesh separate from terrain material sampling;
 both geometry consumers include it. Remnants have independent spatial/revision
-queries. `PlanetVolumeBase` supplies generated ground and an explicit soil depth
-to `minimium-terrain`. `validate_volume_geometry` preflights affected collision
+queries. `PlanetVolumeBase` supplies generated ground and material classification
+from the bound profile to `minimium-terrain`; consumers cannot override its soil
+depth per call. `validate_volume_geometry` preflights affected collision
 sectors: it clips old triangles from activated chunk boxes, extracts canonical
 box-face contours, zippers matching Marching Cubes loops and returns an error for
 open, unmatched or degenerate transitions. Render workers use

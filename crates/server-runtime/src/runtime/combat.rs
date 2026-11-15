@@ -85,7 +85,6 @@ impl ServerRuntime {
                 &self.game.worlds,
                 instance,
                 self.prepared_geography.as_ref(),
-                self.excavation.soil_depth_m(),
             ) {
                 let respawn = respawn_mm.0.map(|value| value as f32 / 1000.0);
                 if let (Some(target), Some(world)) =

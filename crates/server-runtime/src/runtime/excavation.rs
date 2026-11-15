@@ -94,10 +94,6 @@ struct Pending {
 }
 
 impl Excavation {
-    pub(super) fn soil_depth_m(&self) -> f64 {
-        self.config.soil_depth_m
-    }
-
     pub(super) fn open(
         path: &std::path::Path,
         config: crate::composition::ExcavationConfig,
@@ -183,6 +179,7 @@ impl ServerRuntime {
         let owner = self.game.worlds.get(world)?;
         Some(minimium_procgen::TerrainInputs {
             geography: self.prepared_geography.clone(),
+            material_profile: Some(owner.terrain_material_profile),
             edits: Some(owner.terrain.clone()),
             remnants: Some(owner.remnants.clone()),
             volumes: owner.volumes.clone(),

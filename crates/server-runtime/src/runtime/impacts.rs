@@ -231,6 +231,7 @@ impl ServerRuntime {
             };
             let geography = minimium_procgen::TerrainInputs {
                 geography: self.prepared_geography.clone(),
+                material_profile: Some(owner.terrain_material_profile),
                 edits: Some(owner.terrain.clone()),
                 remnants: Some(owner.remnants.clone()),
                 volumes: owner.volumes.clone(),
@@ -441,15 +442,11 @@ struct Surface {
 }
 impl minimium_simulation::impact::BodyEnvironment for Surface {
     fn terrain_distance(&self, position: [f64; 3]) -> Option<f64> {
-        let terrain = minimium_procgen::PlanetTerrain::new(
-            self.manifest.generation(),
-            minimium_procgen::planet_surface_for(self.manifest),
-            Some(self.manifest.planet()?),
-            self.geography.clone(),
-        )
-        .ok()?;
+        let terrain =
+            minimium_procgen::PlanetTerrain::for_manifest(self.manifest, self.geography.clone())
+                .ok()?;
         // Soil depth affects material identity only; this query reads distance.
-        let base = terrain.volume_base(0.0)?;
+        let base = terrain.volume_base()?;
         if let Some(store) = &self.geography.volumes {
             store
                 .view(&base)

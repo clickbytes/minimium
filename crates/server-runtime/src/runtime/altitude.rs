@@ -64,6 +64,7 @@ impl ServerRuntime {
             direction,
             minimium_procgen::TerrainInputs {
                 geography: self.prepared_geography.clone(),
+                material_profile: Some(self.game.worlds.get(instance)?.terrain_material_profile),
                 edits: Some(self.game.worlds.get(instance)?.terrain.clone()),
                 remnants: Some(self.game.worlds.get(instance)?.remnants.clone()),
                 volumes: self.game.worlds.get(instance)?.volumes.clone(),

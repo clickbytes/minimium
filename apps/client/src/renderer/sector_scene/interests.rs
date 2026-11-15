@@ -36,6 +36,50 @@ impl SceneInterestOwner {
 }
 
 impl ClientSectorCache {
+    pub(super) fn update_terrain_input(
+        &mut self,
+        instance: WorldInstanceId,
+        manifest: WorldManifest,
+        terrain: &minimium_procgen::TerrainInputs,
+    ) {
+        let old = self.terrain_inputs.get(&instance);
+        let changed_geometry_source =
+            old.is_some_and(|previous| previous.geography.is_some() != terrain.geography.is_some());
+        let changed_material_profile =
+            old.is_some_and(|previous| previous.material_profile != terrain.material_profile);
+        let changed = old.is_none_or(|previous| {
+            previous.revision() != terrain.revision()
+                || changed_geometry_source
+                || changed_material_profile
+        });
+        if changed {
+            let count = minimium_procgen::planet_sector_count(manifest);
+            if let Some(previous) = old {
+                self.manager.invalidate_where(instance, |key| {
+                    changed_geometry_source
+                        || changed_material_profile
+                        || previous.sector_version(key, 1, count)
+                            != terrain.sector_version(key, 1, count)
+                });
+            }
+            self.presentations
+                .retain(|scene_owner, _| scene_owner.instance() != instance);
+        }
+        self.terrain_inputs
+            .insert(instance, Arc::new(terrain.clone()));
+    }
+
+    pub(super) fn material_profile_matches(
+        inputs: &minimium_procgen::TerrainInputs,
+        manifest: WorldManifest,
+        map: Option<&WorldMap>,
+    ) -> bool {
+        inputs.material_profile.is_none_or(|profile| {
+            profile.matches_manifest(manifest)
+                && map.is_some_and(|map| profile.matches(manifest, map.fingerprint()))
+        }) && (inputs.volumes.is_none() || inputs.material_profile.is_some())
+    }
+
     pub(super) fn interest_matches(
         &self,
         owner: SceneInterestOwner,

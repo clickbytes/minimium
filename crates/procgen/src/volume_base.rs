@@ -4,17 +4,19 @@ use minimium_world::terrain::{valid_position, TerrainMaterial, TerrainRevision, 
 
 pub struct PlanetVolumeBase<'a> {
     terrain: &'a PlanetTerrain,
-    soil_depth_m: f64,
+    soil_depth_mm: u16,
 }
 
 impl PlanetTerrain {
-    pub fn volume_base(&self, soil_depth_m: f64) -> Option<PlanetVolumeBase<'_>> {
-        (0.0..=16.0)
-            .contains(&soil_depth_m)
-            .then_some(PlanetVolumeBase {
-                terrain: self,
-                soil_depth_m,
-            })
+    pub fn volume_base(&self) -> Option<PlanetVolumeBase<'_>> {
+        let profile = self.inputs().material_profile?;
+        if self.material_manifest != Some(profile.manifest()) {
+            return None;
+        }
+        Some(PlanetVolumeBase {
+            terrain: self,
+            soil_depth_mm: profile.profile().soil_depth_mm(),
+        })
     }
 }
 
@@ -35,7 +37,7 @@ impl minimium_terrain::BaseTerrain for PlanetVolumeBase<'_> {
         let distance_m = radius - surface.height_mm as f64 / 1000.0;
         Some(TerrainSample {
             distance_m,
-            material: if distance_m < -self.soil_depth_m {
+            material: if distance_m < -(f64::from(self.soil_depth_mm) / 1000.0) {
                 TerrainMaterial::Rock
             } else {
                 TerrainMaterial::Soil

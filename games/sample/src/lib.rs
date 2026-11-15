@@ -2,7 +2,7 @@
 
 mod combat;
 mod excavation;
-pub use excavation::{DEFAULT_IMPACT_PROFILE, DEFAULT_TOOL_PROFILE, SOIL_DEPTH_M};
+pub use excavation::{DEFAULT_IMPACT_PROFILE, DEFAULT_TOOL_PROFILE};
 mod peak_relief;
 mod planet_config;
 mod portal;
@@ -14,9 +14,9 @@ pub use combat::{SampleCombatConfig, DEFAULT_COMBAT_CONFIG};
 pub use planet_config::{load as load_planet_preset, PlanetMode, ResolvedPlanetConfig};
 pub use portal::{PortalComponent, SampleGameplayModule, PORTAL_COMPONENT, PORTAL_SCHEMA};
 pub use scenario::{
-    generate_demo_worlds, generate_worlds, generate_worlds_with_planet,
-    generate_worlds_with_planet_and_geography, materialize_manifest_map, DemoPortal,
-    GeneratedWorld,
+    default_terrain_material_profile, generate_demo_worlds, generate_worlds,
+    generate_worlds_with_planet, generate_worlds_with_planet_and_geography,
+    materialize_manifest_map, terrain_material_profile, DemoPortal, GeneratedWorld,
 };
 pub use universe::{demo_universe_catalog, DemoUniverseCatalog};
 

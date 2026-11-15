@@ -1,5 +1,4 @@
 //! Sample-owned terrain/tool balance, passed explicitly by application hosts.
-pub const SOIL_DEPTH_M: f64 = 1.5;
 
 pub const DEFAULT_TOOL_PROFILE: minimium_simulation::tools::ToolProfile =
     minimium_simulation::tools::ToolProfile {

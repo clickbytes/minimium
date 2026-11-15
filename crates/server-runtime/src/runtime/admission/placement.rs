@@ -23,7 +23,6 @@ pub(super) fn claim_and_validate(
             &runtime.game.worlds,
             primary_instance,
             runtime.prepared_geography.as_ref(),
-            runtime.excavation.soil_depth_m(),
         )
         .ok_or(())?
     } else {
@@ -59,7 +58,6 @@ pub(super) fn claim_and_validate(
     let terrain_reads = super::super::gameplay_terrain::build(
         &runtime.game.worlds,
         runtime.prepared_geography.as_ref(),
-        runtime.excavation.soil_depth_m(),
     );
     let saved_position = player.location.position();
     let saved_float = saved_position.0.map(|value| value as f32 / 1000.0);

@@ -200,7 +200,6 @@ impl ServerSchedule {
         simulation_tick: u64,
         worlds: &WorldRegistry,
         geography: Option<&Arc<dyn PreparedGeography>>,
-        soil_depth_m: f64,
         events: &[GameplayEvent],
         world_context: Option<(minimium_world::world::WorldInstanceId, WorldLifecycle)>,
     ) -> WorldEffectBatch {
@@ -213,7 +212,7 @@ impl ServerSchedule {
             }
         }
         let mut effects = WorldEffectBuffer::default();
-        let terrain_reads = gameplay_terrain::build(worlds, geography, soil_depth_m);
+        let terrain_reads = gameplay_terrain::build(worlds, geography);
         let mut context = ModuleSystemContext {
             stage,
             worlds,

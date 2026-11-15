@@ -77,7 +77,6 @@ impl ServerRuntime {
             .ok_or_else(|| io::Error::other("mutation IDs exhausted"))?;
         let mut water = self.excavation.waters.get(&body.world).cloned();
         let digest = self.excavation.water_catalogs.get(&body.world).copied();
-        let soil = self.excavation.config.soil_depth_m;
         let other_cells: usize = self
             .excavation
             .waters
@@ -98,7 +97,7 @@ impl ServerRuntime {
                 let old_planet =
                     scene::planet(manifest, inputs.clone()).ok_or(ActionRejection::Stale)?;
                 let old_base = old_planet
-                    .volume_base(soil)
+                    .volume_base()
                     .ok_or(ActionRejection::InvalidIntent)?;
                 let mut candidate_inputs = inputs;
                 candidate_inputs.edits = Some(craters.clone());
@@ -106,7 +105,7 @@ impl ServerRuntime {
                 let new_planet = scene::planet(manifest, candidate_inputs.clone())
                     .ok_or(ActionRejection::Stale)?;
                 let new_base = new_planet
-                    .volume_base(soil)
+                    .volume_base()
                     .ok_or(ActionRejection::InvalidIntent)?;
                 let mut mutation = WorldMutation {
                     id,
@@ -183,7 +182,6 @@ impl ServerRuntime {
                     manifest,
                     &candidate_planet,
                     &affected,
-                    soil,
                 )
                 .map_err(|reason| {
                     PreparationError::Geometry(GeometryFailure {

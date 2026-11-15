@@ -75,17 +75,14 @@ pub fn materialize_world_sector_with_geography(
     key: SectorKey,
     geography: impl Into<crate::TerrainInputs>,
 ) -> Result<SectorGeometry, crate::ExcavationGeometryError> {
-    materialize_world_sector_with_geography_and_soil(map, manifest, key, geography, 1.5)
-}
-
-pub fn materialize_world_sector_with_geography_and_soil(
-    map: &WorldMap,
-    manifest: minimium_world::world::WorldManifest,
-    key: SectorKey,
-    geography: impl Into<crate::TerrainInputs>,
-    soil_depth_m: f64,
-) -> Result<SectorGeometry, crate::ExcavationGeometryError> {
     let inputs: crate::TerrainInputs = geography.into();
+    if inputs.volumes.is_some()
+        && !inputs
+            .material_profile
+            .is_some_and(|profile| profile.matches(manifest, map.fingerprint()))
+    {
+        return Err(crate::ExcavationGeometryError::UnavailableSurface);
+    }
     let mut geometry = slice_sector_geometry_with_count(
         map,
         manifest.topology(),
@@ -98,12 +95,7 @@ pub fn materialize_world_sector_with_geography_and_soil(
         geometry.triangles.extend(generated.triangles);
         geometry.object_triangles.extend(generated.object_triangles);
         if let Some(store) = inputs.volumes.as_deref() {
-            let terrain = crate::PlanetTerrain::new(
-                manifest.generation(),
-                crate::planet_surface_for(manifest),
-                manifest.planet(),
-                inputs.clone(),
-            )?;
+            let terrain = crate::PlanetTerrain::for_manifest(manifest, inputs.clone())?;
             let count = crate::planet_sector_count(manifest);
             let (u, v) = planet.coordinates();
             let contour_sectors =
@@ -126,7 +118,6 @@ pub fn materialize_world_sector_with_geography_and_soil(
                 count,
                 &geometry,
                 &contour_source,
-                soil_depth_m,
             )?;
         }
     }

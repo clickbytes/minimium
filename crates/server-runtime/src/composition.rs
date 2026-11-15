@@ -54,6 +54,7 @@ pub struct WorldDefinition {
     pub instance: WorldInstanceId,
     pub manifest: WorldManifest,
     pub map: WorldMap,
+    pub terrain_material_profile: minimium_procgen::ResolvedTerrainMaterialProfile,
     pub initial_entities: Vec<InitialEntity>,
 }
 
@@ -87,6 +88,7 @@ pub struct WorldComposition {
     pub worlds: Option<Vec<WorldDefinition>>,
     pub planet_definition: Option<Vec<u8>>,
     pub prepared_geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
+    pub primary_terrain_material_profile: minimium_procgen::TerrainMaterialProfile,
 }
 
 /// The one application callback used to build world data during server initialization.
@@ -105,7 +107,6 @@ pub struct ServerCombatConfig {
 pub struct ExcavationConfig {
     pub terrain: minimium_terrain::TerrainConfig,
     pub tools: minimium_simulation::tools::ToolProfile,
-    pub soil_depth_m: f64,
     pub fluids: minimium_fluids::FluidConfig,
     pub server_fluid_cells: usize,
 }
@@ -114,7 +115,6 @@ impl ExcavationConfig {
     pub fn valid(self) -> bool {
         self.terrain.valid()
             && self.tools.valid()
-            && (0.0..=16.0).contains(&self.soil_depth_m)
             && (1..=262_144).contains(&self.fluids.max_active_cells)
             && (self.fluids.max_active_cells..=524_288).contains(&self.server_fluid_cells)
     }

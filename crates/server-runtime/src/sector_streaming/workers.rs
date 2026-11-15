@@ -266,6 +266,7 @@ impl SectorGenerationPool {
                 manifest: instance.manifest,
                 geography: minimium_procgen::TerrainInputs {
                     geography: geography.clone(),
+                    material_profile: Some(instance.terrain_material_profile),
                     edits: Some(instance.terrain.clone()),
                     remnants: Some(instance.remnants.clone()),
                     volumes: instance.volumes.clone(),

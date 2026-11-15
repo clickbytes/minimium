@@ -94,7 +94,7 @@ impl ServerRuntime {
         let terrain =
             scene::planet(manifest, inputs.clone()).ok_or(ActionRejection::InvalidIntent)?;
         let base = terrain
-            .volume_base(self.excavation.config.soil_depth_m)
+            .volume_base()
             .ok_or(ActionRejection::InvalidIntent)?;
         let hit = scene::query(
             owner,
@@ -149,7 +149,6 @@ impl ServerRuntime {
             radius_m: action.radius_m,
             tool: action.tool,
         };
-        let soil_depth_m = self.excavation.config.soil_depth_m;
         let water = self.excavation.waters.get(&context.instance()).cloned();
         let water_catalog_digest = self
             .excavation
@@ -178,7 +177,6 @@ impl ServerRuntime {
             water,
             water_budget,
             water_catalog_digest,
-            soil_depth_m,
         };
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
         self.sector_workers

@@ -189,11 +189,8 @@ impl ServerRuntime {
         &mut self,
         sector_ready: &HashSet<minimium_core::ids::PlayerId>,
     ) -> HashSet<minimium_core::ids::PlayerId> {
-        let terrain = super::gameplay_terrain::build(
-            &self.game.worlds,
-            self.prepared_geography.as_ref(),
-            self.excavation.soil_depth_m(),
-        );
+        let terrain =
+            super::gameplay_terrain::build(&self.game.worlds, self.prepared_geography.as_ref());
         let reads: std::collections::HashMap<_, &dyn minimium_world::terrain::TerrainRead> =
             terrain
                 .iter()

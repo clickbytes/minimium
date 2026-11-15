@@ -34,18 +34,17 @@ fn planet_position_at_direction(
     inputs: crate::TerrainInputs,
     safe_spawn: bool,
 ) -> Option<[i64; 3]> {
+    if inputs.volumes.is_some()
+        && !inputs
+            .material_profile
+            .is_some_and(|profile| profile.matches_manifest(manifest))
+    {
+        return None;
+    }
     let count = planet_sector_count(manifest);
     let key = PlanetSectorKey::from_direction_with_count(direction, count);
     let terrain = if inputs.volumes.is_some() {
-        Some(
-            crate::PlanetTerrain::new(
-                manifest.generation(),
-                crate::planet_surface_for(manifest),
-                manifest.planet(),
-                inputs.clone(),
-            )
-            .ok()?,
-        )
+        Some(crate::PlanetTerrain::for_manifest(manifest, inputs.clone()).ok()?)
     } else {
         None
     };
@@ -89,8 +88,7 @@ fn planet_position_at_direction(
         .collect();
     let base = bases.get(&key)?;
     let geometry = if let Some(terrain) = &terrain {
-        crate::integrate_volume_sector_with_contours(terrain, key, count, base, &contours, 1.5)
-            .ok()?
+        crate::integrate_volume_sector_with_contours(terrain, key, count, base, &contours).ok()?
     } else {
         base.clone()
     };
@@ -105,7 +103,6 @@ fn planet_position_at_direction(
                     count,
                     adjacent_base,
                     &contours,
-                    1.5,
                 )
                 .ok()?
             } else {

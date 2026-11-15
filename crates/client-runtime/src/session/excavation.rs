@@ -12,6 +12,14 @@ pub(super) struct ToolClientState {
 impl ClientSession {
     pub fn terrain_inputs(&self) -> minimium_procgen::TerrainInputs {
         let mut inputs = minimium_procgen::TerrainInputs::from(self.prepared_geography());
+        if let Some(profile) = self
+            .active_world_content
+            .as_ref()
+            .filter(|content| Some(content.context) == self.world_context)
+            .map(|content| content.content.terrain_material_profile)
+        {
+            inputs.material_profile = Some(profile);
+        }
         if self.impacts.context == self.world_context && self.impacts.ready {
             inputs.remnants = self
                 .impacts
@@ -35,9 +43,10 @@ impl ClientSession {
             .pending_world_content
             .as_ref()
             .filter(|pending| pending.context == context)?;
-        Some(minimium_procgen::TerrainInputs::from(
-            pending.content.geography.clone(),
-        ))
+        Some(
+            minimium_procgen::TerrainInputs::from(pending.content.geography.clone())
+                .with_material_profile(pending.content.terrain_material_profile),
+        )
     }
 
     pub fn excavation_ready(&self) -> bool {

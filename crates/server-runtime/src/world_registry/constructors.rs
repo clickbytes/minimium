@@ -2,7 +2,10 @@ use super::*;
 use crate::environment::profile_for_manifest;
 
 impl WorldRegistry {
-    pub(crate) fn authored_primary(map: WorldMap) -> Self {
+    pub(crate) fn authored_primary(
+        map: WorldMap,
+        material_profile: minimium_procgen::TerrainMaterialProfile,
+    ) -> Self {
         let definition = WorldDefinitionId::new(1).expect("authored definition ID is nonzero");
         let instance = WorldInstanceId::new(1).expect("authored instance ID is nonzero");
         let generation = GenerationSpec::new(
@@ -20,6 +23,7 @@ impl WorldRegistry {
             revision,
             digest,
         );
+        let terrain_material_profile = material_profile.bind(manifest, map.fingerprint());
         let mut world = World::default();
         world.load_map_streamed(&map);
         let map = Arc::new(map);
@@ -34,6 +38,7 @@ impl WorldRegistry {
                 terrain: Arc::new(minimium_terrain::TerrainSnapshot::empty(10000.0)),
                 remnants: Arc::new(minimium_world::remnants::RemnantSnapshot::empty(10000.0)),
                 manifest,
+                terrain_material_profile,
                 map,
                 world,
                 collision_source_revision: 0,
@@ -60,8 +65,19 @@ impl WorldRegistry {
         instance: WorldInstanceId,
         manifest: WorldManifest,
         map: WorldMap,
+        terrain_material_profile: minimium_procgen::ResolvedTerrainMaterialProfile,
     ) -> Result<(), RegistryError> {
         validate_manifest_map(manifest, &map)?;
+        if !terrain_material_profile.matches(manifest, map.fingerprint()) {
+            return Err(RegistryError::InvalidTerrainMaterialProfile);
+        }
+        if self.instances.values().any(|owner| {
+            owner.manifest == manifest
+                && owner.map.fingerprint() == map.fingerprint()
+                && owner.terrain_material_profile != terrain_material_profile
+        }) {
+            return Err(RegistryError::InvalidTerrainMaterialProfile);
+        }
         if self.instances.contains_key(&instance) {
             return Err(RegistryError::DuplicateInstance);
         }
@@ -94,6 +110,7 @@ impl WorldRegistry {
                         .map_or(10000.0, |p| p.radius_mm as f64 / 1000.0),
                 )),
                 manifest,
+                terrain_material_profile,
                 map,
                 world,
                 collision_source_revision: 0,
@@ -112,6 +129,12 @@ impl WorldRegistry {
         let mut worlds = worlds.into_iter();
         let primary = worlds.next().ok_or(RegistryError::EmptyWorlds)?;
         validate_manifest_map(primary.manifest, &primary.map)?;
+        if !primary
+            .terrain_material_profile
+            .matches(primary.manifest, primary.map.fingerprint())
+        {
+            return Err(RegistryError::InvalidTerrainMaterialProfile);
+        }
         let primary_id = primary.instance;
         let mut registry = Self::from_definition(primary);
         for world in worlds {
@@ -156,6 +179,7 @@ impl WorldRegistry {
                         .map_or(10000.0, |p| p.radius_mm as f64 / 1000.0),
                 )),
                 manifest: world.manifest,
+                terrain_material_profile: world.terrain_material_profile,
                 map,
                 world: simulation,
                 collision_source_revision: 0,
@@ -180,7 +204,12 @@ impl WorldRegistry {
     fn register_definition(&mut self, world: WorldDefinition) -> Result<(), RegistryError> {
         let instance = world.instance;
         let initial_entities = world.initial_entities;
-        self.register(instance, world.manifest, world.map)?;
+        self.register(
+            instance,
+            world.manifest,
+            world.map,
+            world.terrain_material_profile,
+        )?;
         let owner = self
             .instances
             .get_mut(&instance)

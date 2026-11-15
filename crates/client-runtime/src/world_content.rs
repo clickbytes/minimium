@@ -28,6 +28,7 @@ pub struct ResolvedWorldContent {
     pub manifest: WorldManifest,
     pub map: Arc<WorldMap>,
     pub geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
+    pub terrain_material_profile: minimium_procgen::ResolvedTerrainMaterialProfile,
 }
 
 pub trait WorldContentResolver: Send + Sync {
@@ -49,6 +50,10 @@ pub struct ContentResolutionTicket {
 
 impl ResolvedWorldContent {
     pub fn matches(&self, ticket: ContentResolutionTicket, manifest: WorldManifest) -> bool {
-        self.ticket == ticket && self.manifest == manifest
+        self.ticket == ticket
+            && self.manifest == manifest
+            && self
+                .terrain_material_profile
+                .matches(manifest, self.map.fingerprint())
     }
 }
