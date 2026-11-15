@@ -69,7 +69,14 @@ terrain and prepared collision only after a durable acknowledgement. Obsolete
 worker tickets cannot replace the new geometry. Unchanged sector indexes are
 shared through Arc.
 
-The initial coordinator serializes structural transactions with one bounded
+`ExcavationCoordinator` privately owns preparation, durable pending work and
+mutation IDs. Tool, impact, inventory and fluid-checkpoint paths share its
+submission operations. Bounded work and publication ports do not expose the
+whole runtime; live publication requires the owner's durable-acknowledgement
+proof. Cancelling unsubmitted work drops its receiver and releases its exact
+impact checkpoint reservations. Submitted writes are drained, not cancelled.
+
+The coordinator serializes structural transactions with one bounded
 pending preparation/commit; this is deliberately stricter than the per-chunk
 limit. Independent water worlds can prepare in separate shared-pool tasks.
 Only affected terrain images and world state are copied.

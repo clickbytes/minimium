@@ -3,7 +3,7 @@ use minimium_world::{impact::BodyState, terrain::TerrainChunkKey};
 
 impl ServerRuntime {
     pub(in crate::runtime) fn restore_excavation_impacts(&mut self) -> io::Result<()> {
-        for (world, saved) in &self.excavation.restored.worlds {
+        for (world, saved) in &self.excavation.state.restored.worlds {
             let owner = self
                 .game
                 .worlds
@@ -31,7 +31,7 @@ impl ServerRuntime {
         body: BodyState,
     ) -> io::Result<()> {
         if self.excavation.busy()
-            || self.excavation.water_jobs.contains_key(&body.world)
+            || self.excavation.state.water_jobs.contains_key(&body.world)
             || self.impacts.has_pending_in_world(body.world)
         {
             return Err(io::Error::new(
@@ -39,10 +39,15 @@ impl ServerRuntime {
                 "impact terrain is reserved",
             ));
         }
-        if let Some(error) = &self.excavation.failure {
-            return Err(io::Error::other(error.clone()));
+        if let Some(error) = self.excavation.coordinator.failure() {
+            return Err(io::Error::other(error.to_owned()));
         }
-        if self.excavation.water_failures.contains_key(&body.world) {
+        if self
+            .excavation
+            .state
+            .water_failures
+            .contains_key(&body.world)
+        {
             return Err(io::Error::new(
                 io::ErrorKind::WouldBlock,
                 "impact waits for the world's fluid system",
@@ -75,10 +80,16 @@ impl ServerRuntime {
             .excavation
             .allocate_id()
             .ok_or_else(|| io::Error::other("mutation IDs exhausted"))?;
-        let mut water = self.excavation.waters.get(&body.world).cloned();
-        let digest = self.excavation.water_catalogs.get(&body.world).copied();
+        let mut water = self.excavation.state.waters.get(&body.world).cloned();
+        let digest = self
+            .excavation
+            .state
+            .water_catalogs
+            .get(&body.world)
+            .copied();
         let other_cells: usize = self
             .excavation
+            .state
             .waters
             .iter()
             .filter(|(world, _)| **world != body.world)
@@ -86,14 +97,19 @@ impl ServerRuntime {
             .sum();
         let budget = self
             .excavation
+            .state
             .config
             .server_fluid_cells
             .saturating_sub(other_cells)
-            .min(self.excavation.config.fluids.max_active_cells);
-        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
-        self.impacts.begin_checkpoints(&[body])?;
-        if let Err(error) = self.sector_workers.prepare(Box::new(move || {
-            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            .min(self.excavation.state.config.fluids.max_active_cells);
+        self.excavation.coordinator.prepare(
+            PreparationRequest {
+                origin: Origin::default(),
+                world: body.world,
+                impact_bodies: vec![body],
+                input_revision,
+            },
+            Box::new(move || {
                 let old_planet =
                     scene::planet(manifest, inputs.clone()).ok_or(ActionRejection::Stale)?;
                 let old_base = old_planet
@@ -202,23 +218,8 @@ impl ServerRuntime {
                     water,
                     craters: Some(craters),
                 })
-            }))
-            .unwrap_or(Err(ActionRejection::Capacity.into()));
-            let _ = sender.send(result);
-        })) {
-            self.impacts.discard_pending_checkpoint(&body);
-            return Err(error);
-        }
-        self.excavation.preparing = Some(Preparation {
-            player: None,
-            context: None,
-            action_id: None,
-            world: body.world,
-            impact_bodies: vec![body],
-            input_revision,
-            receiver,
-            started: Instant::now(),
-        });
-        Ok(())
+            }),
+            &mut ports::WorkSubmission::new(&self.sector_workers, &mut self.impacts),
+        )
     }
 }
