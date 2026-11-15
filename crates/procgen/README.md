@@ -32,7 +32,7 @@ Without WorldCover, presentation fractions distinguish arid latitude belts,
 temperate ground and alpine rock using physical source elevation. They no longer
 assign the same grass-dominated mixture to all low-elevation land.
 
-See the re-exports in `src/lib.rs`, including sector materialization, planet sampling, dungeon generation, generator contract validation and addressable randomness. `PreparedGeography` is the host port for immutable geographic samples; `PlanetTerrain::with_geography` carries it into terrain and weather sampling. Sample world composition belongs to `minimium-game-sample`.
+See the re-exports in `src/lib.rs`, including sector materialization, planet sampling, dungeon generation, generator contract validation and addressable randomness. `PreparedGeography` is the host port for immutable geographic samples. `PlanetTerrain::new` validates the generation, surface, optional planet definition and complete `TerrainInputs` together; Earth requires geography with the declared package digest. No builder can replace that definition or its inputs after construction. Sample world composition belongs to `minimium-game-sample`.
 
 Excavation collision preflight and render contour preparation share projected
 chunk bounds. Neighbor queries match canonical cube corners across face seams.
@@ -53,12 +53,21 @@ Generation functions are called by client/server owners or their scheduled work.
 
 Preserve seeds, address calculations, rounding, scales and algorithm order. Generation must remain reproducible for the same inputs. Manifest validation and map materialization return `GenerationError` with a stable code and concrete category rather than requiring callers to parse an error string.
 
+Terrain, source elevation, bounds, landmarks, meshes and water catalog sampling
+return `GenerationError`; `Sampling(EarthSampleError)` preserves a failed provider
+query, including nonfinite elevation. No failed sample becomes an empty mesh or
+invented height. `ExcavationGeometryError::Generation` carries the cause through
+sector preparation. Existing optional spatial-query and `BaseTerrain` ports map
+failure to unavailable (`None`), so callers cannot approve an unsupported hit.
+Callers publish only a complete successful result and still validate its context
+and revision. Successful sampling arithmetic and content digests are unchanged.
+
 Render patches and coarse blocks sample signed ground heights through
 PlanetTerrain::ground_sample; Earth bathymetry remains below sea level.
 PlanetTerrain::sea_position supplies canonical sea-level vertices for presentation.
 The renderer owns the separate ocean mesh and its intersection with ground.
 The earlier binary shoreline clipping is removed. PlanetTerrain::sample and
-collision sector generation retain their original sea-clamped results and rounding.
+collision sector generation retain their current ground results and rounding.
 
 ## Commands
 

@@ -1,7 +1,7 @@
 //! Conform fine patch boundaries to their coarse neighbor, including cube seams.
 //! Only presentation copies change; generator/collision geometry is immutable.
 use crate::terrain_geometry::radial_curtain;
-use minimium_procgen::{PlanetTerrain, SectorGeometry};
+use minimium_procgen::{GenerationError, PlanetTerrain, SectorGeometry};
 use minimium_world::world::{
     SectorKey, PLANET_DENSE_SECTORS_PER_FACE, PLANET_SAMPLE_COORDINATE_SCALE,
 };
@@ -34,7 +34,11 @@ impl EdgeConformance {
         self.entries.get(&(key, lod))?.ocean.as_deref()
     }
 
-    pub fn prepare(&mut self, patches: Vec<Patch>, terrain: &PlanetTerrain) -> Vec<Patch> {
+    pub fn prepare(
+        &mut self,
+        patches: Vec<Patch>,
+        terrain: &PlanetTerrain,
+    ) -> Result<Vec<Patch>, GenerationError> {
         let mut lines: HashMap<Line, Vec<Edge>> = HashMap::new();
         let edges: Vec<_> = patches
             .iter()
@@ -49,7 +53,7 @@ impl EdgeConformance {
             .zip(edges)
             .map(|((key, lod, source), edges)| {
                 let Some(edges) = edges else {
-                    return (key, lod, source);
+                    return Ok((key, lod, source));
                 };
                 let steps = edges.map(|edge| {
                     lines[&edge.line]
@@ -63,11 +67,13 @@ impl EdgeConformance {
                     .entries
                     .remove(&(key, lod))
                     .filter(|entry| Arc::ptr_eq(&entry.source, &source) && entry.steps == steps);
-                let entry = cached.unwrap_or_else(|| {
-                    let ground = conform(&source, edges, steps, terrain, false);
+                let entry = if let Some(entry) = cached {
+                    entry
+                } else {
+                    let ground = conform(&source, edges, steps, terrain, false)?;
                     let (ground, ocean) = if terrain.is_earth() {
                         let sphere = crate::ocean_geometry::sphere_patch(&source, terrain);
-                        let sea = conform(&sphere, edges, steps, terrain, true);
+                        let sea = conform(&sphere, edges, steps, terrain, true)?;
                         let (land, water) = crate::shoreline::partition(&ground, &sea);
                         (land, Some(Arc::new(water)))
                     } else {
@@ -79,18 +85,21 @@ impl EdgeConformance {
                         source,
                         steps,
                     }
-                });
+                };
                 let ground = entry.ground.clone();
                 retained.insert((key, lod), entry);
-                (key, lod, ground)
+                Ok((key, lod, ground))
             })
-            .collect();
+            .collect::<Result<Vec<_>, GenerationError>>()?;
         self.entries = retained;
-        result
+        Ok(result)
     }
 }
 
-pub(crate) fn preconform_bases(patches: Vec<Patch>, terrain: &PlanetTerrain) -> Vec<Patch> {
+pub(crate) fn preconform_bases(
+    patches: Vec<Patch>,
+    terrain: &PlanetTerrain,
+) -> Result<Vec<Patch>, GenerationError> {
     let edge_sets: Vec<_> = patches
         .iter()
         .map(|(key, lod, _)| edges(*key, *lod))
@@ -104,7 +113,7 @@ pub(crate) fn preconform_bases(patches: Vec<Patch>, terrain: &PlanetTerrain) -> 
         .zip(edge_sets)
         .map(|((key, lod, source), edge_set)| {
             let Some(edge_set) = edge_set else {
-                return (key, lod, source);
+                return Ok((key, lod, source));
             };
             let steps = edge_set.map(|edge| {
                 lines[&edge.line]
@@ -114,8 +123,8 @@ pub(crate) fn preconform_bases(patches: Vec<Patch>, terrain: &PlanetTerrain) -> 
                     .max()
                     .unwrap_or(edge.step)
             });
-            let geometry = Arc::new(conform(&source, edge_set, steps, terrain, false));
-            (key, lod, geometry)
+            let geometry = Arc::new(conform(&source, edge_set, steps, terrain, false)?);
+            Ok((key, lod, geometry))
         })
         .collect()
 }
@@ -169,7 +178,7 @@ fn conform(
     steps: [i32; 4],
     terrain: &PlanetTerrain,
     ocean: bool,
-) -> SectorGeometry {
+) -> Result<SectorGeometry, GenerationError> {
     let mut geometry = SectorGeometry {
         object_triangles: if ocean {
             Vec::new()
@@ -219,52 +228,64 @@ fn conform(
         }
         let mut next = *triangle;
         let precise = precise.map(|point| {
-            *points.entry(point).or_insert_with(|| {
-                if protected.contains(&point) {
-                    return point;
-                }
-                let cube =
-                    minimium_procgen::terrain_surface::key(point.map(|v| v as f64)).coordinates();
-                for (edge, step) in edges.iter().zip(steps) {
-                    let (axis, fixed) = edge.line;
-                    if step <= edge.step
-                        || (0..3).any(|a| a != axis && (cube[a] - fixed[a]).abs() > tolerance)
-                    {
-                        continue;
+            points
+                .entry(point)
+                .or_insert_with(|| {
+                    if protected.contains(&point) {
+                        return Ok::<_, GenerationError>(point);
                     }
-                    let scale = PLANET_SAMPLE_COORDINATE_SCALE;
-                    // Both shells use the same canonical fraction. A projection
-                    // of each displaced point would give ground and sea different
-                    // fractions and could move their intersection at a LOD seam.
-                    let value = (((cube[axis] + scale + edge.step / 2) / edge.step) * edge.step
-                        - scale)
-                        .clamp(edge.from, edge.to);
-                    let cell = ((value + scale) / step * step - scale).min(scale - step);
-                    let (a, b) = *segments.entry((edge.line, cell, step)).or_insert_with(|| {
-                        let sample = |value| {
-                            let mut c = fixed;
-                            c[axis] = value;
-                            let key = minimium_procgen::terrain_surface::key(c.map(f64::from));
-                            let point = if ocean {
-                                terrain.sea_position(key)
-                            } else {
-                                terrain.ground_sample(key).position_mm
-                            };
-                            glam::DVec3::from_array(point.coordinates().map(|v| v as f64))
-                        };
-                        (sample(cell), sample(cell + step))
-                    });
-                    // Every resulting point lies on the exact coarse triangle edge.
-                    let d = b - a;
-                    let t = f64::from(value - cell) / f64::from(step);
-                    return (a + d * t).to_array().map(|v| v.round() as i64);
-                }
-                point
-            })
+                    let cube = minimium_procgen::terrain_surface::key(point.map(|v| v as f64))
+                        .coordinates();
+                    for (edge, step) in edges.iter().zip(steps) {
+                        let (axis, fixed) = edge.line;
+                        if step <= edge.step
+                            || (0..3).any(|a| a != axis && (cube[a] - fixed[a]).abs() > tolerance)
+                        {
+                            continue;
+                        }
+                        let scale = PLANET_SAMPLE_COORDINATE_SCALE;
+                        // Both shells use the same canonical fraction. A projection
+                        // of each displaced point would give ground and sea different
+                        // fractions and could move their intersection at a LOD seam.
+                        let value = (((cube[axis] + scale + edge.step / 2) / edge.step)
+                            * edge.step
+                            - scale)
+                            .clamp(edge.from, edge.to);
+                        let cell = ((value + scale) / step * step - scale).min(scale - step);
+                        let (a, b) = segments
+                            .entry((edge.line, cell, step))
+                            .or_insert_with(|| {
+                                let sample = |value| {
+                                    let mut c = fixed;
+                                    c[axis] = value;
+                                    let key =
+                                        minimium_procgen::terrain_surface::key(c.map(f64::from));
+                                    let point = if ocean {
+                                        terrain.sea_position(key)
+                                    } else {
+                                        terrain.ground_sample(key)?.position_mm
+                                    };
+                                    Ok::<_, GenerationError>(glam::DVec3::from_array(
+                                        point.coordinates().map(|v| v as f64),
+                                    ))
+                                };
+                                Ok::<_, GenerationError>((sample(cell)?, sample(cell + step)?))
+                            })
+                            .clone()?;
+                        // Every resulting point lies on the exact coarse triangle edge.
+                        let d = b - a;
+                        let t = f64::from(value - cell) / f64::from(step);
+                        return Ok((a + d * t).to_array().map(|v| v.round() as i64));
+                    }
+                    Ok(point)
+                })
+                .clone()
         });
+        let [a, b, c] = precise;
+        let precise = [a?, b?, c?];
         next.precise_vertices = Some(precise);
         next.vertices = precise.map(|p| p.map(|v| v as f32 / 1000.0));
         geometry.triangles.push(next);
     }
-    geometry
+    Ok(geometry)
 }

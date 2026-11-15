@@ -70,6 +70,10 @@ pub(super) fn dispatch_message(
                 session.disconnect(DisconnectReason::GeneratorMismatch, events);
                 return DispatchResult::Stop;
             }
+            if !session.validate_prepare_message(message) {
+                session.disconnect(DisconnectReason::UnexpectedMessage, events);
+                return DispatchResult::Stop;
+            }
         }
         ServerMessage::TransitionCommitted {
             transition_id,
@@ -188,6 +192,8 @@ pub(super) fn dispatch_message(
             source_context,
             target_context,
             map_fingerprint,
+            destination,
+            destination_mm,
             manifest,
             clock_sample,
             environment,
@@ -199,6 +205,8 @@ pub(super) fn dispatch_message(
                 source: *source_context,
                 target: *target_context,
                 map_fingerprint: *map_fingerprint,
+                destination: *destination,
+                destination_mm: *destination_mm,
                 manifest,
                 clock_sample: *clock_sample,
                 environment: *environment,
@@ -297,8 +305,7 @@ fn handle_welcome(
     session.clear_replicas();
     session.next_input_seq = 1;
     session.next_target_tick = session.server_tick.saturating_add(2).max(1);
-    session.pending_transition = None;
-    session.ready_transition = None;
+    session.clear_transfer_lifecycle();
     session.state = SessionState::Connected;
     session.state_since = Instant::now();
     session.last_heartbeat_at = session.state_since;

@@ -10,7 +10,7 @@ use minimium_renderer::{
 use minimium_world::world::{MapBox, SectorKey, WorldInstanceId};
 use std::sync::Arc;
 
-fn main() {
+fn main() -> Result<(), minimium_procgen::GenerationError> {
     let geometry = Arc::new(SectorGeometry {
         boxes: vec![MapBox {
             center: [0.0, 0.5, 0.0],
@@ -28,7 +28,7 @@ fn main() {
         None,
         None,
         [0.0; 3],
-    );
+    )?;
     let view = RenderViewFrame::default();
     let environment = EnvironmentUniform {
         ambient_rgb_exposure: [0.1, 0.1, 0.1, 1.0],
@@ -62,4 +62,5 @@ fn main() {
     );
     let reusable_overlay = frame.take_ui_vertices();
     println!("reusable overlay capacity={}", reusable_overlay.capacity());
+    Ok(())
 }

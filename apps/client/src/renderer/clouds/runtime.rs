@@ -123,6 +123,13 @@ impl Renderer {
             self.gpu.cloud_gpu.inside_count = 0;
             self.gpu.cloud_gpu.light_records.clear();
         }
+        if let Some((failed_stamp, error)) = self.weather.worker.take_failure() {
+            if failed_stamp == stamp {
+                self.application
+                    .connection
+                    .record_diagnostic_failure(error.code(), &error.to_string());
+            }
+        }
         if let Some((cover_stamp, cover)) = self.weather.worker.take_cover() {
             if cover_stamp == stamp {
                 self.gpu.terrain_gpu.upload_cover(&self.gpu.queue, &cover);

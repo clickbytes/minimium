@@ -6,6 +6,8 @@ pub(super) struct TransitionPreparation<'a> {
     pub source: WorldContext,
     pub target: WorldContext,
     pub map_fingerprint: u64,
+    pub destination: [f32; 3],
+    pub destination_mm: minimium_world::world::Position3Mm,
     pub manifest: &'a minimium_world::world::WorldManifest,
     pub clock_sample: ClockSample,
     pub environment: EnvironmentDescriptor,
@@ -32,6 +34,8 @@ pub(super) fn handle_transition_prepare(
         source: source_context,
         target: target_context,
         map_fingerprint,
+        destination,
+        destination_mm,
         manifest,
         clock_sample,
         environment,
@@ -62,13 +66,29 @@ pub(super) fn handle_transition_prepare(
         session.disconnect(DisconnectReason::GeneratorMismatch, events);
         return DispatchResult::Stop;
     }
-    let transition = (transition_id, target_context);
-    if session
-        .pending_transition
-        .is_some_and(|current| current != transition)
-    {
+    let identity = super::super::super::super::transfer::PrepareIdentity {
+        id: transition_id,
+        source: source_context,
+        target: target_context,
+        map_fingerprint,
+        destination,
+        destination_mm,
+        manifest: *manifest,
+        clock_sample,
+        environment,
+    };
+    if !session.validate_prepare_identity(identity) {
         session.disconnect(DisconnectReason::UnexpectedMessage, events);
         return DispatchResult::Stop;
+    }
+    let transition = (transition_id, target_context);
+    match session.pending_transition {
+        Some(current) if current == transition => return DispatchResult::Skip,
+        Some(_) => {
+            session.disconnect(DisconnectReason::UnexpectedMessage, events);
+            return DispatchResult::Stop;
+        }
+        None => {}
     }
     if let Err(reason) = session.prepare_environment(
         transition_id,
@@ -80,11 +100,11 @@ pub(super) fn handle_transition_prepare(
         session.disconnect(reason, events);
         return DispatchResult::Stop;
     }
-    if session.pending_transition != Some(transition) {
-        session.pending_transition = Some(transition);
-        session.ready_transition = None;
-        session.cancel_requested_transition = None;
-    }
+    session.pending_transition = Some(transition);
+    session.ready_transition = None;
+    session.cancel_requested_transition = None;
+    session.host_ready_transition = None;
+    session.install_prepare_identity(identity);
     DispatchResult::Emit
 }
 
@@ -104,6 +124,10 @@ pub(super) fn handle_transition_committed(
     } = commit;
     if session.pending_transition != Some((transition_id, context)) {
         return DispatchResult::Skip;
+    }
+    if session.ready_transition != Some((transition_id, context)) {
+        session.disconnect(DisconnectReason::UnexpectedMessage, events);
+        return DispatchResult::Stop;
     }
     let expected_fingerprint = session
         .pending_content_for_transition(transition_id, context)
@@ -142,9 +166,7 @@ pub(super) fn handle_transition_committed(
     session.server_tick = server_tick;
     session.next_input_seq = 1;
     session.next_target_tick = session.server_tick.saturating_add(2).max(1);
-    session.pending_transition = None;
-    session.ready_transition = None;
-    session.cancel_requested_transition = None;
+    session.clear_transfer_lifecycle();
     let pending = session
         .pending_world_content
         .take()
@@ -171,9 +193,7 @@ pub(super) fn handle_transition_cancelled(
     {
         return DispatchResult::Skip;
     }
-    session.pending_transition = None;
-    session.ready_transition = None;
-    session.cancel_requested_transition = None;
+    session.clear_transfer_lifecycle();
     session.cancel_pending_environment(transition_id);
     session.pending_world_content = None;
     session.world_content_cancel.cancel();

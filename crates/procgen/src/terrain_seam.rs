@@ -6,8 +6,9 @@ use minimium_world::{
 };
 use std::collections::BTreeSet;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ExcavationGeometryError {
+    Generation(crate::GenerationError),
     InvalidChunk,
     MissingGuardband,
     UnavailableSurface,
@@ -16,6 +17,12 @@ pub enum ExcavationGeometryError {
     OpenVoxelContour,
     UnmatchedContours,
     DegenerateTransition,
+}
+
+impl From<crate::GenerationError> for ExcavationGeometryError {
+    fn from(error: crate::GenerationError) -> Self {
+        Self::Generation(error)
+    }
 }
 
 /// Replaces the old surface inside a guarded voxel-chunk domain. The callbacks

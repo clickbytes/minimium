@@ -10,6 +10,9 @@ impl Renderer {
         destination: [f32; 3],
         manifest: WorldManifest,
     ) {
+        if self.application.has_transition_id(transition_id) {
+            return;
+        }
         let Some(map) = self.resolved_map_for_context(target_context, manifest) else {
             self.fail_connection("target generation manifest is not supported");
             return;
@@ -52,10 +55,7 @@ impl Renderer {
         health: u16,
         manifest: WorldManifest,
     ) {
-        if !self
-            .application
-            .can_commit_transition(transition_id, context)
-        {
+        if !self.application.has_transition(transition_id, context) {
             self.fail_connection("world transfer commit has no matching ready ticket");
             return;
         }

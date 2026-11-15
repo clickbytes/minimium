@@ -43,6 +43,12 @@ Clock values and weather models are deterministic; callers provide monotonic/sys
 
 Preserve coordinate conventions, catalogue bounds, model revisions and explicit invalid-observer errors.
 
+`TerrainSampler` has an associated error type. Terrain, source-height and bound
+failures propagate through climate, cover and cloud queries; environment does not
+depend on procgen to name that error. `Ok(None)` means an optional source/bound
+port is unsupported and permits the existing analytical fallback, whereas `Err`
+aborts preparation. A failed cloud query does not return a partial snapshot.
+
 ## Commands
 
 Owns time commands and pure UTC/time-scale argument parsing. Server runtime performs command dispatch and authorization checks.

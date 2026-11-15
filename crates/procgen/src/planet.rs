@@ -1,8 +1,7 @@
-use crate::{AddressedRandom, GenerationChannel};
+use crate::{AddressedRandom, GenerationChannel, GenerationError};
 use minimium_world::world::{
     CubeSampleKey, GenerationSpec, PlanetDefinition, PlanetFace, Position3Mm, SectorKey,
 };
-use std::sync::Arc;
 
 const MAX_RADIUS_MM: u64 = 6_371_000_000;
 const MIN_RADIUS_MM: u64 = 5_000;
@@ -67,15 +66,42 @@ pub struct PlanetTerrain {
 }
 
 impl PlanetTerrain {
-    pub fn new(generation: GenerationSpec, surface: PlanetSurfaceSpec) -> Option<Self> {
+    pub fn new(
+        generation: GenerationSpec,
+        surface: PlanetSurfaceSpec,
+        definition: Option<PlanetDefinition>,
+        inputs: crate::TerrainInputs,
+    ) -> Result<Self, GenerationError> {
         if u64::from(generation.position_quantum_mm()) > surface.radius_mm() / 1024 {
-            return None;
+            return Err(GenerationError::invalid_manifest(
+                "planet generation quantum does not fit the surface",
+            ));
         }
-        Some(Self {
+        if let Some(definition) = definition {
+            if !definition.is_valid()
+                || definition.radius_mm != surface.radius_mm()
+                || u64::from(definition.mountain_limit_mm) != surface.relief_mm()
+            {
+                return Err(GenerationError::invalid_manifest(
+                    "planet definition does not match its surface",
+                ));
+            }
+            if definition.mode == 1 {
+                let geography = inputs.geography.as_ref().ok_or_else(|| {
+                    GenerationError::sampling(crate::EarthSampleError::PackageUnavailable)
+                })?;
+                if geography.package_digest() != definition.package_digest {
+                    return Err(GenerationError::sampling(
+                        crate::EarthSampleError::PackageMismatch,
+                    ));
+                }
+            }
+        }
+        Ok(Self {
             generation,
             surface,
-            definition: None,
-            inputs: Default::default(),
+            definition,
+            inputs,
             surface_recipe: Default::default(),
         })
     }
@@ -91,23 +117,8 @@ impl PlanetTerrain {
         Some(self)
     }
 
-    pub fn with_geography(mut self, geography: Arc<dyn crate::PreparedGeography>) -> Self {
-        self.inputs.geography = Some(geography);
-        self
-    }
-
-    pub fn with_inputs(mut self, inputs: crate::TerrainInputs) -> Self {
-        self.inputs = inputs;
-        self
-    }
-
     pub fn inputs(&self) -> &crate::TerrainInputs {
         &self.inputs
-    }
-
-    pub fn with_definition(mut self, definition: PlanetDefinition) -> Self {
-        self.definition = Some(definition);
-        self
     }
 
     pub const fn radius_mm(&self) -> u64 {
@@ -147,13 +158,16 @@ impl PlanetTerrain {
         })
     }
 
-    pub fn sample(&self, cube_sample: CubeSampleKey) -> PlanetPoint {
+    pub fn sample(&self, cube_sample: CubeSampleKey) -> Result<PlanetPoint, GenerationError> {
         self.sample_surface(cube_sample, false)
     }
 
     /// Ground retains Earth bathymetry beneath the separate ocean for collision
     /// and presentation alike.
-    pub fn ground_sample(&self, cube_sample: CubeSampleKey) -> PlanetPoint {
+    pub fn ground_sample(
+        &self,
+        cube_sample: CubeSampleKey,
+    ) -> Result<PlanetPoint, GenerationError> {
         self.sample_surface(cube_sample, false)
     }
 
@@ -163,7 +177,11 @@ impl PlanetTerrain {
         self.position_at(cube_sample, radius)
     }
 
-    fn sample_surface(&self, cube_sample: CubeSampleKey, sea_clamped: bool) -> PlanetPoint {
+    fn sample_surface(
+        &self,
+        cube_sample: CubeSampleKey,
+        sea_clamped: bool,
+    ) -> Result<PlanetPoint, GenerationError> {
         let (offset, ocean) = if let Some(definition) =
             self.definition.filter(|definition| definition.mode == 1)
         {
@@ -174,7 +192,12 @@ impl PlanetTerrain {
                 .as_ref()
                 .map(|geography| geography.elevation_m(direction))
                 .unwrap_or(Err(crate::EarthSampleError::PackageUnavailable))
-                .expect("Earth generation requires its prepared geography");
+                .map_err(GenerationError::sampling)?;
+            if !elevation_m.is_finite() {
+                return Err(GenerationError::sampling(
+                    crate::EarthSampleError::InvalidElevation,
+                ));
+            }
             let elevation = definition.earth_elevation_mm(elevation_m).round() as i64;
             let ocean = elevation < definition.sea_level_mm;
             let detail = if ocean {
@@ -258,35 +281,56 @@ impl PlanetTerrain {
             + (displacement * 1000.0).round() as i64)
             .max(1) as u64;
         let position_mm = self.position_at(cube_sample, height_mm);
-        PlanetPoint {
+        Ok(PlanetPoint {
             cube_sample,
             height_mm,
             position_mm,
             ocean,
-        }
+        })
     }
 
     pub fn earth_elevation_upper_bound_m(
         &self,
         direction: [f64; 3],
         angle: f64,
-    ) -> Result<f64, crate::EarthSampleError> {
-        self.inputs.geography.as_ref().map_or(
-            Err(crate::EarthSampleError::PackageUnavailable),
-            |geography| geography.elevation_upper_bound_m(direction, angle),
-        )
+    ) -> Result<f64, GenerationError> {
+        let bound = self
+            .inputs
+            .geography
+            .as_ref()
+            .map_or(
+                Err(crate::EarthSampleError::PackageUnavailable),
+                |geography| geography.elevation_upper_bound_m(direction, angle),
+            )
+            .map_err(GenerationError::sampling)?;
+        if !bound.is_finite() {
+            return Err(GenerationError::sampling(
+                crate::EarthSampleError::InvalidElevation,
+            ));
+        }
+        Ok(bound)
     }
 
     /// Unexaggerated source metres above the configured sea datum for climate.
-    pub fn source_elevation_m(&self, direction: [f64; 3]) -> Option<f64> {
-        let definition = self.definition.filter(|p| p.mode == 1)?;
+    pub fn source_elevation_m(&self, direction: [f64; 3]) -> Result<Option<f64>, GenerationError> {
+        let Some(definition) = self.definition.filter(|p| p.mode == 1) else {
+            return Ok(None);
+        };
         let raw = self
             .inputs
             .geography
-            .as_ref()?
+            .as_ref()
+            .ok_or_else(|| GenerationError::sampling(crate::EarthSampleError::PackageUnavailable))?
             .elevation_m(direction)
-            .ok()?;
-        Some(raw - definition.sea_level_mm as f64 / f64::from(definition.height_scale_permille))
+            .map_err(GenerationError::sampling)?;
+        if !raw.is_finite() {
+            return Err(GenerationError::sampling(
+                crate::EarthSampleError::InvalidElevation,
+            ));
+        }
+        Ok(Some(
+            raw - definition.sea_level_mm as f64 / f64::from(definition.height_scale_permille),
+        ))
     }
 
     pub fn has_peak_relief(&self) -> bool {
@@ -295,7 +339,7 @@ impl PlanetTerrain {
 
     /// Safe deterministic spawn and entrance on one face, joined by sampled
     /// approach points. The relief bound keeps the route traversable.
-    pub fn landmarks(&self) -> PlanetLandmarks {
+    pub fn landmarks(&self) -> Result<PlanetLandmarks, GenerationError> {
         let scale = PLANET_SAMPLE_COORDINATE_SCALE;
         let (u, start, step) = if self.is_earth() {
             // Near Bergen: 60.4 N, 5.3 E. This cube coordinate samples the
@@ -321,17 +365,21 @@ impl PlanetTerrain {
         } else {
             (0, -(scale / 512), scale / 2048)
         };
-        let approach = std::array::from_fn(|index| {
+        let mut samples = Vec::with_capacity(9);
+        for index in 0..9 {
             let sample = PlanetFace::PositiveY
                 .cube_sample(u, start + index as i32 * step)
                 .expect("fixed planet route samples lie inside the face");
-            self.sample(sample)
-        });
-        PlanetLandmarks {
+            samples.push(self.sample(sample)?);
+        }
+        let approach: [PlanetPoint; 9] = samples
+            .try_into()
+            .map_err(|_| GenerationError::materialization("invalid route sample count"))?;
+        Ok(PlanetLandmarks {
             spawn: approach[0],
             entrance: approach[8],
             approach,
-        }
+        })
     }
 
     fn position_at(&self, sample: CubeSampleKey, radius_mm: u64) -> Position3Mm {

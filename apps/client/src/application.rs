@@ -112,17 +112,14 @@ impl ClientApplication {
         self.transitions.register(id, pending)
     }
 
+    pub(crate) fn has_transition_id(&self, id: minimium_world::world::TransitionId) -> bool {
+        self.transitions.contains_id(id)
+    }
+
     pub(crate) fn pending_transition_preparations(
         &self,
     ) -> Vec<(minimium_world::world::TransitionId, PendingSectorTransition)> {
         self.transitions.pending_preparations()
-    }
-
-    pub(crate) fn mark_transition_ready(
-        &mut self,
-        id: minimium_world::world::TransitionId,
-    ) -> bool {
-        self.transitions.mark_ready_sent(id)
     }
 
     pub(crate) fn commit_transition(
@@ -133,12 +130,12 @@ impl ClientApplication {
         self.transitions.commit(id, context)
     }
 
-    pub(crate) fn can_commit_transition(
+    pub(crate) fn has_transition(
         &self,
         id: minimium_world::world::TransitionId,
         context: minimium_protocol::WorldContext,
     ) -> bool {
-        self.transitions.can_commit(id, context)
+        self.transitions.contains(id, context)
     }
 
     pub(crate) fn cancel_transition(

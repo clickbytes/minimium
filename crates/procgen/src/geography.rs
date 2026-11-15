@@ -5,6 +5,7 @@ pub enum EarthSampleError {
     PackageUnavailable,
     PackageMismatch,
     InvalidDirection,
+    InvalidElevation,
 }
 
 impl fmt::Display for EarthSampleError {
@@ -13,6 +14,7 @@ impl fmt::Display for EarthSampleError {
             Self::PackageUnavailable => "GEBCO package is not prepared",
             Self::PackageMismatch => "prepared GEBCO package does not match the planet",
             Self::InvalidDirection => "Earth sample direction is zero or non-finite",
+            Self::InvalidElevation => "prepared geography returned a non-finite elevation",
         })
     }
 }

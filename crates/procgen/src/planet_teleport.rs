@@ -36,19 +36,19 @@ fn planet_position_at_direction(
 ) -> Option<[i64; 3]> {
     let count = planet_sector_count(manifest);
     let key = PlanetSectorKey::from_direction_with_count(direction, count);
-    let mut terrain = if inputs.volumes.is_some() {
+    let terrain = if inputs.volumes.is_some() {
         Some(
-            crate::PlanetTerrain::new(manifest.generation(), crate::planet_surface_for(manifest))?
-                .with_inputs(inputs.clone()),
+            crate::PlanetTerrain::new(
+                manifest.generation(),
+                crate::planet_surface_for(manifest),
+                manifest.planet(),
+                inputs.clone(),
+            )
+            .ok()?,
         )
     } else {
         None
     };
-    if let Some(terrain) = &mut terrain {
-        if let Some(definition) = manifest.planet() {
-            *terrain = terrain.clone().with_definition(definition);
-        }
-    }
     let neighbors = if safe_spawn || terrain.is_some() {
         bounded_neighbors(key, direction, count)
     } else {
@@ -76,12 +76,13 @@ fn planet_position_at_direction(
     let bases: std::collections::BTreeMap<_, _> = base_sectors
         .into_iter()
         .map(|sector| {
-            (
+            Ok::<_, crate::GenerationError>((
                 sector,
-                generate_planet_sector_with_geography(manifest, sector, inputs.clone()),
-            )
+                generate_planet_sector_with_geography(manifest, sector, inputs.clone())?,
+            ))
         })
-        .collect();
+        .collect::<Result<_, _>>()
+        .ok()?;
     let contours: Vec<_> = bases
         .values()
         .flat_map(|geometry| geometry.triangles.iter().copied())

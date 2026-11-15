@@ -140,7 +140,7 @@ pub(crate) fn prepare(
             region.lod,
             revision,
             || generate_base(manifest, *region, kind, inputs.clone()),
-        );
+        )?;
         bytes = bytes.saturating_add(geometry_bytes(&geometry));
         if bytes > MAX_PREPASS_BYTES {
             return Err(minimium_procgen::ExcavationGeometryError::UnavailableSurface);
@@ -157,16 +157,13 @@ pub(crate) fn prepare(
             )
         })
         .collect();
-    let mut conform_terrain = minimium_procgen::PlanetTerrain::new(
+    let conform_terrain = minimium_procgen::PlanetTerrain::new(
         manifest.generation(),
         minimium_procgen::planet_surface_for(manifest),
-    )
-    .ok_or(minimium_procgen::ExcavationGeometryError::UnavailableSurface)?
-    .with_inputs(inputs.clone());
-    if let Some(definition) = manifest.planet() {
-        conform_terrain = conform_terrain.with_definition(definition);
-    }
-    let conform = crate::terrain_edges::preconform_bases(conform, &conform_terrain);
+        manifest.planet(),
+        inputs.clone(),
+    )?;
+    let conform = crate::terrain_edges::preconform_bases(conform, &conform_terrain)?;
     for (sector, lod, geometry) in conform {
         let SectorKey::Planet(sector) = sector else {
             continue;
@@ -237,7 +234,7 @@ fn generate_base(
     region: RegionKey,
     kind: RenderMeshKind,
     inputs: minimium_procgen::TerrainInputs,
-) -> SectorGeometry {
+) -> Result<SectorGeometry, minimium_procgen::GenerationError> {
     let (u, v) = region.sector.coordinates();
     match kind {
         RenderMeshKind::Patch => minimium_procgen::generate_planet_render_patch_with_geography(

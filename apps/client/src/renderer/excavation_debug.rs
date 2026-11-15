@@ -182,9 +182,10 @@ impl Renderer {
             let terrain = minimium_procgen::PlanetTerrain::new(
                 manifest.generation(),
                 minimium_procgen::planet_surface_for(manifest),
-            )?
-            .with_definition(manifest.planet()?)
-            .with_inputs(inputs);
+                Some(manifest.planet()?),
+                inputs,
+            )
+            .ok()?;
             let base = terrain.volume_base(minimium_game_sample::SOIL_DEPTH_M)?;
             let behind = std::array::from_fn(|i| hit.position_m[i] - hit.normal[i] * 0.01);
             if let Some(sample) = store.view(&base).sample(behind) {

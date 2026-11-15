@@ -17,7 +17,16 @@ pub struct TerrainSurfaceSample {
 }
 
 impl PlanetTerrain {
-    pub fn surface_sample(&self, direction: [f64; 3]) -> TerrainSurfaceSample {
+    pub fn surface_sample(
+        &self,
+        direction: [f64; 3],
+    ) -> Result<TerrainSurfaceSample, crate::GenerationError> {
+        let length = dot(direction, direction).sqrt();
+        if !length.is_finite() || length <= 1.0e-20 {
+            return Err(crate::GenerationError::sampling(
+                crate::EarthSampleError::InvalidDirection,
+            ));
+        }
         let n = normalize(direction);
         let east = normalize(if n[1].abs() < 0.9 {
             cross([0.0, 1.0, 0.0], n)
@@ -28,15 +37,21 @@ impl PlanetTerrain {
         // Constant world-space derivative radius shared by every sector and LOD.
         let epsilon =
             (2000.0 / self.radius_mm() as f64).max(4.0 / f64::from(PLANET_SAMPLE_COORDINATE_SCALE));
-        let point = self.ground_sample(key(n));
-        let height = |d| self.ground_sample(key(d)).height_mm as f64 / 1000.0;
+        let point = self.ground_sample(key(n))?;
+        let height = |d| {
+            self.ground_sample(key(d))
+                .map(|point| point.height_mm as f64 / 1000.0)
+        };
         let derivative = |axis: [f64; 3]| {
             let plus = normalize(std::array::from_fn(|i| n[i] + axis[i] * epsilon));
             let minus = normalize(std::array::from_fn(|i| n[i] - axis[i] * epsilon));
-            (height(plus) - height(minus)) / (2.0 * epsilon * self.radius_mm() as f64 / 1000.0)
+            Ok::<_, crate::GenerationError>(
+                (height(plus)? - height(minus)?)
+                    / (2.0 * epsilon * self.radius_mm() as f64 / 1000.0),
+            )
         };
-        let de = derivative(east);
-        let dn = derivative(north);
+        let de = derivative(east)?;
+        let dn = derivative(north)?;
         let normal = normalize(std::array::from_fn(|i| n[i] - east[i] * de - north[i] * dn));
         let slope = (1.0 - dot(normal, n)).clamp(0.0, 1.0) as f32;
         let elevation_m = (point.height_mm as i64 - self.radius_mm() as i64 - self.sea_level_mm())
@@ -52,10 +67,10 @@ impl PlanetTerrain {
         let landform = crate::surface_habitat::Landform::from_heights(
             point.height_mm as f64 / 1000.0,
             [
-                offset(east, 1.0),
-                offset(east, -1.0),
-                offset(north, 1.0),
-                offset(north, -1.0),
+                offset(east, 1.0)?,
+                offset(east, -1.0)?,
+                offset(north, 1.0)?,
+                offset(north, -1.0)?,
             ],
             slope,
             self.surface_recipe,
@@ -67,8 +82,9 @@ impl PlanetTerrain {
         let latitude = n[1].asin().abs() as f32;
         let dry_belt = (-((latitude - 0.5) / 0.18).powi(2)).exp();
         let physical_height = if self.has_peak_relief() {
-            self.source_elevation_m(n)
-                .expect("prepared Earth source elevation") as f32
+            self.source_elevation_m(n)?.ok_or_else(|| {
+                crate::GenerationError::invalid_manifest("peak relief requires Earth geography")
+            })? as f32
         } else {
             elevation_m / self.presentation_height_scale()
         };
@@ -114,7 +130,7 @@ impl PlanetTerrain {
         for weight in &mut coverage {
             *weight /= total;
         }
-        TerrainSurfaceSample {
+        Ok(TerrainSurfaceSample {
             elevation_m,
             source_elevation_m: physical_height,
             landform,
@@ -123,7 +139,7 @@ impl PlanetTerrain {
             water: f32::from(point.ocean),
             normal: normal.map(|v| v as f32),
             coverage,
-        }
+        })
     }
 }
 

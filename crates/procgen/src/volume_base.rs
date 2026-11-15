@@ -30,7 +30,8 @@ impl minimium_terrain::BaseTerrain for PlanetVolumeBase<'_> {
         let direction = position.map(|v| v / radius);
         let surface = self
             .terrain
-            .ground_sample(crate::terrain_surface::key(direction));
+            .ground_sample(crate::terrain_surface::key(direction))
+            .ok()?;
         let distance_m = radius - surface.height_mm as f64 / 1000.0;
         Some(TerrainSample {
             distance_m,

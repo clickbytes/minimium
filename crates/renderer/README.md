@@ -6,6 +6,13 @@ Owns presentation contracts, reusable rendering primitives and pass encoding: ca
 
 ## Public API
 
+CPU terrain preparation (`PreparedSector`, edge conformance, visibility and
+contours) propagates `GenerationError` or its `ExcavationGeometryError` wrapper.
+Render-patch cache entries are replaced only after successful construction.
+Surface-atlas and cover-grid preparation propagate the terrain adapter's error;
+atlas cancellation remains a separate `Ok(None)` result. Hosts retain their last
+complete publication on failure. Vertex and uniform layouts are unchanged.
+
 Atmosphere presentation is shared from ground to orbit. `atmosphere_view` prepares
 camera/scale values in f64 and uploads a 256-byte checked uniform; `atmosphere_resources`
 owns sampled and staged LUTs, and `AtmosphereGpu` computes and composes them in

@@ -2,13 +2,16 @@
 use crate::PlanetTerrain;
 use minimium_world::{terrain_edits::project, world::MapTriangle};
 
-pub(crate) fn remnants(terrain: &PlanetTerrain, triangles: &[MapTriangle]) -> Vec<MapTriangle> {
+pub(crate) fn remnants(
+    terrain: &PlanetTerrain,
+    triangles: &[MapTriangle],
+) -> Result<Vec<MapTriangle>, crate::GenerationError> {
     let mut objects = Vec::new();
     let Some(edits) = terrain.inputs().remnants.as_deref() else {
-        return objects;
+        return Ok(objects);
     };
     if triangles.is_empty() {
-        return objects;
+        return Ok(objects);
     }
     let mut lo = [f64::INFINITY; 3];
     let mut hi = [f64::NEG_INFINITY; 3];
@@ -35,7 +38,7 @@ pub(crate) fn remnants(terrain: &PlanetTerrain, triangles: &[MapTriangle]) -> Ve
         }
         let up = project(body.position, 1.0);
         let height = terrain
-            .ground_sample(crate::terrain_surface::key(up))
+            .ground_sample(crate::terrain_surface::key(up))?
             .height_mm as f64
             / 1000.0;
         let center = project(up, height + radius * 0.55);
@@ -78,5 +81,5 @@ pub(crate) fn remnants(terrain: &PlanetTerrain, triangles: &[MapTriangle]) -> Ve
             });
         }
     }
-    objects
+    Ok(objects)
 }

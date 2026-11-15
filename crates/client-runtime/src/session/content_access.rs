@@ -116,28 +116,23 @@ impl ClientSession {
         true
     }
 
-    pub fn queue_transition_ready(
-        &mut self,
-        transition_id: TransitionId,
-        target_context: WorldContext,
-    ) -> Result<(), QueueError> {
-        let transition = (transition_id, target_context);
+    /// Records host readiness; the session queues the protocol message on poll.
+    pub fn report_transfer_host_ready(&mut self, ticket: TransferTicket) -> Result<(), QueueError> {
+        let transition = (ticket.transition_id(), ticket.context());
         if self.pending_transition != Some(transition)
-            || self.cancel_requested_transition == Some(transition_id)
+            || self.cancel_requested_transition == Some(ticket.transition_id())
             || self
-                .pending_content_for_transition(transition_id, target_context)
+                .pending_content_for_transition(ticket.transition_id(), ticket.context())
                 .is_none()
         {
             return Err(QueueError::StaleWorldContext);
         }
-        if self.ready_transition == Some(transition) {
-            return Ok(());
-        }
-        self.queue(&ClientMessage::TransitionReady {
-            transition_id,
-            target_context,
-        })?;
-        self.ready_transition = Some(transition);
+        self.host_ready_transition = Some(transition);
         Ok(())
+    }
+
+    /// Returns true after host preparation was reported or cancellation closed readiness.
+    pub fn host_readiness_requested(&self, ticket: TransferTicket) -> bool {
+        self.has_host_readiness_request(ticket)
     }
 }
