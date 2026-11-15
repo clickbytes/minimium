@@ -1,6 +1,6 @@
 use crate::{AddressedRandom, GenerationChannel, GenerationError};
 use minimium_world::world::{
-    CubeSampleKey, GenerationSpec, PlanetDefinition, PlanetFace, Position3Mm, SectorKey,
+    CubeSampleKey, GenerationSpec, PlanetDefinition, Position3Mm, SectorKey,
 };
 
 const MAX_RADIUS_MM: u64 = 6_371_000_000;
