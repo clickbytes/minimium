@@ -319,6 +319,7 @@ impl GpuResources {
             held_tool_visible: false,
             initial_world,
             remote_vertices,
+            remote_stamp: None,
             shadow_remote_complete: true,
             shadow_remote_stamp: None,
             shadow_remote_dirty: false,

@@ -121,8 +121,18 @@ impl GpuResources {
         }
     }
 
-    pub(super) fn update_remote_vertices(&mut self, vertices: &[Vertex]) {
+    pub(super) fn update_remote_vertices(
+        &mut self,
+        vertices: &[Vertex],
+        stamp: super::RemotePlayerGeometryStamp,
+    ) {
         self.remote_vertices.upload(&self.queue, vertices);
+        self.remote_stamp = Some(stamp);
+    }
+
+    pub(super) fn clear_remote_vertices(&mut self) {
+        self.remote_vertices.clear();
+        self.remote_stamp = None;
     }
 
     pub(super) fn set_render_origin(&mut self, origin: [f32; 3]) -> bool {
@@ -131,6 +141,7 @@ impl GpuResources {
         }
         let delta = std::array::from_fn(|axis| self.render_origin[axis] - origin[axis]);
         self.render_origin = origin;
+        self.clear_remote_vertices();
         self.shadow_publish_ready = false;
         if !self.world_geometry.rebase(&self.device, &self.queue, delta) {
             self.fixed_gpu_bytes = self

@@ -149,7 +149,7 @@ impl Renderer {
 
     fn reset_remote_gameplay(&mut self) {
         self.application.action_executor.clear_input_cooldown();
-        self.gpu.remote_vertices.clear();
+        self.gpu.clear_remote_vertices();
         self.application.game.gameplay.clear_remote_players();
         self.application.game.gameplay.health = PLAYER_MAX_HEALTH;
         self.gameplay_presentation.clear_remote_players();
@@ -222,7 +222,7 @@ impl Renderer {
                 .saturating_add(metrics.bytes_received);
             session.close();
         }
-        self.gpu.remote_vertices.clear();
+        self.gpu.clear_remote_vertices();
         self.application.game.gameplay.clear_remote_players();
         self.application.game.gameplay.health = PLAYER_MAX_HEALTH;
         self.gameplay_presentation.clear_remote_players();
@@ -391,65 +391,7 @@ impl Renderer {
             crate::application::ClientAction::InteractEntity { entity },
         );
     }
-
-    pub(super) fn update_remote_player_rendering(&mut self, now: Instant) {
-        if self.application.connection.session().is_none() {
-            self.application.action_executor.clear_input_cooldown();
-            self.application.game.gameplay.clear_remote_players();
-            self.gameplay_presentation.clear_remote_players();
-            self.gpu.remote_vertices.clear();
-            self.gpu.update_remote_shadow_vertices(&[], None);
-            return;
-        }
-        if self.gameplay_presentation.update_remote_vertices(
-            &mut self.application.game.gameplay,
-            now,
-            self.gpu.render_origin,
-        ) {
-            self.gpu
-                .update_remote_vertices(&self.gameplay_presentation.remote_vertices);
-        }
-        let center = self
-            .application
-            .game
-            .gameplay
-            .prediction
-            .position_mm
-            .map_or_else(
-                || {
-                    self.application
-                        .game
-                        .gameplay
-                        .prediction
-                        .character
-                        .position
-                        .map(f64::from)
-                },
-                |position| position.0.map(|value| value as f64 / 1000.0),
-            );
-        let shadow_vertices_changed = self.gameplay_presentation.update_remote_shadow_vertices(
-            &self.application.game.gameplay,
-            center,
-            self.gpu.render_origin,
-        );
-        let geometry_stamp = self
-            .gpu
-            .world_geometry
-            .publication()
-            .map(|publication| publication.stamp);
-        // Even an unchanged (or empty) player batch must acknowledge a new
-        // terrain publication. Otherwise the shadow frame stays incomplete
-        // until a remote player happens to move.
-        if self.gpu.shadow_remote_dirty
-            || shadow_vertices_changed
-            || self.gpu.shadow_remote_stamp != geometry_stamp
-        {
-            self.gpu.update_remote_shadow_vertices(
-                &self.gameplay_presentation.remote_shadow_vertices,
-                geometry_stamp,
-            );
-        }
-    }
 }
 
+mod remote_players;
 mod world_install;

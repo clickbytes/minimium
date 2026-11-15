@@ -47,6 +47,8 @@ pub struct MainScenePass<'a> {
     pub local_water_vertex_count: u32,
     pub remote_vertices: &'a wgpu::Buffer,
     pub remote_vertex_count: u32,
+    /// The host matched the uploaded players' context and complete publication stamp.
+    pub remote_publication_matches: bool,
     pub world_vertex_catalog: &'a HashMap<(WorldInstanceId, SectorKey, u8), (wgpu::Buffer, u32)>,
     pub instance: WorldInstanceId,
     pub sector_hints: &'a [(SectorKey, u8)],
@@ -146,7 +148,11 @@ pub fn encode_main_scene_pass(
         );
         encode_terrain(&mut pass, frame, &mut stats);
     }
-    if !frame.overview_active && frame.remote_vertex_count > 0 {
+    if frame.scene_visible
+        && frame.remote_publication_matches
+        && !frame.overview_active
+        && frame.remote_vertex_count > 0
+    {
         bind_world(
             &mut pass,
             frame.world_pipeline,

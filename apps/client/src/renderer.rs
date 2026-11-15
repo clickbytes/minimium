@@ -100,6 +100,7 @@ struct GpuResources {
     held_tool_visible: bool,
     initial_world: minimium_renderer::geometry_gpu::StaticVertexBuffer,
     remote_vertices: minimium_renderer::geometry_gpu::DynamicVertexBuffer,
+    remote_stamp: Option<RemotePlayerGeometryStamp>,
     shadow_remote_complete: bool,
     shadow_remote_stamp: Option<minimium_renderer::world_geometry_gpu::GeometryPublicationStamp>,
     shadow_remote_dirty: bool,
@@ -128,6 +129,12 @@ struct GpuResources {
     overview_planet: bool,
     scene_visible: bool,
     output_encoder: Option<minimium_renderer::OutputEncoder>,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+struct RemotePlayerGeometryStamp {
+    context: minimium_protocol::WorldContext,
+    publication: minimium_renderer::world_geometry_gpu::GeometryPublicationStamp,
 }
 
 struct GameplayPresentation {
