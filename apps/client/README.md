@@ -75,12 +75,12 @@ keeps the active environment and geometry visible.
 
 `ClientApplication` owns the connection controller, client gameplay/session
 state, input action mapper, settings, UI model, world catalog, overview model,
-typed connection status and `WorldTransitionController`. Transfer tickets move
-through prepare, ready, commit, cancel or fail via application methods, which
-reject stale context/ticket events. A pending transfer retains its resolved map
-behind its own context and transition ticket; preparing destination geometry
-does not overwrite the active world catalog. The application installs that map
-in the active catalog only after commit. Cancel and failure drop the staged map.
+typed connection status and a bounded data registry for one staged transfer.
+The client runtime owns transfer ticket lifecycle and protocol readiness. A
+pending transfer retains its resolved map behind its context and transition ID;
+preparing destination geometry does not overwrite the active world catalog.
+The application installs that map in the active catalog only after commit.
+Cancel and failure drop the staged map.
 The renderer owns only gameplay render
 geometry, hit feedback and shot cooldown alongside GPU resources. The application
 has no GPU handle.
@@ -222,7 +222,7 @@ Local server startup passes a typed launch configuration to client runtime. The 
 
 ## Change guide
 
-`ClientApplication` in `src/application.rs` owns logical game/session state, settings, world catalog, UI, input mapping and transfer lifecycle. `ClientGameState` owns current instance and manifest/session context; client-runtime owns prediction, reconciliation and remote-player snapshots. `GameplayPresentation` owns renderer-only hit feedback, shot cooldown and geometry. The application owns the shared generated/authored world resolver used by desktop and terminal. `Renderer` owns GPU presentation state; `RenderFrame` is CPU-only input to renderer upload. The application has no GPU handle. `renderer/window_events.rs` maps physical events into `InputAction`s and applies modal priority; text and IME input remain separate. `application/transitions.rs` validates transfer tickets while `session/sector_readiness.rs` schedules scene/collision preparation and queues readiness.
+`ClientApplication` in `src/application.rs` owns logical game/session state, settings, world catalog, UI, input mapping and one bounded staged transfer data record. `ClientGameState` owns current instance and manifest/session context; client-runtime owns transfer lifecycle, readiness queue retry, prediction, reconciliation and remote-player snapshots. `GameplayPresentation` owns renderer-only hit feedback, shot cooldown and geometry. The application owns the shared generated/authored world resolver used by desktop and terminal. `Renderer` owns GPU presentation state; `RenderFrame` is CPU-only input to renderer upload. The application has no GPU handle. `renderer/window_events.rs` maps physical events into `InputAction`s and applies modal priority; text and IME input remain separate. `application/transitions.rs` stages destination content, `session/sector_readiness.rs` prepares and publishes the desktop scene before reporting host readiness, and the terminal reports host readiness when CPU content resolution completes.
 
 To add an input action, extend `InputAction::parse` and the default/context binding table in `src/input.rs`, then route its behavior in `renderer/window_events.rs` or the relevant application handler. Keep binding validation and persistence through `SettingsStore`. Desktop and terminal share configuration; terminal has no renderer event loop. To add a UI sentence, add a typed `UiMessage`/`UiNotice`, English and Polish Fluent entries, and construct the message at its consumer; `Localizer` handles fallback and both frontends format it.
 

@@ -44,9 +44,27 @@ impl ClientSession {
                     };
                     match (&deferred, &next) {
                         (
+                            previous @ ServerMessage::TransitionPrepare {
+                                transition_id: old_id,
+                                ..
+                            },
+                            incoming @ ServerMessage::TransitionPrepare {
+                                transition_id: new_id,
+                                ..
+                            },
+                        ) if old_id == new_id => {
+                            if previous != incoming {
+                                self.disconnect(DisconnectReason::UnexpectedMessage, events);
+                                return;
+                            }
+                            self.receive_buffer.drain(..frame_bytes);
+                            continue;
+                        }
+                        (
                             ServerMessage::TransitionPrepare {
                                 transition_id: pending_id,
                                 source_context,
+                                target_context,
                                 ..
                             },
                             ServerMessage::TransitionCancelled {
@@ -58,6 +76,7 @@ impl ClientSession {
                             && Some(*context) == self.world_context =>
                         {
                             self.world_content_cancel.cancel();
+                            self.mark_transition_terminated(*pending_id);
                             self.pending_world_content = None;
                             self.deferred_world_message = None;
                             self.world_content_request = None;
@@ -65,16 +84,37 @@ impl ClientSession {
                             self.receive_buffer.drain(..frame_bytes);
                             continue;
                         }
-                        (_, ServerMessage::TransitionPrepare { source_context, .. })
+                        (_, next @ ServerMessage::TransitionPrepare { source_context, .. })
                             if self.state == SessionState::Connected
                                 && Some(*source_context) == self.world_context =>
                         {
+                            if !self.validate_prepare_message(next) {
+                                self.disconnect(DisconnectReason::UnexpectedMessage, events);
+                                return;
+                            }
+                            let incoming_id = match next {
+                                ServerMessage::TransitionPrepare { transition_id, .. } => {
+                                    *transition_id
+                                }
+                                _ => unreachable!(),
+                            };
+                            if let ServerMessage::TransitionPrepare {
+                                transition_id: deferred_id,
+                                ..
+                            } = &deferred
+                            {
+                                if incoming_id <= *deferred_id {
+                                    self.disconnect(DisconnectReason::UnexpectedMessage, events);
+                                    return;
+                                }
+                                self.mark_transition_terminated(*deferred_id);
+                            }
                             self.world_content_cancel.cancel();
                             self.pending_world_content = None;
                             self.world_content_request = None;
                             self.world_content_started = Some(Instant::now());
                             self.deferred_world_message =
-                                Some((next, self.clock.local_monotonic_ms()));
+                                Some((next.clone(), self.clock.local_monotonic_ms()));
                             self.receive_buffer.drain(..frame_bytes);
                             continue;
                         }

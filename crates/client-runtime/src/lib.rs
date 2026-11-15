@@ -25,7 +25,7 @@ pub use prediction::{ClientPrediction, PredictedStep};
 pub use replicas::{ReplicaComponent, ReplicaEntity, ReplicaError, ReplicatedEntities};
 pub use session::{
     ClientSession, DisconnectReason, QueueError, SessionEvent, SessionFailure, SessionMetrics,
-    SessionState, HEARTBEAT_INTERVAL, HEARTBEAT_TIMEOUT, MAX_SESSION_BUFFER_BYTES,
+    SessionState, TransferTicket, HEARTBEAT_INTERVAL, HEARTBEAT_TIMEOUT, MAX_SESSION_BUFFER_BYTES,
     MAX_SESSION_READ_BYTES_PER_POLL, WELCOME_TIMEOUT,
 };
 pub use snapshots::{RemotePlayerTrack, SnapshotReconciler};

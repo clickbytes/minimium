@@ -136,7 +136,10 @@ impl WorldTransitionController {
         id: TransitionId,
         transition: PendingSectorTransition,
     ) -> bool {
-        if !self.pending.is_empty() || self.pending.contains_key(&id) {
+        if let Some(current) = self.pending.get(&id) {
+            return current.same_preparation(&transition);
+        }
+        if !self.pending.is_empty() {
             return false;
         }
         self.pending.insert(id, transition);
@@ -146,35 +149,30 @@ impl WorldTransitionController {
     pub(crate) fn pending_preparations(&self) -> Vec<(TransitionId, PendingSectorTransition)> {
         self.pending
             .iter()
-            .filter(|(_, transition)| !transition.ready_sent())
             .map(|(id, transition)| (*id, transition.clone()))
             .collect()
     }
 
-    pub(crate) fn mark_ready_sent(&mut self, id: TransitionId) -> bool {
-        self.pending
-            .get_mut(&id)
-            .is_some_and(PendingSectorTransition::mark_ready_sent)
+    pub(crate) fn contains_id(&self, id: TransitionId) -> bool {
+        self.pending.contains_key(&id)
     }
 
     pub(crate) fn commit(&mut self, id: TransitionId, context: WorldContext) -> bool {
-        let Some(transition) = self.pending.get_mut(&id) else {
-            return false;
-        };
-        if transition.context != context {
-            return false;
-        }
-        if !transition.advance(PendingTransitionEvent::Commit) {
+        if !self
+            .pending
+            .get(&id)
+            .is_some_and(|transition| transition.context == context)
+        {
             return false;
         }
         self.pending.remove(&id);
         true
     }
 
-    pub(crate) fn can_commit(&self, id: TransitionId, context: WorldContext) -> bool {
+    pub(crate) fn contains(&self, id: TransitionId, context: WorldContext) -> bool {
         self.pending
             .get(&id)
-            .is_some_and(|transition| transition.context == context && transition.ready_sent())
+            .is_some_and(|transition| transition.context == context)
     }
 
     pub(crate) fn cancel(
@@ -182,9 +180,10 @@ impl WorldTransitionController {
         id: TransitionId,
         source_context: WorldContext,
     ) -> Option<PendingSectorTransition> {
-        let transition = self.pending.get_mut(&id)?;
-        if transition.source_context != source_context
-            || !transition.advance(PendingTransitionEvent::Cancel)
+        if !self
+            .pending
+            .get(&id)
+            .is_some_and(|t| t.source_context == source_context)
         {
             return None;
         }
@@ -192,10 +191,6 @@ impl WorldTransitionController {
     }
 
     pub(crate) fn fail(&mut self, id: TransitionId) -> Option<PendingSectorTransition> {
-        let transition = self.pending.get_mut(&id)?;
-        if !transition.advance(PendingTransitionEvent::Fail) {
-            return None;
-        }
         self.pending.remove(&id)
     }
 
@@ -257,24 +252,6 @@ pub(crate) struct PendingSectorTransition {
     pub(crate) destination: [f32; 3],
     pub(crate) manifest: WorldManifest,
     pub(crate) map: std::sync::Arc<minimium_world::world::WorldMap>,
-    phase: PendingTransitionPhase,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum PendingTransitionPhase {
-    Preparing,
-    ReadySent,
-    Committed,
-    Cancelled,
-    Failed,
-}
-
-#[derive(Clone, Copy)]
-enum PendingTransitionEvent {
-    Ready,
-    Commit,
-    Cancel,
-    Fail,
 }
 
 impl PendingSectorTransition {
@@ -293,37 +270,15 @@ impl PendingSectorTransition {
             destination,
             manifest,
             map,
-            phase: PendingTransitionPhase::Preparing,
         }
     }
 
-    pub(crate) fn ready_sent(&self) -> bool {
-        self.phase == PendingTransitionPhase::ReadySent
-    }
-
-    fn mark_ready_sent(&mut self) -> bool {
-        self.advance(PendingTransitionEvent::Ready)
-    }
-
-    fn advance(&mut self, event: PendingTransitionEvent) -> bool {
-        let next = match (self.phase, event) {
-            (PendingTransitionPhase::Preparing, PendingTransitionEvent::Ready) => {
-                PendingTransitionPhase::ReadySent
-            }
-            (
-                PendingTransitionPhase::Preparing | PendingTransitionPhase::ReadySent,
-                PendingTransitionEvent::Cancel,
-            ) => PendingTransitionPhase::Cancelled,
-            (PendingTransitionPhase::ReadySent, PendingTransitionEvent::Commit) => {
-                PendingTransitionPhase::Committed
-            }
-            (
-                PendingTransitionPhase::Preparing | PendingTransitionPhase::ReadySent,
-                PendingTransitionEvent::Fail,
-            ) => PendingTransitionPhase::Failed,
-            _ => return false,
-        };
-        self.phase = next;
-        true
+    fn same_preparation(&self, other: &Self) -> bool {
+        self.transition_id == other.transition_id
+            && self.source_context == other.source_context
+            && self.context == other.context
+            && self.destination == other.destination
+            && self.manifest == other.manifest
+            && self.map.fingerprint() == other.map.fingerprint()
     }
 }

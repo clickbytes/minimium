@@ -98,6 +98,7 @@ mod excavation;
 mod impacts;
 mod receive;
 mod replication;
+mod transfer;
 
 /// Maximum retained receive or pending send data.
 pub const MAX_SESSION_BUFFER_BYTES: usize = 64 * 1024;
@@ -145,6 +146,29 @@ pub enum SessionEvent {
     Message(ServerMessage),
     PingRoundTrip(Duration),
     Disconnected(DisconnectReason),
+}
+
+/// Identifies one prepared transfer at both the protocol and destination context.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct TransferTicket {
+    transition_id: TransitionId,
+    context: WorldContext,
+}
+
+impl TransferTicket {
+    pub const fn new(transition_id: TransitionId, context: WorldContext) -> Self {
+        Self {
+            transition_id,
+            context,
+        }
+    }
+
+    pub const fn transition_id(self) -> TransitionId {
+        self.transition_id
+    }
+    pub const fn context(self) -> WorldContext {
+        self.context
+    }
 }
 
 /// Cumulative wire traffic metrics and the most recent measured ping RTT.
@@ -196,6 +220,9 @@ pub struct ClientSession {
     pending_transition: Option<(TransitionId, WorldContext)>,
     ready_transition: Option<(TransitionId, WorldContext)>,
     cancel_requested_transition: Option<TransitionId>,
+    host_ready_transition: Option<(TransitionId, WorldContext)>,
+    pending_prepare_identity: Option<transfer::PrepareIdentity>,
+    highest_terminated_transition_id: Option<TransitionId>,
     clock_sample: Option<ClockSample>,
     environment_descriptor: Option<EnvironmentDescriptor>,
     pending_environment: Option<(
@@ -291,6 +318,9 @@ impl ClientSession {
             pending_transition: None,
             ready_transition: None,
             cancel_requested_transition: None,
+            host_ready_transition: None,
+            pending_prepare_identity: None,
+            highest_terminated_transition_id: None,
             clock_sample: None,
             environment_descriptor: None,
             pending_environment: None,
@@ -377,9 +407,7 @@ impl ClientSession {
         self.impacts = Default::default();
         self.excavation = Default::default();
         self.tools = Default::default();
-        self.pending_transition = None;
-        self.ready_transition = None;
-        self.cancel_requested_transition = None;
+        self.clear_transfer_lifecycle();
         self.clock_sample = None;
         self.environment_descriptor = None;
         self.pending_environment = None;

@@ -183,6 +183,23 @@ impl ConnectionController {
             .is_some_and(ClientSession::cancel_pending_transition)
     }
 
+    /// Reports that the host has prepared presentation for this transfer.
+    pub fn report_transfer_host_ready(
+        &mut self,
+        ticket: crate::session::TransferTicket,
+    ) -> Result<(), QueueError> {
+        self.session
+            .as_mut()
+            .ok_or(QueueError::Disconnected)?
+            .report_transfer_host_ready(ticket)
+    }
+
+    pub fn host_readiness_requested(&self, ticket: crate::session::TransferTicket) -> bool {
+        self.session
+            .as_ref()
+            .is_some_and(|session| session.host_readiness_requested(ticket))
+    }
+
     pub fn start_remote(&mut self, address: String) -> Result<(), StartError> {
         if self.busy() {
             return Err(StartError::Busy {

@@ -31,7 +31,7 @@ Welcome and transfer messages use one manifest check before requesting content:
 generated worlds require exact revision 5 and the topology digest, while
 authored worlds require the `AUTH` digest of the offered map fingerprint.
 
-The connector performs DNS, socket and local process startup away from the UI lane. The host polls `ConnectionController`; the session decodes bounded frames, asks the application resolver for exact world content and emits typed events and synchronization estimates to presentation adapters. `queue_world_input` binds the current context and assigns movement sequence/tick values from server snapshots, committing counters only after the frame enters the bounded send buffer. The host supplies each fixed-step collision snapshot to `ClientPrediction`, which shares the server's simulation integrator and records each transmitted predicted step with its policy and collision revisions. `SnapshotReconciler` owns authoritative time ordering and remote-player interpolation; the host turns output positions into presentation geometry. Prepared geography is immutable and shared by `Arc` with generation and presentation workers.
+The connector performs DNS, socket and local process startup away from the UI lane. The host polls `ConnectionController`; the session decodes bounded frames, asks the application resolver for exact world content and emits typed events and synchronization estimates to presentation adapters. Runtime owns the transfer ticket, duplicate-prepare identity, cancellation race and `TransitionReady` queue retry. The terminal reports readiness after resolved CPU content is available; desktop also reports it after its target scene has been published. `queue_world_input` binds the current context and assigns movement sequence/tick values from server snapshots, committing counters only after the frame enters the bounded send buffer. The host supplies each fixed-step collision snapshot to `ClientPrediction`, which shares the server's simulation integrator and records each transmitted predicted step with its policy and collision revisions. `SnapshotReconciler` owns authoritative time ordering and remote-player interpolation; the host turns output positions into presentation geometry. Prepared geography is immutable and shared by `Arc` with generation and presentation workers.
 
 ## Ownership and execution
 
@@ -43,6 +43,13 @@ attempt or pending cleanup before calling the connector or changing owned state.
 no synthetic ID, while a live connector worker retains its actual ID. Cancelled
 workers remain busy until drained; after session removal and cleanup completion,
 the same controller can start again without losing its local-server guard.
+
+`TransferTicket` binds a transition ID to its target context. Hosts report
+readiness through `ConnectionController`; the runtime queues one
+`TransitionReady` after CPU content resolution and host readiness both succeed,
+retrying if the bounded send buffer is full. A local cancel suppresses readiness
+that has not yet been queued. If readiness was queued first, the pending bundle
+remains available for an authoritative commit or server cancellation.
 
 `ConnectionController::finish_until` accepts the process-owned absolute work
 deadline; desktop and terminal use the same 30-second endpoint cleanup and
