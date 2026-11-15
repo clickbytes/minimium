@@ -8,7 +8,6 @@ use std::{
 };
 use wgpu::util::DeviceExt;
 
-mod legacy_cache;
 mod lifecycle;
 mod local_water;
 mod prepared_upload;
