@@ -6,6 +6,40 @@ Owns the authoritative server lifecycle, world registry, tick, typed transport-e
 
 ## Public API
 
+`ServerRuntime::new(settings, prepared, composition, execution, time)` constructs
+the same authoritative owner used by the process driver. `RuntimeModules::new`
+validates modules and exposes their component catalog for storage loading.
+`RuntimeExecution::new` explicitly prepares the existing bounded pools before
+construction (1..64 lanes, 1..16 sector workers). The reusable constructor starts
+no threads, TCP listeners, processes, files or console readers. The host supplies
+authentication, fixed-domain loggers, session nonce and opened S12 services.
+
+`submit(RuntimeCommand)` accepts a parsed administration intent of at most 512
+bytes into the shared 64-command queue and returns a monotone `SubmissionId` or
+typed `SubmitError`. Acceptance is not execution. `step(RuntimeTime)` returns
+bounded command execution results, tick/stop state and the next recommended wake
+instant; it never sleeps. One step executes at most one due fixed tick and eight
+commands, preserving the existing missed-tick rule. Console/admin input uses the
+same queue/executor. Host possession grants administration authority; gameplay
+principals still enter through the supplied typed transport port and existing
+admission/action validation. `query` is immutable and returns status or world/player
+pages capped at 256 rows and 1 MiB dynamic data. `shutdown(time, deadline)` closes
+admission, reports cancelled submissions and drains the same services with an
+explicit result; pending acceptance never becomes a fabricated success.
+
+`RuntimeTime` carries a monotonic instant and either validated UTC or a typed UTC
+failure. `RuntimeTime::system_now` is an explicit process adapter. Owner deadlines,
+cooldowns and snapshot timestamps use the injected instant; only instrumentation
+and resource-drain budgets measure actual elapsed work. UTC failures retain clock
+fault/save-error handling. Regressing monotonic input is rejected without advancing
+the owner. Final shutdown capture uses the host-supplied final time. The process
+wrapper prepares console/resources/randomness and drives this same constructor
+and step. See [ADR 0015](../../docs/adr/0015-host-driven-authoritative-runtime.md).
+
+Reset uses the owner's validated typed startup intervals. Optional resolved-setting
+metadata supplies provenance/reporting only; an embedded host may omit it without
+making reset depend on missing keys or reparsing unvalidated strings.
+
 `run(args, process_environment, composition)` handles offline configuration commands from caller-captured environment values. Applications can use `RuntimeServerConfig::parse_with_environment` followed by `run_with_config` to resolve data, log and content paths before process bootstrap. Runtime configuration parsing does not read process environment or working-directory state. The application supplies a world-composer callback, combat values and modules through `composition`; the runtime does not choose sample content. The process host retains log-path ownership for telemetry.
 
 ## Dependencies
@@ -200,6 +234,13 @@ unused offer aliases and broad dead-code/import allowances are removed.
 
 Run `rtk cargo check -p minimium-server-runtime -p minimium-server` and architecture/file-length checks. Runtime acceptance is deferred.
 
+Compile the actual external consumer with `rtk proxy cargo check -p
+minimium-server-runtime --example embedded_host --locked`. It uses local-only
+host services and `MemoryStorageBackend` to submit/query/step, save, shut down
+and reopen the same memory image. The example is not a test suite and is not
+executed during implementation. Q03 must exercise process/embedded parity,
+backward/failed clocks, queue exhaustion, stop cancellation and memory limits.
+
 
 Protocol v16 admits context-bound `SetAltitude` requests through the bounded
 world-input queue. The authoritative handler requires fly mode, a planet, no
@@ -337,8 +378,10 @@ Stale context/content versions and failed worker results never reach the journal
 Queue acceptance is distinct from durable acknowledgement. Shutdown drops the
 unsubmitted result receiver and releases its exact impact checkpoint reservations;
 accepted writes still drain under the existing deadline. Inventory, hydrology
-cadence and network cursors remain separate from transaction state. The current
-file journal backend and host shutdown polling remain adapters pending S12.
+cadence and network cursors remain separate from transaction state. The file
+journal backend implements the explicit persistence ports; hosted shutdown uses
+the same coordinator and host-supplied deadline. Memory-backend acknowledgements
+confirm volatile retention rather than disk durability.
 
 The shared excavation coordinator prepares replacement geometry, collision leaves
 and displaced water before durable commit. Acknowledgement installs the prepared

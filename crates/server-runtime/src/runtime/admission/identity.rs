@@ -22,9 +22,7 @@ pub(super) fn negotiate_content(
     let message = match message {
         ClientMessage::Presentation(capability) if player_id.is_none() => {
             let client = &mut runtime.connections.clients[index];
-            if !client
-                .set_presentation(capability, Instant::now() + crate::CLIENT_HANDSHAKE_TIMEOUT)
-            {
+            if !client.set_presentation(capability, runtime.now + crate::CLIENT_HANDSHAKE_TIMEOUT) {
                 disconnect(runtime, index, None);
             }
             return RoutingOutcome::Handled;
@@ -133,14 +131,12 @@ fn begin_authentication(
         reject_authentication(runtime, index);
         return;
     }
-    runtime.connections.clients[index].begin_authentication(
-        attempt,
-        Instant::now() + crate::CLIENT_AUTHENTICATION_TIMEOUT,
-    );
+    runtime.connections.clients[index]
+        .begin_authentication(attempt, runtime.now + crate::CLIENT_AUTHENTICATION_TIMEOUT);
 }
 
 pub(super) fn poll_authentication(runtime: &mut ServerRuntime) {
-    let now = Instant::now();
+    let now = runtime.now;
     for index in 0..runtime.connections.clients.len() {
         let Some((attempt, deadline)) = runtime.connections.clients[index].authentication_attempt()
         else {
@@ -202,7 +198,7 @@ fn reject_authentication(runtime: &mut ServerRuntime, index: usize) {
         &mut runtime.connections.clients[index],
         &mut runtime.metrics,
         ServerMessage::Error(ServerErrorCode::Busy),
-        Instant::now(),
+        runtime.now,
     ) {
         disconnect(runtime, index, None);
     }
@@ -239,7 +235,7 @@ pub(super) fn activate_profile(
             &mut runtime.connections.clients[index],
             &mut runtime.metrics,
             ServerMessage::Error(ServerErrorCode::ServerFull),
-            Instant::now(),
+            runtime.now,
         ) {
             disconnect(runtime, index, None);
         }
@@ -252,7 +248,7 @@ pub(super) fn activate_profile(
             &mut runtime.connections.clients[index],
             &mut runtime.metrics,
             ServerMessage::Error(ServerErrorCode::Busy),
-            Instant::now(),
+            runtime.now,
         ) {
             disconnect(runtime, index, None);
         }
@@ -266,7 +262,7 @@ pub(super) fn activate_profile(
                 &mut runtime.connections.clients[index],
                 &mut runtime.metrics,
                 ServerMessage::Error(ServerErrorCode::Busy),
-                Instant::now(),
+                runtime.now,
             ) {
                 disconnect(runtime, index, None);
             }
@@ -321,7 +317,7 @@ pub(super) fn activate_profile(
         position: player.position,
         position_mm: player.location.position(),
     };
-    let now = Instant::now();
+    let now = runtime.now;
     let (welcome, clock_revision) =
         match build_welcome_message(runtime, welcome_player, instance, context, now) {
             Ok(welcome) => welcome,
@@ -360,7 +356,7 @@ pub(super) fn activate_profile(
         runtime.connections.clients[index].mark_environment_sent(
             context,
             clock_revision,
-            Instant::now(),
+            runtime.now,
         );
         crate::diagnostics::emit(
             &runtime.server_logger,

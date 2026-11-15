@@ -287,12 +287,12 @@ fn entity_despawn(context: &mut ModuleCommandContext<'_>, args: &[&str]) -> Comm
     CommandReply::success(CommandPayload::EntityDespawn { world, entity })
 }
 
-pub(super) struct RuntimeCommandReadView<'a> {
+pub(crate) struct RuntimeCommandReadView<'a> {
     worlds: &'a WorldRegistry,
 }
 
 impl<'a> RuntimeCommandReadView<'a> {
-    pub(super) fn new(worlds: &'a WorldRegistry) -> Self {
+    pub(crate) fn new(worlds: &'a WorldRegistry) -> Self {
         Self { worlds }
     }
 

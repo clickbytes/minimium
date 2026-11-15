@@ -50,7 +50,10 @@ impl ServerRuntime {
                         decoded_frames: stats.frames_in,
                         queued_frames: stats.frames_out,
                         encoding_us: client.encoding_us,
-                        connected_ms: client.connected_at.elapsed().as_millis(),
+                        connected_ms: self
+                            .now
+                            .saturating_duration_since(client.connected_at)
+                            .as_millis(),
                     }
                 })
             })

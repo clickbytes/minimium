@@ -33,6 +33,13 @@ composition verifies against the materialized map before publishing the world.
 
 The runtime crate owns mutable authoritative state. This binary owns sample content selection, process startup and global allocator selection.
 
+The process wrapper prepares `RuntimeModules`, `RuntimeExecution`, services and
+clock samples, then drives the same public `ServerRuntime::step` used by embedded
+hosts. Command admission shares the owner's bounded queue; accepted submissions
+remain distinct from execution results. The wrapper owns wall-clock sampling,
+sleep and process metrics. Runtime construction does not bind TCP, open files or
+start threads; see [ADR 0015](../../docs/adr/0015-host-driven-authoritative-runtime.md).
+
 ## Invariants and errors
 
 Preserve the command-line interface and exit behavior.

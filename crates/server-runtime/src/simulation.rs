@@ -62,7 +62,7 @@ mod tests {
                 },
             );
         }
-        let executor = Executor::new(lanes);
+        let executor = Executor::new(lanes).unwrap();
         for _ in 0..40 {
             step_players(&mut world, &inputs, 0.05, &executor);
         }

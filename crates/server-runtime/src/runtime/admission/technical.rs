@@ -84,7 +84,7 @@ pub(super) fn handle_message(
                 &mut runtime.connections.clients[index],
                 &mut runtime.metrics,
                 ServerMessage::Bye,
-                Instant::now(),
+                runtime.now,
             ) {
                 mark_disconnected(
                     index,
@@ -107,7 +107,7 @@ fn handle_time_probe(
     decoded_at: Instant,
 ) {
     runtime.metrics.clock_probe_requests = runtime.metrics.clock_probe_requests.saturating_add(1);
-    let now = Instant::now();
+    let now = runtime.now;
     if !runtime.connections.clients[index].accept_time_probe(now) {
         runtime.metrics.clock_probe_rejected =
             runtime.metrics.clock_probe_rejected.saturating_add(1);
@@ -139,7 +139,7 @@ fn handle_time_probe(
             return;
         }
     };
-    let send_at = Instant::now();
+    let send_at = runtime.now;
     let server_send_monotonic_ms = match runtime.monotonic_ms(send_at) {
         Ok(value) => value,
         Err(error) => {

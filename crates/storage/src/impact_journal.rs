@@ -15,6 +15,8 @@ use std::{
 };
 
 const MAGIC: &[u8; 8] = b"MIMPACT1";
+mod memory;
+pub(crate) use memory::MemoryImpacts;
 pub const MAX_BODIES: usize = 4096;
 const COMPACT_BYTES: u64 = 4 * 1024 * 1024;
 // One parent plus one daughter is a single checksummed durable transaction.

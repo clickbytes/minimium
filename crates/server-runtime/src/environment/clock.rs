@@ -6,7 +6,6 @@ use minimium_environment::time::{
     ClockSample, MonotonicMs, OfflinePolicy, SavedClockState, SessionNonce, TimeError,
     TimeScalePpm, WorldTimeMs,
 };
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 const SYSTEM_CLOCK_CHECK_MS: i128 = 250;
 
@@ -40,6 +39,7 @@ impl ClockFault {
 }
 
 pub(crate) struct EnvironmentClock {
+    wall_utc: Result<WorldTimeMs, crate::RuntimeUtcError>,
     anchor: ClockAnchor,
     session_nonce: SessionNonce,
     last_valid_world_time: WorldTimeMs,
@@ -49,32 +49,19 @@ pub(crate) struct EnvironmentClock {
 }
 
 impl EnvironmentClock {
+    pub(crate) fn set_host_utc(&mut self, utc: Result<WorldTimeMs, crate::RuntimeUtcError>) {
+        self.wall_utc = utc;
+    }
     pub(crate) fn new(
         config: EnvironmentConfig,
         saved_clock: Option<SavedClockState>,
-        server_started: Instant,
+        wall_utc: Result<WorldTimeMs, crate::RuntimeUtcError>,
+        nonce: SessionNonce,
         logger: &minimium_diagnostics::DomainLogger,
     ) -> Result<Self, EnvironmentClockError> {
-        let nonce = minimium_platform::endpoint::new_random_bytes::<16>()
-            .map(SessionNonce::new)
-            .map_err(|error| {
-                EnvironmentClockError::caused_by(
-                    EnvironmentClockErrorKind::RandomSource,
-                    "could not create server session nonce",
-                    error,
-                )
-            })?;
-        let monotonic_ms = u64::try_from(server_started.elapsed().as_millis())
-            .map(MonotonicMs::new)
-            .map_err(|error| {
-                EnvironmentClockError::caused_by(
-                    EnvironmentClockErrorKind::InvalidConfiguration,
-                    "server monotonic time overflow",
-                    error,
-                )
-            })?;
+        let monotonic_ms = MonotonicMs::new(0);
         let anchor = if let Some(saved) = saved_clock {
-            let wall_utc_now = system_world_time_now()?;
+            let wall_utc_now = wall_utc.map_err(crate::RuntimeUtcError::environment_error)?;
             let restored =
                 restore_clock_state(saved, wall_utc_now, monotonic_ms).map_err(|error| {
                     EnvironmentClockError::caused_by(
@@ -103,9 +90,13 @@ impl EnvironmentClock {
             restored.anchor()
         } else {
             let world_time = match (config.mode, config.initial_utc) {
-                (ClockMode::RealTime, _) => system_world_time_now()?,
+                (ClockMode::RealTime, _) => {
+                    wall_utc.map_err(crate::RuntimeUtcError::environment_error)?
+                }
                 (ClockMode::TimeScale, Some(initial)) => initial,
-                (ClockMode::TimeScale, None) => system_world_time_now()?,
+                (ClockMode::TimeScale, None) => {
+                    wall_utc.map_err(crate::RuntimeUtcError::environment_error)?
+                }
             };
             ClockAnchor::initial(
                 config.mode,
@@ -117,6 +108,7 @@ impl EnvironmentClock {
             .map_err(EnvironmentClockError::from_time)?
         };
         Ok(Self {
+            wall_utc,
             anchor,
             session_nonce: nonce,
             last_valid_world_time: anchor.world_utc_ms(),
@@ -152,14 +144,14 @@ impl EnvironmentClock {
         {
             return Ok(None);
         }
-        let utc_now = match system_world_time_now() {
-            Ok(value) => value,
+        let utc_now = match self.wall_utc {
+            Ok(utc) => utc,
             Err(error) => {
                 let fault = self.pause_on_range_exhaustion(now);
                 return Err(EnvironmentClockError::caused_by(
                     EnvironmentClockErrorKind::SystemClock,
                     fault.code(),
-                    error,
+                    error.environment_error(),
                 ));
             }
         };
@@ -247,7 +239,9 @@ impl EnvironmentClock {
                 ClockFault::RevisionExhausted.code(),
             ));
         }
-        let wall_utc = system_world_time_now()?;
+        let wall_utc = self
+            .wall_utc
+            .map_err(crate::RuntimeUtcError::environment_error)?;
         save_clock_state(self.anchor, now, wall_utc).map_err(EnvironmentClockError::from_time)
     }
 
@@ -281,7 +275,10 @@ impl EnvironmentClock {
         let recover = value == ClockMode::RealTime;
         self.ensure_mutable(now, recover)?;
         let utc_now = if recover {
-            Some(system_world_time_now()?)
+            Some(
+                self.wall_utc
+                    .map_err(crate::RuntimeUtcError::environment_error)?,
+            )
         } else {
             None
         };
@@ -377,33 +374,6 @@ fn map_clock_error(
         }
         EnvironmentClockError::from_time(error)
     })
-}
-
-fn system_world_time_now() -> Result<WorldTimeMs, EnvironmentClockError> {
-    let elapsed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| {
-            EnvironmentClockError::caused_by(
-                EnvironmentClockErrorKind::SystemClock,
-                "system clock is before the POSIX epoch",
-                error,
-            )
-        })?;
-    let millis = i128::try_from(elapsed.as_millis()).map_err(|error| {
-        EnvironmentClockError::caused_by(
-            EnvironmentClockErrorKind::SystemClock,
-            "system UTC milliseconds overflow i128",
-            error,
-        )
-    })?;
-    let millis = i64::try_from(millis).map_err(|error| {
-        EnvironmentClockError::caused_by(
-            EnvironmentClockErrorKind::SystemClock,
-            "system UTC milliseconds overflow i64",
-            error,
-        )
-    })?;
-    WorldTimeMs::new(millis).map_err(EnvironmentClockError::from_time)
 }
 
 fn mode_name(mode: ClockMode) -> &'static str {

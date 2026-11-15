@@ -13,6 +13,7 @@ mod impacts;
 pub(crate) use excavation::ExcavationStatus;
 pub(crate) use impacts::ImpactStatus;
 pub(crate) use impacts::ProtectedImpactEntities;
+mod hosted;
 mod inputs;
 mod r#loop;
 mod network;
@@ -22,6 +23,7 @@ pub mod schedule;
 mod tick;
 mod transfers;
 use diagnostics::emit_system_effect_diagnostic;
+use hosted::{validate_hosted_inputs, CommandOrigin};
 
 use crate::server_command::ServerCommand;
 use crate::{
@@ -36,7 +38,6 @@ use crate::{
     sector_streaming::SectorPayload,
     startup::PreparedRuntime,
     storage::{PersistencePort, PlayerStore, SAVE_VERSION},
-    terminal,
     world_inputs::WorldInput,
     world_registry::WorldRegistry,
     CLIENT_IDLE_TIMEOUT, MAX_PENDING_HANDSHAKES, MAX_PENDING_WORLD_INPUTS, SNAPSHOT_INTERVAL, TICK,
@@ -50,7 +51,6 @@ use std::{
     collections::{HashMap, HashSet, VecDeque},
     io,
     sync::{mpsc::Receiver, Arc},
-    thread,
     time::{Duration, Instant},
 };
 
@@ -86,7 +86,9 @@ struct ConnectionState {
 struct OperationsState {
     transport: Box<dyn minimium_transport::TransportPort>,
     console_rx: Option<Receiver<ServerCommand>>,
-    command_queue: VecDeque<(Option<RequestId>, ServerCommand)>,
+    command_queue: VecDeque<(CommandOrigin, ServerCommand)>,
+    next_submission: u64,
+    host_outcomes: Vec<crate::CommandExecution>,
     player_store: PlayerStore,
     persistence: Box<dyn PersistencePort>,
     next_player: u64,
@@ -100,7 +102,8 @@ struct Scheduler {
     autosave_interval: Duration,
     simulation_tick: u64,
 }
-pub(crate) struct ServerRuntime {
+pub struct ServerRuntime {
+    now: Instant,
     excavation: excavation::Excavation,
     impacts: impacts::Impacts,
     pub(crate) server_logger: minimium_diagnostics::DomainLogger,
@@ -139,9 +142,11 @@ pub(crate) struct ServerRuntime {
     combat: CombatSettings,
     movement_policy: minimium_simulation::MovementPolicy,
     autosave_seconds: u64,
+    startup_autosave_seconds: u64,
     resolved_settings: std::collections::BTreeMap<String, minimium_commands::ResolvedConfigValue>,
     autosave_session_override: bool,
     bolid_interval: Option<(u64, u64)>,
+    startup_bolid_interval: Option<(u64, u64)>,
     bolid_session_override: bool,
     next_bolid_at: Option<Instant>,
     next_bolid_id: u64,
@@ -151,35 +156,59 @@ pub(crate) struct ServerRuntime {
 }
 
 impl ServerRuntime {
-    pub(crate) fn new(
+    pub fn new(
         config: crate::composition::RuntimeSettings,
         startup: PreparedRuntime,
-        combat: ServerCombatConfig,
-        impact_profile: Option<minimium_world::impact::ImpactProfile>,
-        excavation_config: crate::composition::ExcavationConfig,
-        server_logger: minimium_diagnostics::DomainLogger,
-        transport_logger: minimium_diagnostics::DomainLogger,
-        environment_logger: minimium_diagnostics::DomainLogger,
-        protocol_logger: minimium_diagnostics::DomainLogger,
-        world_logger: minimium_diagnostics::DomainLogger,
-        sectors_logger: minimium_diagnostics::DomainLogger,
-        simulation_logger: minimium_diagnostics::DomainLogger,
-        authentication_provider: crate::authentication::SharedAuthenticationProvider,
-        shutdown_request: crate::composition::ShutdownRequest,
-        module_registry: crate::modules::ModuleRegistry<
-            crate::commands::ModuleHandler,
-            schedule::SystemFn,
-        >,
-        component_registry: minimium_world::entity::ComponentRegistry,
+        composition: crate::RuntimeComposition,
+        execution: crate::RuntimeExecution,
+        time: crate::RuntimeTime,
     ) -> io::Result<Self> {
+        let crate::RuntimeComposition {
+            combat,
+            impacts: impact_profile,
+            excavation: excavation_config,
+            modules,
+            loggers,
+            authentication: authentication_provider,
+            shutdown: shutdown_request,
+            session_nonce,
+        } = composition;
+        let crate::hosting::RuntimeModules {
+            registry: module_registry,
+            components: component_registry,
+        } = modules;
+        let crate::RuntimeLoggers {
+            server: server_logger,
+            transport: transport_logger,
+            environment: environment_logger,
+            protocol: protocol_logger,
+            world: world_logger,
+            sectors: sectors_logger,
+            simulation: simulation_logger,
+        } = loggers;
+        validate_hosted_inputs(&config, &startup, &combat)?;
+        if time
+            .monotonic
+            .checked_add(Duration::from_secs(604830))
+            .is_none()
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "host clock cannot represent runtime deadlines",
+            ));
+        }
         if !excavation_config.valid() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "invalid excavation or fluid capacity configuration",
             ));
         }
-        let sector_workers = SectorGenerationPool::new(config.sector_workers)?;
-        let lanes = config.lanes.count();
+        let crate::RuntimeExecution {
+            executor,
+            sectors: sector_workers,
+            console: console_rx,
+        } = execution;
+        let lanes = executor.lane_count();
         let resolved_settings = config.resolved_settings.clone();
         let PreparedRuntime {
             map,
@@ -205,13 +234,6 @@ impl ServerRuntime {
             saved_clock,
             prepared_geography,
         } = startup;
-        let console_rx = if config.console_enabled {
-            println!("Type `help` for server commands.");
-            Some(terminal::spawn(server_logger.clone())?)
-        } else {
-            None
-        };
-        let executor = Executor::new(lanes);
         let mut worlds = worlds
             .map(WorldRegistry::try_from_world_definitions)
             .transpose()
@@ -246,6 +268,7 @@ impl ServerRuntime {
                     format!("saved entities are incompatible with registered schemas: {error:?}"),
                 )
             })?;
+        hosted::reserve_restored_entities(&mut player_store, &entities)?;
         let max_client_connections = config.max_players + MAX_PENDING_HANDSHAKES;
         let mut game = GameState {
             worlds,
@@ -281,6 +304,8 @@ impl ServerRuntime {
             admin_requests: VecDeque::with_capacity(64),
         };
         let operations = OperationsState {
+            next_submission: 1,
+            host_outcomes: Vec::with_capacity(64),
             transport,
             console_rx,
             command_queue: VecDeque::with_capacity(64),
@@ -289,11 +314,12 @@ impl ServerRuntime {
             next_player,
         };
         let metrics = RuntimeMetrics::default();
-        let server_started = Instant::now();
+        let server_started = time.monotonic;
         let environment_clock = EnvironmentClock::new(
             environment_config,
             saved_clock,
-            server_started,
+            time.utc,
+            session_nonce,
             &environment_logger,
         )
         .map_err(io::Error::other)?;
@@ -303,10 +329,12 @@ impl ServerRuntime {
         })?;
         let autosave_interval = Duration::from_secs(config.autosave_seconds);
         let mut runtime = Self {
+            now: time.monotonic,
             excavation: excavation::Excavation::from_storage(
                 excavation_journal,
                 excavation_restore,
                 excavation_config,
+                time.monotonic,
             )?,
             impacts: impacts::Impacts::from_storage(
                 impact_journal,
@@ -338,7 +366,7 @@ impl ServerRuntime {
                 server_started,
                 next_utc_check: server_started + Duration::from_secs(5),
                 next_tick: server_started + TICK,
-                next_snapshot: Instant::now() + SNAPSHOT_INTERVAL,
+                next_snapshot: server_started + SNAPSHOT_INTERVAL,
                 next_autosave: (!autosave_interval.is_zero())
                     .then_some(server_started + autosave_interval),
                 autosave_interval,
@@ -357,9 +385,11 @@ impl ServerRuntime {
             combat: combat.hitscan,
             movement_policy,
             autosave_seconds: config.autosave_seconds,
+            startup_autosave_seconds: config.autosave_seconds,
             resolved_settings,
             autosave_session_override: false,
             bolid_interval: config.bolid_interval,
+            startup_bolid_interval: config.bolid_interval,
             bolid_session_override: false,
             next_bolid_at: config
                 .bolid_interval

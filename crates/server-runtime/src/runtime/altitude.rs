@@ -118,8 +118,8 @@ impl ServerRuntime {
             input.vertical = 0.0;
             input.jump = false;
         }
-        self.game.input_last_received.insert(id, Instant::now());
-        self.scheduler.next_snapshot = Instant::now();
+        self.game.input_last_received.insert(id, self.now);
+        self.scheduler.next_snapshot = self.now;
         Some(position_mm)
     }
 }

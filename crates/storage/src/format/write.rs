@@ -168,16 +168,7 @@ fn encode_component_record(
 }
 
 pub(super) fn write(snapshot: SaveSnapshot, data_dir: &Path) -> io::Result<()> {
-    let mut players: Vec<_> = snapshot
-        .player_shards
-        .iter()
-        .flat_map(|shard| {
-            shard
-                .iter()
-                .map(|(profile_id, player)| (player.id, *profile_id, *player))
-        })
-        .collect();
-    players.sort_unstable_by_key(|(id, _, _)| *id);
+    let players = sorted_players(&snapshot);
     let path = data_dir.join("world.snapshot");
     let temporary_path = data_dir.join("world.snapshot.tmp");
     let mut counter = CountingWriter(0);
@@ -192,6 +183,39 @@ pub(super) fn write(snapshot: SaveSnapshot, data_dir: &Path) -> io::Result<()> {
         };
         encode_snapshot(&mut writer, &snapshot, &players)
     })
+}
+
+pub(crate) fn encode_bytes(snapshot: &SaveSnapshot, maximum: usize) -> io::Result<Vec<u8>> {
+    let players = sorted_players(snapshot);
+    let mut counter = CountingWriter(0);
+    encode_snapshot(&mut counter, snapshot, &players)?;
+    if counter.0 > maximum.min(MAX_WORLD_SNAPSHOT_BYTES) {
+        return Err(crate::snapshot_limit_exceeded());
+    }
+    let mut bytes = Vec::with_capacity(counter.0);
+    encode_snapshot(
+        &mut LimitedWriter {
+            inner: &mut bytes,
+            written: 0,
+        },
+        snapshot,
+        &players,
+    )?;
+    Ok(bytes)
+}
+
+fn sorted_players(snapshot: &SaveSnapshot) -> Vec<(PlayerId, PlayerProfileId, StoredPlayer)> {
+    let mut players: Vec<_> = snapshot
+        .player_shards
+        .iter()
+        .flat_map(|shard| {
+            shard
+                .iter()
+                .map(|(profile_id, player)| (player.id, *profile_id, *player))
+        })
+        .collect();
+    players.sort_unstable_by_key(|(id, _, _)| *id);
+    players
 }
 
 fn encode_snapshot(

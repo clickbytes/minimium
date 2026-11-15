@@ -143,7 +143,9 @@ impl ServerRuntime {
             },
             inventory,
             &scene::FirstHit(hit),
-            self.scheduler.server_started.elapsed().as_millis() as u64,
+            self.now
+                .saturating_duration_since(self.scheduler.server_started)
+                .as_millis() as u64,
         );
         let action = match action_result {
             Ok(action) => action,

@@ -34,7 +34,7 @@ impl ServerRuntime {
             && self
                 .impacts
                 .last_manual
-                .is_some_and(|t| t.elapsed() < Duration::from_secs(5))
+                .is_some_and(|t| self.now.saturating_duration_since(t) < Duration::from_secs(5))
         {
             return Err(io::Error::other("meteorid rate limited; wait five seconds"));
         }
@@ -96,7 +96,7 @@ impl ServerRuntime {
             .get(&player.id)
             .filter(|(context, _, _, at)| {
                 self.game.worlds.context_matches(player.id, *context)
-                    && at.elapsed() < Duration::from_secs(15)
+                    && self.now.saturating_duration_since(*at) < Duration::from_secs(15)
             })
             .and_then(|(_, gaze, _, _)| {
                 let x = (0..3).map(|i| f64::from(gaze[i]) * east[i]).sum::<f64>();
@@ -196,7 +196,7 @@ impl ServerRuntime {
         };
         self.queue_body(body)?;
         if manual {
-            self.impacts.last_manual = Some(Instant::now());
+            self.impacts.last_manual = Some(self.now);
         }
         Ok(id)
     }

@@ -58,7 +58,7 @@ impl ServerRuntime {
     }
 
     pub(super) fn replicate_environment(&mut self) {
-        let now = Instant::now();
+        let now = self.now;
         let monotonic = match self.monotonic_ms(now) {
             Ok(monotonic) => monotonic,
             Err(error) => {

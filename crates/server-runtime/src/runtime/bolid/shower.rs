@@ -34,7 +34,7 @@ impl ServerRuntime {
                 "server.bolid.shower_busy",
             );
         }
-        let now = Instant::now();
+        let now = self.now;
         if count > 1 {
             self.bolid_shower = Some(Shower {
                 observer: None,

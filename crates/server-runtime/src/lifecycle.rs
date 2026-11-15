@@ -12,7 +12,8 @@ use std::{
 };
 
 pub(crate) struct ShutdownContext<'a> {
-    pub shutdown_request: &'a crate::composition::ShutdownRequest,
+    pub deadline: Instant,
+    pub snapshot_at: Instant,
     pub transport: &'a mut dyn minimium_transport::TransportPort,
     pub player_store: &'a mut PlayerStore,
     pub persistence: &'a mut dyn PersistencePort,
@@ -30,8 +31,7 @@ pub(crate) struct ShutdownContext<'a> {
 
 pub(crate) fn shutdown(mut context: ShutdownContext<'_>) -> io::Result<()> {
     // One process-wide 30-second deadline; the final two seconds belong to diagnostics.
-    let log_deadline = context.shutdown_request.begin_shutdown();
-    let deadline = log_deadline - Duration::from_secs(2);
+    let deadline = context.deadline;
     context.transport.stop_admission();
     context.transport.reject_admin_pending();
     drain_transport(context.transport, &mut context.runtime_error, deadline);
@@ -43,6 +43,7 @@ pub(crate) fn shutdown(mut context: ShutdownContext<'_>) -> io::Result<()> {
     unfinished.extend(context.sector_workers.shutdown_until(deadline));
     unfinished.extend(context.executor.shutdown_until(deadline));
     let snapshot = capture_final_snapshot(
+        context.snapshot_at,
         context.server_started,
         context.environment_clock,
         context.worlds,
@@ -115,6 +116,7 @@ fn drain_transport(
 }
 
 fn capture_final_snapshot(
+    capture_at: Instant,
     server_started: Instant,
     environment_clock: &mut EnvironmentClock,
     worlds: &WorldRegistry,
@@ -129,7 +131,6 @@ fn capture_final_snapshot(
             "final snapshot capture missed shutdown deadline",
         ));
     }
-    let capture_at = Instant::now();
     let monotonic_ms = u64::try_from(
         capture_at
             .saturating_duration_since(server_started)
@@ -236,6 +237,5 @@ fn finish_shutdown(
     }
     shutdown_result?;
     status_result?;
-    println!("server stopped cleanly");
     Ok(())
 }
