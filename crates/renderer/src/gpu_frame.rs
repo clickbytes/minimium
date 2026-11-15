@@ -1,4 +1,5 @@
-//! Stable camera uniform layout shared with the frame shader.
+//! CPU uniform data and preparation shared with the frame shader.
+//! Upload and bind groups live in the GPU-gated `gpu_bindings` module.
 
 use crate::RenderViewFrame;
 

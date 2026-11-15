@@ -26,6 +26,11 @@ builds a terminal-only executable: it defaults to console mode, skips material
 cooking and has no wgpu/winit/astronomy dependency. Renderer quality/debug values
 remain CPU-only public contracts when its `gpu` feature is disabled.
 
+The renderer's `RenderFrame`, `PreparedSector`, uniform and vertex data are also
+available without GPU. Desktop exposure calculation and diagnostics share
+`render_frame::view_exposure` with CPU consumers; upload still uses the same
+renderer data types and feature-gated GPU owners.
+
 Consumes renderer, client-runtime, core, environment, world, assets, asset-io, astronomy, platform, protocol, procgen, sectors, telemetry and sample-game content. The application supplies the client-runtime world-content resolver shared by desktop and terminal frontends. Headless server and ctl must not depend on this package.
 
 ## Data flow

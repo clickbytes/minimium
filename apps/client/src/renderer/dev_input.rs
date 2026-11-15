@@ -106,7 +106,7 @@ pub(super) fn execute(renderer: &mut Renderer, line: &str) -> bool {
                 f32::from_bits(shadow.uniform.flags[2])
             );
         }
-        let night_gain = minimium_renderer::lighting::view_exposure(
+        let night_gain = minimium_renderer::render_frame::view_exposure(
             frame.render_view,
             frame.environment_uniform.global_sun_direction,
             1.0,
