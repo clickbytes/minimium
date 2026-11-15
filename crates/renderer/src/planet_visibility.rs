@@ -88,23 +88,28 @@ pub fn render_patches_for_view(
     for region in regions {
         let sector = SectorKey::Planet(region.sector);
         let patch = if let Some(prepared) = bases.region(region) {
-            cache.get_revision_result(sector, region.lod, prepared.cache_revision.clone(), || {
-                let contours = bases.contours(&prepared);
-                let mut geometry = minimium_procgen::integrate_volume_sector_with_contours(
-                    &terrain,
-                    region.sector,
-                    count,
-                    &prepared.geometry,
-                    &contours,
-                    1.5,
-                )?;
-                if let Some((_, collision_geometry)) =
-                    collision.iter().find(|(key, _)| *key == sector)
-                {
-                    geometry.boxes = collision_geometry.boxes.clone();
-                }
-                Ok(geometry)
-            })?
+            cache.get_revision_result(
+                sector,
+                region.lod,
+                prepared.cache_revision.clone(),
+                || {
+                    let contours = bases.contours(&prepared);
+                    let mut geometry = minimium_procgen::integrate_volume_sector_with_contours(
+                        &terrain,
+                        region.sector,
+                        count,
+                        &prepared.geometry,
+                        &contours,
+                        1.5,
+                    )?;
+                    if let Some((_, collision_geometry)) =
+                        collision.iter().find(|(key, _)| *key == sector)
+                    {
+                        geometry.boxes = collision_geometry.boxes.clone();
+                    }
+                    Ok(geometry)
+                },
+            )?
         } else {
             let revision = terrain.inputs().sector_version(sector, 1, count);
             cache.get_revision_result(sector, region.lod, revision, || {
