@@ -141,7 +141,7 @@ responsibility = "Desktop and terminal client application state (typed settings,
 [[package]]
 name = "minimium-client-runtime"
 role = "runtime"
-responsibility = "Nonblocking protocol session with typed failures, application-supplied world-content resolver contract, content download worker/deadline and GPU readiness coordination, connection controller, connector, typed local-server launch settings with bounded offline server-config preview and captured environment, local-server ownership and stderr diagnostics, fixed-step prediction, reconciliation/interpolation and environment synchronization. Owns protocol-21 context-bound object replicas and staged terrain/fluid/crater batches, water catalog preparation, swimming prediction and terrain synchronization readiness."
+responsibility = "Nonblocking protocol session with typed failures, application-supplied world-content resolver contract, content download worker/deadline and GPU readiness coordination, connection controller enforcing session/attempt/cleanup exclusion before startup, connector, typed local-server launch settings with bounded offline server-config preview and captured environment, local-server ownership and stderr diagnostics, fixed-step prediction, reconciliation/interpolation and environment synchronization. Owns protocol-21 context-bound object replicas and staged terrain/fluid/crater batches, water catalog preparation, swimming prediction and terrain synchronization readiness."
 forbidden_dependencies = ["minimium-astronomy", "wgpu", "wgpu-core", "wgpu-hal", "winit", "minimium-client", "minimium-server"]
 
 [[package]]
