@@ -218,6 +218,10 @@ fn compose_world(
                 definition.manifest(),
                 &map,
             )?,
+            resolved_relief_policy: minimium_game_sample::resolved_planet_relief_policy(
+                definition.manifest(),
+                &map,
+            )?,
             map: map.clone(),
             initial_entities: Vec::new(),
         };
@@ -342,6 +346,7 @@ fn to_world_definition(world: GeneratedWorld) -> WorldDefinition {
             &world.map,
         )
         .expect("sample generated manifest passed the generator contract"),
+        resolved_relief_policy: world.resolved_relief_policy,
         map: world.map,
         initial_entities,
     }

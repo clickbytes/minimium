@@ -20,6 +20,15 @@ the validated `PlanetTerrain` constructor together. Landmark and overview
 sampling errors propagate as `GenerationError` before a world is published;
 successful seed, rounding, manifest and fingerprint behavior is unchanged.
 
+The sample owns the seeded planet route, spawn clearance and entrance marker,
+and selects the +Y relief ramp for its procedural planet recipe. The immutable
+relief policy is bound to the resolved manifest and map fingerprint before
+publication and is carried with world content to terrain, worker and cache
+consumers. Earth uses the identity sampling policy while retaining its existing
+`PeakRelief` behavior. The route and policy are runtime composition data: they
+do not add world parameters or change seed, generator digest or materialized
+map bytes.
+
 `materials/recipe.py` owns deterministic sand, soil, grass, litter, rock and snow
 art recipes. `materials/cook.py OUTPUT` explicitly supplies that recipe to
 `tools/bake_materials.py::bake(recipe_path, output)` (Python + numpy), which returns
@@ -78,7 +87,7 @@ Content is static repository data. Runtime applications own loaded instances.
 
 ## Invariants and errors
 
-All generated sample worlds use generator revision 5. Planet mode selects the
+All generated sample worlds use generator revision 6. Planet mode selects the
 procedural or Earth generation path explicitly. Other generator revisions are
 rejected; they are not reinterpreted as revision 5.
 

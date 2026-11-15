@@ -31,6 +31,13 @@ impl ClientSession {
             .and_then(|bundle| bundle.content.geography.clone())
     }
 
+    pub fn resolved_relief_policy(&self) -> Option<minimium_procgen::ResolvedPlanetReliefPolicy> {
+        self.active_world_content
+            .as_ref()
+            .filter(|bundle| Some(bundle.context) == self.world_context)
+            .and_then(|bundle| bundle.content.resolved_relief_policy)
+    }
+
     pub(crate) fn set_world_content_resolver(
         &mut self,
         session_id: u64,

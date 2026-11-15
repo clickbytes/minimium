@@ -53,6 +53,7 @@ pub struct RenderPatchCache {
         WorldInstanceId,
         WorldManifest,
         Option<minimium_procgen::ResolvedTerrainMaterialProfile>,
+        Option<minimium_procgen::ResolvedPlanetReliefPolicy>,
     )>,
     revisions: HashMap<(SectorKey, u8), RenderPatchVersion>,
     entries: HashMap<(SectorKey, u8), (u64, Arc<SectorGeometry>)>,
@@ -69,11 +70,12 @@ impl RenderPatchCache {
         world: WorldInstanceId,
         manifest: WorldManifest,
         material_profile: Option<minimium_procgen::ResolvedTerrainMaterialProfile>,
+        resolved_relief_policy: Option<minimium_procgen::ResolvedPlanetReliefPolicy>,
     ) {
-        if self.context == Some((world, manifest, material_profile)) {
+        if self.context == Some((world, manifest, material_profile, resolved_relief_policy)) {
             return;
         }
-        self.context = Some((world, manifest, material_profile));
+        self.context = Some((world, manifest, material_profile, resolved_relief_policy));
         self.revisions.clear();
         self.entries.clear();
         self.base_entries.clear();

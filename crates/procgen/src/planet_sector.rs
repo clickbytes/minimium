@@ -96,13 +96,7 @@ pub fn planet_point_at_direction_with_geography(
     };
     let scale = f64::from(minimium_world::world::PLANET_SAMPLE_COORDINATE_SCALE);
     let sample = face.cube_sample((u * scale).round() as i32, (v * scale).round() as i32)?;
-    let terrain = PlanetTerrain::new(
-        manifest.generation(),
-        planet_surface_for(manifest),
-        manifest.planet(),
-        geography.into(),
-    )
-    .ok()?;
+    let terrain = PlanetTerrain::for_manifest(manifest, geography.into()).ok()?;
     terrain.sample(sample).ok()
 }
 
@@ -118,12 +112,7 @@ pub fn generate_planet_sector_with_geography(
     key: PlanetSectorKey,
     geography: impl Into<crate::TerrainInputs>,
 ) -> Result<SectorGeometry, GenerationError> {
-    let terrain = PlanetTerrain::new(
-        manifest.generation(),
-        planet_surface_for(manifest),
-        manifest.planet(),
-        geography.into(),
-    )?;
+    let terrain = PlanetTerrain::for_manifest(manifest, geography.into())?;
     let subdivisions = if manifest.planet().is_some() {
         32
     } else {
@@ -196,12 +185,7 @@ pub fn generate_planet_render_patch_with_geography(
     geography: impl Into<crate::TerrainInputs>,
 ) -> Result<SectorGeometry, GenerationError> {
     assert!(subdivisions.is_power_of_two() && (1..=16).contains(&subdivisions));
-    let terrain = PlanetTerrain::new(
-        manifest.generation(),
-        planet_surface_for(manifest),
-        manifest.planet(),
-        geography.into(),
-    )?;
+    let terrain = PlanetTerrain::for_manifest(manifest, geography.into())?;
     let count = planet_sector_count(manifest);
     let mut triangles = Vec::new();
     let edge_step = 16 / subdivisions;
@@ -277,12 +261,7 @@ pub fn generate_planet_render_block_with_geography(
     const STEPS: usize = PLANET_RENDER_BLOCK_SUBDIVISIONS as usize;
     let count = u32::from(planet_sector_count(manifest));
     let scale = minimium_world::world::PLANET_SAMPLE_COORDINATE_SCALE;
-    let terrain = PlanetTerrain::new(
-        manifest.generation(),
-        planet_surface_for(manifest),
-        manifest.planet(),
-        geography.into(),
-    )?;
+    let terrain = PlanetTerrain::for_manifest(manifest, geography.into())?;
     let mut samples = Vec::with_capacity((STEPS + 1) * (STEPS + 1));
     let mut points = Vec::with_capacity((STEPS + 1) * (STEPS + 1));
     let mut ocean = Vec::with_capacity((STEPS + 1) * (STEPS + 1));

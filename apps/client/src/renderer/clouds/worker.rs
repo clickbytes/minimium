@@ -54,15 +54,10 @@ impl TerrainSampler for ClientTerrain {
 fn create_weather_model(
     manifest: minimium_world::world::WorldManifest,
     profile: SeasonalProfile,
-    geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
+    terrain_inputs: minimium_procgen::TerrainInputs,
 ) -> Result<WeatherModel<ClientTerrain>, GenerationError> {
     let surface = minimium_procgen::planet_surface_for(manifest);
-    let terrain = PlanetTerrain::new(
-        manifest.generation(),
-        surface,
-        manifest.planet(),
-        geography.into(),
-    )?;
+    let terrain = PlanetTerrain::for_manifest(manifest, terrain_inputs)?;
     let radius_m = manifest
         .planet()
         .map_or(surface.radius_mm(), |planet| planet.radius_mm) as f64
@@ -154,7 +149,7 @@ impl CloudWorker {
                         model = match create_weather_model(
                             request.stamp.manifest,
                             SeasonalProfile::Seasonal,
-                            request.geography.clone(),
+                            request.terrain_inputs.clone(),
                         ) {
                             Ok(model) => Some(model),
                             Err(error) => {

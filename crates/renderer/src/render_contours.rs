@@ -55,6 +55,15 @@ pub(crate) fn prepare(
     {
         return Err(minimium_procgen::ExcavationGeometryError::UnavailableSurface);
     }
+    let requires_relief_policy = manifest.source() == minimium_world::world::WorldSource::Generated
+        && manifest.topology() == minimium_world::world::WorldTopology::Planet;
+    if inputs
+        .resolved_relief_policy
+        .is_some_and(|policy| !policy.matches_manifest(manifest))
+        || (requires_relief_policy && inputs.resolved_relief_policy.is_none())
+    {
+        return Err(minimium_procgen::ExcavationGeometryError::UnavailableSurface);
+    }
     let count = minimium_procgen::planet_sector_count(manifest);
     let mut selected = BTreeSet::new();
     for region in regions {

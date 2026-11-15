@@ -63,12 +63,17 @@ impl SampleWorldContentResolver {
         let geography = self.geography_for(*manifest, cancellation)?;
         let profile = minimium_game_sample::terrain_material_profile(*manifest, map)
             .map_err(|error| SessionFailure::caused_by(error.code(), error.to_string(), error))?;
+        let resolved_relief_policy = minimium_game_sample::resolved_planet_relief_policy(
+            *manifest, map,
+        )
+        .map_err(|error| SessionFailure::caused_by(error.code(), error.to_string(), error))?;
         Ok(Some(ResolvedWorldContent {
             ticket: request.ticket,
             manifest: *manifest,
             map: map.clone(),
             geography,
             terrain_material_profile: profile,
+            resolved_relief_policy,
         }))
     }
 
@@ -133,12 +138,17 @@ impl SampleWorldContentResolver {
         }
         let profile = minimium_game_sample::terrain_material_profile(request.manifest, &map)
             .map_err(|error| SessionFailure::caused_by(error.code(), error.to_string(), error))?;
+        let resolved_relief_policy =
+            minimium_game_sample::resolved_planet_relief_policy(request.manifest, &map).map_err(
+                |error| SessionFailure::caused_by(error.code(), error.to_string(), error),
+            )?;
         Ok(ResolvedWorldContent {
             ticket: request.ticket,
             manifest: request.manifest,
             map: Arc::new(map),
             geography,
             terrain_material_profile: profile,
+            resolved_relief_policy,
         })
     }
 }

@@ -17,6 +17,7 @@ pub struct SectorContentVersion {
 pub struct TerrainInputs {
     pub geography: Option<Arc<dyn PreparedGeography>>,
     pub material_profile: Option<crate::ResolvedTerrainMaterialProfile>,
+    pub resolved_relief_policy: Option<crate::ResolvedPlanetReliefPolicy>,
     pub edits: Option<Arc<TerrainSnapshot>>,
     pub remnants: Option<Arc<RemnantSnapshot>>,
     pub volumes: Option<Arc<TerrainStore>>,
@@ -37,6 +38,14 @@ impl TerrainInputs {
         material_profile: crate::ResolvedTerrainMaterialProfile,
     ) -> Self {
         self.material_profile = Some(material_profile);
+        self
+    }
+
+    pub fn with_resolved_relief_policy(
+        mut self,
+        resolved_relief_policy: crate::ResolvedPlanetReliefPolicy,
+    ) -> Self {
+        self.resolved_relief_policy = Some(resolved_relief_policy);
         self
     }
 

@@ -56,6 +56,7 @@ pub(super) fn safe_planet_spawn(
     let inputs = TerrainInputs {
         geography: geography.cloned(),
         material_profile: Some(owner.terrain_material_profile),
+        resolved_relief_policy: owner.resolved_relief_policy,
         edits: Some(owner.terrain.clone()),
         remnants: Some(owner.remnants.clone()),
         volumes: owner.volumes.clone(),
@@ -100,6 +101,7 @@ pub(super) fn safe_planet_spawn(
         TerrainInputs {
             geography: geography.cloned(),
             material_profile: Some(owner.terrain_material_profile),
+            resolved_relief_policy: owner.resolved_relief_policy,
             edits: Some(owner.terrain.clone()),
             remnants: Some(owner.remnants.clone()),
             volumes: Some(volumes.clone()),
@@ -122,6 +124,7 @@ fn planet(
             TerrainInputs {
                 geography: geography.cloned(),
                 material_profile: Some(owner.terrain_material_profile),
+                resolved_relief_policy: owner.resolved_relief_policy,
                 edits: Some(owner.terrain.clone()),
                 remnants: Some(owner.remnants.clone()),
                 volumes: owner.volumes.clone(),
