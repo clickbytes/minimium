@@ -15,6 +15,7 @@ pub(crate) enum WorldInput {
     Leave(PlayerId),
     Move(PlayerId, minimium_protocol::MovementSample),
     Fire(PlayerId, [f32; 3]),
+    Excavation(PlayerId, WorldContext, minimium_protocol::ExcavationInput),
     MapTeleport(PlayerId, WorldContext, [f32; 3]),
     SetAltitude(PlayerId, WorldContext, f32),
     Chat(PlayerId, String),

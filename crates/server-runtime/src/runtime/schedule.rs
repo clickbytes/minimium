@@ -1,3 +1,4 @@
+use super::gameplay_terrain::{self, CurrentTerrainRead};
 use crate::modules::{
     EffectBufferError, GameplayEvent, WorldEffect, WorldEffectBatch, WorldEffectBuffer,
 };
@@ -5,6 +6,9 @@ use crate::modules::{
     GameplaySystem, GameplaySystemContext, RegisteredSystem, Stage, WorldLifecycle,
 };
 use crate::world_registry::WorldRegistry;
+use minimium_procgen::PreparedGeography;
+use minimium_world::world::WorldInstanceId;
+use std::sync::Arc;
 
 pub type ModuleSystem = GameplaySystem;
 pub(crate) type SystemFn = ModuleSystem;
@@ -21,6 +25,7 @@ pub(crate) struct ScheduleDiagnostics {
 pub struct ModuleSystemContext<'a> {
     stage: Stage,
     worlds: &'a WorldRegistry,
+    terrain_reads: &'a std::collections::HashMap<WorldInstanceId, CurrentTerrainRead>,
     diagnostics: &'a mut ScheduleDiagnostics,
     effects: &'a mut WorldEffectBuffer,
     events: &'a [GameplayEvent],
@@ -102,6 +107,18 @@ impl ModuleSystemContext<'_> {
 }
 
 impl GameplaySystemContext for ModuleSystemContext<'_> {
+    fn terrain(
+        &self,
+        instance: minimium_world::world::WorldInstanceId,
+    ) -> Option<&minimium_terrain::TerrainSnapshot> {
+        Some(&self.worlds.get(instance)?.terrain)
+    }
+    fn terrain_read(
+        &self,
+        instance: WorldInstanceId,
+    ) -> Option<&dyn minimium_world::terrain::TerrainRead> {
+        self.terrain_reads.get(&instance).map(|read| read as _)
+    }
     fn stage(&self) -> Stage {
         self.stage()
     }
@@ -182,6 +199,8 @@ impl ServerSchedule {
         stage: Stage,
         simulation_tick: u64,
         worlds: &WorldRegistry,
+        geography: Option<&Arc<dyn PreparedGeography>>,
+        soil_depth_m: f64,
         events: &[GameplayEvent],
         world_context: Option<(minimium_world::world::WorldInstanceId, WorldLifecycle)>,
     ) -> WorldEffectBatch {
@@ -194,9 +213,11 @@ impl ServerSchedule {
             }
         }
         let mut effects = WorldEffectBuffer::default();
+        let terrain_reads = gameplay_terrain::build(worlds, geography, soil_depth_m);
         let mut context = ModuleSystemContext {
             stage,
             worlds,
+            terrain_reads: &terrain_reads,
             diagnostics: &mut self.diagnostics,
             effects: &mut effects,
             events,

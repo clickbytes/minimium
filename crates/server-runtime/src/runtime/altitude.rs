@@ -62,7 +62,12 @@ impl ServerRuntime {
         let ground = minimium_procgen::planet_collision_position_at_direction_with_geography(
             manifest,
             direction,
-            self.prepared_geography.clone(),
+            minimium_procgen::TerrainInputs {
+                geography: self.prepared_geography.clone(),
+                edits: Some(self.game.worlds.get(instance)?.terrain.clone()),
+                remnants: Some(self.game.worlds.get(instance)?.remnants.clone()),
+                volumes: self.game.worlds.get(instance)?.volumes.clone(),
+            },
         )?;
         let radius = ground
             .iter()

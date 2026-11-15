@@ -107,7 +107,7 @@ impl ResolvedPlanetConfig {
         value ^= value >> 31;
         Self {
             version: 1,
-            generator_revision: 5,
+            generator_revision: 6,
             seed,
             mode: PlanetMode::Procedural,
             radius_mm: 617_500_000 + value % 65_000_001,
@@ -128,7 +128,7 @@ impl ResolvedPlanetConfig {
         resolved.version = preset.version.unwrap_or(1);
         resolved.mode = preset.mode.unwrap_or(PlanetMode::Procedural);
         resolved.peak_relief = preset.peak_relief;
-        resolved.generator_revision = preset.generator_revision.unwrap_or(5);
+        resolved.generator_revision = preset.generator_revision.unwrap_or(6);
         if resolved.mode == PlanetMode::Earth {
             resolved.radius_mm = 650_000_000;
             resolved.height_scale_permille = 100;
@@ -156,18 +156,18 @@ impl ResolvedPlanetConfig {
         if self.version != 1 {
             return Err(invalid("unsupported planet preset version"));
         }
-        if self.generator_revision != 5 {
+        if self.generator_revision != 6 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 format!(
-                    "unsupported planet generator revision {}; only revision 5 is supported",
+                    "unsupported planet generator revision {}; only revision 6 is supported",
                     self.generator_revision
                 ),
             ));
         }
         if let Some(curve) = self.peak_relief {
             if self.mode != PlanetMode::Earth || !curve.definition().is_valid() {
-                return Err(invalid("peak_relief requires Earth v5, 1..3x, exponent 1..8 and 0 <= start_m < full_m <= 12000"));
+                return Err(invalid("peak_relief requires Earth v6, 1..3x, exponent 1..8 and 0 <= start_m < full_m <= 12000"));
             }
         }
         if !(318_550_000..=EARTH_RADIUS_MM).contains(&self.radius_mm) {

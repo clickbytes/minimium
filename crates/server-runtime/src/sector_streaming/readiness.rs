@@ -17,9 +17,7 @@ pub(super) fn collect_ready_players(
                     .tickets
                     .iter()
                     .all(|ticket| sectors.collision_ready(*ticket))
-                && request.tickets.first().is_some_and(|ticket| {
-                    super::collision::instance_ready(worlds, ticket.instance())
-                }))
+                && super::collision::tickets_ready(worlds, &request.tickets))
             .then_some(request.player)
         })
         .collect()
@@ -40,9 +38,7 @@ pub(super) fn collect_ready_transfers(
                     .tickets
                     .iter()
                     .all(|ticket| sectors.collision_ready(*ticket))
-                && request.tickets.first().is_some_and(|ticket| {
-                    super::collision::instance_ready(worlds, ticket.instance())
-                }))
+                && super::collision::tickets_ready(worlds, &request.tickets))
             .then_some(request.player)
         })
         .collect()

@@ -92,3 +92,16 @@ The client regenerates an individual map from its manifest topology and recorded
 generation seed. It does not infer world kind from instance IDs or reverse a
 seed transform; the server's existing paired-world producer keeps its current
 seed derivation and geometry.
+
+## Rare meteorite event
+
+The sample gameplay module registers the engine body component. Application
+composition separately passes the sample `DEFAULT_IMPACT_PROFILE`: probability 100/10000 per automatic event opportunity, initial mass
+500000 kg, density 7800 kg/m3, maximum crater radius 24 game metres. These are
+gameplay settings for a compressed planet, not a prediction of real crater size.
+The final radius depends on surviving kinetic energy. Ordinary cosmetic meteors
+and server atmospheric bolids retain their existing producers.
+
+The excavation module owns the future tool defaults (3 m reach, 0.6 m radius,
+500 ms cooldown) and the 1.5 m soil layer. These domain values do not yet install
+input bindings, developer grants or persistent inventory gameplay.

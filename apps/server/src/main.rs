@@ -140,6 +140,18 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .get("MINIMIUM_EARTH_PACKAGE")
         .map(std::path::PathBuf::from);
     let earth_package = resolve_server_paths(&mut config, earth_package.as_deref(), &working_dir)?;
+    if let Err(error) = minimium_server_runtime::preflight_persistent_formats(&config.data_dir) {
+        eprintln!("server startup compatibility preflight failed: {error}");
+        let _ = diagnostics
+            .shutdown_until(std::time::Instant::now() + std::time::Duration::from_secs(2));
+        return Err(error.into());
+    }
+    if let Err(error) = composition::preflight_saved_planet(&config) {
+        eprintln!("server startup compatibility preflight failed: {error}");
+        let _ = diagnostics
+            .shutdown_until(std::time::Instant::now() + std::time::Duration::from_secs(2));
+        return Err(error);
+    }
     let run_id = diagnostics.run_id().to_owned();
     config.diagnostics_run_id = Some(run_id.clone());
     if let Some(attempt_id) = config.startup_attempt_id.as_ref() {

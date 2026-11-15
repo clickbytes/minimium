@@ -19,7 +19,7 @@ pub fn validate_world_manifest(manifest: WorldManifest) -> Result<(), Generation
         }
         (WorldTopology::Dungeon, None) => {}
     }
-    if manifest.generation().revision().get() != 5 {
+    if manifest.generation().revision().get() != 6 {
         return Err(GenerationError::unsupported_revision(
             manifest.generation().revision().get(),
         ));
@@ -45,7 +45,7 @@ pub fn validate_world_manifest(manifest: WorldManifest) -> Result<(), Generation
 
 /// Digest of the code contract for one topology and generator revision.
 pub fn generator_digest(topology: WorldTopology, generation: GenerationSpec) -> GeneratorDigest {
-    let label = b"minimium-procgen/philox4x32-10/planet-sectors/v5".as_slice();
+    let label = b"minimium-procgen/philox4x32-10/planet-sectors/v6-volume-500mm".as_slice();
     digest_with_label(label, topology, generation)
 }
 

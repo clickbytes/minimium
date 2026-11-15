@@ -20,7 +20,15 @@ impl ServerRuntime {
         self.update_bolid_shower(now);
         if self.next_bolid_at.is_some_and(|deadline| now >= deadline) {
             if !shower_active {
-                let _ = self.spawn_bolid(false, false);
+                let impact = self.impacts.profile.is_some_and(|p| {
+                    mix(self.next_bolid_id ^ self.scheduler.simulation_tick) % 10000
+                        < u64::from(p.chance_per_10000)
+                });
+                if impact {
+                    let _ = self.spawn_meteorid(false);
+                } else {
+                    let _ = self.spawn_bolid(false, false);
+                }
             }
             self.schedule_next_bolid(now);
         }

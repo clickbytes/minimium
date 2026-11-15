@@ -5,6 +5,8 @@ use std::{collections::BTreeMap, path::PathBuf, thread};
 
 pub const MAX_PLAYERS: usize = 512;
 pub const DEFAULT_AUTOSAVE_SECONDS: u64 = 300;
+pub const DEFAULT_FLUID_WORLD_CELLS: usize = 131_072;
+pub const DEFAULT_FLUID_SERVER_CELLS: usize = 524_288;
 
 pub fn default_sector_workers() -> usize {
     thread::available_parallelism()
@@ -41,6 +43,8 @@ pub struct ServerConfig {
     pub seed: Option<u128>,
     pub lanes: LaneSelection,
     pub sector_workers: usize,
+    pub fluid_world_cells: usize,
+    pub fluid_server_cells: usize,
     pub data_dir: PathBuf,
     pub log_dir: PathBuf,
     pub admin_token: Option<String>,

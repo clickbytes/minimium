@@ -19,7 +19,7 @@ use std::{
     sync::Arc,
 };
 
-pub const SAVE_VERSION: u8 = 10;
+pub const SAVE_VERSION: u8 = 11;
 pub(super) const MAX_STORED_PLAYERS: usize = 100_000;
 pub(super) const MAX_WORLD_SNAPSHOT_BYTES: usize = 128 * 1024 * 1024;
 pub(super) const MAX_SAVED_POSITION_MM: u64 = 7_000_000_000;
@@ -37,6 +37,10 @@ use locations::{parse_location, position_from_location, write_location};
 use sectors::{parse_saved_sector, write_saved_sector};
 pub(crate) use worlds::parse_manifest;
 use worlds::{parse_saved_world, validate_saved_world, write_manifest, write_saved_world};
+
+pub fn preflight_snapshot_version(data_dir: &Path) -> io::Result<()> {
+    load::preflight_snapshot_version(data_dir)
+}
 
 pub(super) fn load(
     data_dir: &Path,

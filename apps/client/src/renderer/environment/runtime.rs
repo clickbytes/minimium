@@ -22,10 +22,16 @@ impl Renderer {
         // The client-local meteor runtime consumes the freshly rebuilt
         // environment frame on the client monotonic clock and produces one
         // bounded, origin-relative `MeteorFrame` per frame (ADR 0013 § 5).
-        let meteors = self
+        let mut meteors = self
             .meteors
             .build_frame(&self.render_environment_frame)
             .with_quality(self.meteors.effective_quality(self.sky_quality.effective));
+        self.impacts.append(
+            self.application.game.session_context(),
+            &mut meteors,
+            self.meteors.now_s(),
+            &mut self.meteors.audio,
+        );
         let prepared =
             PreparedEnvironmentFrame::new(self.render_environment_frame.clone(), stars, meteors);
         self.metrics

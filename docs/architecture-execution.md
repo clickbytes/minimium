@@ -81,7 +81,7 @@ the issue's GitHub evidence. Compilation and runtime remain deferred.
 
 `client-runtime::session::receive::decode::dispatch::manifest_matches_content`
 now calls `validate_world_manifest` before accepting a Welcome or transfer.
-Generated content requires exact revision 5 and the topology digest; Authored
+Generated content requires exact revision 6 and the topology digest; Authored
 content requires the `AUTH` digest of the offered fingerprint. The two former
 inline OR checks in Welcome and initial installation use the same helper.
 `WorldRegistry::try_from_world_definitions` and `register` validate composed
@@ -337,12 +337,12 @@ preflights transfers before this commit. All production callers use this path;
 | Load | `startup::initialize` passes the already registered component schemas to `PlayerStore::load`; complete staged parsing validates world references, duplicate IDs/components, exact schema, global count/payload cap, counters and initialization markers before runtime publication. |
 
 `save_input` iterates entity IDs separately from components, preserving an empty
-entity. It also captures per-world next ID and `content_initialized`. The v10
+entity. It also captures per-world next ID and `content_initialized`. The v11
 writer sorts records, counts the exact encoder output, then streams to a
 size-limited temporary file before atomic replacement. Profile reservation
 measures the maximum legal encoded profile; fixed world metadata reserve is
 checked against actual encoders. Snapshot budget is 128 MiB, raw component
-payloads 4 MiB globally. Versions 2–9 are rejected during load before the
+payloads 4 MiB globally. Versions 2–10 are rejected during load before the
 persistence worker is spawned. Sample portal Startup emits a spawn only for
 `WorldLifecycle::New`; after save/load the restored marker is true. Despawn
 then save/load leaves no portal while retaining the marker and monotonically
@@ -418,7 +418,7 @@ does the same in `runtime/tick.rs`; an owned client sends admin Stop, while
 Attached never does. `lifecycle::shutdown` starts one 30-second absolute
 deadline, reserves its final two seconds for logs, stops admin admission,
 rejects pending admin commands, closes client sockets, stops worker intake,
-captures the final immutable v10 snapshot, queues its higher revision after
+captures the final immutable v11 snapshot, queues its higher revision after
 any autosave, waits for result, then removes the owned endpoint and writes
 shutdown status. The host uses the same log deadline. Final capture checks
 the work deadline before and after its synchronous copy. Error or timeout of

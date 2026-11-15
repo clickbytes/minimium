@@ -40,10 +40,25 @@ LUTs, staging, fog and uniforms use approximately 1.71 MiB in the physical path;
 the scene snapshot adds about 15.8 MiB at 1080p or 63.3 MiB at 4K.
 Runtime image/performance acceptance is pending.
 
-TerrainVertex (112 bytes) and TerrainGpu form the shared planet surface path
+`held_tool` contains small camera-local low-poly shovel and pickaxe meshes.
+`HeldToolGpu` draws the equipped mesh as a no-depth viewmodel after atmosphere
+and cloud composition and before UI/output. The confirmed `ToolKind` comes from
+the client session; no equipped tool means no model. It is hidden while the
+scene is unprepared, in overview/map mode, or under the console. Viewmodel
+coordinates are camera-relative screen geometry, so planet origin rebasing and
+radial camera orientation do not move it or clip it against world depth.
+
+TerrainVertex (120 bytes) and TerrainGpu form the shared planet surface path
 for overview and FPP. Both cameras use TerrainView, planet_visibility and the
 same shader, material means and climate history. The separate globe texture,
 palette, detail sphere and resources have been retired.
+
+Excavation surfaces carry a typed presentation flag and cached sky visibility
+in a dedicated vertex channel. Their soil/rock weights bypass patch, snow,
+vegetation and weather-history overrides. Five bounded CPU rays sample the
+current signed terrain field (24 steps, 8 m maximum); the result attenuates
+indirect ambient only. Excavation triangles remain shadow casters even when
+their walls resemble radial LOD curtains.
 
 Static landform/coverage comes from procgen. Continuous planet-space GPU masks
 use retention, climate, slope and seeded noise to perturb substrate boundaries.
@@ -115,10 +130,16 @@ evaluating lattice fractions, preserving local precision on large planets.
 Shadow PCF taps adjust comparison depth analytically from the geometric triangle
 plane and the orthographic light-projection rows. Terrain carries a separate
 flat geometric normal derived from the exact origin-relative f32 vertex positions;
-the smooth sampled normal remains for lighting. The 112-byte vertex includes 12
+the smooth sampled normal remains for lighting. The 120-byte vertex includes 12
 extra bytes for that plane normal. Differencing projected screen depths caused
 precision loss on small nearby triangles; it is no longer used for correction.
-This still needs visual confirmation against the reported shadow diagnostic.
+Directional receiver-plane correction is now used at every non-singular light
+angle. The former `smoothstep(0.005, 0.05, |N·L|)` fade left the full 3x3 PCF
+kernel active while only partially correcting its tap depths, producing large
+systematic errors at grazing angles. Only `|N·L| <= 1e-6` skips the gradient,
+where the plane/light intersection is numerically singular in f32. This is a
+numerical guard, not a visual bias increase; grazing-angle acceptance still
+requires runtime inspection.
 
 Terrain repeat sampling uses 4x anisotropic filtering (linear min/mag/mip).
 Normal-map contribution also fades as its texel footprint becomes unresolved,
@@ -163,6 +184,10 @@ remote casters and the map are ready for the new publication.
 On compute-capable rendering, floating-origin shifts update the position fields
 of resident vertex/storage buffers. Anchored material coordinates, normals and
 world-space bounds stay unchanged. Unsupported adapters retain buffer rebuilds.
+Rebase buffers carry a typed object/terrain/water layout; Rust supplies the actual
+vertex stride and terrain plane-normal offset to WGSL. Resident and staged
+geometry use the same contract. Terrain rebases whole triangles and recomputes
+their geometric normals, preserving the excavation and sky-visibility channels.
 Dense presentation boundaries conform to coarser neighbors; radial curtains
 are removed before surface/shadow preparation. The client moves the near plane conservatively away from 5 cm
 when flying clear of resident geometry, improving distant depth precision.
@@ -174,18 +199,22 @@ Earth ocean is a separate opaque sphere mesh, approximated with the selected
 ground lattice. Both shells share LOD selection and canonical edge fractions;
 FPP coastal leaves receive twice the refinement priority within its 256-leaf cap.
 Overview prioritizes coasts 8x and inland terrain 2x within a 512-leaf cap.
-Ground retains signed bathymetry, and depth intersection defines the coast.
+Ground retains signed bathymetry. After paired edge conformance, `shoreline`
+partitions land and water into complementary polygons using f64 signed offsets
+and shared millimetre intersections. Depth handles occlusion rather than deciding
+the coast between almost coplanar overlapping surfaces. Zero-height ties are land.
 Binary water flags no longer blend water into terrain materials. A narrow damp
 band uses signed shore elevation. Procedural worlds retain their prior dry surface.
 
 Ocean vertices contain only position and radial normal (24 bytes). The shader
 uses existing lighting/atmosphere/shadow resources, a broad Fresnel sky reflection
 and no material texture reads. No new texture asset, wave simulation, scene
-capture or transparent-water pass is added. Fully submerged ground triangles
-are excluded before material/shadow preparation; coastal triangles remain.
-Sea and ground buffers stage/publish together and rebase with strides 6/28 floats.
-At most 512 ocean triangles per dense leaf add up to 9 MiB of vertex storage
-per complete 256-leaf FPP selection or 18 MiB for 512 overview leaves, before
+capture or transparent-water pass is added. Submerged terrain is excluded before
+material/shadow preparation; crossing triangles are clipped on the CPU worker.
+Sea and ground buffers stage/publish together and rebase with strides derived
+from their Rust vertex layouts (currently 6/30 floats).
+At most 1024 ocean triangles per dense leaf add up to 18 MiB of vertex storage
+per complete 256-leaf FPP selection or 36 MiB for 512 overview leaves, before
 active/pending overlap. Existing frame
 upload limits include these bytes; extra sea draws are counted in telemetry.
 
@@ -193,6 +222,17 @@ The sphere is tessellated, not an analytic infinitely smooth surface. Small
 coastal features remain limited by geography resolution and available mesh LOD.
 This is surface water only: no underwater rendering, tides, rivers or elevated
 lakes. Visual coast/seam/flicker and measured performance acceptance are pending.
+
+Walking shoreline stability (2026-11-14): TerrainView retains the 20 m request
+direction grid but restores the camera radius at 1 m resolution before choosing
+LOD/horizon. Cartesian snapping previously changed coastal altitude by up to
+17.3 m. FPP prioritizes the finest existing lattice within a two-sector-radius
+guard (at most 160 m) near sea level. Previously refined nodes also retain a
+ranking advantage when the leaf budget is full. The 256/512 leaf caps, shared
+ground/sea publication, shader layouts and base generation stay unchanged.
+Coast polygons are derived from the selected lattice, so distant LOD transitions
+and source-data resolution still limit detail. Runtime acceptance must inspect
+small enclosed water patches, flat shores, cube/LOD seams and origin rebasing.
 
 Terrain surface attributes now carry source and exaggerated elevation separately.
 A uniform climate-relief influence blends them consistently with the environment
@@ -759,8 +799,8 @@ client monotonic clock, and world UTC only gates exposure conditions.
 The first producer is the client-local manual runtime (E047-02,
 `apps/client/src/renderer/meteors`): manual presets seed deterministic events
 that rebuild one bounded `MeteorFrame` per frame on the client monotonic clock;
-`Tracked` remains an input marker with no server producer, protocol message,
-save field or world entity.
+E047 reserved `Tracked` for another producer; the authoritative impact adapter
+described below now supplies it without changing the cosmetic lifecycle.
 `RenderFrame::meteors` carries the frame on every prepared render frame with
 explicit disabled states for interior/unavailable environments and an
 explicitly empty ready state otherwise; the scene snapshot exposes it and
@@ -955,3 +995,35 @@ and projected distance from the brightest emitter in pixels. These are
 diagnostics for subsequent visual acceptance, not evidence that every viewing
 angle resolves all physical fragments. Static compilation/WGSL validation
 passes; runtime acceptance remains pending under the project test policy.
+
+## Tracked impact adapter
+
+The client now feeds `MeteorSource::Tracked` from authoritative protocol-20 bodies.
+Renderer remains independent of protocol/storage. Tracked heads, wakes, ejecta,
+dust and point lights share the existing finite MeteorFrame/GPU budgets, depth,
+planet occlusion, cloud composition and HDR/output paths. Low quality retains
+ground-impact effects instead of applying the cosmetic high-atmosphere gate.
+The client delays the impact burst until the corresponding terrain presentation
+revision is installed. RenderPatchCache keys use local terrain revisions; unchanged
+patches survive. Collidable remnant object triangles use the object/shadow pipeline,
+not terrain coverage. Lighting and plume values still require visual acceptance
+and performance measurement in the final verification phase.
+
+Planet preparation consumes explicit `TerrainInputs` and includes local terrain,
+remnant and volume revisions in patch caches. Remnant collection no longer
+advances terrain revision. `MapTriangle.surface` carries the CPU-prepared normal,
+soil/rock coverage and elevation channel through floating-origin conversion;
+fallible patch caching keeps an earlier complete mesh if seam preflight rejects
+the replacement. GPU visual acceptance remains pending.
+
+`WorldGeometryGpu` stages prepared terrain channels and local water against its
+shared upload budget, then installs the complete scene selection at publication.
+Prepared channel identities include the shoreline image: changed lake levels
+upload ocean buffers even when the underlying ground geometry is unchanged.
+Water-only updates reuse terrain, objects and shadow buffers. Local water is
+meshed on the client worker, never rebuilt or allocated in the drawing loop.
+Excavation contour preparation uses the actual selected LOD bases and their
+bounded neighboring coverage. Those bases share edge conformance before seam
+construction; the later pass preserves points shared with excavation faces.
+Only regions near stored chunks need the additional base cache and guard meshes.
+The preparation fails closed when its contour or memory bounds cannot be met.

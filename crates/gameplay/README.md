@@ -49,3 +49,16 @@ Keep module descriptions and registration generic. Host-specific handlers and wo
 ## Verification
 
 Compilation and static validation are deferred to the workspace final verification phase.
+
+## Impact configuration and interaction port
+
+Impact profiles are no longer module-registration hooks. The sample supplies a
+profile constant and the application passes it explicitly through
+`ServerComposition`; runtime validates it and owns scheduling.
+`GameplaySystemContext::terrain` borrows the compatible crater snapshot;
+`terrain_read` borrows the current planetary signed-field query, including
+committed crater and volume edits when available. Missing worlds or unavailable
+terrain remain unavailable rather than being treated as empty space.
+`EntityInteractionRequested` is the generic interaction event; the sample portal
+consumer accepts it and the earlier `PortalUseRequested` compatibility variant.
+Inventory, mining rewards and damage policy are not implied by the impact profile.

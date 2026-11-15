@@ -42,6 +42,7 @@ impl Renderer {
             Vec::new()
         } else {
             sector_geometry(&SectorGeometry {
+                object_triangles: Vec::new(),
                 boxes: map.boxes().to_vec(),
                 triangles: map.triangles().to_vec(),
             })
@@ -157,16 +158,45 @@ impl Renderer {
             );
             return;
         }
-        let earth = self
+        let manifest = self
             .application
             .game
             .world_manifests
             .get(&self.application.game.current_instance)
+            .copied();
+        let session_present = self.application.connection.session().is_some();
+        if session_present && manifest.is_none() {
+            self.application.status = crate::application::ClientStatus::Status(
+                minimium_localization::UiStatus::EarthLoading,
+            );
+            self.application.ui.console.push_ui_error_message(
+                minimium_localization::UiMessage::Notice(
+                    minimium_localization::UiNotice::MapTeleportSynchronizing,
+                ),
+                &self.localizer,
+                self.application.settings.locale,
+            );
+            return;
+        }
+        let earth = manifest
             .is_some_and(|manifest| manifest.planet().is_some_and(|planet| planet.mode == 1));
-        if !earth || self.application.connection.session().is_none() || !self.gpu.scene_visible {
+        if !earth || !session_present {
             self.application.ui.console.push_ui_error_message(
                 minimium_localization::UiMessage::Notice(
                     minimium_localization::UiNotice::MapTeleportRequiresEarth,
+                ),
+                &self.localizer,
+                self.application.settings.locale,
+            );
+            return;
+        }
+        if !self.gpu.scene_visible || !self.application.game.gameplay.sectors_ready {
+            self.application.status = crate::application::ClientStatus::Status(
+                minimium_localization::UiStatus::EarthLoading,
+            );
+            self.application.ui.console.push_ui_error_message(
+                minimium_localization::UiMessage::Notice(
+                    minimium_localization::UiNotice::MapTeleportSynchronizing,
                 ),
                 &self.localizer,
                 self.application.settings.locale,

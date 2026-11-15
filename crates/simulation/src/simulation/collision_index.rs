@@ -6,6 +6,10 @@ use std::collections::HashMap;
 
 #[derive(Clone, Default)]
 pub struct CollisionIndex {
+    pub(super) bounds: Option<Aabb>,
+    pub(super) partitions: Vec<(Aabb, std::sync::Arc<CollisionIndex>)>,
+    pub(super) partition_cells: HashMap<[i32; 3], Vec<usize>>,
+    pub(super) large_partitions: Vec<usize>,
     pub(super) colliders: Vec<Aabb>,
     pub(super) cells: HashMap<Cell, Vec<usize>>,
     pub(super) large_colliders: Vec<usize>,
@@ -15,6 +19,12 @@ pub struct CollisionIndex {
 }
 
 impl CollisionIndex {
+    pub(super) fn include_bounds(&mut self, bounds: Aabb) {
+        self.bounds = Some(self.bounds.map_or(bounds, |old| Aabb {
+            min: std::array::from_fn(|i| old.min[i].min(bounds.min[i])),
+            max: std::array::from_fn(|i| old.max[i].max(bounds.max[i])),
+        }));
+    }
     pub fn from_colliders(colliders: Vec<Aabb>) -> Self {
         Self::from_geometry(colliders, Vec::new())
     }
@@ -43,6 +53,7 @@ impl CollisionIndex {
             return;
         }
 
+        self.include_bounds(collider);
         let index = self.colliders.len();
         self.colliders.push(collider);
         let min = cell_for(collider.min);
@@ -74,6 +85,7 @@ impl CollisionIndex {
                 max[axis] = max[axis].max(vertex[axis]);
             }
         }
+        self.include_bounds(Aabb { min, max });
         let index = self.surfaces.len();
         self.surfaces.push(surface);
         let min_cell = cell_for(min);

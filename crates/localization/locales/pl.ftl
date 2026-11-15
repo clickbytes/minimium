@@ -130,6 +130,7 @@ ui-notice = { $notice ->
     [sky_quality_desktop_only] --sky-quality jest dostępne tylko w kliencie graficznym
     [map_teleport_busy] map_telepo: poczekaj na poprzednie przeniesienie
     [map_teleport_requires_earth] map_telepo wymaga połączenia ze światem Earth
+    [map_teleport_synchronizing] map_telepo: świat Earth nadal się synchronizuje
     [local_server_threads_conflict] server.threads podano zarówno w opcjach klienta, jak i poleceniu hosta
     [star_catalog_unavailable] Katalog gwiazd jest niedostępny; etykiety ciał niebieskich są wyłączone
     [time_request_failed] Nie udało się wysłać żądania zmiany czasu
@@ -245,3 +246,31 @@ configuration-saved = Zapisano konfigurację w { $path }
 configuration-save-failed = Nie udało się zapisać konfiguracji. Szczegóły są w logu klienta.
 environment-status = Środowisko: { $quality } | { $date } | tempo { $rate } | rewizja { $revision }
 environment-title = { $quality } | { $date }
+
+tool-shovel = Łopata
+tool-pickaxe = Kilof
+tool-stowed = Schowane
+tool-soil = Gleba
+tool-rock = Skała
+tool-empty = Pusta przestrzeń
+tool-obstacle = Obiekt / gracz
+tool-ready = Materiał zgodny: LPM kopie
+tool-synchronizing = Oczekiwanie na synchronizację terenu i kolizji
+tool-no-target = Brak powierzchni w zasięgu (3 m)
+tool-wrong-material = Skała wymaga kilofa [2]
+tool-not-equipped = Wyposaż łopatę [1] lub kilof [2]
+tool-obstructed = Pierwsze trafienie to obiekt lub gracz, a nie grunt do kopania
+tool-unsafe-geometry = Odmowa: nie udało się bezpiecznie połączyć terenu; szczegóły w logu serwera
+tool-busy = Serwer przygotowuje inną zmianę świata
+tool-rate-limited = Odnowienie narzędzia: najwyżej 2 użycia na sekundę
+tool-stale = Cel zmienił się; wyceluj ponownie
+tool-capacity = Przekroczony limit terenu lub wody
+tool-storage = Serwer nie mógł zapisać zmiany
+tool-invalid-intent = Nieprawidłowa akcja narzędzia
+tool-pending = Oczekiwanie na wynik serwera
+tool-committed = Wykop zapisany
+tool-controls = [1] Łopata  [2] Kilof  [0] Schowaj  [LPM] Kop
+tool-preview = Podgląd lokalny: zielony = zgodny materiał, czerwony = blokada; serwer zatwierdza wykop
+tool-heading = DEBUG KOPANIA | { $tool } | promień 0,6 m / zasięg 3 m
+tool-target = Cel: { $material } | odległość { $distance } m
+tool-result = Ostatnia akcja #{ $action }: { $outcome }

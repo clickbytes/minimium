@@ -77,11 +77,24 @@ pub(super) fn velocity(
 /// One shared bounded integrator for authoritative movement and prediction.
 pub fn step_character(
     state: &mut CharacterState,
+    input: MovementIntent,
+    policy: MovementPolicy,
+    colliders: &[super::Aabb],
+    surfaces: &[MapTriangle],
+    dt: f32,
+) {
+    step_character_with_water(state, input, policy, colliders, surfaces, dt, None);
+}
+
+/// Shared prediction/authority movement with an optional neutral water sample.
+pub fn step_character_with_water(
+    state: &mut CharacterState,
     mut input: MovementIntent,
     policy: MovementPolicy,
     colliders: &[super::Aabb],
     surfaces: &[MapTriangle],
     dt: f32,
+    water: Option<minimium_world::fluid::WaterSample>,
 ) {
     if !dt.is_finite() || dt <= 0.0 || !policy.valid() {
         return;
@@ -89,6 +102,10 @@ pub fn step_character(
     input.direction = input.direction.map(super::rules::finite_input);
     input.vertical = super::rules::finite_input(input.vertical);
     let dt = dt.min(super::SIMULATION_STEP_SECONDS);
+    let water = water.filter(|sample| sample.valid() && !policy.can_fly);
+    if water.is_some_and(|sample| sample.submerged_fraction > 0.5) {
+        input.jump = false;
+    }
     let steps = if policy.can_fly {
         1
     } else {
@@ -104,6 +121,7 @@ pub fn step_character(
             colliders,
             surfaces,
             dt / steps as f32,
+            water,
         );
         if index == 0 {
             input.jump = false;

@@ -14,12 +14,15 @@ pub struct TerrainVertex {
     pub surface: [f32; 4],
     pub geometric_normal: [f32; 3],
     pub habitat: [f32; 3],
+    /// Typed excavation flag and cached signed-field sky visibility.
+    pub presentation: [f32; 2],
 }
 
 impl TerrainVertex {
-    const ATTRIBUTES: [wgpu::VertexAttribute; 9] = wgpu::vertex_attr_array![
+    const ATTRIBUTES: [wgpu::VertexAttribute; 10] = wgpu::vertex_attr_array![
         0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Float32x3,
-        4 => Float32x4, 5 => Float32x2, 6 => Float32x4, 7 => Float32x3, 8 => Float32x3
+        4 => Float32x4, 5 => Float32x2, 6 => Float32x4, 7 => Float32x3,
+        8 => Float32x3, 9 => Float32x2
     ];
     pub fn layout() -> wgpu::VertexBufferLayout<'static> {
         wgpu::VertexBufferLayout {
@@ -31,8 +34,9 @@ impl TerrainVertex {
 }
 
 const _: () = {
-    assert!(std::mem::size_of::<TerrainVertex>() == 112);
+    assert!(std::mem::size_of::<TerrainVertex>() == 120);
     assert!(std::mem::offset_of!(TerrainVertex, geometric_normal) == 88);
+    assert!(std::mem::offset_of!(TerrainVertex, presentation) == 112);
 };
 
 pub fn vertices(
@@ -41,6 +45,15 @@ pub fn vertices(
     origin: [f32; 3],
 ) -> Vec<TerrainVertex> {
     let mut samples = std::collections::HashMap::new();
+    let mut sky_visibility = std::collections::HashMap::<[i64; 3], f32>::new();
+    // Occlusion only consumes distance; material layers come from surface metadata.
+    let volume_base = terrain.volume_base(0.0);
+    let volume_view = terrain
+        .inputs()
+        .volumes
+        .as_ref()
+        .zip(volume_base.as_ref())
+        .map(|(store, base)| store.view(base));
     let mut out = Vec::with_capacity(geometry.triangles.len() * 3);
     for triangle in &geometry.triangles {
         let points = triangle
@@ -61,32 +74,73 @@ pub fn vertices(
             .normalize_or_zero()
             .as_vec3()
             .to_array();
-        for point in points {
+        for (index, point) in points.into_iter().enumerate() {
             let key = point.map(f64::to_bits);
             let sample = *samples
                 .entry(key)
                 .or_insert_with(|| terrain.surface_sample(point));
+            let override_surface = triangle.surface.map(|vertices| vertices[index]);
+            let excavation = override_surface.is_some_and(|surface| {
+                matches!(
+                    surface.kind,
+                    minimium_world::world::MapSurfaceKind::Excavation
+                )
+            });
+            let sky = if excavation {
+                let sky_key = point.map(|value| (value * 1000.0).round() as i64);
+                *sky_visibility.entry(sky_key).or_insert_with(|| {
+                    volume_view.as_ref().map_or(0.0, |view| {
+                        crate::terrain_occlusion::sky_visibility(
+                            |position| view.interpolated(position).map(|sample| sample.distance_m),
+                            point,
+                            override_surface.map_or(sample.normal, |surface| surface.normal),
+                        )
+                    })
+                })
+            } else {
+                1.0
+            };
             out.push(TerrainVertex {
                 position: std::array::from_fn(|i| (point[i] - f64::from(origin[i])) as f32),
                 // Curtains conceal cracks; lighting them as vertical cliffs
                 // exposes a dark grid over otherwise flat water/snow.
-                normal: sample.normal,
+                normal: override_surface.map_or(sample.normal, |v| v.normal),
                 planet_high: high.map(|v| v as f32),
                 planet_low: std::array::from_fn(|i| (point[i] - high[i]) as f32),
-                coverage_a: sample.coverage[..4].try_into().unwrap(),
-                coverage_b: sample.coverage[4..].try_into().unwrap(),
-                surface: [
-                    sample.source_elevation_m,
-                    sample.slope,
-                    f32::from(terrain.is_earth()),
-                    sample.elevation_m / terrain.presentation_height_scale(),
-                ],
+                coverage_a: override_surface.map_or_else(
+                    || sample.coverage[..4].try_into().unwrap(),
+                    |v| v.coverage[..4].try_into().unwrap(),
+                ),
+                coverage_b: override_surface.map_or_else(
+                    || sample.coverage[4..].try_into().unwrap(),
+                    |v| v.coverage[4..].try_into().unwrap(),
+                ),
+                surface: override_surface.map_or(
+                    [
+                        sample.source_elevation_m,
+                        sample.slope,
+                        sample.water,
+                        sample.elevation_m / terrain.presentation_height_scale(),
+                    ],
+                    |v| {
+                        [
+                            v.source_elevation_m,
+                            v.slope,
+                            v.water,
+                            v.surface_elevation_m,
+                        ]
+                    },
+                ),
                 geometric_normal: face_normal,
-                habitat: [
-                    sample.landform.retention,
-                    sample.landform.exposure,
-                    f32::from(sample.mapped_coverage),
-                ],
+                habitat: override_surface.map_or(
+                    [
+                        sample.landform.retention,
+                        sample.landform.exposure,
+                        f32::from(sample.mapped_coverage),
+                    ],
+                    |v| v.habitat,
+                ),
+                presentation: [if excavation { 1.0 } else { 0.0 }, sky],
             });
         }
     }
@@ -123,7 +177,15 @@ pub fn shadow_vertices(
             .precise_vertices
             .map(|p| p.map(|v| v.map(|c| c as f64 / 1000.0)))
             .unwrap_or_else(|| triangle.vertices.map(|p| p.map(f64::from)));
-        if !radial_curtain(points) {
+        let excavation = triangle.surface.is_some_and(|surface| {
+            surface.iter().any(|vertex| {
+                matches!(
+                    vertex.kind,
+                    minimium_world::world::MapSurfaceKind::Excavation
+                )
+            })
+        });
+        if excavation || !radial_curtain(points) {
             out.extend_from_slice(rendered);
         }
     }

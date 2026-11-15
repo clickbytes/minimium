@@ -138,11 +138,20 @@ impl OutputEncoder {
     }
 
     pub fn update_exposure(&self, queue: &wgpu::Queue, exposure: f32) {
+        self.update_exposure_with_water(queue, exposure, 0.0);
+    }
+
+    pub fn update_exposure_with_water(
+        &self,
+        queue: &wgpu::Queue,
+        exposure: f32,
+        submerged_fraction: f32,
+    ) {
         let params = [
             exposure,
             f32::from(self.hdr_enabled),
             f32::from(self.surface_is_srgb),
-            0.0,
+            submerged_fraction.clamp(0.0, 1.0),
         ];
         queue.write_buffer(&self.params, 0, bytemuck::cast_slice(&params));
     }

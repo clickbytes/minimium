@@ -404,6 +404,13 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
             renderer.last_sky_view_at = None;
             renderer.bolid_notice(minimium_localization::UiNotice::BolidRequestQueued);
         }
+        FrontendAction::SpawnRandomMeteorid => {
+            let text = match renderer.application.connection.request_random_meteorid() {
+                Ok(()) => "Meteorite request sent".to_owned(),
+                Err(error) => format!("spawn_random_meteorid: {error}"),
+            };
+            renderer.application.ui.console.push_line(text);
+        }
         FrontendAction::TimeMode(mode) => {
             match renderer.application.connection.request_time_mode(&mode) {
                 Ok(()) => renderer

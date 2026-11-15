@@ -66,6 +66,22 @@ const OPTIONS: &[CliOptionSpec] = &[
         false,
     ),
     option(
+        "--fluid-world-cells",
+        None,
+        Some("1..262144"),
+        "Maximum active local-water cells per world.",
+        false,
+        false,
+    ),
+    option(
+        "--fluid-server-cells",
+        None,
+        Some("1..524288"),
+        "Maximum active local-water cells across the server.",
+        false,
+        false,
+    ),
+    option(
         "--data-dir",
         None,
         Some("PATH"),

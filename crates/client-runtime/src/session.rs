@@ -93,6 +93,8 @@ impl Eq for SessionFailure {}
 mod clock;
 mod content;
 mod environment;
+mod excavation;
+mod impacts;
 mod receive;
 mod replication;
 
@@ -165,6 +167,9 @@ pub enum QueueError {
 
 /// A single nonblocking TCP protocol session.
 pub struct ClientSession {
+    pub(crate) impacts: crate::impacts::ImpactReplica,
+    pub(crate) excavation: crate::excavation::ExcavationReplica,
+    tools: excavation::ToolClientState,
     diagnostic_logger: Option<minimium_diagnostics::DomainLogger>,
     content: content::ContentPreparation,
     stream: Option<TcpStream>,
@@ -175,7 +180,7 @@ pub struct ClientSession {
     next_target_tick: u64,
     session_id: u64,
     world_content_resolver: Option<Arc<dyn WorldContentResolver>>,
-    world_content_worker: Option<JoinHandle<Result<ResolvedWorldContent, SessionFailure>>>,
+    world_content_worker: Option<JoinHandle<receive::PreparedWorldContent>>,
     world_content_worker_ticket: Option<ContentResolutionTicket>,
     world_content_request: Option<ContentResolutionTicket>,
     next_world_content_request_id: u64,
@@ -183,6 +188,8 @@ pub struct ClientSession {
     world_content_started: Option<Instant>,
     deferred_world_message: Option<(ServerMessage, u64)>,
     resolved_worlds: HashMap<minimium_world::world::WorldInstanceId, Arc<ResolvedWorldContent>>,
+    water_catalogs:
+        HashMap<minimium_world::world::WorldInstanceId, Arc<minimium_procgen::WaterCatalog>>,
     replica_schemas: HashMap<ComponentTypeId, SchemaVersion>,
     replica_assembly: Option<crate::replicas::ReplicaAssembly>,
     replicas: crate::replicas::ReplicatedEntities,
@@ -260,6 +267,10 @@ impl ClientSession {
             world_content_started: None,
             deferred_world_message: None,
             resolved_worlds: HashMap::new(),
+            water_catalogs: HashMap::new(),
+            impacts: Default::default(),
+            excavation: Default::default(),
+            tools: Default::default(),
             replica_schemas: HashMap::new(),
             replica_assembly: None,
             replicas: crate::replicas::ReplicatedEntities::default(),
@@ -390,6 +401,7 @@ impl ClientSession {
         self.pending_ping_end = None;
         self.world_context = None;
         self.resolved_worlds.clear();
+        self.water_catalogs.clear();
         self.world_content_cancel.cancel();
         self.world_content_worker = None;
         self.world_content_worker_ticket = None;
@@ -397,6 +409,9 @@ impl ClientSession {
         self.world_content_started = None;
         self.deferred_world_message = None;
         self.prepared_geography = None;
+        self.impacts = Default::default();
+        self.excavation = Default::default();
+        self.tools = Default::default();
         self.pending_transition = None;
         self.ready_transition = None;
         self.clock_sample = None;

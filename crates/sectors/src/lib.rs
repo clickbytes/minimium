@@ -8,6 +8,7 @@ use std::{
     sync::Arc,
 };
 
+mod prepared;
 #[cfg(test)]
 mod tests;
 
@@ -96,6 +97,21 @@ pub struct SectorManager<T> {
 }
 
 impl<T> SectorManager<T> {
+    /// Explicit local terrain mutation invalidates even pinned data. Old task serials
+    /// cannot install after this removal; owners reacquire their affected tickets.
+    pub fn invalidate_where(
+        &mut self,
+        instance: WorldInstanceId,
+        mut affected: impl FnMut(SectorKey) -> bool,
+    ) {
+        self.entries
+            .retain(|address, _| address.instance != instance || !affected(address.key));
+        self.pending.retain(|ticket| {
+            self.entries
+                .get(&ticket.address)
+                .is_some_and(|e| e.ticket == *ticket)
+        });
+    }
     pub fn new(cache_capacity: usize, queue_capacity: usize) -> Result<Self, RequestError> {
         if cache_capacity == 0 || queue_capacity == 0 {
             return Err(RequestError::InvalidCapacity);

@@ -10,6 +10,13 @@ use minimium_environment::{TimeCommand, TIME_USAGE};
 
 const SERVER_SPECS: &[CommandSpec<ServerCommand, CommandError>] = &[
     CommandSpec {
+        name: "spawn_random_meteorid",
+        alias: None,
+        usage: "spawn_random_meteorid",
+        arguments: &[],
+        parser: parse_server_spec,
+    },
+    CommandSpec {
         name: "help",
         alias: None,
         usage: "help",
@@ -158,6 +165,7 @@ pub(crate) const SERVER_COMMAND_NAMES: &[&str] = &[
     "world save",
     "stop",
     "spawn_random_bolid",
+    "spawn_random_meteorid",
     "time status",
     "time mode real_time",
     "time mode time_scale",
@@ -201,6 +209,9 @@ fn parse_server_spec(arguments: &[&str]) -> Result<ServerCommand, CommandError> 
                     TIME_USAGE,
                 )
             });
+    }
+    if *command == "spawn_random_meteorid" && tail.is_empty() {
+        return Ok(ServerCommand::SpawnRandomMeteorid);
     }
     if *command == "spawn_random_bolid" {
         let count = if tail.is_empty() {
@@ -253,6 +264,7 @@ pub enum ServerCommand {
     Save,
     Stop,
     SpawnRandomBolid(u16),
+    SpawnRandomMeteorid,
     Time(TimeCommand),
     Property(ServerPropertyCommand),
     /// A validated administrative line owned by its registering server module.

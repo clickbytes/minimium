@@ -1,7 +1,27 @@
 use super::*;
 
 impl Renderer {
+    pub(in crate::renderer) fn water_presentation_for(
+        &self,
+        instance: minimium_world::world::WorldInstanceId,
+    ) -> Option<super::super::sector_worker::WaterPresentation> {
+        let session = self.application.connection.session()?;
+        let catalog = session.water_catalog_for(instance)?;
+        let snapshot = session.fluid_snapshot()?;
+        (snapshot.world() == instance)
+            .then(|| super::super::sector_worker::WaterPresentation::new(catalog, snapshot))
+    }
+
     pub(in crate::renderer) fn refresh_active_sector_scene(&mut self) -> bool {
+        if self
+            .application
+            .connection
+            .session()
+            .is_some_and(|s| !s.impact_ready() || !s.excavation_ready())
+        {
+            self.application.game.gameplay.sectors_ready = false;
+            return false;
+        }
         let Some(manifest) = self
             .application
             .game
@@ -12,7 +32,31 @@ impl Renderer {
             self.application.game.gameplay.sectors_ready = false;
             return false;
         };
+        if manifest.planet().is_some() {
+            let prediction = &self.application.game.gameplay.prediction;
+            let feet = prediction
+                .position_mm
+                .map_or(prediction.character.position.map(f64::from), |position| {
+                    position.0.map(|v| v as f64 / 1000.0)
+                });
+            let up = minimium_world::world::character_frame(
+                prediction.character.gravity,
+                prediction.character.position,
+            )
+            .0
+            .map(f64::from);
+            if !self
+                .application
+                .connection
+                .session()
+                .is_some_and(|session| session.water_region_covers_capsule(feet, up, 1.7))
+            {
+                self.application.game.gameplay.sectors_ready = false;
+                return false;
+            }
+        }
         let view = self.terrain_view();
+        let water = self.water_presentation_for(self.application.game.current_instance);
         let scene = match self.sector_cache.ensure_scene(
             self.application.game.current_instance,
             manifest,
@@ -25,7 +69,9 @@ impl Renderer {
             self.application
                 .connection
                 .session()
-                .and_then(|session| session.prepared_geography()),
+                .map(|session| session.terrain_inputs())
+                .unwrap_or_default(),
+            water,
         ) {
             Ok(Some(scene)) => scene,
             Ok(None) => {
@@ -40,6 +86,10 @@ impl Renderer {
                 return false;
             }
         };
+        if manifest.planet().is_some() && scene.prepared.is_none() {
+            self.application.game.gameplay.sectors_ready = false;
+            return false;
+        }
         if !self
             .gpu
             .cache_sector_scene(self.application.game.current_instance, &scene)
@@ -52,11 +102,38 @@ impl Renderer {
                     .map_or(0, |map| map.fingerprint()),
             )
         {
+            let current = self.application.game.session_context().map(|context| {
+                (
+                    context,
+                    self.application
+                        .connection
+                        .session()
+                        .map_or((0, 0, 0), |s| s.terrain_inputs().revision()),
+                )
+            });
+            if self.impacts.published_terrain != current {
+                self.application.game.gameplay.sectors_ready = false;
+                return false;
+            }
             self.application.game.gameplay.collision_index = scene.collision;
             self.application.game.gameplay.collision_revision = scene.collision_revision;
             self.last_render_position = [f32::INFINITY; 3];
             self.application.game.gameplay.sectors_ready = true;
             return true;
+        }
+        if let (Some(context), Some(prepared)) = (
+            self.application.game.session_context(),
+            scene.prepared.as_ref(),
+        ) {
+            self.impacts.published_terrain = Some((context, prepared.terrain_revision()));
+            self.impacts.published_craters = self
+                .application
+                .connection
+                .session()
+                .and_then(|session| session.terrain_inputs().edits)
+                .map_or_else(Default::default, |terrain| {
+                    terrain.edits().iter().map(|stamp| stamp.id).collect()
+                });
         }
         self.application.game.gameplay.collision_index = scene.collision;
         self.application.game.gameplay.collision_revision = scene.collision_revision;
@@ -72,6 +149,7 @@ impl Renderer {
         let pending = self.application.pending_transition_preparations();
         for (transition_id, pending) in pending {
             let instance = pending.context.instance();
+            let water = self.water_presentation_for(instance);
             let scene = match self.sector_cache.ensure_scene(
                 instance,
                 pending.manifest,
@@ -88,7 +166,9 @@ impl Renderer {
                 self.application
                     .connection
                     .session()
-                    .and_then(|session| session.prepared_geography()),
+                    .and_then(|session| session.base_geography())
+                    .into(),
+                water,
             ) {
                 Ok(Some(scene)) => scene,
                 Ok(None) => continue,

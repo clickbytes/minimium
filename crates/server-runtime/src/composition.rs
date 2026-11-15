@@ -101,8 +101,30 @@ pub struct ServerCombatConfig {
 }
 
 /// Application-selected world and combat data for one server process.
+#[derive(Clone, Copy)]
+pub struct ExcavationConfig {
+    pub terrain: minimium_terrain::TerrainConfig,
+    pub tools: minimium_simulation::tools::ToolProfile,
+    pub soil_depth_m: f64,
+    pub fluids: minimium_fluids::FluidConfig,
+    pub server_fluid_cells: usize,
+}
+
+impl ExcavationConfig {
+    pub fn valid(self) -> bool {
+        self.terrain.valid()
+            && self.tools.valid()
+            && (0.0..=16.0).contains(&self.soil_depth_m)
+            && (1..=262_144).contains(&self.fluids.max_active_cells)
+            && (self.fluids.max_active_cells..=524_288).contains(&self.server_fluid_cells)
+    }
+}
+
+/// Application-selected world and combat data for one server process.
 #[derive(Clone)]
 pub struct ServerComposition {
+    pub excavation: ExcavationConfig,
+    pub impact_profile: Option<minimium_world::impact::ImpactProfile>,
     pub shutdown_request: ShutdownRequest,
     pub modules: Vec<std::sync::Arc<crate::ServerGameplayModule>>,
     pub world_composer: WorldComposer,

@@ -11,6 +11,8 @@ impl ServerRuntime {
             self.scheduler.simulation_tick = self.scheduler.simulation_tick.saturating_add(1);
             self.apply_commands();
             self.update_bolids();
+            self.update_impacts();
+            self.update_excavation();
             if self.shutdown_request.is_requested() {
                 return;
             }
@@ -64,6 +66,9 @@ impl ServerRuntime {
             let monotonic_ms = self.monotonic_ms(Instant::now());
             let schedule_diagnostics = self.schedule.diagnostics();
             let mut reply = match &command {
+                crate::server_command::ServerCommand::SpawnRandomMeteorid => {
+                    self.spawn_meteorid(true)
+                }
                 crate::server_command::ServerCommand::Property(property) => {
                     self.apply_property_command(property)
                 }
@@ -100,6 +105,8 @@ impl ServerRuntime {
                 let _ = write!(reply.text, " game_address={game_address} max_players={max_players} map_fingerprint={:016x} tick_ms={} snapshot_ms={} autosave_seconds={} protocol_version={PROTOCOL_VERSION} save_version={SAVE_VERSION}", self.map.fingerprint(), TICK.as_millis(), SNAPSHOT_INTERVAL.as_millis(), self.autosave_seconds);
                 reply.text.push_str(" environment_profiles=");
                 reply.text.push_str(&self.game.worlds.environment_summary());
+                reply.text.push_str(&self.impact_status());
+                reply.text.push_str(&self.excavation_status());
             }
             if command.is_metrics() {
                 use std::fmt::Write as _;
@@ -195,7 +202,22 @@ impl ServerRuntime {
         &mut self,
         sector_ready: &HashSet<minimium_core::ids::PlayerId>,
     ) -> HashSet<minimium_core::ids::PlayerId> {
-        let committed = self.game.worlds.commit_ready_transfers(sector_ready);
+        let terrain = super::gameplay_terrain::build(
+            &self.game.worlds,
+            self.prepared_geography.as_ref(),
+            self.excavation.soil_depth_m(),
+        );
+        let reads: std::collections::HashMap<_, &dyn minimium_world::terrain::TerrainRead> =
+            terrain
+                .iter()
+                .map(|(instance, read)| {
+                    (*instance, read as &dyn minimium_world::terrain::TerrainRead)
+                })
+                .collect();
+        let (committed, cancelled) = self
+            .game
+            .worlds
+            .commit_ready_transfers_with_terrain(sector_ready, &reads);
         let mut committed_players = HashSet::with_capacity(committed.len());
         if !committed.is_empty() {
             self.scheduler.next_snapshot = Instant::now();
@@ -203,6 +225,29 @@ impl ServerRuntime {
         for transfer in committed {
             committed_players.insert(transfer.player);
             self.send_transition_committed(transfer);
+        }
+        for (player, transition_id, context) in cancelled {
+            let Some(index) = self
+                .connections
+                .client_indices_by_player
+                .get(&player)
+                .copied()
+            else {
+                continue;
+            };
+            if !crate::connection::queue_message(
+                &mut self.connections.clients[index],
+                &mut self.metrics,
+                minimium_protocol::ServerMessage::TransitionCancelled {
+                    transition_id,
+                    context,
+                },
+            ) {
+                self.metrics.dropped_messages = self.metrics.dropped_messages.saturating_add(1);
+                self.connections.clients[index].disconnect_reason =
+                    Some(crate::connection::CloseReason::Backpressure);
+                self.connections.disconnected.push(index);
+            }
         }
         committed_players
     }

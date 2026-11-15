@@ -11,7 +11,42 @@ mod tickets;
 mod workers;
 pub(crate) use workers::SectorGenerationPool;
 
-pub(crate) type SectorPayload = minimium_procgen::SectorGeometry;
+pub(crate) struct SectorPayload {
+    geometry: minimium_procgen::SectorGeometry,
+    pub(crate) collision: Arc<minimium_simulation::CollisionIndex>,
+}
+
+impl SectorPayload {
+    pub(crate) fn new(geometry: minimium_procgen::SectorGeometry) -> Self {
+        let colliders = geometry
+            .boxes
+            .iter()
+            .filter(|b| b.solid)
+            .map(|b| minimium_world::world::Aabb::from_center_size(b.center, b.size))
+            .collect();
+        let surfaces = geometry
+            .triangles
+            .iter()
+            .chain(&geometry.object_triangles)
+            .filter(|t| t.solid)
+            .copied()
+            .collect();
+        let collision = Arc::new(minimium_simulation::CollisionIndex::from_geometry(
+            colliders, surfaces,
+        ));
+        Self {
+            geometry,
+            collision,
+        }
+    }
+}
+
+impl std::ops::Deref for SectorPayload {
+    type Target = minimium_procgen::SectorGeometry;
+    fn deref(&self) -> &Self::Target {
+        &self.geometry
+    }
+}
 
 /// Request data selected from the current world registry snapshot.
 struct PlayerSectorRequest {

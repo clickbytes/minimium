@@ -4,6 +4,9 @@ mod bolid;
 mod clock;
 mod diagnostics;
 mod environment;
+mod excavation;
+mod gameplay_terrain;
+mod impacts;
 mod inputs;
 mod r#loop;
 mod network;
@@ -91,6 +94,8 @@ struct Scheduler {
     simulation_tick: u64,
 }
 pub(crate) struct ServerRuntime {
+    excavation: excavation::Excavation,
+    impacts: impacts::Impacts,
     pub(crate) server_logger: minimium_diagnostics::DomainLogger,
     shutdown_request: crate::composition::ShutdownRequest,
     pub(crate) transport_logger: minimium_diagnostics::DomainLogger,
@@ -149,6 +154,8 @@ impl ServerRuntime {
         config: ServerConfig,
         startup: Startup,
         combat: ServerCombatConfig,
+        impact_profile: Option<minimium_world::impact::ImpactProfile>,
+        excavation_config: crate::composition::ExcavationConfig,
         server_logger: minimium_diagnostics::DomainLogger,
         transport_logger: minimium_diagnostics::DomainLogger,
         environment_logger: minimium_diagnostics::DomainLogger,
@@ -165,6 +172,15 @@ impl ServerRuntime {
         >,
         component_registry: minimium_world::entity::ComponentRegistry,
     ) -> io::Result<Self> {
+        let mut excavation_config = excavation_config;
+        excavation_config.fluids.max_active_cells = config.fluid_world_cells;
+        excavation_config.server_fluid_cells = config.fluid_server_cells;
+        if !excavation_config.valid() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "invalid excavation or fluid capacity configuration",
+            ));
+        }
         let climate_config = crate::environment::ClimateConfiguration::load(&config)?;
         let content = crate::content::ContentServer::new(&config, asset_io_logger)?;
         climate_config.commit()?;
@@ -283,6 +299,8 @@ impl ServerRuntime {
         })?;
         let autosave_interval = Duration::from_secs(config.autosave_seconds);
         let mut runtime = Self {
+            excavation: excavation::Excavation::open(&config.data_dir, excavation_config)?,
+            impacts: impacts::Impacts::open(&config.data_dir, impact_profile)?,
             server_logger,
             shutdown_request,
             transport_logger,
@@ -344,6 +362,9 @@ impl ServerRuntime {
             _endpoint_guard: endpoint_guard,
             _data_lock: data_lock,
         };
+        runtime.restore_excavation_impacts()?;
+        runtime.restore_impacts()?;
+        runtime.restore_excavation()?;
         runtime.run_system_stage(crate::modules::Stage::Startup)?;
         Ok(runtime)
     }
@@ -368,6 +389,8 @@ impl ServerRuntime {
                     stage,
                     self.scheduler.simulation_tick,
                     &self.game.worlds,
+                    self.prepared_geography.as_ref(),
+                    self.excavation.soil_depth_m(),
                     &self.game.gameplay_events,
                     Some((instance, lifecycle)),
                 );
@@ -386,6 +409,8 @@ impl ServerRuntime {
             stage,
             self.scheduler.simulation_tick,
             &self.game.worlds,
+            self.prepared_geography.as_ref(),
+            self.excavation.soil_depth_m(),
             &self.game.gameplay_events,
             None,
         );

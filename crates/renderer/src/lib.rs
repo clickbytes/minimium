@@ -58,6 +58,9 @@ pub mod geometry_gpu;
 pub mod gpu_bindings;
 #[cfg(feature = "gpu")]
 pub mod gpu_frame;
+pub mod held_tool;
+#[cfg(feature = "gpu")]
+pub mod held_tool_gpu;
 #[cfg(feature = "gpu")]
 pub mod lighting;
 pub mod meteors;
@@ -89,6 +92,8 @@ pub mod prepared_sector;
 pub mod profiles;
 pub mod quality;
 #[cfg(feature = "gpu")]
+mod render_contours;
+#[cfg(feature = "gpu")]
 pub mod render_frame;
 #[cfg(feature = "gpu")]
 pub mod render_patch_cache;
@@ -106,6 +111,8 @@ pub mod shadow_settings;
 pub mod shadow_target;
 #[cfg(feature = "gpu")]
 pub mod shadow_uniform;
+#[cfg(feature = "gpu")]
+mod shoreline;
 #[cfg(feature = "gpu")]
 pub mod star_gpu;
 #[cfg(feature = "gpu")]
@@ -126,6 +133,8 @@ pub mod terrain_geometry;
 #[cfg(feature = "gpu")]
 pub mod terrain_gpu;
 #[cfg(feature = "gpu")]
+mod terrain_occlusion;
+#[cfg(feature = "gpu")]
 mod terrain_palette;
 #[cfg(feature = "gpu")]
 pub mod terrain_view;
@@ -138,6 +147,7 @@ pub mod transient_lighting;
 pub mod ui_pipeline;
 #[cfg(feature = "gpu")]
 pub mod ui_vertex;
+pub mod water_surface;
 #[cfg(feature = "gpu")]
 pub mod world_geometry_gpu;
 #[cfg(feature = "gpu")]

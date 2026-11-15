@@ -128,6 +128,7 @@ ui-notice = { $notice ->
     [sky_quality_desktop_only] --sky-quality is available only in the desktop renderer
     [map_teleport_busy] map_telepo: wait for the previous destination
     [map_teleport_requires_earth] map_telepo requires a connected Earth world
+    [map_teleport_synchronizing] map_telepo: Earth is still synchronizing
     [local_server_threads_conflict] server.threads is specified both in client options and the host command
     [star_catalog_unavailable] Star catalog is unavailable; celestial labels are disabled
     [time_request_failed] Could not submit the time change request
@@ -243,3 +244,31 @@ configuration-saved = Configuration saved to { $path }
 configuration-save-failed = Could not save the configuration. Check the client log for details.
 environment-status = Environment: { $quality } | { $date } | rate { $rate } | revision { $revision }
 environment-title = { $quality } | { $date }
+
+tool-shovel = Shovel
+tool-pickaxe = Pickaxe
+tool-stowed = Stowed
+tool-soil = Soil
+tool-rock = Rock
+tool-empty = Empty space
+tool-obstacle = Object / player
+tool-ready = Material matches: LMB to dig
+tool-synchronizing = Waiting for terrain and collision synchronization
+tool-no-target = No surface in reach (3 m)
+tool-wrong-material = Rock requires the pickaxe [2]
+tool-not-equipped = Equip a shovel [1] or pickaxe [2]
+tool-obstructed = The first hit is an object or player, not diggable ground
+tool-unsafe-geometry = Refused: terrain could not be joined safely; see server geometry diagnostics
+tool-busy = The server is preparing another world change
+tool-rate-limited = Tool cooldown: at most 2 uses per second
+tool-stale = The target changed; aim again
+tool-capacity = Terrain or water capacity exceeded
+tool-storage = The server could not save the change
+tool-invalid-intent = Invalid tool action
+tool-pending = Waiting for the server result
+tool-committed = Excavation saved
+tool-controls = [1] Shovel  [2] Pickaxe  [0] Stow  [LMB] Dig
+tool-preview = Local preview: green = material matches, red = blocked; server confirms edits
+tool-heading = DIG DEBUG | { $tool } | radius 0.6 m / reach 3 m
+tool-target = Target: { $material } | distance { $distance } m
+tool-result = Last action #{ $action }: { $outcome }

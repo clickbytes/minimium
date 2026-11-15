@@ -335,6 +335,10 @@ pub(super) fn handle(
             ),
             Err(error) => println!("spawn_random_bolid: {error}"),
         },
+        FrontendAction::SpawnRandomMeteorid => match connection.request_random_meteorid() {
+            Ok(()) => println!("Meteorite request sent"),
+            Err(error) => println!("spawn_random_meteorid: {error}"),
+        },
         FrontendAction::TimeMode(mode) => match connection.request_time_mode(&mode) {
             Ok(()) => println!(
                 "{}",

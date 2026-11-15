@@ -5,6 +5,13 @@ use super::{
 
 const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
+        name: "dev inventory tools",
+        alias: None,
+        usage: "dev inventory tools",
+        arguments: &[],
+        parser: parse,
+    },
+    CommandSpec {
         name: "movement move",
         alias: Some("move"),
         usage: "movement move X Z (-1..1 each; tangent direction)",
@@ -111,6 +118,7 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
     }
     let arguments = raw_arguments.split_whitespace().collect::<Vec<_>>();
     match (*command, arguments.as_slice()) {
+        ("dev inventory tools", []) => Ok(ClientCommand::GrantTools),
         ("movement move", [x, z]) => Ok(ClientCommand::Move([
             parse_coordinate(x)?,
             parse_coordinate(z)?,

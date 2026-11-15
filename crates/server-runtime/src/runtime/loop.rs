@@ -30,6 +30,13 @@ impl ServerRuntime {
             self.plan_sleep();
         }
         drop(self.game_listener.take());
+        let persistence_deadline = self.shutdown_request.begin_shutdown() - Duration::from_secs(2);
+        if let Err(error) = self.shutdown_excavation(persistence_deadline) {
+            runtime_error = Some(error);
+        }
+        if let Err(error) = self.shutdown_impacts(persistence_deadline) {
+            runtime_error = Some(error);
+        }
         lifecycle::shutdown(lifecycle::ShutdownContext {
             shutdown_request: &self.shutdown_request,
             admin: &mut self.operations.admin,

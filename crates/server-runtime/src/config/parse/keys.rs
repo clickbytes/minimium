@@ -1,6 +1,8 @@
 pub(super) const KEYS: &[&str] = &[
     "server.threads",
     "server.sector_workers",
+    "server.fluid.world_cells",
+    "server.fluid.server_cells",
     "server.data_dir",
     "server.bind",
     "server.game_port",

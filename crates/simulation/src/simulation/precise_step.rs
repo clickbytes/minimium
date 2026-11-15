@@ -1,7 +1,7 @@
 use super::collision_queries::CollisionQueryStats;
 use super::spatial::update_cell_index;
 use super::world_state::{SimulationBatch, World};
-use super::{step_character, CharacterGravity, CharacterState, MovementIntent};
+use super::{CharacterGravity, CharacterState, MovementIntent};
 use minimium_world::world::{Aabb, MapTriangle, Position3Mm};
 use std::sync::Arc;
 
@@ -13,6 +13,28 @@ pub fn step_character_mm(
     colliders: &[Aabb],
     surfaces: &[MapTriangle],
     delta_seconds: f32,
+) {
+    step_character_mm_with_water(
+        state,
+        position_mm,
+        input,
+        policy,
+        colliders,
+        surfaces,
+        delta_seconds,
+        None,
+    );
+}
+
+pub fn step_character_mm_with_water(
+    state: &mut CharacterState,
+    position_mm: &mut Position3Mm,
+    input: MovementIntent,
+    policy: super::MovementPolicy,
+    colliders: &[Aabb],
+    surfaces: &[MapTriangle],
+    delta_seconds: f32,
+    water: Option<minimium_world::fluid::WaterSample>,
 ) {
     let origin = position_mm.0;
     let local = |point: [f32; 3]| -> [f32; 3] {
@@ -39,6 +61,7 @@ pub fn step_character_mm(
             precise_vertices: None,
             color: surface.color,
             solid: surface.solid,
+            surface: surface.surface,
         })
         .collect();
     let original_gravity = state.gravity;
@@ -50,13 +73,14 @@ pub fn step_character_mm(
     };
     state.position = [0.0; 3];
     state.gravity = gravity;
-    step_character(
+    super::step_character_with_water(
         state,
         input,
         policy,
         &local_colliders,
         &local_surfaces,
         delta_seconds,
+        water,
     );
     position_mm.0 = std::array::from_fn(|axis| {
         origin[axis].saturating_add((f64::from(state.position[axis]) * 1000.0).round() as i64)

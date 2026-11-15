@@ -10,6 +10,7 @@ desktop-audio = ["desktop", "dep:rodio"]
 desktop = ["minimium-renderer/gpu", "dep:minimium-astronomy", "dep:wgpu", "dep:winit", "dep:pollster", "dep:arboard", "dep:fontdue", "dep:unicode-segmentation"]
 
 [dependencies]
+minimium-terrain = { path = "../../crates/terrain" }
 minimium-assets = { path = "../../crates/assets" }
 minimium-client-runtime = { path = "../../crates/client-runtime" }
 minimium-localization = { path = "../../crates/localization" }
@@ -24,6 +25,7 @@ minimium-world = { path = "../../crates/world" }
 minimium-simulation = { path = "../../crates/simulation" }
 minimium-protocol = { path = "../../crates/protocol" }
 minimium-procgen = { path = "../../crates/procgen" }
+minimium-fluids = { path = "../../crates/fluids" }
 minimium-sectors = { path = "../../crates/sectors" }
 minimium-telemetry = { path = "../../crates/telemetry" }
 minimium-diagnostics = { path = "../../crates/diagnostics" }

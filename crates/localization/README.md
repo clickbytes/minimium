@@ -8,6 +8,10 @@ Owns locale identifiers, typed user-facing messages and Fluent catalog formattin
 
 `Locale`, `UiMessage`, and `Localizer` format the same typed message in English or Polish. The requested catalog is checked first, then English; a missing Polish entry therefore falls back to its English sentence. If neither catalog contains a key, the stable key is returned and a localization diagnostic is emitted when a logger was supplied. Technical error codes and command/property syntax remain stable data rather than translated text.
 
+`ToolMessage` and `ToolNotice` cover the persistent digging overlay, tool/material
+names and distinct action refusals. The caller supplies domain results and measured
+distance; this package supplies language, not tool rules or collision queries.
+
 A catalog entry that fails Fluent formatting also emits a diagnostic and is skipped. The next catalog is tried; if every candidate fails, the stable message key is returned.
 Catalog parsing requires exactly one default variant per Fluent select expression. If construction fails, the client startup error path prints the underlying error and the catalog failure.
 

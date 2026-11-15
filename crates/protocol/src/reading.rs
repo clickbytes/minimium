@@ -76,6 +76,14 @@ impl<'a> Reader<'a> {
         Ok(u32::from_le_bytes(bytes))
     }
 
+    pub(crate) fn i32(&mut self) -> Result<i32, ProtocolError> {
+        let bytes: [u8; 4] = self
+            .take(4)?
+            .try_into()
+            .map_err(|_| ProtocolError::InvalidPayload)?;
+        Ok(i32::from_le_bytes(bytes))
+    }
+
     pub(crate) fn fixed<const N: usize>(&mut self) -> Result<[u8; N], ProtocolError> {
         self.take(N)?
             .try_into()
@@ -135,7 +143,7 @@ impl<'a> Reader<'a> {
                         exponent: self.u32()?,
                     },
                 };
-                if !planet.is_valid() || (planet.peak_relief.enabled() && revision.get() != 5) {
+                if !planet.is_valid() || (planet.peak_relief.enabled() && revision.get() != 6) {
                     return Err(ProtocolError::InvalidPayload);
                 }
                 manifest = manifest.with_planet(planet);

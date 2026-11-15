@@ -2,6 +2,14 @@ mod decode;
 
 use super::*;
 
+pub(super) type PreparedWorldContent = Result<
+    (
+        ResolvedWorldContent,
+        Option<Arc<minimium_procgen::WaterCatalog>>,
+    ),
+    SessionFailure,
+>;
+
 pub(super) enum WorldContentProgress {
     Ready,
     Pending,
@@ -81,8 +89,14 @@ impl ClientSession {
             if completed_ticket != Some(ticket) {
                 return self.start_world_content_resolution(ticket, manifest, expected_fingerprint);
             }
-            let content = result?;
-            self.install_resolved_world_content(content, ticket, manifest, expected_fingerprint)?;
+            let (content, water_catalog) = result?;
+            self.install_resolved_world_content(
+                content,
+                water_catalog,
+                ticket,
+                manifest,
+                expected_fingerprint,
+            )?;
             return Ok(WorldContentProgress::Ready);
         }
         self.start_world_content_resolution(ticket, manifest, expected_fingerprint)
@@ -110,7 +124,12 @@ impl ClientSession {
         self.world_content_worker = Some(
             std::thread::Builder::new()
                 .name("world-content-prepare".into())
-                .spawn(move || resolver.resolve(request, cancellation))
+                .spawn(move || {
+                    let content = resolver.resolve(request, cancellation)?;
+                    let catalog =
+                        prepare_water_catalog(manifest, content.geography.clone()).map(Arc::new);
+                    Ok((content, catalog))
+                })
                 .map_err(|error| {
                     SessionFailure::caused_by(
                         "session.world_content_worker_start_failed",
@@ -127,6 +146,7 @@ impl ClientSession {
     fn install_resolved_world_content(
         &mut self,
         content: ResolvedWorldContent,
+        water_catalog: Option<Arc<minimium_procgen::WaterCatalog>>,
         ticket: ContentResolutionTicket,
         manifest: minimium_world::world::WorldManifest,
         expected_fingerprint: u64,
@@ -164,6 +184,12 @@ impl ClientSession {
         });
         self.resolved_worlds
             .insert(ticket.instance, Arc::new(content));
+        self.water_catalogs.retain(|known, _| {
+            *known == ticket.instance || active_instance.is_some_and(|active| active == *known)
+        });
+        if let Some(catalog) = water_catalog {
+            self.water_catalogs.insert(ticket.instance, catalog);
+        }
         self.world_content_started = None;
         self.world_content_request = None;
         Ok(())
@@ -358,4 +384,30 @@ impl ClientSession {
         self.close();
         events.push(SessionEvent::Disconnected(reason));
     }
+}
+
+fn prepare_water_catalog(
+    manifest: minimium_world::world::WorldManifest,
+    geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
+) -> Option<minimium_procgen::WaterCatalog> {
+    if manifest.topology() != minimium_world::world::WorldTopology::Planet {
+        return None;
+    }
+    if manifest.planet().is_some_and(|planet| planet.mode == 1) && geography.is_none() {
+        return None;
+    }
+    let mut terrain = minimium_procgen::PlanetTerrain::new(
+        manifest.generation(),
+        minimium_procgen::planet_surface_for(manifest),
+    )?;
+    if let Some(definition) = manifest.planet() {
+        terrain = terrain.with_definition(definition);
+    }
+    if let Some(geography) = geography {
+        terrain = terrain.with_geography(geography);
+    }
+    minimium_procgen::WaterCatalog::build(
+        &terrain,
+        minimium_procgen::DEFAULT_WATER_CATALOG_RESOLUTION,
+    )
 }

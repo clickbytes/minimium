@@ -45,11 +45,13 @@ pub(crate) fn sphere_patch(source: &SectorGeometry, terrain: &PlanetTerrain) -> 
                 precise_vertices: Some(precise),
                 color: [0.012, 0.042, 0.068],
                 solid: false,
+                surface: None,
             })
         })
         .collect();
     SectorGeometry {
         boxes: Vec::new(),
+        object_triangles: Vec::new(),
         triangles,
     }
 }
@@ -73,35 +75,6 @@ pub fn vertices(geometry: &SectorGeometry, origin: [f32; 3]) -> Vec<OceanVertex>
             })
         })
         .collect()
-}
-
-/// Remove triangles wholly behind their matching sea facet before material and
-/// shadow preparation. Coastal triangles remain intact; GPU depth finds the shore.
-pub(crate) fn exposed_ground(ground: &SectorGeometry, sea: &SectorGeometry) -> SectorGeometry {
-    if ground.triangles.len() != sea.triangles.len() {
-        return ground.clone();
-    }
-    let triangles = ground
-        .triangles
-        .iter()
-        .zip(&sea.triangles)
-        .filter_map(|(g, s)| {
-            let (Some(gp), Some(sp)) = (g.precise_vertices, s.precise_vertices) else {
-                return Some(*g);
-            };
-            let sp = sp.map(|p| glam::DVec3::from_array(p.map(|v| v as f64)));
-            let n = (sp[1] - sp[0]).cross(sp[2] - sp[0]).normalize_or_zero();
-            // A two-millimetre margin retains uncertain, nearly coplanar land.
-            let exposed = gp
-                .iter()
-                .any(|p| (glam::DVec3::from_array(p.map(|v| v as f64)) - sp[0]).dot(n) >= -2.0);
-            exposed.then_some(*g)
-        })
-        .collect();
-    SectorGeometry {
-        boxes: ground.boxes.clone(),
-        triangles,
-    }
 }
 
 const _: () = assert!(std::mem::size_of::<OceanVertex>() == 24);

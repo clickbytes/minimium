@@ -60,6 +60,7 @@ pub(crate) enum ClientCommand {
     InteractPortal,
     MapTeleport,
     Fire,
+    GrantTools,
     Chat(String),
     SetName(String),
     State,
@@ -79,6 +80,7 @@ pub(crate) enum ClientCommand {
     TimeStatus,
     TimeScale(String),
     SpawnRandomBolid(u16),
+    SpawnRandomMeteorid,
     SetTime { minute: u16, local: bool },
     WeatherStatus,
     WeatherDebug(minimium_environment::weather::CloudDebug),
@@ -269,6 +271,7 @@ pub(crate) enum FrontendAction {
     SkyMeteorsLight(MeteorLightDebug),
     SkyMeteorsDebug(MeteorDebug),
     SpawnRandomBolid(u16),
+    SpawnRandomMeteorid,
     TimeMode(String),
     TimeOfflinePolicy(String),
     SetTime { minute: u16, local: bool },
@@ -366,6 +369,9 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
         ClientCommand::Fire => OutgoingCommand::World(ClientWorldInput::Fire {
             direction: context.fire_direction,
         }),
+        ClientCommand::GrantTools => OutgoingCommand::World(ClientWorldInput::Excavation(
+            minimium_protocol::excavation::ExcavationInput::GrantTools,
+        )),
         ClientCommand::Chat(text) => OutgoingCommand::World(ClientWorldInput::Chat(text)),
         ClientCommand::SetName(name) => OutgoingCommand::World(ClientWorldInput::SetName(name)),
         ClientCommand::Help => return CommandResult::Action(FrontendAction::Help),
@@ -464,6 +470,9 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
         }
         ClientCommand::SpawnRandomBolid(count) => {
             return CommandResult::Action(FrontendAction::SpawnRandomBolid(count))
+        }
+        ClientCommand::SpawnRandomMeteorid => {
+            return CommandResult::Action(FrontendAction::SpawnRandomMeteorid)
         }
     };
     let result = match message {

@@ -9,7 +9,7 @@ use minimium_world::world::{
 use std::sync::Arc;
 
 const CONTENT_REVISION: u64 = 2;
-const GENERATION_REVISION: u32 = 5;
+const GENERATION_REVISION: u32 = 6;
 const POSITION_QUANTUM_MM: u32 = 10;
 
 #[derive(Clone, Copy, Debug, PartialEq)]

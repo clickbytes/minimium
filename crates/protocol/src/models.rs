@@ -54,7 +54,10 @@ pub enum ClientWorldInput {
     SetFlightEnabled(bool),
     Chat(String),
     InteractEntity { entity: EntityId },
+    Excavation(ExcavationInput),
 }
+
+pub use crate::excavation::{ExcavationInput, ExcavationMessage};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum EntityReplicationOperation {
@@ -187,6 +190,20 @@ impl RemotePlayerIds {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ServerMessage {
+    Excavation {
+        context: WorldContext,
+        message: ExcavationMessage,
+    },
+    ImpactState {
+        context: WorldContext,
+        server_time_ms: u64,
+        live: bool,
+        body: minimium_world::impact::BodyState,
+    },
+    ImpactSync {
+        context: WorldContext,
+        complete: bool,
+    },
     Bolid {
         context: WorldContext,
         event: BolidEvent,

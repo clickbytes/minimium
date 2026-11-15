@@ -3,10 +3,11 @@ use minimium_world::world::{
     MapBox, MapTriangle, PlanetFace, PlanetSectorKey, SectorKey, WorldMap, WorldTopology,
     PLANET_SECTORS_PER_FACE,
 };
-use std::sync::Arc;
 
 #[derive(Clone, Default)]
 pub struct SectorGeometry {
+    /// Solid object meshes, kept separate from sampled terrain materials.
+    pub object_triangles: Vec<MapTriangle>,
     pub boxes: Vec<MapBox>,
     pub triangles: Vec<MapTriangle>,
 }
@@ -64,7 +65,7 @@ pub fn materialize_world_sector(
     map: &WorldMap,
     manifest: minimium_world::world::WorldManifest,
     key: SectorKey,
-) -> SectorGeometry {
+) -> Result<SectorGeometry, crate::ExcavationGeometryError> {
     materialize_world_sector_with_geography(map, manifest, key, None)
 }
 
@@ -72,8 +73,19 @@ pub fn materialize_world_sector_with_geography(
     map: &WorldMap,
     manifest: minimium_world::world::WorldManifest,
     key: SectorKey,
-    geography: Option<Arc<dyn crate::PreparedGeography>>,
-) -> SectorGeometry {
+    geography: impl Into<crate::TerrainInputs>,
+) -> Result<SectorGeometry, crate::ExcavationGeometryError> {
+    materialize_world_sector_with_geography_and_soil(map, manifest, key, geography, 1.5)
+}
+
+pub fn materialize_world_sector_with_geography_and_soil(
+    map: &WorldMap,
+    manifest: minimium_world::world::WorldManifest,
+    key: SectorKey,
+    geography: impl Into<crate::TerrainInputs>,
+    soil_depth_m: f64,
+) -> Result<SectorGeometry, crate::ExcavationGeometryError> {
+    let inputs: crate::TerrainInputs = geography.into();
     let mut geometry = slice_sector_geometry_with_count(
         map,
         manifest.topology(),
@@ -81,11 +93,41 @@ pub fn materialize_world_sector_with_geography(
         crate::planet_sector_count(manifest),
     );
     if let (WorldTopology::Planet, SectorKey::Planet(planet)) = (manifest.topology(), key) {
-        geometry.triangles.extend(
-            crate::generate_planet_sector_with_geography(manifest, planet, geography).triangles,
-        );
+        let generated =
+            crate::generate_planet_sector_with_geography(manifest, planet, inputs.clone());
+        geometry.triangles.extend(generated.triangles);
+        geometry.object_triangles.extend(generated.object_triangles);
+        if inputs.volumes.is_some() {
+            let mut terrain = crate::PlanetTerrain::new(
+                manifest.generation(),
+                crate::planet_surface_for(manifest),
+            )
+            .expect("validated planet has a compatible surface")
+            .with_inputs(inputs.clone());
+            if let Some(definition) = manifest.planet() {
+                terrain = terrain.with_definition(definition);
+            }
+            let mut contour_source = Vec::new();
+            let count = crate::planet_sector_count(manifest);
+            for adjacent in crate::planet_sector_neighborhood_with_diagonals(planet, count) {
+                let context = crate::generate_planet_sector_with_geography(
+                    manifest,
+                    adjacent,
+                    inputs.clone(),
+                );
+                contour_source.extend(context.triangles);
+            }
+            geometry = crate::integrate_volume_sector_with_contours(
+                &terrain,
+                planet,
+                count,
+                &geometry,
+                &contour_source,
+                soil_depth_m,
+            )?;
+        }
     }
-    geometry
+    Ok(geometry)
 }
 
 fn planet_box_touches(map_box: MapBox, sector: PlanetSectorKey, count: u16) -> bool {

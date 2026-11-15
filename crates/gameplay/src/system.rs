@@ -22,6 +22,17 @@ pub trait GameplaySystemContext {
     ) -> Option<ComponentView<'_>>;
     fn initial_entities(&self, instance: WorldInstanceId) -> Vec<InitialEntityView<'_>>;
     fn events(&self) -> &[GameplayEvent];
+    /// Immutable committed surface changes; modules cannot mutate generation or storage.
+    fn terrain(&self, _instance: WorldInstanceId) -> Option<&minimium_terrain::TerrainSnapshot> {
+        None
+    }
+    /// Current generated terrain and committed volume edits; unavailable worlds stay unavailable.
+    fn terrain_read(
+        &self,
+        _instance: WorldInstanceId,
+    ) -> Option<&dyn minimium_world::terrain::TerrainRead> {
+        None
+    }
     fn record_startup_run(&mut self, world_count: usize);
     fn emit(&mut self, effect: WorldEffect) -> Result<(), EffectBufferError>;
 }

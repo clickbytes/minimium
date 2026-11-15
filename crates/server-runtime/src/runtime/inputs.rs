@@ -219,14 +219,46 @@ impl ServerRuntime {
                     }
                 }
             }
+            WorldInput::Excavation(id, context, input) => {
+                self.apply_excavation(id, context, input);
+            }
             WorldInput::Fire(id, direction) => {
+                if self.player_inventory(id).tool().is_some() {
+                    return None;
+                }
                 self.metrics.shots_fired = self.metrics.shots_fired.saturating_add(1);
                 let instance = self.game.worlds.instance_for_player(id)?;
-                let world = &mut self.game.worlds.get_mut(instance)?.world;
-                let outcome = world.fire_hitscan(id, direction, self.combat)?;
-                let target_health = outcome
-                    .target_id
-                    .and_then(|target| world.player_health(target));
+                let manifest = self.game.worlds.get(instance)?.manifest;
+                let outcome = {
+                    let world = &mut self.game.worlds.get_mut(instance)?.world;
+                    if manifest.planet().is_some() {
+                        world.fire_hitscan_deferred_respawn(id, direction, self.combat)?
+                    } else {
+                        world.fire_hitscan(id, direction, self.combat)?
+                    }
+                };
+                if outcome.killed && manifest.planet().is_some() {
+                    if let Some(respawn_mm) = super::gameplay_terrain::safe_planet_spawn(
+                        &self.game.worlds,
+                        instance,
+                        self.prepared_geography.as_ref(),
+                        self.excavation.soil_depth_m(),
+                    ) {
+                        let respawn = respawn_mm.0.map(|value| value as f32 / 1000.0);
+                        if let (Some(target), Some(world)) =
+                            (outcome.target_id, self.game.worlds.get_mut(instance))
+                        {
+                            world.world.set_position(target, respawn);
+                            world.world.restore_position_mm(target, respawn_mm);
+                        }
+                    }
+                }
+                let target_health = outcome.target_id.and_then(|target| {
+                    self.game
+                        .worlds
+                        .get(instance)
+                        .and_then(|owner| owner.world.player_health(target))
+                });
                 if outcome.target_id.is_some() {
                     self.metrics.shots_hit = self.metrics.shots_hit.saturating_add(1);
                     if outcome.killed {
@@ -262,13 +294,13 @@ impl ServerRuntime {
                 self.operations.player_store.rename(id, name);
             }
             WorldInput::InteractEntity(id, source_context, entity) => {
-                self.publish_portal_use(id, source_context, entity);
+                self.publish_entity_interaction(id, source_context, entity);
             }
         }
         None
     }
 
-    fn publish_portal_use(
+    fn publish_entity_interaction(
         &mut self,
         id: minimium_core::ids::PlayerId,
         source_context: minimium_protocol::WorldContext,
@@ -280,14 +312,14 @@ impl ServerRuntime {
                 .worlds
                 .player_position_in_context(id, source_context)
             {
-                self.game
-                    .gameplay_events
-                    .push(crate::modules::GameplayEvent::PortalUseRequested {
+                self.game.gameplay_events.push(
+                    crate::modules::GameplayEvent::EntityInteractionRequested {
                         player: id,
                         world: source_context.instance(),
                         entity,
                         position,
-                    });
+                    },
+                );
             }
         }
     }
@@ -299,12 +331,25 @@ impl ServerRuntime {
         target_world: minimium_world::world::WorldInstanceId,
         destination: [f32; 3],
     ) {
-        let Some(offer) = self.game.worlds.prepare_entity_transfer(
+        let terrain = super::gameplay_terrain::build(
+            &self.game.worlds,
+            self.prepared_geography.as_ref(),
+            self.excavation.soil_depth_m(),
+        );
+        let reads: std::collections::HashMap<_, &dyn minimium_world::terrain::TerrainRead> =
+            terrain
+                .iter()
+                .map(|(instance, read)| {
+                    (*instance, read as &dyn minimium_world::terrain::TerrainRead)
+                })
+                .collect();
+        let Some(offer) = self.game.worlds.prepare_entity_transfer_with_terrain(
             id,
             source_context,
             target_world,
             destination,
             self.operations.player_store.return_location_for(id),
+            &reads,
         ) else {
             return;
         };
@@ -367,18 +412,22 @@ impl ServerRuntime {
         if manifest.planet()?.mode != 1 {
             return None;
         }
+        let geography = minimium_procgen::TerrainInputs {
+            geography: self.prepared_geography.clone(),
+            edits: Some(self.game.worlds.get(instance)?.terrain.clone()),
+            remnants: Some(self.game.worlds.get(instance)?.remnants.clone()),
+            volumes: self.game.worlds.get(instance)?.volumes.clone(),
+        };
         let point = minimium_procgen::planet_point_at_direction_with_geography(
             manifest,
             direction,
-            self.prepared_geography.clone(),
+            geography.clone(),
         )?;
         if point.ocean {
             return None;
         }
-        let ground = minimium_procgen::planet_collision_position_at_direction_with_geography(
-            manifest,
-            direction,
-            self.prepared_geography.clone(),
+        let ground = minimium_procgen::planet_safe_spawn_position_at_direction_with_geography(
+            manifest, direction, geography,
         )?;
         let length = ground
             .iter()

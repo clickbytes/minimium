@@ -177,6 +177,7 @@ impl Renderer {
     }
 
     pub(super) fn clear_connection(&mut self) {
+        self.excavation_debug = Default::default();
         self.pending_bolid_request = None;
         self.last_sky_view_at = None;
         self.bolids.clear();
@@ -304,6 +305,9 @@ impl Renderer {
     }
 
     pub(super) fn queue_fire(&mut self) {
+        if self.queue_equipped_tool() {
+            return;
+        }
         if !self
             .application
             .connection

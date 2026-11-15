@@ -62,7 +62,7 @@ pub struct PlanetTerrain {
     generation: GenerationSpec,
     surface: PlanetSurfaceSpec,
     definition: Option<PlanetDefinition>,
-    geography: Option<Arc<dyn crate::PreparedGeography>>,
+    inputs: crate::TerrainInputs,
     pub(crate) surface_recipe: crate::surface_habitat::SurfaceRecipe,
 }
 
@@ -75,7 +75,7 @@ impl PlanetTerrain {
             generation,
             surface,
             definition: None,
-            geography: None,
+            inputs: Default::default(),
             surface_recipe: Default::default(),
         })
     }
@@ -92,8 +92,17 @@ impl PlanetTerrain {
     }
 
     pub fn with_geography(mut self, geography: Arc<dyn crate::PreparedGeography>) -> Self {
-        self.geography = Some(geography);
+        self.inputs.geography = Some(geography);
         self
+    }
+
+    pub fn with_inputs(mut self, inputs: crate::TerrainInputs) -> Self {
+        self.inputs = inputs;
+        self
+    }
+
+    pub fn inputs(&self) -> &crate::TerrainInputs {
+        &self.inputs
     }
 
     pub fn with_definition(mut self, definition: PlanetDefinition) -> Self {
@@ -115,9 +124,13 @@ impl PlanetTerrain {
             .is_some_and(|definition| definition.mode == 1)
     }
 
+    pub fn terrain_edits(&self) -> Option<&minimium_terrain::TerrainSnapshot> {
+        self.inputs.edits.as_deref()
+    }
+
     pub(crate) fn land_cover(&self, direction: [f64; 3]) -> Option<[f32; 6]> {
         if self.is_earth() {
-            self.geography.as_ref()?.land_cover(direction)
+            self.inputs.geography.as_ref()?.land_cover(direction)
         } else {
             None
         }
@@ -135,11 +148,11 @@ impl PlanetTerrain {
     }
 
     pub fn sample(&self, cube_sample: CubeSampleKey) -> PlanetPoint {
-        self.sample_surface(cube_sample, true)
+        self.sample_surface(cube_sample, false)
     }
 
-    /// Presentation ground retains Earth bathymetry beneath the separate ocean.
-    /// The authoritative sample remains sea-clamped for saves and collision.
+    /// Ground retains Earth bathymetry beneath the separate ocean for collision
+    /// and presentation alike.
     pub fn ground_sample(&self, cube_sample: CubeSampleKey) -> PlanetPoint {
         self.sample_surface(cube_sample, false)
     }
@@ -156,6 +169,7 @@ impl PlanetTerrain {
         {
             let direction = cube_sample.coordinates().map(f64::from);
             let elevation_m = self
+                .inputs
                 .geography
                 .as_ref()
                 .map(|geography| geography.elevation_m(direction))
@@ -236,7 +250,13 @@ impl PlanetTerrain {
                 false,
             )
         };
-        let height_mm = (self.surface.radius_mm as i64 + offset) as u64;
+        let displacement = self.terrain_edits().map_or(0.0, |edits| {
+            edits.sample(cube_sample.coordinates().map(f64::from)).0
+        });
+        let height_mm = (self.surface.radius_mm as i64
+            + offset
+            + (displacement * 1000.0).round() as i64)
+            .max(1) as u64;
         let position_mm = self.position_at(cube_sample, height_mm);
         PlanetPoint {
             cube_sample,
@@ -251,7 +271,7 @@ impl PlanetTerrain {
         direction: [f64; 3],
         angle: f64,
     ) -> Result<f64, crate::EarthSampleError> {
-        self.geography.as_ref().map_or(
+        self.inputs.geography.as_ref().map_or(
             Err(crate::EarthSampleError::PackageUnavailable),
             |geography| geography.elevation_upper_bound_m(direction, angle),
         )
@@ -260,7 +280,12 @@ impl PlanetTerrain {
     /// Unexaggerated source metres above the configured sea datum for climate.
     pub fn source_elevation_m(&self, direction: [f64; 3]) -> Option<f64> {
         let definition = self.definition.filter(|p| p.mode == 1)?;
-        let raw = self.geography.as_ref()?.elevation_m(direction).ok()?;
+        let raw = self
+            .inputs
+            .geography
+            .as_ref()?
+            .elevation_m(direction)
+            .ok()?;
         Some(raw - definition.sea_level_mm as f64 / f64::from(definition.height_scale_permille))
     }
 

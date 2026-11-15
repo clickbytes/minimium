@@ -7,7 +7,7 @@ impl WorldRegistry {
         let instance = WorldInstanceId::new(1).expect("authored instance ID is nonzero");
         let generation = GenerationSpec::new(
             WorldSeed::new(0),
-            GenerationRevision::new(5).expect("current generator revision is nonzero"),
+            GenerationRevision::new(6).expect("current generator revision is nonzero"),
             1,
         )
         .expect("authored position quantum is nonzero");
@@ -29,6 +29,10 @@ impl WorldRegistry {
             WorldInstance {
                 clock_id: ClockId::MVP,
                 environment_profile: profile_for_manifest(manifest),
+                collision_tickets: Default::default(),
+                volumes: None,
+                terrain: Arc::new(minimium_terrain::TerrainSnapshot::empty(10000.0)),
+                remnants: Arc::new(minimium_world::remnants::RemnantSnapshot::empty(10000.0)),
                 manifest,
                 map,
                 world,
@@ -77,6 +81,18 @@ impl WorldRegistry {
             WorldInstance {
                 clock_id: ClockId::MVP,
                 environment_profile,
+                collision_tickets: Default::default(),
+                volumes: None,
+                terrain: Arc::new(minimium_terrain::TerrainSnapshot::empty(
+                    manifest
+                        .planet()
+                        .map_or(10000.0, |p| p.radius_mm as f64 / 1000.0),
+                )),
+                remnants: Arc::new(minimium_world::remnants::RemnantSnapshot::empty(
+                    manifest
+                        .planet()
+                        .map_or(10000.0, |p| p.radius_mm as f64 / 1000.0),
+                )),
                 manifest,
                 map,
                 world,
@@ -125,6 +141,20 @@ impl WorldRegistry {
             WorldInstance {
                 clock_id: ClockId::MVP,
                 environment_profile: profile_for_manifest(world.manifest),
+                collision_tickets: Default::default(),
+                volumes: None,
+                terrain: Arc::new(minimium_terrain::TerrainSnapshot::empty(
+                    world
+                        .manifest
+                        .planet()
+                        .map_or(10000.0, |p| p.radius_mm as f64 / 1000.0),
+                )),
+                remnants: Arc::new(minimium_world::remnants::RemnantSnapshot::empty(
+                    world
+                        .manifest
+                        .planet()
+                        .map_or(10000.0, |p| p.radius_mm as f64 / 1000.0),
+                )),
                 manifest: world.manifest,
                 map,
                 world: simulation,

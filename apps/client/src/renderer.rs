@@ -38,9 +38,13 @@ mod dev_input;
 mod diagnostics;
 mod environment;
 mod environment_gpu;
+mod excavation;
+mod excavation_debug;
 mod gameplay_presentation;
 mod gpu;
+mod gpu_scene;
 mod gpu_surface;
+mod impacts;
 mod init;
 mod materials;
 mod meteor_diagnostics;
@@ -93,6 +97,9 @@ struct GpuResources {
     atmosphere_gpu: atmosphere_gpu::AtmosphereGpu,
     cloud_gpu: clouds::CloudGpu,
     ui: minimium_renderer::ui_pipeline::UiGpuResources,
+    held_tool: minimium_renderer::held_tool_gpu::HeldToolGpu,
+    held_tool_kind: Option<minimium_world::items::ToolKind>,
+    held_tool_visible: bool,
     initial_world: minimium_renderer::geometry_gpu::StaticVertexBuffer,
     remote_vertices: minimium_renderer::geometry_gpu::DynamicVertexBuffer,
     shadow_remote_complete: bool,
@@ -181,6 +188,7 @@ struct Renderer {
     render_environment_frame: EnvironmentFrame,
     environment_observer: environment::observer::ObserverAdapter,
     meteors: meteors::MeteorRuntime,
+    impacts: impacts::TrackedImpacts,
     sky_calculator: minimium_astronomy::SkyCalculator,
     sky_catalogue: Option<minimium_renderer::stars::StarCatalogueAdapter>,
     environment_error: Option<String>,
@@ -188,6 +196,7 @@ struct Renderer {
     demo_environment: Option<LocalDemoEnvironment>,
     application: crate::application::ClientApplication,
     gameplay_presentation: GameplayPresentation,
+    excavation_debug: excavation_debug::ExcavationDebug,
     sector_cache: sector_scene::ClientSectorCache,
     last_render_position: [f32; 3],
 }

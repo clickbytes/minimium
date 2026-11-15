@@ -24,6 +24,9 @@ pub(crate) enum InputAction {
     Jump,
     Interact,
     Fire,
+    EquipShovel,
+    EquipPickaxe,
+    StowTool,
 }
 
 impl InputAction {
@@ -42,6 +45,9 @@ impl InputAction {
             "jump" => Self::Jump,
             "interact" => Self::Interact,
             "fire" => Self::Fire,
+            "shovel" => Self::EquipShovel,
+            "pickaxe" => Self::EquipPickaxe,
+            "stow" => Self::StowTool,
             _ => return None,
         })
     }
@@ -103,6 +109,9 @@ impl InputMapper {
             ("gameplay", "interact", "KeyE"),
             ("gameplay", "map", "KeyM"),
             ("gameplay", "fire", "MouseLeft"),
+            ("gameplay", "shovel", "Digit1"),
+            ("gameplay", "pickaxe", "Digit2"),
+            ("gameplay", "stow", "Digit0"),
         ] {
             result.insert(
                 InputContext::parse(ctx).unwrap(),
@@ -193,6 +202,9 @@ impl InputMapper {
                     | InputAction::Jump
                     | InputAction::Interact
                     | InputAction::Fire
+                    | InputAction::EquipShovel
+                    | InputAction::EquipPickaxe
+                    | InputAction::StowTool
             )
         {
             return None;

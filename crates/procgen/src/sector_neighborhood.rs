@@ -1,8 +1,29 @@
 use minimium_world::world::{
-    PlanetSectorKey, SectorKey, WorldManifest, WorldTopology, PLANET_SECTORS_PER_FACE,
+    PlanetEdge, PlanetSectorKey, SectorKey, WorldManifest, WorldTopology, PLANET_SECTORS_PER_FACE,
 };
 
 pub const DUNGEON_SECTOR_EDGE: u16 = 16;
+
+/// One 8-connected surface ring, including diagonals across cube-face seams.
+pub fn planet_sector_neighborhood_with_diagonals(
+    center: PlanetSectorKey,
+    count: u16,
+) -> Vec<PlanetSectorKey> {
+    let cardinal = center.neighbors_with_count(count);
+    let mut result = vec![center];
+    result.extend(cardinal);
+    for (index, neighbor) in cardinal.into_iter().enumerate() {
+        let sides = if index < 2 {
+            [PlanetEdge::VNegative, PlanetEdge::VPositive]
+        } else {
+            [PlanetEdge::UNegative, PlanetEdge::UPositive]
+        };
+        result.extend(sides.map(|edge| neighbor.neighbor_with_count(edge, count)));
+    }
+    result.sort_unstable();
+    result.dedup();
+    result
+}
 
 /// Returns the server/client collision neighborhood for a topology.
 pub fn sector_neighborhood(topology: WorldTopology, position: [f32; 3]) -> Vec<SectorKey> {

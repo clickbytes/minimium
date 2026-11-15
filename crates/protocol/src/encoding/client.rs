@@ -2,7 +2,7 @@ use super::common::{write_chat_text, write_name, write_vector, write_world_conte
 use crate::{
     framing::encode_frame,
     kinds::ClientKind,
-    models::{ClientMessage, ClientWorldInput, ProtocolError},
+    models::{ClientMessage, ClientWorldInput, ExcavationInput, ProtocolError},
     validation::{is_unit_direction, valid_direction_component},
 };
 
@@ -106,6 +106,43 @@ pub fn encode_client(message: &ClientMessage) -> Result<Vec<u8>, ProtocolError> 
                 ClientWorldInput::MapTeleport { direction } => {
                     payload.push(6);
                     write_unit_direction(*direction, &mut payload)?;
+                }
+                ClientWorldInput::Excavation(input) => {
+                    payload.push(12);
+                    match input {
+                        ExcavationInput::GrantTools => payload.push(1),
+                        ExcavationInput::Equip { slot } => {
+                            payload.push(2);
+                            match slot {
+                                None => payload.push(0),
+                                Some(slot) if *slot < 2 => {
+                                    payload.push(1);
+                                    payload.push(*slot);
+                                }
+                                _ => return Err(ProtocolError::InvalidPayload),
+                            }
+                        }
+                        ExcavationInput::Use {
+                            action_id,
+                            direction,
+                        } => {
+                            if *action_id == 0 {
+                                return Err(ProtocolError::InvalidPayload);
+                            }
+                            payload.push(3);
+                            payload.extend_from_slice(&action_id.to_le_bytes());
+                            write_unit_direction(*direction, &mut payload)?;
+                        }
+                        ExcavationInput::Resync { coordinates } => {
+                            if coordinates.iter().any(|v| !(-625_000..625_000).contains(v)) {
+                                return Err(ProtocolError::InvalidPayload);
+                            }
+                            payload.push(4);
+                            for coordinate in coordinates {
+                                payload.extend_from_slice(&coordinate.to_le_bytes());
+                            }
+                        }
+                    }
                 }
             }
             ClientKind::WorldInput

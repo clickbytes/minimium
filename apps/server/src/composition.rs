@@ -15,6 +15,30 @@ use std::{
     sync::Arc,
 };
 
+pub(super) fn preflight_saved_planet(
+    config: &minimium_server_runtime::RuntimeServerConfig,
+) -> Result<(), Box<dyn Error>> {
+    if config.map_path.is_some() || config.world_definition_path.is_some() {
+        return Ok(());
+    }
+    let path = config.data_dir.join("world.planet.ron");
+    let bytes = match minimium_platform::files::read_bounded_file(&path, 64 * 1024) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.into()),
+    };
+    let source = String::from_utf8(bytes)
+        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+    let planet = ron::from_str::<ResolvedPlanetConfig>(&source).map_err(|error| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("saved planet definition: {error}"),
+        )
+    })?;
+    planet.validate()?;
+    Ok(())
+}
+
 pub(super) fn server_composition(
     dev_mode: bool,
     earth_package_dir: Option<PathBuf>,
@@ -35,6 +59,17 @@ pub(super) fn server_composition(
     let world_asset_logger = asset_io_logger.clone();
     let world_procgen_logger = procgen_logger.clone();
     ServerComposition {
+        impact_profile: Some(minimium_game_sample::DEFAULT_IMPACT_PROFILE),
+        excavation: minimium_server_runtime::composition::ExcavationConfig {
+            terrain: minimium_terrain::TerrainConfig {
+                max_chunks: 4096,
+                max_edit_radius_m: 0.6,
+            },
+            tools: minimium_game_sample::DEFAULT_TOOL_PROFILE,
+            soil_depth_m: minimium_game_sample::SOIL_DEPTH_M,
+            fluids: minimium_fluids::FluidConfig::WORLD_DEFAULT,
+            server_fluid_cells: 524_288,
+        },
         shutdown_request,
         modules: vec![Arc::new(minimium_game_sample::SampleGameplayModule)],
         world_composer: Arc::new(move |request| {

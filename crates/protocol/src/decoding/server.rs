@@ -18,6 +18,29 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
     };
     let mut reader = Reader::new(payload);
     let message = match ServerKind::try_from(kind)? {
+        ServerKind::Excavation => super::excavation::decode(&mut reader)?,
+        ServerKind::ImpactSync => ServerMessage::ImpactSync {
+            context: reader.world_context()?,
+            complete: reader.boolean()?,
+        },
+        ServerKind::ImpactState => {
+            let context = reader.world_context()?;
+            let server_time_ms = reader.u64()?;
+            let live = reader.boolean()?;
+            let body = minimium_world::impact::BodyState::decode(
+                &reader.fixed::<{ minimium_world::impact::BODY_RECORD_BYTES }>()?,
+            )
+            .ok_or(ProtocolError::InvalidPayload)?;
+            if body.world != context.instance() {
+                return Err(ProtocolError::InvalidPayload);
+            }
+            ServerMessage::ImpactState {
+                context,
+                server_time_ms,
+                live,
+                body,
+            }
+        }
         ServerKind::Bolid => {
             let context = reader.world_context()?;
             let event = crate::BolidEvent {

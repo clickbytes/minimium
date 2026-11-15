@@ -1,9 +1,53 @@
 //! Rare floating-origin shifts update resident vertices without rebuilding meshes.
+use crate::{geometry::Vertex, ocean_geometry::OceanVertex, terrain_geometry::TerrainVertex};
+use std::mem::{offset_of, size_of};
 use wgpu::util::DeviceExt;
-const STRIDES: [u32; 3] = [9, 28, 6];
+
+#[derive(Clone, Copy)]
+pub(crate) enum RebaseLayout {
+    Object,
+    Terrain,
+    Water,
+}
+
+impl RebaseLayout {
+    const ALL: [Self; 3] = [Self::Object, Self::Terrain, Self::Water];
+
+    fn stride(self) -> u32 {
+        let bytes = match self {
+            Self::Object => size_of::<Vertex>(),
+            Self::Terrain => size_of::<TerrainVertex>(),
+            Self::Water => size_of::<OceanVertex>(),
+        };
+        (bytes / size_of::<f32>()) as u32
+    }
+
+    fn vertices_per_invocation(self) -> u32 {
+        match self {
+            Self::Terrain => 3,
+            Self::Object | Self::Water => 1,
+        }
+    }
+
+    fn normal_offset(self) -> u32 {
+        match self {
+            Self::Terrain => {
+                (offset_of!(TerrainVertex, geometric_normal) / size_of::<f32>()) as u32
+            }
+            Self::Object | Self::Water => 0,
+        }
+    }
+}
+
+const _: () = {
+    assert!(offset_of!(Vertex, position) == 0);
+    assert!(offset_of!(TerrainVertex, position) == 0);
+    assert!(offset_of!(OceanVertex, position) == 0);
+};
+
 pub struct GeometryRebase {
     pipeline: wgpu::ComputePipeline,
-    parameters: [wgpu::Buffer; STRIDES.len()],
+    parameters: [wgpu::Buffer; RebaseLayout::ALL.len()],
 }
 impl GeometryRebase {
     pub fn new(device: &wgpu::Device) -> Self {
@@ -22,7 +66,7 @@ impl GeometryRebase {
         let parameters = std::array::from_fn(|_| {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("geometry rebase delta"),
-                contents: &[0; 16],
+                contents: &[0; 32],
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             })
         });
@@ -36,25 +80,29 @@ impl GeometryRebase {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         delta: [f32; 3],
-        buffers: impl Iterator<Item = (&'a wgpu::Buffer, u32)>,
+        buffers: impl Iterator<Item = (&'a wgpu::Buffer, RebaseLayout)>,
     ) {
-        for (i, stride) in STRIDES.into_iter().enumerate() {
+        for layout in RebaseLayout::ALL {
             let words = [
                 delta[0].to_bits(),
                 delta[1].to_bits(),
                 delta[2].to_bits(),
-                stride,
+                layout.stride(),
+                layout.vertices_per_invocation(),
+                layout.normal_offset(),
+                0,
+                0,
             ];
-            queue.write_buffer(&self.parameters[i], 0, bytemuck::cast_slice(&words));
+            queue.write_buffer(
+                &self.parameters[layout as usize],
+                0,
+                bytemuck::cast_slice(&words),
+            );
         }
         let layout = self.pipeline.get_bind_group_layout(0);
         let groups: Vec<_> = buffers
-            .filter(|(b, s)| b.size() >= u64::from(*s) * 4)
-            .map(|(buffer, stride)| {
-                let index = STRIDES
-                    .iter()
-                    .position(|s| *s == stride)
-                    .expect("supported render vertex layout");
+            .filter(|(b, layout)| b.size() >= u64::from(layout.stride()) * 4)
+            .map(|(buffer, vertex_layout)| {
                 let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                     label: Some("geometry rebase buffer"),
                     layout: &layout,
@@ -65,13 +113,13 @@ impl GeometryRebase {
                         },
                         wgpu::BindGroupEntry {
                             binding: 1,
-                            resource: self.parameters[index].as_entire_binding(),
+                            resource: self.parameters[vertex_layout as usize].as_entire_binding(),
                         },
                     ],
                 });
-                let vertices = (buffer.size() / u64::from(stride) / 4) as u32;
+                let vertices = (buffer.size() / u64::from(vertex_layout.stride()) / 4) as u32;
                 // Terrain updates one complete triangle and its plane normal.
-                let invocations = if stride == 28 { vertices / 3 } else { vertices };
+                let invocations = vertices / vertex_layout.vertices_per_invocation();
                 (group, invocations)
             })
             .collect();

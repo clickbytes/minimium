@@ -21,6 +21,30 @@ pub fn encode_server_into(
     let payload_start = frame.len();
     let encoded = (|| {
         let kind = match message {
+            ServerMessage::Excavation { context, message } => {
+                super::excavation::encode(*context, message, frame)?;
+                ServerKind::Excavation
+            }
+            ServerMessage::ImpactSync { context, complete } => {
+                write_world_context(*context, frame);
+                frame.push(u8::from(*complete));
+                ServerKind::ImpactSync
+            }
+            ServerMessage::ImpactState {
+                context,
+                server_time_ms,
+                live,
+                body,
+            } => {
+                if !body.valid() || body.world != context.instance() {
+                    return Err(ProtocolError::InvalidPayload);
+                }
+                write_world_context(*context, frame);
+                frame.extend(server_time_ms.to_le_bytes());
+                frame.push(u8::from(*live));
+                frame.extend(body.encode());
+                ServerKind::ImpactState
+            }
             ServerMessage::Bolid { context, event } => {
                 if !event.valid() {
                     return Err(ProtocolError::InvalidPayload);

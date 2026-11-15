@@ -47,6 +47,7 @@ impl Renderer {
             return false;
         }
         let target_position = destination.unwrap_or_else(|| map.spawn());
+        let water = self.water_presentation_for(instance);
         let scene = match self.sector_cache.ensure_scene(
             instance,
             manifest,
@@ -63,7 +64,9 @@ impl Renderer {
             self.application
                 .connection
                 .session()
-                .and_then(|session| session.prepared_geography()),
+                .map(|session| session.terrain_inputs())
+                .unwrap_or_default(),
+            water,
         ) {
             Ok(scene) => scene,
             Err(error) => {

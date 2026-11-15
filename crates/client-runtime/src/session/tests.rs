@@ -15,6 +15,7 @@ fn context(epoch: u64) -> WorldContext {
 fn connected_session(context: WorldContext) -> ClientSession {
     let now = Instant::now();
     ClientSession {
+        impacts: Default::default(),
         diagnostic_logger: None,
         content: Default::default(),
         stream: None,

@@ -23,6 +23,7 @@ impl Vertex {
 pub fn sector_geometry(geometry: &minimium_procgen::SectorGeometry) -> Vec<Vertex> {
     let mut out = Vec::with_capacity(geometry.boxes.len() * 36 + geometry.triangles.len() * 3);
     append_geometry(&mut out, &geometry.boxes, &geometry.triangles);
+    append_geometry(&mut out, &[], &geometry.object_triangles);
     out
 }
 
@@ -36,12 +37,17 @@ pub fn sector_geometry_relative(
             *coordinate = (f64::from(*coordinate) - f64::from(origin)) as f32;
         }
     }
-    for (triangle, rendered) in geometry.triangles.iter().zip(
-        vertices[geometry.boxes.len() * 36..]
-            .as_chunks_mut::<3>()
-            .0
-            .iter_mut(),
-    ) {
+    for (triangle, rendered) in geometry
+        .triangles
+        .iter()
+        .chain(&geometry.object_triangles)
+        .zip(
+            vertices[geometry.boxes.len() * 36..]
+                .as_chunks_mut::<3>()
+                .0
+                .iter_mut(),
+        )
+    {
         if let Some(precise) = triangle.precise_vertices {
             for (point, vertex) in precise.iter().zip(rendered.iter_mut()) {
                 vertex.position = std::array::from_fn(|axis| {

@@ -8,6 +8,17 @@ Owns mutable player state, movement integration, collision indexing and queries,
 
 `World` owns mutable simulation state; `MovementIntent`, `MovementPolicy` and `step_character` provide the shared server/prediction movement path. Intents contain direction, jump and vertical control only. The server owns movement limits and flight policy, which are copied into worker batches before parallel stepping. `step_batch` processes immutable batches, while `CollisionQueryStats` reports bounded query work.
 
+The optional neutral `WaterRead` view feeds the same `step_character_with_water`
+and precise-millimetre integrators used by prediction and authority. It applies
+buoyancy, flow drag and bounded vertical swim control before collision movement;
+legacy entry points remain dry. Immersion does not model oxygen or drowning.
+Steering uses velocity relative to the local current; vertical swim acceleration
+can overcome buoyancy in either direction. Water forces are applied after
+steering/gravity and before collision, independently of developer flight.
+Radial-gravity movement sweeps the oriented capsule against solid terrain
+triangles with bounded substeps, so excavation walls and ceilings block motion
+while the projected movement slides along contacted walls.
+
 ## Dependencies
 
 Consumes world maps, geometry and manifests from `minimium-world`, plus core player identifiers. The world domain does not depend on simulation.
@@ -35,3 +46,24 @@ Change movement, collision or combat rules here. Keep geometry definitions and t
 ## Verification
 
 Run `rtk cargo check -p minimium-simulation -p minimium-server -p minimium-client -p minimium-protocol` and architecture/file-length checks. Runtime acceptance is deferred.
+
+## Authoritative impact motion
+
+`impact::step_body` is a pure SI gravity/drag/ablation integrator using a borrowed
+`BodyEnvironment` surface port. Swept sphere contact uses bounded substeps and
+bisection; one pressure-triggered daughter preserves momentum. The runtime
+supplies fragment capacity, so saturation does not silently delete fragment mass.
+This is a bounded gameplay approximation, not a hydrodynamic impact solver.
+`CollisionIndex::from_partitions` retains immutable per-sector indexes and cached
+bounds. Character and ray queries visit nearby partitions; edits rebuild only
+changed leaves and a lightweight root. Static map collision remains connected.
+
+`tools::ToolUseGate` prepares bounded tool actions from server-owned inventory
+and a first-obstacle scene port. It enforces material/reach/cooldown rules and one
+pending action, with monotonically ordered IDs and an explicit completion.
+The server runtime supplies current collision hits and profile inventory, then
+finishes the gate after a durable mutation or a typed refusal. The same exact
+triangle and player-capsule query blocks digging behind an earlier obstacle.
+`CollisionIndex::tool_surface_hit` exposes that read-only nearest-hit query to
+client previews. Callers pass nearby remote-player `ToolRayCapsule` blockers;
+the authoritative `World::tool_surface_hit` delegates through the same query.

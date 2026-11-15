@@ -15,6 +15,15 @@ impl World {
         if lanes <= 1 || selected_count < PARALLEL_SIMULATION_MIN_PLAYERS {
             return None;
         }
+        let water_samples: HashMap<_, _> = self
+            .players
+            .iter()
+            .filter(|(id, _)| selected.is_none_or(|ids| ids.contains(*id)))
+            .filter_map(|(id, player)| {
+                self.water_sample(player.position, player.position_mm)
+                    .map(|sample| (*id, sample))
+            })
+            .collect();
         let players = Arc::make_mut(&mut self.players);
         let movement_policy = self.movement_policy;
         let player_movement_policies = Arc::clone(&self.player_movement_policies);
@@ -60,6 +69,7 @@ impl World {
                         .get(id)
                         .copied()
                         .unwrap_or(movement_policy),
+                    water: water_samples.get(id).copied(),
                 });
         }
 

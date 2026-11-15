@@ -7,20 +7,117 @@ use std::{
 };
 #[derive(Default)]
 pub struct RenderPatchCache {
+    revisions: HashMap<(SectorKey, u8), u64>,
     entries: HashMap<(SectorKey, u8), (u64, Arc<SectorGeometry>)>,
+    base_entries: HashMap<(SectorKey, u8), (u64, u64, Arc<SectorGeometry>)>,
     tick: u64,
     pub refined: HashSet<(minimium_world::world::PlanetFace, u16, u16, u16)>,
     pub(crate) coasts: crate::coast_probe::CoastProbeCache,
 }
 impl RenderPatchCache {
-    pub fn bytes(&self) -> usize {
-        self.entries
+    /// Bounded cache for the unmodified LOD meshes used to construct exact
+    /// excavation contours before final meshes replace their chunk domains.
+    pub fn get_base_revision(
+        &mut self,
+        key: SectorKey,
+        lod: u8,
+        revision: u64,
+        build: impl FnOnce() -> SectorGeometry,
+    ) -> Arc<SectorGeometry> {
+        self.tick = self.tick.wrapping_add(1);
+        if let Some((current, age, geometry)) = self.base_entries.get_mut(&(key, lod)) {
+            if *current == revision {
+                *age = self.tick;
+                return geometry.clone();
+            }
+        }
+        let geometry = Arc::new(build());
+        self.base_entries.remove(&(key, lod));
+        while self.base_entries.len() >= 512 || self.base_bytes() >= 64 * 1024 * 1024 {
+            let oldest = self
+                .base_entries
+                .iter()
+                .min_by_key(|(_, (_, age, _))| *age)
+                .map(|(key, _)| *key);
+            let Some(oldest) = oldest else { break };
+            self.base_entries.remove(&oldest);
+        }
+        self.base_entries
+            .insert((key, lod), (revision, self.tick, geometry.clone()));
+        geometry
+    }
+
+    fn base_bytes(&self) -> usize {
+        self.base_entries
             .values()
-            .map(|(_, g)| {
-                g.triangles.capacity() * std::mem::size_of::<minimium_world::world::MapTriangle>()
-                    + g.boxes.capacity() * std::mem::size_of::<minimium_world::world::MapBox>()
+            .map(|(_, _, geometry)| {
+                (geometry.triangles.capacity() + geometry.object_triangles.capacity())
+                    * std::mem::size_of::<minimium_world::world::MapTriangle>()
+                    + geometry.boxes.capacity()
+                        * std::mem::size_of::<minimium_world::world::MapBox>()
             })
             .sum()
+    }
+
+    pub fn get_revision(
+        &mut self,
+        key: SectorKey,
+        lod: u8,
+        revision: u64,
+        build: impl FnOnce() -> SectorGeometry,
+    ) -> Arc<SectorGeometry> {
+        if self.revisions.get(&(key, lod)) != Some(&revision) {
+            self.entries.remove(&(key, lod));
+        }
+        self.revisions.insert((key, lod), revision);
+        self.get(key, lod, build)
+    }
+
+    /// Fallible build variant. A failed geometry preflight does not replace the
+    /// last complete entry or publish an empty/partial mesh under a new revision.
+    pub fn get_revision_result<E>(
+        &mut self,
+        key: SectorKey,
+        lod: u8,
+        revision: u64,
+        build: impl FnOnce() -> Result<SectorGeometry, E>,
+    ) -> Result<Arc<SectorGeometry>, E> {
+        self.tick = self.tick.wrapping_add(1);
+        if self.revisions.get(&(key, lod)) == Some(&revision) {
+            if let Some((age, geometry)) = self.entries.get_mut(&(key, lod)) {
+                *age = self.tick;
+                return Ok(geometry.clone());
+            }
+        }
+        let geometry = Arc::new(build()?);
+        self.entries.remove(&(key, lod));
+        self.revisions.insert((key, lod), revision);
+        while self.entries.len() >= 1024 || self.bytes() >= 128 * 1024 * 1024 {
+            let old = self
+                .entries
+                .iter()
+                .filter(|(old, _)| **old != (key, lod))
+                .min_by_key(|(_, value)| value.0)
+                .map(|(old, _)| *old);
+            let Some(old) = old else { break };
+            self.entries.remove(&old);
+            self.revisions.remove(&old);
+        }
+        self.entries
+            .insert((key, lod), (self.tick, geometry.clone()));
+        Ok(geometry)
+    }
+    pub fn bytes(&self) -> usize {
+        self.base_bytes()
+            + self
+                .entries
+                .values()
+                .map(|(_, g)| {
+                    (g.triangles.capacity() + g.object_triangles.capacity())
+                        * std::mem::size_of::<minimium_world::world::MapTriangle>()
+                        + g.boxes.capacity() * std::mem::size_of::<minimium_world::world::MapBox>()
+                })
+                .sum::<usize>()
     }
 
     pub fn with_boxes(
@@ -65,6 +162,7 @@ impl RenderPatchCache {
                 .map(|(k, _)| *k)
             {
                 self.entries.remove(&old);
+                self.revisions.remove(&old);
             } else {
                 break;
             }

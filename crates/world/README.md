@@ -43,3 +43,21 @@ exponent 1..8, source start/full thresholds up to 12000 m). It uses a smoothstep
 weight raised to an integer power, retaining identity below the threshold and
 bounded gain above the reference height. PlanetDefinition owns the curve and
 the pure Earth height/datum conversion. Identity preserves legacy arithmetic.
+
+## Persistent impact domain
+
+`impact::BodyState` is a validated world-scoped entity component (type 0x100,
+schema 1); its neutral 162-byte record is shared by storage and protocol adapters.
+It carries immutable world seed, physical parameters, SI velocity, game-space
+position, lifetime, fragmentation and flight/landed/collected phase. `follows`
+rejects identity changes, phase regression and changes to committed craters.
+`minimium_terrain::TerrainSnapshot` now owns the indexed crater field. World
+retains neutral crater stamp values and the independent `RemnantSnapshot` object
+view. Removing a remnant does not mutate terrain or advance its revision.
+`terrain`, `items` and `fluid` define world-space query, inventory/action and water
+observation contracts; they contain no storage or solver implementation.
+Tool outcomes distinguish a blocking first hit (`Obstructed`) from a rejected
+terrain/collision join (`UnsafeGeometry`) so presentation can explain the refusal.
+`MapTriangle.surface` optionally carries terrain normals and six material
+fractions for generated ground and excavation surfaces. Static authored geometry
+leaves this field absent.

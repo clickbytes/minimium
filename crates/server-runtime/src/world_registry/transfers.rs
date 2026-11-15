@@ -1,4 +1,4 @@
-use super::{Membership, WorldRegistry};
+use super::{Membership, TerrainReads, WorldRegistry};
 use minimium_core::ids::PlayerId;
 use minimium_protocol::WorldContext;
 use minimium_world::world::{
@@ -91,6 +91,7 @@ impl WorldRegistry {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn prepare_entity_transfer(
         &mut self,
         player: PlayerId,
@@ -98,6 +99,44 @@ impl WorldRegistry {
         target_instance: WorldInstanceId,
         requested_destination: [f32; 3],
         return_location: Option<WorldLocation>,
+    ) -> Option<TransferOffer> {
+        self.prepare_entity_transfer_checked(
+            player,
+            source_context,
+            target_instance,
+            requested_destination,
+            return_location,
+            None,
+        )
+    }
+
+    pub(crate) fn prepare_entity_transfer_with_terrain(
+        &mut self,
+        player: PlayerId,
+        source_context: WorldContext,
+        target_instance: WorldInstanceId,
+        requested_destination: [f32; 3],
+        return_location: Option<WorldLocation>,
+        reads: &TerrainReads<'_>,
+    ) -> Option<TransferOffer> {
+        self.prepare_entity_transfer_checked(
+            player,
+            source_context,
+            target_instance,
+            requested_destination,
+            return_location,
+            Some(reads),
+        )
+    }
+
+    fn prepare_entity_transfer_checked(
+        &mut self,
+        player: PlayerId,
+        source_context: WorldContext,
+        target_instance: WorldInstanceId,
+        requested_destination: [f32; 3],
+        return_location: Option<WorldLocation>,
+        reads: Option<&TerrainReads<'_>>,
     ) -> Option<TransferOffer> {
         if self.transfers.contains_key(&player)
             || !self.context_matches(player, source_context)
@@ -126,10 +165,20 @@ impl WorldRegistry {
             }
         });
         let destination = destination_mm.0.map(|value| value as f32 / 1000.0);
-        if !target
+        let static_safe = target
             .map
-            .can_place_player_with_gravity(destination, target.world.gravity())
-        {
+            .can_place_player_with_gravity(destination, target.world.gravity());
+        let terrain_safe = if target.manifest.planet().is_some() {
+            reads.is_some_and(|reads| {
+                reads
+                    .get(&target_instance)
+                    .is_some_and(|terrain| super::terrain_capsule_clear(*terrain, destination_mm))
+            })
+        } else {
+            true
+        };
+        let safe = static_safe && terrain_safe;
+        if !safe {
             return None;
         }
         let target_epoch = self.allocate_epoch().ok()?;
@@ -223,10 +272,23 @@ impl WorldRegistry {
         self.context_matches(id, context) && !self.transfers.contains_key(&id)
     }
 
+    #[cfg(test)]
     pub(crate) fn commit_ready_transfers(
         &mut self,
         sector_ready: &HashSet<PlayerId>,
     ) -> Vec<CommittedTransfer> {
+        self.commit_ready_transfers_with_terrain(sector_ready, &TerrainReads::new())
+            .0
+    }
+
+    pub(crate) fn commit_ready_transfers_with_terrain(
+        &mut self,
+        sector_ready: &HashSet<PlayerId>,
+        reads: &TerrainReads<'_>,
+    ) -> (
+        Vec<CommittedTransfer>,
+        Vec<(PlayerId, TransitionId, WorldContext)>,
+    ) {
         let ready_players: Vec<_> = self
             .transfers
             .iter()
@@ -235,7 +297,27 @@ impl WorldRegistry {
             })
             .collect();
         let mut committed = Vec::with_capacity(ready_players.len());
+        let mut cancelled = Vec::new();
         for player in ready_players {
+            let Some(pending) = self.transfers.get(&player) else {
+                continue;
+            };
+            if !self.transfer_destination_clear(
+                pending.offer.target_context.instance(),
+                pending.offer.destination_mm,
+                reads,
+            ) {
+                let pending = self
+                    .transfers
+                    .remove(&player)
+                    .expect("pending transfer exists");
+                cancelled.push((
+                    player,
+                    pending.offer.transition_id,
+                    pending.offer.target_context,
+                ));
+                continue;
+            }
             let Some(transfer) = self.transfers.remove(&player) else {
                 continue;
             };
@@ -243,7 +325,7 @@ impl WorldRegistry {
                 committed.push(transfer);
             }
         }
-        committed
+        (committed, cancelled)
     }
 
     fn commit_one_transfer(

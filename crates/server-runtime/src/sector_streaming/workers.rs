@@ -19,7 +19,7 @@ struct Job {
     ticket: SectorTicket,
     map: Arc<WorldMap>,
     manifest: WorldManifest,
-    geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
+    geography: minimium_procgen::TerrainInputs,
 }
 
 struct Finished {
@@ -29,6 +29,8 @@ struct Finished {
 
 #[derive(Default)]
 struct State {
+    preparations: VecDeque<Box<dyn FnOnce() + Send>>,
+    active_preparations: usize,
     pending: VecDeque<Job>,
     finished: VecDeque<Finished>,
     active: HashMap<usize, SectorTicket>,
@@ -42,6 +44,23 @@ pub(crate) struct SectorGenerationPool {
 }
 
 impl SectorGenerationPool {
+    /// Structural edits share the bounded sector worker pool and thread budget.
+    pub(crate) fn prepare(&self, task: Box<dyn FnOnce() + Send>) -> io::Result<()> {
+        let mut state = self.shared.0.lock().unwrap();
+        if state.stop
+            || self.workers.is_empty()
+            || state.preparations.len() + state.active_preparations >= 8
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "terrain preparation busy",
+            ));
+        }
+        state.preparations.push_back(task);
+        self.shared.1.notify_one();
+        Ok(())
+    }
+
     pub(crate) fn new(worker_count: usize) -> io::Result<Self> {
         let collision = super::collision::CollisionIndexWorker::new()?;
         let shared = Arc::new((Mutex::new(State::default()), Condvar::new()));
@@ -78,6 +97,7 @@ impl SectorGenerationPool {
             let mut state = self.shared.0.lock().unwrap();
             state.stop = true;
             state.pending.clear();
+            state.preparations.clear();
             state.finished.clear();
             self.shared.1.notify_all();
         }
@@ -244,7 +264,12 @@ impl SectorGenerationPool {
                 ticket,
                 map: instance.map.clone(),
                 manifest: instance.manifest,
-                geography: geography.clone(),
+                geography: minimium_procgen::TerrainInputs {
+                    geography: geography.clone(),
+                    edits: Some(instance.terrain.clone()),
+                    remnants: Some(instance.remnants.clone()),
+                    volumes: instance.volumes.clone(),
+                },
             };
             let mut state = self.shared.0.lock().unwrap();
             if state.stop
@@ -275,13 +300,33 @@ impl Drop for SectorGenerationPool {
 
 fn worker_loop(id: usize, shared: Arc<(Mutex<State>, Condvar)>) {
     loop {
+        // The task returns its result through the request-owned bounded channel.
+        let preparation = {
+            let mut state = shared.0.lock().unwrap();
+            if state.stop {
+                return;
+            }
+            let task = state.preparations.pop_front();
+            if task.is_some() {
+                state.active_preparations += 1;
+            }
+            task
+        };
+        if let Some(task) = preparation {
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(task));
+            shared.0.lock().unwrap().active_preparations -= 1;
+            continue;
+        }
         let job = {
             let mut state = shared.0.lock().unwrap();
-            while state.pending.is_empty() && !state.stop {
+            while state.pending.is_empty() && state.preparations.is_empty() && !state.stop {
                 state = shared.1.wait(state).unwrap();
             }
             if state.stop {
                 return;
+            }
+            if !state.preparations.is_empty() {
+                continue;
             }
             let job = state
                 .pending
@@ -305,13 +350,17 @@ fn worker_loop(id: usize, shared: Arc<(Mutex<State>, Condvar)>) {
         } else {
             minimium_procgen::validate_world_manifest(job.manifest)
         };
-        let result = validation.map(|()| {
-            Arc::new(minimium_procgen::materialize_world_sector_with_geography(
+        let result = validation.and_then(|()| {
+            minimium_procgen::materialize_world_sector_with_geography(
                 &job.map,
                 job.manifest,
                 job.ticket.key(),
                 job.geography,
-            ))
+            )
+            .map(|geometry| Arc::new(SectorPayload::new(geometry)))
+            .map_err(|error| {
+                minimium_procgen::GenerationError::materialization(format!("{error:?}"))
+            })
         });
         let mut state = shared.0.lock().unwrap();
         state.active.remove(&id);

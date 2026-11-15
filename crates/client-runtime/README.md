@@ -4,9 +4,13 @@
 
 Owns the nonblocking protocol session, connection controller, connector, local-server child guard, fixed-step local movement prediction, authoritative snapshot reconciliation, remote-player interpolation, world transition handshake, synchronized world-clock estimate and client-runtime diagnostic events. It receives a fixed-domain logger through its application-facing controller/configuration APIs; the telemetry file sink stays outside the runtime. It owns no window, GPU, console rendering, localized environment status formatting or process event loop.
 
+`ClientSession::tool_action_pending` exposes whether the current context has an
+unconfirmed tool action. Developer overlays combine it with confirmed inventory
+and the same simulation collision query used by the server; they cannot approve edits.
+
 ## Public API
 
-Presentation clients negotiate `ContentOffer` before `Welcome` under protocol v19.
+Presentation clients negotiate `ContentOffer` before `Welcome` under protocol v20.
 Content preparation has its own 300-second deadline. A bounded worker fetches the
 required package over a separate HTTP endpoint at the game peer's IP and caches
 verified hash blobs. The host takes the complete package, installs GPU resources,
@@ -120,3 +124,14 @@ The session accepts Bolid only for its active world context and discards it duri
 `ConnectionController::request_random_bolid(count)` validates 1..64 and forwards
 the bounded count through the existing owned-server admin command channel. It
 does not send N separate requests or change the game protocol.
+
+## Impact replica
+
+Protocol 20 adds a context-bound `ImpactReplica` and initial-image readiness.
+Out-of-world/old-membership messages are ignored; regressing or conflicting states
+are rejected. Source-world updates remain valid during a pending transfer so a
+cancellation cannot lose a durable edit. Disconnect clears the replica. Once
+ready, `terrain_inputs` exposes separate immutable crater and remnant snapshots;
+`prepared_geography` remains the unmodified geographic dataset. Target-world
+preparation uses `base_geography` until its own image arrives.
+The replica owns no GPU, simulation authority or disk writes.

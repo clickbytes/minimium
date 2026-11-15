@@ -7,6 +7,10 @@ use entities::{parse_component, parse_entity, parse_entity_counter, parse_world_
 use header::parse_snapshot_header;
 use std::collections::HashMap;
 
+pub(super) fn preflight_snapshot_version(data_dir: &Path) -> io::Result<()> {
+    header::preflight_snapshot_version(&data_dir.join("world.snapshot"))
+}
+
 pub(super) fn load(
     data_dir: &Path,
     worlds: &[(WorldInstanceId, WorldMap, WorldManifest)],

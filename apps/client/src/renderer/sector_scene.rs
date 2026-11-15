@@ -1,10 +1,13 @@
+mod collision;
+
 use super::sector_worker::{PreparedScene, SectorWorker};
+pub(super) use collision::collision_from_sectors;
 use minimium_procgen::SectorGeometry;
 use minimium_sectors::{InstallResult, RequestError, SectorManager, SectorTicket};
 use minimium_simulation::CollisionIndex;
 use minimium_world::world::{
-    Aabb, GenerationRevision, MapBox, MapTriangle, SectorKey, SectorRevision, WorldContentRevision,
-    WorldInstanceId, WorldManifest, WorldMap,
+    GenerationRevision, SectorKey, SectorRevision, WorldContentRevision, WorldInstanceId,
+    WorldManifest, WorldMap,
 };
 use std::{collections::HashMap, fmt, io, sync::Arc};
 
@@ -17,6 +20,7 @@ pub(super) enum SectorWorkerError {
     QueueFull,
     CacheFull,
     WorkerStopped(Vec<SectorTicket>),
+    Geometry(minimium_procgen::ExcavationGeometryError),
 }
 
 impl SectorWorkerError {
@@ -26,6 +30,7 @@ impl SectorWorkerError {
             Self::QueueFull => "client_runtime.sector_worker_queue_full",
             Self::CacheFull => "client_runtime.sector_cache_full",
             Self::WorkerStopped(_) => "client_runtime.sector_worker_stopped",
+            Self::Geometry(_) => "client_runtime.sector_geometry_failed",
         }
     }
 }
@@ -36,6 +41,7 @@ impl fmt::Display for SectorWorkerError {
             Self::ThreadSpawn(error) => write!(formatter, "{}: {error}", self.code()),
             Self::QueueFull => formatter.write_str(self.code()),
             Self::CacheFull => formatter.write_str(self.code()),
+            Self::Geometry(error) => write!(formatter, "{}: {error:?}", self.code()),
             Self::WorkerStopped(tickets) => {
                 write!(formatter, "{} ({} tickets)", self.code(), tickets.len())
             }
@@ -47,12 +53,13 @@ impl std::error::Error for SectorWorkerError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::ThreadSpawn(error) => Some(error),
-            Self::QueueFull | Self::CacheFull | Self::WorkerStopped(_) => None,
+            Self::QueueFull | Self::CacheFull | Self::WorkerStopped(_) | Self::Geometry(_) => None,
         }
     }
 }
 
 pub(super) struct ClientSectorCache {
+    terrain_inputs: HashMap<WorldInstanceId, Arc<minimium_procgen::TerrainInputs>>,
     manager: SectorManager<SectorGeometry>,
     collision_worker: super::collision_worker::CollisionWorker,
     scene_collision_worker: super::collision_worker::SceneCollisionWorker,
@@ -60,6 +67,7 @@ pub(super) struct ClientSectorCache {
     interests: HashMap<WorldInstanceId, SectorInterest>,
     workers: HashMap<WorldInstanceId, SectorWorker>,
     presentations: HashMap<WorldInstanceId, Arc<PreparedScene>>,
+    water_presentations: HashMap<WorldInstanceId, super::sector_worker::WaterPresentation>,
 }
 
 struct SectorInterest {
@@ -110,6 +118,7 @@ impl ClientSectorCache {
     }
     pub(super) fn new() -> Result<Self, SectorWorkerError> {
         Ok(Self {
+            terrain_inputs: HashMap::new(),
             manager: SectorManager::new(CLIENT_SECTOR_CACHE_CAPACITY, CLIENT_SECTOR_CACHE_CAPACITY)
                 .expect("client sector cache capacity is nonzero"),
             collision_worker: super::collision_worker::CollisionWorker::new()?,
@@ -118,6 +127,7 @@ impl ClientSectorCache {
             interests: HashMap::new(),
             workers: HashMap::new(),
             presentations: HashMap::new(),
+            water_presentations: HashMap::new(),
         })
     }
 
@@ -150,14 +160,44 @@ impl ClientSectorCache {
         origin_generation: u64,
         maps: &HashMap<WorldInstanceId, WorldMap>,
         manifests: &HashMap<WorldInstanceId, WorldManifest>,
-        geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
+        geography: minimium_procgen::TerrainInputs,
+        water: Option<super::sector_worker::WaterPresentation>,
     ) -> Result<Option<ClientSectorScene>, SectorWorkerError> {
+        let water = water.map(|incoming| {
+            let cached = self
+                .water_presentations
+                .entry(instance)
+                .or_insert_with(|| incoming.clone());
+            if !Arc::ptr_eq(&cached.snapshot, &incoming.snapshot)
+                || cached.catalog.digest != incoming.catalog.digest
+            {
+                *cached = incoming;
+            }
+            // The selected 96 m surface neighborhood does not need to be
+            // resorted for every millimetre of camera motion or every frame.
+            cached.set_center(position.map(|value| (f64::from(value) / 4.0).floor() * 4.0));
+            cached.clone()
+        });
+        {
+            let terrain = &geography;
+            let old = self.terrain_inputs.get(&instance);
+            if old.map_or((0, 0, 0), |t| t.revision()) != terrain.revision() {
+                let count = minimium_procgen::planet_sector_count(manifest);
+                self.manager.invalidate_where(instance, |key| {
+                    old.map_or(0, |t| t.sector_revision(key, 1, count))
+                        != terrain.sector_revision(key, 1, count)
+                });
+                self.terrain_inputs
+                    .insert(instance, Arc::new(terrain.clone()));
+                self.presentations.remove(&instance);
+            }
+        }
         if maps.get(&instance).is_none() || manifests.get(&instance) != Some(&manifest) {
             return Ok(None);
         }
         // Earth jobs must wait for the session's validated geography, including
         // bootstrap frames before Welcome. Never dispatch a job that would panic.
-        if manifest.planet().is_some_and(|p| p.mode == 1) && geography.is_none() {
+        if manifest.planet().is_some_and(|p| p.mode == 1) && geography.geography.is_none() {
             return Ok(None);
         }
         let keys = minimium_procgen::sector_neighborhood_for(manifest, position);
@@ -227,6 +267,10 @@ impl ClientSectorCache {
             error
         })?;
         for (ticket, geometry) in completed {
+            let geometry = geometry.map_err(|error| {
+                self.manager.fail(ticket);
+                SectorWorkerError::Geometry(error)
+            })?;
             let revision = SectorRevision::new(1).expect("initial revision");
             match self.manager.complete(ticket, revision, geometry) {
                 InstallResult::Installed => {
@@ -313,6 +357,7 @@ impl ClientSectorCache {
             return Ok(None);
         };
         let mut prepared = None;
+        let terrain_revision = geography.revision();
         let render_sectors = if manifest.topology() == minimium_world::world::WorldTopology::Planet
         {
             if !self.workers.contains_key(&instance) {
@@ -325,18 +370,40 @@ impl ClientSectorCache {
                 view,
                 origin,
                 origin_generation,
+                water.clone(),
                 &sectors,
                 geography,
             )? {
                 self.presentations.insert(instance, result);
             }
-            if let Some(result) = self
-                .presentations
-                .get(&instance)
-                .filter(|r| r.matches(instance, manifest, view, origin, origin_generation))
-            {
+            if let Some(result) = self.presentations.get(&instance).filter(|r| {
+                r.matches(
+                    instance,
+                    manifest,
+                    view,
+                    origin,
+                    origin_generation,
+                    water.as_ref().map_or(0, |water| water.level_revision),
+                    water.as_ref().map_or(0, |water| water.fluid_revision),
+                )
+            }) {
                 prepared = Some(result.clone());
                 result
+                    .patches
+                    .iter()
+                    .map(|p| (p.key, p.lod, p.geometry.clone()))
+                    .collect()
+            } else if let Some(previous) = self.presentations.get(&instance).filter(|scene| {
+                scene.geometry_matches(
+                    instance,
+                    manifest,
+                    origin,
+                    origin_generation,
+                    terrain_revision,
+                )
+            }) {
+                prepared = Some(previous.clone());
+                previous
                     .patches
                     .iter()
                     .map(|p| (p.key, p.lod, p.geometry.clone()))
@@ -362,6 +429,7 @@ impl ClientSectorCache {
 
     pub(super) fn release_interest(&mut self, instance: WorldInstanceId) {
         self.presentations.remove(&instance);
+        self.water_presentations.remove(&instance);
         self.workers.remove(&instance);
         if let Some(interest) = self.interests.remove(&instance) {
             for ticket in interest.tickets {
@@ -393,52 +461,4 @@ impl ClientSectorCache {
             Err(_) => Err(SectorWorkerError::CacheFull),
         }
     }
-}
-
-pub(super) fn collision_from_sectors<'a>(
-    sectors: impl Iterator<Item = &'a SectorGeometry>,
-) -> CollisionIndex {
-    let mut colliders = Vec::new();
-    let mut seen_boxes = std::collections::HashSet::new();
-    let mut triangles = Vec::new();
-    let mut seen_triangles = std::collections::HashSet::new();
-    for sector in sectors {
-        for map_box in &sector.boxes {
-            if map_box.solid && seen_boxes.insert(box_key(*map_box)) {
-                colliders.push(Aabb::from_center_size(map_box.center, map_box.size));
-            }
-        }
-        for triangle in &sector.triangles {
-            if triangle.solid && seen_triangles.insert(triangle_key(*triangle)) {
-                triangles.push(*triangle);
-            }
-        }
-    }
-    CollisionIndex::from_geometry(colliders, triangles)
-}
-
-fn box_key(map_box: MapBox) -> [u32; 6] {
-    [
-        map_box.center[0].to_bits(),
-        map_box.center[1].to_bits(),
-        map_box.center[2].to_bits(),
-        map_box.size[0].to_bits(),
-        map_box.size[1].to_bits(),
-        map_box.size[2].to_bits(),
-    ]
-}
-
-fn triangle_key(triangle: MapTriangle) -> [u32; 9] {
-    let [a, b, c] = triangle.vertices;
-    [
-        a[0].to_bits(),
-        a[1].to_bits(),
-        a[2].to_bits(),
-        b[0].to_bits(),
-        b[1].to_bits(),
-        b[2].to_bits(),
-        c[0].to_bits(),
-        c[1].to_bits(),
-        c[2].to_bits(),
-    ]
 }

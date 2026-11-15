@@ -1,7 +1,7 @@
 use crate::{
     framing::decode_frame,
     kinds::ClientKind,
-    models::{ClientMessage, ClientWorldInput, ProtocolError},
+    models::{ClientMessage, ClientWorldInput, ExcavationInput, ProtocolError},
     reading::Reader,
     validation::is_unit_direction,
 };
@@ -80,6 +80,41 @@ pub fn decode_client(input: &[u8]) -> Result<Option<(ClientMessage, usize)>, Pro
                     ClientWorldInput::SetMovementPolicy { speed, accel }
                 }
                 10 => ClientWorldInput::SetFlightEnabled(reader.boolean()?),
+                12 => ClientWorldInput::Excavation(match reader.byte()? {
+                    1 => ExcavationInput::GrantTools,
+                    2 => ExcavationInput::Equip {
+                        slot: match reader.byte()? {
+                            0 => None,
+                            1 => {
+                                let slot = reader.byte()?;
+                                if slot >= 2 {
+                                    return Err(ProtocolError::InvalidPayload);
+                                }
+                                Some(slot)
+                            }
+                            _ => return Err(ProtocolError::InvalidPayload),
+                        },
+                    },
+                    3 => {
+                        let action_id = reader.u64()?;
+                        let direction = reader.vector()?;
+                        if action_id == 0 || !is_unit_direction(direction) {
+                            return Err(ProtocolError::InvalidPayload);
+                        }
+                        ExcavationInput::Use {
+                            action_id,
+                            direction,
+                        }
+                    }
+                    4 => {
+                        let coordinates = [reader.i32()?, reader.i32()?, reader.i32()?];
+                        if coordinates.iter().any(|v| !(-625_000..625_000).contains(v)) {
+                            return Err(ProtocolError::InvalidPayload);
+                        }
+                        ExcavationInput::Resync { coordinates }
+                    }
+                    _ => return Err(ProtocolError::InvalidPayload),
+                }),
                 7 => {
                     let input_seq = reader.u64()?;
                     let target_tick = reader.u64()?;

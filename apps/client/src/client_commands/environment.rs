@@ -216,6 +216,13 @@ const COMMANDS: &[CommandSpec] = &[
         parser: parse,
     },
     CommandSpec {
+        name: "spawn_random_meteorid",
+        alias: None,
+        usage: "spawn_random_meteorid (owned local server)",
+        arguments: &[],
+        parser: parse,
+    },
+    CommandSpec {
         name: "spawn_random_bolid",
         alias: None,
         usage: "spawn_random_bolid [N: 1..64] (irregular shower; owned local server)",
@@ -325,6 +332,7 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
         ("set_time" | "set_time_local", _) => Err(ParseError::SetTimeUsage),
         ("time status", []) => Ok(ClientCommand::TimeStatus),
         ("spawn_random_bolid", []) => Ok(ClientCommand::SpawnRandomBolid(1)),
+        ("spawn_random_meteorid", []) => Ok(ClientCommand::SpawnRandomMeteorid),
         ("spawn_random_bolid", [value]) => {
             let count = value
                 .parse::<u16>()

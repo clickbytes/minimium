@@ -22,10 +22,12 @@ mod diagnostics;
 mod entity_state;
 mod environment;
 mod membership;
+mod placement;
 mod sector_state;
 mod transfers;
 
 use membership::Membership;
+pub(crate) use placement::{terrain_capsule_clear, TerrainReads};
 pub(crate) use transfers::CommittedTransfer;
 use transfers::PendingTransfer;
 
@@ -33,6 +35,10 @@ use transfers::PendingTransfer;
 mod tests;
 
 pub(crate) struct WorldInstance {
+    pub(crate) collision_tickets: std::collections::HashSet<minimium_sectors::SectorTicket>,
+    pub(crate) terrain: Arc<minimium_terrain::TerrainSnapshot>,
+    pub(crate) volumes: Option<Arc<minimium_terrain::TerrainStore>>,
+    pub(crate) remnants: Arc<minimium_world::remnants::RemnantSnapshot>,
     pub(crate) clock_id: ClockId,
     pub(crate) environment_profile: EnvironmentProfile,
     pub(crate) manifest: WorldManifest,

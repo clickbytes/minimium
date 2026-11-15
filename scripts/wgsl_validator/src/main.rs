@@ -37,6 +37,10 @@ fn main() {
         ("encode_output", source::encode_output()),
         ("ui_output_srgb", source::ui_output(true)),
         ("ui_output_linear", source::ui_output(false)),
+        (
+            "held_tool",
+            include_str!("../../../crates/renderer/src/shaders/held_tool.wgsl").to_owned(),
+        ),
     ];
     for (name, code) in variants {
         let module = naga::front::wgsl::parse_str(&code)
@@ -56,6 +60,9 @@ fn main() {
         if name == "clouds" {
             cloud_contract(&module, &info);
         }
+        if name == "geometry_rebase" {
+            rebase_contract(&module);
+        }
         if name == "sky" {
             bolid_contract(&module, &info);
         }
@@ -65,6 +72,26 @@ fn main() {
         transient_contract(&module, &info);
         println!("{name}: valid");
     }
+}
+
+fn rebase_contract(module: &naga::Module) {
+    let (_, parameters) = module
+        .types
+        .iter()
+        .find(|(_, ty)| ty.name.as_deref() == Some("Parameters"))
+        .expect("geometry rebase parameters");
+    let naga::TypeInner::Struct { members, span } = &parameters.inner else {
+        panic!("expected geometry rebase uniform struct");
+    };
+    // Rust uploads eight words: delta, stride, triangle width, normal offset, padding.
+    assert_eq!(*span, 32);
+    assert_eq!(
+        members
+            .iter()
+            .map(|member| member.offset)
+            .collect::<Vec<_>>(),
+        [0, 12, 16, 20, 24]
+    );
 }
 
 fn bolid_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {

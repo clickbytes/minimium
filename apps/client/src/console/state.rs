@@ -26,6 +26,7 @@ pub(super) struct ChatLine {
 }
 
 pub struct Overlay<'a> {
+    pub tool: Option<&'a super::ToolOverlay>,
     pub status: Option<&'a str>,
     pub overview_zoom: Option<f32>,
     pub celestial_labels: &'a [CelestialLabel],
@@ -327,7 +328,7 @@ impl Console {
                 context,
                 HudState {
                     health,
-                    show_crosshair,
+                    show_crosshair: show_crosshair && overlay.tool.is_none(),
                     hit_feedback,
                 },
             );
@@ -355,6 +356,9 @@ impl Console {
             }
         }
         if !self.open {
+            if let Some(tool) = overlay.tool {
+                super::tool_hud::append(&mut self.vertices, context, tool);
+            }
             self.append_chat(context);
             return &self.vertices;
         }

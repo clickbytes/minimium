@@ -19,6 +19,20 @@ pub(super) fn print_session_event(
         ),
         SessionEvent::Disconnected(reason) => print(Text::from(reason), localizer, locale),
         SessionEvent::Message(message) => match message {
+            ServerMessage::Excavation { message, .. } => match message {
+                minimium_protocol::ExcavationMessage::Inventory { inventory } => {
+                    println!(
+                        "Tools: {:?}; equipped: {:?}",
+                        inventory.slots,
+                        inventory.tool()
+                    );
+                }
+                minimium_protocol::ExcavationMessage::ActionResult { result } => {
+                    println!("{result:?}")
+                }
+                _ => {}
+            },
+            ServerMessage::ImpactState { .. } | ServerMessage::ImpactSync { .. } => {}
             ServerMessage::Welcome { id, health, .. } => {
                 print(Text::Connected { id, health }, localizer, locale)
             }

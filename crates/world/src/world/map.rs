@@ -18,11 +18,32 @@ pub struct MapBox {
 }
 
 #[derive(Clone, Copy, Debug)]
+pub enum MapSurfaceKind {
+    PlanetGround,
+    Excavation,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct MapSurfaceVertex {
+    pub kind: MapSurfaceKind,
+    pub normal: [f32; 3],
+    /// Sand, soil, grass, litter, rock, snow fractions.
+    pub coverage: [f32; 6],
+    pub source_elevation_m: f32,
+    pub surface_elevation_m: f32,
+    pub slope: f32,
+    pub water: f32,
+    pub habitat: [f32; 3],
+}
+
+#[derive(Clone, Copy, Debug)]
 pub struct MapTriangle {
     pub vertices: [[f32; 3]; 3],
     pub precise_vertices: Option<[[i64; 3]; 3]>,
     pub color: [f32; 3],
     pub solid: bool,
+    /// Authoritative material and normal data for volumetric terrain surfaces.
+    pub surface: Option<[MapSurfaceVertex; 3]>,
 }
 
 #[derive(Clone, Debug)]
@@ -60,6 +81,22 @@ impl WorldMap {
                 !item.vertices.into_iter().flatten().all(coordinate)
                     || !item.color.into_iter().all(color)
                     || triangle_area_squared(item.vertices) <= 1.0e-12
+                    || item.surface.is_some_and(|vertices| {
+                        vertices.iter().any(|vertex| {
+                            let normal_length = vertex.normal.iter().map(|v| v * v).sum::<f32>();
+                            !vertex.normal.into_iter().all(|v| v.is_finite())
+                                || !(0.8..=1.2).contains(&normal_length)
+                                || !vertex
+                                    .coverage
+                                    .into_iter()
+                                    .all(|v| (0.0..=1.0).contains(&v))
+                                || !vertex.source_elevation_m.is_finite()
+                                || !vertex.surface_elevation_m.is_finite()
+                                || !vertex.slope.is_finite()
+                                || !vertex.water.is_finite()
+                                || !vertex.habitat.into_iter().all(|v| v.is_finite())
+                        })
+                    })
             })
         {
             return Err("invalid map geometry".into());
@@ -204,6 +241,29 @@ pub(super) fn map_fingerprint(spawn: [f32; 3], boxes: &[MapBox], triangles: &[Ma
                 feed(&canonical_float_bits(value).to_le_bytes());
             }
             feed(&[u8::from(triangle.solid)]);
+            if let Some(vertices) = triangle.surface {
+                feed(b"\0SURFACE\0");
+                for vertex in vertices {
+                    for value in vertex
+                        .normal
+                        .into_iter()
+                        .chain(vertex.coverage)
+                        .chain([
+                            vertex.source_elevation_m,
+                            vertex.surface_elevation_m,
+                            vertex.slope,
+                            vertex.water,
+                        ])
+                        .chain(vertex.habitat)
+                    {
+                        feed(&canonical_float_bits(value).to_le_bytes());
+                    }
+                    feed(&[match vertex.kind {
+                        MapSurfaceKind::PlanetGround => 0,
+                        MapSurfaceKind::Excavation => 1,
+                    }]);
+                }
+            }
         }
     }
     hash

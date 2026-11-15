@@ -14,14 +14,20 @@ Coordinates world, simulation, environment, protocol, transport, storage, platfo
 
 ## Data flow
 
-The process validates startup inputs and reads world.seed before invoking the application world composer. The application owns saved planet and snapshot seed discovery and requests randomness only when no seed is available. Modules and their exact component schemas are registered before `PlayerStore::load`; the storage parser validates saved component types and versions before publishing `LoadedState`. The runtime restores the complete entity set, counters and initialization markers into staged world stores, then applies bounded network inputs on the owner lane. Workers publish typed results back to the runtime; immutable, revisioned save snapshots cross into storage.
+The process preflights snapshot and excavation journal versions before creating its data lock, composes and loads saved world state read-only, then acquires the lock and revalidates persistent format headers and world seed/planet inputs before any startup cleanup or writes. The application owns saved planet and snapshot seed discovery and requests randomness only when no seed is available. Modules and their exact component schemas are registered before `PlayerStore::load`; the storage parser validates saved component types and versions before publishing `LoadedState`. The runtime restores the complete entity set, counters and initialization markers into staged world stores, then applies bounded network inputs on the owner lane. Workers publish typed results back to the runtime; immutable, revisioned save snapshots cross into storage.
 The world registry validates every composed manifest before publishing an instance:
-generated content requires revision 5 and the matching generator digest; authored
+generated content requires revision 6 and the matching generator digest; authored
 content must additionally match the materialized map fingerprint.
 
 The gameplay context's targeted component lookup borrows a blob from the
 world-scoped entity store, so repeated interaction events do not enumerate the
 whole world on the owner lane.
+Gameplay systems can also borrow `TerrainRead` for a planetary world. The runtime
+builds it from the current manifest, prepared geography, crater snapshot and
+committed volume store; the legacy crater snapshot accessor remains available.
+Nonplanet worlds and failed terrain preparation return no read port.
+Planet admission and transfer destinations validate the standing capsule against
+that current signed field, retaining a saved tunnel position only while it is clear.
 
 ## Ownership and execution
 
@@ -129,6 +135,15 @@ Server startup configuration resolves defaults, schema v1 RON, mapped
 `config validate` and `config show` run before runtime startup; JSON show output
 is versioned, bounded to 64 KiB, and includes resolved values and source labels.
 These commands do not lock storage, create worlds, write files, or bind listeners.
+Local-water capacity defaults to 131,072 cells per world and 524,288 per server.
+Use `--fluid-world-cells` / `--fluid-server-cells`, canonical settings
+`server.fluid.world_cells` / `server.fluid.server_cells`, or environment variables
+`MINIMIUM_SERVER_FLUID_WORLD_CELLS` / `MINIMIUM_SERVER_FLUID_SERVER_CELLS`.
+World capacity accepts 1..262,144 and must not exceed server capacity; server
+capacity accepts 1..524,288.
+Tool results retain one response slot per player and retry admission to the
+bounded output queue before terrain data, so output pressure cannot strand the
+client's pending tool action.
 
 `server.autosave_interval` is the first live server property. Its change runs on
 the owner lane, updates the autosave deadline, and leaves a save already in
@@ -183,3 +198,38 @@ No tick catch-up burst or separate timer thread is used. Observer/context loss,
 placement/delivery failure or ten-minute expiry cancels remaining members.
 Automatic births due during a series are rescheduled without emission. No wire
 or save-format change. Runtime visual acceptance remains deferred.
+
+## Authoritative meteorites
+
+`spawn_random_meteorid` uses the existing local admin/owned-server command path.
+It accepts one event, with a five-second cooldown and a global eight-flight cap.
+Placement makes up to 32 land attempts near an active planet player, biases manual
+events to recent gaze and checks players, spatial entities, boxes, shore and slope.
+Natural events roll the sample profile once per existing 120..300-second opportunity.
+The owner lane integrates BodyState, reserves entity/snapshot capacity, queues an
+immutable journal transaction and publishes entity plus terrain only after its
+durable acknowledgement. Parent and daughter share one commit. Restored state is
+bound to world ID, seed and radius, before startup systems allocate new entities.
+The shared excavation coordinator prepares replacement geometry, collision leaves
+and displaced water before durable commit. Acknowledgement installs the prepared
+parts together and invalidates intersecting nonresident tickets. Movement and
+transfer readiness require the matching installed collision tickets. Unaffected
+sectors retain their indexes. The status command reports active/pending bodies, crater
+count and storage health. An I/O failure stops new impacts but preserves replication
+of the last committed world. The original automatic scheduler remains transient.
+
+Current terrain preparation uses `TerrainInputs` with separate geography, crater
+and remnant snapshots. Entity batches clone only affected world stores, while
+capacity checks still include all untouched entities. Impact settings enter via
+`ServerComposition::impact_profile`, without a specialized module hook.
+`runtime/excavation` coordinates tool intents, profile inventories, immutable
+terrain/collision preparation, fluid preflight and coherent checkpoints. The
+shared worker pool runs preparation and water steps; only the owner installs
+acknowledged changes. New impacts use this result journal for crater, remnant
+and water publication. Bounded contextual chunk/fluid cursors share a structural
+batch; fluid and terrain terminal markers are emitted once, with BatchEnd held
+until its paired fluid snapshot completes. Inventory and action replies remain
+small messages. See
+[excavation](../../docs/excavation.md) for limits and deferred acceptance.
+Unsafe geometry rejections retain their contour failure category in a bounded
+diagnostic with mutation/action IDs, brush center and at most eight chunk keys.

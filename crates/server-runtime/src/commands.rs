@@ -208,7 +208,7 @@ pub fn execute(
             stop: false,
             error_code: Some("server.property.wrong_lane"),
         },
-        ServerCommand::SpawnRandomBolid(_) => CommandReply {
+        ServerCommand::SpawnRandomBolid(_) | ServerCommand::SpawnRandomMeteorid => CommandReply {
             success: false,
             text: "bolid command must execute on the server owner lane".into(),
             stop: false,

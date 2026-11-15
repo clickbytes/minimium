@@ -167,7 +167,7 @@ pub(crate) fn authored_manifest(id: u128, map: &WorldMap) -> WorldManifest {
     };
     let generation = GenerationSpec::new(
         WorldSeed::new(0),
-        GenerationRevision::new(5).expect("current generator revision is nonzero"),
+        GenerationRevision::new(6).expect("current generator revision is nonzero"),
         1,
     )
     .expect("authored position quantum is nonzero");

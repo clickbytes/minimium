@@ -1,6 +1,8 @@
 mod budget;
 mod error;
+pub mod excavation;
 mod format;
+pub mod impact_journal;
 mod loaded_state;
 mod persistence;
 mod player_store;
@@ -51,6 +53,11 @@ pub use format::SAVE_VERSION;
 pub use loaded_state::LoadedState;
 pub use persistence::PersistenceWorker;
 pub use player_store::{PlayerStore, SaveSnapshot};
+
+/// Checks the saved snapshot version without creating files or loading records.
+pub fn preflight_snapshot_version(data_dir: &std::path::Path) -> std::io::Result<()> {
+    format::preflight_snapshot_version(data_dir)
+}
 
 pub fn saved_sector_record_bytes(
     instance: minimium_world::world::WorldInstanceId,

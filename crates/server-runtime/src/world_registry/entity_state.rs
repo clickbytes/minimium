@@ -21,11 +21,29 @@ impl WorldRegistry {
         if effects.is_empty() {
             return Ok(());
         }
-        let mut stores: BTreeMap<_, _> = self
+        let mut stores = BTreeMap::new();
+        for effect in effects {
+            let instance = match effect {
+                crate::modules::WorldEffect::SpawnEntity { world, .. }
+                | crate::modules::WorldEffect::DespawnEntity { world, .. }
+                | crate::modules::WorldEffect::SetComponent { world, .. }
+                | crate::modules::WorldEffect::RemoveComponent { world, .. } => *world,
+                crate::modules::WorldEffect::RequestTransfer { .. } => continue,
+            };
+            if let std::collections::btree_map::Entry::Vacant(entry) = stores.entry(instance) {
+                let owner = self
+                    .instances
+                    .get(&instance)
+                    .ok_or(RegistryError::UnknownInstance)?;
+                entry.insert(owner.entities.clone());
+            }
+        }
+        let untouched_entities: usize = self
             .instances
             .iter()
-            .map(|(instance, owner)| (*instance, owner.entities.clone()))
-            .collect();
+            .filter(|(id, _)| !stores.contains_key(id))
+            .map(|(_, owner)| owner.entities.len())
+            .sum();
         let mut next_budget = budget.clone();
         for effect in effects {
             match effect {
@@ -34,7 +52,8 @@ impl WorldRegistry {
                     sector,
                     components,
                 } => {
-                    let total: usize = stores.values().map(EntityStore::len).sum();
+                    let total =
+                        untouched_entities + stores.values().map(EntityStore::len).sum::<usize>();
                     if total >= minimium_world::entity::MAX_PERSISTENT_ENTITIES {
                         return Err(RegistryError::Component(ComponentError::CapacityExceeded));
                     }

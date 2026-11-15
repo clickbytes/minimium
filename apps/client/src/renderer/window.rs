@@ -190,7 +190,13 @@ impl ApplicationHandler for App {
                     &renderer.prepared_shadow,
                     renderer.gpu.world_geometry.publication().cloned(),
                 );
-                let draws = match renderer.gpu.render(&scene) {
+                let submerged = renderer
+                    .application
+                    .game
+                    .gameplay
+                    .prediction
+                    .submerged_fraction();
+                let draws = match renderer.gpu.render(&scene, submerged) {
                     Ok(draws) => draws,
                     Err(
                         wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated,

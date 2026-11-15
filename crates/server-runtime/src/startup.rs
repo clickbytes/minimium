@@ -12,6 +12,7 @@ use minimium_platform::{
     endpoint::{new_admin_token, ServerEndpoint},
     server_lock::ServerDataLock,
 };
+use minimium_storage::excavation::JOURNAL_FILE_NAME;
 use minimium_world::world::{WorldInstanceId, WorldMap};
 use std::{
     io,
@@ -60,7 +61,7 @@ pub(crate) fn initialize(
         return Err("bind address resolved to no addresses".into());
     }
 
-    let data_lock = ServerDataLock::acquire(data_dir)?;
+    preflight_persistent_formats(data_dir)?;
     if config.environment_config_path.is_some()
         && ["world.seed", "world.planet.ron", "world.snapshot"]
             .iter()
@@ -75,17 +76,10 @@ pub(crate) fn initialize(
         .transpose()?
         .unwrap_or_default();
     let seed_path = data_dir.join("world.seed");
-    let existing_seed = match minimium_platform::files::read_bounded_file(&seed_path, 64) {
-        Ok(bytes) => Some(
-            std::str::from_utf8(&bytes)
-                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid world.seed"))?
-                .trim()
-                .parse::<u128>()
-                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid world.seed"))?,
-        ),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
-        Err(error) => return Err(error.into()),
-    };
+    let seed_bytes = read_optional_file(&seed_path, 64)?;
+    let planet_path = data_dir.join("world.planet.ron");
+    let planet_bytes = read_optional_file(&planet_path, 64 * 1024)?;
+    let existing_seed = parse_seed(seed_bytes.as_deref())?;
     let composition = world_composer(WorldCompositionRequest {
         data_dir: data_dir.to_path_buf(),
         requested_seed,
@@ -100,8 +94,6 @@ pub(crate) fn initialize(
     let planet_definition = composition.planet_definition;
     let prepared_geography = composition.prepared_geography;
 
-    remove_if_exists(&data_dir.join(SHUTDOWN_FILE))?;
-    remove_if_exists(&data_dir.join(SHUTDOWN_OWNER_FILE))?;
     let primary = WorldInstanceId::new(1).expect("primary instance identifier is nonzero");
     let world_maps = generated_worlds
         .as_ref()
@@ -118,7 +110,33 @@ pub(crate) fn initialize(
                 authored_manifest(1, map.fingerprint()),
             )]
         });
+    // Reject incompatible saved worlds before creating the process lock file.
+    drop(PlayerStore::load(
+        data_dir,
+        &world_maps,
+        component_registry,
+    )?);
+    let data_lock = ServerDataLock::acquire(data_dir)?;
+    preflight_persistent_formats(data_dir)?;
+    if config.environment_config_path.is_some()
+        && ["world.seed", "world.planet.ron", "world.snapshot"]
+            .iter()
+            .any(|name| data_dir.join(name).exists())
+    {
+        return Err("--environment-config initializes a new world only; use time commands for an existing world".into());
+    }
+    if read_optional_file(&seed_path, 64)? != seed_bytes
+        || read_optional_file(&planet_path, 64 * 1024)? != planet_bytes
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "world seed or planet definition changed during startup preflight",
+        )
+        .into());
+    }
     let loaded_state = PlayerStore::load(data_dir, &world_maps, component_registry)?;
+    remove_if_exists(&data_dir.join(SHUTDOWN_FILE))?;
+    remove_if_exists(&data_dir.join(SHUTDOWN_OWNER_FILE))?;
     let saved_clock = loaded_state.saved_clock;
     let entity_counters = loaded_state.entity_counters;
     let world_initialization = loaded_state.world_initialization;
@@ -197,6 +215,31 @@ pub(crate) fn initialize(
     })
 }
 
+pub(crate) fn preflight_persistent_formats(data_dir: &Path) -> io::Result<()> {
+    minimium_storage::preflight_snapshot_version(data_dir)?;
+    minimium_storage::excavation::ExcavationJournal::preflight(&data_dir.join(JOURNAL_FILE_NAME))
+}
+
+fn read_optional_file(path: &Path, maximum: usize) -> io::Result<Option<Vec<u8>>> {
+    match minimium_platform::files::read_bounded_file(path, maximum) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+fn parse_seed(bytes: Option<&[u8]>) -> io::Result<Option<u128>> {
+    bytes
+        .map(|bytes| {
+            std::str::from_utf8(bytes)
+                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid world.seed"))?
+                .trim()
+                .parse::<u128>()
+                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid world.seed"))
+        })
+        .transpose()
+}
+
 fn authored_manifest(id: u128, fingerprint: u64) -> minimium_world::world::WorldManifest {
     use minimium_world::world::{
         GenerationRevision, GenerationSpec, GeneratorDigest, WorldContentRevision,
@@ -204,7 +247,7 @@ fn authored_manifest(id: u128, fingerprint: u64) -> minimium_world::world::World
     };
     let generation = GenerationSpec::new(
         WorldSeed::new(0),
-        GenerationRevision::new(5).expect("current generator revision is nonzero"),
+        GenerationRevision::new(6).expect("current generator revision is nonzero"),
         1,
     )
     .expect("authored position quantum is nonzero");

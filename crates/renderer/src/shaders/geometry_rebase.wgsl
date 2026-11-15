@@ -1,9 +1,15 @@
-struct Parameters { delta: vec3<f32>, stride: u32 }
+struct Parameters {
+    delta: vec3<f32>,
+    stride: u32,
+    vertices_per_invocation: u32,
+    normal_offset: u32,
+    padding: vec2<u32>,
+}
 @group(0) @binding(0) var<storage,read_write> vertices: array<f32>;
 @group(0) @binding(1) var<uniform> parameters: Parameters;
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
-    if parameters.stride == 28u {
+    if parameters.vertices_per_invocation == 3u {
         // A terrain invocation owns the whole triangle. Rebasing rounds its
         // positions again, so the old plane normal can no longer be used for
         // receiver-plane shadow correction. No cross-invocation reads/writes.
@@ -21,7 +27,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         let plane = cross(positions[1]-positions[0], positions[2]-positions[0]);
         let normal = plane * inverseSqrt(max(dot(plane, plane), 1e-30));
         for (var corner = 0u; corner < 3u; corner++) {
-            let base = first + corner * parameters.stride + 22u;
+            let base = first + corner * parameters.stride + parameters.normal_offset;
             vertices[base] = normal.x;
             vertices[base+1u] = normal.y;
             vertices[base+2u] = normal.z;

@@ -5,6 +5,7 @@ use crate::{
     scene_encoder::{self, MainScenePass, SceneDrawStats},
     ShadowGpu,
 };
+use minimium_world::items::ToolKind;
 use minimium_world::world::{SectorKey, WorldInstanceId};
 use std::collections::HashMap;
 
@@ -36,6 +37,7 @@ pub struct FramePasses<'a> {
     pub shadow: ShadowPass<'a>,
     pub scene: MainScenePass<'a>,
     pub clouds: &'a CloudGpu,
+    pub held_tool: Option<(&'a crate::held_tool_gpu::HeldToolGpu, ToolKind)>,
     pub final_passes: FinalPasses<'a>,
 }
 
@@ -45,6 +47,7 @@ pub struct FrameDrawStats {
     pub scene: SceneDrawStats,
     pub atmosphere: u32,
     pub clouds: u32,
+    pub held_tool: u32,
     pub final_passes: u32,
 }
 
@@ -85,12 +88,20 @@ pub fn encode_frame(encoder: &mut wgpu::CommandEncoder, frame: FramePasses<'_>) 
             && frame.scene.atmosphere.debug == 0,
     );
     scene.draws += crate::bolid_dust::resolve(encoder, frame.scene, frame.clouds);
+    let held_tool = if frame.scene.scene_visible && !frame.scene.overview_active {
+        frame.held_tool.map_or(0, |(gpu, kind)| {
+            gpu.encode(encoder, frame.scene.color_view, kind)
+        })
+    } else {
+        0
+    };
     let final_passes = encode_final_passes(encoder, frame.final_passes);
     FrameDrawStats {
         shadow: shadow_draws,
         scene,
         atmosphere,
         clouds,
+        held_tool,
         final_passes,
     }
 }

@@ -6,12 +6,14 @@ pub mod connector;
 mod controller_error;
 mod diagnostics;
 pub mod environment;
+pub mod excavation;
 mod options;
 mod prediction;
 mod replicas;
 mod session;
 mod snapshots;
 pub mod view;
+mod water_replica;
 mod world_content;
 
 pub use authentication::{ClientAuthentication, ClientAuthenticationError};
@@ -28,7 +30,9 @@ pub use session::{
 };
 pub use snapshots::{RemotePlayerTrack, SnapshotReconciler};
 pub use view::ClientView;
+pub use water_replica::WaterReplica;
 pub use world_content::{
     ContentCancellation, ContentResolutionTicket, ResolvedWorldContent, WorldContentRequest,
     WorldContentResolver,
 };
+pub mod impacts;

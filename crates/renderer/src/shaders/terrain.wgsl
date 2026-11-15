@@ -8,6 +8,7 @@ struct TerrainInput {
     @location(6) surface: vec4<f32>,
     @location(7) geometric_normal: vec3<f32>,
     @location(8) habitat: vec3<f32>,
+    @location(9) presentation: vec2<f32>,
 };
 struct TerrainOutput {
     @builtin(position) clip: vec4<f32>,
@@ -21,6 +22,8 @@ struct TerrainOutput {
     @location(7) climate: vec2<f32>,
     @location(8) @interpolate(flat) geometric_normal: vec3<f32>,
     @location(9) habitat: vec3<f32>,
+    @location(10) @interpolate(flat) excavation: f32,
+    @location(11) sky_visibility: f32,
 };
 fn macro_climate(direction: vec3<f32>, elevation: f32) -> vec2<f32> {
     let latitude = asin(clamp(direction.y, -1.0, 1.0));
@@ -34,7 +37,8 @@ fn macro_climate(direction: vec3<f32>, elevation: f32) -> vec2<f32> {
 @vertex fn vs_terrain(input: TerrainInput) -> TerrainOutput {
     return TerrainOutput(camera.view_projection * vec4<f32>(input.position, 1.0),
         input.position, input.normal, input.high, input.low, input.coverage_a, input.coverage_b, input.surface,
-        macro_climate(normalize(input.high+input.low), mix(input.surface.x,input.surface.w,terrain.climate.w)),input.geometric_normal,input.habitat);
+        macro_climate(normalize(input.high+input.low), mix(input.surface.x,input.surface.w,terrain.climate.w)),input.geometric_normal,input.habitat,
+        input.presentation.x,input.presentation.y);
 }
 @fragment fn fs_terrain(input: TerrainOutput) -> @location(0) vec4<f32> {
     let dx = dpdx(input.low);
@@ -56,15 +60,21 @@ fn macro_climate(direction: vec3<f32>, elevation: f32) -> vec2<f32> {
     cover.x = min(cover.x, thermal);
     // Snow needs precipitation history or mapped permanent ice. Cold/humidity
     // alone must not paint a full snow layer over otherwise dry ground.
-    let snow = clamp(max(cover.y,input.coverage_b.y)*(1.0-smoothstep(1.0,6.0,temperature)),0.0,1.0);
+    let excavation = input.excavation > 0.5;
+    var snow = clamp(max(cover.y,input.coverage_b.y)*(1.0-smoothstep(1.0,6.0,temperature)),0.0,1.0);
+    if excavation { snow = 0.0; }
     let habitat = habitat_moisture(patches,moisture,cover.z,input.habitat.x);
     let heat_survival = 1.0-smoothstep(38.0,52.0,temperature);
-    var weights = patch_coverage(array<f32, 6>(input.coverage_a.x, input.coverage_a.y,
-        input.coverage_a.z, input.coverage_a.w, input.coverage_b.x, input.coverage_b.y),
-        patches, cover.x*heat_survival, thermal*heat_survival, habitat, input.surface.y, footprint);
-    weights[4] += weights[5]*(1.0-snow);
-    weights[5] = snow;
-    for (var layer = 0u; layer < 5u; layer++) { weights[layer] *= 1.0-snow; }
+    let base_weights = array<f32, 6>(input.coverage_a.x, input.coverage_a.y,
+        input.coverage_a.z, input.coverage_a.w, input.coverage_b.x, input.coverage_b.y);
+    var weights = base_weights;
+    if !excavation {
+        weights = patch_coverage(base_weights, patches, cover.x*heat_survival,
+            thermal*heat_survival, habitat, input.surface.y, footprint);
+        weights[4] += weights[5]*(1.0-snow);
+        weights[5] = snow;
+        for (var layer = 0u; layer < 5u; layer++) { weights[layer] *= 1.0-snow; }
+    }
     if terrain.debug.x == 7u {
         return vec4<f32>(input.habitat.y, input.habitat.x, 0.1, 1.0);
     }
@@ -79,21 +89,23 @@ fn macro_climate(direction: vec3<f32>, elevation: f32) -> vec2<f32> {
         for (var i = 0u; i < 6u; i++) { color += weights[i]*colors[i]; total += weights[i]; }
         return vec4<f32>(color/max(total,0.0001),1.0);
     }
-    let greenness = smoothstep(0.12,0.5,habitat)*heat_survival;
+    let greenness = select(smoothstep(0.12,0.5,habitat)*heat_survival,0.0,excavation);
     let sample = blend_terrain(input.high,input.low,base_normal,weights,dx,dy,detail,greenness);
     var albedo = sample.albedo;
     let packed = sample.packed;
     let normal = sample.normal;
-    let macro_variation = 1.0+(patches.x-0.5)*mix(0.16,0.04,snow);
+    let macro_variation = select(1.0,1.0+(patches.x-0.5)*mix(0.16,0.04,snow),!excavation);
     var total_weight = 0.0;
     for (var i = 0u; i < 6u; i++) { total_weight += weights[i]; }
     let loose_fraction = (weights[0]+weights[1])/max(total_weight,0.0001);
-    let mineral_tint = mix(vec3<f32>(0.95,0.98,1.03),vec3<f32>(1.04,1.0,0.95),patches.y);
+    let mineral_tint = select(
+        mix(vec3<f32>(0.95,0.98,1.03),vec3<f32>(1.04,1.0,0.95),patches.y),
+        vec3<f32>(1.0), excavation);
     albedo *= mix(vec3<f32>(1.0),mineral_tint,loose_fraction);
     // Signed ground height defines a narrow damp shore; water is separate geometry.
     let shore = (1.0-smoothstep(0.05,1.2,input.surface.x))
         *(1.0-snow)*(1.0-smoothstep(0.05,0.3,input.surface.y))*input.surface.z;
-    let wetness = max(cover.z,shore*0.65);
+    let wetness = select(max(cover.z,shore*0.65),0.0,excavation);
     albedo *= macro_variation * mix(1.0, 0.62, wetness);
     if terrain.debug.x == 5u { return vec4<f32>(albedo,1.0); }
     if terrain.debug.x == 1u { albedo = vec3<f32>(0.5); }
@@ -160,6 +172,7 @@ fn macro_climate(direction: vec3<f32>, elevation: f32) -> vec2<f32> {
     // It attenuates only indirect light; directional shadows remain geometric.
     let shelter=smoothstep(0.45,0.85,input.habitat.x)*(1.0-smoothstep(0.15,0.5,input.habitat.y));
     let ambient = terrain_ambient(normal,view,direction,albedo,roughness,
-        packed.g*mix(1.0,0.65,shelter),packed.a,input.position);
+        packed.g*mix(1.0,0.65,shelter),packed.a,input.position)
+        * select(1.0,mix(0.12,1.0,input.sky_visibility),excavation);
     return vec4<f32>(tone_map_linear(ambient+direct), 1.0);
 }

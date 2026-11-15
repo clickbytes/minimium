@@ -95,6 +95,7 @@ impl Renderer {
             0,
             &world_catalog,
             &world_manifests,
+            Default::default(),
             None,
         )?;
         let vertices: Vec<_> = initial_scene
@@ -294,6 +295,7 @@ impl Renderer {
             render_environment_frame: EnvironmentFrame::unavailable(RenderViewFrame::default()),
             environment_observer: environment::observer::ObserverAdapter::default(),
             meteors: meteors::MeteorRuntime::configured(&meteor_preferences),
+            impacts: Default::default(),
             sky_calculator: minimium_astronomy::SkyCalculator::default(),
             sky_catalogue,
             environment_error: None,
@@ -311,6 +313,7 @@ impl Renderer {
                 last_shot_sent_at: None,
                 hit_confirmation_until: None,
             },
+            excavation_debug: Default::default(),
             application: crate::application::ClientApplication::new(
                 crate::application::UiModel {
                     console,

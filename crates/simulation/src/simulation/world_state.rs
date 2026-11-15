@@ -7,7 +7,6 @@ use super::raycast::{MapRayQuery, PlayerRayQuery};
 use super::rules::{CharacterState, MovementIntent, Player};
 use super::snapshot::WorldSnapshot;
 use super::spatial::update_cell_index;
-use super::step_character;
 use super::{
     MAX_PLAYER_NAME_CHARS, PARALLEL_SIMULATION_MIN_PLAYERS, PLAYERS_PER_SIMULATION_BATCH,
     PLAYER_MAX_HEALTH,
@@ -27,6 +26,7 @@ pub(super) struct PlayerStepInput {
     pub(super) position_mm: Option<Position3Mm>,
     pub(super) input: MovementIntent,
     pub(super) movement_policy: super::MovementPolicy,
+    pub(super) water: Option<minimium_world::fluid::WaterSample>,
 }
 
 #[derive(Clone, Copy)]
@@ -62,10 +62,40 @@ pub struct World {
     pub(super) precise_positions: bool,
     pub(super) movement_policy: super::MovementPolicy,
     pub(super) player_movement_policies: Arc<HashMap<PlayerId, super::MovementPolicy>>,
+    water_read: Option<Arc<dyn minimium_world::fluid::WaterRead>>,
     last_precise_batch_count: Option<usize>,
 }
 
 impl World {
+    pub fn set_water_read(&mut self, water: Option<Arc<dyn minimium_world::fluid::WaterRead>>) {
+        self.water_read = water;
+    }
+
+    fn water_sample(
+        &self,
+        position: [f32; 3],
+        position_mm: Option<Position3Mm>,
+    ) -> Option<minimium_world::fluid::WaterSample> {
+        let water = self.water_read.as_ref()?;
+        let feet = position_mm.map_or_else(
+            || position.map(f64::from),
+            |mm| mm.0.map(|v| v as f64 / 1000.0),
+        );
+        let up = match self.gravity {
+            CharacterGravity::FixedY => [0.0, 1.0, 0.0],
+            CharacterGravity::Radial { center } => {
+                let delta = std::array::from_fn(|axis| feet[axis] - f64::from(center[axis]));
+                let length = delta.iter().map(|v| v * v).sum::<f64>().sqrt();
+                if length > f64::EPSILON {
+                    delta.map(|v| v / length)
+                } else {
+                    [0.0, 1.0, 0.0]
+                }
+            }
+        };
+        Some(water.sample_capsule(feet, up, minimium_world::world::PLAYER_HEIGHT as f64))
+    }
+
     pub fn movement_policy(&self) -> super::MovementPolicy {
         self.movement_policy
     }
@@ -124,14 +154,12 @@ impl World {
                 CharacterGravity::Radial { .. } => {
                     let up = character_frame(self.gravity, position).0;
                     self.collision_index
-                        .colliders
-                        .iter()
+                        .all_colliders()
                         .all(|collider| !oriented_capsule_intersects(position, up, *collider))
                 }
                 CharacterGravity::FixedY => self
                     .collision_index
-                    .colliders
-                    .iter()
+                    .all_colliders()
                     .all(|collider| !intersects_player(position, *collider)),
             };
         let position = if clear_of_boxes { position } else { self.spawn };
@@ -196,6 +224,15 @@ impl World {
         selected: Option<&HashSet<PlayerId>>,
         delta_seconds: f32,
     ) -> CollisionQueryStats {
+        let water_samples: HashMap<_, _> = self
+            .players
+            .iter()
+            .filter(|(id, _)| selected.is_none_or(|ids| ids.contains(*id)))
+            .filter_map(|(id, player)| {
+                self.water_sample(player.position, player.position_mm)
+                    .map(|sample| (*id, sample))
+            })
+            .collect();
         let Self {
             players,
             cells,
@@ -233,7 +270,7 @@ impl World {
                 policy.speed,
             ));
             if let Some(position_mm) = &mut player.position_mm {
-                precise_step::step_character_mm(
+                precise_step::step_character_mm_with_water(
                     &mut state,
                     position_mm,
                     input,
@@ -241,15 +278,17 @@ impl World {
                     collision_query.candidates(),
                     collision_query.surface_candidates(),
                     delta_seconds,
+                    water_samples.get(id).copied(),
                 );
             } else {
-                step_character(
+                super::step_character_with_water(
                     &mut state,
                     input,
                     policy,
                     collision_query.candidates(),
                     collision_query.surface_candidates(),
                     delta_seconds,
+                    water_samples.get(id).copied(),
                 );
             }
             player.position = state.position;

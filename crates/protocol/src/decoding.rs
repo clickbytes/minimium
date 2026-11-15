@@ -1,4 +1,5 @@
 mod client;
+mod excavation;
 mod server;
 
 pub use client::decode_client;

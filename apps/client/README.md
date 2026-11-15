@@ -13,6 +13,11 @@ Owns the desktop and text client application shells, input, console, renderer an
 
 Executable entry point is `src/main.rs`; internal modules provide startup and front-end behavior.
 
+The desktop renderer reads the confirmed equipped tool from the active client
+session and passes its neutral `ToolKind` to the first-person viewmodel pass.
+Shovels and pickaxes are presentation-only low-poly meshes; gameplay tool use
+continues through the existing authoritative session action.
+
 ## Dependencies
 
 The default `desktop` feature enables renderer GPU code and the astronomy,
@@ -96,8 +101,17 @@ for current presentation; `reset` returns to the resolved startup layer and
 Desktop and terminal clients share the command registry/handlers and
 `client-runtime` session and replica contracts.
 
+Confirmed developer tool inventory enables the desktop digging overlay. It uses
+the shared simulation first-hit query against published collision and remote-player
+capsules, then samples current terrain material with the same soil depth as the server.
+A green aim/brush outline means local material eligibility; red marks a blocking
+object or unsuitable material, and amber indicates missing range/readiness or a
+pending action. The server remains authoritative. The last action result remains
+visible until another result or context change, distinguishing obstruction from
+unsafe geometry joining. The overlay and console text support English and Polish.
+
 Both frontends install the same `SampleWorldContentResolver`. It validates the
-revision-5 manifest and expected map fingerprint, loads only configured Earth
+revision-6 manifest and expected map fingerprint, loads only configured Earth
 geography for Earth manifests, and recreates generated maps from topology and
 the recorded seed. Authored content is accepted only from a known or transferred
 map whose fingerprint matches; missing authored content is an error.
@@ -201,7 +215,7 @@ Fractions such as `set_altitude 0.5` are accepted. The range is 0..10000 km,
 also subject to world-coordinate limits. Earth height compression is respected.
 The authoritative server checks fly mode and current membership, resets velocity
 and preserves fly settings. The terminal frontend supports the same command.
-The active wire contract is protocol v19 on both client and server. Existing saves use the separate v10 storage contract.
+The active wire contract is protocol v20 on both client and server. Existing saves use the separate v10 storage contract.
 
 Set `MINIMIUM_FORCE_HDR_FALLBACK=1` before starting the desktop client to compare
 the sky and bolid brightness with the non-HDR output path on an HDR-capable GPU.
@@ -224,6 +238,10 @@ Runtime window/DPI acceptance remains pending.
 
 The terrain worker prepares paired Earth ground/ocean patches. Both are staged
 as one selection, including during transfers and render-origin changes.
+The worker now clips complementary shoreline polygons before preparing vertices;
+nearly coplanar land/water depth comparisons no longer choose the contour. LOD
+requests preserve camera radius after direction snapping, and walking detail has
+a bounded local guard. These changes use the existing terrain worker and caches.
 The terrain status command reports ocean triangles and includes ocean buffers
 in resident surface memory. Existing Earth worlds use this presentation on the
 next normal start; ResetWorld is unnecessary. Visual acceptance remains pending.
@@ -500,3 +518,27 @@ The dev bolid fragments diagnostic also reports solid/grain type and projected
 pixel separation from the brightest emitter. Dev bolid status includes the
 cached number and duration of simultaneously luminous solid fragments; these
 help distinguish missing fragmentation from unresolved distant fragments.
+
+## Ground-impact event
+
+Run `spawn_random_meteorid` from the client console with its owned local server,
+or through the server admin console. The event is authoritative and leaves a
+permanent collidable meteorite and geometric crater. Client presentation includes
+seeded color/flicker, the separately moving fragment, a ground flash, dust/ejecta,
+point illumination and optional desktop-audio sound with propagation delay.
+There is no mining/inventory reward attached to the remnant. Restart both endpoints
+for protocol 21. `start-earth.ps1` rebuilds the matching release executables.
+Initial terrain synchronization gates prediction; impact revisions gate replacement
+geometry/collision, and the burst waits for the new presentation. The terminal
+client consumes the same replica without GPU dependencies. Runtime visual/FPS and
+multiplayer acceptance remain part of final verification; static compilation alone
+does not establish their results.
+
+Terrain/collision preparation consumes explicit `TerrainInputs`. Geographic
+sampling remains immutable; crater and remnant revisions independently invalidate
+prepared scenes. Excavation geometry, material cross-sections and water surfaces
+are prepared on workers and published with matching collision and GPU state.
+Water-only updates coalesce behind an active preparation instead of cancelling
+it every solver tick; the last complete water frame remains presentable while
+the latest one is prepared. Structural terrain and origin changes still cancel
+stale work. See `docs/excavation.md` for controls and deferred acceptance.

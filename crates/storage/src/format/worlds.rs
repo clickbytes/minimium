@@ -65,7 +65,7 @@ pub(super) fn write_saved_world(
 
 pub(super) fn write_manifest(file: &mut impl Write, manifest: WorldManifest) -> io::Result<()> {
     if manifest.planet().is_some_and(|p| {
-        !p.is_valid() || (p.peak_relief.enabled() && manifest.generation().revision().get() != 5)
+        !p.is_valid() || (p.peak_relief.enabled() && manifest.generation().revision().get() != 6)
     }) {
         return Err(invalid_world_snapshot(
             "invalid peak relief generation contract",
@@ -214,7 +214,7 @@ pub(crate) fn parse_manifest(fields: &mut std::str::Split<'_, char>) -> io::Resu
                     )
                     .map_err(|_| invalid_world_snapshot("invalid package digest"))?;
                 }
-                let peak_relief = if revision.get() >= 5 {
+                let peak_relief = if revision.get() >= 6 {
                     let value = |f: &mut std::str::Split<'_, char>| {
                         u32::try_from(number(f)?)
                             .map_err(|_| invalid_world_snapshot("invalid peak relief"))

@@ -13,6 +13,7 @@ pub struct ClientPrediction {
     pending_inputs: VecDeque<(u64, u64, MovementIntent, MovementPolicy, u64)>,
     resolved_intent: MovementIntent,
     visual_offset: [f32; 3],
+    water_read: Option<Arc<dyn minimium_world::fluid::WaterRead>>,
 }
 
 pub struct PredictedStep {
@@ -30,11 +31,47 @@ impl ClientPrediction {
             pending_inputs: VecDeque::with_capacity(128),
             resolved_intent: MovementIntent::default(),
             visual_offset: [0.0; 3],
+            water_read: None,
         }
     }
 
     pub fn accumulate_time(&mut self, delta_seconds: f32) {
         self.physics_accumulator += delta_seconds;
+    }
+
+    pub fn set_water_read(&mut self, water: Option<Arc<dyn minimium_world::fluid::WaterRead>>) {
+        self.water_read = water;
+    }
+
+    pub fn is_submerged(&self) -> bool {
+        self.sample_water()
+            .is_some_and(|s| s.submerged_fraction > 0.05)
+    }
+    pub fn submerged_fraction(&self) -> f32 {
+        self.sample_water()
+            .map_or(0.0, |sample| sample.submerged_fraction as f32)
+    }
+
+    fn sample_water(&self) -> Option<minimium_world::fluid::WaterSample> {
+        let reader = self.water_read.as_ref()?;
+        let feet = self.position_mm.map_or_else(
+            || self.character.position.map(f64::from),
+            |position| position.0.map(|v| v as f64 / 1000.0),
+        );
+        let up = match self.character.gravity {
+            minimium_world::world::CharacterGravity::FixedY => [0.0, 1.0, 0.0],
+            minimium_world::world::CharacterGravity::Radial { center } => {
+                let delta: [f64; 3] =
+                    std::array::from_fn(|axis| feet[axis] - f64::from(center[axis]));
+                let length = delta.iter().map(|v| v * v).sum::<f64>().sqrt();
+                if length > f64::EPSILON {
+                    delta.map(|v| v / length)
+                } else {
+                    [0.0, 1.0, 0.0]
+                }
+            }
+        };
+        Some(reader.sample_capsule(feet, up, minimium_world::world::PLAYER_HEIGHT as f64))
     }
 
     pub fn reset_time(&mut self) {
@@ -157,8 +194,9 @@ impl ClientPrediction {
                 minimium_simulation::SIMULATION_STEP_SECONDS,
                 active_policy.speed,
             );
+            let water_sample = self.sample_water();
             if let Some(position_mm) = &mut self.position_mm {
-                minimium_simulation::step_character_mm(
+                minimium_simulation::step_character_mm_with_water(
                     &mut self.character,
                     position_mm,
                     input,
@@ -166,15 +204,17 @@ impl ClientPrediction {
                     collision_query.candidates(),
                     collision_query.surface_candidates(),
                     minimium_simulation::SIMULATION_STEP_SECONDS,
+                    water_sample,
                 );
             } else {
-                minimium_simulation::step_character(
+                minimium_simulation::step_character_with_water(
                     &mut self.character,
                     input,
                     active_policy,
                     collision_query.candidates(),
                     collision_query.surface_candidates(),
                     minimium_simulation::SIMULATION_STEP_SECONDS,
+                    water_sample,
                 );
             }
             if !active_policy.can_fly
@@ -230,8 +270,9 @@ impl ClientPrediction {
             minimium_simulation::SIMULATION_STEP_SECONDS,
             movement.speed,
         );
+        let water_sample = self.sample_water();
         if let Some(position_mm) = &mut self.position_mm {
-            minimium_simulation::step_character_mm(
+            minimium_simulation::step_character_mm_with_water(
                 &mut self.character,
                 position_mm,
                 input,
@@ -239,15 +280,17 @@ impl ClientPrediction {
                 collision_query.candidates(),
                 collision_query.surface_candidates(),
                 minimium_simulation::SIMULATION_STEP_SECONDS,
+                water_sample,
             );
         } else {
-            minimium_simulation::step_character(
+            minimium_simulation::step_character_with_water(
                 &mut self.character,
                 input,
                 movement,
                 collision_query.candidates(),
                 collision_query.surface_candidates(),
                 minimium_simulation::SIMULATION_STEP_SECONDS,
+                water_sample,
             );
         }
         if !movement.can_fly

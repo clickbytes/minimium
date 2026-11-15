@@ -18,9 +18,9 @@ fn receiver_depth_gradient(normal: vec3<f32>) -> vec2<f32> {
     let u = vec3<f32>(m[0][0],m[1][0],m[2][0])*0.5;
     let v = vec3<f32>(m[0][1],m[1][1],m[2][1])*(-0.5);
     let z = vec3<f32>(m[0][2],m[1][2],m[2][2]);
-    // The plane becomes ill-conditioned as it approaches a light-tangent
-    // plane. Fade the correction out smoothly instead of switching it off at
-    // one threshold, which made tiny normal changes produce depth jumps.
+    // Keep the analytic plane correction until the projection is effectively
+    // singular. Fading it while retaining the full PCF kernel compares taps
+    // against the wrong receiver depth and creates grazing-light acne bands.
     let normal_length_squared = dot(normal, normal);
     let z_length_squared = dot(z, z);
     let u_length_squared = dot(u, u);
@@ -31,8 +31,9 @@ fn receiver_depth_gradient(normal: vec3<f32>) -> vec2<f32> {
     }
     let light_facing = abs(dot(normal * inverseSqrt(normal_length_squared),
         z * inverseSqrt(z_length_squared)));
-    let stability = smoothstep(0.005, 0.05, light_facing);
-    if light_facing <= 0.005 {
+    // Below this normalized dot product the plane/light intersection is
+    // numerically singular; avoid dividing by a value dominated by f32 error.
+    if light_facing <= 1e-6 {
         return vec2<f32>(0.0);
     }
     let nz = dot(normal,z)/max(dot(z,z),1e-20);
@@ -41,7 +42,7 @@ fn receiver_depth_gradient(normal: vec3<f32>) -> vec2<f32> {
     }
     let gradient = -vec2<f32>(dot(normal,u)/max(dot(u,u),1e-20),
         dot(normal,v)/max(dot(v,v),1e-20))/nz;
-    return gradient * stability;
+    return gradient;
 }
 
 // Perspective projection maps a receiver plane to a plane in NDC. Project

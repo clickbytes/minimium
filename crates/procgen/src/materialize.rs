@@ -63,6 +63,7 @@ pub fn materialize_planet_overview(terrain: PlanetTerrain) -> Vec<MapTriangle> {
                         precise_vertices: None,
                         color,
                         solid: false,
+                        surface: None,
                     });
                 }
             }
@@ -155,6 +156,7 @@ fn floor_triangles(x: u16, y: u16, color: [f32; 3]) -> [MapTriangle; 2] {
             precise_vertices: None,
             color,
             solid: true,
+            surface: None,
         },
         MapTriangle {
             vertices: [
@@ -165,6 +167,7 @@ fn floor_triangles(x: u16, y: u16, color: [f32; 3]) -> [MapTriangle; 2] {
             precise_vertices: None,
             color,
             solid: true,
+            surface: None,
         },
     ]
 }

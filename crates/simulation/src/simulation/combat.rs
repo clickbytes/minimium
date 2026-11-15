@@ -23,6 +23,27 @@ impl World {
         direction: [f32; 3],
         settings: CombatSettings,
     ) -> Option<ShotOutcome> {
+        self.fire_hitscan_inner(attacker_id, direction, settings, false)
+    }
+
+    /// Applies damage without moving a killed player. The owner lane must place
+    /// the player at a validated current-geometry respawn point before publish.
+    pub fn fire_hitscan_deferred_respawn(
+        &mut self,
+        attacker_id: PlayerId,
+        direction: [f32; 3],
+        settings: CombatSettings,
+    ) -> Option<ShotOutcome> {
+        self.fire_hitscan_inner(attacker_id, direction, settings, true)
+    }
+
+    fn fire_hitscan_inner(
+        &mut self,
+        attacker_id: PlayerId,
+        direction: [f32; 3],
+        settings: CombatSettings,
+        defer_respawn: bool,
+    ) -> Option<ShotOutcome> {
         if settings.damage == 0 || !settings.range.is_finite() || settings.range <= 0.0 {
             return None;
         }
@@ -104,15 +125,17 @@ impl World {
         let killed = remaining_health == 0;
         if killed {
             target.health = PLAYER_MAX_HEALTH;
-            target.position = *spawn;
             target.velocity = [0.0; 3];
             target.grounded = false;
-            update_cell_index(
-                Arc::make_mut(cells),
-                Arc::make_mut(player_cells),
-                target_id,
-                *spawn,
-            );
+            if !defer_respawn {
+                target.position = *spawn;
+                update_cell_index(
+                    Arc::make_mut(cells),
+                    Arc::make_mut(player_cells),
+                    target_id,
+                    *spawn,
+                );
+            }
         } else {
             target.health = remaining_health;
         }

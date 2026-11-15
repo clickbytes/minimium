@@ -5,6 +5,7 @@ impl GpuResources {
     pub(super) fn render(
         &mut self,
         snapshot: &RenderSceneSnapshot<'_>,
+        submerged_fraction: f32,
     ) -> Result<u32, wgpu::CurrentSurfaceTexture> {
         self.environment_draw_calls = super::sky::EnvironmentDrawCalls::default();
         self.last_environment_upload_cpu = None;
@@ -156,7 +157,7 @@ impl GpuResources {
             bytemuck::bytes_of(&environment_upload),
         );
         if let Some(output) = &self.output_encoder {
-            output.update_exposure(&self.queue, 1.0);
+            output.update_exposure_with_water(&self.queue, 1.0, submerged_fraction);
         }
         let ui_vertices = render_frame.ui_vertices();
         if !ui_vertices.is_empty() {
@@ -191,6 +192,9 @@ impl GpuResources {
             surface_moon: super::sky::should_draw_moon(environment)
                 || self.atmosphere_gpu.is_active(),
         };
+        let instance = publication_stamp.map_or(client.world_instance, |stamp| stamp.instance);
+        let (local_water_buffer, local_water_vertex_count) =
+            self.world_geometry.local_water(instance);
         let scene = minimium_renderer::scene_encoder::MainScenePass {
             color_view: scene_view,
             depth_view: &self.depth_view,
@@ -211,10 +215,12 @@ impl GpuResources {
             overview_buffers: &self.overview_buffers,
             world_vertices: self.initial_world.buffer(),
             world_vertex_count: self.initial_world.vertex_count(),
+            local_water_buffer,
+            local_water_vertex_count,
             remote_vertices: self.remote_vertices.buffer(),
             remote_vertex_count: self.remote_vertices.vertex_count(),
             world_vertex_catalog: self.world_geometry.catalog(),
-            instance: publication_stamp.map_or(client.world_instance, |stamp| stamp.instance),
+            instance,
             sector_hints: publication_keys,
             scene_visible: self.scene_visible
                 && self.terrain_gpu.valid
@@ -224,6 +230,11 @@ impl GpuResources {
             uploaded_stars_match: self.uploaded_star_stamp == environment.diagnostics.star_frame,
             halo_count: render_frame.halo_count,
             environment: environment_flags,
+        };
+        let held_tool = if self.scene_visible && self.held_tool_visible {
+            self.held_tool_kind.map(|kind| (&self.held_tool, kind))
+        } else {
+            None
         };
         let encoded = minimium_renderer::frame_encoder::encode_frame(
             &mut encoder,
@@ -241,6 +252,7 @@ impl GpuResources {
                 },
                 scene,
                 clouds: &self.cloud_gpu,
+                held_tool,
                 final_passes: minimium_renderer::frame_encoder::FinalPasses {
                     scene_view,
                     surface_view,
@@ -264,6 +276,7 @@ impl GpuResources {
             + encoded.scene.draws
             + encoded.atmosphere
             + encoded.clouds
+            + encoded.held_tool
             + encoded.final_passes;
         frame.submit(&self.queue, encoder);
         self.atmosphere_gpu.after_submit();

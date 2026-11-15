@@ -1,5 +1,5 @@
 use super::{precise_step, world_state::PlayerStepResult};
-use super::{step_character, CollisionIndex, SimulationBatch};
+use super::{CollisionIndex, SimulationBatch};
 /// Advances a batch using immutable collision geometry; it never mutates a world.
 pub fn step_batch(
     mut batch: SimulationBatch,
@@ -18,7 +18,7 @@ pub fn step_batch(
             ));
         let mut position_mm = step.position_mm;
         if let Some(position_mm) = &mut position_mm {
-            precise_step::step_character_mm(
+            precise_step::step_character_mm_with_water(
                 &mut state,
                 position_mm,
                 step.input,
@@ -26,15 +26,17 @@ pub fn step_batch(
                 batch.collision_query.candidates(),
                 batch.collision_query.surface_candidates(),
                 delta_seconds,
+                step.water,
             );
         } else {
-            step_character(
+            super::step_character_with_water(
                 &mut state,
                 step.input,
                 step.movement_policy,
                 batch.collision_query.candidates(),
                 batch.collision_query.surface_candidates(),
                 delta_seconds,
+                step.water,
             );
         }
         batch.results.push(PlayerStepResult {

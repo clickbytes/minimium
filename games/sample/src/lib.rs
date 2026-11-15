@@ -1,6 +1,8 @@
 //! Static sample-game content shared by the client and server applications.
 
 mod combat;
+mod excavation;
+pub use excavation::{DEFAULT_IMPACT_PROFILE, DEFAULT_TOOL_PROFILE, SOIL_DEPTH_M};
 mod peak_relief;
 mod planet_config;
 mod portal;

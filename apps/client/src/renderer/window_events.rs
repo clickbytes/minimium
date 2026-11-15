@@ -72,6 +72,15 @@ pub(super) fn keyboard(
                             renderer.queue_fire();
                         }
                     }
+                    crate::input::InputAction::EquipShovel if !event.repeat => {
+                        renderer.equip_tool(Some(0));
+                    }
+                    crate::input::InputAction::EquipPickaxe if !event.repeat => {
+                        renderer.equip_tool(Some(1));
+                    }
+                    crate::input::InputAction::StowTool if !event.repeat => {
+                        renderer.equip_tool(None);
+                    }
                     _ => {}
                 }
             }

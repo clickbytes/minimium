@@ -64,6 +64,10 @@ impl ConnectionController {
         self.request_admin_command(format!("spawn_random_bolid {count}"))
     }
 
+    pub fn request_random_meteorid(&mut self) -> Result<(), ControllerError> {
+        self.request_admin_command("spawn_random_meteorid".into())
+    }
+
     fn request_admin_command(&mut self, command: String) -> Result<(), ControllerError> {
         if !self
             .session

@@ -144,7 +144,9 @@ impl MeteorGpu {
         self.rejected_low = 0;
         self.optical_heads = 0;
         for core in frame.cores().iter().take(core_limit) {
-            if frame.physical_height(core.position_rel_m) < frame.minimum_height_m() {
+            if core.source != crate::meteors::model::MeteorSource::Tracked
+                && frame.physical_height(core.position_rel_m) < frame.minimum_height_m()
+            {
                 self.rejected_low += 1;
                 continue;
             }
@@ -201,7 +203,9 @@ impl MeteorGpu {
                 .enumerate()
                 .filter(|(i, _)| !low || i % 2 == 0 || *i + 1 == trail_count)
             {
-                if frame.physical_height(point.position_rel_m) < frame.minimum_height_m() {
+                if core.source != crate::meteors::model::MeteorSource::Tracked
+                    && frame.physical_height(point.position_rel_m) < frame.minimum_height_m()
+                {
                     previous = None;
                     continue;
                 }

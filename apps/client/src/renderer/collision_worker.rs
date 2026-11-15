@@ -1,6 +1,6 @@
 //! Bounded sector materialization. SectorManager installation stays on the UI lane.
 use super::sector_scene::SectorWorkerError;
-use minimium_procgen::{PreparedGeography, SectorGeometry};
+use minimium_procgen::SectorGeometry;
 use minimium_sectors::SectorTicket;
 use minimium_world::world::{WorldManifest, WorldMap};
 use std::{
@@ -16,6 +16,10 @@ pub(super) struct SceneCollisionWorker {
 }
 #[derive(Default)]
 struct SceneCollisionState {
+    cached: Vec<(
+        Arc<SectorGeometry>,
+        Arc<minimium_simulation::CollisionIndex>,
+    )>,
     pending: BTreeMap<minimium_world::world::WorldInstanceId, SceneCollisionJob>,
     completed: BTreeMap<minimium_world::world::WorldInstanceId, SceneCollisionResult>,
     stop: bool,
@@ -70,8 +74,25 @@ impl SceneCollisionWorker {
                     let key = *state.pending.keys().next().expect("pending collision job");
                     state.pending.remove(&key).expect("selected collision job")
                 };
-                let index = Arc::new(super::sector_scene::collision_from_sectors(
-                    job.sectors.iter().map(AsRef::as_ref),
+                let previous = std::mem::take(&mut shared.0.lock().unwrap().cached);
+                let cached: Vec<_> = job
+                    .sectors
+                    .iter()
+                    .map(|geometry| {
+                        let index = previous
+                            .iter()
+                            .find(|(old, _)| Arc::ptr_eq(old, geometry))
+                            .map(|(_, index)| index.clone())
+                            .unwrap_or_else(|| {
+                                Arc::new(super::sector_scene::collision_from_sectors(
+                                    std::iter::once(geometry.as_ref()),
+                                ))
+                            });
+                        (geometry.clone(), index)
+                    })
+                    .collect();
+                let index = Arc::new(minimium_simulation::CollisionIndex::from_partitions(
+                    cached.iter().map(|(_, index)| index.clone()).collect(),
                 ));
                 let result = SceneCollisionResult {
                     instance: job.instance,
@@ -79,6 +100,7 @@ impl SceneCollisionWorker {
                     index,
                 };
                 let mut state = shared.0.lock().unwrap();
+                state.cached = cached;
                 if !state.stop {
                     state.completed.insert(result.instance, result);
                 }
@@ -133,12 +155,15 @@ struct Job {
     ticket: SectorTicket,
     map: WorldMap,
     manifest: WorldManifest,
-    geography: Option<Arc<dyn PreparedGeography>>,
+    geography: minimium_procgen::TerrainInputs,
 }
 #[derive(Default)]
 struct State {
     pending: VecDeque<Job>,
-    completed: Vec<(SectorTicket, Arc<SectorGeometry>)>,
+    completed: Vec<(
+        SectorTicket,
+        Result<Arc<SectorGeometry>, minimium_procgen::ExcavationGeometryError>,
+    )>,
     busy: bool,
     active: Option<SectorTicket>,
     stop: bool,
@@ -189,12 +214,13 @@ impl CollisionWorker {
                     state.active = Some(job.ticket);
                     job
                 };
-                let geometry = Arc::new(minimium_procgen::materialize_world_sector_with_geography(
+                let geometry = minimium_procgen::materialize_world_sector_with_geography(
                     &job.map,
                     job.manifest,
                     job.ticket.key(),
                     job.geography,
-                ));
+                )
+                .map(Arc::new);
                 let mut state = shared.0.lock().unwrap();
                 state.busy = false;
                 state.active = None;
@@ -217,7 +243,7 @@ impl CollisionWorker {
         ticket: SectorTicket,
         map: WorldMap,
         manifest: WorldManifest,
-        geography: Option<Arc<dyn PreparedGeography>>,
+        geography: minimium_procgen::TerrainInputs,
     ) -> Result<(), SectorWorkerError> {
         let mut state = self.state.0.lock().unwrap();
         if state.stop || self.thread.as_ref().is_none_or(JoinHandle::is_finished) {
@@ -236,7 +262,15 @@ impl CollisionWorker {
         self.state.1.notify_one();
         Ok(())
     }
-    pub fn poll(&self) -> Result<Vec<(SectorTicket, Arc<SectorGeometry>)>, SectorWorkerError> {
+    pub fn poll(
+        &self,
+    ) -> Result<
+        Vec<(
+            SectorTicket,
+            Result<Arc<SectorGeometry>, minimium_procgen::ExcavationGeometryError>,
+        )>,
+        SectorWorkerError,
+    > {
         if self.thread.as_ref().is_none_or(JoinHandle::is_finished) {
             let mut state = self.state.0.lock().unwrap();
             let mut failed: Vec<_> = state.pending.drain(..).map(|job| job.ticket).collect();

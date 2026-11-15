@@ -65,7 +65,39 @@ fn handle_admitted_message(
         ClientMessage::Authenticate { .. } => {
             disconnect_invalid_sequence(runtime, index);
         }
-        ClientMessage::WorldInput { input, .. } => match (player_id, input) {
+        ClientMessage::WorldInput { context, input } => match (player_id, input) {
+            (Some(player), ClientWorldInput::Excavation(input)) => {
+                if matches!(input, minimium_protocol::ExcavationInput::GrantTools)
+                    && !identity::has_permission(
+                        runtime,
+                        index,
+                        minimium_core::identity::ServerPermission::DeveloperTeleport,
+                        "developer inventory",
+                    )
+                {
+                    return;
+                }
+                let action_id = match &input {
+                    minimium_protocol::ExcavationInput::Use { action_id, .. } => Some(*action_id),
+                    _ => None,
+                };
+                if !super::queue::try_queue(
+                    runtime,
+                    crate::world_inputs::WorldInput::Excavation(player, context, input),
+                    decoded_at,
+                ) {
+                    if let Some(action_id) = action_id {
+                        runtime.excavation_result(
+                            player,
+                            context,
+                            minimium_world::items::ActionResult::Rejected {
+                                action_id,
+                                reason: minimium_world::items::ActionRejection::Busy,
+                            },
+                        );
+                    }
+                }
+            }
             (Some(player), ClientWorldInput::SetName(name)) => {
                 actions::movement::admit_name(runtime, index, player, name, decoded_at)
             }

@@ -3,6 +3,7 @@ use fluent_bundle::{FluentArgs, FluentValue};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum UiMessage {
+    Tool(crate::ToolMessage),
     ConnectingTo(String),
     ItemsAvailable(u64),
     ServerDisconnected,
@@ -131,6 +132,7 @@ pub enum UiMessage {
 impl UiMessage {
     pub(super) fn key(&self) -> &'static str {
         match self {
+            Self::Tool(message) => message.key(),
             Self::ConnectingTo(_) => "connection-connecting",
             Self::ItemsAvailable(_) => "items-available",
             Self::ServerDisconnected => "connection-disconnected",
@@ -205,6 +207,7 @@ impl UiMessage {
     pub(super) fn args(&self) -> FluentArgs<'static> {
         let mut args = FluentArgs::new();
         match self {
+            Self::Tool(message) => return message.args(),
             Self::ConnectingTo(address) => args.set("address", FluentValue::from(address.clone())),
             Self::ItemsAvailable(count) => args.set("count", FluentValue::from(*count as i64)),
             Self::ServerDisconnected => {}
@@ -382,6 +385,7 @@ impl UiMessage {
                     UiNotice::SkyQualityDesktopOnly => "sky_quality_desktop_only",
                     UiNotice::MapTeleportBusy => "map_teleport_busy",
                     UiNotice::MapTeleportRequiresEarth => "map_teleport_requires_earth",
+                    UiNotice::MapTeleportSynchronizing => "map_teleport_synchronizing",
                     UiNotice::LocalServerThreadsConflict => "local_server_threads_conflict",
                     UiNotice::StarCatalogUnavailable => "star_catalog_unavailable",
                     UiNotice::TimeRequestFailed => "time_request_failed",

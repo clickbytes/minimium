@@ -1194,6 +1194,7 @@ dependencies = [
  "minimium-core",
  "minimium-diagnostics",
  "minimium-environment",
+ "minimium-fluids",
  "minimium-game-sample",
  "minimium-localization",
  "minimium-platform",
@@ -1203,6 +1204,7 @@ dependencies = [
  "minimium-sectors",
  "minimium-simulation",
  "minimium-telemetry",
+ "minimium-terrain",
  "minimium-world",
  "pollster",
  "rodio",
@@ -1220,11 +1222,13 @@ dependencies = [
  "minimium-core",
  "minimium-diagnostics",
  "minimium-environment",
+ "minimium-fluids",
  "minimium-game-sample",
  "minimium-platform",
  "minimium-procgen",
  "minimium-protocol",
  "minimium-simulation",
+ "minimium-terrain",
  "minimium-world",
  "serde",
  "serde_json",
@@ -1259,6 +1263,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "minimium-fluids"
+version = "0.1.0"
+dependencies = [
+ "minimium-world",
+]
+
+[[package]]
 name = "minimium-game-sample"
 version = "0.1.0"
 dependencies = [
@@ -1278,6 +1289,7 @@ version = "0.1.0"
 dependencies = [
  "minimium-commands",
  "minimium-core",
+ "minimium-terrain",
  "minimium-world",
 ]
 
@@ -1321,6 +1333,7 @@ dependencies = [
  "memmap2",
  "minimium-core",
  "minimium-environment",
+ "minimium-terrain",
  "minimium-world",
  "ron",
  "serde",
@@ -1347,6 +1360,7 @@ dependencies = [
  "minimium-assets",
  "minimium-astronomy",
  "minimium-environment",
+ "minimium-fluids",
  "minimium-procgen",
  "minimium-world",
  "pollster",
@@ -1370,12 +1384,14 @@ dependencies = [
  "minimium-assets",
  "minimium-core",
  "minimium-diagnostics",
+ "minimium-fluids",
  "minimium-game-sample",
  "minimium-platform",
  "minimium-procgen",
  "minimium-server-runtime",
  "minimium-simulation",
  "minimium-telemetry",
+ "minimium-terrain",
  "minimium-world",
  "ron",
 ]
@@ -1390,6 +1406,7 @@ dependencies = [
  "minimium-core",
  "minimium-diagnostics",
  "minimium-environment",
+ "minimium-fluids",
  "minimium-game-sample",
  "minimium-gameplay",
  "minimium-platform",
@@ -1399,6 +1416,7 @@ dependencies = [
  "minimium-simulation",
  "minimium-storage",
  "minimium-telemetry",
+ "minimium-terrain",
  "minimium-transport",
  "minimium-world",
  "ron",
@@ -1421,9 +1439,11 @@ dependencies = [
  "minimium-core",
  "minimium-diagnostics",
  "minimium-environment",
+ "minimium-fluids",
  "minimium-platform",
  "minimium-simulation",
  "minimium-telemetry",
+ "minimium-terrain",
  "minimium-world",
 ]
 
@@ -1432,6 +1452,13 @@ name = "minimium-telemetry"
 version = "0.1.0"
 dependencies = [
  "minimium-diagnostics",
+]
+
+[[package]]
+name = "minimium-terrain"
+version = "0.1.0"
+dependencies = [
+ "minimium-world",
 ]
 
 [[package]]

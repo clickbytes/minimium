@@ -51,6 +51,11 @@ pub type ServerGameplayModule = dyn EngineModule<ModuleCommandHandler, ModuleSys
 pub use config::RuntimeServerConfig;
 pub use process_error::{ServerProcessError, ServerProcessErrorKind};
 
+/// Rejects unsupported snapshot and excavation journal versions without writes.
+pub fn preflight_persistent_formats(data_dir: &std::path::Path) -> std::io::Result<()> {
+    startup::preflight_persistent_formats(data_dir)
+}
+
 /// Parses server arguments and runs the runtime with application-owned content.
 pub fn run(
     args: &[String],
@@ -87,6 +92,15 @@ pub fn run_with_config(
     config: RuntimeServerConfig,
     composition: ServerComposition,
 ) -> Result<(), ServerProcessError> {
+    if composition
+        .impact_profile
+        .is_some_and(|profile| !profile.valid())
+    {
+        return Err(ServerProcessError::caused_by(
+            ServerProcessErrorKind::RuntimeSetup,
+            std::io::Error::other("invalid impact configuration"),
+        ));
+    }
     let module_registry = commands::initialize_modules(&composition.modules).map_err(|error| {
         ServerProcessError::caused_by(
             ServerProcessErrorKind::RuntimeSetup,
@@ -115,6 +129,8 @@ pub fn run_with_config(
         config,
         startup,
         composition.combat,
+        composition.impact_profile,
+        composition.excavation,
         composition.server_logger,
         composition.transport_logger,
         composition.environment_logger,

@@ -260,22 +260,9 @@ pub(super) fn activate_profile(
         return;
     }
 
-    let player = match runtime.operations.player_store.claim(
-        profile_id,
-        &mut runtime.operations.next_player,
-        runtime.map.spawn(),
-        runtime.map.spawn_position_mm(),
-        runtime.game.worlds.primary_id(),
-        runtime.game.worlds.primary().world.gravity(),
-    ) {
+    let player = match super::placement::claim_and_validate(runtime, profile_id) {
         Ok(player) => player,
-        Err(error) => {
-            crate::diagnostics::emit(
-                &runtime.world_logger,
-                minimium_diagnostics::Level::Warn,
-                "server.profile_claim_failed",
-                &[("reason", error.to_string())],
-            );
+        Err(()) => {
             if !queue_close_response(
                 &mut runtime.connections.clients[index],
                 &mut runtime.metrics,

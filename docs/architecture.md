@@ -16,8 +16,8 @@ Local play launches the server as a child process and connects through the norma
 
 ## Current ownership and target boundaries
 
-The current wire contract is protocol v19; save files use format v10 and
-generated worlds use generator revision 5. These are separate version domains.
+The current wire contract is protocol v21; save files use format v11 and
+generated worlds use generator revision 6. These are separate version domains.
 Older wire, save and generated-world revisions are rejected without fallback or
 migration. Create a fresh world in a separate data directory when replacing old
 saved data. Terrain and material ownership is split across assets, asset-io,
@@ -38,7 +38,9 @@ Current packages and responsibilities:
 | Package | Current responsibility |
 | --- | --- |
 | `minimium-core` | Foundational identifiers, player profiles, authenticated Principal values and server-granted permission bits. |
-| `minimium-world` | World definitions, topology, addressing, geometry, maps, entities and neutral component data. |
+| `minimium-world` | World definitions, topology, addressing, geometry, maps, entities and neutral terrain/tool/water contracts. |
+| `minimium-terrain` | Crater height fields, sparse volumetric chunk state, edit preparation, CPU meshing and spatial reads. |
+| `minimium-fluids` | Local water volumes, finite reservoirs, ocean exchange accounting and explicit conservative transfers. |
 | `minimium-simulation` | Mutable world state, movement, collision queries, combat, snapshots and fixed-step results. |
 | `minimium-environment` | World clock and environment values, renderer-independent sky/climate/solar-system contracts, and deterministic weather model. |
 | `minimium-procgen` | Seeded revisioned world generation, typed errors, sector geometry and terrain sampling through explicit prepared geography inputs. |
@@ -46,7 +48,7 @@ Current packages and responsibilities:
 | `minimium-assets` | Map, OBJ, sky catalog, material manifest and world-definition parsing from supplied data. |
 | `minimium-asset-io` | Bounded authored asset/geography access, material HTTP adapters, and leased content cache. |
 | `minimium-platform` | Application-resolved process paths, durable file operations, identity, locks and bounded local administration transport with versioned structured error decoding. |
-| `minimium-storage` | Exact version-10 save format, entity/component validation, snapshot budget, player store and bounded persistence worker. |
+| `minimium-storage` | Exact version-11 save format, entity/component validation, snapshot budget, player store and bounded persistence worker. |
 | `minimium-transport` | Bounded socket byte flushing without protocol or game policy. |
 | `minimium-commands` | Generic command registry; domains own command values and validation, while hosts own execution. |
 | `minimium-protocol` | Versioned message models, codecs and validation. |
@@ -64,7 +66,7 @@ Current packages and responsibilities:
 | `minimium-loadtest` | Headless scenario client. |
 | `minimium-game-sample` | Demo maps/presets, sample world composition, portal component/system and combat defaults; consumed by applications. |
 
-The world, simulation, command and environment packages own their public domain contracts. `minimium-gameplay` defines static extension contracts; the sample game implements them without reaching server infrastructure. `minimium-renderer` owns camera-frame preparation, visibility/LOD, GPU resources and scene/shadow/cloud/atmosphere/UI/output encoders, while the client application owns settings, world/transfer lifecycle, input, preparation workers and frame scheduling. `ClientView` is adapted to CPU-only `RenderFrame` values. Server authority and client prediction share the simulation integrator. `minimium-assets` parses supplied data; `minimium-asset-io` owns bounded file/HTTP/cache access. `minimium-storage` owns v10 snapshots and its persistence worker; `minimium-transport` owns bounded socket byte progress. `minimium-diagnostics` is the domain contract and `minimium-telemetry` owns run directories and the file sink.
+The world, simulation, command and environment packages own their public domain contracts. `minimium-gameplay` defines static extension contracts; the sample game implements them without reaching server infrastructure. `minimium-renderer` owns camera-frame preparation, visibility/LOD, GPU resources and scene/shadow/cloud/atmosphere/UI/output encoders, while the client application owns settings, world/transfer lifecycle, input, preparation workers and frame scheduling. `ClientView` is adapted to CPU-only `RenderFrame` values. Server authority and client prediction share the simulation integrator. `minimium-assets` parses supplied data; `minimium-asset-io` owns bounded file/HTTP/cache access. `minimium-storage` owns v11 snapshots and its persistence worker; `minimium-transport` owns bounded socket byte progress. `minimium-diagnostics` is the domain contract and `minimium-telemetry` owns run directories and the file sink.
 
 ## Repository package layout
 
@@ -130,11 +132,11 @@ Initial server commands: help, status, players list, metrics show, world save, s
 
 The following describes source-level ownership and contracts. Compilation is deferred to E046-17; runtime behavior and performance are not established here.
 
-The workspace contains the packages listed in `architecture.toml`, including the diagnostics, gameplay and localization contracts. Core owns identity and principal permissions; world owns manifests and component/entity data; simulation owns shared movement/collision rules; gameplay owns registration/effect interfaces; storage owns v10 persistence; protocol owns v18 wire types; procgen accepts only generated revision 5; asset-io and platform own external I/O adapters. Runtime/app packages compose these boundaries. The architecture checker traverses all-feature production normal/build edges, including target-specific dependencies, reports dev edges separately, and source-scans declared domain/runtime roots for explicit effects. This is a guardrail, not proof that indirect effects are absent. The static scripts are scheduled for E046-17 and have not yet been run.
+The workspace contains the packages listed in `architecture.toml`, including the diagnostics, gameplay and localization contracts. Core owns identity and principal permissions; world owns manifests and component/entity data; simulation owns shared movement/collision rules; gameplay owns registration/effect interfaces; storage owns v11 persistence; protocol owns v21 wire types; procgen accepts only generated revision 6; asset-io and platform own external I/O adapters. Runtime/app packages compose these boundaries. The architecture checker traverses all-feature production normal/build edges, including target-specific dependencies, reports dev edges separately, and source-scans declared domain/runtime roots for explicit effects. This is a guardrail, not proof that indirect effects are absent. Compilation and the static scripts are implementation checks; final runtime acceptance remains a separate phase.
 
 The workspace contains `minimium-core`, `minimium-renderer`, `minimium-server-runtime`, `minimium-client-runtime`, `minimium-world`, `minimium-simulation`, `minimium-environment`, `minimium-commands`, `minimium-astronomy`, `minimium-procgen`, `minimium-sectors`, `minimium-assets`, `minimium-asset-io`, `minimium-platform`, `minimium-protocol`, `minimium-storage`, `minimium-transport`, `minimium-telemetry`, `minimium-server`, `minimium-client`, `minimium-game-sample`, `minimiumctl`, and `minimium-loadtest`. Platform owns bounded persistent-file reads, atomic writes/replacement, profile files, server locks and endpoint/admin helpers; storage owns snapshot parsing and validation. Assets parses maps, OBJ and versioned manual dungeon definitions; asset-io opens bounded map, mesh and world-definition files. The desktop client uses wgpu/winit and can launch a local server or connect remotely. Press F1 for its command console; `--console` selects the text client. Client and server accept `--map PATH` or `--world-definition PATH`; the local client passes the same path to its child server. The default client/server generate matching demo worlds. The server's `--game-port 0` asks the OS for an ephemeral port.
 
-`minimium-environment::time` owns validated UTC, scale, clock anchor/sample and saved-clock types, plus pure clock evaluation, mutation and restore operations. The environment crate root owns profile and versioned astronomy/catalogue identifiers. `minimium-environment::sky` owns observer and sky-model contracts, `universe` owns the solar-system catalogue, and `weather` owns deterministic weather/cloud models behind a `TerrainSampler` host port. These contracts use platform-neutral values; the server supplies UTC and monotonic samples, storage v10 owns serialization, protocol v19 owns wire encoding, and the client owns astronomy and rendering. Clock state is independent of `WorldManifest`, generator inputs and geometry fingerprints.
+`minimium-environment::time` owns validated UTC, scale, clock anchor/sample and saved-clock types, plus pure clock evaluation, mutation and restore operations. The environment crate root owns profile and versioned astronomy/catalogue identifiers. `minimium-environment::sky` owns observer and sky-model contracts, `universe` owns the solar-system catalogue, and `weather` owns deterministic weather/cloud models behind a `TerrainSampler` host port. These contracts use platform-neutral values; the server supplies UTC and monotonic samples, storage v11 owns serialization, protocol v21 owns wire encoding, and the client owns astronomy and rendering. Clock state is independent of `WorldManifest`, generator inputs and geometry fingerprints.
 
 The server runtime adapts one `EnvironmentClock` to the same `server_started` monotonic epoch used by uptime snapshots. It creates a separate OS-random 16-byte session nonce, checks UTC every five seconds in RealTime mode, and reanchors on corrections of at least 250 ms. Time mutations share the authenticated local admin/terminal command path and never scale physics, cooldowns or network deadlines. The bounded `--environment-config` initializes a new world only. Save v10 persists clock state in the same atomic player/world snapshot; protocol v19 carries samples and environment descriptors.
 
@@ -146,7 +148,7 @@ The server is headless, caps players at 512 by default and pending handshakes at
 
 `--threads 1..64|auto` selects execution lanes. One lane executes work inline; additional workers perform bounded independent tasks against immutable snapshots. `world save`, autosave and shutdown capture player, sector, clock and current entity/component state on the owner thread, then pass one immutable snapshot to the persistence worker. Save v10 accepts only its exact header and validates records against the registered component schemas. It counts and streams the same encoding through a size-limited writer before atomic replacement. Versions 1–9 and unknown versions are rejected; no automatic migration is supported. Use a separate data directory for a new-format world. The client profile ID is a durable local identifier, not account authentication.
 
-Game traffic uses protocol v19 over TCP. A bounded provider credential is mapped by the configured authentication provider to a server-side `Principal`; the example `dev.profile` provider is an insecure development identity claim, not an account system. Snapshot messages include the server tick, world context, safe resolved input prefix and bounded player deltas. Fire requests use server-side spatial hitscan and cooldown validation. Entity/component replication uses per-client acknowledged revisions. Portal interaction carries an entity ID; transfer carries transition IDs and target manifests. Bounded UTF-8 chat uses capped output queues. Public accounts and TLS are outside the current implementation. No performance result is claimed.
+Game traffic uses protocol v20 over TCP. A bounded provider credential is mapped by the configured authentication provider to a server-side `Principal`; the example `dev.profile` provider is an insecure development identity claim, not an account system. Snapshot messages include the server tick, world context, safe resolved input prefix and bounded player deltas. Fire requests use server-side spatial hitscan and cooldown validation. Entity/component replication uses per-client acknowledged revisions. Portal interaction carries an entity ID; transfer carries transition IDs and target manifests. Bounded UTF-8 chat uses capped output queues. Public accounts and TLS are outside the current implementation. No performance result is claimed.
 
 ## Current module contracts
 
@@ -173,7 +175,7 @@ The client application owns `ClientApplication`, typed settings, connection and 
 
 Startup acquires the data lock, loads the map and player snapshot with the optional saved clock, starts the persistence worker, binds listeners and publishes the endpoint. ServerRuntime::new then restores the clock before entering the loop that accepts clients; a restore failure does not admit players. Shutdown drains admin replies, closes clients, captures a final immutable player/sector/clock snapshot, joins the worker, removes the owned endpoint and writes the owner-bound result before releasing the lock. A runtime error remains primary if final save or cleanup also fails; secondary errors are reported. This describes ordering, not a verified crash recovery guarantee.
 
-The extension API is Rust source through `minimium-gameplay`, map data and validated world definitions; it is not a dynamic plugin ABI. Keep generated manifests and verified authored content available to both clients and server. New protocol messages require a separately planned version decision. The active contracts are wire v18, save format v10 and generated revision 5; each rejects unsupported revisions without migration or fallback. Sample systems/components live in `minimium-game-sample`; engine domains do not depend on that package. The example `dev.profile` provider is a local development claim, not public account authentication. TLS is not implemented. Source review, compilation and runtime acceptance are tracked separately in `docs/architecture-execution.md`.
+The extension API is Rust source through `minimium-gameplay`, map data and validated world definitions; it is not a dynamic plugin ABI. Keep generated manifests and verified authored content available to both clients and server. New protocol messages require a separately planned version decision. The active contracts are wire v21, save format v11 and generated revision 6; each rejects unsupported revisions without migration or fallback. Sample systems/components live in `minimium-game-sample`; engine domains do not depend on that package. The example `dev.profile` provider is a local development claim, not public account authentication. TLS is not implemented. Source review, compilation and runtime acceptance are tracked separately in `docs/architecture-execution.md`.
 
 Atmosphere presentation now has one camera-relative renderer path from the ground
 to orbit. Renderer owns bounded optical/sky/aerial LUTs, regional fog presentation,
@@ -279,9 +281,83 @@ Client owns monotonic births, pooled histories/deposition and optional bounded
 Rodio/CPAL audio. Renderer owns pure SI physics, MeteorFrame/TransientLightUniform
 and GPU adapters. Config and commands use the existing registry/SettingsStore.
 No world entity, server, protocol v19, save v10 or generator revision 5 changes.
-MeteorSource::Tracked is an input marker only; a future tracked adapter belongs
-to a separate epic and must feed the same frame contract. The existing server
+MeteorSource::Tracked was reserved by E047; the authoritative impact adapter
+described below now feeds the same frame contract. The existing server
 spawn_random_bolid demo remains a separate producer sharing finite composition.
 It does not synchronize local E047 cosmetic events across players. Optional audio
 is not a server/domain dependency; terminal builds retain CPU contracts only.
 See [static acceptance and final gate](ambient-meteors-acceptance.md).
+
+## Shoreline stability (2026-11-14)
+
+Shoreline presentation correction (2026-11-14): renderer owns complementary
+land/water polygon clipping after paired edge conformance, using f64 local offsets
+and identical millimetre edge intersections. Both prepared-worker and direct GPU
+cache paths consume it. TerrainView preserves radial camera height when snapping
+request direction and gives local walking detail priority within existing leaf
+caps. This affects presentation only; source geography, collision generation,
+protocol and saves retain their contracts. Runtime visual acceptance is pending.
+
+## Authoritative impacts (2026-11-13)
+
+The atmospheric BolidEvent payload remains unchanged. Ground-reaching bodies
+use protocol 21 and a separate durable world-entity lifecycle. The sample module
+selects a 1% chance per automatic opportunity; `spawn_random_meteorid` directly
+requests a specimen. This is an independent producer from E047 ambient cosmetics.
+
+| Owner | Responsibility |
+| --- | --- |
+| world | Body identity/state, neutral crater stamps and independent remnant snapshots |
+| terrain | Committed crater field, spatial/local revision index and volumetric domain |
+| simulation | Bounded SI drag, ablation, fragmentation, swept ground contact |
+| procgen | Base terrain plus immutable edit overlay, shared rock mesh |
+| storage | `impacts.v1` flight records and `excavation.v1` structural result transactions, fsync, replay, compaction |
+| server-runtime | Entity allocation, capacity reservation, tick, durable publication |
+| protocol/client-runtime | Contextual initial image and live states, readiness gates |
+| client/renderer | Tracked frame adapter, burst/dust/audio/light, local cache refresh |
+| game-sample | Probability, physical profile and crater gameplay scale |
+
+The lifecycle is flight -> committed impact -> persistent crater and landed
+entity. A collected phase is represented independently of the crater. The body
+component is server-only in generic component replication. Dedicated bounded
+impact messages carry body states; excavation batches atomically carry terrain,
+crater and fluid state. Clients reveal landed objects only after the matching
+crater batch is installed. Tool inventory belongs to the separate profile store.
+
+Publication order is reserve -> prepare geometry/collision/fluid changes ->
+validate input revisions -> durable journal acknowledgement -> publish the
+complete result at a tick boundary. Affected prediction/movement waits for its
+geometry; the visual impact burst waits for the presented terrain revision.
+Unchanged sector indexes and render patches survive. Old worker results are stale
+by ticket serial/revision. Transfer contexts reject old-world records; a cancelled
+transfer retains current-world edits. Late joiners receive terrain without replaying
+past explosions. Full synchronization is bounded to 4096 bodies, 16 records/tick;
+the current implementation sends the current world's image rather than an AOI log.
+
+Terrain and fluids now have dedicated domains. Only save version 11 and generator
+revision 6 are accepted. Flight and excavation journals are required for durable
+newer state. Backups must include the entire world directory. Replay runs
+before gameplay Startup and verifies world ID/seed/radius. Only incomplete trailing
+records are discarded; complete corruption and missing journal bodies fail closed.
+Flight checkpoints permit up to five simulation seconds of rewind after a crash;
+landed edits are acknowledged only after their own durable commit. Filesystem I/O
+runs in a bounded worker. Limits are eight flying bodies and 4096 durable records.
+
+The physical model and crater dimensions are bounded gameplay approximations for
+compressed worlds. Final acceptance must cover dark flight/fragment visibility,
+HDR/fallback point lighting, day/night dust, terrain under the player, overlapping
+craters, late join/reconnect, transfer/cancellation, journal recovery, and measured
+CPU/GPU cost. Compilation and static shader validation are not runtime acceptance.
+
+## Volumetric excavation
+
+[Excavation](excavation.md) documents the new-world-only controls, result journal,
+chunk batches, water catalog and solver, shared swimming and acceptance boundary.
+Explicit `TerrainInputs` separates immutable geography from crater fields,
+volumetric images and remnant objects. Application composition supplies tool,
+soil, fluid and impact configuration; EngineModule has no domain-specific hooks.
+Structural preparation uses the shared worker pool. Result images, fluid state,
+independent crater stamps and impact-body results share a durable transaction.
+The owner publishes prepared terrain and collision together on a tick boundary.
+Compilation and static checks do not substitute for the deferred final gameplay,
+failure-recovery and performance acceptance.

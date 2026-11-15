@@ -3,6 +3,15 @@ use crate::messages::ClientText as Text;
 
 impl Renderer {
     pub(super) fn update(&mut self) -> environment::PreparedEnvironmentFrame {
+        self.update_tool_use();
+        self.gpu.held_tool_kind = self
+            .application
+            .connection
+            .session()
+            .and_then(|session| session.inventory().tool());
+        self.gpu.held_tool_visible = self.application.game.gameplay.sectors_ready
+            && !self.application.ui.console.open
+            && !self.application.overview().is_open();
         if self.application.overview().is_open()
             && self.application.overview().instance()
                 != Some(self.application.game.current_instance)
@@ -17,8 +26,19 @@ impl Renderer {
             .as_secs_f32()
             .min(minimium_simulation::SIMULATION_STEP_SECONDS);
         self.metrics.last_frame = now;
+        let water_read = self
+            .application
+            .connection
+            .session()
+            .and_then(|session| session.water_read());
+        self.application
+            .game
+            .gameplay
+            .prediction
+            .set_water_read(water_read);
         let direction = if (self.application.game.gameplay.sectors_ready
-            || self.application.connection.movement.can_fly)
+            || self.application.connection.movement.can_fly
+            || self.application.game.gameplay.prediction.is_submerged())
             && !self.application.overview().is_open()
         {
             self.input.movement(
@@ -41,7 +61,8 @@ impl Renderer {
             direction,
             if self.application.ui.console.open
                 || self.application.overview().is_open()
-                || !self.application.connection.flight_enabled
+                || (!self.application.connection.flight_enabled
+                    && !self.application.game.gameplay.prediction.is_submerged())
             {
                 0.0
             } else {
@@ -391,6 +412,7 @@ impl Renderer {
             .application
             .status
             .format(&self.localizer, self.application.settings.locale);
+        let tool_overlay = self.tool_overlay(&prepared_environment.frame.render_view);
         self.application.ui.console.build_vertices(
             self.gpu.size.width,
             self.gpu.size.height,
@@ -400,6 +422,7 @@ impl Renderer {
                 .hit_confirmation_until
                 .is_some_and(|until| Instant::now() < until),
             crate::console::Overlay {
+                tool: tool_overlay.as_ref(),
                 status: self
                     .application
                     .settings

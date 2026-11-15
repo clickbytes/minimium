@@ -125,6 +125,13 @@ pub struct WorldEffectBatch {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum GameplayEvent {
+    EntityInteractionRequested {
+        player: PlayerId,
+        world: WorldInstanceId,
+        entity: EntityId,
+        position: [f32; 3],
+    },
+    /// Compatibility for game modules producing the earlier portal-specific event.
     PortalUseRequested {
         player: PlayerId,
         world: WorldInstanceId,

@@ -1,5 +1,6 @@
 mod client;
 mod common;
+mod excavation;
 mod server;
 
 pub use client::encode_client;

@@ -1,5 +1,8 @@
 use super::KEYS;
-use crate::config::{LaneSelection, ServerConfig, DEFAULT_AUTOSAVE_SECONDS, MAX_PLAYERS};
+use crate::config::{
+    LaneSelection, ServerConfig, DEFAULT_AUTOSAVE_SECONDS, DEFAULT_FLUID_SERVER_CELLS,
+    DEFAULT_FLUID_WORLD_CELLS, MAX_PLAYERS,
+};
 use minimium_commands::{
     CommandError, CommandErrorCode, ConfigDocument, ConfigError, ConfigResolution,
     ResolvedConfigValue, MAX_CONFIG_BYTES,
@@ -73,6 +76,14 @@ pub(super) fn config_from(
         seed,
         lanes,
         sector_workers,
+        fluid_world_cells: parse_value(
+            "server.fluid.world_cells",
+            get("server.fluid.world_cells"),
+        )?,
+        fluid_server_cells: parse_value(
+            "server.fluid.server_cells",
+            get("server.fluid.server_cells"),
+        )?,
         data_dir: PathBuf::from(get("server.data_dir")),
         log_dir: PathBuf::from("logs"),
         admin_token: None,
@@ -120,6 +131,14 @@ pub(super) fn config_from(
             "--planet-config PATH",
         ));
     }
+    if config.fluid_world_cells > config.fluid_server_cells {
+        return Err(error(
+            CommandErrorCode::InvalidValue,
+            "server.fluid.world_cells",
+            "per-world fluid cells must not exceed the server-wide fluid cell limit",
+            "--fluid-world-cells N --fluid-server-cells N",
+        ));
+    }
     Ok(config)
 }
 
@@ -127,6 +146,8 @@ pub(super) const LEGACY_OPTIONS: &[(&str, &str)] = &[
     ("--seed", "world.seed"),
     ("--threads", "server.threads"),
     ("--sector-workers", "server.sector_workers"),
+    ("--fluid-world-cells", "server.fluid.world_cells"),
+    ("--fluid-server-cells", "server.fluid.server_cells"),
     ("--data-dir", "server.data_dir"),
     ("--map", "world.map"),
     ("--world-definition", "world.definition"),
@@ -176,6 +197,14 @@ fn defaults() -> BTreeMap<String, String> {
         DEFAULT_AUTOSAVE_SECONDS.to_string(),
     );
     defaults.insert(
+        "server.fluid.world_cells".to_owned(),
+        DEFAULT_FLUID_WORLD_CELLS.to_string(),
+    );
+    defaults.insert(
+        "server.fluid.server_cells".to_owned(),
+        DEFAULT_FLUID_SERVER_CELLS.to_string(),
+    );
+    defaults.insert(
         "server.sky.bolid_interval".to_owned(),
         "120..300".to_owned(),
     );
@@ -186,6 +215,14 @@ fn environment_values(process_environment: &BTreeMap<String, String>) -> BTreeMa
     [
         ("MINIMIUM_SERVER_THREADS", "server.threads"),
         ("MINIMIUM_SERVER_SECTOR_WORKERS", "server.sector_workers"),
+        (
+            "MINIMIUM_SERVER_FLUID_WORLD_CELLS",
+            "server.fluid.world_cells",
+        ),
+        (
+            "MINIMIUM_SERVER_FLUID_SERVER_CELLS",
+            "server.fluid.server_cells",
+        ),
         ("MINIMIUM_SERVER_DATA_DIR", "server.data_dir"),
         ("MINIMIUM_SERVER_BIND", "server.bind"),
         ("MINIMIUM_SERVER_GAME_PORT", "server.game_port"),
@@ -238,6 +275,18 @@ fn validate_value(key: &str, value: &str) -> Result<(), CommandError> {
                 .contains(&n)
                 .then_some(())
                 .ok_or_else(|| invalid("sector workers must be 1..16 or auto".into()))
+        }),
+        "server.fluid.world_cells" => parse_value::<usize>(key, value).and_then(|n| {
+            (1..=262_144)
+                .contains(&n)
+                .then_some(())
+                .ok_or_else(|| invalid("per-world fluid cells must be 1..262144".into()))
+        }),
+        "server.fluid.server_cells" => parse_value::<usize>(key, value).and_then(|n| {
+            (1..=524_288)
+                .contains(&n)
+                .then_some(())
+                .ok_or_else(|| invalid("server-wide fluid cells must be 1..524288".into()))
         }),
         "server.data_dir" => nonempty(key, value, &invalid),
         "server.bind" => value

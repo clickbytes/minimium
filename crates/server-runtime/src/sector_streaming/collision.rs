@@ -2,7 +2,7 @@ use super::SectorPayload;
 use crate::world_registry::WorldRegistry;
 use minimium_diagnostics::{DomainLogger, Level};
 use minimium_sectors::{SectorManager, SectorTicket};
-use minimium_world::world::{Aabb, MapBox, MapTriangle, WorldInstanceId};
+use minimium_world::world::WorldInstanceId;
 use std::{
     collections::{BTreeMap, HashSet},
     io,
@@ -18,6 +18,7 @@ struct CollisionJob {
 }
 
 struct CollisionResult {
+    tickets: HashSet<SectorTicket>,
     instance: WorldInstanceId,
     revision: u64,
     index: Arc<minimium_simulation::CollisionIndex>,
@@ -183,14 +184,20 @@ pub(super) fn update_changed_instances(
             continue;
         }
         owner.world.install_streamed_collision_index(result.index);
+        owner.collision_tickets = result.tickets;
         owner.collision_installed_revision = result.revision;
     }
 }
 
-pub(super) fn instance_ready(worlds: &WorldRegistry, instance: WorldInstanceId) -> bool {
-    worlds
-        .get(instance)
-        .is_some_and(|world| world.collision_installed_revision == world.collision_source_revision)
+pub(super) fn tickets_ready(worlds: &WorldRegistry, tickets: &[SectorTicket]) -> bool {
+    tickets
+        .first()
+        .and_then(|t| worlds.get(t.instance()))
+        .is_some_and(|w| {
+            tickets
+                .iter()
+                .all(|ticket| w.collision_tickets.contains(ticket))
+        })
 }
 
 fn collision_loop(shared: Arc<(Mutex<State>, Condvar)>) {
@@ -215,13 +222,18 @@ fn collision_loop(shared: Arc<(Mutex<State>, Condvar)>) {
             state.active = Some(instance);
             job
         };
-        let (colliders, surfaces) = collect_geometry(&job.sectors);
+        let tickets: HashSet<_> = job.sectors.iter().map(|(ticket, _)| *ticket).collect();
+        // Each sector owns its prepared index; rebuilding the root copies Arcs.
+        let parts = job
+            .sectors
+            .iter()
+            .map(|(_, payload)| payload.collision.clone())
+            .collect();
         let result = CollisionResult {
+            tickets,
             instance: job.instance,
             revision: job.revision,
-            index: Arc::new(minimium_simulation::CollisionIndex::from_geometry(
-                colliders, surfaces,
-            )),
+            index: Arc::new(minimium_simulation::CollisionIndex::from_partitions(parts)),
         };
         let mut state = shared.0.lock().unwrap();
         state.active = None;
@@ -229,54 +241,6 @@ fn collision_loop(shared: Arc<(Mutex<State>, Condvar)>) {
             state.completed.insert(result.instance, result);
         }
     }
-}
-
-fn collect_geometry(
-    sectors: &[(SectorTicket, Arc<SectorPayload>)],
-) -> (Vec<Aabb>, Vec<MapTriangle>) {
-    let mut colliders = Vec::new();
-    let mut seen_boxes = HashSet::new();
-    let mut surfaces = Vec::new();
-    let mut seen_triangles = HashSet::new();
-    for (_, payload) in sectors {
-        for map_box in &payload.boxes {
-            if map_box.solid && seen_boxes.insert(box_geometry_key(*map_box)) {
-                colliders.push(Aabb::from_center_size(map_box.center, map_box.size));
-            }
-        }
-        for triangle in &payload.triangles {
-            if triangle.solid && seen_triangles.insert(triangle_geometry_key(*triangle)) {
-                surfaces.push(*triangle);
-            }
-        }
-    }
-    (colliders, surfaces)
-}
-
-fn box_geometry_key(map_box: MapBox) -> [u32; 6] {
-    [
-        map_box.center[0].to_bits(),
-        map_box.center[1].to_bits(),
-        map_box.center[2].to_bits(),
-        map_box.size[0].to_bits(),
-        map_box.size[1].to_bits(),
-        map_box.size[2].to_bits(),
-    ]
-}
-
-fn triangle_geometry_key(triangle: MapTriangle) -> [u32; 9] {
-    let [a, b, c] = triangle.vertices;
-    [
-        a[0].to_bits(),
-        a[1].to_bits(),
-        a[2].to_bits(),
-        b[0].to_bits(),
-        b[1].to_bits(),
-        b[2].to_bits(),
-        c[0].to_bits(),
-        c[1].to_bits(),
-        c[2].to_bits(),
-    ]
 }
 
 fn emit_collision_failure(logger: &DomainLogger, code: &'static str, instance: WorldInstanceId) {

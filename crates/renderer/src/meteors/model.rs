@@ -4,8 +4,8 @@
 //! every conversion to game or render units is owned by [`crate::meteors::coords`].
 //! The types carry no `wgpu`, window, protocol, storage or lifetime dependencies,
 //! so the terminal `--no-default-features` build compiles them unchanged.
-//! `Tracked` is an input marker only: no server producer, message, entity or save
-//! field exists for it in this epic.
+//! `Tracked` is fed by the client adapter for authoritative impact bodies.
+//! The frame contract itself remains independent of replication and persistence.
 
 /// Producer semantics tag carried by every sample.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -13,7 +13,7 @@
 pub enum MeteorSource {
     /// Client-local cosmetic meteor (ambient dust, streaks, fragments, trails).
     Cosmetic = 0,
-    /// Reserved input seam for a future tracked meteoroid adapter; never produced.
+    /// Server-owned body adapted by the client to the same finite frame budget.
     Tracked = 1,
 }
 
@@ -89,7 +89,7 @@ impl std::error::Error for MeteorContractError {}
 pub struct MeteorSample {
     /// Deterministic identity; importance ties break by ascending id.
     pub id: MeteorId,
-    /// Producer marker; `Tracked` implies no server producer exists.
+    /// Producer marker; authoritative bodies use `Tracked`.
     pub source: MeteorSource,
     /// Client-monotonic birth in seconds (`ANIMATION_EPOCH` convention).
     pub started_mono_s: f64,

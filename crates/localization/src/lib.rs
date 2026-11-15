@@ -5,6 +5,8 @@ use unic_langid::LanguageIdentifier;
 
 mod messages;
 pub use messages::UiMessage;
+mod tools;
+pub use tools::{ToolMessage, ToolNotice};
 
 mod catalogs {
     pub const EN: &str = include_str!("../locales/en.ftl");
@@ -86,6 +88,7 @@ pub enum UiNotice {
     SkyQualityDesktopOnly,
     MapTeleportBusy,
     MapTeleportRequiresEarth,
+    MapTeleportSynchronizing,
     LocalServerThreadsConflict,
     StarCatalogUnavailable,
     TimeRequestFailed,

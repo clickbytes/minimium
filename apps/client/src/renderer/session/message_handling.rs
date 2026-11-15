@@ -7,6 +7,19 @@ mod transitions;
 impl Renderer {
     pub(super) fn handle_server_message(&mut self, message: ServerMessage) {
         match message {
+            ServerMessage::Excavation { context, message } => {
+                self.observe_excavation(context, &message);
+            }
+            ServerMessage::ImpactState {
+                context,
+                body,
+                live,
+                ..
+            } => {
+                if Some(context) == self.application.game.session_context() {
+                    self.impacts.observe(context, body, live);
+                }
+            }
             ServerMessage::Bolid { context, event } => {
                 if Some(context) != self.application.game.session_context() {
                     return;

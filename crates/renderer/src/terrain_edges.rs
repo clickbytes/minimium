@@ -63,14 +63,22 @@ impl EdgeConformance {
                     .entries
                     .remove(&(key, lod))
                     .filter(|entry| Arc::ptr_eq(&entry.source, &source) && entry.steps == steps);
-                let entry = cached.unwrap_or_else(|| Entry {
-                    ground: Arc::new(conform(&source, edges, steps, terrain, false)),
-                    ocean: terrain.is_earth().then(|| {
+                let entry = cached.unwrap_or_else(|| {
+                    let ground = conform(&source, edges, steps, terrain, false);
+                    let (ground, ocean) = if terrain.is_earth() {
                         let sphere = crate::ocean_geometry::sphere_patch(&source, terrain);
-                        Arc::new(conform(&sphere, edges, steps, terrain, true))
-                    }),
-                    source,
-                    steps,
+                        let sea = conform(&sphere, edges, steps, terrain, true);
+                        let (land, water) = crate::shoreline::partition(&ground, &sea);
+                        (land, Some(Arc::new(water)))
+                    } else {
+                        (ground, None)
+                    };
+                    Entry {
+                        ground: Arc::new(ground),
+                        ocean,
+                        source,
+                        steps,
+                    }
                 });
                 let ground = entry.ground.clone();
                 retained.insert((key, lod), entry);
@@ -80,6 +88,36 @@ impl EdgeConformance {
         self.entries = retained;
         result
     }
+}
+
+pub(crate) fn preconform_bases(patches: Vec<Patch>, terrain: &PlanetTerrain) -> Vec<Patch> {
+    let edge_sets: Vec<_> = patches
+        .iter()
+        .map(|(key, lod, _)| edges(*key, *lod))
+        .collect();
+    let mut lines: HashMap<Line, Vec<Edge>> = HashMap::new();
+    for edge in edge_sets.iter().flatten().flatten() {
+        lines.entry(edge.line).or_default().push(*edge);
+    }
+    patches
+        .into_iter()
+        .zip(edge_sets)
+        .map(|((key, lod, source), edge_set)| {
+            let Some(edge_set) = edge_set else {
+                return (key, lod, source);
+            };
+            let steps = edge_set.map(|edge| {
+                lines[&edge.line]
+                    .iter()
+                    .filter(|other| other.from <= edge.from && other.to >= edge.to)
+                    .map(|other| other.step)
+                    .max()
+                    .unwrap_or(edge.step)
+            });
+            let geometry = Arc::new(conform(&source, edge_set, steps, terrain, false));
+            (key, lod, geometry)
+        })
+        .collect()
 }
 
 fn edges(key: SectorKey, lod: u8) -> Option<[Edge; 4]> {
@@ -133,6 +171,11 @@ fn conform(
     ocean: bool,
 ) -> SectorGeometry {
     let mut geometry = SectorGeometry {
+        object_triangles: if ocean {
+            Vec::new()
+        } else {
+            source.object_triangles.clone()
+        },
         boxes: source.boxes.clone(),
         triangles: Vec::with_capacity(source.triangles.len()),
     };
@@ -141,17 +184,45 @@ fn conform(
         .max(1.0) as i32;
     let mut points = HashMap::new();
     let mut segments = HashMap::new();
+    let protected: std::collections::HashSet<_> = source
+        .triangles
+        .iter()
+        .filter_map(|triangle| Some((triangle.precise_vertices?, triangle.surface?)))
+        .flat_map(|(points, surfaces)| {
+            surfaces
+                .into_iter()
+                .zip(points)
+                .filter_map(|(surface, point)| {
+                    matches!(
+                        surface.kind,
+                        minimium_world::world::MapSurfaceKind::Excavation
+                    )
+                    .then_some(point)
+                })
+        })
+        .collect();
     for triangle in &source.triangles {
         let Some(precise) = triangle.precise_vertices else {
             geometry.triangles.push(*triangle);
             continue;
         };
-        if radial_curtain(precise.map(|p| p.map(|v| v as f64 / 1000.0))) {
+        let excavation = triangle.surface.is_some_and(|surface| {
+            surface.iter().any(|vertex| {
+                matches!(
+                    vertex.kind,
+                    minimium_world::world::MapSurfaceKind::Excavation
+                )
+            })
+        });
+        if !excavation && radial_curtain(precise.map(|p| p.map(|v| v as f64 / 1000.0))) {
             continue;
         }
         let mut next = *triangle;
         let precise = precise.map(|point| {
             *points.entry(point).or_insert_with(|| {
+                if protected.contains(&point) {
+                    return point;
+                }
                 let cube =
                     minimium_procgen::terrain_surface::key(point.map(|v| v as f64)).coordinates();
                 for (edge, step) in edges.iter().zip(steps) {

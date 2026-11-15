@@ -1,5 +1,5 @@
 //! GPU sector-geometry buffers and their shadow bounds cache.
-use crate::{geometry, shadow_geometry::ShadowBounds};
+use crate::{geometry, geometry_rebase::RebaseLayout, shadow_geometry::ShadowBounds};
 use minimium_procgen::SectorGeometry;
 use minimium_world::world::{GenerationRevision, SectorKey, WorldContentRevision, WorldInstanceId};
 use std::{
@@ -8,6 +8,8 @@ use std::{
 };
 use wgpu::util::DeviceExt;
 
+mod lifecycle;
+mod local_water;
 mod prepared_upload;
 
 type CatalogKey = (WorldInstanceId, SectorKey, u8);
@@ -39,7 +41,10 @@ pub struct WorldGeometryGpu {
     versions: HashMap<WorldInstanceId, (GenerationRevision, WorldContentRevision)>,
     bounds: HashMap<CatalogKey, ShadowBounds>,
     sources: HashMap<CatalogKey, Arc<SectorGeometry>>,
+    prepared_sources: HashMap<CatalogKey, Arc<crate::prepared_sector::PreparedSector>>,
     pending: HashMap<CatalogKey, prepared_upload::PendingGeometry>,
+    water: HashMap<WorldInstanceId, local_water::LocalWaterSlot>,
+    released_publication_bytes: u64,
     publication: Option<GeometryPublication>,
     next_geometry_revision: u64,
     origin_generation: u64,
@@ -104,23 +109,29 @@ impl WorldGeometryGpu {
         let complete = !keys.is_empty()
             && keys.iter().all(|(key, lod)| {
                 let catalog_key = (instance, *key, *lod);
-                self.catalog.contains_key(&catalog_key)
-                    && self.catalog_origin_generation.get(&catalog_key)
-                        == Some(&self.origin_generation)
-                    && !self.pending.contains_key(&catalog_key)
+                self.pending
+                    .get(&catalog_key)
+                    .is_some_and(|pending| pending.origin_generation == self.origin_generation)
+                    || (self.catalog.contains_key(&catalog_key)
+                        && self.catalog_origin_generation.get(&catalog_key)
+                            == Some(&self.origin_generation))
             });
         if !complete {
             self.publication = None;
             return false;
         }
-        if self.publication.as_ref().is_some_and(|publication| {
-            publication.stamp.instance == instance
-                && publication.stamp.generation == generation
-                && publication.stamp.content_revision == content_revision
-                && publication.stamp.world_fingerprint == fingerprint
-                && publication.stamp.origin_generation == self.origin_generation
-                && publication.keys == keys
-        }) {
+        let geometry_changed = self.publish_prepared(instance, keys);
+        self.publish_local_water(instance);
+        if !geometry_changed
+            && self.publication.as_ref().is_some_and(|publication| {
+                publication.stamp.instance == instance
+                    && publication.stamp.generation == generation
+                    && publication.stamp.content_revision == content_revision
+                    && publication.stamp.world_fingerprint == fingerprint
+                    && publication.stamp.origin_generation == self.origin_generation
+                    && publication.keys == keys
+            })
+        {
             return true;
         }
         let Some(revision) = self.next_geometry_revision.checked_add(1) else {
@@ -161,24 +172,27 @@ impl WorldGeometryGpu {
             self.publication = None;
             return false;
         };
-        let flat = self.catalog.values().map(|(b, _)| (b, 9));
-        let terrain = self
-            .terrain
+        let flat = self
+            .catalog
             .values()
-            .flat_map(|t| [(&t.surface, 28), (&t.ocean, 6), (&t.objects, 9)]);
-        let pending_flat = self.pending.values().map(|p| (&p.shadow, 9));
-        let pending_terrain = self
-            .pending
+            .map(|(b, _)| (b, RebaseLayout::Object));
+        let terrain = self.terrain.values().flat_map(|t| {
+            [
+                (&t.surface, RebaseLayout::Terrain),
+                (&t.ocean, RebaseLayout::Water),
+                (&t.objects, RebaseLayout::Object),
+            ]
+        });
+        let pending = self.pending.values().flat_map(|p| p.buffers());
+        let water = self
+            .water
             .values()
-            .filter_map(|p| p.terrain.as_ref())
-            .flat_map(|t| [(&t.surface, 28), (&t.ocean, 6), (&t.objects, 9)]);
+            .flat_map(|slot| slot.buffers().map(|buffer| (buffer, RebaseLayout::Water)));
         rebase.apply(
             device,
             queue,
             delta,
-            flat.chain(terrain)
-                .chain(pending_flat)
-                .chain(pending_terrain),
+            flat.chain(terrain).chain(pending).chain(water),
         );
         self.origin_generation = origin_generation;
         self.catalog_origin_generation
@@ -186,6 +200,9 @@ impl WorldGeometryGpu {
             .for_each(|generation| *generation = origin_generation);
         for pending in self.pending.values_mut() {
             pending.origin_generation = origin_generation;
+        }
+        for slot in self.water.values_mut() {
+            slot.rebase(origin_generation);
         }
         if let Some(mut publication) = self.publication.take() {
             let Some(revision) = self.next_geometry_revision.checked_add(1) else {
@@ -302,7 +319,7 @@ impl WorldGeometryGpu {
             if let Some(terrain) = terrain {
                 let surface = crate::terrain_geometry::vertices(geometry, terrain, render_origin);
                 let ocean = edges.ocean(*key, *lod).map_or_else(Vec::new, |g| {
-                    crate::ocean_geometry::vertices(g, render_origin)
+                    crate::prepared_sector::clipped_ocean_vertices(g, render_origin, None)
                 });
                 let object_count = geometry.boxes.len() * 36;
                 let make_buffer = |label, bytes: &[u8]| {
@@ -378,69 +395,5 @@ impl WorldGeometryGpu {
             allocated_bytes,
             released_bytes,
         }
-    }
-
-    pub fn release_world(&mut self, instance: WorldInstanceId) -> u64 {
-        if self
-            .publication
-            .as_ref()
-            .is_some_and(|publication| publication.stamp.instance == instance)
-        {
-            self.publication = None;
-        }
-        let mut released_bytes = 0_u64;
-        self.catalog.retain(|(owner, _, _), (buffer, _)| {
-            if *owner != instance {
-                true
-            } else {
-                released_bytes = released_bytes.saturating_add(buffer.size());
-                false
-            }
-        });
-        self.pending.retain(|(owner, _, _), pending| {
-            if *owner == instance {
-                released_bytes += pending.bytes();
-                false
-            } else {
-                true
-            }
-        });
-        self.versions.remove(&instance);
-        self.catalog_origin_generation
-            .retain(|(owner, _, _), _| *owner != instance);
-        self.sources.retain(|(owner, _, _), _| *owner != instance);
-        self.bounds.retain(|(owner, _, _), _| *owner != instance);
-        self.terrain.retain(|(owner, _, _), buffers| {
-            if *owner != instance {
-                true
-            } else {
-                released_bytes += buffers.bytes();
-                false
-            }
-        });
-        released_bytes
-    }
-
-    pub fn clear(&mut self) -> u64 {
-        self.publication = None;
-        let released_bytes = self
-            .catalog
-            .values()
-            .map(|(buffer, _)| buffer.size())
-            .sum::<u64>()
-            + self
-                .terrain
-                .values()
-                .map(TerrainBuffers::bytes)
-                .sum::<u64>();
-        let released_bytes = released_bytes + self.pending.values().map(|p| p.bytes()).sum::<u64>();
-        self.pending.clear();
-        self.sources.clear();
-        self.terrain.clear();
-        self.catalog.clear();
-        self.catalog_origin_generation.clear();
-        self.versions.clear();
-        self.bounds.clear();
-        released_bytes
     }
 }

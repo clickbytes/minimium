@@ -22,7 +22,8 @@ pub use dungeon::{DungeonBlueprint, DungeonRoom, DungeonTile};
 pub use geometry::{triangle_area_squared, Aabb};
 pub use gravity_policy::{character_frame, CharacterGravity, GravityPolicy};
 pub use map::{
-    MapBox, MapTriangle, WorldMap, MAX_MAP_BOXES, MAX_MAP_COORDINATE, MAX_MAP_TRIANGLES,
+    MapBox, MapSurfaceKind, MapSurfaceVertex, MapTriangle, WorldMap, MAX_MAP_BOXES,
+    MAX_MAP_COORDINATE, MAX_MAP_TRIANGLES,
 };
 pub use model::{
     GenerationRevision, GenerationSpec, GeneratorDigest, MembershipEpoch, ObjectOriginId,

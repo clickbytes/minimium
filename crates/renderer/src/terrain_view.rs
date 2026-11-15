@@ -9,8 +9,10 @@ pub struct TerrainView {
 impl TerrainView {
     pub fn new(position: [f32; 3], vertical_fov: f32, height: u32) -> Self {
         Self {
-            // Stable requests avoid rebuilding selections for sub-cell motion.
-            position: position.map(|v| (v / 20.0).round() * 20.0),
+            // Quantize direction for stable requests, then restore radial height.
+            // Cartesian snapping alone moves a coastal camera +/-17 m vertically,
+            // repeatedly changing its horizon and displacing the selected LODs.
+            position: stable_position(position),
             projected_scale: height.max(1) as f32
                 / (2.0 * (vertical_fov.clamp(0.2, 2.8) * 0.5).tan()),
             overview_planes: None,
@@ -50,6 +52,16 @@ impl TerrainView {
         }
     }
 
+    /// Keep the walking neighborhood on one canonical mesh inside the existing
+    /// leaf budget. The footprint scales down on small procedural planets.
+    pub(crate) fn ground_detail_radius(self, sector_width: f64) -> f64 {
+        if self.overview_planes.is_none() {
+            (sector_width * 2.0).min(160.0)
+        } else {
+            0.0
+        }
+    }
+
     pub(crate) fn intersects(self, center: [f64; 3], radius: f64) -> bool {
         self.overview_planes.is_none_or(|planes| {
             planes.iter().all(|normal| {
@@ -69,4 +81,15 @@ impl TerrainView {
             _ => 1.0,
         }
     }
+}
+
+fn stable_position(position: [f32; 3]) -> [f32; 3] {
+    let point = glam::DVec3::from_array(position.map(f64::from));
+    let snapped = glam::DVec3::from_array(position.map(|v| (f64::from(v) / 20.0).round() * 20.0));
+    if snapped.length_squared() < 1.0 {
+        return position;
+    }
+    (snapped.normalize() * point.length().round())
+        .as_vec3()
+        .to_array()
 }

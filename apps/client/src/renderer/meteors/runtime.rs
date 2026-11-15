@@ -33,7 +33,7 @@ impl MeteorRuntime {
     }
 
     /// Client-monotonic runtime time in seconds (ADR 0013 § 5).
-    fn now_s(&self) -> f64 {
+    pub(in crate::renderer) fn now_s(&self) -> f64 {
         self.epoch.elapsed().as_secs_f64()
     }
 

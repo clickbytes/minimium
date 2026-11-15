@@ -1,3 +1,5 @@
+mod excavation;
+mod impacts;
 mod manifest;
 mod time_probe;
 use super::*;
@@ -40,6 +42,12 @@ pub(super) fn dispatch_message(
     events: &mut Vec<SessionEvent>,
 ) -> DispatchResult {
     match message {
+        ServerMessage::Excavation { .. } => {
+            return excavation::dispatch(session, message, events);
+        }
+        ServerMessage::ImpactSync { .. } | ServerMessage::ImpactState { .. } => {
+            return impacts::dispatch(session, message, events);
+        }
         ServerMessage::Welcome {
             context,
             manifest,

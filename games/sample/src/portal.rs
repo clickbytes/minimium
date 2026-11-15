@@ -90,6 +90,7 @@ impl<H> EngineModule<H, GameplaySystem> for SampleGameplayModule {
         &self,
         registrar: &mut ModuleRegistrar<'_, H, GameplaySystem>,
     ) -> Result<(), ModuleError> {
+        registrar.component(minimium_world::impact::component_descriptor())?;
         registrar.component(ComponentDescriptor {
             id: PORTAL_COMPONENT,
             name: "sample.portal",
@@ -158,12 +159,18 @@ fn portal_interaction_system(context: &mut dyn GameplaySystemContext) {
     }
     let events = context.events().to_vec();
     for event in events {
-        let GameplayEvent::PortalUseRequested {
+        let (GameplayEvent::PortalUseRequested {
             player,
             world,
             entity,
             position,
-        } = event;
+        }
+        | GameplayEvent::EntityInteractionRequested {
+            player,
+            world,
+            entity,
+            position,
+        }) = event;
         let Some(component) = context.component(world, entity, PORTAL_COMPONENT) else {
             continue;
         };

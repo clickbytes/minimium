@@ -38,7 +38,7 @@ pub fn geometry_bounds(geometry: &SectorGeometry) -> Option<ShadowBounds> {
         bounds.include(std::array::from_fn(|axis| center[axis] - half[axis]));
         bounds.include(std::array::from_fn(|axis| center[axis] + half[axis]));
     }
-    for triangle in &geometry.triangles {
+    for triangle in geometry.triangles.iter().chain(&geometry.object_triangles) {
         let points = triangle.precise_vertices.map_or_else(
             || triangle.vertices.map(|point| point.map(f64::from)),
             |vertices| vertices.map(|point| point.map(|value| value as f64 / 1000.0)),
@@ -95,7 +95,11 @@ pub fn local_map_geometry(map: &WorldMap, center: [f64; 3], radius: f64) -> Sect
         .copied()
         .filter(|item| triangle_bounds(*item).intersects_sphere(center, radius))
         .collect();
-    SectorGeometry { boxes, triangles }
+    SectorGeometry {
+        boxes,
+        triangles,
+        object_triangles: Vec::new(),
+    }
 }
 
 fn box_bounds(item: MapBox) -> ShadowBounds {
