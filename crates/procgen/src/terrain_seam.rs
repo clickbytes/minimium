@@ -1,5 +1,5 @@
 //! Chunk-domain replacement with checked closed contours and a perimeter zipper.
-use crate::{terrain_clip, terrain_contours, SectorGeometry};
+use crate::{terrain_clip, terrain_contours, terrain_zipper, SectorGeometry};
 use minimium_world::{
     terrain::{TerrainChunkKey, TERRAIN_CHUNK_M},
     world::{MapSurfaceVertex, MapTriangle},
@@ -17,6 +17,9 @@ pub enum ExcavationGeometryError {
     OpenVoxelContour,
     UnmatchedContours,
     DegenerateTransition,
+    InvalidTransitionContour,
+    TransitionSelfIntersection,
+    TransitionStripIntersection,
 }
 
 impl From<crate::GenerationError> for ExcavationGeometryError {
@@ -102,13 +105,9 @@ pub fn replace_chunk_domain(
     let paired = pair_loops(&old_loops, &voxel_loops)?;
     let strips: Vec<_> = paired
         .iter()
-        .map(|(old_loop, voxel_loop)| {
-            terrain_contours::zipper(old_loop, voxel_loop)
-                .map_err(|_| ExcavationGeometryError::DegenerateTransition)
-        })
+        .map(|(old_loop, voxel_loop)| terrain_zipper::zipper(old_loop, voxel_loop))
         .collect::<Result<_, _>>()?;
-    terrain_contours::validate_strip_intersections(&strips)
-        .map_err(|_| ExcavationGeometryError::DegenerateTransition)?;
+    terrain_contours::validate_strip_intersections(&strips)?;
     for strip in strips {
         for (mut points, old_flags) in strip {
             let mut surfaces = std::array::from_fn(|i| {
