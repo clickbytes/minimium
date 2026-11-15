@@ -10,7 +10,11 @@ Owns bounded file access for authored maps, referenced OBJ meshes and world defi
 byte budgets. `ContentCache` reserves capacity across processes, installs only
 complete verified digest blobs, and keeps active package blobs under a shared
 lease. Its default capacity is 8 GiB and callers may set a different limit.
-Eviction only removes cache-owned digest blobs whose lease can be acquired.
+Each install reserves the unique missing blob bytes and any new receipt before
+writing, while protecting all required digests and its receipt from eviction.
+Eviction only removes cache-owned digest blobs whose lease can be acquired;
+unavailable capacity returns a limit error without exceeding the configured
+quota.
 Abandoned staging cleanup recognizes only installer-owned digest/receipt names
 with run and task identifiers; unrelated `.part` files are left intact.
 `material_http::fetch` reads bounded HTTP responses from an explicit endpoint.
