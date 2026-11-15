@@ -67,24 +67,37 @@ impl ContentCache {
         let manifest = MaterialManifest::parse(manifest_bytes)
             .map_err(|error| AssetIoError::invalid_format("material manifest", error))?;
         let variant = usize::from(!compressed);
-        let required = manifest.variants[variant]
-            .maps
-            .iter()
-            .try_fold(0_u64, |total, file| {
-                let blob = self.root.join(&file.sha256);
-                let installed = materials::read_bounded(&blob, file.bytes).is_ok_and(|bytes| {
-                    bytes.len() as u64 == file.bytes
-                        && minimium_assets::terrain_material::digest(&bytes) == file.sha256
-                });
-                if installed {
-                    Ok(total)
-                } else {
-                    total.checked_add(file.bytes).ok_or_else(|| {
-                        AssetIoError::limit_exceeded("content package size", self.maximum_bytes)
-                    })
-                }
-            })?;
-        self.make_room(required)?;
+        let mut digest_bytes = std::collections::HashMap::new();
+        for file in &manifest.variants[variant].maps {
+            digest_bytes
+                .entry(file.sha256.as_str())
+                .and_modify(|bytes: &mut u64| *bytes = (*bytes).max(file.bytes))
+                .or_insert(file.bytes);
+        }
+        let mut required = 0_u64;
+        for (&digest, &bytes) in &digest_bytes {
+            let blob = self.root.join(digest);
+            let installed = materials::read_bounded(&blob, bytes).is_ok_and(|contents| {
+                contents.len() as u64 == bytes
+                    && minimium_assets::terrain_material::digest(&contents) == digest
+            });
+            if !installed {
+                required = required.checked_add(bytes).ok_or_else(|| {
+                    AssetIoError::limit_exceeded("content package size", self.maximum_bytes)
+                })?;
+            }
+        }
+        let receipt_name = format!("{expected_hash}-{variant}.ron");
+        let receipt = self.root.join(&receipt_name);
+        if !receipt.exists() {
+            required = required
+                .checked_add(manifest_bytes.len() as u64)
+                .ok_or_else(|| {
+                    AssetIoError::limit_exceeded("content package size", self.maximum_bytes)
+                })?;
+        }
+        let required_digests = digest_bytes.keys().copied().collect();
+        self.make_room(required, &required_digests, &receipt_name)?;
         let mut update_locks = std::collections::HashMap::new();
         for file in &manifest.variants[variant].maps {
             let blob = self.root.join(&file.sha256);
@@ -133,7 +146,12 @@ impl ContentCache {
         Ok(package)
     }
 
-    fn make_room(&self, required: u64) -> Result<(), AssetIoError> {
+    fn make_room(
+        &self,
+        required: u64,
+        required_digests: &std::collections::HashSet<&str>,
+        required_receipt: &str,
+    ) -> Result<(), AssetIoError> {
         let mut entries = Vec::new();
         let mut used = 0_u64;
         for entry in fs::read_dir(&self.root)
@@ -177,6 +195,13 @@ impl ContentCache {
         for (path, digest, bytes, _) in entries {
             if used.saturating_add(required) <= self.maximum_bytes {
                 break;
+            }
+            if digest
+                .as_deref()
+                .is_some_and(|digest| required_digests.contains(digest))
+                || path.file_name().and_then(|name| name.to_str()) == Some(required_receipt)
+            {
+                continue;
             }
             let _lease_guard = if let Some(digest) = digest {
                 let lock_path = self.root.join(".leases").join(format!("{digest}.lock"));
