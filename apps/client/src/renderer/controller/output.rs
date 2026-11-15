@@ -14,31 +14,15 @@ impl CommandOutputCollector {
         self.result.outputs.push(CommandOutput::Line(line.into()));
     }
 
-    pub(super) fn push_ui_message(
-        &mut self,
-        message: minimium_localization::UiMessage,
-        _localizer: &minimium_localization::Localizer,
-        _locale: minimium_localization::Locale,
-    ) {
+    pub(super) fn push_ui_message(&mut self, message: minimium_localization::UiMessage) {
         self.result.outputs.push(CommandOutput::UiMessage(message));
     }
 
-    pub(super) fn push_ui_error_message(
-        &mut self,
-        message: minimium_localization::UiMessage,
-        _localizer: &minimium_localization::Localizer,
-        _locale: minimium_localization::Locale,
-    ) {
+    pub(super) fn push_ui_error_message(&mut self, message: minimium_localization::UiMessage) {
         self.result.outputs.push(CommandOutput::UiError(message));
     }
 
-    pub(super) fn push_client_text(
-        &mut self,
-        message: ClientText,
-        error: bool,
-        _localizer: &minimium_localization::Localizer,
-        _locale: minimium_localization::Locale,
-    ) {
+    pub(super) fn push_client_text(&mut self, message: ClientText, error: bool) {
         self.result
             .outputs
             .push(CommandOutput::ClientText { message, error });

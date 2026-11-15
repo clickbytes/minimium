@@ -83,9 +83,7 @@ pub(super) fn handle(
                         Text::StartingLocalServer.localized(&localizer, options.locale)
                     );
                 }
-                Err(error) => result
-                    .outputs
-                    .extend(start_error_output(error, &localizer, options.locale).outputs),
+                Err(error) => result.outputs.extend(start_error_output(error).outputs),
             }
         }
         FrontendAction::Connect(address) => {
@@ -97,7 +95,7 @@ pub(super) fn handle(
             } else {
                 result
                     .outputs
-                    .extend(start_remote(connection, &address, &localizer, options.locale).outputs);
+                    .extend(start_remote(connection, &address).outputs);
             }
         }
         FrontendAction::Disconnect => {

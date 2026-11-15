@@ -7,42 +7,26 @@ pub(super) fn execute(
 ) -> (bool, client_commands::CommandActionResult) {
     let mut output = CommandOutputCollector::default();
     match action {
-        FrontendAction::Notice(notice) => output.push_ui_message(
-            minimium_localization::UiMessage::Notice(notice),
-            &renderer.localizer,
-            renderer.application.settings.locale,
-        ),
+        FrontendAction::Notice(notice) => {
+            output.push_ui_message(minimium_localization::UiMessage::Notice(notice))
+        }
         FrontendAction::Print(text) => {
             for line in text.lines() {
                 output.push_line(line);
             }
         }
         FrontendAction::Help => {
-            output.push_ui_message(
-                minimium_localization::UiMessage::Notice(
-                    minimium_localization::UiNotice::CommandsHeader,
-                ),
-                &renderer.localizer,
-                renderer.application.settings.locale,
-            );
+            output.push_ui_message(minimium_localization::UiMessage::Notice(
+                minimium_localization::UiNotice::CommandsHeader,
+            ));
             for line in client_commands::help_lines() {
                 output.push_line(line);
             }
-            output.push_client_text(
-                Text::ConsoleHistoryHelp,
-                false,
-                &renderer.localizer,
-                renderer.application.settings.locale,
-            );
+            output.push_client_text(Text::ConsoleHistoryHelp, false);
         }
         FrontendAction::Connect(address) => {
             if renderer.application.connection.busy() {
-                output.push_client_text(
-                    Text::DisconnectOrWait,
-                    true,
-                    &renderer.localizer,
-                    renderer.application.settings.locale,
-                );
+                output.push_client_text(Text::DisconnectOrWait, true);
             } else {
                 output
                     .result
@@ -52,12 +36,7 @@ pub(super) fn execute(
         }
         FrontendAction::HostLocal(lane) => {
             if renderer.application.connection.busy() {
-                output.push_client_text(
-                    Text::DisconnectOrWait,
-                    true,
-                    &renderer.localizer,
-                    renderer.application.settings.locale,
-                );
+                output.push_client_text(Text::DisconnectOrWait, true);
             } else {
                 output
                     .result
@@ -68,12 +47,7 @@ pub(super) fn execute(
         FrontendAction::Disconnect => {
             renderer.application.connection.cancel();
             renderer.clear_connection();
-            output.push_client_text(
-                Text::Disconnected,
-                false,
-                &renderer.localizer,
-                renderer.application.settings.locale,
-            );
+            output.push_client_text(Text::Disconnected, false);
         }
         FrontendAction::FpsShow => renderer
             .application
@@ -108,8 +82,6 @@ pub(super) fn execute(
                     ),
                 },
                 false,
-                &renderer.localizer,
-                renderer.application.settings.locale,
             );
         }
         FrontendAction::State => output.push_client_text(
@@ -130,8 +102,6 @@ pub(super) fn execute(
                     .player_count(),
             },
             false,
-            &renderer.localizer,
-            renderer.application.settings.locale,
         ),
         FrontendAction::MapTeleport => renderer.arm_map_teleport(),
         FrontendAction::Clear => output.clear_lines(),
@@ -146,13 +116,11 @@ pub(super) fn execute(
                 &renderer.application.settings.config_file_settings,
                 &renderer.session_settings(),
             ) {
-                Ok(()) => output.push_ui_message(
-                    minimium_localization::UiMessage::ConfigurationSaved(
+                Ok(()) => {
+                    output.push_ui_message(minimium_localization::UiMessage::ConfigurationSaved(
                         path.display().to_string(),
-                    ),
-                    &renderer.localizer,
-                    renderer.application.settings.locale,
-                ),
+                    ))
+                }
                 Err(error) => {
                     renderer.application.connection.record_diagnostic_failure(
                         "storage.config_save_failed",
@@ -160,8 +128,6 @@ pub(super) fn execute(
                     );
                     output.push_ui_error_message(
                         minimium_localization::UiMessage::ConfigurationSaveFailed,
-                        &renderer.localizer,
-                        renderer.application.settings.locale,
                     );
                 }
             }
@@ -195,13 +161,9 @@ pub(super) fn execute(
                         .application
                         .connection
                         .record_diagnostic_failure("client.time_request_failed", &error);
-                    output.push_ui_error_message(
-                        minimium_localization::UiMessage::Notice(
-                            minimium_localization::UiNotice::TimeRequestFailed,
-                        ),
-                        &renderer.localizer,
-                        renderer.application.settings.locale,
-                    );
+                    output.push_ui_error_message(minimium_localization::UiMessage::Notice(
+                        minimium_localization::UiNotice::TimeRequestFailed,
+                    ));
                 }
             }
         }
@@ -227,13 +189,9 @@ pub(super) fn execute(
                         .application
                         .connection
                         .record_diagnostic_failure("client.time_scale_request_failed", &error);
-                    output.push_ui_error_message(
-                        minimium_localization::UiMessage::Notice(
-                            minimium_localization::UiNotice::TimeScaleRequestFailed,
-                        ),
-                        &renderer.localizer,
-                        renderer.application.settings.locale,
-                    );
+                    output.push_ui_error_message(minimium_localization::UiMessage::Notice(
+                        minimium_localization::UiNotice::TimeScaleRequestFailed,
+                    ));
                 }
             }
         }
@@ -268,13 +226,9 @@ pub(super) fn execute(
                         .application
                         .connection
                         .record_diagnostic_failure("client.time_mode_request_failed", &error);
-                    output.push_ui_error_message(
-                        minimium_localization::UiMessage::Notice(
-                            minimium_localization::UiNotice::TimeModeRequestFailed,
-                        ),
-                        &renderer.localizer,
-                        renderer.application.settings.locale,
-                    );
+                    output.push_ui_error_message(minimium_localization::UiMessage::Notice(
+                        minimium_localization::UiNotice::TimeModeRequestFailed,
+                    ));
                 }
             }
         }
@@ -299,13 +253,9 @@ pub(super) fn execute(
                         .application
                         .connection
                         .record_diagnostic_failure("client.time_policy_request_failed", &error);
-                    output.push_ui_error_message(
-                        minimium_localization::UiMessage::Notice(
-                            minimium_localization::UiNotice::TimeOfflinePolicyRequestFailed,
-                        ),
-                        &renderer.localizer,
-                        renderer.application.settings.locale,
-                    );
+                    output.push_ui_error_message(minimium_localization::UiMessage::Notice(
+                        minimium_localization::UiNotice::TimeOfflinePolicyRequestFailed,
+                    ));
                 }
             }
         }

@@ -62,7 +62,7 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
     let mut last_environment_status_at = None;
 
     if let Some(address) = options.connect.as_ref() {
-        let result = start_remote(&mut connection, address, &localizer, options.locale);
+        let result = start_remote(&mut connection, address);
         format_startup_output(result, &localizer, options.locale);
     }
 
@@ -323,8 +323,6 @@ pub(super) fn format_startup_output(
 pub(super) fn start_remote(
     connection: &mut ConnectionController,
     address: &str,
-    localizer: &minimium_localization::Localizer,
-    locale: minimium_localization::Locale,
 ) -> crate::client_commands::CommandActionResult {
     match connection.start_remote(address.to_owned()) {
         Ok(()) => crate::client_commands::CommandActionResult {
@@ -333,15 +331,11 @@ pub(super) fn start_remote(
                 error: false,
             }],
         },
-        Err(error) => start_error_output(error, localizer, locale),
+        Err(error) => start_error_output(error),
     }
 }
 
-pub(super) fn start_error_output(
-    error: StartError,
-    localizer: &minimium_localization::Localizer,
-    locale: minimium_localization::Locale,
-) -> crate::client_commands::CommandActionResult {
+pub(super) fn start_error_output(error: StartError) -> crate::client_commands::CommandActionResult {
     let message = match error {
         StartError::Busy {
             active_attempt: Some(active_attempt),
@@ -354,7 +348,6 @@ pub(super) fn start_error_output(
         StartError::AttemptIdsExhausted => Text::AttemptIdsExhausted,
         StartError::WorkerSpawn(error) => Text::WorkerStartFailed(error.to_string()),
     };
-    let _ = (localizer, locale);
     crate::client_commands::CommandActionResult {
         outputs: vec![crate::client_commands::CommandOutput::ClientText {
             message,

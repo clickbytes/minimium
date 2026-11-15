@@ -50,35 +50,21 @@ pub(super) fn execute_input(
     let action = match result {
         client_commands::TextCommandResult::Empty => return (false, output.result),
         client_commands::TextCommandResult::Rejected(error) => {
-            output.push_ui_error_message(
-                minimium_localization::UiMessage::CommandRejected {
-                    code: error.code.as_str().to_owned(),
-                    subject: error.subject.clone().unwrap_or_default(),
-                },
-                &renderer.localizer,
-                renderer.application.settings.locale,
-            );
+            output.push_ui_error_message(minimium_localization::UiMessage::CommandRejected {
+                code: error.code.as_str().to_owned(),
+                subject: error.subject.clone().unwrap_or_default(),
+            });
             if let Some(usage) = error.usage.as_deref() {
                 output.push_line(format!("Usage: {usage}"));
             }
             return (false, output.result);
         }
         client_commands::TextCommandResult::Queued { .. } => {
-            output.push_client_text(
-                Text::CommandQueued,
-                false,
-                &renderer.localizer,
-                renderer.application.settings.locale,
-            );
+            output.push_client_text(Text::CommandQueued, false);
             return (false, output.result);
         }
         client_commands::TextCommandResult::QueueRejected { error, .. } => {
-            output.push_client_text(
-                Text::CouldNotQueueCommand(error.into()),
-                true,
-                &renderer.localizer,
-                renderer.application.settings.locale,
-            );
+            output.push_client_text(Text::CouldNotQueueCommand(error.into()), true);
             return (false, output.result);
         }
         client_commands::TextCommandResult::Suppressed(_) => return (false, output.result),
