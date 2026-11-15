@@ -4,6 +4,15 @@ Aktywny epic: [#421](https://github.com/clickbytes/minimium/issues/421). Kontrak
 Bazowy checkout: `main@7d7ada8ca16ff52db28a889247e5b8173644b6d5`, czyste drzewo; repo-check potwierdził autora i Git transport jako clickbytes.
 Przed każdym przydziałem odczytać aktualny main, rzeczywiste stany GitHub, diff i aktualnych producentów/konsumentów. Baseline nie jest poleceniem cofnięcia kodu.
 
+## Stan integracji i dowody
+
+O00, wszystkie 45 implementacji W01–P09 oraz Q01 mają odczytane CLOSED.
+Zintegrowana baza przeglądu Q02 to `main@4b0524ff7444dd37adc6150d369ae6fe4ac154d1`.
+[Raport Q02](evidence/epic-049/q02.md) zawiera mapę F01–F43, rzeczywistych
+właścicieli i konsumentów, rejestr PR/merge oraz dowody i ograniczenia kontroli.
+Aktualizacja tego dokumentu nie uruchamia final testing. Q03 #470, jego dziecko
+#384 i epic #421 pozostają otwarte do jawnie rozpoczętego i ukończonego odbioru.
+
 ## Obowiązujący workflow
 
 Ten dokument i issues E049 zastępują instrukcje wykonywania historycznych E046/E047 i wcześniejszych sekwencyjnych planów. Ich historia i dowody pozostają zachowane. E047 #366 zamknięto jako **zastąpiony**, nie funkcjonalnie ukończony; niewykonany odbiór meteorów #384 jest dzieckiem Q03 #470.
