@@ -1,6 +1,31 @@
 use super::*;
-use minimium_world::entity::{ComponentBlob, ComponentRegistry, EntityStore};
+use minimium_world::entity::{
+    ComponentBlob, ComponentMutation, ComponentRegistry, EntityStore, WorldEntityChange,
+};
 use std::collections::HashSet;
+
+pub(crate) struct StagedEntityBatch<'a> {
+    worlds: &'a mut WorldRegistry,
+    stores: BTreeMap<WorldInstanceId, EntityStore>,
+    changes: Vec<WorldEntityChange>,
+}
+
+impl StagedEntityBatch<'_> {
+    pub(crate) fn changes(&self) -> &[WorldEntityChange] {
+        &self.changes
+    }
+
+    pub(crate) fn commit(self, reservation: minimium_storage::PreparedEntityReservation<'_>) {
+        reservation.commit();
+        for (instance, store) in self.stores {
+            self.worlds
+                .instances
+                .get_mut(&instance)
+                .expect("staged world remains registered while entity batch holds its borrow")
+                .entities = store;
+        }
+    }
+}
 
 impl WorldRegistry {
     pub(crate) fn initialize_new_content(&mut self) {
@@ -12,16 +37,13 @@ impl WorldRegistry {
         }
     }
 
-    pub(crate) fn apply_entity_effect_batch(
-        &mut self,
+    pub(crate) fn stage_entity_effect_batch<'a>(
+        &'a mut self,
         effects: &[crate::modules::WorldEffect],
-        budget: &mut crate::storage::SnapshotBudget,
         registry: &ComponentRegistry,
-    ) -> Result<(), RegistryError> {
-        if effects.is_empty() {
-            return Ok(());
-        }
+    ) -> Result<StagedEntityBatch<'a>, RegistryError> {
         let mut stores = BTreeMap::new();
+        let mut changes = Vec::new();
         for effect in effects {
             let instance = match effect {
                 crate::modules::WorldEffect::SpawnEntity { world, .. }
@@ -44,7 +66,6 @@ impl WorldRegistry {
             .filter(|(id, _)| !stores.contains_key(id))
             .map(|(_, owner)| owner.entities.len())
             .sum();
-        let mut next_budget = budget.clone();
         for effect in effects {
             match effect {
                 crate::modules::WorldEffect::SpawnEntity {
@@ -78,13 +99,10 @@ impl WorldRegistry {
                         .get_mut(world)
                         .ok_or(RegistryError::UnknownInstance)?;
                     let entity = store.spawn().map_err(RegistryError::Component)?;
-                    next_budget
-                        .reserve_many([(
-                            crate::storage::SnapshotRecordKey::Entity(*world, entity),
-                            minimium_storage::entity_record_bytes(*world, entity)
-                                .map_err(|_| RegistryError::SnapshotBudgetExceeded)?,
-                        )])
-                        .map_err(|_| RegistryError::SnapshotBudgetExceeded)?;
+                    changes.push(WorldEntityChange {
+                        world: *world,
+                        mutation: ComponentMutation::Spawn(entity),
+                    });
                     let mut kinds = HashSet::new();
                     for component in components {
                         if !kinds.insert(component.kind) {
@@ -101,44 +119,23 @@ impl WorldRegistry {
                             .map_err(RegistryError::Component)?;
                         let blob = ComponentBlob::new(component.schema, component.bytes.clone())
                             .ok_or(RegistryError::Component(ComponentError::InvalidPayload))?;
-                        let bytes = minimium_storage::component_record_bytes(
-                            *world,
-                            entity,
-                            component.kind,
-                            &blob,
-                        )
-                        .map_err(|_| RegistryError::SnapshotBudgetExceeded)?;
-                        let key = crate::storage::SnapshotRecordKey::Component(
-                            *world,
-                            entity,
-                            component.kind,
-                        );
-                        next_budget
-                            .reserve_many([(key, bytes)])
-                            .map_err(|_| RegistryError::SnapshotBudgetExceeded)?;
-                        next_budget
-                            .reserve_component_payloads([(key, component.bytes.len())])
-                            .map_err(|_| RegistryError::SnapshotBudgetExceeded)?;
+                        changes.push(WorldEntityChange {
+                            world: *world,
+                            mutation: ComponentMutation::Upsert(entity, component.kind, blob),
+                        });
                     }
                 }
                 crate::modules::WorldEffect::DespawnEntity { world, entity } => {
                     let store = stores
                         .get_mut(world)
                         .ok_or(RegistryError::UnknownInstance)?;
-                    let kinds: Vec<_> = store
-                        .iter_components()
-                        .filter(|(id, _, _)| id == entity)
-                        .map(|(_, kind, _)| kind)
-                        .collect();
                     if !store.despawn(*entity).map_err(RegistryError::Component)? {
                         return Err(RegistryError::EntitySectorConflict);
                     }
-                    next_budget.release(crate::storage::SnapshotRecordKey::Entity(*world, *entity));
-                    for kind in kinds {
-                        next_budget.release(crate::storage::SnapshotRecordKey::Component(
-                            *world, *entity, kind,
-                        ));
-                    }
+                    changes.push(WorldEntityChange {
+                        world: *world,
+                        mutation: ComponentMutation::Despawn(*entity),
+                    });
                 }
                 crate::modules::WorldEffect::SetComponent {
                     world,
@@ -159,24 +156,10 @@ impl WorldRegistry {
                         .map_err(RegistryError::Component)?;
                     let blob = ComponentBlob::new(component.schema, component.bytes.clone())
                         .ok_or(RegistryError::Component(ComponentError::InvalidPayload))?;
-                    let bytes = minimium_storage::component_record_bytes(
-                        *world,
-                        *entity,
-                        component.kind,
-                        &blob,
-                    )
-                    .map_err(|_| RegistryError::SnapshotBudgetExceeded)?;
-                    let key = crate::storage::SnapshotRecordKey::Component(
-                        *world,
-                        *entity,
-                        component.kind,
-                    );
-                    next_budget
-                        .reserve(key, bytes)
-                        .map_err(|_| RegistryError::SnapshotBudgetExceeded)?;
-                    next_budget
-                        .reserve_component_payloads([(key, component.bytes.len())])
-                        .map_err(|_| RegistryError::SnapshotBudgetExceeded)?;
+                    changes.push(WorldEntityChange {
+                        world: *world,
+                        mutation: ComponentMutation::Upsert(*entity, component.kind, blob),
+                    });
                 }
                 crate::modules::WorldEffect::RemoveComponent {
                     world,
@@ -190,22 +173,20 @@ impl WorldRegistry {
                         .remove_component(*entity, *kind)
                         .map_err(RegistryError::Component)?
                     {
-                        next_budget.release(crate::storage::SnapshotRecordKey::Component(
-                            *world, *entity, *kind,
-                        ));
+                        changes.push(WorldEntityChange {
+                            world: *world,
+                            mutation: ComponentMutation::RemoveComponent(*entity, *kind),
+                        });
                     }
                 }
                 crate::modules::WorldEffect::RequestTransfer { .. } => {}
             }
         }
-        for (instance, store) in stores {
-            self.instances
-                .get_mut(&instance)
-                .expect("staged world remains registered")
-                .entities = store;
-        }
-        *budget = next_budget;
-        Ok(())
+        Ok(StagedEntityBatch {
+            worlds: self,
+            stores,
+            changes,
+        })
     }
 
     pub(crate) fn restore_persistent_entities(
