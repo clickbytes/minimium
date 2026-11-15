@@ -142,3 +142,15 @@ contours use selected LOD bases where available and bounded guard bases elsewher
 Teleport surface queries intersect the integrated mesh and choose the outermost
 exposed hit; the runtime applies its player clearance above that point. GPU
 runtime acceptance is pending.
+
+Transition alignment and zipper advancement use cumulative Euclidean arc length
+in canonical millimetres, normalized over the complete closed loop. Alignment
+scores both directions and all voxel-vertex rotations by integrated squared
+separation, so extra samples on one edge do not outweigh the rest of a contour.
+The zipper retains the original boundary vertices, surface provenance and area
+filter. It does not permit intersecting strips: `TransitionSelfIntersection`
+and `TransitionStripIntersection` distinguish these refusals in existing server
+diagnostics; `InvalidTransitionContour` rejects invalid perimeter input, and
+`DegenerateTransition` remains the malformed face-intersection error. These
+diagnostic variants do not change the protocol's `UnsafeGeometry` rejection.
+No failed candidate is returned to the runtime for persistence/publication.

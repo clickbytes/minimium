@@ -1,4 +1,5 @@
-//! Canonical closed contour graph and deterministic perimeter zipper.
+//! Canonical closed contour graph and transition intersection validation.
+use crate::ExcavationGeometryError;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) type Point = [i64; 3];
@@ -63,48 +64,11 @@ pub(crate) fn closed_loops(segments: &[(Point, Point)]) -> Result<Vec<Loop>, &'s
     Ok(loops)
 }
 
-pub(crate) fn zipper(
-    a: &[Point],
-    b: &[Point],
-) -> Result<Vec<([Point; 3], [bool; 3])>, &'static str> {
-    if a.len() < 3 || b.len() < 3 {
-        return Err("transition contour has fewer than three vertices");
-    }
-    let (a, b) = align(a, b);
-    let mut triangles = Vec::with_capacity(a.len() + b.len());
-    let (mut i, mut j) = (0, 0);
-    while i < a.len() || j < b.len() {
-        let next_a = (i + 1) as f64 / a.len() as f64;
-        let next_b = (j + 1) as f64 / b.len() as f64;
-        let pa = a[i % a.len()];
-        let pb = b[j % b.len()];
-        if (next_a - next_b).abs() < 1.0e-12 {
-            let an = a[(i + 1) % a.len()];
-            let bn = b[(j + 1) % b.len()];
-            let first = [pa, an, bn];
-            let second = [pa, bn, pb];
-            triangles.extend([(first, [true, true, false]), (second, [true, false, false])]);
-            i += 1;
-            j += 1;
-        } else if next_a < next_b {
-            triangles.push(([pa, a[(i + 1) % a.len()], pb], [true, true, false]));
-            i += 1;
-        } else {
-            triangles.push(([pa, b[(j + 1) % b.len()], pb], [true, false, false]));
-            j += 1;
-        }
-    }
-    Ok(triangles
-        .into_iter()
-        .filter(|(triangle, _)| area2(*triangle) >= 1.0)
-        .collect())
-}
-
 /// Rejects intersections between transition strips before geometry can be
 /// published. Shared vertices are expected at canonical chunk-face corners.
 pub(crate) fn validate_strip_intersections(
     strips: &[Vec<([Point; 3], [bool; 3])>],
-) -> Result<(), &'static str> {
+) -> Result<(), ExcavationGeometryError> {
     for strip in strips {
         for first in 0..strip.len() {
             for second in first + 1..strip.len() {
@@ -112,7 +76,7 @@ pub(crate) fn validate_strip_intersections(
                     continue;
                 }
                 if triangles_intersect(strip[first].0, strip[second].0) {
-                    return Err("transition strip self-intersects");
+                    return Err(ExcavationGeometryError::TransitionSelfIntersection);
                 }
             }
         }
@@ -125,7 +89,7 @@ pub(crate) fn validate_strip_intersections(
                         continue;
                     }
                     if triangles_intersect(*a, *b) {
-                        return Err("transition strips intersect");
+                        return Err(ExcavationGeometryError::TransitionStripIntersection);
                     }
                 }
             }
@@ -241,52 +205,4 @@ fn crossf(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
         a[2] * b[0] - a[0] * b[2],
         a[0] * b[1] - a[1] * b[0],
     ]
-}
-
-fn align(a: &[Point], b: &[Point]) -> (Vec<Point>, Vec<Point>) {
-    let a = rotate_min(a);
-    let mut best = (f64::INFINITY, Vec::new());
-    for reverse in [false, true] {
-        let candidate = if reverse {
-            b.iter().copied().rev().collect::<Vec<_>>()
-        } else {
-            b.to_vec()
-        };
-        for offset in 0..candidate.len() {
-            let rotated = (0..candidate.len())
-                .map(|i| candidate[(i + offset) % candidate.len()])
-                .collect::<Vec<_>>();
-            let score = a.iter().zip(&rotated).map(|(x, y)| distance2(*x, *y)).sum();
-            if score < best.0 {
-                best = (score, rotated);
-            }
-        }
-    }
-    (a, best.1)
-}
-
-fn rotate_min(points: &[Point]) -> Vec<Point> {
-    let start = points
-        .iter()
-        .enumerate()
-        .min_by_key(|(_, p)| *p)
-        .map_or(0, |(i, _)| i);
-    (0..points.len())
-        .map(|i| points[(i + start) % points.len()])
-        .collect()
-}
-
-fn distance2(a: Point, b: Point) -> f64 {
-    (0..3).map(|i| (a[i] as f64 - b[i] as f64).powi(2)).sum()
-}
-
-fn area2([a, b, c]: [Point; 3]) -> f64 {
-    let ab = std::array::from_fn::<_, 3, _>(|i| b[i] as f64 - a[i] as f64);
-    let ac = std::array::from_fn::<_, 3, _>(|i| c[i] as f64 - a[i] as f64);
-    let cross = [
-        ab[1] * ac[2] - ab[2] * ac[1],
-        ab[2] * ac[0] - ab[0] * ac[2],
-        ab[0] * ac[1] - ab[1] * ac[0],
-    ];
-    cross.iter().map(|v| v * v).sum()
 }

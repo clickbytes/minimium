@@ -25,6 +25,7 @@ mod terrain_material;
 mod terrain_overlay;
 mod terrain_seam;
 pub mod terrain_surface;
+mod terrain_zipper;
 mod traversal;
 mod volume_base;
 mod water_catalog;
