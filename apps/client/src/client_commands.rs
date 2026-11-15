@@ -30,6 +30,7 @@ pub(crate) use meteors::{MeteorDebug, MeteorLightDebug, MeteorPreset};
 pub(crate) use minimium_commands::{
     CommandArgumentSpec as ArgumentSpec, CommandArgumentType as ArgumentType,
 };
+pub(crate) use properties::local_setting_specs;
 #[cfg(feature = "desktop")]
 pub(crate) use properties::property_specs;
 pub(crate) use properties::{

@@ -1,70 +1,13 @@
-use crate::client_commands::{parse_setting_value, ClientPropertyValue};
+use crate::{
+    application::StartupSettings,
+    client_commands::{local_setting_specs, parse_setting_value, ClientPropertyKey as Key},
+};
 use minimium_commands::{
     parse_cli, CliOptionSpec, CliParseOutcome, CommandError, CommandErrorCode, ConfigDocument,
-    ConfigErrorCode, ConfigResolution, PropertySource, MAX_CONFIG_BYTES,
+    ConfigErrorCode, ConfigResolution, MAX_CONFIG_BYTES,
 };
-use minimium_renderer::quality::SkyQuality;
 use std::{collections::BTreeMap, path::Path};
 
-const FOV_KEY: &str = "client.camera.fov";
-const SENSITIVITY_KEY: &str = "client.input.mouse_sensitivity";
-const INPUT_BINDINGS_KEY: &str = "client.input.bindings";
-const SKY_QUALITY_KEY: &str = "client.graphics.sky_quality";
-const SKY_NAMES_KEY: &str = "client.sky.names";
-const CLOUD_DETAIL_KEY: &str = "client.weather.cloud_detail";
-const ATMOSPHERE_DEBUG_KEY: &str = "client.debug.atmosphere";
-const TERRAIN_DEBUG_KEY: &str = "client.debug.terrain";
-const CLOUD_DEBUG_KEY: &str = "client.debug.clouds";
-const SKY_DEMO_KEY: &str = "client.sky.demo";
-const LOCALE_KEY: &str = "ui.locale";
-const DEFAULTS: &[(&str, &str)] = &[
-    ("client.sky.meteors.enabled", "true"),
-    ("client.sky.meteors.rate", "1"),
-    ("client.sky.meteors.quality", "standard"),
-    ("client.sky.meteors.seed_override", "none"),
-    ("client.sky.meteors.sound", "false"),
-    (FOV_KEY, "70"),
-    (SENSITIVITY_KEY, "0.0025"),
-    (INPUT_BINDINGS_KEY, ""),
-    (SKY_QUALITY_KEY, "standard"),
-    (SKY_NAMES_KEY, "false"),
-    (CLOUD_DETAIL_KEY, "6"),
-    (ATMOSPHERE_DEBUG_KEY, "off"),
-    (TERRAIN_DEBUG_KEY, "off"),
-    (CLOUD_DEBUG_KEY, "off"),
-    (SKY_DEMO_KEY, "false"),
-    (LOCALE_KEY, "en"),
-];
-const PERSISTENT_KEYS: &[&str] = &[
-    "client.sky.meteors.enabled",
-    "client.sky.meteors.quality",
-    "client.sky.meteors.sound",
-    FOV_KEY,
-    SENSITIVITY_KEY,
-    INPUT_BINDINGS_KEY,
-    SKY_QUALITY_KEY,
-    SKY_NAMES_KEY,
-    CLOUD_DETAIL_KEY,
-    LOCALE_KEY,
-];
-const KNOWN_KEYS: &[&str] = &[
-    "client.sky.meteors.enabled",
-    "client.sky.meteors.rate",
-    "client.sky.meteors.quality",
-    "client.sky.meteors.seed_override",
-    "client.sky.meteors.sound",
-    FOV_KEY,
-    SENSITIVITY_KEY,
-    INPUT_BINDINGS_KEY,
-    SKY_QUALITY_KEY,
-    SKY_NAMES_KEY,
-    CLOUD_DETAIL_KEY,
-    ATMOSPHERE_DEBUG_KEY,
-    TERRAIN_DEBUG_KEY,
-    CLOUD_DEBUG_KEY,
-    SKY_DEMO_KEY,
-    LOCALE_KEY,
-];
 const OFFLINE_OPTIONS: &[CliOptionSpec] = &[
     CliOptionSpec {
         name: "--config",
@@ -93,20 +36,14 @@ const OFFLINE_OPTIONS: &[CliOptionSpec] = &[
 ];
 
 pub(crate) struct ClientPreferenceConfig {
-    pub(crate) locale: minimium_localization::Locale,
-    pub(crate) fov_degrees: f32,
-    pub(crate) mouse_sensitivity: f32,
-    pub(crate) input_bindings: String,
-    pub(crate) sky_quality: SkyQuality,
-    pub(crate) sky_names: bool,
-    pub(crate) cloud_detail: u8,
-    pub(crate) atmosphere_debug: minimium_renderer::atmosphere_debug::AtmosphereDebug,
-    pub(crate) terrain_debug: minimium_renderer::terrain_debug::TerrainDebug,
-    pub(crate) cloud_debug: minimium_environment::weather::CloudDebug,
-    pub(crate) sky_demo: bool,
-    pub(crate) sources: BTreeMap<String, PropertySource>,
-    pub(crate) resolved_values: BTreeMap<String, String>,
+    pub(crate) startup: StartupSettings,
     pub(crate) file_settings: BTreeMap<String, String>,
+}
+
+fn persistent_keys() -> impl Iterator<Item = &'static str> {
+    local_setting_specs()
+        .filter(|spec| spec.persistent)
+        .map(|spec| spec.key)
 }
 
 pub(crate) fn resolve_preferences(
@@ -116,12 +53,12 @@ pub(crate) fn resolve_preferences(
     let document = path.map(read_document).transpose()?;
     if let Some(document) = &document {
         document
-            .validate_keys(PERSISTENT_KEYS.iter().copied())
+            .validate_keys(persistent_keys())
             .map_err(map_config_error)?;
     }
     if let Some(key) = command_line
         .keys()
-        .find(|key| !KNOWN_KEYS.contains(&key.as_str()))
+        .find(|key| !local_setting_specs().any(|spec| spec.key == key.as_str()))
     {
         return Err(CommandError::new(
             CommandErrorCode::UnknownProperty,
@@ -130,127 +67,57 @@ pub(crate) fn resolve_preferences(
             Some("help [KEY]"),
         ));
     }
-    let defaults = DEFAULTS
-        .iter()
-        .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+    let defaults = local_setting_specs()
+        .map(|spec| {
+            (
+                spec.key.to_owned(),
+                spec.default.expect("local startup default").to_owned(),
+            )
+        })
         .collect::<BTreeMap<_, _>>();
     let environment = mapped_environment_values();
     let resolved =
         ConfigResolution::resolve(&defaults, document.as_ref(), &environment, command_line);
-    let mut sources = BTreeMap::new();
-    let mut resolved_values = BTreeMap::new();
-    for (key, value) in resolved.iter() {
-        sources.insert(key.to_owned(), value.source);
-        resolved_values.insert(key.to_owned(), value.requested.clone());
-        if key == LOCALE_KEY {
-            if minimium_localization::Locale::from_setting(&value.requested).is_none() {
-                return Err(CommandError::new(
-                    CommandErrorCode::InvalidValue,
-                    Some(LOCALE_KEY),
-                    "expected en or pl",
-                    Some("config show ui.locale"),
-                ));
-            }
-        } else if key == INPUT_BINDINGS_KEY {
-            crate::input::InputMapper::from_setting(&value.requested).map_err(|error| {
-                CommandError::new(
-                    CommandErrorCode::InvalidValue,
-                    Some(INPUT_BINDINGS_KEY),
-                    error,
-                    Some("config show client.input.bindings"),
-                )
-            })?;
-        } else {
-            parse_setting_value(key, &value.requested)?;
-        }
-    }
-    let value = |key: &str| resolved_values.get(key).expect("setting has a default");
-    let typed = |key: &str| parse_setting_value(key, value(key)).expect("validated setting");
-    let fov_degrees = match typed(FOV_KEY) {
-        ClientPropertyValue::CameraFov(value) => value,
-        _ => unreachable!("FOV key has a decimal descriptor"),
-    };
-    let locale = minimium_localization::Locale::from_setting(value(LOCALE_KEY))
-        .expect("locale was validated above");
-    let mouse_sensitivity = match typed(SENSITIVITY_KEY) {
-        ClientPropertyValue::MouseSensitivity(value) => value,
-        _ => unreachable!("sensitivity key has a decimal descriptor"),
-    };
-    let input_bindings = value(INPUT_BINDINGS_KEY).clone();
-    let sky_quality = match typed(SKY_QUALITY_KEY) {
-        ClientPropertyValue::SkyQuality(value) => value,
-        _ => unreachable!("quality key has an enum descriptor"),
-    };
-    let sky_names = match typed(SKY_NAMES_KEY) {
-        ClientPropertyValue::SkyNames(value) => value,
-        _ => unreachable!("names key has a boolean descriptor"),
-    };
-    let cloud_detail = match typed(CLOUD_DETAIL_KEY) {
-        ClientPropertyValue::CloudDetail(value) => value,
-        _ => unreachable!("detail key has an integer descriptor"),
-    };
-    let atmosphere_debug = match typed(ATMOSPHERE_DEBUG_KEY) {
-        ClientPropertyValue::AtmosphereDebug(value) => value,
-        _ => unreachable!("atmosphere debug key has an enum descriptor"),
-    };
-    let terrain_debug = match typed(TERRAIN_DEBUG_KEY) {
-        ClientPropertyValue::TerrainDebug(value) => value,
-        _ => unreachable!("terrain debug key has an enum descriptor"),
-    };
-    let cloud_debug = match typed(CLOUD_DEBUG_KEY) {
-        ClientPropertyValue::CloudDebug(value) => value,
-        _ => unreachable!("cloud debug key has an enum descriptor"),
-    };
-    let sky_demo = match typed(SKY_DEMO_KEY) {
-        ClientPropertyValue::SkyDemo(value) => value,
-        _ => unreachable!("demo key has a boolean descriptor"),
-    };
+    let startup = StartupSettings::from_resolution(&resolved)?;
+    let atmosphere_debug = startup.atmosphere_debug();
+    let terrain_debug = startup.terrain_debug();
     if atmosphere_debug != minimium_renderer::atmosphere_debug::AtmosphereDebug::Off
         && terrain_debug != minimium_renderer::terrain_debug::TerrainDebug::Off
     {
         return Err(CommandError::new(
             CommandErrorCode::InvalidValue,
-            Some(ATMOSPHERE_DEBUG_KEY),
+            Some(Key::AtmosphereDebug.key()),
             "atmosphere and terrain diagnostics are mutually exclusive",
             Some("set client.debug.atmosphere VALUE or client.debug.terrain VALUE"),
         ));
     }
     Ok(ClientPreferenceConfig {
-        locale,
-        fov_degrees,
-        mouse_sensitivity,
-        input_bindings,
-        sky_quality,
-        sky_names,
-        cloud_detail,
-        atmosphere_debug,
-        terrain_debug,
-        cloud_debug,
-        sky_demo,
-        sources,
-        resolved_values,
+        startup,
         file_settings: document.map_or_else(BTreeMap::new, |document| document.settings().clone()),
     })
 }
 
 fn mapped_environment_values() -> BTreeMap<String, String> {
     [
-        ("MINIMIUM_CLIENT_CAMERA_FOV", FOV_KEY),
-        ("MINIMIUM_CLIENT_MOUSE_SENSITIVITY", SENSITIVITY_KEY),
-        ("MINIMIUM_CLIENT_SKY_QUALITY", SKY_QUALITY_KEY),
-        ("MINIMIUM_CLIENT_SKY_NAMES", SKY_NAMES_KEY),
-        ("MINIMIUM_CLIENT_CLOUD_DETAIL", CLOUD_DETAIL_KEY),
-        ("MINIMIUM_METEOR_SEED", "client.sky.meteors.seed_override"),
-        ("MINIMIUM_METEORS", "client.sky.meteors.enabled"),
+        ("MINIMIUM_CLIENT_CAMERA_FOV", Key::CameraFov.key()),
+        (
+            "MINIMIUM_CLIENT_MOUSE_SENSITIVITY",
+            Key::MouseSensitivity.key(),
+        ),
+        ("MINIMIUM_CLIENT_SKY_QUALITY", Key::SkyQuality.key()),
+        ("MINIMIUM_CLIENT_SKY_NAMES", Key::SkyNames.key()),
+        ("MINIMIUM_CLIENT_CLOUD_DETAIL", Key::CloudDetail.key()),
+        ("MINIMIUM_METEOR_SEED", Key::MeteorSeed.key()),
+        ("MINIMIUM_METEORS", Key::MeteorEnabled.key()),
     ]
     .into_iter()
     .filter_map(|(environment, key)| {
         std::env::var(environment).ok().map(|value| {
             (
                 key.to_owned(),
-                if key == "client.sky.meteors.enabled" && value == "0" {
+                if key == Key::MeteorEnabled.key() && value == "0" {
                     "false".into()
-                } else if key == "client.sky.meteors.enabled" && value == "1" {
+                } else if key == Key::MeteorEnabled.key() && value == "1" {
                     "true".into()
                 } else {
                     value
@@ -318,20 +185,18 @@ pub(crate) fn handle_offline_command(args: &[String]) -> Result<Option<String>, 
         )));
     }
     let include_sources = values.contains("--sources");
-    let mut records = crate::application::SettingsStore::new(
-        resolved.resolved_values.clone(),
-        resolved.sources.clone(),
-    );
-    for key in resolved.resolved_values.keys() {
+    let mut records = crate::application::SettingsStore::new(&resolved.startup);
+    for value in resolved.startup.iter() {
         records.set_unavailable(
-            key,
+            value.key().key(),
             "configuration preview; no client consumer applied the value".to_owned(),
         );
     }
     let output = resolved
-        .resolved_values
-        .keys()
-        .map(|key| {
+        .startup
+        .iter()
+        .map(|setting| {
+            let key = setting.key().key();
             let value = records
                 .requested(key)
                 .expect("resolved setting record exists");
@@ -358,13 +223,13 @@ pub(crate) fn save_preferences(
 ) -> Result<(), CommandError> {
     let mut settings = file_settings
         .iter()
-        .filter(|(key, _)| PERSISTENT_KEYS.contains(&key.as_str()))
+        .filter(|(key, _)| persistent_keys().any(|allowed| allowed == key.as_str()))
         .map(|(key, value)| (key.clone(), value.clone()))
         .collect::<BTreeMap<_, _>>();
     for (key, value) in session_settings {
-        if PERSISTENT_KEYS.contains(&key.as_str()) {
-            parse_setting_value(key, value)?;
-            settings.insert(key.clone(), value.clone());
+        if persistent_keys().any(|allowed| allowed == key.as_str()) {
+            let value = parse_setting_value(key, value)?;
+            settings.insert(value.key().key().to_owned(), value.encode());
         }
     }
     let bytes = ConfigDocument::new(settings)

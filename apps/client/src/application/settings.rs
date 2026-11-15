@@ -1,4 +1,7 @@
+mod startup;
+use crate::client_commands::ClientPropertyValue;
 use minimium_commands::PropertySource;
+pub(crate) use startup::StartupSettings;
 use std::collections::BTreeMap;
 
 #[cfg(feature = "desktop")]
@@ -43,14 +46,14 @@ impl ClientSettings {
     pub(crate) fn difference_reason(&self, key: &str) -> Option<&str> {
         self.values.difference_reason(key)
     }
-    pub(crate) fn set(&mut self, key: &str, value: String) {
-        self.values.set(key, value);
+    pub(crate) fn set(&mut self, value: ClientPropertyValue) {
+        self.values.set(value);
     }
-    pub(crate) fn set_effective(&mut self, key: &str, value: String, reason: Option<String>) {
-        self.values.set_effective(key, value, reason);
+    pub(crate) fn set_effective(&mut self, value: ClientPropertyValue, reason: Option<String>) {
+        self.values.set_effective(value, reason);
     }
-    pub(crate) fn reset(&mut self, key: &str) {
-        self.values.reset(key);
+    pub(crate) fn reset(&mut self, key: &str) -> Option<ClientPropertyValue> {
+        self.values.reset(key)
     }
     pub(crate) fn session_values(&self) -> BTreeMap<String, String> {
         self.values.session_values()
@@ -63,53 +66,23 @@ pub(crate) struct SettingsStore {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum SettingValue {
-    Locale(minimium_localization::Locale),
-    InputBindings(ValidatedInputBindings),
-    Text(String),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ValidatedInputBindings(String);
-
-impl ValidatedInputBindings {
-    pub(crate) fn parse(value: &str) -> Result<Self, String> {
-        crate::input::InputMapper::from_setting(value)?;
-        Ok(Self(value.to_owned()))
-    }
-
-    pub(crate) fn as_str(&self) -> &str {
-        &self.0
-    }
+struct SettingValue {
+    typed: ClientPropertyValue,
+    encoded: String,
 }
 
 impl SettingValue {
-    fn parse(key: &str, value: &str) -> Self {
-        match key {
-            "ui.locale" => Self::Locale(
-                minimium_localization::Locale::from_setting(value)
-                    .expect("locale values are validated before entering settings"),
-            ),
-            "client.input.bindings" => Self::InputBindings(
-                ValidatedInputBindings::parse(value)
-                    .expect("binding values are validated before entering settings"),
-            ),
-            _ => Self::Text(value.to_owned()),
-        }
+    fn new(typed: ClientPropertyValue) -> Self {
+        let encoded = typed.encode();
+        Self { typed, encoded }
     }
-
     fn as_str(&self) -> &str {
-        match self {
-            Self::Locale(minimium_localization::Locale::English) => "en",
-            Self::Locale(minimium_localization::Locale::Polish) => "pl",
-            Self::InputBindings(value) => value.as_str(),
-            Self::Text(value) => value,
-        }
+        &self.encoded
     }
 }
 
-#[derive(Clone, Debug)]
-pub(crate) struct SettingRecord {
+#[derive(Clone, Debug, PartialEq)]
+struct SettingRecord {
     pub(crate) requested: SettingValue,
     pub(crate) effective: Option<SettingValue>,
     pub(crate) source: PropertySource,
@@ -128,26 +101,10 @@ impl SettingRecord {
 }
 
 impl SettingsStore {
-    pub(crate) fn new(
-        startup: BTreeMap<String, String>,
-        sources: BTreeMap<String, PropertySource>,
-    ) -> Self {
-        let startup = startup
-            .into_iter()
-            .map(|(key, value)| {
-                let source = sources
-                    .get(&key)
-                    .copied()
-                    .unwrap_or(PropertySource::Default);
-                (
-                    key.clone(),
-                    SettingRecord::resolved(SettingValue::parse(&key, &value), source),
-                )
-            })
-            .collect::<BTreeMap<_, _>>();
+    pub(crate) fn new(startup: &StartupSettings) -> Self {
         Self {
-            records: startup.clone(),
-            startup,
+            records: startup.records.clone(),
+            startup: startup.records.clone(),
         }
     }
 
@@ -176,8 +133,9 @@ impl SettingsStore {
             .map_or(PropertySource::Default, |record| record.source)
     }
 
-    pub(crate) fn set(&mut self, key: &str, value: String) {
-        let value = SettingValue::parse(key, &value);
+    pub(crate) fn set(&mut self, value: ClientPropertyValue) {
+        let key = value.key().key();
+        let value = SettingValue::new(value);
         let record = self
             .records
             .entry(key.to_owned())
@@ -191,11 +149,11 @@ impl SettingsStore {
     #[cfg(feature = "desktop")]
     pub(crate) fn set_effective(
         &mut self,
-        key: &str,
-        value: String,
+        value: ClientPropertyValue,
         difference_reason: Option<String>,
     ) {
-        let parsed = SettingValue::parse(key, &value);
+        let key = value.key().key();
+        let parsed = SettingValue::new(value);
         let record = self
             .records
             .entry(key.to_owned())
@@ -211,10 +169,11 @@ impl SettingsStore {
         }
     }
 
-    pub(crate) fn reset(&mut self, key: &str) {
-        if let Some(startup) = self.startup.get(key) {
-            self.records.insert(key.to_owned(), startup.clone());
-        }
+    pub(crate) fn reset(&mut self, key: &str) -> Option<ClientPropertyValue> {
+        let startup = self.startup.get(key)?;
+        let value = startup.requested.typed.clone();
+        self.records.insert(key.to_owned(), startup.clone());
+        Some(value)
     }
 
     pub(crate) fn session_values(&self) -> BTreeMap<String, String> {

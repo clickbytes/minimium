@@ -196,6 +196,23 @@ The client property catalog is registered beside those command groups. It owns l
 
 Client preferences use schema v1 RON and resolve default, file, mapped environment, then CLI input. `config validate` and `config show` run before renderer startup; `config show --sources` reads the same requested/source record and reports effective as unavailable with a configuration-preview reason because no client consumer has applied the value. Live property reads use that record after application and renderer results update effective/reason. `config save PATH` writes only persistent requested values and uses an atomic replacement. Session values reset to the resolved startup layer and are never written to the source file automatically.
 
+The canonical property keys and descriptors also define the complete local
+startup catalog, defaults and persistence flags. `StartupSettings` retains the
+validated `ClientPropertyValue` values and their sources; desktop, terminal,
+configuration preview and `SettingsStore` consume that same immutable set.
+Values encode through the property contract, never Rust `Debug` names. Reset
+restores the typed startup value and source, then reapplies the host operation
+and its effective-value constraint. This includes `optical_depth`, `base_color`
+and `client.audio.meteor_volume` (default 0.25, session/CLI only). The historical
+`client.audio.meteors` command alias maps to the canonical sound key without
+creating another startup record. No protocol, save or content format changes.
+
+C01 runtime acceptance is deferred: check every local property's set/reset,
+both diagnostic modes across reset, a non-default CLI meteor volume followed by
+set/reset, source precedence and persistence, and terminal unavailable reasons.
+Static compilation covers both host feature configurations; it does not prove
+visual or audio behavior.
+
 Local server startup passes a typed launch configuration to client runtime. The runtime asks the sibling server executable for offline `config show --sources --format json`, validates local bind/headless constraints, and uses the same captured environment and argv settings for launch. Explicit startup settings prevent attach to an existing server; `--server-data-dir` remains a target selector.
 
 ## Change guide

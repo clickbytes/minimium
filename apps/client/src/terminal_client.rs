@@ -30,7 +30,7 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
     let asset_io_logger = diagnostics.logger(minimium_diagnostics::DomainId::AssetIo);
     let procgen_logger = diagnostics.logger(minimium_diagnostics::DomainId::Procgen);
     let mut text_properties = properties::TextProperties::new(&options);
-    if options.sky_quality != minimium_renderer::quality::SkyQuality::Standard {
+    if options.startup_settings.sky_quality() != minimium_renderer::quality::SkyQuality::Standard {
         println!(
             "{}",
             localizer.format(

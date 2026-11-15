@@ -10,7 +10,7 @@ mod ui;
 pub(crate) use game::{ClientGameState, GameplayState};
 #[cfg(feature = "desktop")]
 pub(crate) use settings::ClientSettings;
-pub(crate) use settings::SettingsStore;
+pub(crate) use settings::{SettingsStore, StartupSettings};
 #[cfg(feature = "desktop")]
 pub(crate) use transitions::{
     MapOverviewModel, PendingSectorTransition, WorldTransitionController,

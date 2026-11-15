@@ -1,3 +1,4 @@
+use super::ClientPropertyKey as Key;
 use minimium_commands::{
     PropertyLifecycle, PropertyPermission, PropertyRegistry, PropertySpec, PropertyType,
 };
@@ -5,27 +6,27 @@ use std::sync::OnceLock;
 
 const CLIENT_PROPERTIES: &[PropertySpec] = &[
     PropertySpec::new(
-        "client.sky.meteors.enabled", PropertyType::Boolean, None,
+        Key::MeteorEnabled.key(), PropertyType::Boolean, None,
         "Local meteor enabled.", Some("true"), Some("true|false"),
         "apps/client::renderer::meteors", PropertyPermission::Local, PropertyLifecycle::Live, true, true,
     ),
     PropertySpec::new(
-        "client.sky.meteors.rate", PropertyType::Decimal, None,
+        Key::MeteorRate.key(), PropertyType::Decimal, None,
         "Local meteor rate.", Some("1"), Some("finite 0..=10"),
         "apps/client::renderer::meteors", PropertyPermission::Local, PropertyLifecycle::Live, false, true,
     ),
     PropertySpec::new(
-        "client.sky.meteors.quality", PropertyType::Enumeration, None,
+        Key::MeteorQuality.key(), PropertyType::Enumeration, None,
         "Local meteor quality.", Some("standard"), Some("low|standard"),
         "apps/client::renderer::meteors", PropertyPermission::Local, PropertyLifecycle::Live, true, true,
     ),
     PropertySpec::new(
-        "client.sky.meteors.seed_override", PropertyType::Text, None,
+        Key::MeteorSeed.key(), PropertyType::Text, None,
         "Local meteor seed_override.", Some("none"), Some("none|decimal u64"),
         "apps/client::renderer::meteors", PropertyPermission::Local, PropertyLifecycle::Live, false, true,
     ),
     PropertySpec::new(
-        "client.sky.meteors.sound", PropertyType::Boolean, None,
+        Key::MeteorAudio.key(), PropertyType::Boolean, None,
         "Local meteor sound.", Some("false"), Some("true|false"),
         "apps/client::renderer::meteors", PropertyPermission::Local, PropertyLifecycle::Live, true, true,
     ),
@@ -36,12 +37,12 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         "apps/client::audio", PropertyPermission::Local, PropertyLifecycle::Live, false, true,
     ),
     PropertySpec::new(
-        "client.audio.meteor_volume", PropertyType::Decimal, None,
+        Key::MeteorVolume.key(), PropertyType::Decimal, None,
         "Local meteor audio volume.", Some("0.25"), Some("finite 0..=1"),
         "apps/client::audio", PropertyPermission::Local, PropertyLifecycle::Live, false, true,
     ),
     PropertySpec::new(
-        "ui.locale",
+        Key::Locale.key(),
         PropertyType::Enumeration,
         None,
         "User interface language.",
@@ -54,7 +55,7 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         true,
     ),
     PropertySpec::new(
-        "client.camera.fov",
+        Key::CameraFov.key(),
         PropertyType::Decimal,
         Some("degrees"),
         "Vertical camera field of view.",
@@ -67,7 +68,7 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         true,
     ),
     PropertySpec::new(
-        "client.input.mouse_sensitivity",
+        Key::MouseSensitivity.key(),
         PropertyType::Decimal,
         Some("rad/pixel"),
         "Mouse look sensitivity; zero disables mouse rotation.",
@@ -80,7 +81,7 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         true,
     ),
     PropertySpec::new(
-        "client.input.bindings",
+        Key::InputBindings.key(),
         PropertyType::Text,
         None,
         "Physical key bindings by input context; semicolon-separated context.action=control entries.",
@@ -93,7 +94,7 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         true,
     ),
     PropertySpec::new(
-        "client.graphics.sky_quality",
+        Key::SkyQuality.key(),
         PropertyType::Enumeration,
         None,
         "Local shadow and sky rendering quality.",
@@ -106,7 +107,7 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         true,
     ),
     PropertySpec::new(
-        "client.sky.names",
+        Key::SkyNames.key(),
         PropertyType::Boolean,
         None,
         "Show celestial labels in the desktop renderer.",
@@ -119,7 +120,7 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         true,
     ),
     PropertySpec::new(
-        "client.weather.cloud_detail",
+        Key::CloudDetail.key(),
         PropertyType::Integer,
         None,
         "Preferred maximum recursive cloud voxel depth.",
@@ -132,7 +133,7 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         true,
     ),
     PropertySpec::new(
-        "client.debug.atmosphere",
+        Key::AtmosphereDebug.key(),
         PropertyType::Enumeration,
         None,
         "Atmosphere diagnostic view.",
@@ -145,7 +146,7 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         true,
     ),
     PropertySpec::new(
-        "client.debug.terrain",
+        Key::TerrainDebug.key(),
         PropertyType::Enumeration,
         None,
         "Terrain diagnostic view.",
@@ -158,7 +159,7 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         true,
     ),
     PropertySpec::new(
-        "client.debug.clouds",
+        Key::CloudDebug.key(),
         PropertyType::Enumeration,
         None,
         "Cloud diagnostic overlay.",
@@ -171,7 +172,7 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         true,
     ),
     PropertySpec::new(
-        "client.sky.demo",
+        Key::SkyDemo.key(),
         PropertyType::Boolean,
         None,
         "Enable the local celestial demonstration.",
@@ -184,7 +185,7 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         true,
     ),
     PropertySpec::new(
-        "player.movement.fly",
+        Key::MovementFly.key(),
         PropertyType::Boolean,
         None,
         "Local fly/noclip input state; queue acceptance is not server confirmation.",
@@ -197,7 +198,7 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         true,
     ),
     PropertySpec::new(
-        "player.movement.speed",
+        Key::MovementSpeed.key(),
         PropertyType::Decimal,
         Some("m/s"),
         "Local walk/fly speed input; queue acceptance is not server confirmation.",
@@ -210,7 +211,7 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         true,
     ),
     PropertySpec::new(
-        "player.movement.accel",
+        Key::MovementAccel.key(),
         PropertyType::Decimal,
         Some("m/s²"),
         "Local walk/fly acceleration input; queue acceptance is not server confirmation.",
@@ -223,7 +224,7 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         true,
     ),
     PropertySpec::new(
-        "world.time.mode",
+        Key::WorldTimeMode.key(),
         PropertyType::Enumeration,
         None,
         "World clock mode; changes require the owned local server admin channel.",
@@ -236,7 +237,7 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         false,
     ),
     PropertySpec::new(
-        "world.time.scale",
+        Key::WorldTimeScale.key(),
         PropertyType::Decimal,
         Some("x"),
         "World clock rate; changes require the owned local server admin channel.",
@@ -249,7 +250,7 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         false,
     ),
     PropertySpec::new(
-        "world.time.offline_policy",
+        Key::WorldTimeOfflinePolicy.key(),
         PropertyType::Enumeration,
         None,
         "Policy used when the world is offline.",
@@ -262,7 +263,7 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         false,
     ),
     PropertySpec::new(
-        "world.time.utc",
+        Key::WorldTimeUtc.key(),
         PropertyType::Text,
         None,
         "Synchronized world UTC date from the client replica.",
@@ -275,7 +276,7 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         false,
     ),
     PropertySpec::new(
-        "world.time.revision",
+        Key::WorldTimeRevision.key(),
         PropertyType::Integer,
         None,
         "Clock revision from the client replica.",

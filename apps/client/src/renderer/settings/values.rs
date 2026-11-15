@@ -4,18 +4,21 @@ impl Renderer {
         if let Some(line) = crate::client_commands::format_time_value(key, self.environment_frame) {
             return line;
         }
-        let (requested, effective, default, difference_reason) = match key {
-            Key::Locale => self.stored_property(key, "en"),
-            Key::CameraFov => self.stored_property(key, "70"),
-            Key::MouseSensitivity => self.stored_property(key, "0.0025"),
-            Key::InputBindings => self.stored_property(key, ""),
-            Key::SkyQuality => self.stored_property(key, "standard"),
-            Key::SkyNames => self.stored_property(key, "false"),
+        let default = crate::client_commands::property_spec(key.key())
+            .and_then(|spec| spec.default)
+            .unwrap_or("n/a")
+            .to_owned();
+        let (requested, effective, difference_reason) = match key {
+            Key::Locale => self.stored_property(key),
+            Key::CameraFov => self.stored_property(key),
+            Key::MouseSensitivity => self.stored_property(key),
+            Key::InputBindings => self.stored_property(key),
+            Key::SkyQuality => self.stored_property(key),
+            Key::SkyNames => self.stored_property(key),
             Key::MeteorAudio => (
                 self.meteors.audio.enabled.to_string(),
                 (self.meteors.audio.enabled && self.meteors.audio.backend_status() == "ready")
                     .to_string(),
-                "false".into(),
                 Some(self.meteors.audio.backend_status().into()),
             ),
             Key::MeteorEnabled => {
@@ -24,47 +27,42 @@ impl Renderer {
                     self.application
                         .settings
                         .requested(key.key())
-                        .unwrap_or("true")
+                        .expect("local startup setting exists")
                         .into(),
                     enabled.to_string(),
-                    "true".into(),
                     reason,
                 )
             }
-            Key::MeteorRate => self.stored_property(key, "1"),
-            Key::MeteorSeed => self.stored_property(key, "none"),
+            Key::MeteorRate => self.stored_property(key),
+            Key::MeteorSeed => self.stored_property(key),
             Key::MeteorQuality => (
                 self.meteors.quality.label().into(),
                 self.meteors
                     .effective_quality(self.sky_quality.effective)
                     .label()
                     .into(),
-                "standard".into(),
                 (self.sky_quality.effective == minimium_renderer::quality::SkyQuality::Low)
                     .then(|| "sky quality limits meteor visibility to low".into()),
             ),
-            Key::MeteorVolume => self.stored_property(key, "0.25"),
-            Key::CloudDetail => self.stored_property(key, "6"),
-            Key::AtmosphereDebug => self.stored_property(key, "off"),
-            Key::TerrainDebug => self.stored_property(key, "off"),
-            Key::CloudDebug => self.stored_property(key, "off"),
-            Key::SkyDemo => self.stored_property(key, "false"),
+            Key::MeteorVolume => self.stored_property(key),
+            Key::CloudDetail => self.stored_property(key),
+            Key::AtmosphereDebug => self.stored_property(key),
+            Key::TerrainDebug => self.stored_property(key),
+            Key::CloudDebug => self.stored_property(key),
+            Key::SkyDemo => self.stored_property(key),
             Key::MovementFly => (
                 self.application.connection.flight_enabled.to_string(),
                 self.application.connection.flight_enabled.to_string(),
-                "false".to_owned(),
                 Some("local queued input; server confirmation is unavailable".to_owned()),
             ),
             Key::MovementSpeed => (
                 self.application.connection.movement.speed.to_string(),
                 self.application.connection.movement.speed.to_string(),
-                "5".to_owned(),
                 Some("local queued input; server confirmation is unavailable".to_owned()),
             ),
             Key::MovementAccel => (
                 self.application.connection.movement.accel.to_string(),
                 self.application.connection.movement.accel.to_string(),
-                "30".to_owned(),
                 Some("local queued input; server confirmation is unavailable".to_owned()),
             ),
             Key::WorldTimeMode
@@ -100,12 +98,17 @@ impl Renderer {
         )
     }
 
-    fn stored_property(&self, key: Key, default: &str) -> (String, String, String, Option<String>) {
+    fn stored_property(&self, key: Key) -> (String, String, Option<String>) {
         let store = &self.application.settings;
         (
-            store.requested(key.key()).unwrap_or(default).to_owned(),
-            store.effective(key.key()).unwrap_or(default).to_owned(),
-            default.to_owned(),
+            store
+                .requested(key.key())
+                .expect("local startup setting exists")
+                .to_owned(),
+            store
+                .effective(key.key())
+                .unwrap_or("unavailable")
+                .to_owned(),
             store.difference_reason(key.key()).map(str::to_owned),
         )
     }
