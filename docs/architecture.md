@@ -4,6 +4,10 @@
 
 Minimium is a Rust engine for networked first-person games in full 3D, with an MMO target. Client and server are separate processes, including during local play. The server owns authoritative simulation and persistence. Art direction may use 2.5D presentation without limiting the world model.
 
+## Agent engineering workflow
+
+For repository-wide agent policy and domain-local instructions start at [AGENTS.md](../AGENTS.md). [Agent workflow and skill routing](agent-workflow.md) identifies the appropriate local `AGENTS.md`, owners, `SKILL.md` and static evidence for a change; [ADR 0014](adr/0014-agent-engineering-governance.md) records the source-of-truth decision. These are development rules, not additional runtime components.
+
 ## Runtime processes
 
 - Client: input, renderer, audio, HUD, console, prediction and interpolation.
