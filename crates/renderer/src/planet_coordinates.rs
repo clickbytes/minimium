@@ -1,4 +1,4 @@
-//! The single physical ↔ game ↔ render-origin mapping adapter for local meteors.
+//! The single physical ↔ game ↔ render-origin mapping adapter for planet presentation sources.
 //!
 //! ADR 0013 § 4 conventions, owned nowhere else:
 //! - input physics: positions and velocities in physical metres as `f64` on
@@ -91,4 +91,53 @@ pub fn render_relative_m(world_m: [f64; 3], render_origin_m: [f64; 3]) -> [f32; 
         (world_m[1] - render_origin_m[1]) as f32,
         (world_m[2] - render_origin_m[2]) as f32,
     ]
+}
+
+/// Shared adaptation for physical emission geometry and light positions.
+pub(crate) fn physical_position_relative_m(
+    position_phys_m: [f64; 3],
+    game_radius_m: f64,
+    surface_scale: PlanetSurfaceScale,
+    render_origin_m: [f64; 3],
+) -> Option<[f32; 3]> {
+    let squared = position_phys_m
+        .iter()
+        .map(|value| value * value)
+        .sum::<f64>();
+    let radius_phys_m = (squared > 0.0).then(|| squared.sqrt())?;
+    if radius_phys_m < game_radius_m {
+        return None;
+    }
+    let direction = position_phys_m.map(|value| value / radius_phys_m);
+    let game_radial_m =
+        game_radius_m + surface_scale.radial_offset_m(radius_phys_m - game_radius_m);
+    Some(render_relative_m(
+        direction.map(|value| value * game_radial_m),
+        render_origin_m,
+    ))
+}
+
+/// Conservative head-only rejection. A hidden head never rejects its trail:
+/// individual segments retain the shader's exact terrain/planet ray check.
+pub fn sphere_source_visible(
+    eye: [f64; 3],
+    source: [f64; 3],
+    radius_m: f64,
+    extent_m: f64,
+) -> bool {
+    let eye = glam::DVec3::from_array(eye);
+    let source = glam::DVec3::from_array(source);
+    if !eye.is_finite() || !source.is_finite() || !radius_m.is_finite() || radius_m <= 0.0 {
+        return false;
+    }
+    let delta = source - eye;
+    let length = delta.length();
+    if length <= extent_m.max(0.0) {
+        return true;
+    }
+    let ray = delta / length;
+    let distance = (-eye.dot(ray)).clamp(0.0, (length - extent_m.max(0.0)).max(0.0));
+    let closest = (eye + ray * distance).length();
+    // Expanding the head can only keep it, never hide a visible edge.
+    closest + extent_m.max(0.0) >= radius_m - (radius_m * 1e-9).max(0.01)
 }

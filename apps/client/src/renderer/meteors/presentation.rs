@@ -2,9 +2,10 @@
 use super::{ActiveEvent, EVENT_ID_STRIDE, TRAIL_SLOTS_PER_EVENT};
 use minimium_renderer::meteors::{
     fragmentation::{material_for_slot, BODY_SLOTS, SOLID_SLOTS},
-    model::{MeteorSample, MeteorSource, MeteorTrailSample, TransientLightSample},
+    model::{MeteorSample, MeteorSource, MeteorTrailSample},
     photometry, MeteorFrame, MAX_METEOR_CORES,
 };
+use minimium_renderer::transient_lighting::TransientLightSample;
 
 pub(super) fn push_event(
     frame: &mut MeteorFrame,
@@ -82,6 +83,7 @@ pub(super) fn push_event(
                     emission.intensity,
                     light.range_m,
                     (event.duration_s - age_s).max(0.0),
+                    1.0,
                 ) {
                     let _ = frame.push_light(sample);
                 }

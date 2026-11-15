@@ -94,9 +94,10 @@ impl GpuResources {
             // and the atmosphere LUTs globally. The output shoulder handles HDR.
         }
         let meteors = snapshot.meteors();
+        let light_frame = &render_frame.transient_lights;
         // One bounded snapshot feeds the shared finite-distance emission layer.
         let mut lights =
-            minimium_renderer::transient_lighting::TransientLightUniform::from_frame(&meteors);
+            minimium_renderer::transient_lighting::TransientLightUniform::from_frame(light_frame);
         if !self.transient_enabled {
             lights.count[0] = 0;
         }
@@ -105,7 +106,9 @@ impl GpuResources {
             &mut lights,
             &self.cloud_gpu.light_records,
             minimium_renderer::transient_cloud_cache::CloudLightQuery {
-                ids: std::array::from_fn(|i| meteors.lights().get(i).map_or(0, |light| light.id)),
+                ids: std::array::from_fn(|i| {
+                    light_frame.lights().get(i).map_or(0, |light| light.id)
+                }),
                 origin: render_frame.view.render_origin_m,
                 revision: cloud_revision,
                 now: std::time::Instant::now(),
@@ -113,14 +116,14 @@ impl GpuResources {
                     (render_frame.view.camera_eye_world_m[i] - render_frame.view.render_origin_m[i])
                         as f32
                 }),
-                standard: self.cloud_gpu.standard_lighting && meteors.minimum_height_m() == 0.0,
+                standard: self.cloud_gpu.standard_lighting && light_frame.cloud_occlusion(),
             },
         );
         lights.count[1] = u32::from(self.transient_transmission);
         self.transient_count = lights.count[0];
         self.transient_incident =
             minimium_renderer::transient_lighting::TransientLightUniform::observer_irradiance(
-                &meteors,
+                light_frame,
             );
         if !self.transient_enabled {
             self.transient_incident = 0.0;
@@ -130,7 +133,7 @@ impl GpuResources {
         self.meteors_status = meteors.render_status();
         self.milky_way
             .meteors
-            .upload(&self.queue, &meteors, &render_frame.view);
+            .upload(&self.queue, &meteors, light_frame, &render_frame.view);
         self.atmosphere_gpu.mark_environment(&environment_upload);
         self.terrain_gpu.uniform.eye_relative = std::array::from_fn(|i| {
             if i < 3 {

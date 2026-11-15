@@ -2,7 +2,8 @@
 use super::runtime::magnitude;
 use super::{ActiveEvent, EventBasis};
 use crate::renderer::environment::RenderViewFrame;
-use minimium_renderer::meteors::{coords::PlanetSurfaceScale, model::POSITION_ABS_M_MAX};
+use minimium_renderer::meteors::model::POSITION_ABS_M_MAX;
+use minimium_renderer::planet_coordinates::PlanetSurfaceScale;
 use std::f64::consts::TAU;
 
 impl ActiveEvent {

@@ -55,7 +55,7 @@ pub(crate) fn visible(
     let distance = center.distance(glam::DVec3::from_array(context.camera_eye_world_m));
     let extent = f64::from(a.distance(b) * 0.5 + start[3].max(end[3]) * 4.0)
         + if optical { distance * 0.024 } else { 0.0 };
-    crate::meteors::visibility::head_visible(
+    crate::planet_coordinates::sphere_source_visible(
         context.camera_eye_world_m,
         center.to_array(),
         context.game_radius_m,

@@ -56,6 +56,27 @@ that current signed field, retaining a saved tunnel position only while it is cl
 
 ## Ownership and execution
 
+`ServerSchedule` consumes the validated gameplay `SchedulePlan`. The fixed tick
+dispatches its `BuiltinOperation` sequence, not a second handwritten ordering:
+commands → bolids → impacts → excavation → shutdown gate → world inputs →
+FixedUpdate handlers/effects → simulation → Environment handlers/effects →
+PostSimulation handlers/effects → gameplay-event cleanup. Each stage retains
+one bounded effect batch and its existing publication point. Command batches
+still publish per command. A shutdown requested by commands or asynchronous
+owners still stops at the gate after excavation, before world inputs or module
+stages; tick completion metrics/deadlines remain after the full sequence.
+
+Simulation remains one owner operation: synchronize movement policies, update
+sector readiness/collision, commit ready transfers, move ready players, enforce
+surface constraints and reset jump intent. Module dependencies cannot interleave
+inside that transaction. Startup remains once per prepared world after restore;
+replication remains independently scheduled outside the fixed tick. The module
+registry rejects unknown/reserved/duplicate/cyclic dependencies and reverse
+phase constraints before runtime startup. See the gameplay README for stable
+built-in IDs and extension boundaries. Graph allocation is startup-only;
+dispatch reuses the immutable plan. No tick cadence, monotonic clock, catch-up,
+protocol, save or generator changes.
+
 `ServerRuntime` owns mutable authoritative state on one lane. Worker threads do not mutate active worlds. Signal, admin `server stop`, and host-owner shutdown converge on the shared `ShutdownRequest`. Shutdown closes game and admin admission, rejects pending admin commands, then keeps the owner lane frozen while bounded workers stop and the final snapshot is captured and persisted. A single absolute deadline is 30 seconds from lifecycle start; worker, save, endpoint/status work has the first 28 seconds and the host diagnostics flush uses the remaining two seconds. A timeout is reported as failure and does not mean blocking operating-system I/O was cancelled. `Attached` client sessions never stop the server; only an `OwnedServer` sends graceful stop and reaps its child.
 
 `GameState` owns actor-keyed fire and per-player chat cooldowns, plus the global

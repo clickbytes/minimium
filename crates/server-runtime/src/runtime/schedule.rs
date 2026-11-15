@@ -1,9 +1,9 @@
 use super::gameplay_terrain::{self, CurrentTerrainRead};
 use crate::modules::{
-    EffectBufferError, GameplayEvent, WorldEffect, WorldEffectBatch, WorldEffectBuffer,
+    BuiltinOperation, GameplaySystem, GameplaySystemContext, SchedulePlan, Stage, WorldLifecycle,
 };
 use crate::modules::{
-    GameplaySystem, GameplaySystemContext, RegisteredSystem, Stage, WorldLifecycle,
+    EffectBufferError, GameplayEvent, WorldEffect, WorldEffectBatch, WorldEffectBuffer,
 };
 use crate::world_registry::WorldRegistry;
 use minimium_procgen::PreparedGeography;
@@ -174,15 +174,18 @@ struct ScheduledSystem {
 }
 
 pub(crate) struct ServerSchedule {
+    operations: Vec<BuiltinOperation>,
     systems: Vec<ScheduledSystem>,
     startup_worlds: std::collections::BTreeSet<minimium_world::world::WorldInstanceId>,
     diagnostics: ScheduleDiagnostics,
 }
 
 impl ServerSchedule {
-    pub(crate) fn from_systems(systems: &[&RegisteredSystem<SystemFn>]) -> Self {
+    pub(crate) fn from_plan(plan: &SchedulePlan<'_, SystemFn>) -> Self {
         Self {
-            systems: systems
+            operations: plan.operations().to_vec(),
+            systems: plan
+                .systems()
                 .iter()
                 .map(|system| ScheduledSystem {
                     stage: system.definition.stage,
@@ -192,6 +195,10 @@ impl ServerSchedule {
             startup_worlds: std::collections::BTreeSet::new(),
             diagnostics: ScheduleDiagnostics::default(),
         }
+    }
+
+    pub(crate) fn tick_operation(&self, index: usize) -> Option<BuiltinOperation> {
+        self.operations.get(index).copied()
     }
 
     pub(crate) fn run_stage(

@@ -8,7 +8,8 @@ use crate::{
     renderer::environment::RenderViewFrame,
 };
 use glam::DVec3;
-use minimium_renderer::meteors::{coords::PlanetSurfaceScale, fragmentation::EventKind};
+use minimium_renderer::meteors::fragmentation::EventKind;
+use minimium_renderer::planet_coordinates::PlanetSurfaceScale;
 
 pub(super) fn listener(view: &RenderViewFrame, scale: PlanetSurfaceScale) -> [f64; 3] {
     let eye = DVec3::from_array(view.camera_eye_world_m);

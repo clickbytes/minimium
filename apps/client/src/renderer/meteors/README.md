@@ -22,6 +22,15 @@ The event vector is allocated once at the shared eight-event capacity.
 
 No protocol, save, server simulation or GPU resource is owned here.
 
+`MeteorFrame::transient_lights` exports the selected sources into the independent
+CPU `TransientLightFrame`. `environment/prepared.rs` attaches that snapshot to
+`RenderFrame` separately from the meteor emission geometry. The meteor adapter
+resolves emitting radii against the final retained core set (one metre when a
+source has no retained core), preserving selection and the existing fallback.
+Rendering, observer irradiance and cloud-occlusion caching consume the neutral
+frame; meteor optical heads look up source indices in that same final frame.
+Other producers can supply validated light samples without creating meteors.
+
 
 Fragmentation histories are pooled at startup (eight bounded Evolution owners)
 and returned on every dismissal/clear path. `presentation::push_event` emits

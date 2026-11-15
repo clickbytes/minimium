@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod commands;
 mod effects;
+mod schedule;
 mod system;
 pub use commands::{
     CommandPlayerView, CommandViewError, CommandViewPage, CommandWorldView, ModuleCommandContext,
@@ -18,6 +19,7 @@ pub use effects::{
     TransferRejection, WorldEffect, WorldEffectBatch, WorldEffectBuffer, WorldEffectOutcome,
     WorldLifecycle, MAX_WORLD_EFFECTS_PER_STAGE, MAX_WORLD_EFFECT_BYTES_PER_STAGE,
 };
+pub use schedule::{BuiltinOperation, SchedulePlan};
 pub use system::{GameplaySystem, GameplaySystemContext};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -52,6 +54,7 @@ pub enum ModuleError {
     DuplicateSystem,
     DuplicateComponent,
     DependencyCycle,
+    InvalidPhaseOrder,
 }
 
 impl std::fmt::Display for ModuleError {
@@ -192,6 +195,9 @@ impl<H, S> ModuleRegistrar<'_, H, S> {
 
     pub fn system(&mut self, definition: SystemDefinition<S>) -> Result<(), ModuleError> {
         if !valid_path(definition.id)
+            || BuiltinOperation::ALL
+                .iter()
+                .any(|op| op.id() == definition.id)
             || self
                 .existing_systems
                 .iter()
@@ -306,66 +312,6 @@ impl<H, S> ModuleRegistry<H, S> {
 
     pub fn systems(&self) -> &[RegisteredSystem<S>] {
         &self.systems
-    }
-
-    pub fn ordered_systems(&self) -> Result<Vec<&RegisteredSystem<S>>, ModuleError> {
-        let mut outgoing = vec![Vec::new(); self.systems.len()];
-        let mut indegree = vec![0usize; self.systems.len()];
-        let mut declared_edges = BTreeSet::new();
-        for (index, system) in self.systems.iter().enumerate() {
-            let mut declared = BTreeSet::new();
-            for (target, reverse) in system
-                .definition
-                .before
-                .iter()
-                .map(|id| (*id, false))
-                .chain(system.definition.after.iter().map(|id| (*id, true)))
-            {
-                if !declared.insert(target) {
-                    return Err(ModuleError::InvalidDescriptor);
-                }
-                let other = self
-                    .systems
-                    .iter()
-                    .position(|candidate| candidate.definition.id == target)
-                    .ok_or(ModuleError::MissingDependency)?;
-                let (from, to) = if reverse {
-                    (other, index)
-                } else {
-                    (index, other)
-                };
-                if !declared_edges.insert((from, to)) {
-                    return Err(ModuleError::InvalidDescriptor);
-                }
-                if self.systems[from].definition.stage > self.systems[to].definition.stage {
-                    return Err(ModuleError::InvalidDescriptor);
-                }
-                outgoing[from].push(to);
-                indegree[to] += 1;
-            }
-        }
-        let mut ready: BTreeSet<(Stage, &'static str, usize)> = self
-            .systems
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| indegree[*index] == 0)
-            .map(|(index, system)| (system.definition.stage, system.definition.id, index))
-            .collect();
-        let mut ordered = Vec::with_capacity(self.systems.len());
-        while let Some((_, _, index)) = ready.pop_first() {
-            ordered.push(&self.systems[index]);
-            for target in &outgoing[index] {
-                indegree[*target] -= 1;
-                if indegree[*target] == 0 {
-                    let system = &self.systems[*target];
-                    ready.insert((system.definition.stage, system.definition.id, *target));
-                }
-            }
-        }
-        if ordered.len() != self.systems.len() {
-            return Err(ModuleError::DependencyCycle);
-        }
-        Ok(ordered)
     }
 
     /// Longest path wins: `world inspect` takes priority over `world`.

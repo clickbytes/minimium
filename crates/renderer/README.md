@@ -818,13 +818,42 @@ terrain.wgsl and shadow_sampling.wgsl were restored from exact pre-experiment
 copies; no extra interpolator or alternate sampling API remains. Compilation
 and 23 WGSL validation modules passed for the experiment; no tests were run.
 
+## Shared transient-light frame (E049-P03)
+
+`transient_lighting::TransientLightFrame` owns a fixed array of four selected
+sources, its immutable view/physical-scale context and cloud-occlusion policy.
+It is available without GPU features. Validated physical-metre samples carry
+stable `u64` identities, colour, intensity, range, remaining monotonic lifetime
+and emitting radius; the frame converts positions through `planet_coordinates`.
+Invalid context returns `LightContractError`; invalid, hidden, expired,
+duplicate or lower-priority samples leave the frame unchanged. Selection keeps
+received luminance descending and identity ascending, with the existing range
+fade, horizon check and limits. Rebuilding a frame handles origin/world changes;
+it retains no history or asynchronous work.
+
+`RenderFrame::transient_lights` is independent of `RenderFrame::meteors`.
+`MeteorFrame::transient_lights()` is the existing producer's adapter and resolves
+each source radius from the final retained core set, retaining the one-metre
+fallback. `TransientLightUniform::from_frame`, observer diagnostics, cloud-cache
+identities and optical-head source indices all consume the final neutral frame.
+The CPU example builds an ordinary short-lived lamp without a meteor object.
+Callers choose one view/context for the whole render frame and globally unique
+source identities when composing producers; `push` enforces the shared budget.
+
+The four-source, eight-cloud-occluders-per-source, 2288-byte GPU uniform and its
+layout assertions are unchanged. No shader, exposure, cloud selection, protocol
+or save format changes. Deferred acceptance covers meteor/source ordering,
+retained/evicted core radii, mixed-producer optical indices, cloudy/low quality,
+origin/world changes, invalid samples and the non-meteor lamp.
+
 ## Ambient cosmetic meteors (CPU contract - ADR 0013, E047-01)
 
 `docs/adr/0013-ambient-meteors.md` freezes the E047 design; E047-01 lands this
 crate's CPU-only contract in `meteors`. `meteors::model` holds
-`MeteorSource { Cosmetic, Tracked }`, `MeteorSample`, `MeteorTrailSample` and
-`TransientLightSample` with hard finite/non-negative/bounds validation.
-`meteors::coords` is the single physical-metre ↔ game ↔ render-origin adapter:
+`MeteorSource { Cosmetic, Tracked }`, `MeteorSample` and `MeteorTrailSample`
+with hard finite/non-negative/bounds validation. E049-P03 places the shared
+`TransientLightSample` in `transient_lighting`, independently of meteors.
+`planet_coordinates` is the single physical-metre ↔ game ↔ render-origin adapter:
 `PlanetSurfaceScale` mirrors the observer camera mapping (Earth relief and
 uniform procedural scales, manifest `height_scale_permille`, no hard-coded
 radius), and `render_relative_m` subtracts the floating origin in `f64` before

@@ -11,7 +11,7 @@ use minimium_environment::sky::ObserverFrame;
 use minimium_environment::{time::ClockRevision, EnvironmentDescriptor};
 use minimium_protocol::WorldContext;
 use minimium_renderer::gpu_frame::{CameraUniform, EnvironmentUniform};
-use minimium_renderer::meteors::coords::PlanetSurfaceScale;
+use minimium_renderer::planet_coordinates::PlanetSurfaceScale;
 pub(crate) use minimium_renderer::{EnvironmentViewKind, RenderViewFrame, RenderViewInput};
 use std::{error::Error, fmt};
 

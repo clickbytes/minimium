@@ -34,6 +34,7 @@ impl PreparedEnvironmentFrame {
             uniform,
             frame.halo_count,
         )
+        .with_transient_lights(meteors.transient_lights())
         .with_meteors(meteors);
         Self {
             frame,
