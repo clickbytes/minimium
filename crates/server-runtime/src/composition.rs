@@ -45,6 +45,109 @@ pub struct RuntimeSettings {
         std::collections::BTreeMap<String, minimium_commands::ResolvedConfigValue>,
 }
 
+/// Validated fixed-step and monotonic scheduling values for impacts/hydrology.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AsyncWorkPolicy {
+    impact_fixed_step: Duration,
+    impact_checkpoint_age: Duration,
+    hydrology_cadence: Duration,
+    hydrology_fixed_step: Duration,
+    water_checkpoint_cadence: Duration,
+    hydrology_retry_delay: Duration,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AsyncWorkPolicyError {
+    InvalidInterval,
+    InvalidFixedStep,
+}
+
+impl std::fmt::Display for AsyncWorkPolicyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::error::Error for AsyncWorkPolicyError {}
+
+impl AsyncWorkPolicy {
+    const MAX_INTERVAL: Duration = Duration::from_secs(604_800);
+    const MAX_IMPACT_STEP: Duration = Duration::from_millis(100);
+    const MAX_HYDROLOGY_STEP: Duration = Duration::from_secs(1);
+
+    pub fn new(
+        impact_fixed_step: Duration,
+        impact_checkpoint_age: Duration,
+        hydrology_cadence: Duration,
+        hydrology_fixed_step: Duration,
+        water_checkpoint_cadence: Duration,
+        hydrology_retry_delay: Duration,
+    ) -> Result<Self, AsyncWorkPolicyError> {
+        for interval in [
+            impact_checkpoint_age,
+            hydrology_cadence,
+            water_checkpoint_cadence,
+            hydrology_retry_delay,
+        ] {
+            if interval.is_zero() || interval > Self::MAX_INTERVAL {
+                return Err(AsyncWorkPolicyError::InvalidInterval);
+            }
+        }
+        if impact_fixed_step.is_zero() || impact_fixed_step > Self::MAX_IMPACT_STEP {
+            return Err(AsyncWorkPolicyError::InvalidFixedStep);
+        }
+        if hydrology_fixed_step.is_zero() || hydrology_fixed_step > Self::MAX_HYDROLOGY_STEP {
+            return Err(AsyncWorkPolicyError::InvalidFixedStep);
+        }
+        Ok(Self {
+            impact_fixed_step,
+            impact_checkpoint_age,
+            hydrology_cadence,
+            hydrology_fixed_step,
+            water_checkpoint_cadence,
+            hydrology_retry_delay,
+        })
+    }
+
+    pub const fn impact_fixed_step(self) -> Duration {
+        self.impact_fixed_step
+    }
+
+    /// Threshold in modeled body age, not host monotonic time.
+    pub const fn impact_checkpoint_age(self) -> Duration {
+        self.impact_checkpoint_age
+    }
+
+    pub const fn hydrology_cadence(self) -> Duration {
+        self.hydrology_cadence
+    }
+
+    pub const fn hydrology_fixed_step(self) -> Duration {
+        self.hydrology_fixed_step
+    }
+
+    pub const fn water_checkpoint_cadence(self) -> Duration {
+        self.water_checkpoint_cadence
+    }
+
+    pub const fn hydrology_retry_delay(self) -> Duration {
+        self.hydrology_retry_delay
+    }
+}
+
+impl Default for AsyncWorkPolicy {
+    fn default() -> Self {
+        Self {
+            impact_fixed_step: Duration::from_millis(50),
+            impact_checkpoint_age: Duration::from_secs(5),
+            hydrology_cadence: Duration::from_millis(100),
+            hydrology_fixed_step: Duration::from_millis(100),
+            water_checkpoint_cadence: Duration::from_secs(1),
+            hydrology_retry_delay: Duration::from_secs(5),
+        }
+    }
+}
+
 impl ShutdownRequest {
     pub fn request(&self) {
         self.0.requested.store(true, Ordering::Release);
@@ -155,6 +258,7 @@ impl ExcavationConfig {
 pub struct ServerComposition {
     pub excavation: ExcavationConfig,
     pub impact_profile: Option<minimium_world::impact::ImpactProfile>,
+    pub async_work_policy: AsyncWorkPolicy,
     pub shutdown_request: ShutdownRequest,
     pub modules: Vec<std::sync::Arc<crate::ServerGameplayModule>>,
     pub world_composer: WorldComposer,

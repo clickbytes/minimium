@@ -30,6 +30,7 @@ pub(super) struct Excavation {
 
 struct ExcavationState {
     config: crate::composition::ExcavationConfig,
+    async_work_policy: crate::AsyncWorkPolicy,
     restored: ExcavationRestore,
     inventories: HashMap<PlayerProfileId, Inventory>,
     inventory_requests: HashMap<PlayerId, (WorldContext, Inventory)>,
@@ -79,6 +80,7 @@ impl Excavation {
         journal: Box<dyn ExcavationJournalPort>,
         restored: ExcavationRestore,
         config: crate::composition::ExcavationConfig,
+        async_work_policy: crate::AsyncWorkPolicy,
         now: Instant,
     ) -> io::Result<Self> {
         if !config.valid() {
@@ -88,6 +90,7 @@ impl Excavation {
             coordinator: ExcavationCoordinator::new(journal, restored.last_mutation_id),
             state: ExcavationState {
                 config,
+                async_work_policy,
                 inventories: restored.inventories.iter().map(|(p, i)| (*p, *i)).collect(),
                 restored,
                 gates: HashMap::new(),
