@@ -54,6 +54,7 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
     let (sender, receiver) = mpsc::sync_channel(INPUT_QUEUE_CAPACITY);
     super::spawn_console_input_reader(sender, logger.clone());
     let mut connection = connection.for_host(crate::bootstrap::HostCapabilities::CpuOnly);
+    let mut action_executor = crate::application::ClientActionExecutor::default();
     let mut events = Vec::with_capacity(16);
     let mut prompt_needed = true;
     let mut last_snapshot: Option<ServerMessage> = None;
@@ -211,6 +212,7 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                     command,
                     &mut CommandContext {
                         connection: &mut connection,
+                        action_executor: &mut action_executor,
                         fire_direction: [1.0, 0.0, 0.0],
                         player_position: last_snapshot.as_ref().and_then(|message| match message {
                             ServerMessage::Snapshot { self_position, .. } => Some(*self_position),
@@ -227,6 +229,8 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                                 .localized(&localizer, options.locale)
                         )
                     }
+                    #[cfg(feature = "desktop")]
+                    CommandResult::Suppressed(_) => {}
                     CommandResult::Action(action) => {
                         if actions::handle(
                             action,

@@ -2,22 +2,19 @@ use super::*;
 
 impl Renderer {
     pub(super) fn equip_tool(&mut self, slot: Option<u8>) {
-        if let Some(session) = self.application.connection.session_mut() {
-            if let Err(error) = session.equip_tool(slot) {
+        if let crate::application::LocalActionOutcome::Rejected { error, .. } =
+            self.application.action_executor.execute(
+                &mut self.application.connection,
+                crate::application::ClientAction::EquipTool { slot },
+            )
+        {
+            if error != crate::session::QueueError::Disconnected {
                 self.fail_connection(format!("Could not equip tool: {error:?}"));
             }
         }
     }
 
-    pub(super) fn queue_equipped_tool(&mut self) -> bool {
-        if !self
-            .application
-            .connection
-            .session()
-            .is_some_and(|s| s.inventory().tool().is_some())
-        {
-            return false;
-        }
+    pub(super) fn queue_equipped_use(&mut self, trigger: crate::application::UseTrigger) {
         let prediction = &self.application.game.gameplay.prediction;
         let character = prediction.character;
         let feet_m = prediction.position_mm.map_or_else(
@@ -25,7 +22,7 @@ impl Renderer {
             |position| position.0.map(|value| value as f64 / 1000.0),
         );
         let Some(geometry) = CharacterGeometry::new(feet_m, character.gravity) else {
-            return true;
+            return;
         };
         let direction = super::camera::camera_direction_from_geometry(
             geometry,
@@ -34,12 +31,14 @@ impl Renderer {
         )
         .normalize()
         .to_array();
-        if let Some(session) = self.application.connection.session_mut() {
-            if let Err(error) = session.queue_tool_use(direction) {
-                self.fail_connection(format!("Could not use tool: {error:?}"));
-            }
+        if let crate::application::LocalActionOutcome::Rejected { error, .. } =
+            self.application.action_executor.execute(
+                &mut self.application.connection,
+                crate::application::ClientAction::UseEquipped { direction, trigger },
+            )
+        {
+            self.fail_connection(format!("Could not use tool: {error:?}"));
         }
-        true
     }
 
     pub(super) fn update_tool_use(&mut self) {
@@ -51,7 +50,7 @@ impl Renderer {
                 .input
                 .is_active(crate::input::InputAction::Fire)
         {
-            self.queue_equipped_tool();
+            self.queue_equipped_use(crate::application::UseTrigger::Held);
         }
     }
 }

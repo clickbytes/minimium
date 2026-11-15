@@ -73,7 +73,6 @@ use minimium_renderer::geometry::{cube, sector_geometry};
 
 const UI_VERTEX_CAPACITY: usize = 8192;
 pub(crate) const REMOTE_INTERPOLATION_DELAY: Duration = Duration::from_millis(100);
-const SHOT_LOCAL_COOLDOWN: Duration = Duration::from_millis(300);
 
 struct GpuResources {
     surface: wgpu::Surface<'static>,
@@ -135,7 +134,6 @@ struct GameplayPresentation {
     pub(crate) remote_vertices: Vec<Vertex>,
     pub(crate) remote_shadow_vertices: Vec<Vertex>,
     pub(crate) remote_geometry_dirty: bool,
-    pub(crate) last_shot_sent_at: Option<Instant>,
     pub(crate) hit_confirmation_until: Option<Instant>,
 }
 
