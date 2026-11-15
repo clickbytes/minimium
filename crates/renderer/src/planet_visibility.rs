@@ -16,7 +16,12 @@ pub fn render_patches_for_view(
     cache: &mut crate::render_patch_cache::RenderPatchCache,
     cancelled: &dyn Fn() -> bool,
 ) -> Result<Vec<(SectorKey, u8, Arc<SectorGeometry>)>, minimium_procgen::ExcavationGeometryError> {
-    cache.set_context(world, manifest, geography.material_profile);
+    cache.set_context(
+        world,
+        manifest,
+        geography.material_profile,
+        geography.resolved_relief_policy,
+    );
     let position = view.position;
     if manifest.planet().is_some() {
         return dense_render_patches(manifest, view, collision, geography, cache, cancelled);

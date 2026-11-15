@@ -101,36 +101,6 @@ fn every_cube_face_edge_has_matching_canonical_samples() {
 }
 
 #[test]
-fn planet_route_is_quantized_traversable_and_has_bounded_height_steps() {
-    let surface = PlanetSurfaceSpec::new(100_000, 300).unwrap();
-    let terrain = PlanetTerrain::new(generation(42), surface, None, Default::default()).unwrap();
-    let landmarks = terrain.landmarks().unwrap();
-    let map = materialize_planet_map(terrain, landmarks).unwrap();
-    assert!(
-        map.can_place_player_with_gravity(
-            map.spawn(),
-            CharacterGravity::Radial { center: [0.0; 3] },
-        )
-    );
-
-    for point in landmarks.approach {
-        assert!(point
-            .position_mm
-            .coordinates()
-            .iter()
-            .all(|value| *value % 10 == 0));
-        assert!((99_700..=100_300).contains(&point.height_mm));
-    }
-    for pair in landmarks.approach.windows(2) {
-        let height_step = pair[1].height_mm.abs_diff(pair[0].height_mm);
-        assert!(
-            height_step <= surface.relief_mm() / 2,
-            "height step was {height_step}mm"
-        );
-    }
-}
-
-#[test]
 fn dungeon_materialization_preserves_tiles_across_sector_boundaries() {
     let spec = DungeonSpec::new(48, 40, 4, 5, 1).unwrap();
     let blueprint = generate_dungeon(generation(77), spec);

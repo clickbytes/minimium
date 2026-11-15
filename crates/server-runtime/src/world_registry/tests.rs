@@ -34,6 +34,7 @@ fn registry_from_sample(worlds: Vec<minimium_game_sample::GeneratedWorld>) -> Wo
                     &world.map,
                 )
                 .unwrap(),
+                resolved_relief_policy: world.resolved_relief_policy,
                 map: world.map,
                 initial_entities: Vec::new(),
             })

@@ -47,13 +47,6 @@ pub struct PlanetPoint {
     pub ocean: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct PlanetLandmarks {
-    pub spawn: PlanetPoint,
-    pub entrance: PlanetPoint,
-    pub approach: [PlanetPoint; 9],
-}
-
 /// Fixed-point value-noise surface. The cube sample key makes face borders share
 /// the same lattice coordinates; output positions are integral millimeters.
 #[derive(Clone, Debug)]
@@ -64,6 +57,7 @@ pub struct PlanetTerrain {
     inputs: crate::TerrainInputs,
     pub(crate) material_manifest: Option<minimium_world::world::WorldManifest>,
     pub(crate) surface_recipe: crate::surface_habitat::SurfaceRecipe,
+    relief_policy: crate::PlanetReliefSamplingPolicy,
 }
 
 impl PlanetTerrain {
@@ -73,6 +67,43 @@ impl PlanetTerrain {
         definition: Option<PlanetDefinition>,
         inputs: crate::TerrainInputs,
     ) -> Result<Self, GenerationError> {
+        let policy = inputs
+            .resolved_relief_policy
+            .map(crate::ResolvedPlanetReliefPolicy::policy)
+            .or_else(|| {
+                definition
+                    .filter(|definition| definition.mode == 1)
+                    .map(|_| crate::PlanetReliefSamplingPolicy::identity())
+            })
+            .or_else(|| {
+                definition
+                    .is_none()
+                    .then(crate::PlanetReliefSamplingPolicy::identity)
+            })
+            .ok_or_else(|| {
+                GenerationError::invalid_manifest(
+                    "procedural planet requires a resolved relief sampling policy",
+                )
+            })?;
+        Self::new_with_relief_policy(generation, surface, definition, inputs, policy)
+    }
+
+    /// Constructs terrain with a scenario-selected recipe before its map exists.
+    pub fn new_with_relief_policy(
+        generation: GenerationSpec,
+        surface: PlanetSurfaceSpec,
+        definition: Option<PlanetDefinition>,
+        inputs: crate::TerrainInputs,
+        relief_policy: crate::PlanetReliefSamplingPolicy,
+    ) -> Result<Self, GenerationError> {
+        if inputs
+            .resolved_relief_policy
+            .is_some_and(|resolved| resolved.policy() != relief_policy)
+        {
+            return Err(GenerationError::invalid_manifest(
+                "terrain relief policy conflicts with resolved content",
+            ));
+        }
         if u64::from(generation.position_quantum_mm()) > surface.radius_mm() / 1024 {
             return Err(GenerationError::invalid_manifest(
                 "planet generation quantum does not fit the surface",
@@ -105,6 +136,7 @@ impl PlanetTerrain {
             inputs,
             material_manifest: None,
             surface_recipe: Default::default(),
+            relief_policy,
         })
     }
 
@@ -122,11 +154,28 @@ impl PlanetTerrain {
                 "terrain material profile does not match the world manifest",
             ));
         }
-        let mut terrain = Self::new(
+        let relief_policy = match inputs.resolved_relief_policy {
+            Some(policy) if !policy.matches_manifest(manifest) => {
+                return Err(GenerationError::invalid_manifest(
+                    "terrain relief policy does not match the world manifest",
+                ));
+            }
+            Some(policy) => policy.policy(),
+            None if manifest.source() == minimium_world::world::WorldSource::Generated
+                && manifest.topology() == minimium_world::world::WorldTopology::Planet =>
+            {
+                return Err(GenerationError::invalid_manifest(
+                    "generated planet has no resolved relief sampling policy",
+                ));
+            }
+            None => crate::PlanetReliefSamplingPolicy::identity(),
+        };
+        let mut terrain = Self::new_with_relief_policy(
             manifest.generation(),
             crate::planet_surface_for(manifest),
             manifest.planet(),
             inputs,
+            relief_policy,
         )?;
         terrain.material_manifest = Some(manifest);
         Ok(terrain)
@@ -273,16 +322,7 @@ impl PlanetTerrain {
                 GenerationChannel::TerrainDetail,
             ) * i64::from(definition.detail_strength_mm)
                 / 32_768;
-            let [x, y, z] = cube_sample.coordinates();
-            let clearance = if y == PLANET_SAMPLE_COORDINATE_SCALE {
-                let distance = x.abs().max(z.abs());
-                let inner = PLANET_SAMPLE_COORDINATE_SCALE / 256;
-                let outer = PLANET_SAMPLE_COORDINATE_SCALE / 64;
-                i64::from((distance - inner).clamp(0, outer - inner)) * 1000
-                    / i64::from(outer - inner)
-            } else {
-                1000
-            };
+            let clearance = self.relief_policy.attenuation_permille(cube_sample);
             (
                 ((mountains + detail) * i64::from(definition.height_scale_permille) * clearance
                     / 1_000_000)
@@ -361,51 +401,6 @@ impl PlanetTerrain {
 
     pub fn has_peak_relief(&self) -> bool {
         self.definition.is_some_and(|p| p.peak_relief.enabled())
-    }
-
-    /// Safe deterministic spawn and entrance on one face, joined by sampled
-    /// approach points. The relief bound keeps the route traversable.
-    pub fn landmarks(&self) -> Result<PlanetLandmarks, GenerationError> {
-        let scale = PLANET_SAMPLE_COORDINATE_SCALE;
-        let (u, start, step) = if self.is_earth() {
-            // Near Bergen: 60.4 N, 5.3 E. This cube coordinate samples the
-            // same GEBCO surface used by collision and sector rendering.
-            let step = scale / 8192;
-            (
-                (i64::from(scale) * 566 / 1000) as i32,
-                (i64::from(scale) * 527 / 10_000) as i32,
-                step,
-            )
-        } else if self
-            .definition
-            .is_some_and(|definition| definition.mode == 1)
-        {
-            let jitter =
-                (self.generation.seed().get() as i32).rem_euclid(scale / 1024) - scale / 2048;
-            let step = scale / 4096;
-            (
-                scale / 1000 * 811 + jitter,
-                scale / 1000 * 217 - 4 * step + jitter,
-                step,
-            )
-        } else {
-            (0, -(scale / 512), scale / 2048)
-        };
-        let mut samples = Vec::with_capacity(9);
-        for index in 0..9 {
-            let sample = PlanetFace::PositiveY
-                .cube_sample(u, start + index as i32 * step)
-                .expect("fixed planet route samples lie inside the face");
-            samples.push(self.sample(sample)?);
-        }
-        let approach: [PlanetPoint; 9] = samples
-            .try_into()
-            .map_err(|_| GenerationError::materialization("invalid route sample count"))?;
-        Ok(PlanetLandmarks {
-            spawn: approach[0],
-            entrance: approach[8],
-            approach,
-        })
     }
 
     fn position_at(&self, sample: CubeSampleKey, radius_mm: u64) -> Position3Mm {

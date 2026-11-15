@@ -13,6 +13,7 @@ mod planet;
 mod planet_sector;
 mod planet_teleport;
 mod random_address;
+mod relief_policy;
 mod sector_clip;
 mod sector_geometry;
 mod sector_neighborhood;
@@ -46,12 +47,10 @@ pub use excavation_geometry::{
 };
 pub use generator_contract::{generator_digest, validate_world_manifest};
 pub use geography::{EarthSampleError, PreparedGeography};
-pub use materialize::{
-    materialize_dungeon_map, materialize_planet_map, materialize_planet_overview,
-};
+pub use materialize::{materialize_dungeon_map, materialize_planet_overview};
 pub use minimium_world::world::{DungeonBlueprint, DungeonRoom, DungeonTile};
 pub use philox::philox4x32_10;
-pub use planet::{PlanetLandmarks, PlanetPoint, PlanetSurfaceSpec, PlanetTerrain};
+pub use planet::{PlanetPoint, PlanetSurfaceSpec, PlanetTerrain};
 pub use planet_sector::{
     generate_planet_render_block, generate_planet_render_block_with_geography,
     generate_planet_render_patch, generate_planet_render_patch_with_geography,
@@ -64,6 +63,7 @@ pub use planet_teleport::{
     planet_safe_spawn_position_at_direction_with_geography,
 };
 pub use random_address::{AddressedRandom, GenerationChannel};
+pub use relief_policy::{PlanetReliefSamplingPolicy, ResolvedPlanetReliefPolicy};
 pub use sector_geometry::{
     materialize_world_sector, materialize_world_sector_with_geography, slice_sector_geometry,
     SectorGeometry,

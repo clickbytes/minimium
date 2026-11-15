@@ -17,6 +17,7 @@ use std::{
 struct Key {
     terrain_revision: SectorContentVersion,
     material_profile: Option<minimium_procgen::ResolvedTerrainMaterialProfile>,
+    resolved_relief_policy: Option<minimium_procgen::ResolvedPlanetReliefPolicy>,
     world: WorldInstanceId,
     manifest: WorldManifest,
     origin: [f32; 3],
@@ -31,6 +32,7 @@ impl Key {
             && self.manifest == other.manifest
             && self.terrain_revision == other.terrain_revision
             && self.material_profile == other.material_profile
+            && self.resolved_relief_policy == other.resolved_relief_policy
             && self.origin == other.origin
             && self.origin_generation == other.origin_generation
             && self.view == other.view
@@ -66,6 +68,7 @@ impl PreparedScene {
         water_level_revision: u64,
         fluid_revision: u64,
         material_profile: Option<minimium_procgen::ResolvedTerrainMaterialProfile>,
+        resolved_relief_policy: Option<minimium_procgen::ResolvedPlanetReliefPolicy>,
     ) -> bool {
         self.key.world == world
             && self.key.manifest == manifest
@@ -75,6 +78,7 @@ impl PreparedScene {
             && self.key.water_level_revision == water_level_revision
             && self.key.fluid_revision == fluid_revision
             && self.key.material_profile == material_profile
+            && self.key.resolved_relief_policy == resolved_relief_policy
     }
     pub fn geometry_matches(
         &self,
@@ -84,6 +88,7 @@ impl PreparedScene {
         origin_generation: u64,
         terrain_revision: SectorContentVersion,
         material_profile: Option<minimium_procgen::ResolvedTerrainMaterialProfile>,
+        resolved_relief_policy: Option<minimium_procgen::ResolvedPlanetReliefPolicy>,
     ) -> bool {
         self.key.world == world
             && self.key.manifest == manifest
@@ -91,6 +96,7 @@ impl PreparedScene {
             && self.key.origin_generation == origin_generation
             && self.key.terrain_revision == terrain_revision
             && self.key.material_profile == material_profile
+            && self.key.resolved_relief_policy == resolved_relief_policy
     }
     pub fn position(&self) -> [f32; 3] {
         self.key.view.position
@@ -396,6 +402,7 @@ impl SectorWorker {
         let key = Key {
             terrain_revision: geography.revision(),
             material_profile: geography.material_profile,
+            resolved_relief_policy: geography.resolved_relief_policy,
             world,
             manifest,
             view,

@@ -101,10 +101,24 @@ impl Renderer {
             self.gpu.atmosphere_gpu.clear_weather();
             return;
         };
+        let terrain_inputs = self
+            .application
+            .connection
+            .session()
+            .map(|session| {
+                let mut inputs =
+                    minimium_procgen::TerrainInputs::from(session.prepared_geography());
+                if let Some(policy) = session.resolved_relief_policy() {
+                    inputs = inputs.with_resolved_relief_policy(policy);
+                }
+                inputs
+            })
+            .unwrap_or_default();
         let stamp = Stamp {
             manifest,
             context,
             clock_revision,
+            resolved_relief_policy: terrain_inputs.resolved_relief_policy,
         };
         let utc = utc as f64 / 1000.0;
         let position = DVec3::from_array(frame.render_view.camera_eye_world_m);
@@ -157,11 +171,7 @@ impl Renderer {
                 revision: self.weather.sequence,
                 detail: self.weather.detail,
                 started: now,
-                geography: self
-                    .application
-                    .connection
-                    .session()
-                    .and_then(|session| session.prepared_geography()),
+                terrain_inputs,
             });
             self.weather.last_request = Some(now);
         }
