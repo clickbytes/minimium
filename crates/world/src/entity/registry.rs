@@ -25,6 +25,8 @@ pub struct ComponentDescriptor {
     pub id: ComponentTypeId,
     pub name: &'static str,
     pub schema: SchemaVersion,
+    /// Validates this schema's encoded payload after size and schema checks.
+    pub validate_payload: fn(&[u8]) -> Result<(), ComponentError>,
     pub replication: ReplicationPolicy,
     pub visibility: ReplicationVisibility,
 }
@@ -90,6 +92,7 @@ impl ComponentRegistry {
         if schema != descriptor.schema {
             return Err(ComponentError::UnsupportedSchema);
         }
+        (descriptor.validate_payload)(bytes)?;
         ComponentBlob::new(descriptor.schema, bytes.to_vec()).ok_or(ComponentError::InvalidPayload)
     }
 }
