@@ -5,7 +5,7 @@ use winit::{
 };
 
 pub(super) fn keyboard(
-    renderer: &mut Renderer,
+    renderer: &mut DesktopHost,
     window: &Window,
     event_loop: &ActiveEventLoop,
     event: KeyEvent,
@@ -55,7 +55,7 @@ pub(super) fn keyboard(
 }
 
 fn apply_action(
-    renderer: &mut Renderer,
+    renderer: &mut DesktopHost,
     window: &Window,
     event_loop: &ActiveEventLoop,
     action: crate::input::InputAction,
@@ -92,7 +92,7 @@ fn apply_action(
                 renderer.application.input.clear_held();
                 renderer.toggle_overview();
             } else {
-                renderer.application.connection.cancel_transition();
+                renderer.application.cancel_transition_request();
                 release_cursor(renderer, window, false, false, true);
             }
         }
@@ -120,7 +120,7 @@ fn apply_action(
     }
 }
 
-fn input_context(renderer: &Renderer) -> crate::input::InputContext {
+fn input_context(renderer: &DesktopHost) -> crate::input::InputContext {
     if renderer.application.ui.console.open {
         crate::input::InputContext::Console
     } else if renderer.application.overview().is_open() {
@@ -131,7 +131,7 @@ fn input_context(renderer: &Renderer) -> crate::input::InputContext {
 }
 
 pub(super) fn mouse_input(
-    renderer: &mut Renderer,
+    renderer: &mut DesktopHost,
     window: &Window,
     event_loop: &ActiveEventLoop,
     state: ElementState,
@@ -217,7 +217,7 @@ pub(super) fn mouse_input(
     }
 }
 
-pub(super) fn mouse_wheel(renderer: &mut Renderer, delta: MouseScrollDelta) {
+pub(super) fn mouse_wheel(renderer: &mut DesktopHost, delta: MouseScrollDelta) {
     if renderer.application.ui.console.open {
         let amount = scroll_amount(delta, 40.0);
         renderer
@@ -235,7 +235,7 @@ pub(super) fn mouse_wheel(renderer: &mut Renderer, delta: MouseScrollDelta) {
 }
 
 pub(super) fn cursor_moved(
-    renderer: &mut Renderer,
+    renderer: &mut DesktopHost,
     window: &Window,
     position: PhysicalPosition<f64>,
 ) {
@@ -284,7 +284,7 @@ pub(super) fn cursor_moved(
     renderer.input.last_cursor = Some((position.x, position.y));
 }
 
-pub(super) fn device_event(renderer: &mut Renderer, event: DeviceEvent) {
+pub(super) fn device_event(renderer: &mut DesktopHost, event: DeviceEvent) {
     if let DeviceEvent::MouseMotion { delta } = event {
         if renderer.input.cursor_locked
             && !renderer.application.ui.console.open
@@ -299,7 +299,7 @@ pub(super) fn device_event(renderer: &mut Renderer, event: DeviceEvent) {
 }
 
 fn release_cursor(
-    renderer: &mut Renderer,
+    renderer: &mut DesktopHost,
     window: &Window,
     clear_keys: bool,
     clear_jump: bool,

@@ -77,9 +77,35 @@ impl GameplayState {
     }
 }
 
+#[cfg(feature = "desktop")]
 pub(crate) use minimium_client_runtime::PredictedStep;
 
 impl ClientGameState {
+    pub(crate) fn for_initial_world(
+        current_instance: WorldInstanceId,
+        spawn: [f32; 3],
+        world_manifests: HashMap<WorldInstanceId, WorldManifest>,
+    ) -> Self {
+        let gravity = world_manifests
+            .get(&current_instance)
+            .copied()
+            .map(minimium_world::world::GravityPolicy::for_manifest)
+            .map(minimium_world::world::GravityPolicy::character_gravity)
+            .unwrap_or_default();
+        let character = minimium_simulation::CharacterState::at_spawn_with_gravity(spawn, gravity);
+        let gameplay = GameplayState {
+            reconciliation: minimium_client_runtime::SnapshotReconciler::default(),
+            remote_positions_mm: Vec::new(),
+            prediction: minimium_client_runtime::ClientPrediction::new(character, None),
+            health: minimium_simulation::PLAYER_MAX_HEALTH,
+            collision_index: minimium_simulation::CollisionIndex::default(),
+            collision_query: minimium_simulation::CollisionQuery::default(),
+            collision_revision: 0,
+            sectors_ready: false,
+        };
+        Self::new(gameplay, current_instance, world_manifests)
+    }
+
     pub(crate) fn new(
         gameplay: GameplayState,
         current_instance: WorldInstanceId,
@@ -101,6 +127,7 @@ impl ClientGameState {
         self.session_context = context;
     }
 
+    #[cfg(feature = "desktop")]
     pub(crate) fn view(&self) -> minimium_client_runtime::ClientView<'_> {
         minimium_client_runtime::ClientView::new(
             self.current_instance,
@@ -113,10 +140,12 @@ impl ClientGameState {
         )
     }
 
+    #[cfg(feature = "desktop")]
     pub(crate) fn accumulate_prediction_time(&mut self, delta_seconds: f32) {
         self.gameplay.prediction.accumulate_time(delta_seconds);
     }
 
+    #[cfg(feature = "desktop")]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn predict_next(
         &mut self,

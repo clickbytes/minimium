@@ -1,12 +1,12 @@
 mod values;
-use super::Renderer;
+use super::DesktopHost;
 use crate::client_commands::{
     ClientPropertyCommand, ClientPropertyKey as Key, ClientPropertyValue as Value,
 };
 use minimium_commands::{PropertySource, PropertyValue};
 use std::collections::BTreeMap;
 
-impl Renderer {
+impl DesktopHost {
     pub(super) fn apply_property(&mut self, command: ClientPropertyCommand) -> String {
         match command {
             ClientPropertyCommand::Get(key) => self.property_line(key, false),
@@ -106,27 +106,27 @@ impl Renderer {
             }
             Value::AtmosphereDebug(value) => {
                 self.atmosphere_debug = value;
-                self.gpu.atmosphere_gpu.debug = value as u32;
+                self.renderer.atmosphere_gpu.debug = value as u32;
                 if value != minimium_renderer::atmosphere_debug::AtmosphereDebug::Off {
                     self.terrain_debug = minimium_renderer::terrain_debug::TerrainDebug::Off;
                     self.application
                         .settings
                         .set(Value::TerrainDebug(self.terrain_debug));
-                    self.gpu.terrain_gpu.uniform.debug[0] = 0;
-                    self.gpu.terrain_gpu.update(&self.gpu.queue);
+                    self.renderer.terrain_gpu.uniform.debug[0] = 0;
+                    self.renderer.terrain_gpu.update(&self.renderer.queue);
                 }
             }
             Value::TerrainDebug(value) => {
                 self.terrain_debug = value;
-                self.gpu.terrain_gpu.uniform.debug[0] = value as u32;
-                self.gpu.terrain_gpu.update(&self.gpu.queue);
+                self.renderer.terrain_gpu.uniform.debug[0] = value as u32;
+                self.renderer.terrain_gpu.update(&self.renderer.queue);
                 if value != minimium_renderer::terrain_debug::TerrainDebug::Off {
                     self.atmosphere_debug =
                         minimium_renderer::atmosphere_debug::AtmosphereDebug::Off;
                     self.application
                         .settings
                         .set(Value::AtmosphereDebug(self.atmosphere_debug));
-                    self.gpu.atmosphere_gpu.debug = 0;
+                    self.renderer.atmosphere_gpu.debug = 0;
                 }
             }
             Value::CloudDebug(value) => {

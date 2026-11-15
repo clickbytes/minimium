@@ -1,22 +1,22 @@
-use super::Renderer;
+use super::DesktopHost;
 use minimium_renderer::quality::{SkyQuality, SkyQualityState};
 use minimium_renderer::ShadowSettings;
 
-impl Renderer {
+impl DesktopHost {
     pub(super) fn set_sky_quality(&mut self, requested: SkyQuality) -> String {
         let requested_settings = ShadowSettings::for_quality(requested);
         let mut fallback_reason = None;
         self.shadow_state.caster_keys.clear();
-        if let Err(error) = self.gpu.set_shadow_settings(requested_settings) {
+        if let Err(error) = self.renderer.set_shadow_settings(requested_settings) {
             fallback_reason = Some(error);
             if requested == SkyQuality::Standard {
                 let low = ShadowSettings::for_quality(SkyQuality::Low);
-                if let Err(low_error) = self.gpu.set_shadow_settings(low) {
+                if let Err(low_error) = self.renderer.set_shadow_settings(low) {
                     fallback_reason = Some(low_error);
                 }
             }
         }
-        let effective = if self.gpu.shadow_gpu.settings.enabled {
+        let effective = if self.renderer.shadow_gpu.settings.enabled {
             SkyQuality::Standard
         } else {
             self.shadow_state

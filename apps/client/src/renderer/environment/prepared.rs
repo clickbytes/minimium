@@ -1,5 +1,5 @@
 use super::{EnvironmentFrame, StarFrameStamp};
-use crate::renderer::{environment_gpu, GpuResources};
+use crate::renderer::{environment_gpu, Renderer};
 use minimium_renderer::meteors::MeteorFrame;
 use minimium_renderer::stars::{StarInstanceGpu, STAR_GPU_RECORD_COUNT};
 use minimium_renderer::RenderFrame;
@@ -72,7 +72,7 @@ impl PreparedEnvironmentFrame {
     }
 
     /// Uploads the app-owned, epoch-stamped star batch when it matches this frame.
-    pub(in crate::renderer) fn upload_stars(&self, gpu: &mut GpuResources) {
+    pub(in crate::renderer) fn upload_stars(&self, gpu: &mut Renderer) {
         if let Some(stars) = &self.stars {
             if self.frame.diagnostics.star_frame == Some(stars.stamp) {
                 gpu.stars.upload(&gpu.queue, &stars.instances);

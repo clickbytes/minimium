@@ -1,6 +1,6 @@
 use crate::application::PendingSectorTransition;
 use crate::{
-    client_commands::{self, CommandContext, FrontendAction},
+    client_commands::{self, FrontendAction},
     console::Console,
     environment::{EnvironmentFrameInput, LocalDemoEnvironment},
     session::{ClientSession, DisconnectReason, SessionEvent, SessionState},
@@ -9,7 +9,7 @@ use minimium_client_runtime::{connector::StartError, ConnectionEvent};
 use minimium_protocol::{ServerMessage, MAX_VISIBLE_PLAYERS};
 use minimium_simulation::{CharacterState, CollisionQuery, MovementIntent, PLAYER_MAX_HEALTH};
 use minimium_world::world::{
-    character_frame, CharacterGeometry, CharacterGravity, WorldManifest, WorldMap, WorldTopology,
+    character_frame, CharacterGeometry, CharacterGravity, WorldManifest, WorldTopology,
 };
 use std::{
     error::Error,
@@ -74,7 +74,8 @@ use minimium_renderer::geometry::{cube, sector_geometry};
 const UI_VERTEX_CAPACITY: usize = 8192;
 pub(crate) const REMOTE_INTERPOLATION_DELAY: Duration = Duration::from_millis(100);
 
-struct GpuResources {
+/// GPU and presentation-resource owner. Application logic stays in `DesktopHost`.
+struct Renderer {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -162,7 +163,8 @@ struct FrameMetrics {
     previous_bytes_received: u64,
 }
 
-struct Renderer {
+/// Desktop event-loop owner that composes the CPU application and GPU renderer.
+struct DesktopHost {
     bolid_worker: bolids::BolidWorker,
     prepared_bolids: minimium_renderer::milky_way_gpu::BolidGpuFrame,
     diagnostic_bolid_age: Option<(minimium_protocol::WorldContext, u64, f32)>,
@@ -175,7 +177,7 @@ struct Renderer {
     last_sky_view_at: Option<Instant>,
     pending_bolid_request: Option<u16>,
     localizer: minimium_localization::Localizer,
-    gpu: GpuResources,
+    renderer: Renderer,
     shadow_state: shadows::ShadowState,
     prepared_shadow: shadow_prepare::PreparedShadowFrame,
     shadow_map_preparation: shadow_map_cache::ShadowMapPreparationCache,

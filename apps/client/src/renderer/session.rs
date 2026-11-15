@@ -4,7 +4,7 @@ mod sector_readiness;
 use super::*;
 use crate::messages::ClientText as Text;
 
-impl Renderer {
+impl DesktopHost {
     pub(crate) fn start_remote_attempt(
         &mut self,
         address: &str,
@@ -64,7 +64,7 @@ impl Renderer {
             self.application.status = crate::application::ClientStatus::Status(
                 minimium_localization::UiStatus::EarthConnecting,
             );
-            self.gpu.scene_visible = false;
+            self.renderer.scene_visible = false;
         }
     }
 
@@ -96,18 +96,17 @@ impl Renderer {
     }
 
     pub(super) fn poll_connector(&mut self) {
-        if let Some(result) = self.application.connection.poll_admin_result() {
+        if let Some(result) = self.application.poll_admin_result() {
             match result {
                 Ok(response) => self.application.ui.console.push_line(response.trim()),
                 Err(error) => {
                     self.application
-                        .connection
                         .record_diagnostic_failure("client.admin_response_failed", &error);
                     self.application.ui.console.push_line(error.to_string());
                 }
             }
         }
-        match self.application.connection.poll_connector() {
+        match self.application.poll_connector() {
             ConnectionEvent::TimedOut => {
                 self.application.status = crate::application::ClientStatus::Status(
                     minimium_localization::UiStatus::ConnectionTimedOut,
@@ -156,17 +155,16 @@ impl Renderer {
     }
 
     fn reset_remote_gameplay(&mut self) {
-        self.application.action_executor.clear_input_cooldown();
-        self.gpu.clear_remote_vertices();
-        self.application.game.gameplay.clear_remote_players();
-        self.application.game.gameplay.health = PLAYER_MAX_HEALTH;
+        self.application.clear_action_input_cooldown();
+        self.renderer.clear_remote_vertices();
+        self.application.clear_remote_players();
         self.gameplay_presentation.clear_remote_players();
     }
 
     pub(crate) fn finish_on_exit(&mut self, deadline: Instant) -> Result<(), Box<dyn Error>> {
         self.clear_connection();
         let worker_deadline = deadline - Duration::from_secs(2);
-        let server_result = self.application.connection.finish_until(worker_deadline);
+        let server_result = self.application.finish_until(worker_deadline);
         let mut unfinished = self.sector_cache.shutdown_until(worker_deadline);
         if !self.weather.shutdown_until(worker_deadline) {
             unfinished.push("client-cloud-mesh");
@@ -192,7 +190,7 @@ impl Renderer {
     }
 
     pub(super) fn clear_connection(&mut self) {
-        self.application.action_executor.clear_input_cooldown();
+        self.application.clear_action_input_cooldown();
         self.excavation_debug = Default::default();
         self.pending_bolid_request = None;
         self.last_sky_view_at = None;
@@ -200,18 +198,19 @@ impl Renderer {
         self.diagnostic_bolid_age = None;
         self.clear_pending_sector_transitions();
         let bootstrap = super::sector_scene::SceneInterestOwner::Bootstrap(
-            self.application.game.current_instance,
+            self.application.game_view().current_instance,
         );
         self.sector_cache.release_interest(bootstrap);
-        self.gpu
+        self.renderer
             .release_scene_stage(bootstrap.instance(), bootstrap);
-        if let Some(context) = self.application.game.session_context() {
+        if let Some(context) = self.application.game_view().session_context() {
             let active = super::sector_scene::SceneInterestOwner::Active(context);
             self.sector_cache.release_interest(active);
-            self.gpu.release_scene_stage(context.instance(), active);
+            self.renderer
+                .release_scene_stage(context.instance(), active);
         }
         if self.application.settings.require_earth {
-            self.gpu.scene_visible = false;
+            self.renderer.scene_visible = false;
             if !self.application.status.is_error() {
                 self.application.status = crate::application::ClientStatus::Status(
                     minimium_localization::UiStatus::EarthDisconnected,
@@ -230,9 +229,8 @@ impl Renderer {
                 .saturating_add(metrics.bytes_received);
             session.close();
         }
-        self.gpu.clear_remote_vertices();
-        self.application.game.gameplay.clear_remote_players();
-        self.application.game.gameplay.health = PLAYER_MAX_HEALTH;
+        self.renderer.clear_remote_vertices();
+        self.application.clear_remote_players();
         self.gameplay_presentation.clear_remote_players();
     }
 
@@ -242,10 +240,10 @@ impl Renderer {
             minimium_localization::UiMessage::EarthError(message.clone()),
         );
         if self.application.settings.require_earth {
-            self.gpu.scene_visible = false;
+            self.renderer.scene_visible = false;
         }
         self.application
-            .connection
+            .connection_view()
             .record_diagnostic_failure("client_runtime.session_content_failed", &message);
         self.application.ui.console.push_ui_error_message(
             minimium_localization::UiMessage::ContentUnavailable,
@@ -256,11 +254,11 @@ impl Renderer {
     }
 
     pub(super) fn poll_session(&mut self) {
-        if self.application.connection.session().is_some() {
+        if self.application.connection_view().session().is_some() {
             self.application.ui.session_events.clear();
-            self.application
-                .connection
-                .poll_session(&mut self.application.ui.session_events);
+            let mut session_events = Vec::new();
+            self.application.poll_session(&mut session_events);
+            self.application.ui.session_events = session_events;
             self.prepare_session_materials();
         }
         let mut events = std::mem::take(&mut self.application.ui.session_events);
@@ -300,7 +298,7 @@ impl Renderer {
                     if self.application.settings.require_earth {
                         self.application.status =
                             crate::application::ClientStatus::ClientText(text.clone());
-                        self.gpu.scene_visible = false;
+                        self.renderer.scene_visible = false;
                     }
                     if self.application.ui.console.open {
                         self.application.ui.console.push_client_text(
@@ -314,7 +312,7 @@ impl Renderer {
                 }
                 SessionEvent::Message(message) => {
                     self.handle_server_message(message);
-                    if self.application.connection.session().is_none() {
+                    if self.application.connection_view().session().is_none() {
                         break;
                     }
                 }
@@ -322,7 +320,7 @@ impl Renderer {
         }
         if self
             .application
-            .connection
+            .connection_view()
             .session()
             .is_some_and(|session| session.state() == SessionState::Disconnected)
         {
@@ -332,7 +330,7 @@ impl Renderer {
     }
 
     pub(super) fn queue_fire(&mut self) {
-        let prediction = &self.application.game.gameplay.prediction;
+        let prediction = &self.application.game_view().gameplay.prediction;
         let character = prediction.character;
         let feet_m = prediction.position_mm.map_or_else(
             || character.position.map(f64::from),
@@ -348,13 +346,12 @@ impl Renderer {
         )
         .normalize()
         .to_array();
-        match self.application.action_executor.execute(
-            &mut self.application.connection,
-            crate::application::ClientAction::UseEquipped {
+        match self
+            .application
+            .execute_action(crate::application::ClientAction::UseEquipped {
                 direction,
                 trigger: crate::application::UseTrigger::Pressed,
-            },
-        ) {
+            }) {
             crate::application::LocalActionOutcome::Queued {
                 kind: crate::application::QueuedActionKind::WeaponFire,
                 ..
@@ -386,18 +383,23 @@ impl Renderer {
     }
 
     pub(crate) fn queue_portal(&mut self) {
-        let position = self.application.game.gameplay.prediction.character.position;
+        let position = self
+            .application
+            .game_view()
+            .gameplay
+            .prediction
+            .character
+            .position;
         let entity = self
             .application
-            .connection
+            .connection_view()
             .session()
             .and_then(|session| session.replicated_entities())
             .and_then(|replicas| crate::client_commands::nearest_portal_entity(replicas, position));
         let Some(entity) = entity else { return };
-        let _ = self.application.action_executor.execute(
-            &mut self.application.connection,
-            crate::application::ClientAction::InteractEntity { entity },
-        );
+        let _ = self
+            .application
+            .execute_action(crate::application::ClientAction::InteractEntity { entity });
     }
 }
 

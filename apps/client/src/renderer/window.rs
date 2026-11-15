@@ -3,7 +3,7 @@ use crate::messages::ClientText as Text;
 
 struct App {
     window: Option<Arc<Window>>,
-    renderer: Option<Renderer>,
+    host: Option<DesktopHost>,
     worlds: Option<crate::bootstrap::InitialWorlds>,
     connection: Option<crate::bootstrap::ClientConnection>,
     options: crate::options::ClientOptions,
@@ -46,7 +46,7 @@ impl ApplicationHandler for App {
                 Text::RendererAlreadyInitialized.localized(&self.localizer, self.options.locale)
             )
         });
-        match pollster::block_on(Renderer::new(init::RendererSetup {
+        match pollster::block_on(DesktopHost::new(init::RendererSetup {
             window: Arc::clone(&window),
             worlds,
             connection: self
@@ -82,7 +82,7 @@ impl ApplicationHandler for App {
                     }
                 }
                 self.window = Some(window);
-                self.renderer = Some(renderer);
+                self.host = Some(renderer);
             }
             Err(error) => {
                 self.renderer_logger.emit(
@@ -104,7 +104,7 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
-        let (Some(window), Some(renderer)) = (&self.window, &mut self.renderer) else {
+        let (Some(window), Some(renderer)) = (&self.window, &mut self.host) else {
             return;
         };
         match event {
@@ -154,22 +154,22 @@ impl ApplicationHandler for App {
                 let interval = started.saturating_duration_since(renderer.metrics.last_redraw);
                 renderer.metrics.last_redraw = started;
                 let mut prepared_environment = renderer.update();
-                let client_view = renderer.application.game.view();
-                prepared_environment = prepared_environment.with_client_view(&client_view);
+                let client_view = renderer.application.desktop_render_view();
+                prepared_environment = prepared_environment.with_client_view(&client_view.client);
                 let scene = super::scene_bridge::RenderSceneSnapshot::new(
                     renderer.prepared_bolids,
                     &prepared_environment,
                     &renderer.prepared_shadow,
-                    renderer.gpu.world_geometry.publication().cloned(),
-                    renderer.application.game.session_context(),
+                    renderer.renderer.world_geometry.publication().cloned(),
+                    client_view.context,
                 );
                 let submerged = renderer
                     .application
-                    .game
+                    .game_view()
                     .gameplay
                     .prediction
                     .submerged_fraction();
-                let draws = match renderer.gpu.render(&scene, submerged) {
+                let draws = match renderer.renderer.render(&scene, submerged) {
                     Ok(draws) => draws,
                     Err(
                         wgpu::CurrentSurfaceTexture::Lost | wgpu::CurrentSurfaceTexture::Outdated,
@@ -210,11 +210,11 @@ impl ApplicationHandler for App {
                     renderer.metrics.fps_frames = 0;
                     renderer.metrics.fps_time = Instant::now();
                     let coordinates = if renderer.application.settings.require_earth
-                        && renderer.gpu.scene_visible
+                        && renderer.renderer.scene_visible
                     {
                         let [x, y, z] = renderer
                             .application
-                            .game
+                            .game_view()
                             .gameplay
                             .prediction
                             .character
@@ -233,7 +233,7 @@ impl ApplicationHandler for App {
                         "{} | {}{} | {}",
                         Text::WindowTitleStatus {
                             fps,
-                            health: renderer.application.game.gameplay.health
+                            health: renderer.application.game_view().gameplay.health
                         }
                         .localized(&renderer.localizer, renderer.application.settings.locale),
                         renderer
@@ -259,14 +259,14 @@ impl ApplicationHandler for App {
         _device_id: winit::event::DeviceId,
         event: DeviceEvent,
     ) {
-        if let Some(renderer) = &mut self.renderer {
+        if let Some(renderer) = &mut self.host {
             super::window_events::device_event(renderer, event);
         }
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
-        if let (Some(renderer), Some(input)) = (&mut self.renderer, &self.dev_input) {
-            if renderer.gpu.scene_visible && !renderer.application.map_teleport_pending() {
+        if let (Some(renderer), Some(input)) = (&mut self.host, &self.dev_input) {
+            if renderer.renderer.scene_visible && !renderer.application.map_teleport_pending() {
                 if let Ok(line) = input.try_recv() {
                     let (exit, result) = super::dev_input::execute(renderer, &line);
                     super::dev_input::format_output(renderer, result);
@@ -311,7 +311,7 @@ pub fn run(options: crate::options::ClientOptions) -> Result<(), Box<dyn Error>>
     ));
     let mut app = App {
         window: None,
-        renderer: None,
+        host: None,
         worlds: Some(worlds),
         connection: Some(connection),
         options,
@@ -331,11 +331,11 @@ pub fn run(options: crate::options::ClientOptions) -> Result<(), Box<dyn Error>>
         window.set_visible(false);
     }
     let shutdown_deadline = Instant::now() + Duration::from_secs(30);
-    let cleanup_result = app.renderer.as_mut().map_or(Ok(()), |renderer| {
+    let cleanup_result = app.host.as_mut().map_or(Ok(()), |renderer| {
         renderer.finish_on_exit(shutdown_deadline)
     });
     let startup_error = app.startup_error.take();
-    drop(app.renderer.take());
+    drop(app.host.take());
     drop(app.diagnostic_logger);
     drop(app.renderer_logger);
     drop(app.localizer);

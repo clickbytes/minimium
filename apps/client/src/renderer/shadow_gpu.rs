@@ -1,6 +1,6 @@
 use super::{
     shadow_map_cache::{PreparedMapCasters, MAX_MAP_VERTEX_BYTES},
-    GpuResources,
+    Renderer,
 };
 use minimium_renderer::{geometry::Vertex, ShadowSettings};
 
@@ -12,7 +12,7 @@ pub(super) enum ShadowUploadStatus {
     Failed,
 }
 
-impl GpuResources {
+impl Renderer {
     pub(super) fn set_shadow_settings(
         &mut self,
         settings: ShadowSettings,

@@ -146,11 +146,11 @@ impl WorldTransitionController {
         true
     }
 
-    pub(crate) fn pending_preparations(&self) -> Vec<(TransitionId, PendingSectorTransition)> {
+    pub(crate) fn pending_preparation(&self) -> Option<(TransitionId, &PendingSectorTransition)> {
         self.pending
             .iter()
-            .map(|(id, transition)| (*id, transition.clone()))
-            .collect()
+            .next()
+            .map(|(id, transition)| (*id, transition))
     }
 
     pub(crate) fn contains_id(&self, id: TransitionId) -> bool {

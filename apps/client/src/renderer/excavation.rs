@@ -1,12 +1,10 @@
 use super::*;
 
-impl Renderer {
+impl DesktopHost {
     pub(super) fn equip_tool(&mut self, slot: Option<u8>) {
-        if let crate::application::LocalActionOutcome::Rejected { error, .. } =
-            self.application.action_executor.execute(
-                &mut self.application.connection,
-                crate::application::ClientAction::EquipTool { slot },
-            )
+        if let crate::application::LocalActionOutcome::Rejected { error, .. } = self
+            .application
+            .execute_action(crate::application::ClientAction::EquipTool { slot })
         {
             if error != crate::session::QueueError::Disconnected {
                 self.fail_connection(format!("Could not equip tool: {error:?}"));
@@ -15,7 +13,7 @@ impl Renderer {
     }
 
     pub(super) fn queue_equipped_use(&mut self, trigger: crate::application::UseTrigger) {
-        let prediction = &self.application.game.gameplay.prediction;
+        let prediction = &self.application.game_view().gameplay.prediction;
         let character = prediction.character;
         let feet_m = prediction.position_mm.map_or_else(
             || character.position.map(f64::from),
@@ -31,11 +29,9 @@ impl Renderer {
         )
         .normalize()
         .to_array();
-        if let crate::application::LocalActionOutcome::Rejected { error, .. } =
-            self.application.action_executor.execute(
-                &mut self.application.connection,
-                crate::application::ClientAction::UseEquipped { direction, trigger },
-            )
+        if let crate::application::LocalActionOutcome::Rejected { error, .. } = self
+            .application
+            .execute_action(crate::application::ClientAction::UseEquipped { direction, trigger })
         {
             self.fail_connection(format!("Could not use tool: {error:?}"));
         }

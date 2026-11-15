@@ -1,7 +1,7 @@
-use super::Renderer;
+use super::DesktopHost;
 use crate::environment::{diagnostics::format_utc_millis, SkyDiagnosticsSnapshot};
 
-impl Renderer {
+impl DesktopHost {
     pub(super) fn sky_info_lines(&self) -> Vec<String> {
         let frame = &self.render_environment_frame;
         let input = self.environment_frame;
@@ -56,7 +56,7 @@ impl Renderer {
     }
 }
 
-fn push_milky_way_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
+fn push_milky_way_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &DesktopHost) {
     let frame = &renderer.render_environment_frame;
     let overview = frame.render_view.kind == super::environment::EnvironmentViewKind::Overview;
     let u = &frame.environment_uniform;
@@ -66,7 +66,7 @@ fn push_milky_way_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Rende
     } else {
         u.sky_horizon_rgb_star_visibility[3] / (1.0 + 8.0 * moon_flux)
     };
-    let drawn = renderer.gpu.environment_draw_calls.sky > 0;
+    let drawn = renderer.renderer.environment_draw_calls.sky > 0;
     snapshot.push(
         "milky_way_state",
         if !drawn {
@@ -87,7 +87,7 @@ fn push_milky_way_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Rende
         "milky_way_texture_bytes",
         minimium_renderer::MilkyWayGpu::BYTES,
     );
-    snapshot.push("scene_linear_HDR", renderer.gpu.hdr_enabled);
+    snapshot.push("scene_linear_HDR", renderer.renderer.hdr_enabled);
 }
 
 fn push_clock_fields(
@@ -312,8 +312,8 @@ fn push_counter_fields(
     snapshot.push("render_frames_skipped", stats.frames_skipped);
 }
 
-fn push_shadow_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
-    let gpu = &renderer.gpu;
+fn push_shadow_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &DesktopHost) {
+    let gpu = &renderer.renderer;
     let enabled = gpu.shadow_gpu.settings.enabled;
     let active_publication = gpu
         .world_geometry
@@ -402,8 +402,8 @@ fn push_shadow_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer
     );
 }
 
-fn push_gpu_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
-    let gpu = &renderer.gpu;
+fn push_gpu_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &DesktopHost) {
+    let gpu = &renderer.renderer;
     let star_bytes = gpu.stars.buffer.size();
     let uniform_bytes = gpu.environment_buffer.size()
         + gpu.camera_buffer.size()
