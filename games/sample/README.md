@@ -135,8 +135,8 @@ and server atmospheric bolids retain their existing producers.
 
 The sample owns the current tool defaults (3 m reach, 0.6 m radius,
 500 ms cooldown). The recognized sample content profile selects the 1.5 m soil
-layer. These domain values do not yet install
-input bindings, developer grants or persistent inventory gameplay.
+layer. These domain values do not install input bindings or persistent inventory
+gameplay; the developer grant is supplied separately as fixed item slots.
 
 `DEFAULT_TOOL_PROFILE` supplies independent Shovel and Pickaxe definitions to
 server composition and client preview; `DEFAULT_TOOL_GRANTS` supplies the

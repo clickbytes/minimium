@@ -211,6 +211,7 @@ impl ServerRuntime {
     fn apply_world_inputs(&mut self) {
         let input_phase = allocations::enter(Phase::Input);
         let input_apply_started = Instant::now();
+        self.expire_pending_transfers(Instant::now());
         self.apply_inputs();
         self.metrics
             .input_apply
@@ -231,10 +232,11 @@ impl ServerRuntime {
                     (*instance, read as &dyn minimium_world::terrain::TerrainRead)
                 })
                 .collect();
-        let (committed, cancelled) = self
-            .game
-            .worlds
-            .commit_ready_transfers_with_terrain(sector_ready, &reads);
+        let (committed, cancelled) = self.game.worlds.commit_ready_transfers_with_terrain(
+            sector_ready,
+            &reads,
+            Instant::now(),
+        );
         let mut committed_players = HashSet::with_capacity(committed.len());
         if !committed.is_empty() {
             self.scheduler.next_snapshot = Instant::now();
@@ -243,28 +245,8 @@ impl ServerRuntime {
             committed_players.insert(transfer.player);
             self.send_transition_committed(transfer);
         }
-        for (player, transition_id, context) in cancelled {
-            let Some(index) = self
-                .connections
-                .client_indices_by_player
-                .get(&player)
-                .copied()
-            else {
-                continue;
-            };
-            if !crate::connection::queue_message(
-                &mut self.connections.clients[index],
-                &mut self.metrics,
-                minimium_protocol::ServerMessage::TransitionCancelled {
-                    transition_id,
-                    context,
-                },
-            ) {
-                self.metrics.dropped_messages = self.metrics.dropped_messages.saturating_add(1);
-                self.connections.clients[index].disconnect_reason =
-                    Some(crate::connection::CloseReason::Backpressure);
-                self.connections.disconnected.push(index);
-            }
+        for cancelled in cancelled {
+            self.finish_transfer_cancellation(cancelled);
         }
         committed_players
     }

@@ -304,6 +304,7 @@ impl ServerRuntime {
             destination,
             return_location,
             &reads,
+            Instant::now(),
         );
         let offer = match offer {
             Ok(offer) => offer,

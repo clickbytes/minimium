@@ -206,10 +206,12 @@ pub(super) fn route_message(
             target_context,
         } => {
             let accepted = player_id.is_some_and(|player| {
-                runtime
-                    .game
-                    .worlds
-                    .mark_transfer_ready(player, transition_id, target_context)
+                runtime.game.worlds.mark_transfer_ready(
+                    player,
+                    transition_id,
+                    target_context,
+                    Instant::now(),
+                )
             });
             if !accepted {
                 reject_input(runtime);
@@ -218,17 +220,9 @@ pub(super) fn route_message(
         }
         ClientMessage::CancelTransition(transition_id) => {
             if let Some(player) = player_id {
-                if runtime.game.worlds.cancel_transfer(player, transition_id) {
-                    if let Some(context) = runtime.game.worlds.context_for_player(player) {
-                        let _ = queue_message(
-                            &mut runtime.connections.clients[index],
-                            &mut runtime.metrics,
-                            ServerMessage::TransitionCancelled {
-                                transition_id,
-                                context,
-                            },
-                        );
-                    }
+                if let Some(cancelled) = runtime.game.worlds.cancel_transfer(player, transition_id)
+                {
+                    runtime.finish_transfer_cancellation(cancelled);
                 }
             }
             RoutingOutcome::Handled
