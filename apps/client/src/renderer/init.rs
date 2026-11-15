@@ -45,6 +45,8 @@ impl DesktopHost {
             .get(&current_instance)
             .copied()
             .ok_or("initial world has no generation manifest")?;
+        let terrain_inputs =
+            crate::world_content::bootstrap_terrain_inputs(current_manifest, &map)?;
         let mut sector_cache = sector_scene::ClientSectorCache::new()?;
         let initial_scene = sector_cache.ensure_scene(
             sector_scene::SceneInterestOwner::Bootstrap(current_instance),
@@ -57,7 +59,7 @@ impl DesktopHost {
             &world_catalog,
             &world_manifests,
             None,
-            Default::default(),
+            terrain_inputs,
             None,
         )?;
         let vertices: Vec<_> = initial_scene

@@ -304,10 +304,8 @@ impl ClientApplication {
                     position: candidate_position,
                     water_covers_candidate,
                     terrain_inputs: self
-                        .connection
-                        .session()
-                        .map(|session| session.terrain_inputs())
-                        .unwrap_or_default(),
+                        .scene_terrain_inputs()
+                        .map_err(|error| format!("{}: {error}", error.code()))?,
                     world_catalog: &self.world_catalog,
                     world_manifests: &self.game.world_manifests,
                     session_content_ready,
