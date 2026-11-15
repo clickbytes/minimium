@@ -17,13 +17,19 @@ pub struct MaterialPackage {
 
 impl MaterialPackage {
     pub fn open(path: &Path, compressed: bool) -> Result<Self, AssetIoError> {
-        let source = read_bounded(&path.join("manifest.ron"), MAX_MANIFEST_BYTES as u64)?;
+        Self::open_manifest(&path.join("manifest.ron"), compressed)
+    }
+
+    /// Opens the selected manifest and its flat, sibling material files.
+    pub fn open_manifest(path: &Path, compressed: bool) -> Result<Self, AssetIoError> {
+        let source = read_bounded(path, MAX_MANIFEST_BYTES as u64)?;
+        let directory = path.parent().unwrap_or_else(|| Path::new("."));
         let manifest = MaterialManifest::parse(&source)
             .map_err(|error| AssetIoError::invalid_format("material manifest", error))?;
         let variant = usize::from(!compressed);
         let mut maps = [Vec::new(), Vec::new(), Vec::new()];
         for (data, file) in maps.iter_mut().zip(&manifest.variants[variant].maps) {
-            *data = read_bounded(&path.join(&file.name), file.bytes)?;
+            *data = read_bounded(&directory.join(&file.name), file.bytes)?;
         }
         Self::from_parts(&source, compressed, maps)
     }

@@ -18,6 +18,13 @@ quota.
 Abandoned staging cleanup recognizes only installer-owned digest/receipt names
 with run and task identifiers; unrelated `.part` files are left intact.
 `material_http::fetch` reads bounded HTTP responses from an explicit endpoint.
+`MaterialPackage::open_manifest` consumes an explicit manifest and its validated
+flat sibling filenames; the existing directory opener delegates to it. The
+`package_client` example packages an executable with both validated variants and
+the original manifest bytes in a new destination. It stages only declared maps,
+copies the same buffers it validates, then publishes the completed directory.
+Failures clean up only the invocation's created files and directories, reporting
+cleanup errors; an existing destination is rejected. It never selects a recipe.
 `ContentServer` serves only a validated published package through four workers
 and a 32-connection bounded queue; request headers and transfer deadlines are
 bounded, and shutdown reports workers or snapshot resources that did not finish.
