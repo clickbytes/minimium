@@ -21,7 +21,7 @@ pub use scenario::{
     terrain_material_profile, DemoPortal, GeneratedWorld,
 };
 pub use tool_visuals::{
-    tool_model_catalog, tool_model_index, ToolModelDefinition, ToolModelVertex,
+    tool_model_catalog, tool_model_index, ToolModelDefinition, ToolModelVertex, TOOL_MODEL_KINDS,
 };
 pub use universe::{demo_universe_catalog, DemoUniverseCatalog};
 

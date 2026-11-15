@@ -15,26 +15,21 @@ pub struct ToolModelDefinition {
     pub vertices: Vec<ToolModelVertex>,
 }
 
+pub const TOOL_MODEL_KINDS: [ToolKind; 2] = [ToolKind::Shovel, ToolKind::Pickaxe];
+
 /// Returns the sample's ordered model catalog in camera-local metres.
 pub fn tool_model_catalog() -> [ToolModelDefinition; 2] {
-    [
-        ToolModelDefinition {
-            kind: ToolKind::Shovel,
-            vertices: vertices(ToolKind::Shovel),
-        },
-        ToolModelDefinition {
-            kind: ToolKind::Pickaxe,
-            vertices: vertices(ToolKind::Pickaxe),
-        },
-    ]
+    TOOL_MODEL_KINDS.map(|kind| ToolModelDefinition {
+        kind,
+        vertices: vertices(kind),
+    })
 }
 
 /// Returns the catalog index associated with one confirmed inventory tool.
-pub const fn tool_model_index(kind: ToolKind) -> usize {
-    match kind {
-        ToolKind::Shovel => 0,
-        ToolKind::Pickaxe => 1,
-    }
+pub fn tool_model_index(kind: ToolKind) -> Option<usize> {
+    TOOL_MODEL_KINDS
+        .iter()
+        .position(|catalog_kind| *catalog_kind == kind)
 }
 
 fn vertices(kind: ToolKind) -> Vec<ToolModelVertex> {

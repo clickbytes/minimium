@@ -19,6 +19,18 @@ pub enum HeldToolModelError {
     InvalidCatalog,
 }
 
+impl std::fmt::Display for HeldToolModelError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidVertices => formatter.write_str("invalid held-tool model vertices"),
+            Self::Capacity => formatter.write_str("held-tool model catalog exceeds its bounds"),
+            Self::InvalidCatalog => formatter.write_str("held-tool model catalog is empty"),
+        }
+    }
+}
+
+impl std::error::Error for HeldToolModelError {}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct HeldToolModel {
     vertices: Vec<HeldToolVertex>,
@@ -26,6 +38,9 @@ pub struct HeldToolModel {
 
 impl HeldToolModel {
     pub fn new(vertices: Vec<HeldToolVertex>) -> Result<Self, HeldToolModelError> {
+        if vertices.len() > MAX_HELD_TOOL_MODEL_VERTICES {
+            return Err(HeldToolModelError::Capacity);
+        }
         if vertices.is_empty()
             || vertices.len() % 3 != 0
             || vertices.iter().any(|vertex| {
@@ -34,9 +49,6 @@ impl HeldToolModel {
             })
         {
             return Err(HeldToolModelError::InvalidVertices);
-        }
-        if vertices.len() > MAX_HELD_TOOL_MODEL_VERTICES {
-            return Err(HeldToolModelError::Capacity);
         }
         Ok(Self { vertices })
     }

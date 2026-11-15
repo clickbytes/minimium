@@ -240,7 +240,8 @@ impl GpuResources {
             environment: environment_flags,
         };
         let held_tool = if self.scene_visible && self.held_tool_visible {
-            self.held_tool_kind.map(|kind| (&self.held_tool, kind))
+            self.held_tool_model_index
+                .map(|model_index| (&self.held_tool, model_index))
         } else {
             None
         };

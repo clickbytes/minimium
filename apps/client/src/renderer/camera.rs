@@ -9,11 +9,12 @@ pub(super) use character::{
 impl Renderer {
     pub(super) fn update(&mut self) -> environment::PreparedEnvironmentFrame {
         self.update_tool_use();
-        self.gpu.held_tool_kind = self
+        self.gpu.held_tool_model_index = self
             .application
             .connection
             .session()
-            .and_then(|session| session.inventory().tool());
+            .and_then(|session| session.inventory().tool())
+            .and_then(minimium_game_sample::tool_model_index);
         self.gpu.held_tool_visible = self.application.game.gameplay.sectors_ready
             && !self.application.ui.console.open
             && !self.application.overview().is_open();

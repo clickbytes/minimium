@@ -81,7 +81,7 @@ impl HeldToolGpu {
         let Some((buffer, count)) = self.models.get(model_index) else {
             return 0;
         };
-        if count == 0 {
+        if *count == 0 {
             return 0;
         }
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -102,7 +102,7 @@ impl HeldToolGpu {
         });
         pass.set_pipeline(&self.pipeline);
         pass.set_vertex_buffer(0, buffer.slice(..));
-        pass.draw(0..count, 0..1);
+        pass.draw(0..*count, 0..1);
         1
     }
 
