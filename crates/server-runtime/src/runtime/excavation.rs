@@ -1,5 +1,8 @@
 //! Bounded owner-lane coordinator: prepare, persist, then publish at a tick boundary.
 mod admission;
+mod coordinator;
+mod ports;
+use coordinator::{ExcavationCoordinator, Origin, PreparationRequest};
 mod hydrology;
 mod impacts;
 mod inventory;
@@ -23,17 +26,17 @@ use minimium_world::{
 };
 
 pub(super) struct Excavation {
+    coordinator: ExcavationCoordinator,
+    state: ExcavationState,
+}
+
+struct ExcavationState {
     config: crate::composition::ExcavationConfig,
-    journal: ExcavationJournal,
     restored: ExcavationRestore,
     inventories: HashMap<PlayerProfileId, Inventory>,
     inventory_requests: HashMap<PlayerId, (WorldContext, Inventory)>,
     action_results: HashMap<PlayerId, (WorldContext, ActionResult)>,
     gates: HashMap<PlayerId, (WorldContext, minimium_simulation::tools::ToolUseGate)>,
-    preparing: Option<Preparation>,
-    pending: Option<Pending>,
-    next_id: u64,
-    failure: Option<String>,
     clients: HashMap<PlayerId, streaming::Cursor>,
     metrics: metrics::ExcavationMetrics,
     waters: HashMap<WorldInstanceId, water::WaterWorld>,
@@ -42,18 +45,6 @@ pub(super) struct Excavation {
     water_failures: HashMap<WorldInstanceId, hydrology::WaterFailure>,
     next_water_step: Instant,
     water_checkpoint_due: HashMap<WorldInstanceId, Instant>,
-    shutting_down: bool,
-}
-
-struct Preparation {
-    player: Option<PlayerId>,
-    context: Option<WorldContext>,
-    action_id: Option<u64>,
-    world: WorldInstanceId,
-    impact_bodies: Vec<minimium_world::impact::BodyState>,
-    input_revision: minimium_procgen::SectorContentVersion,
-    receiver: Receiver<Result<Prepared, PreparationError>>,
-    started: Instant,
 }
 
 #[derive(Debug)]
@@ -85,14 +76,6 @@ struct Prepared {
     craters: Option<Arc<minimium_terrain::TerrainSnapshot>>,
 }
 
-struct Pending {
-    player: Option<PlayerId>,
-    context: Option<WorldContext>,
-    action_id: Option<u64>,
-    prepared: Prepared,
-    started: Instant,
-}
-
 impl Excavation {
     pub(super) fn open(
         path: &std::path::Path,
@@ -103,66 +86,47 @@ impl Excavation {
         }
         let (journal, restored) = ExcavationJournal::open(&path.join(JOURNAL_FILE_NAME))?;
         Ok(Self {
-            config,
-            journal,
-            inventories: restored.inventories.iter().map(|(p, i)| (*p, *i)).collect(),
-            next_id: restored.last_mutation_id,
-            restored,
-            gates: HashMap::new(),
-            inventory_requests: HashMap::new(),
-            action_results: HashMap::new(),
-            preparing: None,
-            pending: None,
-            failure: None,
-            clients: HashMap::new(),
-            metrics: Default::default(),
-            waters: HashMap::new(),
-            water_catalogs: HashMap::new(),
-            water_jobs: HashMap::new(),
-            water_failures: HashMap::new(),
-            next_water_step: Instant::now(),
-            water_checkpoint_due: HashMap::new(),
-            shutting_down: false,
+            coordinator: ExcavationCoordinator::new(journal, restored.last_mutation_id),
+            state: ExcavationState {
+                config,
+                inventories: restored.inventories.iter().map(|(p, i)| (*p, *i)).collect(),
+                restored,
+                gates: HashMap::new(),
+                inventory_requests: HashMap::new(),
+                action_results: HashMap::new(),
+                clients: HashMap::new(),
+                metrics: Default::default(),
+                waters: HashMap::new(),
+                water_catalogs: HashMap::new(),
+                water_jobs: HashMap::new(),
+                water_failures: HashMap::new(),
+                next_water_step: Instant::now(),
+                water_checkpoint_due: HashMap::new(),
+            },
         })
     }
 
     fn busy(&self) -> bool {
-        self.preparing.is_some() || self.pending.is_some()
+        self.coordinator.busy()
     }
 
     fn allocate_id(&mut self) -> Option<u64> {
-        self.next_id = self.next_id.checked_add(1)?;
-        Some(self.next_id)
+        self.coordinator.allocate_id()
     }
 }
 
 impl ServerRuntime {
     fn excavation_storage_rejection(&mut self, error: io::Error) -> ActionRejection {
-        match error.kind() {
-            io::ErrorKind::InvalidInput => ActionRejection::Capacity,
-            io::ErrorKind::WouldBlock => ActionRejection::Busy,
-            _ => {
-                self.excavation.failure = Some(error.to_string());
-                ActionRejection::Storage
-            }
-        }
+        self.excavation.coordinator.storage_rejection(error)
     }
 
     pub(super) fn excavation_reserves(&self, world: WorldInstanceId) -> bool {
-        self.excavation
-            .preparing
-            .as_ref()
-            .is_some_and(|p| p.world == world)
-            || self
-                .excavation
-                .pending
-                .as_ref()
-                .is_some_and(|p| p.prepared.mutation.world == world)
+        self.excavation.coordinator.reserves(world)
     }
 
     pub(super) fn player_inventory(&self, player: PlayerId) -> Inventory {
         self.excavation_profile(player)
-            .and_then(|p| self.excavation.inventories.get(&p).copied())
+            .and_then(|p| self.excavation.state.inventories.get(&p).copied())
             .unwrap_or_default()
     }
 
@@ -176,14 +140,7 @@ impl ServerRuntime {
     }
 
     fn excavation_inputs(&self, world: WorldInstanceId) -> Option<minimium_procgen::TerrainInputs> {
-        let owner = self.game.worlds.get(world)?;
-        Some(minimium_procgen::TerrainInputs {
-            geography: self.prepared_geography.clone(),
-            material_profile: Some(owner.terrain_material_profile),
-            edits: Some(owner.terrain.clone()),
-            remnants: Some(owner.remnants.clone()),
-            volumes: owner.volumes.clone(),
-        })
+        ports::terrain_inputs(&self.game.worlds, &self.prepared_geography, world)
     }
 
     pub(super) fn excavation_result(
@@ -192,18 +149,15 @@ impl ServerRuntime {
         context: WorldContext,
         result: ActionResult,
     ) {
-        if let Some((c, gate)) = self.excavation.gates.get_mut(&player) {
-            if *c == context {
-                gate.finish(result);
-            }
-        }
-        if self.game.worlds.context_for_player(player) == Some(context) {
-            // One accepted action per player means one bounded response slot.
-            // Streaming retries it until the control frame enters the socket queue.
-            self.excavation
-                .action_results
-                .insert(player, (context, result));
-        }
+        self.excavation.state.record_result(
+            &self.game.worlds,
+            Origin {
+                player: Some(player),
+                context: Some(context),
+                action_id: None,
+            },
+            result,
+        );
     }
 
     fn send_excavation(
@@ -226,6 +180,22 @@ impl ServerRuntime {
                 &mut self.metrics,
                 ServerMessage::Excavation { context, message },
             );
+        }
+    }
+}
+
+impl ExcavationState {
+    fn record_result(&mut self, worlds: &WorldRegistry, origin: Origin, result: ActionResult) {
+        let (Some(player), Some(context)) = (origin.player, origin.context) else {
+            return;
+        };
+        if let Some((current, gate)) = self.gates.get_mut(&player) {
+            if *current == context {
+                gate.finish(result);
+            }
+        }
+        if worlds.context_for_player(player) == Some(context) {
+            self.action_results.insert(player, (context, result));
         }
     }
 }

@@ -39,9 +39,10 @@ impl ServerRuntime {
                     .map_or(0, |store| store.chunks().count())
             })
             .sum();
-        let metrics = &self.excavation.metrics;
+        let metrics = &self.excavation.state.metrics;
         let fluid_cells: usize = self
             .excavation
+            .state
             .waters
             .values()
             .map(|water| water.snapshot().cells().len())
@@ -53,6 +54,7 @@ impl ServerRuntime {
             * (std::mem::size_of::<minimium_fluids::CellWater>() + std::mem::size_of::<[i32; 3]>());
         let fluid_reserved = self
             .excavation
+            .state
             .waters
             .values()
             .map(|water| water.reserved_cell_limit())
@@ -61,13 +63,13 @@ impl ServerRuntime {
             chunks,
             pending: usize::from(self.excavation.busy()),
             bytes: metrics.bytes,
-            ready: self.excavation.failure.is_none(),
+            ready: self.excavation.coordinator.failure().is_none(),
             fluid_cells,
-            fluid_jobs: self.excavation.water_jobs.len(),
+            fluid_jobs: self.excavation.state.water_jobs.len(),
             terrain_payload_bytes,
             fluid_payload_bytes,
             fluid_reserved,
-            failed_worlds: self.excavation.water_failures.len(),
+            failed_worlds: self.excavation.state.water_failures.len(),
             percentiles: [
                 (&metrics.prepare),
                 (&metrics.collision),

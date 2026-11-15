@@ -29,7 +29,7 @@ impl ServerRuntime {
                 }
             }
             ExcavationInput::Resync { .. } => {
-                self.excavation.clients.remove(&player);
+                self.excavation.state.clients.remove(&player);
             }
             ExcavationInput::GrantTools | ExcavationInput::Equip { .. } => {
                 self.change_inventory(player, context, input);
@@ -44,14 +44,14 @@ impl ServerRuntime {
         action_id: u64,
         direction: [f32; 3],
     ) -> Result<(), ActionRejection> {
-        if self.excavation.preparing.as_ref().is_some_and(|p| {
-            p.player == Some(player) && p.context == Some(context) && p.action_id == Some(action_id)
-        }) || self.excavation.pending.as_ref().is_some_and(|p| {
-            p.player == Some(player) && p.context == Some(context) && p.action_id == Some(action_id)
-        }) {
+        if self
+            .excavation
+            .coordinator
+            .contains_action(player, context, action_id)
+        {
             return Ok(());
         }
-        if let Some((c, gate)) = self.excavation.gates.get(&player) {
+        if let Some((c, gate)) = self.excavation.state.gates.get(&player) {
             if *c == context {
                 if let Some(result) = gate.completed(action_id) {
                     self.excavation_result(player, context, result);
@@ -59,10 +59,15 @@ impl ServerRuntime {
                 }
             }
         }
-        if self.excavation.failure.is_some() {
+        if self.excavation.coordinator.failure().is_some() {
             return Err(ActionRejection::Storage);
         }
-        if let Some(failure) = self.excavation.water_failures.get(&context.instance()) {
+        if let Some(failure) = self
+            .excavation
+            .state
+            .water_failures
+            .get(&context.instance())
+        {
             return Err(if failure.error == minimium_fluids::FluidError::Capacity {
                 ActionRejection::Capacity
             } else {
@@ -72,7 +77,12 @@ impl ServerRuntime {
         if self.excavation.busy() {
             return Err(ActionRejection::Busy);
         }
-        if self.excavation.water_jobs.contains_key(&context.instance()) {
+        if self
+            .excavation
+            .state
+            .water_jobs
+            .contains_key(&context.instance())
+        {
             return Err(ActionRejection::Busy);
         }
         if self.impacts.has_pending_in_world(context.instance()) {
@@ -102,18 +112,27 @@ impl ServerRuntime {
             &store,
             &base,
             direction,
-            self.excavation.config.tools.reach_m,
+            self.excavation.state.config.tools.reach_m,
         );
-        let gate = self.excavation.gates.entry(player).or_insert_with(|| {
-            (
-                context,
-                minimium_simulation::tools::ToolUseGate::new(self.excavation.config.tools).unwrap(),
-            )
-        });
+        let gate = self
+            .excavation
+            .state
+            .gates
+            .entry(player)
+            .or_insert_with(|| {
+                (
+                    context,
+                    minimium_simulation::tools::ToolUseGate::new(
+                        self.excavation.state.config.tools,
+                    )
+                    .unwrap(),
+                )
+            });
         if gate.0 != context {
             *gate = (
                 context,
-                minimium_simulation::tools::ToolUseGate::new(self.excavation.config.tools).unwrap(),
+                minimium_simulation::tools::ToolUseGate::new(self.excavation.state.config.tools)
+                    .unwrap(),
             );
         }
         let action_result = gate.1.prepare(
@@ -149,14 +168,21 @@ impl ServerRuntime {
             radius_m: action.radius_m,
             tool: action.tool,
         };
-        let water = self.excavation.waters.get(&context.instance()).cloned();
+        let water = self
+            .excavation
+            .state
+            .waters
+            .get(&context.instance())
+            .cloned();
         let water_catalog_digest = self
             .excavation
+            .state
             .water_catalogs
             .get(&context.instance())
             .copied();
         let other_cells: usize = self
             .excavation
+            .state
             .waters
             .iter()
             .filter(|(world, _)| **world != context.instance())
@@ -164,10 +190,11 @@ impl ServerRuntime {
             .sum();
         let water_budget = self
             .excavation
+            .state
             .config
             .server_fluid_cells
             .saturating_sub(other_cells)
-            .min(self.excavation.config.fluids.max_active_cells);
+            .min(self.excavation.state.config.fluids.max_active_cells);
         let job = preparation::ToolPreparation {
             request,
             manifest,
@@ -178,24 +205,23 @@ impl ServerRuntime {
             water_budget,
             water_catalog_digest,
         };
-        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
-        self.sector_workers
-            .prepare(Box::new(move || {
-                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| job.run()))
-                    .unwrap_or(Err(ActionRejection::Capacity.into()));
-                let _ = sender.send(result);
-            }))
+        self.excavation
+            .coordinator
+            .prepare(
+                PreparationRequest {
+                    origin: Origin {
+                        player: Some(player),
+                        context: Some(context),
+                        action_id: Some(action_id),
+                    },
+                    world: context.instance(),
+                    impact_bodies: Vec::new(),
+                    input_revision,
+                },
+                Box::new(move || job.run()),
+                &mut ports::WorkSubmission::new(&self.sector_workers, &mut self.impacts),
+            )
             .map_err(|_| ActionRejection::Busy)?;
-        self.excavation.preparing = Some(Preparation {
-            started: Instant::now(),
-            player: Some(player),
-            context: Some(context),
-            action_id: Some(action_id),
-            world: context.instance(),
-            impact_bodies: Vec::new(),
-            input_revision,
-            receiver,
-        });
         Ok(())
     }
 }
