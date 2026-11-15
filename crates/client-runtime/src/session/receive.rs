@@ -18,12 +18,22 @@ pub(super) enum WorldContentProgress {
 impl ClientSession {
     pub(super) fn prepare_world_content(
         &mut self,
-        instance: minimium_world::world::WorldInstanceId,
+        context: WorldContext,
+        transition_id: Option<TransitionId>,
         manifest: minimium_world::world::WorldManifest,
         expected_fingerprint: u64,
     ) -> Result<WorldContentProgress, SessionFailure> {
-        let ticket = match self.world_content_request.filter(|ticket| {
-            ticket.instance == instance
+        let existing_ticket = self.world_content_request.or_else(|| {
+            self.pending_world_content
+                .as_ref()
+                .filter(|pending| {
+                    pending.context == context && Some(pending.transition_id) == transition_id
+                })
+                .map(|pending| pending.ticket)
+        });
+        let ticket = match existing_ticket.filter(|ticket| {
+            ticket.context == context
+                && ticket.transition_id == transition_id
                 && ticket.content_revision == manifest.content_revision().get()
         }) {
             Some(ticket) => ticket,
@@ -39,21 +49,20 @@ impl ClientSession {
                 let ticket = ContentResolutionTicket {
                     session_id: self.session_id,
                     request_id,
-                    instance,
+                    context,
+                    transition_id,
                     content_revision: manifest.content_revision().get(),
                 };
                 self.world_content_request = Some(ticket);
                 ticket
             }
         };
-        if let Some(content) = self.resolved_worlds.get(&instance).filter(|content| {
-            content.ticket.session_id == ticket.session_id
-                && content.ticket.instance == ticket.instance
-                && content.ticket.content_revision == ticket.content_revision
-                && content.manifest == manifest
-                && content.map.fingerprint() == expected_fingerprint
-        }) {
-            self.prepared_geography = content.geography.clone();
+        if self
+            .content_for_resolution_ticket(ticket)
+            .is_some_and(|content| {
+                content.manifest == manifest && content.map.fingerprint() == expected_fingerprint
+            })
+        {
             self.world_content_request = None;
             return Ok(WorldContentProgress::Ready);
         }
@@ -94,6 +103,8 @@ impl ClientSession {
                 content,
                 water_catalog,
                 ticket,
+                context,
+                transition_id,
                 manifest,
                 expected_fingerprint,
             )?;
@@ -148,6 +159,8 @@ impl ClientSession {
         content: ResolvedWorldContent,
         water_catalog: Option<Arc<minimium_procgen::WaterCatalog>>,
         ticket: ContentResolutionTicket,
+        context: WorldContext,
+        transition_id: Option<TransitionId>,
         manifest: minimium_world::world::WorldManifest,
         expected_fingerprint: u64,
     ) -> Result<(), SessionFailure> {
@@ -177,18 +190,27 @@ impl ClientSession {
                 ));
             }
         }
-        self.prepared_geography = content.geography.clone();
-        let active_instance = self.world_context.map(WorldContext::instance);
-        self.resolved_worlds.retain(|known, _| {
-            *known == ticket.instance || active_instance.is_some_and(|active| active == *known)
-        });
-        self.resolved_worlds
-            .insert(ticket.instance, Arc::new(content));
-        self.water_catalogs.retain(|known, _| {
-            *known == ticket.instance || active_instance.is_some_and(|active| active == *known)
-        });
-        if let Some(catalog) = water_catalog {
-            self.water_catalogs.insert(ticket.instance, catalog);
+        if ticket.context != context || ticket.transition_id != transition_id {
+            return Err(SessionFailure::new(
+                "session.world_resolver_context_mismatch",
+                "world-content resolver returned content for a stale context or transition",
+            ));
+        }
+        let content = Arc::new(content);
+        if let Some(transition_id) = transition_id {
+            self.pending_world_content = Some(PendingWorldContent {
+                context,
+                transition_id,
+                ticket,
+                content,
+                water_catalog,
+            });
+        } else {
+            self.active_world_content = Some(ActiveWorldContent {
+                context,
+                content,
+                water_catalog,
+            });
         }
         self.world_content_started = None;
         self.world_content_request = None;

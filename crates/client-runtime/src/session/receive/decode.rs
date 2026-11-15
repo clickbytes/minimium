@@ -58,6 +58,7 @@ impl ClientSession {
                             && Some(*context) == self.world_context =>
                         {
                             self.world_content_cancel.cancel();
+                            self.pending_world_content = None;
                             self.deferred_world_message = None;
                             self.world_content_request = None;
                             self.world_content_started = None;
@@ -69,6 +70,7 @@ impl ClientSession {
                                 && Some(*source_context) == self.world_context =>
                         {
                             self.world_content_cancel.cancel();
+                            self.pending_world_content = None;
                             self.world_content_request = None;
                             self.world_content_started = Some(Instant::now());
                             self.deferred_world_message =

@@ -229,7 +229,7 @@ impl ServerSchedule {
             (system.handler)(&mut context);
         }
         let batch = effects.into_batch();
-        if stage == Stage::Startup && batch.rejected == 0 {
+        if stage == Stage::Startup && batch.rejected_pushes() == 0 {
             if let Some((instance, _)) = world_context {
                 self.startup_worlds.insert(instance);
             }

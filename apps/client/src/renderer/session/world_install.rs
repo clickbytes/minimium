@@ -1,54 +1,57 @@
 use super::*;
 impl Renderer {
-    pub(super) fn load_resolved_catalog(
+    pub(super) fn resolved_map_for_context(
         &mut self,
-        instance: minimium_world::world::WorldInstanceId,
+        context: minimium_protocol::WorldContext,
         manifest: WorldManifest,
-    ) -> bool {
+    ) -> Option<std::sync::Arc<WorldMap>> {
         let Some(content) = self
             .application
             .connection
             .session()
-            .and_then(|session| session.resolved_world_content(instance))
+            .and_then(|session| session.resolved_world_content_for_context(context))
         else {
-            return false;
+            return None;
         };
         if content.manifest != manifest {
-            return false;
+            return None;
         }
-        if self.application.game.world_manifests.get(&instance) != Some(&manifest) {
-            if let Err(error) = self.sector_cache.reset() {
-                self.application
-                    .connection
-                    .record_diagnostic_failure(error.code(), &error.to_string());
-                return false;
-            }
-            self.release_world_sectors(instance);
-        }
-        self.application
-            .install_world_content(instance, content.manifest, (*content.map).clone());
-        true
+        Some(content.map.clone())
     }
 
     pub(super) fn install_world(
         &mut self,
-        instance: minimium_world::world::WorldInstanceId,
+        owner: super::super::sector_scene::SceneInterestOwner,
+        context: minimium_protocol::WorldContext,
         fingerprint: u64,
         destination: Option<[f32; 3]>,
         manifest: WorldManifest,
     ) -> bool {
-        let Some(map) = self.application.world_catalog.get(&instance).cloned() else {
+        let instance = context.instance();
+        let Some(map) = self
+            .application
+            .connection
+            .session()
+            .and_then(|session| session.resolved_world_content_for_context(context))
+            .map(|content| content.map.clone())
+        else {
             return false;
         };
         if map.fingerprint() != fingerprint {
             return false;
         }
-        if self.application.game.world_manifests.get(&instance) != Some(&manifest) {
-            return false;
-        }
         let target_position = destination.unwrap_or_else(|| map.spawn());
-        let water = self.water_presentation_for(instance);
+        let water = self.water_presentation_for(context);
+        let Some(terrain_inputs) = self
+            .application
+            .connection
+            .session()
+            .and_then(|session| session.terrain_inputs_for_context(context))
+        else {
+            return false;
+        };
         let scene = match self.sector_cache.ensure_scene(
+            owner,
             instance,
             manifest,
             target_position,
@@ -61,11 +64,8 @@ impl Renderer {
             self.gpu.world_geometry.origin_generation(),
             &self.application.world_catalog,
             &self.application.game.world_manifests,
-            self.application
-                .connection
-                .session()
-                .map(|session| session.terrain_inputs())
-                .unwrap_or_default(),
+            Some((map.as_ref(), manifest)),
+            terrain_inputs,
             water,
         ) {
             Ok(scene) => scene,
@@ -73,6 +73,7 @@ impl Renderer {
                 self.application
                     .connection
                     .record_diagnostic_failure(error.code(), &error.to_string());
+                self.gpu.release_scene_stage(instance, owner);
                 return false;
             }
         };
@@ -80,6 +81,9 @@ impl Renderer {
             self.gpu.cache_sector_scene(instance, scene)
                 && self.gpu.activate_sector_scene(instance, scene, fingerprint)
         });
+        if !gpu_ready {
+            self.gpu.release_scene_stage(instance, owner);
+        }
         self.application.set_loading(!gpu_ready);
         self.gpu.scene_visible = gpu_ready;
         let previous_instance = self.application.game.current_instance;
@@ -115,6 +119,7 @@ impl Renderer {
                 )
             }
         });
+        let previous_context = self.application.game.session_context();
         self.application.game.gameplay.sectors_ready = scene.is_some();
         self.last_render_position = if gpu_ready {
             target_position
@@ -128,8 +133,24 @@ impl Renderer {
         self.application.input.clear_held();
         self.input.jump_pending = false;
         self.application.activate_world(instance);
+        self.gpu.release_scene_stage(
+            instance,
+            super::super::sector_scene::SceneInterestOwner::Active(context),
+        );
+        if let Some(source) = previous_context {
+            self.sector_cache.promote_interest(
+                owner,
+                super::super::sector_scene::SceneInterestOwner::Active(context),
+            );
+            self.sector_cache.release_interest(
+                super::super::sector_scene::SceneInterestOwner::Active(source),
+            );
+            self.gpu.release_scene_stage(
+                source.instance(),
+                super::super::sector_scene::SceneInterestOwner::Active(source),
+            );
+        }
         if previous_instance != instance {
-            self.sector_cache.release_interest(previous_instance);
             self.release_world_sectors(previous_instance);
         }
         self.metrics.frame_stats.set_gpu_bytes(

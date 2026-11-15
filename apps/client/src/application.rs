@@ -211,20 +211,12 @@ impl ClientApplication {
     }
 
     #[cfg(feature = "desktop")]
-    pub(crate) fn install_world_content(
+    pub(crate) fn commit_world_content(
         &mut self,
         instance: WorldInstanceId,
         manifest: minimium_world::world::WorldManifest,
         map: WorldMap,
     ) {
-        if self
-            .game
-            .world_manifests
-            .get(&instance)
-            .is_some_and(|current| *current != manifest)
-        {
-            self.transitions.remove_instance(instance);
-        }
         self.game.world_manifests.insert(instance, manifest);
         self.world_catalog.insert(instance, map);
     }

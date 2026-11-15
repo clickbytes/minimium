@@ -29,6 +29,11 @@ Pure values and algorithms are caller-owned. World and environment domain APIs l
 
 Keep identifiers stable and independent of runtime policy and domain implementations.
 
+`PlayerProfileId::from_hex` returns the core-owned `ProfileIdParseError` for
+invalid byte length or a non-hexadecimal byte (with its offset). It accepts
+exactly 32 ASCII hexadecimal bytes in either case; `to_hex` emits lowercase.
+The parser performs no I/O and does not classify errors as file failures.
+
 ## Commands
 
 None. Command ownership belongs to the feature domain.

@@ -283,7 +283,10 @@ impl ServerRuntime {
         source_context: minimium_protocol::WorldContext,
         target_world: minimium_world::world::WorldInstanceId,
         destination: [f32; 3],
-    ) {
+    ) -> crate::modules::TransferOutcome {
+        use crate::modules::{TransferOutcome, TransferRejection};
+
+        let return_location = self.operations.player_store.return_location_for(id);
         let terrain = super::gameplay_terrain::build(
             &self.game.worlds,
             self.prepared_geography.as_ref(),
@@ -296,19 +299,29 @@ impl ServerRuntime {
                     (*instance, read as &dyn minimium_world::terrain::TerrainRead)
                 })
                 .collect();
-        let Some(offer) = self.game.worlds.prepare_entity_transfer_with_terrain(
+        let offer = self.game.worlds.prepare_entity_transfer_with_terrain(
             id,
             source_context,
             target_world,
             destination,
-            self.operations.player_store.return_location_for(id),
+            return_location,
             &reads,
-        ) else {
-            return;
+        );
+        let offer = match offer {
+            Ok(offer) => offer,
+            Err(crate::world_registry::TransferRequestRejection::AlreadyPending) => {
+                return TransferOutcome::Rejected(TransferRejection::AlreadyPending)
+            }
+            Err(crate::world_registry::TransferRequestRejection::Validation) => {
+                return TransferOutcome::Rejected(TransferRejection::Validation)
+            }
+            Err(crate::world_registry::TransferRequestRejection::IdentifierSpaceExhausted) => {
+                return TransferOutcome::Rejected(TransferRejection::IdentifierSpaceExhausted)
+            }
         };
         let Some(index) = self.connections.client_indices_by_player.get(&id).copied() else {
             self.game.worlds.cancel_transfer(id, offer.transition_id);
-            return;
+            return TransferOutcome::Rejected(TransferRejection::ClientUnavailable);
         };
         let (clock_sample, environment) = match self
             .environment_state_for_instance(offer.target_context.instance(), Instant::now())
@@ -326,28 +339,33 @@ impl ServerRuntime {
                     ],
                 );
                 self.game.worlds.cancel_transfer(id, offer.transition_id);
-                return;
+                return TransferOutcome::Rejected(TransferRejection::EnvironmentUnavailable);
             }
         };
-        if let Some(client) = self.connections.clients.get_mut(index) {
-            if !queue_message(
-                client,
-                &mut self.metrics,
-                minimium_protocol::ServerMessage::TransitionPrepare {
-                    transition_id: offer.transition_id,
-                    source_context: offer.source_context,
-                    target_context: offer.target_context,
-                    map_fingerprint: offer.map_fingerprint,
-                    destination: offer.destination,
-                    destination_mm: offer.destination_mm,
-                    manifest: offer.manifest,
-                    clock_sample,
-                    environment,
-                },
-            ) {
-                self.game.worlds.cancel_transfer(id, offer.transition_id);
-                self.metrics.dropped_messages = self.metrics.dropped_messages.saturating_add(1);
-            }
+        let Some(client) = self.connections.clients.get_mut(index) else {
+            self.game.worlds.cancel_transfer(id, offer.transition_id);
+            return TransferOutcome::Rejected(TransferRejection::ClientUnavailable);
+        };
+        if queue_message(
+            client,
+            &mut self.metrics,
+            minimium_protocol::ServerMessage::TransitionPrepare {
+                transition_id: offer.transition_id,
+                source_context: offer.source_context,
+                target_context: offer.target_context,
+                map_fingerprint: offer.map_fingerprint,
+                destination: offer.destination,
+                destination_mm: offer.destination_mm,
+                manifest: offer.manifest,
+                clock_sample,
+                environment,
+            },
+        ) {
+            TransferOutcome::Started
+        } else {
+            self.game.worlds.cancel_transfer(id, offer.transition_id);
+            self.metrics.dropped_messages = self.metrics.dropped_messages.saturating_add(1);
+            TransferOutcome::Rejected(TransferRejection::Backpressure)
         }
     }
 
