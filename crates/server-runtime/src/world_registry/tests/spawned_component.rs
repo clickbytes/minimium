@@ -37,6 +37,7 @@ fn spawned_component_entity_uses_the_budgeted_entity_effect_path() {
                 }],
             }],
             &components,
+            &crate::runtime::ProtectedImpactEntities::test_empty(),
         )
         .unwrap();
     let reservation = budget.prepare_entity_changes(staged.changes()).unwrap();

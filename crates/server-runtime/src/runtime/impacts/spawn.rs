@@ -23,7 +23,7 @@ impl ServerRuntime {
             .ok_or_else(|| io::Error::other("game has no impact profile"))?;
         if self.impacts.failure.is_some()
             || self.active_body_count() >= minimium_world::impact::MAX_ACTIVE_BODIES
-            || self.impacts.bodies.len() + self.impacts.pending.len() >= 4096
+            || self.impacts.body_count() + self.impacts.pending_count() >= 4096
         {
             return Err(io::Error::other(
                 "impact service unavailable or capacity reached",
