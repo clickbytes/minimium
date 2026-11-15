@@ -1,5 +1,4 @@
 //! Small static command metadata registry shared by interactive front ends.
-use std::fmt::Write as _;
 
 /// One command declaration and its domain-owned parser.
 pub struct CommandSpec<T, E> {
