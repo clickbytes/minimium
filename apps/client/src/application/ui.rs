@@ -1,7 +1,6 @@
 #[cfg(feature = "desktop")]
 pub(crate) struct UiModel {
     pub(crate) console: crate::console::Console,
-    pub(crate) session_events: Vec<minimium_client_runtime::SessionEvent>,
 }
 
 #[derive(Clone, Debug)]

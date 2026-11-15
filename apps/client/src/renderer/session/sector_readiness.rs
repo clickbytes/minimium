@@ -1,5 +1,81 @@
 use super::*;
 
+pub(in crate::renderer) fn prepare_prediction_scene(
+    sector_cache: &mut super::super::sector_scene::ClientSectorCache,
+    renderer: &mut super::Renderer,
+    request: crate::application::PredictionSceneRequest<'_>,
+    water: Option<super::super::sector_worker::WaterPresentation>,
+    fov_degrees: f32,
+    published_terrain: Option<(
+        minimium_protocol::WorldContext,
+        minimium_procgen::SectorContentVersion,
+    )>,
+) -> Result<Option<crate::application::ActiveSceneReady>, String> {
+    if !request.session_content_ready {
+        return Ok(None);
+    }
+    let owner = request.context.map_or_else(
+        || super::super::sector_scene::SceneInterestOwner::Bootstrap(request.instance),
+        super::super::sector_scene::SceneInterestOwner::Active,
+    );
+    let view = minimium_renderer::terrain_view::TerrainView::new(
+        request.position,
+        fov_degrees.to_radians(),
+        renderer.size.height,
+    );
+    let origin = renderer.render_origin;
+    let origin_generation = renderer.world_geometry.origin_generation();
+    let terrain_revision = request.terrain_inputs.revision();
+    let scene = match sector_cache.ensure_scene(
+        owner,
+        request.instance,
+        request.manifest,
+        request.position,
+        view,
+        origin,
+        origin_generation,
+        request.world_catalog,
+        request.world_manifests,
+        None,
+        request.terrain_inputs,
+        water,
+    ) {
+        Ok(Some(scene)) => scene,
+        Ok(None) => return Ok(None),
+        Err(error) => return Err(format!("{}: {error}", error.code())),
+    };
+    if !request.water_covers_candidate {
+        return Ok(None);
+    }
+    if request.manifest.planet().is_some() && scene.prepared.is_none() {
+        return Ok(None);
+    }
+    let map_fingerprint = request
+        .world_catalog
+        .get(&request.instance)
+        .map_or(0, |map| map.fingerprint());
+    if !renderer.cache_sector_scene(request.instance, &scene)
+        || !renderer.activate_sector_scene(request.instance, &scene, map_fingerprint)
+    {
+        let current = request.context.map(|context| (context, terrain_revision));
+        if current.is_none() || published_terrain != current {
+            return Ok(None);
+        }
+    }
+    Ok(Some(
+        crate::application::ActiveSceneReady::new_for_candidate(
+            request.context,
+            request.instance,
+            request.manifest,
+            map_fingerprint,
+            terrain_revision,
+            scene.collision_revision,
+            scene.collision,
+            request.position,
+        ),
+    ))
+}
+
 impl DesktopHost {
     fn invalidate_active_scene(&mut self) {
         let view = self.application.game_view();

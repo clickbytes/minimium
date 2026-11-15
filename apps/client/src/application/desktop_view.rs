@@ -39,6 +39,7 @@ pub(crate) struct ActiveSceneReady {
     terrain_revision: minimium_procgen::SectorContentVersion,
     collision_revision: u64,
     collision_index: minimium_simulation::CollisionIndex,
+    candidate_position: Option<[f32; 3]>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -57,6 +58,10 @@ enum ActiveSceneIdentity {
 }
 
 impl ActiveSceneReady {
+    pub(crate) const fn candidate_position(&self) -> Option<[f32; 3]> {
+        self.candidate_position
+    }
+
     pub(crate) fn new(
         context: Option<WorldContext>,
         instance: WorldInstanceId,
@@ -83,7 +88,31 @@ impl ActiveSceneReady {
             terrain_revision,
             collision_revision,
             collision_index,
+            candidate_position: None,
         }
+    }
+
+    pub(crate) fn new_for_candidate(
+        context: Option<WorldContext>,
+        instance: WorldInstanceId,
+        manifest: minimium_world::world::WorldManifest,
+        map_fingerprint: u64,
+        terrain_revision: minimium_procgen::SectorContentVersion,
+        collision_revision: u64,
+        collision_index: minimium_simulation::CollisionIndex,
+        candidate_position: [f32; 3],
+    ) -> Self {
+        let mut report = Self::new(
+            context,
+            instance,
+            manifest,
+            map_fingerprint,
+            terrain_revision,
+            collision_revision,
+            collision_index,
+        );
+        report.candidate_position = Some(candidate_position);
+        report
     }
 }
 

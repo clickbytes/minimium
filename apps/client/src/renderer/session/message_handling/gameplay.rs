@@ -5,8 +5,12 @@ impl DesktopHost {
         &mut self,
         context: minimium_protocol::WorldContext,
         position_mm: Option<minimium_world::world::Position3Mm>,
+        update: Result<
+            Option<crate::application::WorldContextChange>,
+            crate::application::ApplicationMessageError,
+        >,
     ) {
-        if !self.application.apply_altitude_result(context, position_mm) {
+        if update.is_err() || self.application.game_view().session_context() != Some(context) {
             return;
         }
         if position_mm.is_some() {
@@ -28,8 +32,12 @@ impl DesktopHost {
     pub(super) fn handle_map_teleport_result(
         &mut self,
         position_mm: Option<minimium_world::world::Position3Mm>,
+        update: Result<
+            Option<crate::application::WorldContextChange>,
+            crate::application::ApplicationMessageError,
+        >,
     ) {
-        if !self.application.apply_map_teleport_position(position_mm) {
+        if update.is_err() {
             return;
         }
         if position_mm.is_some() {
@@ -111,8 +119,15 @@ impl DesktopHost {
         }
     }
 
-    pub(super) fn handle_health_update(&mut self, health: u16) {
-        if !self.application.apply_health_update(health) {
+    pub(super) fn handle_health_update(
+        &mut self,
+        health: u16,
+        update: Result<
+            Option<crate::application::WorldContextChange>,
+            crate::application::ApplicationMessageError,
+        >,
+    ) {
+        if update.is_err() {
             return;
         }
         if self.application.ui.console.open {
@@ -125,9 +140,15 @@ impl DesktopHost {
         }
     }
 
-    pub(super) fn handle_snapshot(&mut self, message: ServerMessage) {
-        match self.application.apply_game_message(&message) {
-            Ok(()) => self.gameplay_presentation.remote_geometry_dirty = true,
+    pub(super) fn handle_snapshot(
+        &mut self,
+        update: Result<
+            Option<crate::application::WorldContextChange>,
+            crate::application::ApplicationMessageError,
+        >,
+    ) {
+        match update {
+            Ok(_) => self.gameplay_presentation.remote_geometry_dirty = true,
             Err(crate::application::ApplicationMessageError::VisiblePlayerLimitExceeded) => {
                 self.fail_connection(
                     Text::VisiblePlayerLimitExceeded

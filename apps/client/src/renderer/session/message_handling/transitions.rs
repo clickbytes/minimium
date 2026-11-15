@@ -45,23 +45,29 @@ impl DesktopHost {
                 self.application.settings.locale,
             );
         }
-        self.advance_pending_transitions();
     }
 
     pub(super) fn handle_transition_committed(
         &mut self,
-        message: ServerMessage,
         transition_id: minimium_world::world::TransitionId,
         context: minimium_protocol::WorldContext,
+        update: Result<
+            Option<crate::application::WorldContextChange>,
+            crate::application::ApplicationMessageError,
+        >,
     ) {
         if !self.application.has_transition(transition_id, context) {
             self.fail_connection("world transfer commit has no matching ready ticket");
             return;
         }
-        let change = match self.application.apply_world_message(&message) {
-            Ok(change) => change,
+        let change = match update {
+            Ok(Some(change)) => change,
             Err(error) => {
                 self.fail_connection(&format!("client transfer state update failed: {error:?}"));
+                return;
+            }
+            Ok(None) => {
+                self.fail_connection("transfer commit did not update the active world");
                 return;
             }
         };

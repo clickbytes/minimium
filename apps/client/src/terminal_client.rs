@@ -72,7 +72,6 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
         worlds,
         headless_settings,
     );
-    let mut events = Vec::with_capacity(16);
     let mut prompt_needed = true;
     let mut last_snapshot: Option<ServerMessage> = None;
     let mut last_environment_status = None;
@@ -84,7 +83,17 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
     }
 
     loop {
-        if let Some(result) = application.poll_admin_result() {
+        let input = crate::application::ClientStepInput {
+            #[cfg(feature = "desktop")]
+            now: Instant::now(),
+            #[cfg(feature = "desktop")]
+            prediction: None,
+        };
+        #[cfg(feature = "desktop")]
+        let step = application.step(input, |_| Ok(None));
+        #[cfg(not(feature = "desktop"))]
+        let step = application.step(input);
+        if let Some(result) = step.admin_result {
             match result {
                 Ok(response) => println!("{}", response.trim()),
                 Err(error) => {
@@ -93,7 +102,7 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                 }
             }
         }
-        match application.poll_connector() {
+        match step.connection {
             ConnectionEvent::InProgress {
                 waiting_for_cleanup: true,
             } => println!(
@@ -112,61 +121,53 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                     Text::AwaitingWelcome.localized(&localizer, options.locale)
                 )
             }
-            ConnectionEvent::SetupFailed(error) => {
-                println!(
-                    "{}",
-                    Text::ConnectionSetupFailed(error.to_string())
-                        .localized(&localizer, options.locale)
-                )
-            }
-            ConnectionEvent::Failed(error) => {
-                println!(
-                    "{}",
-                    Text::ConnectFailed(error.to_string()).localized(&localizer, options.locale)
-                )
-            }
+            ConnectionEvent::SetupFailed(error) => println!(
+                "{}",
+                Text::ConnectionSetupFailed(error.to_string())
+                    .localized(&localizer, options.locale)
+            ),
+            ConnectionEvent::Failed(error) => println!(
+                "{}",
+                Text::ConnectFailed(error.to_string()).localized(&localizer, options.locale)
+            ),
             _ => {}
         }
-        if application.session().is_some() {
-            events.clear();
-            application.poll_session(&mut events);
-            for event in events.drain(..) {
-                match event {
-                    SessionEvent::Message(message) => {
-                        let state_update = application.apply_game_message(&message);
-                        if let Err(error) = state_update {
-                            if !matches!(
-                                error,
-                                crate::application::ApplicationMessageError::StaleWorldContext
-                            ) {
-                                println!("Client state update failed: {error:?}");
-                                application.disconnect_session();
-                            }
+        for applied in step.session_events {
+            match applied.event {
+                SessionEvent::Message(message) => {
+                    if let Err(error) = &applied.update {
+                        if !matches!(
+                            error,
+                            crate::application::ApplicationMessageError::StaleWorldContext
+                        ) {
+                            println!("Client state update failed: {error:?}");
                         }
-                        if state_update.is_ok() && matches!(message, ServerMessage::Snapshot { .. })
-                        {
-                            last_snapshot = Some(message.clone());
-                        }
-                        events::print_session_event(
-                            SessionEvent::Message(message),
-                            false,
-                            &localizer,
-                            options.locale,
-                        );
                     }
-                    other => events::print_session_event(other, false, &localizer, options.locale),
+                    if applied.update.is_ok() && matches!(message, ServerMessage::Snapshot { .. }) {
+                        last_snapshot = Some(message.clone());
+                    }
+                    events::print_session_event(
+                        SessionEvent::Message(message),
+                        false,
+                        &localizer,
+                        options.locale,
+                    );
                 }
+                other => events::print_session_event(other, false, &localizer, options.locale),
             }
+        }
+        if application.session().is_some() {
             if let Some(ticket) = application.pending_transfer_ticket() {
                 let _ = application.report_transfer_host_ready(ticket);
             }
-            if application
-                .session()
-                .is_some_and(|current| current.state() == SessionState::Disconnected)
-            {
-                application.disconnect_session();
-                last_snapshot = None;
+        }
+        if let Some(mut disconnect) = step.disconnect {
+            #[cfg(not(feature = "desktop"))]
+            let _ = (disconnect.previous_context, disconnect.previous_instance);
+            if let Some(mut session) = disconnect.session.take() {
+                session.close();
             }
+            last_snapshot = None;
         }
         if let Some(frame) = application
             .session()

@@ -7,6 +7,8 @@ pub(crate) enum ApplicationMessageError {
     WorldContentMismatch,
     StaleWorldContext,
     VisiblePlayerLimitExceeded,
+    #[cfg(feature = "desktop")]
+    RequiredEarthUnavailable,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -126,6 +128,11 @@ impl ClientApplication {
                 .apply_health_update(*health)
                 .then_some(())
                 .ok_or(ApplicationMessageError::StaleWorldContext),
+            #[cfg(feature = "desktop")]
+            ServerMessage::MapTeleportResult { position_mm } => self
+                .apply_map_teleport_position(*position_mm)
+                .then_some(())
+                .ok_or(ApplicationMessageError::StaleWorldContext),
             _ => Ok(()),
         }
     }
@@ -161,6 +168,12 @@ impl ClientApplication {
                 manifest,
                 ..
             } => {
+                if !self.pending_transfer.is_some_and(|preparation| {
+                    preparation.ticket.transition_id() == *transition_id
+                        && preparation.ticket.context() == *context
+                }) {
+                    return Err(ApplicationMessageError::StaleWorldContext);
+                }
                 let change = self.apply_world_context(
                     *context,
                     *map_fingerprint,

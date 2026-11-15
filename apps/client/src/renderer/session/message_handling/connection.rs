@@ -1,8 +1,14 @@
 use super::*;
 
 impl DesktopHost {
-    pub(super) fn handle_welcome(&mut self, message: ServerMessage) {
-        let game_message = message.clone();
+    pub(super) fn handle_welcome(
+        &mut self,
+        message: ServerMessage,
+        update: Result<
+            Option<crate::application::WorldContextChange>,
+            crate::application::ApplicationMessageError,
+        >,
+    ) {
         let ServerMessage::Welcome {
             id,
             context,
@@ -19,10 +25,18 @@ impl DesktopHost {
             self.fail_connection("serwer nie udostępnia manifestu Earth");
             return;
         }
-        let change = match self.application.apply_world_message(&game_message) {
-            Ok(change) => change,
+        let change = match update {
+            Ok(Some(change)) => change,
+            Err(crate::application::ApplicationMessageError::RequiredEarthUnavailable) => {
+                self.fail_connection("serwer nie udostępnia manifestu Earth");
+                return;
+            }
             Err(error) => {
                 self.fail_connection(&format!("server world content is not supported: {error:?}"));
+                return;
+            }
+            Ok(None) => {
+                self.fail_connection("server welcome did not update the active world");
                 return;
             }
         };

@@ -5,7 +5,14 @@ mod gameplay;
 mod transitions;
 
 impl DesktopHost {
-    pub(super) fn handle_server_message(&mut self, message: ServerMessage) {
+    pub(super) fn handle_server_message(
+        &mut self,
+        message: ServerMessage,
+        update: Result<
+            Option<crate::application::WorldContextChange>,
+            crate::application::ApplicationMessageError,
+        >,
+    ) {
         match message {
             ServerMessage::Excavation { context, message } => {
                 self.observe_excavation(context, &message);
@@ -34,7 +41,7 @@ impl DesktopHost {
                 }
                 self.bolids.push((context, event, Instant::now(), None));
             }
-            message @ ServerMessage::Welcome { .. } => self.handle_welcome(message),
+            message @ ServerMessage::Welcome { .. } => self.handle_welcome(message, update),
             ServerMessage::Pong if self.application.ui.console.open => {
                 self.application.ui.console.push_client_text(
                     Text::Pong,
@@ -47,10 +54,10 @@ impl DesktopHost {
                 context,
                 position_mm,
             } => {
-                self.handle_altitude_result(context, position_mm);
+                self.handle_altitude_result(context, position_mm, update);
             }
             ServerMessage::MapTeleportResult { position_mm } => {
-                self.handle_map_teleport_result(position_mm);
+                self.handle_map_teleport_result(position_mm, update);
             }
             ServerMessage::Accepted if self.application.ui.console.open => {
                 self.application.ui.console.push_client_text(
@@ -75,7 +82,7 @@ impl DesktopHost {
             } => {
                 self.handle_shot_result(target_id, remaining_health, killed);
             }
-            ServerMessage::HealthUpdate(health) => self.handle_health_update(health),
+            ServerMessage::HealthUpdate(health) => self.handle_health_update(health, update),
             ServerMessage::Chat {
                 sender_id,
                 sender_name,
@@ -99,8 +106,8 @@ impl DesktopHost {
                 }
                 self.clear_connection();
             }
-            message @ ServerMessage::Snapshot { .. } => self.handle_snapshot(message),
-            message @ ServerMessage::TransitionPrepare {
+            ServerMessage::Snapshot { .. } => self.handle_snapshot(update),
+            ServerMessage::TransitionPrepare {
                 transition_id,
                 source_context,
                 target_context,
@@ -109,7 +116,6 @@ impl DesktopHost {
                 manifest,
                 ..
             } => {
-                let _ = self.application.apply_game_message(&message);
                 self.handle_transition_prepare(
                     transition_id,
                     source_context,
@@ -119,16 +125,15 @@ impl DesktopHost {
                     manifest,
                 );
             }
-            message @ ServerMessage::TransitionCommitted {
+            ServerMessage::TransitionCommitted {
                 transition_id,
                 context,
                 ..
-            } => self.handle_transition_committed(message, transition_id, context),
-            message @ ServerMessage::TransitionCancelled {
+            } => self.handle_transition_committed(transition_id, context, update),
+            ServerMessage::TransitionCancelled {
                 transition_id,
                 context,
             } => {
-                let _ = self.application.apply_game_message(&message);
                 self.handle_transition_cancelled(transition_id, context);
             }
             _ => {}
