@@ -28,6 +28,11 @@ Callers own lifecycle; lock and endpoint guards retain only the resources they p
 
 Atomic replacement and ownership-bound cleanup must remain intact. Avoid exposing secrets in diagnostics.
 
+The identity-store adapter maps core profile-ID parse failures to
+`io::ErrorKind::InvalidData` with the actual `player.profile` path. Malformed
+profile files are rejected before creation or replacement; the 128-byte bound,
+header, locking and atomic publication remain unchanged.
+
 ## Commands
 
 Does not own command parsing or execution; it sends validated command text over the local administrative transport. The bounded admin response reader accepts both legacy `ERR` lines and schema v1 `ERRJSON` envelopes, preserving code, key, reason, and usage in `AdminError`.

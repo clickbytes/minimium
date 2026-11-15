@@ -220,7 +220,9 @@ pub(super) fn load(
             return Err(invalid_world_snapshot("missing CLOCK record in snapshot"));
         }
         player_records_started = true;
-        parse_player_record(line, worlds, &saved_world_instances, &mut store)?;
+        parse_player_record(line, worlds, &saved_world_instances, &mut store).map_err(|error| {
+            io::Error::new(error.kind(), format!("{}: {error}", path.display()))
+        })?;
     }
     if saved_clock.is_none() {
         return Err(invalid_world_snapshot("missing CLOCK record in snapshot"));
@@ -351,7 +353,7 @@ fn parse_player_record(
             .next()
             .ok_or_else(|| invalid_world_snapshot("missing player profile id"))?,
     )
-    .map_err(|_| invalid_world_snapshot("invalid player profile id"))?;
+    .map_err(|error| invalid_world_snapshot(&format!("invalid player profile id: {error}")))?;
     let name = fields
         .next()
         .ok_or_else(|| invalid_world_snapshot("missing player name"))?;

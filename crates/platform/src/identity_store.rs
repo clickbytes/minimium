@@ -59,15 +59,21 @@ fn read(path: &Path) -> io::Result<PlayerProfileId> {
     let mut content = String::new();
     File::open(path)?.take(129).read_to_string(&mut content)?;
     if content.len() > 128 {
-        return Err(invalid_profile_id());
+        return Err(invalid_profile_id(path));
     }
     let mut lines = content.lines();
     if lines.next() != Some("MINIMIUM_PLAYER 1") {
-        return Err(invalid_profile_id());
+        return Err(invalid_profile_id(path));
     }
-    let identity = PlayerProfileId::from_hex(lines.next().ok_or_else(invalid_profile_id)?)?;
+    let identity = PlayerProfileId::from_hex(lines.next().ok_or_else(|| invalid_profile_id(path))?)
+        .map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("invalid player profile in {}: {error}", path.display()),
+            )
+        })?;
     if lines.next().is_some() {
-        return Err(invalid_profile_id());
+        return Err(invalid_profile_id(path));
     }
     Ok(identity)
 }
@@ -114,6 +120,9 @@ fn create_temporary_profile_file(data_dir: &Path) -> io::Result<(PathBuf, File)>
     }
 }
 
-fn invalid_profile_id() -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidData, "invalid player profile file")
+fn invalid_profile_id(path: &Path) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::InvalidData,
+        format!("invalid player profile file: {}", path.display()),
+    )
 }
