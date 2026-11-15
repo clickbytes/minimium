@@ -295,7 +295,9 @@ pub(super) fn print_start_error(
     locale: minimium_localization::Locale,
 ) {
     match error {
-        StartError::Busy { active_attempt } => {
+        StartError::Busy {
+            active_attempt: Some(active_attempt),
+        } => {
             println!(
                 "{}",
                 Text::BusyAttempt {
@@ -304,6 +306,9 @@ pub(super) fn print_start_error(
                 .localized(localizer, locale)
             )
         }
+        StartError::Busy {
+            active_attempt: None,
+        } => println!("{}", Text::DisconnectOrWait.localized(localizer, locale)),
         StartError::AttemptIdsExhausted => {
             println!("{}", Text::AttemptIdsExhausted.localized(localizer, locale))
         }

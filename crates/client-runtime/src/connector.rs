@@ -34,8 +34,9 @@ impl AttemptId {
 /// Why an attempt could not be started.
 #[derive(Debug)]
 pub enum StartError {
-    /// A previous worker, including timed-out or cancelled work, is still live.
-    Busy { active_attempt: AttemptId },
+    /// A session, attempt or cleanup still owns the connection lifecycle.
+    /// Session and cleanup rejection need not have an active attempt ID.
+    Busy { active_attempt: Option<AttemptId> },
     /// The connector exhausted its attempt identifier space.
     AttemptIdsExhausted,
     /// The operating system could not create the worker thread.
@@ -55,12 +56,17 @@ impl StartError {
 impl std::fmt::Display for StartError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Busy { active_attempt } => write!(
+            Self::Busy {
+                active_attempt: Some(active_attempt),
+            } => write!(
                 formatter,
                 "{}: attempt {} is still active",
                 self.code(),
                 active_attempt.get()
             ),
+            Self::Busy {
+                active_attempt: None,
+            } => write!(formatter, "{}: session or cleanup is active", self.code()),
             Self::AttemptIdsExhausted => formatter.write_str(self.code()),
             Self::WorkerSpawn(error) => write!(formatter, "{}: {error}", self.code()),
         }
@@ -183,7 +189,7 @@ impl Connector {
     ) -> Result<AttemptId, StartError> {
         if let Some(active) = self.active.as_ref() {
             return Err(StartError::Busy {
-                active_attempt: active.id,
+                active_attempt: Some(active.id),
             });
         }
 
