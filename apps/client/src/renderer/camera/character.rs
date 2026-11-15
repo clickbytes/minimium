@@ -40,7 +40,3 @@ fn camera_direction_from_frame(
     let forward = glam::Vec3::from_array(frame.forward.map(|value| value as f32));
     forward * (yaw.cos() * pitch.cos()) + right * (yaw.sin() * pitch.cos()) + up * pitch.sin()
 }
-
-pub(in crate::renderer) fn gravity_for_manifest(manifest: WorldManifest) -> CharacterGravity {
-    minimium_world::world::GravityPolicy::for_manifest(manifest).character_gravity()
-}

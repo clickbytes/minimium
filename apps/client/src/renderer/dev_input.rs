@@ -1,12 +1,12 @@
 //! Desktop execution and formatting for typed local developer presentation commands.
-use super::Renderer;
+use super::DesktopHost;
 use crate::client_commands::{
     CommandActionResult, CommandOutput, DeveloperOperation, PresentationResult,
 };
 
 mod bolid_path;
 
-pub(super) fn execute(renderer: &mut Renderer, line: &str) -> (bool, CommandActionResult) {
+pub(super) fn execute(renderer: &mut DesktopHost, line: &str) -> (bool, CommandActionResult) {
     super::controller::execute_input(
         renderer,
         line,
@@ -14,7 +14,7 @@ pub(super) fn execute(renderer: &mut Renderer, line: &str) -> (bool, CommandActi
     )
 }
 
-pub(super) fn format_output(renderer: &Renderer, result: CommandActionResult) {
+pub(super) fn format_output(renderer: &DesktopHost, result: CommandActionResult) {
     for output in result.outputs {
         match output {
             CommandOutput::Line(line) => println!("{line}"),
@@ -40,7 +40,7 @@ pub(super) fn format_output(renderer: &Renderer, result: CommandActionResult) {
 }
 
 pub(super) fn execute_developer(
-    renderer: &mut Renderer,
+    renderer: &mut DesktopHost,
     operation: DeveloperOperation,
 ) -> Vec<String> {
     let mut lines = Vec::new();
@@ -49,9 +49,9 @@ pub(super) fn execute_developer(
         DeveloperOperation::BolidTransmission(enabled) => {
             let mode = if enabled { "on" } else { "off" };
             if renderer
-                .gpu
+                .renderer
                 .milky_way
-                .set_transmission_diagnostic(&renderer.gpu.queue, enabled)
+                .set_transmission_diagnostic(&renderer.renderer.queue, enabled)
             {
                 lines.push(format!(
                     "dev: transmission diagnostic={mode}; requires an active bolid; black=opaque, white=clear; resize resets it"
@@ -88,7 +88,7 @@ pub(super) fn execute_developer(
     lines
 }
 
-fn bolid_fragments(renderer: &Renderer, lines: &mut Vec<String>) {
+fn bolid_fragments(renderer: &DesktopHost, lines: &mut Vec<String>) {
     let view = renderer.render_environment_frame.render_view;
     let matrix = glam::Mat4::from_cols_array_2d(&view.view_projection);
     for (event_index, event) in renderer
@@ -137,9 +137,9 @@ fn bolid_fragments(renderer: &Renderer, lines: &mut Vec<String>) {
     }
 }
 
-fn bolid_lighting(renderer: &Renderer, lines: &mut Vec<String>) {
+fn bolid_lighting(renderer: &DesktopHost, lines: &mut Vec<String>) {
     let frame = &renderer.render_environment_frame;
-    let gpu = &renderer.gpu;
+    let gpu = &renderer.renderer;
     let physical = gpu.hdr_enabled && gpu.atmosphere_gpu.is_active();
     let base = frame.environment_uniform.ambient_rgb_exposure[3];
     let shadow = &renderer.prepared_shadow;
@@ -179,7 +179,7 @@ fn bolid_lighting(renderer: &Renderer, lines: &mut Vec<String>) {
 }
 
 fn replay_bolid(
-    renderer: &mut Renderer,
+    renderer: &mut DesktopHost,
     age: f32,
     seed: Option<u64>,
     event_id: Option<u64>,
@@ -188,7 +188,7 @@ fn replay_bolid(
 ) {
     let now = renderer
         .application
-        .connection
+        .connection_view()
         .session()
         .and_then(|session| session.server_monotonic_ms());
     let context = renderer.render_environment_frame.context;
@@ -222,7 +222,7 @@ fn replay_bolid(
     ));
 }
 
-fn bolid_status(renderer: &Renderer, lines: &mut Vec<String>) {
+fn bolid_status(renderer: &DesktopHost, lines: &mut Vec<String>) {
     for (_, event, _, model) in &renderer.bolids {
         if let Some(model) = model {
             lines.push(bolid_path::format(event));
@@ -252,7 +252,7 @@ fn bolid_status(renderer: &Renderer, lines: &mut Vec<String>) {
     }
 }
 
-fn goto(renderer: &mut Renderer, latitude: f32, longitude: f32, lines: &mut Vec<String>) {
+fn goto(renderer: &mut DesktopHost, latitude: f32, longitude: f32, lines: &mut Vec<String>) {
     if !renderer.is_earth_world() || renderer.application.map_teleport_pending() {
         lines.push("dev: Earth is unavailable or a move is pending".to_owned());
         return;
@@ -264,10 +264,10 @@ fn goto(renderer: &mut Renderer, latitude: f32, longitude: f32, lines: &mut Vec<
         latitude.sin(),
         latitude.cos() * longitude.sin(),
     ];
-    match renderer.application.action_executor.execute(
-        &mut renderer.application.connection,
-        crate::application::ClientAction::MapTeleport { direction },
-    ) {
+    match renderer
+        .application
+        .execute_action(crate::application::ClientAction::MapTeleport { direction })
+    {
         crate::application::LocalActionOutcome::Queued { .. } => {
             renderer.application.arm_map_teleport();
             renderer.application.request_map_teleport();

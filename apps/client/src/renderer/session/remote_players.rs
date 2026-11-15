@@ -1,55 +1,62 @@
 use super::*;
 
-impl Renderer {
+impl DesktopHost {
     pub(in crate::renderer) fn update_remote_player_rendering(&mut self, now: Instant) {
-        if self.application.connection.session().is_none() {
-            self.application.action_executor.clear_input_cooldown();
-            self.application.game.gameplay.clear_remote_players();
+        if self.application.connection_view().session().is_none() {
+            self.application.clear_action_input_cooldown();
+            self.application.clear_remote_players();
             self.gameplay_presentation.clear_remote_players();
-            self.gpu.clear_remote_vertices();
-            self.gpu.update_remote_shadow_vertices(&[], None);
+            self.renderer.clear_remote_vertices();
+            self.renderer.update_remote_shadow_vertices(&[], None);
             return;
         }
-        let stamp = self.application.game.session_context().and_then(|context| {
-            let session = self.application.connection.session()?;
-            let publication = self.gpu.world_geometry.publication()?.stamp;
-            (self.gpu.scene_visible
-                && session.active_world_context() == Some(context)
-                && publication.instance == context.instance()
-                && publication.content_revision == context.content_revision())
-            .then_some(RemotePlayerGeometryStamp {
-                context,
-                publication,
-            })
-        });
+        let stamp = self
+            .application
+            .game_view()
+            .session_context()
+            .and_then(|context| {
+                let session = self.application.connection_view().session()?;
+                let publication = self.renderer.world_geometry.publication()?.stamp;
+                (self.renderer.scene_visible
+                    && session.active_world_context() == Some(context)
+                    && publication.instance == context.instance()
+                    && publication.content_revision == context.content_revision())
+                .then_some(RemotePlayerGeometryStamp {
+                    context,
+                    publication,
+                })
+            });
         let Some(stamp) = stamp else {
-            self.gpu.clear_remote_vertices();
-            self.gpu.update_remote_shadow_vertices(&[], None);
+            self.renderer.clear_remote_vertices();
+            self.renderer.update_remote_shadow_vertices(&[], None);
             return;
         };
         // A new world, membership, publication or origin needs new bytes even
         // when no remote player has moved since the preceding frame.
-        if self.gpu.remote_stamp != Some(stamp) {
+        if self.renderer.remote_stamp != Some(stamp) {
             self.gameplay_presentation.remote_geometry_dirty = true;
         }
+        let moved = self
+            .application
+            .interpolate_remote_players(now, super::super::REMOTE_INTERPOLATION_DELAY);
         if self.gameplay_presentation.update_remote_vertices(
-            &mut self.application.game.gameplay,
-            now,
-            self.gpu.render_origin,
+            &self.application.game_view().gameplay,
+            moved,
+            self.renderer.render_origin,
         ) {
-            self.gpu
+            self.renderer
                 .update_remote_vertices(&self.gameplay_presentation.remote_vertices, stamp);
         }
         let center = self
             .application
-            .game
+            .game_view()
             .gameplay
             .prediction
             .position_mm
             .map_or_else(
                 || {
                     self.application
-                        .game
+                        .game_view()
                         .gameplay
                         .prediction
                         .character
@@ -59,19 +66,19 @@ impl Renderer {
                 |position| position.0.map(|value| value as f64 / 1000.0),
             );
         let shadow_vertices_changed = self.gameplay_presentation.update_remote_shadow_vertices(
-            &self.application.game.gameplay,
+            &self.application.game_view().gameplay,
             center,
-            self.gpu.render_origin,
+            self.renderer.render_origin,
         );
         let geometry_stamp = Some(stamp.publication);
         // Even an unchanged (or empty) player batch must acknowledge a new
         // terrain publication. Otherwise the shadow frame stays incomplete
         // until a remote player happens to move.
-        if self.gpu.shadow_remote_dirty
+        if self.renderer.shadow_remote_dirty
             || shadow_vertices_changed
-            || self.gpu.shadow_remote_stamp != geometry_stamp
+            || self.renderer.shadow_remote_stamp != geometry_stamp
         {
-            self.gpu.update_remote_shadow_vertices(
+            self.renderer.update_remote_shadow_vertices(
                 &self.gameplay_presentation.remote_shadow_vertices,
                 geometry_stamp,
             );

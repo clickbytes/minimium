@@ -1,6 +1,5 @@
-use super::{cube, CharacterGeometry, GameplayPresentation, Vertex, REMOTE_INTERPOLATION_DELAY};
+use super::{cube, CharacterGeometry, GameplayPresentation, Vertex};
 use crate::application::GameplayState;
-use std::time::Instant;
 
 impl GameplayPresentation {
     pub(super) fn clear_remote_players(&mut self) {
@@ -12,15 +11,10 @@ impl GameplayPresentation {
 
     pub(super) fn update_remote_vertices(
         &mut self,
-        gameplay: &mut GameplayState,
-        now: Instant,
+        gameplay: &GameplayState,
+        moved: bool,
         origin: [f32; 3],
     ) -> bool {
-        let moved = gameplay.reconciliation.interpolate_positions(
-            now,
-            REMOTE_INTERPOLATION_DELAY,
-            &mut gameplay.remote_positions_mm,
-        );
         if !moved && !self.remote_geometry_dirty {
             return false;
         }

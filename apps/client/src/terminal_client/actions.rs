@@ -1,8 +1,8 @@
 use super::{events, help_lines, properties, start_error_output, start_remote, ClientOptions};
+use crate::application::ClientApplication;
 use crate::client_commands::{CommandActionResult, CommandOutput, FrontendAction};
 use crate::messages::ClientText as Text;
 use crate::session::SessionEvent;
-use minimium_client_runtime::ConnectionController;
 use minimium_localization::Localizer;
 use minimium_protocol::ServerMessage;
 use std::path::Path;
@@ -10,7 +10,7 @@ use std::path::Path;
 pub(super) fn handle(
     action: FrontendAction,
     options: &mut ClientOptions,
-    connection: &mut ConnectionController,
+    application: &mut ClientApplication,
     last_snapshot: &mut Option<ServerMessage>,
     localizer: &Localizer,
     data_dir: &Path,
@@ -45,7 +45,7 @@ pub(super) fn handle(
             );
         }
         FrontendAction::HostLocal(requested_lanes) => {
-            if connection.busy() {
+            if application.is_connection_busy() {
                 println!(
                     "{}",
                     Text::DisconnectOrWait.localized(&localizer, options.locale)
@@ -60,7 +60,7 @@ pub(super) fn handle(
             ) {
                 Ok(config) => config,
                 Err(error) => {
-                    connection.record_diagnostic_failure(
+                    application.record_diagnostic_failure(
                         "server.local_launch_config_failed",
                         &error.to_string(),
                     );
@@ -76,7 +76,7 @@ pub(super) fn handle(
                     return (false, result);
                 }
             };
-            match connection.start_local(config) {
+            match application.start_local(config) {
                 Ok(()) => {
                     println!(
                         "{}",
@@ -87,7 +87,7 @@ pub(super) fn handle(
             }
         }
         FrontendAction::Connect(address) => {
-            if connection.busy() {
+            if application.is_connection_busy() {
                 println!(
                     "{}",
                     Text::DisconnectOrWait.localized(&localizer, options.locale)
@@ -95,12 +95,12 @@ pub(super) fn handle(
             } else {
                 result
                     .outputs
-                    .extend(start_remote(connection, &address).outputs);
+                    .extend(start_remote(application, &address).outputs);
             }
         }
         FrontendAction::Disconnect => {
-            connection.cancel();
-            if let Some(mut current) = connection.take_session() {
+            application.cancel_connection_attempt();
+            if let Some(mut current) = application.disconnect_session() {
                 current.close();
             }
             *last_snapshot = None;
@@ -110,7 +110,7 @@ pub(super) fn handle(
             );
         }
         FrontendAction::State => {
-            if connection.session().is_none() {
+            if application.session().is_none() {
                 println!(
                     "{}",
                     Text::NotConnected.localized(&localizer, options.locale)
@@ -135,7 +135,7 @@ pub(super) fn handle(
                 Text::FpsUnavailable.localized(&localizer, options.locale)
             );
         }
-        FrontendAction::NetStats => match connection.session() {
+        FrontendAction::NetStats => match application.session() {
             Some(current) => {
                 let metrics = current.metrics();
                 println!(
@@ -172,7 +172,7 @@ pub(super) fn handle(
             );
         }
         FrontendAction::Property(command) => properties::print_result(
-            text_properties.execute(command, options, &connection, &localizer),
+            text_properties.execute(command, options, application.connection_view(), &localizer),
             &localizer,
             options.locale,
         ),
@@ -192,7 +192,7 @@ pub(super) fn handle(
                     )
                 ),
                 Err(error) => {
-                    connection.record_diagnostic_failure(
+                    application.record_diagnostic_failure(
                         "storage.config_save_failed",
                         &error.to_string(),
                     );
@@ -220,7 +220,7 @@ pub(super) fn handle(
             let result = longitude
                 .ok_or_else(|| "player longitude is unavailable".to_owned())
                 .and_then(|longitude| {
-                    connection
+                    application
                         .request_set_time(minute, longitude)
                         .map_err(|error| error.to_string())
                 });
@@ -235,7 +235,7 @@ pub(super) fn handle(
                     )
                 ),
                 Err(error) => {
-                    connection.record_diagnostic_failure("client.time_request_failed", &error);
+                    application.record_diagnostic_failure("client.time_request_failed", &error);
                     println!(
                         "{}",
                         localizer.format(
@@ -250,13 +250,13 @@ pub(super) fn handle(
         }
         FrontendAction::TimeStatus => {
             let unavailable = crate::environment::EnvironmentFrameInput::unavailable();
-            let status = connection
+            let status = application
                 .session()
                 .map(|session| session.environment_frame().time_status_line())
                 .unwrap_or_else(|| unavailable.time_status_line());
             println!("{status}");
         }
-        FrontendAction::TimeScale(value) => match connection.request_time_scale(value) {
+        FrontendAction::TimeScale(value) => match application.request_time_scale(value) {
             Ok(()) => println!(
                 "{}",
                 localizer.format(
@@ -267,7 +267,7 @@ pub(super) fn handle(
                 )
             ),
             Err(error) => {
-                connection.record_diagnostic_failure("client.time_scale_request_failed", &error);
+                application.record_diagnostic_failure("client.time_scale_request_failed", &error);
                 println!(
                     "{}",
                     localizer.format(
@@ -279,7 +279,7 @@ pub(super) fn handle(
                 );
             }
         },
-        FrontendAction::SpawnRandomBolid(count) => match connection.request_random_bolid(count) {
+        FrontendAction::SpawnRandomBolid(count) => match application.request_random_bolid(count) {
             Ok(()) => println!(
                 "{}",
                 localizer.format(
@@ -291,11 +291,11 @@ pub(super) fn handle(
             ),
             Err(error) => println!("spawn_random_bolid: {error}"),
         },
-        FrontendAction::SpawnRandomMeteorid => match connection.request_random_meteorid() {
+        FrontendAction::SpawnRandomMeteorid => match application.request_random_meteorid() {
             Ok(()) => println!("Meteorite request sent"),
             Err(error) => println!("spawn_random_meteorid: {error}"),
         },
-        FrontendAction::TimeMode(mode) => match connection.request_time_mode(&mode) {
+        FrontendAction::TimeMode(mode) => match application.request_time_mode(&mode) {
             Ok(()) => println!(
                 "{}",
                 localizer.format(
@@ -306,7 +306,7 @@ pub(super) fn handle(
                 )
             ),
             Err(error) => {
-                connection.record_diagnostic_failure("client.time_mode_request_failed", &error);
+                application.record_diagnostic_failure("client.time_mode_request_failed", &error);
                 println!(
                     "{}",
                     localizer.format(
@@ -319,7 +319,7 @@ pub(super) fn handle(
             }
         },
         FrontendAction::TimeOfflinePolicy(policy) => {
-            match connection.request_time_offline_policy(&policy) {
+            match application.request_time_offline_policy(&policy) {
                 Ok(()) => println!(
                     "{}",
                     localizer.format(
@@ -330,7 +330,7 @@ pub(super) fn handle(
                     )
                 ),
                 Err(error) => {
-                    connection
+                    application
                         .record_diagnostic_failure("client.time_policy_request_failed", &error);
                     println!(
                         "{}",

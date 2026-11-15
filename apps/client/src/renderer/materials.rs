@@ -23,37 +23,32 @@ pub(super) fn open_offline_materials(
     minimium_asset_io::materials::MaterialPackage::open_manifest(&manifest, compressed)
 }
 
-impl Renderer {
+impl DesktopHost {
     pub(super) fn prepare_session_materials(&mut self) {
-        let Some(session) = self
-            .application
-            .connection
-            .session_mut()
-            .filter(|s| s.content_awaiting_gpu())
-        else {
+        let Some(package) = self.application.take_material_package_if_awaiting_gpu() else {
             return;
         };
-        self.gpu.scene_visible = false;
+        self.renderer.scene_visible = false;
         self.application.status = crate::application::ClientStatus::Status(
             minimium_localization::UiStatus::TerrainMaterials,
         );
         let compressed = self
-            .gpu
+            .renderer
             .device
             .features()
             .contains(wgpu::Features::TEXTURE_COMPRESSION_BC)
-            && self.gpu.device.limits().max_texture_dimension_2d >= 4096;
-        let package = session.take_material_package().map(Ok).unwrap_or_else(|| {
+            && self.renderer.device.limits().max_texture_dimension_2d >= 4096;
+        let package = package.map(Ok).unwrap_or_else(|| {
             open_offline_materials(compressed).map_err(|error| error.to_string())
         });
         let result = package.and_then(|package| {
-            self.gpu.terrain_gpu.release_materials();
+            self.renderer.terrain_gpu.release_materials();
             minimium_renderer::terrain_gpu::TerrainGpu::new(
-                &self.gpu.device,
-                &self.gpu.queue,
-                &self.gpu.frame_layout,
-                &self.gpu.shadow_gpu.group2_layout,
-                self.gpu.scene_color_format,
+                &self.renderer.device,
+                &self.renderer.queue,
+                &self.renderer.frame_layout,
+                &self.renderer.shadow_gpu.group2_layout,
+                self.renderer.scene_color_format,
                 &package.manifest,
                 package.variant,
                 &package.maps,
@@ -61,14 +56,14 @@ impl Renderer {
         });
         match result {
             Ok(mut resources) => {
-                resources.uniform.debug = self.gpu.terrain_gpu.uniform.debug;
-                self.gpu.fixed_gpu_bytes = self
-                    .gpu
+                resources.uniform.debug = self.renderer.terrain_gpu.uniform.debug;
+                self.renderer.fixed_gpu_bytes = self
+                    .renderer
                     .fixed_gpu_bytes
-                    .saturating_sub(self.gpu.terrain_gpu.bytes)
+                    .saturating_sub(self.renderer.terrain_gpu.bytes)
                     + resources.bytes;
-                self.gpu.terrain_gpu = resources;
-                if let Err(error) = session.finish_content() {
+                self.renderer.terrain_gpu = resources;
+                if let Some(Err(error)) = self.application.finish_material_content() {
                     self.fail_connection(error.to_string());
                 }
             }

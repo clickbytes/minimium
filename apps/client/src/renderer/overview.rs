@@ -1,12 +1,12 @@
 use super::*;
 use minimium_procgen::SectorGeometry;
 
-impl Renderer {
+impl DesktopHost {
     pub(super) fn is_earth_world(&self) -> bool {
         self.application
-            .game
+            .game_view()
             .world_manifests
-            .get(&self.application.game.current_instance)
+            .get(&self.application.game_view().current_instance)
             .is_some_and(|manifest| manifest.planet().is_some_and(|planet| planet.mode == 1))
     }
 
@@ -14,31 +14,31 @@ impl Renderer {
         self.application.input.clear_held();
         if self.application.overview().is_open() {
             self.application.overview_close();
-            self.gpu.overview_active = false;
-            self.gpu.overview_planet = false;
+            self.renderer.overview_active = false;
+            self.renderer.overview_planet = false;
             self.last_render_position = [f32::INFINITY; 3];
             self.application.resolve_map_teleport();
             return;
         }
         let Some(manifest) = self
             .application
-            .game
+            .game_view()
             .world_manifests
-            .get(&self.application.game.current_instance)
+            .get(&self.application.game_view().current_instance)
             .copied()
         else {
             return;
         };
         let Some(map) = self
             .application
-            .world_catalog
-            .get(&self.application.game.current_instance)
+            .world_catalog_view()
+            .get(&self.application.game_view().current_instance)
         else {
             return;
         };
         let earth = manifest.planet().is_some_and(|planet| planet.mode == 1);
-        self.gpu.overview_planet = manifest.topology() == WorldTopology::Planet;
-        let vertices = if self.gpu.overview_planet {
+        self.renderer.overview_planet = manifest.topology() == WorldTopology::Planet;
+        let vertices = if self.renderer.overview_planet {
             Vec::new()
         } else {
             sector_geometry(&SectorGeometry {
@@ -59,30 +59,40 @@ impl Renderer {
             &mut marker_vertices,
             (glam::Vec3::from_array(if earth {
                 let radial = glam::Vec3::from_array(
-                    self.application.game.gameplay.prediction.character.position,
+                    self.application
+                        .game_view()
+                        .gameplay
+                        .prediction
+                        .character
+                        .position,
                 )
                 .normalize_or_zero();
                 let radius =
                     minimium_procgen::planet_surface_for(manifest).radius_mm() as f32 / 1000.0;
                 (radial * radius * (1.0 + self.marker_height())).to_array()
             } else {
-                self.application.game.gameplay.prediction.character.position
-            }) - glam::Vec3::from_array(self.gpu.render_origin))
+                self.application
+                    .game_view()
+                    .gameplay
+                    .prediction
+                    .character
+                    .position
+            }) - glam::Vec3::from_array(self.renderer.render_origin))
             .to_array(),
             marker_size,
             [0.95, 0.2, 0.1],
         );
-        self.gpu.install_overview(&vertices);
-        self.gpu.install_overview_marker(&marker_vertices);
+        self.renderer.install_overview(&vertices);
+        self.renderer.install_overview_marker(&marker_vertices);
         self.metrics.frame_stats.set_gpu_bytes(
-            self.gpu.fixed_gpu_bytes
-                + u64::from(self.gpu.size.width.max(1))
-                    * u64::from(self.gpu.size.height.max(1))
+            self.renderer.fixed_gpu_bytes
+                + u64::from(self.renderer.size.width.max(1))
+                    * u64::from(self.renderer.size.height.max(1))
                     * 4,
         );
-        let instance = self.application.game.current_instance;
+        let instance = self.application.game_view().current_instance;
         self.application.overview_open(instance);
-        self.gpu.overview_active = true;
+        self.renderer.overview_active = true;
     }
 
     fn marker_scale(&self, earth: bool) -> f32 {
@@ -97,9 +107,9 @@ impl Renderer {
         self.application.overview().is_open()
             && self
                 .application
-                .game
+                .game_view()
                 .world_manifests
-                .get(&self.application.game.current_instance)
+                .get(&self.application.game_view().current_instance)
                 .is_some_and(|manifest| manifest.topology() == WorldTopology::Planet)
     }
 
@@ -119,30 +129,36 @@ impl Renderer {
         }
         let Some(manifest) = self
             .application
-            .game
+            .game_view()
             .world_manifests
-            .get(&self.application.game.current_instance)
+            .get(&self.application.game_view().current_instance)
         else {
             return;
         };
         let radius = minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0;
-        let radial =
-            glam::Vec3::from_array(self.application.game.gameplay.prediction.character.position)
-                .normalize_or_zero();
+        let radial = glam::Vec3::from_array(
+            self.application
+                .game_view()
+                .gameplay
+                .prediction
+                .character
+                .position,
+        )
+        .normalize_or_zero();
         let mut vertices = Vec::new();
         cube(
             &mut vertices,
             (radial * radius * (1.0 + self.marker_height())
-                - glam::Vec3::from_array(self.gpu.render_origin))
+                - glam::Vec3::from_array(self.renderer.render_origin))
             .to_array(),
             [radius * self.marker_scale(true); 3],
             [0.95, 0.2, 0.1],
         );
-        self.gpu.install_overview_marker(&vertices);
+        self.renderer.install_overview_marker(&vertices);
         self.metrics.frame_stats.set_gpu_bytes(
-            self.gpu.fixed_gpu_bytes
-                + u64::from(self.gpu.size.width.max(1))
-                    * u64::from(self.gpu.size.height.max(1))
+            self.renderer.fixed_gpu_bytes
+                + u64::from(self.renderer.size.width.max(1))
+                    * u64::from(self.renderer.size.height.max(1))
                     * 4,
         );
     }
@@ -160,11 +176,11 @@ impl Renderer {
         }
         let manifest = self
             .application
-            .game
+            .game_view()
             .world_manifests
-            .get(&self.application.game.current_instance)
+            .get(&self.application.game_view().current_instance)
             .copied();
-        let session_present = self.application.connection.session().is_some();
+        let session_present = self.application.connection_view().session().is_some();
         if session_present && manifest.is_none() {
             self.application.status = crate::application::ClientStatus::Status(
                 minimium_localization::UiStatus::EarthLoading,
@@ -190,7 +206,7 @@ impl Renderer {
             );
             return;
         }
-        if !self.gpu.scene_visible || !self.application.game.gameplay.sectors_ready {
+        if !self.renderer.scene_visible || !self.application.game_view().gameplay.sectors_ready {
             self.application.status = crate::application::ClientStatus::Status(
                 minimium_localization::UiStatus::EarthLoading,
             );
@@ -225,16 +241,16 @@ impl Renderer {
         };
         let Some(manifest) = self
             .application
-            .game
+            .game_view()
             .world_manifests
-            .get(&self.application.game.current_instance)
+            .get(&self.application.game_view().current_instance)
         else {
             return;
         };
         let radius = minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0;
         let (mut view, far) = self.overview_camera();
-        let width = self.gpu.size.width.max(1) as f32;
-        let height = self.gpu.size.height.max(1) as f32;
+        let width = self.renderer.size.width.max(1) as f32;
+        let height = self.renderer.size.height.max(1) as f32;
         if self.is_earth_world() {
             view = glam::Mat4::from_scale(glam::Vec3::new(-1.0, 1.0, 1.0)) * view;
         }
@@ -260,10 +276,10 @@ impl Renderer {
             return;
         }
         let direction = (eye + ray * distance).normalize().to_array();
-        match self.application.action_executor.execute(
-            &mut self.application.connection,
-            crate::application::ClientAction::MapTeleport { direction },
-        ) {
+        match self
+            .application
+            .execute_action(crate::application::ClientAction::MapTeleport { direction })
+        {
             crate::application::LocalActionOutcome::Queued { .. } => {
                 self.application.request_map_teleport();
                 self.application.status = crate::application::ClientStatus::Status(
@@ -284,7 +300,7 @@ impl Renderer {
     }
 
     pub(super) fn terrain_view(&self) -> minimium_renderer::terrain_view::TerrainView {
-        if self.application.overview().is_open() && self.gpu.overview_planet {
+        if self.application.overview().is_open() && self.renderer.overview_planet {
             let position = self
                 .overview_camera()
                 .0
@@ -294,26 +310,36 @@ impl Renderer {
             return minimium_renderer::terrain_view::TerrainView::overview(
                 position,
                 self.fov_degrees.to_radians(),
-                [self.gpu.size.width, self.gpu.size.height],
+                [self.renderer.size.width, self.renderer.size.height],
             );
         }
         minimium_renderer::terrain_view::TerrainView::new(
-            self.application.game.gameplay.prediction.character.position,
+            self.application
+                .game_view()
+                .gameplay
+                .prediction
+                .character
+                .position,
             self.fov_degrees.to_radians(),
-            self.gpu.size.height,
+            self.renderer.size.height,
         )
     }
 
     pub(super) fn overview_camera(&self) -> (glam::Mat4, f32) {
         let topology = self
             .application
-            .game
+            .game_view()
             .world_manifests
-            .get(&self.application.game.current_instance)
+            .get(&self.application.game_view().current_instance)
             .map(|manifest| manifest.topology());
         if topology == Some(WorldTopology::Planet) {
             let radial = glam::Vec3::from_array(
-                self.application.game.gameplay.prediction.character.position,
+                self.application
+                    .game_view()
+                    .gameplay
+                    .prediction
+                    .character
+                    .position,
             )
             .normalize_or_zero();
             let radial = if radial.length_squared() > 0.0 {
@@ -324,9 +350,9 @@ impl Renderer {
             let up = glam::Vec3::Y;
             let radius = self
                 .application
-                .game
+                .game_view()
                 .world_manifests
-                .get(&self.application.game.current_instance)
+                .get(&self.application.game_view().current_instance)
                 .map(|manifest| {
                     minimium_procgen::planet_surface_for(*manifest).radius_mm() as f32 / 1000.0
                 })
@@ -351,8 +377,8 @@ impl Renderer {
         } else {
             let Some(map) = self
                 .application
-                .world_catalog
-                .get(&self.application.game.current_instance)
+                .world_catalog_view()
+                .get(&self.application.game_view().current_instance)
             else {
                 return (glam::Mat4::IDENTITY, 1000.0);
             };
@@ -382,7 +408,7 @@ impl Renderer {
     }
 }
 
-impl GpuResources {
+impl Renderer {
     fn install_overview(&mut self, vertices: &[Vertex]) {
         let (old_size, new_size) = self.overview_buffers.install_world(&self.device, vertices);
         self.fixed_gpu_bytes = self

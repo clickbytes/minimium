@@ -12,13 +12,13 @@ pub(super) struct ExcavationDebug {
     last_result: Option<ActionResult>,
 }
 
-impl Renderer {
+impl DesktopHost {
     pub(super) fn observe_excavation(
         &mut self,
         context: WorldContext,
         message: &ExcavationMessage,
     ) {
-        if Some(context) != self.application.game.session_context() {
+        if Some(context) != self.application.game_view().session_context() {
             return;
         }
         if self.excavation_debug.context != Some(context) {
@@ -68,24 +68,22 @@ impl Renderer {
         &self,
         view: &minimium_renderer::RenderViewFrame,
     ) -> Option<crate::console::ToolOverlay> {
-        let session = self.application.connection.session()?;
-        let inventory = session.inventory();
-        let tool_profile = minimium_game_sample::DEFAULT_TOOL_PROFILE;
-        let selected_definition = inventory
-            .tool()
-            .and_then(|tool| tool_profile.definition(tool));
-        if inventory.slots.iter().all(Option::is_none)
+        let application_view = self.application.desktop_render_view();
+        let session = self.application.connection_view().session()?;
+        let selected_definition = application_view.equipped_tool_profile;
+        if !application_view.has_tools
             || self.application.overview().is_open()
             || self.application.ui.console.open
         {
             return None;
         }
-        let ready = self.gpu.scene_visible
-            && self.application.game.gameplay.sectors_ready
+        let ready = self.renderer.scene_visible
+            && self.application.game_view().gameplay.sectors_ready
             && session.excavation_ready();
-        let query_reach = selected_definition.map_or(tool_profile.max_reach_m(), |definition| {
-            definition.reach_m()
-        });
+        let query_reach = selected_definition
+            .map_or(application_view.max_tool_reach_m, |definition| {
+                definition.reach_m()
+            });
         let hit = ready.then(|| self.preview_tool_hit(query_reach)).flatten();
         let (notice, color) = if !ready {
             (ToolNotice::Synchronizing, [1.0, 0.75, 0.25])
@@ -134,22 +132,23 @@ impl Renderer {
         );
         Some(crate::console::ToolOverlay {
             heading: format(ToolMessage::Heading {
-                tool: self.tool_notice(tool_name(inventory.tool())),
+                tool: self.tool_notice(tool_name(application_view.equipped_tool)),
             }),
             target,
             status: self.tool_notice(notice),
             color,
             controls: self.tool_notice(ToolNotice::Controls),
             preview: self.tool_notice(ToolNotice::Preview),
-            result: (self.excavation_debug.context == self.application.game.session_context())
-                .then_some(self.excavation_debug.last_result)
-                .flatten()
-                .map(|result| format(self.tool_result_message(result))),
+            result: (self.excavation_debug.context
+                == self.application.game_view().session_context())
+            .then_some(self.excavation_debug.last_result)
+            .flatten()
+            .map(|result| format(self.tool_result_message(result))),
             outline: hit.map_or_else(Vec::new, |hit| {
                 outline(
                     hit,
                     view,
-                    selected_definition.map_or(tool_profile.max_radius_m(), |definition| {
+                    selected_definition.map_or(application_view.max_tool_radius_m, |definition| {
                         definition.radius_m()
                     }),
                 )
@@ -158,7 +157,7 @@ impl Renderer {
     }
 
     fn preview_tool_hit(&self, reach_m: f64) -> Option<SurfaceHit> {
-        let gameplay = &self.application.game.gameplay;
+        let gameplay = &self.application.game_view().gameplay;
         let character = gameplay.prediction.character;
         let feet = gameplay
             .prediction
@@ -183,19 +182,19 @@ impl Renderer {
                     .map(|geometry| minimium_simulation::ToolRayCapsule { geometry })
             });
         let mut hit = gameplay.collision_index.tool_surface_hit(
-            self.application.game.current_instance,
+            self.application.game_view().current_instance,
             eye,
             direction,
             reach_m,
             blockers,
         )?;
         if let SurfaceTarget::Terrain(_) = hit.target {
-            let session = self.application.connection.session()?;
+            let session = self.application.connection_view().session()?;
             let manifest = *self
                 .application
-                .game
+                .game_view()
                 .world_manifests
-                .get(&self.application.game.current_instance)?;
+                .get(&self.application.game_view().current_instance)?;
             let inputs = session.terrain_inputs();
             let store = inputs.volumes.clone()?;
             let terrain = minimium_procgen::PlanetTerrain::for_manifest(manifest, inputs).ok()?;

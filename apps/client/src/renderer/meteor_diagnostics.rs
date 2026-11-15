@@ -1,7 +1,7 @@
-use super::Renderer;
+use super::DesktopHost;
 use crate::environment::SkyDiagnosticsSnapshot;
 
-pub(super) fn status(renderer: &mut Renderer) -> Vec<String> {
+pub(super) fn status(renderer: &mut DesktopHost) -> Vec<String> {
     let mut output = Vec::new();
     use crate::client_commands::{ClientPropertyCommand as Command, ClientPropertyKey as Key};
     for key in [
@@ -14,26 +14,26 @@ pub(super) fn status(renderer: &mut Renderer) -> Vec<String> {
         let line = renderer.apply_property(Command::Get(key));
         output.push(line);
     }
-    let gpu = &renderer.gpu.milky_way.meteors;
-    output.push(format!("meteor upload CPU {} us; culled segments {}; quality-dropped cores {}; cloud scans {} / reused {}; proxy cache {} bytes", gpu.prepare_us, gpu.culled_segments, gpu.dropped_cores, renderer.gpu.cloud_gpu.light_cache.scans, renderer.gpu.cloud_gpu.light_cache.reused, std::mem::size_of::<minimium_renderer::transient_cloud_cache::CloudLightCache>()));
+    let gpu = &renderer.renderer.milky_way.meteors;
+    output.push(format!("meteor upload CPU {} us; culled segments {}; quality-dropped cores {}; cloud scans {} / reused {}; proxy cache {} bytes", gpu.prepare_us, gpu.culled_segments, gpu.dropped_cores, renderer.renderer.cloud_gpu.light_cache.scans, renderer.renderer.cloud_gpu.light_cache.reused, std::mem::size_of::<minimium_renderer::transient_cloud_cache::CloudLightCache>()));
     output.push(format!(
         "meteor GPU: cores {}, segments {}, dust {}, culled low {}, upload {} bytes, persistent {} bytes, lights {}",
-        renderer.gpu.meteors_status.core_count(), gpu.count, gpu.dust_segments,
+        renderer.renderer.meteors_status.core_count(), gpu.count, gpu.dust_segments,
         gpu.rejected_low, gpu.upload_bytes,
-        minimium_renderer::meteors_gpu::MeteorGpu::BYTES + renderer.gpu.transient_buffer.size(),
-        renderer.gpu.transient_count,
+        minimium_renderer::meteors_gpu::MeteorGpu::BYTES + renderer.renderer.transient_buffer.size(),
+        renderer.renderer.transient_count,
     ));
     output
 }
 
 pub(super) fn debug(
-    renderer: &mut Renderer,
+    renderer: &mut DesktopHost,
     mode: crate::client_commands::MeteorDebug,
 ) -> Vec<String> {
     let mut output = Vec::new();
     use crate::client_commands::MeteorDebug;
-    renderer.gpu.transient_enabled = true;
-    renderer.gpu.transient_transmission = mode == MeteorDebug::Occlusion;
+    renderer.renderer.transient_enabled = true;
+    renderer.renderer.transient_transmission = mode == MeteorDebug::Occlusion;
     match mode {
         MeteorDebug::Paths => {
             for line in renderer.meteors.path_lines() {
@@ -47,38 +47,43 @@ pub(super) fn debug(
     output
 }
 
-pub(super) fn push(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
-    snapshot.push("transient_light_enabled", renderer.gpu.transient_enabled);
-    snapshot.push("transient_lights", renderer.gpu.transient_count);
+pub(super) fn push(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &DesktopHost) {
+    snapshot.push(
+        "transient_light_enabled",
+        renderer.renderer.transient_enabled,
+    );
+    snapshot.push("transient_lights", renderer.renderer.transient_count);
     snapshot.push(
         "transient_observer_irradiance",
-        renderer.gpu.transient_incident,
+        renderer.renderer.transient_incident,
     );
     snapshot.push(
         "transient_buffer_bytes",
-        renderer.gpu.transient_buffer.size(),
+        renderer.renderer.transient_buffer.size(),
     );
     snapshot.push(
         "transient_transmission_debug",
-        renderer.gpu.transient_transmission,
+        renderer.renderer.transient_transmission,
     );
     snapshot.push(
         "transient_cloud_records",
-        renderer.gpu.cloud_gpu.light_records.len(),
+        renderer.renderer.cloud_gpu.light_records.len(),
     );
     snapshot.push(
         "transient_cloud_proxy_limit",
-        if renderer.gpu.cloud_gpu.standard_lighting && !renderer.gpu.milky_way.meteors.low_quality {
+        if renderer.renderer.cloud_gpu.standard_lighting
+            && !renderer.renderer.milky_way.meteors.low_quality
+        {
             8
         } else {
             0
         },
     );
-    let status = renderer.gpu.meteors_status;
-    let gpu = &renderer.gpu.milky_way.meteors;
+    let status = renderer.renderer.meteors_status;
+    let gpu = &renderer.renderer.milky_way.meteors;
     snapshot.push(
         "meteors_optical_heads",
-        if renderer.gpu.transient_enabled {
+        if renderer.renderer.transient_enabled {
             gpu.optical_heads
         } else {
             0
@@ -86,7 +91,7 @@ pub(super) fn push(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
     );
     snapshot.push(
         "meteors_optics",
-        if renderer.gpu.atmosphere_gpu.is_active() {
+        if renderer.renderer.atmosphere_gpu.is_active() {
             "bounded Mie halo"
         } else {
             "analytic narrow halo"
@@ -98,11 +103,11 @@ pub(super) fn push(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
     snapshot.push("meteors_upload_cpu_us", gpu.prepare_us);
     snapshot.push(
         "meteor_cloud_scans",
-        renderer.gpu.cloud_gpu.light_cache.scans,
+        renderer.renderer.cloud_gpu.light_cache.scans,
     );
     snapshot.push(
         "meteor_cloud_cache_reuse",
-        renderer.gpu.cloud_gpu.light_cache.reused,
+        renderer.renderer.cloud_gpu.light_cache.reused,
     );
     snapshot.push(
         "meteors_gpu_time",
@@ -129,21 +134,21 @@ pub(super) fn push(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Renderer) {
     );
 }
 
-pub(super) fn optical_status(renderer: &Renderer) -> String {
+pub(super) fn optical_status(renderer: &DesktopHost) -> String {
     format!(
         "meteors optics: {}, selected sources {}, halo heads {}, light {}",
-        if renderer.gpu.atmosphere_gpu.is_active() {
+        if renderer.renderer.atmosphere_gpu.is_active() {
             "bounded atmospheric halo"
         } else {
             "analytic narrow fallback"
         },
-        renderer.gpu.transient_count,
-        if renderer.gpu.transient_enabled {
-            renderer.gpu.milky_way.meteors.optical_heads
+        renderer.renderer.transient_count,
+        if renderer.renderer.transient_enabled {
+            renderer.renderer.milky_way.meteors.optical_heads
         } else {
             0
         },
-        if renderer.gpu.transient_enabled {
+        if renderer.renderer.transient_enabled {
             "on"
         } else {
             "off"

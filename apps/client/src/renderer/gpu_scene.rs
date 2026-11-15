@@ -1,7 +1,7 @@
-use super::{sector_scene::ClientSectorScene, GpuResources, Renderer};
+use super::{sector_scene::ClientSectorScene, DesktopHost, Renderer};
 use minimium_renderer::geometry::Vertex;
 
-impl GpuResources {
+impl Renderer {
     pub(super) fn cache_sector_scene(
         &mut self,
         instance: minimium_world::world::WorldInstanceId,
@@ -157,13 +157,13 @@ impl GpuResources {
     }
 }
 
-impl Renderer {
+impl DesktopHost {
     pub(super) fn release_world_sectors(
         &mut self,
         instance: minimium_world::world::WorldInstanceId,
     ) {
         self.shadow_map_preparation.release_world(instance);
         self.sector_cache.remove_world_data(instance);
-        self.gpu.release_world_sectors(instance);
+        self.renderer.release_world_sectors(instance);
     }
 }

@@ -4,7 +4,7 @@ mod connection;
 mod gameplay;
 mod transitions;
 
-impl Renderer {
+impl DesktopHost {
     pub(super) fn handle_server_message(&mut self, message: ServerMessage) {
         match message {
             ServerMessage::Excavation { context, message } => {
@@ -16,12 +16,12 @@ impl Renderer {
                 live,
                 ..
             } => {
-                if Some(context) == self.application.game.session_context() {
+                if Some(context) == self.application.game_view().session_context() {
                     self.impacts.observe(context, body, live);
                 }
             }
             ServerMessage::Bolid { context, event } => {
-                if Some(context) != self.application.game.session_context() {
+                if Some(context) != self.application.game_view().session_context() {
                     return;
                 }
                 self.bolids.retain(|(existing, bolid, at, _)| {
@@ -100,7 +100,7 @@ impl Renderer {
                 self.clear_connection();
             }
             message @ ServerMessage::Snapshot { .. } => self.handle_snapshot(message),
-            ServerMessage::TransitionPrepare {
+            message @ ServerMessage::TransitionPrepare {
                 transition_id,
                 source_context,
                 target_context,
@@ -108,36 +108,27 @@ impl Renderer {
                 destination,
                 manifest,
                 ..
-            } => self.handle_transition_prepare(
-                transition_id,
-                source_context,
-                target_context,
-                map_fingerprint,
-                destination,
-                manifest,
-            ),
-            ServerMessage::TransitionCommitted {
+            } => {
+                let _ = self.application.apply_game_message(&message);
+                self.handle_transition_prepare(
+                    transition_id,
+                    source_context,
+                    target_context,
+                    map_fingerprint,
+                    destination,
+                    manifest,
+                );
+            }
+            message @ ServerMessage::TransitionCommitted {
                 transition_id,
                 context,
-                map_fingerprint,
-                destination,
-                destination_mm,
-                health,
-                manifest,
                 ..
-            } => self.handle_transition_committed(
-                transition_id,
-                context,
-                map_fingerprint,
-                destination,
-                destination_mm,
-                health,
-                manifest,
-            ),
-            ServerMessage::TransitionCancelled {
+            } => self.handle_transition_committed(message, transition_id, context),
+            message @ ServerMessage::TransitionCancelled {
                 transition_id,
                 context,
             } => {
+                let _ = self.application.apply_game_message(&message);
                 self.handle_transition_cancelled(transition_id, context);
             }
             _ => {}

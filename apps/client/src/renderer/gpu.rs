@@ -1,11 +1,11 @@
 use super::gpu_surface::emit_gpu_event;
-use super::GpuResources;
+use super::Renderer;
 use minimium_diagnostics::DomainLogger;
 use minimium_renderer::geometry::Vertex;
 use std::{error::Error, sync::Arc};
 use winit::{dpi::PhysicalSize, window::Window};
 
-impl GpuResources {
+impl Renderer {
     pub(super) async fn new(
         window: Arc<Window>,
         vertices: &[Vertex],

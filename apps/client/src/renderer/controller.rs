@@ -6,7 +6,7 @@ use crate::messages::ClientText as Text;
 pub(super) use output::format_console_output;
 use output::CommandOutputCollector;
 
-pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
+pub(super) fn execute_console_input(renderer: &mut DesktopHost) -> bool {
     let input = renderer
         .application
         .ui
@@ -18,12 +18,17 @@ pub(super) fn execute_console_input(renderer: &mut Renderer) -> bool {
 }
 
 pub(super) fn execute_input(
-    renderer: &mut Renderer,
+    renderer: &mut DesktopHost,
     input: &str,
     source: client_commands::CommandSource,
 ) -> (bool, client_commands::CommandActionResult) {
     let direction = super::camera::camera_direction(
-        renderer.application.game.gameplay.prediction.character,
+        renderer
+            .application
+            .game_view()
+            .gameplay
+            .prediction
+            .character,
         renderer.input.yaw,
         renderer.input.pitch,
     )
@@ -31,21 +36,15 @@ pub(super) fn execute_input(
     .to_array();
     let player_position = renderer
         .application
-        .game
+        .game_view()
         .gameplay
         .prediction
         .character
         .position;
-    let result = client_commands::execute_text(
-        input,
-        source,
-        &mut CommandContext {
-            connection: &mut renderer.application.connection,
-            action_executor: &mut renderer.application.action_executor,
-            fire_direction: direction,
-            player_position: Some(player_position),
-        },
-    );
+    let result =
+        renderer
+            .application
+            .execute_text_command(input, source, direction, Some(player_position));
     let mut output = CommandOutputCollector::default();
     let action = match result {
         client_commands::TextCommandResult::Empty => return (false, output.result),

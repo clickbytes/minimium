@@ -1,4 +1,4 @@
-use super::super::Renderer;
+use super::super::DesktopHost;
 use crate::{
     client_commands::{self, CommandActionResult, CommandOutput},
     messages::ClientText,
@@ -34,7 +34,7 @@ impl CommandOutputCollector {
 }
 
 pub(in crate::renderer) fn format_console_output(
-    renderer: &mut Renderer,
+    renderer: &mut DesktopHost,
     result: CommandActionResult,
 ) {
     for output in result.outputs {
