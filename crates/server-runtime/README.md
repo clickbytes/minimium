@@ -300,11 +300,13 @@ count and storage health. Ordinary impact I/O failure stops new impacts but pres
 replication of the last committed world. The original automatic scheduler remains transient.
 
 Current terrain preparation uses `TerrainInputs` with separate geography,
-resolved material profile, crater and remnant snapshots. `WorldDefinition`
-profiles are checked against the exact manifest and map fingerprint before
-registry publication; duplicate content identities cannot select conflicting
-profiles. The sample composition supplies its canonical 1.5 m profile, while
-the runtime has no independent soil-depth override. Entity batches clone only affected world stores, while
+resolved material profile, resolved relief policy, crater and remnant snapshots.
+`WorldDefinition` supplies the relief policy selected by content composition;
+the registry binds and checks it against the exact manifest and map fingerprint
+before publication. Generated planets reject missing policy, and duplicate
+content identities cannot select conflicting material or relief profiles.
+The sample composition supplies its canonical relief policy and 1.5 m material
+profile, while the runtime has no independent soil-depth override. Entity batches clone only affected world stores, while
 capacity checks still include all untouched entities. Impact settings enter via
 `ServerComposition::impact_profile`, without a specialized module hook.
 `runtime/excavation` coordinates tool intents, profile inventories, immutable
