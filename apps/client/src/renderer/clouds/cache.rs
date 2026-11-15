@@ -1,6 +1,7 @@
 //! Bounded temporal mesh cache; unchanged cloud windows need no density work.
 use super::{Face, MAX_FACES};
 use minimium_environment::weather::{CloudSnapshot, DensityField};
+use minimium_renderer::cloud_presentation::{self, CloudTessellation};
 use minimium_renderer::cloud_voxels::Voxels;
 use std::collections::{HashMap, HashSet};
 
@@ -63,20 +64,7 @@ impl MeshCache {
         let priorities: Vec<_> = snapshot
             .clouds
             .iter()
-            .map(|c| {
-                let distance = c
-                    .direction_at(snapshot.utc)
-                    .dot(snapshot.observer)
-                    .clamp(-1.0, 1.0)
-                    .acos();
-                if distance < 0.006 {
-                    (6, 16)
-                } else if distance < 0.018 {
-                    (5, 4)
-                } else {
-                    (4, 1)
-                }
-            })
+            .map(|c| cloud_presentation::priority(*c, snapshot.observer, snapshot.utc))
             .collect();
         let weight: usize = priorities.iter().map(|(_, w)| w).sum();
         let available = MAX_FACES - snapshot.clouds.len() * 6;
@@ -89,14 +77,9 @@ impl MeshCache {
             // Stable buckets prevent a birth/death changing every mesh budget by
             // one face and invalidating the entire otherwise reusable cache.
             let budget = (1_usize << share.ilog2()).max(6);
-            let mut level = wanted.min(detail).clamp(cloud.min_level, cloud.max_level);
             let allowance = MAX_SAMPLES / snapshot.clouds.len().max(1);
-            let cost = |n| {
-                cloud.grid(n).0.iter().product::<usize>() * if n == cloud.min_level { 8 } else { 2 }
-            };
-            while level > cloud.min_level && cost(level) > allowance {
-                level -= 1;
-            }
+            let sampling = CloudTessellation::select(cloud, wanted.min(detail), allowance);
+            let level = sampling.level();
             let (window, start, step) = cloud.morph_window(snapshot.utc);
             let reuse = self
                 .entries
@@ -110,9 +93,9 @@ impl MeshCache {
                 }
                 let mut bricks = 0;
                 let mut render_level = level;
-                let (faces, simplified) = if cost(level) <= allowance {
-                    let mut cells = Voxels::build(cloud, level, start, step);
-                    result.stats.samples += cost(level);
+                let (faces, simplified) = if sampling.sample_cost() <= allowance {
+                    let mut cells = Voxels::build(cloud, sampling, start, step);
+                    result.stats.samples += sampling.sample_cost();
                     bricks = cells.bricks;
                     let mut faces = minimium_renderer::cloud_mesh::build(cloud, &cells, budget);
                     let simplified = faces.is_none();
