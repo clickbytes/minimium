@@ -5,7 +5,7 @@ use water::build_water_vertices;
 pub(super) use water::WaterPresentation;
 
 use super::sector_scene::{SceneInterestOwner, SectorWorkerError};
-use minimium_procgen::{planet_surface_for, PlanetTerrain, SectorContentVersion, SectorGeometry};
+use minimium_procgen::{PlanetTerrain, SectorContentVersion, SectorGeometry};
 use minimium_renderer::{prepared_sector::PreparedSector, render_patch_cache::RenderPatchCache};
 use minimium_world::world::{SectorKey, WorldInstanceId, WorldManifest};
 use std::{
@@ -16,6 +16,7 @@ use std::{
 #[derive(Clone, Copy, PartialEq)]
 struct Key {
     terrain_revision: SectorContentVersion,
+    material_profile: Option<minimium_procgen::ResolvedTerrainMaterialProfile>,
     world: WorldInstanceId,
     manifest: WorldManifest,
     origin: [f32; 3],
@@ -29,6 +30,7 @@ impl Key {
         self.world == other.world
             && self.manifest == other.manifest
             && self.terrain_revision == other.terrain_revision
+            && self.material_profile == other.material_profile
             && self.origin == other.origin
             && self.origin_generation == other.origin_generation
             && self.view == other.view
@@ -63,6 +65,7 @@ impl PreparedScene {
         origin_generation: u64,
         water_level_revision: u64,
         fluid_revision: u64,
+        material_profile: Option<minimium_procgen::ResolvedTerrainMaterialProfile>,
     ) -> bool {
         self.key.world == world
             && self.key.manifest == manifest
@@ -71,6 +74,7 @@ impl PreparedScene {
             && self.key.origin_generation == origin_generation
             && self.key.water_level_revision == water_level_revision
             && self.key.fluid_revision == fluid_revision
+            && self.key.material_profile == material_profile
     }
     pub fn geometry_matches(
         &self,
@@ -79,12 +83,14 @@ impl PreparedScene {
         origin: [f32; 3],
         origin_generation: u64,
         terrain_revision: SectorContentVersion,
+        material_profile: Option<minimium_procgen::ResolvedTerrainMaterialProfile>,
     ) -> bool {
         self.key.world == world
             && self.key.manifest == manifest
             && self.key.origin == origin
             && self.key.origin_generation == origin_generation
             && self.key.terrain_revision == terrain_revision
+            && self.key.material_profile == material_profile
     }
     pub fn position(&self) -> [f32; 3] {
         self.key.view.position
@@ -218,12 +224,7 @@ impl SectorWorker {
                     let manifest = request.key.manifest;
                     let terrain =
                         if manifest.topology() == minimium_world::world::WorldTopology::Planet {
-                            match PlanetTerrain::new(
-                                manifest.generation(),
-                                planet_surface_for(manifest),
-                                manifest.planet(),
-                                request.geography.clone(),
-                            ) {
+                            match PlanetTerrain::for_manifest(manifest, request.geography.clone()) {
                                 Ok(terrain) => Some(
                                     terrain
                                         .with_surface_recipe(minimium_game_sample::SURFACE_RECIPE)
@@ -394,6 +395,7 @@ impl SectorWorker {
     ) -> Result<Option<Arc<PreparedScene>>, SectorWorkerError> {
         let key = Key {
             terrain_revision: geography.revision(),
+            material_profile: geography.material_profile,
             world,
             manifest,
             view,

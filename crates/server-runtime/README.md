@@ -260,8 +260,12 @@ sectors retain their indexes. The status command reports active/pending bodies, 
 count and storage health. Ordinary impact I/O failure stops new impacts but preserves
 replication of the last committed world. The original automatic scheduler remains transient.
 
-Current terrain preparation uses `TerrainInputs` with separate geography, crater
-and remnant snapshots. Entity batches clone only affected world stores, while
+Current terrain preparation uses `TerrainInputs` with separate geography,
+resolved material profile, crater and remnant snapshots. `WorldDefinition`
+profiles are checked against the exact manifest and map fingerprint before
+registry publication; duplicate content identities cannot select conflicting
+profiles. The sample composition supplies its canonical 1.5 m profile, while
+the runtime has no independent soil-depth override. Entity batches clone only affected world stores, while
 capacity checks still include all untouched entities. Impact settings enter via
 `ServerComposition::impact_profile`, without a specialized module hook.
 `runtime/excavation` coordinates tool intents, profile inventories, immutable

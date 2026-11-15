@@ -19,6 +19,11 @@ fn registry_from_sample(worlds: Vec<minimium_game_sample::GeneratedWorld>) -> Wo
             .map(|world| WorldDefinition {
                 instance: world.instance,
                 manifest: world.manifest,
+                terrain_material_profile: minimium_game_sample::terrain_material_profile(
+                    world.manifest,
+                )
+                .unwrap()
+                .bind(world.manifest, world.map.fingerprint()),
                 map: world.map,
                 initial_entities: Vec::new(),
             })
@@ -200,7 +205,10 @@ fn versions_two_through_nine_are_rejected_without_replacing_the_snapshot() {
         Vec::new(),
     )
     .unwrap();
-    let registry = WorldRegistry::authored_primary(map.clone());
+    let registry = WorldRegistry::authored_primary(
+        map.clone(),
+        minimium_game_sample::default_terrain_material_profile(),
+    );
     let (instance, owner) = registry.iter().next().unwrap();
     let worlds = vec![(instance, map.clone(), owner.manifest)];
     for version in 2..=9 {

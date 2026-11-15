@@ -16,17 +16,12 @@ pub fn render_patches_for_view(
     cache: &mut crate::render_patch_cache::RenderPatchCache,
     cancelled: &dyn Fn() -> bool,
 ) -> Result<Vec<(SectorKey, u8, Arc<SectorGeometry>)>, minimium_procgen::ExcavationGeometryError> {
-    cache.set_context(world, manifest);
+    cache.set_context(world, manifest, geography.material_profile);
     let position = view.position;
     if manifest.planet().is_some() {
         return dense_render_patches(manifest, view, collision, geography, cache, cancelled);
     }
-    let terrain = PlanetTerrain::new(
-        manifest.generation(),
-        planet_surface_for(manifest),
-        manifest.planet(),
-        geography.clone(),
-    )?;
+    let terrain = PlanetTerrain::for_manifest(manifest, geography.clone())?;
     let radius = planet_surface_for(manifest).radius_mm() as f32 / 1000.0;
     let altitude_radius = position.iter().map(|x| x * x).sum::<f32>().sqrt();
     let horizon = (altitude_radius * altitude_radius - radius * radius)
@@ -100,7 +95,6 @@ pub fn render_patches_for_view(
                         count,
                         &prepared.geometry,
                         &contours,
-                        1.5,
                     )?;
                     if let Some((_, collision_geometry)) =
                         collision.iter().find(|(key, _)| *key == sector)
@@ -158,12 +152,7 @@ fn dense_render_patches(
     let relief = manifest.planet().map_or(100.0, |d| {
         (f64::from(d.mountain_limit_mm) + d.sea_level_mm.unsigned_abs() as f64) / 1000.0
     });
-    let terrain = PlanetTerrain::new(
-        manifest.generation(),
-        planet_surface_for(manifest),
-        manifest.planet(),
-        geography.clone(),
-    )?;
+    let terrain = PlanetTerrain::for_manifest(manifest, geography.clone())?;
     let cell_width = radius * 2.0
         / f64::from(count)
         / f64::from(minimium_procgen::PLANET_RENDER_BLOCK_SUBDIVISIONS);
@@ -327,7 +316,6 @@ fn dense_render_patches(
                     count,
                     &prepared.geometry,
                     &contours,
-                    1.5,
                 )?;
                 if region.span == 1 {
                     if let Some((_, collision_geometry)) =

@@ -49,6 +49,12 @@ pub(crate) fn prepare(
     kind: RenderMeshKind,
     cache: &mut RenderPatchCache,
 ) -> Result<RenderContourPrepass, minimium_procgen::ExcavationGeometryError> {
+    if inputs
+        .material_profile
+        .is_some_and(|profile| !profile.matches_manifest(manifest))
+    {
+        return Err(minimium_procgen::ExcavationGeometryError::UnavailableSurface);
+    }
     let count = minimium_procgen::planet_sector_count(manifest);
     let mut selected = BTreeSet::new();
     for region in regions {
@@ -157,12 +163,7 @@ pub(crate) fn prepare(
             )
         })
         .collect();
-    let conform_terrain = minimium_procgen::PlanetTerrain::new(
-        manifest.generation(),
-        minimium_procgen::planet_surface_for(manifest),
-        manifest.planet(),
-        inputs.clone(),
-    )?;
+    let conform_terrain = minimium_procgen::PlanetTerrain::for_manifest(manifest, inputs.clone())?;
     let conform = crate::terrain_edges::preconform_bases(conform, &conform_terrain)?;
     for (sector, lod, geometry) in conform {
         let SectorKey::Planet(sector) = sector else {

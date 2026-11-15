@@ -62,6 +62,7 @@ pub struct PlanetTerrain {
     surface: PlanetSurfaceSpec,
     definition: Option<PlanetDefinition>,
     inputs: crate::TerrainInputs,
+    pub(crate) material_manifest: Option<minimium_world::world::WorldManifest>,
     pub(crate) surface_recipe: crate::surface_habitat::SurfaceRecipe,
 }
 
@@ -102,8 +103,33 @@ impl PlanetTerrain {
             surface,
             definition,
             inputs,
+            material_manifest: None,
             surface_recipe: Default::default(),
         })
+    }
+
+    /// Constructs terrain for material and volume queries bound to the exact
+    /// manifest selected by content resolution.
+    pub fn for_manifest(
+        manifest: minimium_world::world::WorldManifest,
+        inputs: crate::TerrainInputs,
+    ) -> Result<Self, GenerationError> {
+        if inputs
+            .material_profile
+            .is_some_and(|profile| !profile.matches_manifest(manifest))
+        {
+            return Err(GenerationError::invalid_manifest(
+                "terrain material profile does not match the world manifest",
+            ));
+        }
+        let mut terrain = Self::new(
+            manifest.generation(),
+            crate::planet_surface_for(manifest),
+            manifest.planet(),
+            inputs,
+        )?;
+        terrain.material_manifest = Some(manifest);
+        Ok(terrain)
     }
 
     pub fn with_surface_recipe(

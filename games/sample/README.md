@@ -6,6 +6,12 @@ Owns shared demo map data and sample-game defaults consumed by client and server
 
 `generate_worlds` derives a complete procedural `PlanetDefinition` from its seed before generating the map. Its manifest carries that definition so the client and server can materialize the same planet without inferring settings from the world instance ID.
 
+The sample content resolver selects one immutable 1500 mm terrain material
+profile for manifests accepted by the current generator contract and binds it
+to the resolved map fingerprint. Position quantum is not restricted by this
+policy. The generic server runtime receives the selected profile through world
+composition and does not expose a competing soil-depth setting.
+
 ## Public API
 
 Planet scenario composition supplies the definition and prepared geography to
@@ -110,5 +116,6 @@ The final radius depends on surviving kinetic energy. Ordinary cosmetic meteors
 and server atmospheric bolids retain their existing producers.
 
 The excavation module owns the future tool defaults (3 m reach, 0.6 m radius,
-500 ms cooldown) and the 1.5 m soil layer. These domain values do not yet install
+500 ms cooldown). The recognized sample content profile selects the 1.5 m soil
+layer. These domain values do not yet install
 input bindings, developer grants or persistent inventory gameplay.

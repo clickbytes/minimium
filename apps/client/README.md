@@ -141,7 +141,8 @@ Desktop and terminal clients share the command registry/handlers and
 
 Confirmed developer tool inventory enables the desktop digging overlay. It uses
 the shared simulation first-hit query against published collision and remote-player
-capsules, then samples current terrain material with the same soil depth as the server.
+capsules, then samples current terrain material through the profile bound to the
+resolved manifest and map, matching server material classification.
 A green aim/brush outline means local material eligibility; red marks a blocking
 object or unsuitable material, and amber indicates missing range/readiness or a
 pending action. The server remains authoritative. The last action result remains
@@ -600,7 +601,7 @@ multiplayer acceptance remain part of final verification; static compilation alo
 does not establish their results.
 
 Terrain/collision preparation consumes explicit `TerrainInputs`. Geographic
-sampling remains immutable; crater and remnant revisions independently invalidate
+sampling remains immutable; resolved material-profile identity and crater/remnant revisions invalidate
 prepared scenes. Excavation geometry, material cross-sections and water surfaces
 are prepared on workers and published with matching collision and GPU state.
 Water-only updates coalesce behind an active preparation instead of cancelling

@@ -12,15 +12,7 @@ pub(super) fn planet(
     manifest: minimium_world::world::WorldManifest,
     inputs: minimium_procgen::TerrainInputs,
 ) -> Option<minimium_procgen::PlanetTerrain> {
-    Some(
-        minimium_procgen::PlanetTerrain::new(
-            manifest.generation(),
-            minimium_procgen::planet_surface_for(manifest),
-            Some(manifest.planet()?),
-            inputs,
-        )
-        .ok()?,
-    )
+    Some(minimium_procgen::PlanetTerrain::for_manifest(manifest, inputs).ok()?)
 }
 
 pub(super) fn edit_error(error: minimium_terrain::TerrainEditError) -> ActionRejection {

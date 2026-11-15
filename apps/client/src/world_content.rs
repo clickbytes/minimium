@@ -61,11 +61,15 @@ impl SampleWorldContentResolver {
             ));
         }
         let geography = self.geography_for(*manifest, cancellation)?;
+        let profile = minimium_game_sample::terrain_material_profile(*manifest)
+            .map_err(|error| SessionFailure::caused_by(error.code(), error.to_string(), error))?
+            .bind(*manifest, map.fingerprint());
         Ok(Some(ResolvedWorldContent {
             ticket: request.ticket,
             manifest: *manifest,
             map: map.clone(),
             geography,
+            terrain_material_profile: profile,
         }))
     }
 
@@ -128,11 +132,15 @@ impl SampleWorldContentResolver {
                 "generated content does not match the requested fingerprint",
             ));
         }
+        let profile = minimium_game_sample::terrain_material_profile(request.manifest)
+            .map_err(|error| SessionFailure::caused_by(error.code(), error.to_string(), error))?
+            .bind(request.manifest, map.fingerprint());
         Ok(ResolvedWorldContent {
             ticket: request.ticket,
             manifest: request.manifest,
             map: Arc::new(map),
             geography,
+            terrain_material_profile: profile,
         })
     }
 }

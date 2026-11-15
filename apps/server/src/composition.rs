@@ -66,7 +66,6 @@ pub(super) fn server_composition(
                 max_edit_radius_m: 0.6,
             },
             tools: minimium_game_sample::DEFAULT_TOOL_PROFILE,
-            soil_depth_m: minimium_game_sample::SOIL_DEPTH_M,
             fluids: minimium_fluids::FluidConfig::WORLD_DEFAULT,
             server_fluid_cells: 524_288,
         },
@@ -215,6 +214,10 @@ fn compose_world(
         let generated = WorldDefinition {
             instance,
             manifest: definition.manifest(),
+            terrain_material_profile: minimium_game_sample::terrain_material_profile(
+                definition.manifest(),
+            )?
+            .bind(definition.manifest(), map.fingerprint()),
             map: map.clone(),
             initial_entities: Vec::new(),
         };
@@ -277,6 +280,11 @@ fn compose_world(
     let planet_definition = planet
         .map(|planet| ron::to_string(&planet).map(String::into_bytes))
         .transpose()?;
+    let primary_terrain_material_profile = worlds
+        .as_ref()
+        .and_then(|worlds| worlds.first())
+        .map(|world| world.terrain_material_profile.profile())
+        .unwrap_or_else(minimium_game_sample::default_terrain_material_profile);
 
     Ok(WorldComposition {
         seed,
@@ -285,6 +293,7 @@ fn compose_world(
         planet_definition,
         prepared_geography: prepared_geography
             .map(|geography| geography as Arc<dyn minimium_procgen::PreparedGeography>),
+        primary_terrain_material_profile,
     })
 }
 
@@ -328,6 +337,9 @@ fn to_world_definition(world: GeneratedWorld) -> WorldDefinition {
     WorldDefinition {
         instance: world.instance,
         manifest: world.manifest,
+        terrain_material_profile: minimium_game_sample::terrain_material_profile(world.manifest)
+            .expect("sample generated manifest passed the generator contract")
+            .bind(world.manifest, world.map.fingerprint()),
         map: world.map,
         initial_entities,
     }

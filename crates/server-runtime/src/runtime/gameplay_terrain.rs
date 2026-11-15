@@ -11,18 +11,16 @@ use std::{collections::HashMap, sync::Arc};
 pub(super) struct CurrentTerrainRead {
     terrain: PlanetTerrain,
     volumes: Arc<TerrainStore>,
-    soil_depth_m: f64,
 }
 pub(super) fn build(
     worlds: &WorldRegistry,
     geography: Option<&Arc<dyn PreparedGeography>>,
-    soil_depth_m: f64,
 ) -> HashMap<WorldInstanceId, CurrentTerrainRead> {
     worlds
         .iter()
         .filter_map(|(instance, owner)| {
-            let definition = owner.manifest.planet()?;
-            let terrain = planet(owner.manifest, definition, geography, owner)?;
+            owner.manifest.planet()?;
+            let terrain = planet(owner.manifest, geography, owner)?;
             let volumes = owner.volumes.clone().or_else(|| {
                 TerrainStore::new(
                     instance,
@@ -33,14 +31,7 @@ pub(super) fn build(
                 )
                 .map(Arc::new)
             })?;
-            Some((
-                instance,
-                CurrentTerrainRead {
-                    terrain,
-                    volumes,
-                    soil_depth_m,
-                },
-            ))
+            Some((instance, CurrentTerrainRead { terrain, volumes }))
         })
         .collect()
 }
@@ -49,10 +40,9 @@ pub(super) fn safe_planet_spawn(
     worlds: &WorldRegistry,
     instance: WorldInstanceId,
     geography: Option<&Arc<dyn PreparedGeography>>,
-    soil_depth_m: f64,
 ) -> Option<minimium_world::world::Position3Mm> {
     let owner = worlds.get(instance)?;
-    let definition = owner.manifest.planet()?;
+    owner.manifest.planet()?;
     let origin = owner.map.spawn_position_mm()?.0;
     let length = origin
         .iter()
@@ -65,6 +55,7 @@ pub(super) fn safe_planet_spawn(
     let direction = origin.map(|value| (value as f64 / length) as f32);
     let inputs = TerrainInputs {
         geography: geography.cloned(),
+        material_profile: Some(owner.terrain_material_profile),
         edits: Some(owner.terrain.clone()),
         remnants: Some(owner.remnants.clone()),
         volumes: owner.volumes.clone(),
@@ -104,40 +95,33 @@ pub(super) fn safe_planet_spawn(
         )
         .map(Arc::new)
     })?;
-    let terrain = PlanetTerrain::new(
-        owner.manifest.generation(),
-        minimium_procgen::planet_surface_for(owner.manifest),
-        Some(definition),
+    let terrain = PlanetTerrain::for_manifest(
+        owner.manifest,
         TerrainInputs {
             geography: geography.cloned(),
+            material_profile: Some(owner.terrain_material_profile),
             edits: Some(owner.terrain.clone()),
             remnants: Some(owner.remnants.clone()),
             volumes: Some(volumes.clone()),
         },
     )
     .ok()?;
-    let read = CurrentTerrainRead {
-        terrain,
-        volumes,
-        soil_depth_m,
-    };
+    let read = CurrentTerrainRead { terrain, volumes };
     let position = minimium_world::world::Position3Mm(feet);
     crate::world_registry::terrain_capsule_clear(&read, position).then_some(position)
 }
 
 fn planet(
     manifest: WorldManifest,
-    definition: minimium_world::world::PlanetDefinition,
     geography: Option<&Arc<dyn PreparedGeography>>,
     owner: &crate::world_registry::WorldInstance,
 ) -> Option<PlanetTerrain> {
     Some(
-        PlanetTerrain::new(
-            manifest.generation(),
-            minimium_procgen::planet_surface_for(manifest),
-            Some(definition),
+        PlanetTerrain::for_manifest(
+            manifest,
             TerrainInputs {
                 geography: geography.cloned(),
+                material_profile: Some(owner.terrain_material_profile),
                 edits: Some(owner.terrain.clone()),
                 remnants: Some(owner.remnants.clone()),
                 volumes: owner.volumes.clone(),
@@ -149,7 +133,7 @@ fn planet(
 
 impl TerrainRead for CurrentTerrainRead {
     fn sample(&self, position_m: [f64; 3]) -> Option<TerrainSample> {
-        let base = self.terrain.volume_base(self.soil_depth_m)?;
+        let base = self.terrain.volume_base()?;
         self.volumes.view(&base).sample(position_m)
     }
 
@@ -159,7 +143,7 @@ impl TerrainRead for CurrentTerrainRead {
         direction: [f64; 3],
         reach_m: f64,
     ) -> Option<SurfaceHit> {
-        let base = self.terrain.volume_base(self.soil_depth_m)?;
+        let base = self.terrain.volume_base()?;
         self.volumes
             .view(&base)
             .surface_hit(origin_m, direction, reach_m)

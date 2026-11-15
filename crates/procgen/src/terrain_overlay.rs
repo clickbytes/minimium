@@ -16,6 +16,7 @@ pub struct SectorContentVersion {
 #[derive(Clone, Debug, Default)]
 pub struct TerrainInputs {
     pub geography: Option<Arc<dyn PreparedGeography>>,
+    pub material_profile: Option<crate::ResolvedTerrainMaterialProfile>,
     pub edits: Option<Arc<TerrainSnapshot>>,
     pub remnants: Option<Arc<RemnantSnapshot>>,
     pub volumes: Option<Arc<TerrainStore>>,
@@ -31,6 +32,14 @@ impl From<Option<Arc<dyn PreparedGeography>>> for TerrainInputs {
 }
 
 impl TerrainInputs {
+    pub fn with_material_profile(
+        mut self,
+        material_profile: crate::ResolvedTerrainMaterialProfile,
+    ) -> Self {
+        self.material_profile = Some(material_profile);
+        self
+    }
+
     pub fn revision(&self) -> SectorContentVersion {
         SectorContentVersion {
             edits: self.edits.as_ref().map_or(0, |t| t.revision()),

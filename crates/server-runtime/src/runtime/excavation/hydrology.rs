@@ -204,7 +204,6 @@ impl ServerRuntime {
         let owner = self.game.worlds.get(world).unwrap();
         let manifest = owner.manifest;
         let store = owner.volumes.clone().unwrap();
-        let soil_depth_m = self.excavation.config.soil_depth_m;
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
         if self
             .sector_workers
@@ -214,7 +213,7 @@ impl ServerRuntime {
                     let terrain = scene::planet(manifest, inputs)
                         .ok_or(minimium_fluids::FluidError::Unavailable)?;
                     let base = terrain
-                        .volume_base(soil_depth_m)
+                        .volume_base()
                         .ok_or(minimium_fluids::FluidError::Invalid)?;
                     water.step_terrain(&store.view(&base), [0.0; 3], 9.81, 0.1)?;
                     Ok((water, started.elapsed()))

@@ -48,7 +48,7 @@ pub fn vertices(
     let mut samples = std::collections::HashMap::new();
     let mut sky_visibility = std::collections::HashMap::<[i64; 3], f32>::new();
     // Occlusion only consumes distance; material layers come from surface metadata.
-    let volume_base = terrain.volume_base(0.0);
+    let volume_base = terrain.volume_base();
     let volume_view = terrain
         .inputs()
         .volumes

@@ -9,7 +9,6 @@ pub(super) struct ToolPreparation {
     pub water: Option<water::WaterWorld>,
     pub water_budget: usize,
     pub water_catalog_digest: Option<[u8; 32]>,
-    pub soil_depth_m: f64,
 }
 
 impl ToolPreparation {
@@ -17,7 +16,7 @@ impl ToolPreparation {
         let terrain = scene::planet(self.manifest, self.inputs.clone())
             .ok_or(ActionRejection::InvalidIntent)?;
         let base = terrain
-            .volume_base(self.soil_depth_m)
+            .volume_base()
             .ok_or(ActionRejection::InvalidIntent)?;
         let edit = self
             .store
@@ -49,7 +48,7 @@ impl ToolPreparation {
                 )
                 .map_err(|_| ActionRejection::Capacity)?;
             let candidate_base = candidate_terrain
-                .volume_base(self.soil_depth_m)
+                .volume_base()
                 .ok_or(ActionRejection::InvalidIntent)?;
             let prepared_water = state
                 .prepare_terrain_edit(
@@ -74,7 +73,6 @@ impl ToolPreparation {
             self.manifest,
             &candidate_terrain,
             &changed,
-            self.soil_depth_m,
         )
         .map_err(|reason| {
             PreparationError::Geometry(GeometryFailure {

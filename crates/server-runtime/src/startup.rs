@@ -23,6 +23,7 @@ use std::{
 
 pub(crate) struct Startup {
     pub(crate) map: WorldMap,
+    pub(crate) primary_terrain_material_profile: minimium_procgen::TerrainMaterialProfile,
     pub(crate) worlds: Option<Vec<WorldDefinition>>,
     pub(crate) player_store: PlayerStore,
     pub(crate) entity_counters: Vec<(WorldInstanceId, u64)>,
@@ -88,11 +89,28 @@ pub(crate) fn initialize(
         world_definition_path: world_definition_path.map(Path::to_path_buf),
         planet_config_path: planet_config_path.map(Path::to_path_buf),
     })?;
+    if let Some(primary_world) = composition
+        .worlds
+        .as_ref()
+        .and_then(|worlds| worlds.first())
+    {
+        if primary_world.map.fingerprint() != composition.primary_map.fingerprint()
+            || primary_world.terrain_material_profile.profile()
+                != composition.primary_terrain_material_profile
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "primary world map or material profile differs from its recognized definition",
+            )
+            .into());
+        }
+    }
     let seed = composition.seed;
     let map = composition.primary_map;
     let generated_worlds = composition.worlds;
     let planet_definition = composition.planet_definition;
     let prepared_geography = composition.prepared_geography;
+    let primary_terrain_material_profile = composition.primary_terrain_material_profile;
 
     let primary = WorldInstanceId::new(1).expect("primary instance identifier is nonzero");
     let world_maps = generated_worlds
@@ -196,6 +214,7 @@ pub(crate) fn initialize(
 
     Ok(Startup {
         map,
+        primary_terrain_material_profile,
         worlds: generated_worlds,
         player_store,
         entity_counters,

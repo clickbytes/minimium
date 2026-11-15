@@ -27,6 +27,22 @@ pub struct GeneratedWorld {
     pub portal: Option<DemoPortal>,
 }
 
+/// Canonical sample material policy for any manifest accepted by the current
+/// generator contract. The application binds it to the resolved map identity.
+pub fn terrain_material_profile(
+    manifest: WorldManifest,
+) -> Result<minimium_procgen::TerrainMaterialProfile, GenerationError> {
+    minimium_procgen::validate_world_manifest(manifest)?;
+    Ok(default_terrain_material_profile())
+}
+
+/// The canonical sample policy selected by the sample application's content
+/// composer before an authored map receives its runtime manifest.
+pub fn default_terrain_material_profile() -> minimium_procgen::TerrainMaterialProfile {
+    minimium_procgen::TerrainMaterialProfile::new(1_500)
+        .expect("sample soil depth is within the supported range")
+}
+
 /// Recreates one generated map from its complete manifest without inferring a
 /// world role from its instance ID or transforming its recorded seed.
 pub fn materialize_manifest_map(

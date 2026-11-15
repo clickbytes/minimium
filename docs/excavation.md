@@ -54,8 +54,10 @@ action per player. Shovels remove soil; pickaxes also remove rock.
   completed state; it does not decide where water flows.
 
 Geography does not carry mutable terrain. Explicit `TerrainInputs` separates
-geography, crater fields, remnant objects and volumetric chunks. Domain settings
-enter through application composition, including soil depth and tool rules.
+geography, a resolved manifest/map-bound material profile, crater fields, remnant
+objects and volumetric chunks. The recognizing game-content resolver selects the
+profile; runtime callers cannot override its soil depth. Tool rules continue to
+enter through application composition.
 
 ## Structural transactions
 

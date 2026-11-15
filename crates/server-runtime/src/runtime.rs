@@ -197,6 +197,7 @@ impl ServerRuntime {
         let resolved_settings = config.resolved_settings.clone();
         let Startup {
             map,
+            primary_terrain_material_profile,
             worlds,
             mut player_store,
             entity_counters,
@@ -230,7 +231,9 @@ impl ServerRuntime {
                     format!("generated world registry is invalid: {error:?}"),
                 )
             })?
-            .unwrap_or_else(|| WorldRegistry::authored_primary(map.clone()));
+            .unwrap_or_else(|| {
+                WorldRegistry::authored_primary(map.clone(), primary_terrain_material_profile)
+            });
         let saved_sector_states = player_store.sector_states();
         worlds
             .restore_sector_states(saved_sector_states, player_store.snapshot_budget_mut())
@@ -400,7 +403,6 @@ impl ServerRuntime {
                     self.scheduler.simulation_tick,
                     &self.game.worlds,
                     self.prepared_geography.as_ref(),
-                    self.excavation.soil_depth_m(),
                     &self.game.gameplay_events,
                     Some((instance, lifecycle)),
                 );
@@ -421,7 +423,6 @@ impl ServerRuntime {
             self.scheduler.simulation_tick,
             &self.game.worlds,
             self.prepared_geography.as_ref(),
-            self.excavation.soil_depth_m(),
             &self.game.gameplay_events,
             None,
         );
