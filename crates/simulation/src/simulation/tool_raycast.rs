@@ -3,14 +3,13 @@ use super::{collision_index::CollisionIndex, world_state::World};
 use minimium_core::ids::PlayerId;
 use minimium_world::{
     terrain::{SurfaceHit, SurfaceTarget, TerrainChunkKey, TerrainMaterial, TerrainRevision},
-    world::{Aabb, WorldInstanceId},
+    world::{Aabb, CharacterGeometry, WorldInstanceId},
 };
 
-/// Position and radial up vector for a remote player capsule that can block a tool ray.
+/// Shared remote-character geometry that can block a tool ray.
 #[derive(Clone, Copy, Debug)]
 pub struct ToolRayCapsule {
-    pub feet_m: [f64; 3],
-    pub up: [f64; 3],
+    pub geometry: CharacterGeometry,
 }
 
 impl CollisionIndex {
@@ -39,20 +38,12 @@ impl CollisionIndex {
         let mut found = None;
         trace(self, world, origin, direction, reach, &mut found);
         for blocker in blockers {
-            if !blocker.feet_m.iter().all(|value| value.is_finite())
-                || !blocker.up.iter().all(|value| value.is_finite())
-            {
-                continue;
-            }
-            let up_length = dot(blocker.up, blocker.up).sqrt();
-            if !up_length.is_finite() || up_length < 1.0e-9 {
-                continue;
-            }
-            let up = blocker.up.map(|value| value / up_length);
-            let radius = f64::from(super::PLAYER_RADIUS);
-            let feet = blocker.feet_m;
+            let frame = blocker.geometry.frame();
+            let up = frame.up;
+            let radius = f64::from(blocker.geometry.radius_m());
+            let feet = blocker.geometry.feet_m();
             let bottom = std::array::from_fn(|axis| feet[axis] + up[axis] * radius);
-            let top_offset = f64::from(super::PLAYER_HEIGHT) - radius;
+            let top_offset = f64::from(blocker.geometry.height_m()) - radius;
             let top = std::array::from_fn(|axis| feet[axis] + up[axis] * top_offset);
             if let Some(distance) =
                 capsule_distance(origin, direction, limit(&found, reach), bottom, top, radius)
@@ -76,19 +67,17 @@ impl World {
         reach: f64,
     ) -> Option<SurfaceHit> {
         let gravity = self.gravity();
-        let blockers =
-            self.players
-                .iter()
-                .filter(|(id, _)| **id != actor)
-                .map(move |(_, player)| ToolRayCapsule {
-                    feet_m: player.position_mm.map_or_else(
-                        || player.position.map(f64::from),
-                        |position| position.0.map(|value| value as f64 / 1000.0),
-                    ),
-                    up: minimium_world::world::character_frame(gravity, player.position)
-                        .0
-                        .map(f64::from),
-                });
+        let blockers = self
+            .players
+            .iter()
+            .filter(|(id, _)| **id != actor)
+            .filter_map(move |(_, player)| {
+                let feet_m = player.position_mm.map_or_else(
+                    || player.position.map(f64::from),
+                    |position| position.0.map(|value| value as f64 / 1000.0),
+                );
+                CharacterGeometry::new(feet_m, gravity).map(|geometry| ToolRayCapsule { geometry })
+            });
         self.spatial_geometry
             .movement
             .tool_surface_hit(world, origin, direction, reach, blockers)

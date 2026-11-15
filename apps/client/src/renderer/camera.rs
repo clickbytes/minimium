@@ -1,6 +1,11 @@
 use super::*;
 use crate::messages::ClientText as Text;
 
+mod character;
+pub(super) use character::{
+    camera_direction, camera_direction_from_geometry, gravity_for_manifest,
+};
+
 impl Renderer {
     pub(super) fn update(&mut self) -> environment::PreparedEnvironmentFrame {
         self.update_tool_use();
@@ -189,23 +194,40 @@ impl Renderer {
                 far,
             )
         } else {
-            let direction = camera_direction(
-                self.application.game.gameplay.prediction.character,
-                self.input.yaw,
-                self.input.pitch,
-            )
-            .normalize();
-            let up = glam::Vec3::from_array(
-                character_frame(
-                    self.application.game.gameplay.prediction.character.gravity,
-                    self.application.game.gameplay.prediction.character.position,
-                )
-                .0,
+            let character = self.application.game.gameplay.prediction.character;
+            let feet_m = self
+                .application
+                .game
+                .gameplay
+                .prediction
+                .position_mm
+                .map_or_else(
+                    || character.position.map(f64::from),
+                    |position| position.0.map(|value| value as f64 / 1000.0),
+                );
+            let geometry = CharacterGeometry::new(feet_m, character.gravity);
+            let fallback_frame = character_frame(character.gravity, character.position);
+            let frame = geometry
+                .map(|geometry| geometry.frame())
+                .unwrap_or_else(|| minimium_world::world::CharacterFrame {
+                    up: fallback_frame.0.map(f64::from),
+                    right: fallback_frame.1.map(f64::from),
+                    forward: fallback_frame.2.map(f64::from),
+                });
+            let up = glam::Vec3::from_array(frame.up.map(|value| value as f32));
+            let direction =
+                camera_direction_from_frame(frame, self.input.yaw, self.input.pitch).normalize();
+            let eye_world = geometry.map_or_else(
+                || {
+                    std::array::from_fn(|axis| {
+                        feet_m[axis]
+                            + frame.up[axis] * f64::from(minimium_world::world::PLAYER_EYE_HEIGHT)
+                    })
+                },
+                CharacterGeometry::eye_position_m,
             );
-            let camera_position = glam::Vec3::from_array(
-                self.application.game.gameplay.prediction.character.position,
-            ) + glam::Vec3::from_array(visual_offset)
-                + up * 1.7;
+            let camera_position = glam::Vec3::from_array(eye_world.map(|value| value as f32))
+                + glam::Vec3::from_array(visual_offset);
             let far = if self
                 .application
                 .game
@@ -230,17 +252,9 @@ impl Renderer {
             } else {
                 200.0
             };
-            let local_camera = if let Some(position_mm) =
-                self.application.game.gameplay.prediction.position_mm
-            {
-                glam::Vec3::from_array(std::array::from_fn(|axis| {
-                    (position_mm.0[axis] as f64 / 1000.0 - f64::from(self.gpu.render_origin[axis]))
-                        as f32
-                })) + glam::Vec3::from_array(visual_offset)
-                    + up * 1.7
-            } else {
-                camera_position - glam::Vec3::from_array(self.gpu.render_origin)
-            };
+            let local_camera = glam::Vec3::from_array(std::array::from_fn(|axis| {
+                (eye_world[axis] - f64::from(self.gpu.render_origin[axis])) as f32
+            })) + glam::Vec3::from_array(visual_offset);
             (glam::Mat4::look_to_rh(local_camera, direction, up), far)
         };
         let camera_eye_local = view.inverse().transform_point3(glam::Vec3::ZERO);
@@ -478,15 +492,4 @@ impl InputState {
             [movement.x, movement.z]
         }
     }
-}
-
-pub(super) fn camera_direction(character: CharacterState, yaw: f32, pitch: f32) -> glam::Vec3 {
-    let (up, right, forward) = character_frame(character.gravity, character.position);
-    glam::Vec3::from_array(forward) * (yaw.cos() * pitch.cos())
-        + glam::Vec3::from_array(right) * (yaw.sin() * pitch.cos())
-        + glam::Vec3::from_array(up) * pitch.sin()
-}
-
-pub(super) fn gravity_for_manifest(manifest: WorldManifest) -> CharacterGravity {
-    minimium_world::world::GravityPolicy::for_manifest(manifest).character_gravity()
 }

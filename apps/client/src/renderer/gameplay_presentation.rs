@@ -1,4 +1,4 @@
-use super::{cube, GameplayPresentation, Vertex, REMOTE_INTERPOLATION_DELAY};
+use super::{cube, CharacterGeometry, GameplayPresentation, Vertex, REMOTE_INTERPOLATION_DELAY};
 use crate::application::GameplayState;
 use std::time::Instant;
 
@@ -27,13 +27,16 @@ impl GameplayPresentation {
         }
         self.remote_vertices.clear();
         for position_mm in &gameplay.remote_positions_mm {
-            let position: [f32; 3] = std::array::from_fn(|axis| {
-                (position_mm[axis] as f64 / 1000.0 - f64::from(origin[axis])) as f32
-            });
-            cube(
+            let feet_m = position_mm.map(|value| value as f64 / 1000.0);
+            let Some(geometry) =
+                CharacterGeometry::new(feet_m, gameplay.prediction.character.gravity)
+            else {
+                continue;
+            };
+            append_character_mesh(
                 &mut self.remote_vertices,
-                [position[0], position[1] + 0.85, position[2]],
-                [0.6, 1.7, 0.6],
+                geometry,
+                origin,
                 [0.82, 0.16, 0.12],
             );
         }
@@ -49,28 +52,23 @@ impl GameplayPresentation {
     ) -> bool {
         let mut shadow_vertices = Vec::with_capacity(gameplay.reconciliation.player_count() * 36);
         for track in gameplay.reconciliation.tracks().iter().flatten() {
-            let feet = track
+            let feet_m = track
                 .displayed_position_mm
                 .map(|value| value as f64 / 1000.0);
-            let shape_center = [feet[0], feet[1] + 0.85, feet[2]];
-            let half = [0.3, 0.85, 0.3];
+            let Some(geometry) =
+                CharacterGeometry::new(feet_m, gameplay.prediction.character.gravity)
+            else {
+                continue;
+            };
+            let shape_center = geometry.body_center_m();
+            let caster_radius = geometry.body_bounding_radius_m();
             let distance_squared = (0..3)
-                .map(|axis| {
-                    let delta = (center[axis] - shape_center[axis]).abs() - half[axis];
-                    delta.max(0.0).powi(2)
-                })
+                .map(|axis| (center[axis] - shape_center[axis]).powi(2))
                 .sum::<f64>();
-            if distance_squared > 256.0_f64.powi(2) {
+            if distance_squared > (256.0 + caster_radius).powi(2) {
                 continue;
             }
-            let relative: [f32; 3] =
-                std::array::from_fn(|axis| (feet[axis] - f64::from(origin[axis])) as f32);
-            cube(
-                &mut shadow_vertices,
-                [relative[0], relative[1] + 0.85, relative[2]],
-                [0.6, 1.7, 0.6],
-                [0.82, 0.16, 0.12],
-            );
+            append_character_mesh(&mut shadow_vertices, geometry, origin, [0.82, 0.16, 0.12]);
         }
         let changed = bytemuck::cast_slice::<Vertex, u8>(&shadow_vertices)
             != bytemuck::cast_slice::<Vertex, u8>(&self.remote_shadow_vertices);
@@ -78,5 +76,27 @@ impl GameplayPresentation {
             self.remote_shadow_vertices = shadow_vertices;
         }
         changed
+    }
+}
+
+fn append_character_mesh(
+    output: &mut Vec<Vertex>,
+    geometry: CharacterGeometry,
+    origin: [f32; 3],
+    color: [f32; 3],
+) {
+    let first = output.len();
+    let size = geometry.body_size_m();
+    let normal_sign = geometry.frame_handedness();
+    cube(output, [0.0, geometry.height_m() * 0.5, 0.0], size, color);
+    for vertex in &mut output[first..] {
+        let world = geometry.local_to_world_point(vertex.position.map(f64::from));
+        vertex.position =
+            std::array::from_fn(|axis| (world[axis] - f64::from(origin[axis])) as f32);
+        let normal = geometry.local_to_world_direction(vertex.normal.map(f64::from));
+        let length = normal.iter().map(|value| value * value).sum::<f64>().sqrt();
+        if length.is_finite() && length > 1.0e-9 {
+            vertex.normal = normal.map(|value| (value / length * normal_sign) as f32);
+        }
     }
 }

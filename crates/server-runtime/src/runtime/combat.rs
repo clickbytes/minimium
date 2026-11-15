@@ -15,12 +15,14 @@ impl ServerRuntime {
         let instance = self.game.worlds.instance_for_player(player)?;
         let manifest = self.game.worlds.get(instance)?.manifest;
         let context = self.game.worlds.context_for_player(player)?;
-        let player_state = self.game.worlds.get(instance)?.world.player(player)?;
-        let origin = [
-            player_state.position[0],
-            player_state.position[1] + minimium_world::world::PLAYER_HEIGHT * 0.9,
-            player_state.position[2],
-        ];
+        let origin = self
+            .game
+            .worlds
+            .get(instance)?
+            .world
+            .character_geometry(player)?
+            .eye_position_m()
+            .map(|coordinate| coordinate as f32);
         let coverage_domains = crate::sector_streaming::combat_ray_sectors(
             manifest,
             origin,

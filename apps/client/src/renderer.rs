@@ -10,7 +10,7 @@ use minimium_core::identity::PlayerProfileId;
 use minimium_protocol::{ServerMessage, MAX_VISIBLE_PLAYERS};
 use minimium_simulation::{CharacterState, CollisionQuery, MovementIntent, PLAYER_MAX_HEALTH};
 use minimium_world::world::{
-    character_frame, CharacterGravity, WorldManifest, WorldMap, WorldTopology,
+    character_frame, CharacterGeometry, CharacterGravity, WorldManifest, WorldMap, WorldTopology,
 };
 use std::{
     error::Error,

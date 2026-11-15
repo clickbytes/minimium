@@ -22,13 +22,13 @@ forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-p
 [[package]]
 name = "minimium-world"
 role = "engine-domain"
-responsibility = "World definitions, topologies, addressing, static geometry, maps, bounded monotone peak-relief definitions, and world-scoped entity/component contracts with exact schemas, required descriptor payload validation, ordered world-scoped entity changes and bounded change tracking. Also owns neutral terrain/spatial/tool/water contracts, bounded impact-body components and their owner-side ServerOnly registration, crater stamp values and independent remnant snapshots."
+responsibility = "World definitions, topologies, addressing, static geometry, maps, bounded monotone peak-relief definitions, and world-scoped entity/component contracts with exact schemas, required descriptor payload validation, ordered world-scoped entity changes and bounded change tracking. Also owns neutral terrain/spatial/tool/water contracts, shared character position/dimension/radial-frame/eye geometry, bounded impact-body components and their owner-side ServerOnly registration, crater stamp values and independent remnant snapshots."
 forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-platform", "minimium-assets", "minimium-procgen", "minimium-sectors", "minimium-telemetry", "minimium-commands", "minimium-environment", "minimium-simulation", "minimium-renderer", "minimium-game-sample"]
 
 [[package]]
 name = "minimium-simulation"
 role = "engine-domain"
-responsibility = "Mutable simulation state, movement, collision indexing/queries, combat, snapshots and step results. Owns immutable coherent spatial-geometry publications with movement indices, a full-map combat baseline and exact-sector replacements, and requires a server-certified full-ray coverage plan matched to the publication revision and shot ray before combat mutates health. Also owns pure SI impact integration through a terrain port, incremental collision partitions and bounded authoritative tool admission rules and shared swimming through neutral water observations."
+responsibility = "Mutable simulation state, movement, collision indexing/queries, local-frame combat using shared character geometry, snapshots and step results. Owns immutable coherent spatial-geometry publications with movement indices, a full-map combat baseline and exact-sector replacements, and requires a server-certified full-ray coverage plan matched to the publication revision and shot ray before combat mutates health. Also owns pure SI impact integration through a terrain port, incremental collision partitions and bounded authoritative tool admission rules and shared swimming through neutral water observations."
 forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-platform", "minimium-assets", "minimium-procgen", "minimium-sectors", "minimium-telemetry", "minimium-commands", "minimium-environment", "minimium-renderer", "minimium-game-sample"]
 
 [[package]]

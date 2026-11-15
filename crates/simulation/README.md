@@ -10,10 +10,13 @@ Owns mutable player state, movement integration, collision indexing and queries,
 
 `SpatialGeometryPublication` atomically owns the movement collision index, the
 full-map combat baseline and exact-sector replacement indexes under one revision.
-Hitscan requires a `CombatCoveragePlan` certified for that revision, origin,
-direction and range. Filtered baseline queries continue after masked hits and
-test box entry/exit points, so replacement sectors suppress stale blockers while
-unchanged portions of a box remain solid. A missing replacement returns typed
+Hitscan uses the shared `CharacterGeometry` eye point and transforms the ray into
+each target's local frame before intersecting the shared body box. Its broadphase
+still covers neighboring cells for rotated bodies. Hitscan requires a
+`CombatCoveragePlan` certified for the geometry revision, origin, direction and
+range. Filtered baseline queries continue after masked hits and test box
+entry/exit points, so replacement sectors suppress stale blockers while unchanged
+portions of a box remain solid. A missing replacement returns typed
 `ShotReadinessError::NotReady` before player health changes.
 
 The optional neutral `WaterRead` view feeds the same `step_character_with_water`
@@ -73,5 +76,7 @@ The server runtime supplies current collision hits and profile inventory, then
 finishes the gate after a durable mutation or a typed refusal. The same exact
 triangle and player-capsule query blocks digging behind an earlier obstacle.
 `CollisionIndex::tool_surface_hit` exposes that read-only nearest-hit query to
-client previews. Callers pass nearby remote-player `ToolRayCapsule` blockers;
-the authoritative `World::tool_surface_hit` delegates through the same query.
+client previews. Callers pass nearby remote-player `ToolRayCapsule` blockers
+containing the same `CharacterGeometry`; the authoritative
+`World::tool_surface_hit` delegates through the same query. Camera, hitscan and
+tool rays share the 1.6 m eye point.
