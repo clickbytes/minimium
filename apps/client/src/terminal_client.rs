@@ -16,19 +16,21 @@ use std::{
 mod actions;
 mod events;
 mod properties;
-mod world_setup;
 
 const INPUT_QUEUE_CAPACITY: usize = 64;
 const ENVIRONMENT_STATUS_REFRESH: Duration = Duration::from_secs(5);
 
 pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
-    let initial_log_dir = options.resolved_log_dir()?;
-    let mut diagnostics = minimium_telemetry::logging::DiagnosticsRuntime::start(&initial_log_dir)?;
-    let logger = diagnostics.logger(minimium_diagnostics::DomainId::ClientRuntime);
-    let localizer =
-        minimium_localization::Localizer::new(Some(logger.clone())).map_err(io::Error::other)?;
-    let asset_io_logger = diagnostics.logger(minimium_diagnostics::DomainId::AssetIo);
-    let procgen_logger = diagnostics.logger(minimium_diagnostics::DomainId::Procgen);
+    let crate::bootstrap::ClientBootstrap {
+        mut diagnostics,
+        logger,
+        localizer,
+        paths,
+        worlds,
+        connection,
+    } = crate::bootstrap::ClientBootstrap::new(&options)?;
+    // The resolver retains its catalog; this host has no local scene view.
+    drop(worlds);
     let mut text_properties = properties::TextProperties::new(&options);
     if options.startup_settings.sky_quality() != minimium_renderer::quality::SkyQuality::Standard {
         println!(
@@ -41,27 +43,9 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
             )
         );
     }
-    let world_setup = world_setup::resolve(
-        &options,
-        &asset_io_logger,
-        &procgen_logger,
-        &localizer,
-        options.locale,
-    )?;
-    let map = world_setup.map;
-    let fingerprint = map.fingerprint();
-    let paths = options.paths(fingerprint)?;
-    let profile_id = minimium_platform::identity_store::load_or_create(&paths.profile_dir)?;
     let data_dir = paths.data_dir.clone();
-    let cache_dir = paths.cache_dir.clone();
     let log_dir = paths.log_dir.clone();
-    logger.emit(logger.event(
-        minimium_diagnostics::Level::Info,
-        minimium_diagnostics::EventCode::new("client.starting")?,
-    ));
     let parent_run_id = diagnostics.run_id().to_owned();
-    let earth_package_dir =
-        minimium_platform::app_paths::AppPaths::resolve_path(&options.earth_package_dir)?;
 
     println!(
         "{}",
@@ -69,25 +53,7 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
     );
     let (sender, receiver) = mpsc::sync_channel(INPUT_QUEUE_CAPACITY);
     super::spawn_console_input_reader(sender, logger.clone());
-    let mut connection = ConnectionController::new();
-    connection.register_replica_schema(
-        minimium_game_sample::PORTAL_COMPONENT,
-        minimium_game_sample::PORTAL_SCHEMA,
-    )?;
-    connection.set_authentication(minimium_client_runtime::ClientAuthentication::new(
-        "dev.profile",
-        profile_id.as_bytes().to_vec(),
-    )?);
-    connection.set_diagnostic_logger(logger.clone());
-    connection.set_content_cache_dir(cache_dir);
-    connection.set_content_cache_limit(options.cache_limit_bytes);
-    connection.set_world_content_resolver(std::sync::Arc::new(
-        crate::world_content::SampleWorldContentResolver::new(
-            world_setup.world_catalog,
-            world_setup.world_manifests,
-            Some(earth_package_dir),
-        ),
-    ));
+    let mut connection = connection.for_host(crate::bootstrap::HostCapabilities::CpuOnly);
     let mut events = Vec::with_capacity(16);
     let mut prompt_needed = true;
     let mut last_snapshot: Option<ServerMessage> = None;
