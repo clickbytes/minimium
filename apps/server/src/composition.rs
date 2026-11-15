@@ -66,6 +66,7 @@ pub(super) fn server_composition(
                 max_edit_radius_m: 0.6,
             },
             tools: minimium_game_sample::DEFAULT_TOOL_PROFILE,
+            tool_grants: minimium_game_sample::DEFAULT_TOOL_GRANTS,
             fluids: minimium_fluids::FluidConfig::WORLD_DEFAULT,
             server_fluid_cells: 524_288,
         },

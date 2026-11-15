@@ -6,6 +6,9 @@ mod field;
 mod mesh;
 mod query;
 
-pub use edit::{PreparedTerrainEdit, TerrainEditError, TerrainEditRequest};
+pub use edit::{
+    PreparedTerrainEdit, TerrainDeformation, TerrainDeformationError, TerrainEditError,
+    TerrainEditRequest,
+};
 pub use field::{BaseTerrain, ChunkImage, TerrainConfig, TerrainStore, TerrainView};
 pub use mesh::{TerrainMesh, TerrainVertex};

@@ -52,6 +52,41 @@ pub enum TerrainMaterial {
     Rock,
 }
 
+/// Nonempty set of materials a deformation may affect. Empty space is never
+/// a deformable material; game content selects the allowed solid materials.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub struct TerrainMaterialSet(u8);
+
+impl TerrainMaterialSet {
+    const SOIL_BIT: u8 = 1;
+    const ROCK_BIT: u8 = 2;
+
+    pub const SOIL: Self = Self(Self::SOIL_BIT);
+    pub const ROCK: Self = Self(Self::ROCK_BIT);
+    pub const SOIL_AND_ROCK: Self = Self(Self::SOIL_BIT | Self::ROCK_BIT);
+
+    pub const fn new(soil: bool, rock: bool) -> Option<Self> {
+        let bits = (soil as u8) * Self::SOIL_BIT | (rock as u8) * Self::ROCK_BIT;
+        if bits == 0 {
+            None
+        } else {
+            Some(Self(bits))
+        }
+    }
+
+    pub const fn contains(self, material: TerrainMaterial) -> bool {
+        match material {
+            TerrainMaterial::Empty => false,
+            TerrainMaterial::Soil => self.0 & Self::SOIL_BIT != 0,
+            TerrainMaterial::Rock => self.0 & Self::ROCK_BIT != 0,
+        }
+    }
+
+    pub const fn valid(self) -> bool {
+        self.0 != 0 && self.0 & !(Self::SOIL_BIT | Self::ROCK_BIT) == 0
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TerrainSample {
     /// Positive in free space; negative inside material. Units: metres.
