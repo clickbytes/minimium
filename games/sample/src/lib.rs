@@ -8,6 +8,7 @@ mod planet_config;
 mod portal;
 pub use peak_relief::PeakReliefConfig;
 mod scenario;
+mod tool_visuals;
 mod universe;
 
 pub use combat::{SampleCombatConfig, DEFAULT_COMBAT_CONFIG};
@@ -18,6 +19,9 @@ pub use scenario::{
     generate_worlds_with_planet, generate_worlds_with_planet_and_geography,
     materialize_manifest_map, planet_relief_sampling_policy, resolved_planet_relief_policy,
     terrain_material_profile, DemoPortal, GeneratedWorld,
+};
+pub use tool_visuals::{
+    tool_model_catalog, tool_model_index, ToolModelDefinition, ToolModelVertex, TOOL_MODEL_KINDS,
 };
 pub use universe::{demo_universe_catalog, DemoUniverseCatalog};
 

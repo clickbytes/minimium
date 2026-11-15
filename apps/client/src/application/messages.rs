@@ -115,6 +115,17 @@ impl ClientApplication {
                 }
                 Ok(())
             }
+            ServerMessage::AltitudeResult {
+                context,
+                position_mm,
+            } => self
+                .apply_altitude_result(*context, *position_mm)
+                .then_some(())
+                .ok_or(ApplicationMessageError::StaleWorldContext),
+            ServerMessage::HealthUpdate(health) => self
+                .apply_health_update(*health)
+                .then_some(())
+                .ok_or(ApplicationMessageError::StaleWorldContext),
             _ => Ok(()),
         }
     }
@@ -198,6 +209,8 @@ impl ClientApplication {
         self.game.current_instance = context.instance();
         self.game.set_session_context(Some(context));
         self.game.gameplay.health = health;
+        #[cfg(feature = "desktop")]
+        self.action_executor.clear_input_cooldown();
         self.game.gameplay.clear_remote_players();
         self.game.gameplay.prediction.reset();
         let gravity =

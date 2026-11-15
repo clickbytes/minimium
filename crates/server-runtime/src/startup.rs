@@ -1,5 +1,4 @@
 use crate::{
-    admin::AdminServer,
     composition::{WorldComposer, WorldCompositionRequest, WorldDefinition},
     config::ServerConfig,
     environment::{self, EnvironmentConfig},
@@ -9,14 +8,13 @@ use crate::{
 use minimium_environment::time::SavedClockState;
 use minimium_platform::{
     admin_client::{SHUTDOWN_FILE, SHUTDOWN_OWNER_FILE},
-    endpoint::{new_admin_token, ServerEndpoint},
+    endpoint::ServerEndpoint,
     server_lock::ServerDataLock,
 };
 use minimium_storage::excavation::JOURNAL_FILE_NAME;
 use minimium_world::world::{WorldInstanceId, WorldMap};
 use std::{
     io,
-    net::{TcpListener, ToSocketAddrs},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -31,12 +29,11 @@ pub(crate) struct Startup {
     pub(crate) entities: Vec<minimium_storage::PersistedEntity>,
     pub(crate) persistence: PersistenceWorker,
     pub(crate) next_player: u64,
-    pub(crate) game_listener: TcpListener,
-    pub(crate) game_address: std::net::SocketAddr,
+    pub(crate) transport: Box<dyn minimium_transport::TransportPort>,
+    pub(crate) game_address: String,
     pub(crate) endpoint: ServerEndpoint,
     pub(crate) endpoint_guard: EndpointGuard,
     pub(crate) data_lock: ServerDataLock,
-    pub(crate) admin: AdminServer,
     pub(crate) environment_config: EnvironmentConfig,
     pub(crate) saved_clock: Option<SavedClockState>,
     pub(crate) prepared_geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
@@ -48,19 +45,13 @@ pub(crate) fn initialize(
     component_registry: &minimium_world::entity::ComponentRegistry,
     storage_logger: minimium_diagnostics::DomainLogger,
     server_logger: minimium_diagnostics::DomainLogger,
+    transport: Box<dyn minimium_transport::TransportPort>,
 ) -> Result<Startup, Box<dyn std::error::Error>> {
     let data_dir = &config.data_dir;
     let requested_seed = config.seed;
     let map_path = config.map_path.as_deref();
     let world_definition_path = config.world_definition_path.as_deref();
     let planet_config_path = config.planet_config_path.as_deref();
-    let bind_address = config.bind_address.as_str();
-    let game_port = config.game_port;
-    let max_players = config.max_players;
-    let bind_addresses: Vec<_> = (bind_address, game_port).to_socket_addrs()?.collect();
-    if bind_addresses.is_empty() {
-        return Err("bind address resolved to no addresses".into());
-    }
 
     preflight_persistent_formats(data_dir)?;
     if config.environment_config_path.is_some()
@@ -177,41 +168,27 @@ pub(crate) fn initialize(
             format!("{seed}\n").as_bytes(),
         )?;
     }
-    player_store.reserve_active(max_players);
+    player_store.reserve_active(config.max_players);
     let persistence = PersistenceWorker::spawn(data_dir.to_path_buf(), storage_logger.clone())?;
     let next_player = player_store.next_player_id()?;
-    let game_listener = TcpListener::bind(bind_addresses.as_slice())?;
-    let game_address = game_listener.local_addr()?;
-    let admin_listener = TcpListener::bind(("127.0.0.1", 0))?;
-    game_listener.set_nonblocking(true)?;
-    admin_listener.set_nonblocking(true)?;
+    let transport_endpoint = transport.endpoint();
+    let game_address = transport_endpoint.game_address;
     let endpoint = ServerEndpoint {
-        game_port: game_address.port(),
-        admin_port: admin_listener.local_addr()?.port(),
-        token: match config.admin_token.as_deref() {
-            Some(token)
-                if token.len() == 64 && token.bytes().all(|byte| byte.is_ascii_hexdigit()) =>
-            {
-                token.to_owned()
-            }
-            Some(_) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "invalid inherited admin token",
-                )
-                .into())
-            }
-            None => new_admin_token()?,
-        },
+        game_port: transport_endpoint.game_port,
+        admin_port: transport_endpoint.admin_port,
+        token: transport_endpoint.admin_token,
     };
+    if endpoint.token.len() != 64 || !endpoint.token.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(
+            io::Error::new(io::ErrorKind::InvalidInput, "invalid inherited admin token").into(),
+        );
+    }
     ServerEndpoint::write(data_dir, &endpoint)?;
     let endpoint_guard = EndpointGuard {
         data_dir: PathBuf::from(data_dir),
         endpoint: endpoint.clone(),
         logger: server_logger,
     };
-    let admin = AdminServer::new(admin_listener, endpoint.token.clone())?;
-
     Ok(Startup {
         map,
         primary_terrain_material_profile,
@@ -222,12 +199,11 @@ pub(crate) fn initialize(
         entities,
         persistence,
         next_player,
-        game_listener,
+        transport,
         game_address,
         endpoint,
         endpoint_guard,
         data_lock,
-        admin,
         environment_config,
         saved_clock,
         prepared_geography,

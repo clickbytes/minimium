@@ -4,7 +4,8 @@ use crate::renderer::{
     DesktopHost,
 };
 use glam::{DVec3, Mat4};
-use minimium_environment::weather::{self, CloudDebug};
+use minimium_environment::weather;
+use minimium_renderer::cloud_presentation::CloudDebug;
 use minimium_renderer::{CloudRecord, CloudUniform};
 use std::{
     sync::Arc,

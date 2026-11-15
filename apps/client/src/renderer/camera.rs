@@ -7,11 +7,8 @@ pub(super) use character::{camera_direction, camera_direction_from_geometry};
 impl DesktopHost {
     pub(super) fn update(&mut self) -> environment::PreparedEnvironmentFrame {
         self.update_tool_use();
-        self.renderer.held_tool_kind = self
-            .application
-            .connection_view()
-            .session()
-            .and_then(|session| session.inventory().tool());
+        let render_view = self.application.desktop_render_view();
+        self.renderer.held_tool_model_index = render_view.equipped_tool_model_index;
         self.renderer.held_tool_visible = self.application.game_view().gameplay.sectors_ready
             && !self.application.ui.console.open
             && !self.application.overview().is_open();

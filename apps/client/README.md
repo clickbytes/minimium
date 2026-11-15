@@ -18,6 +18,11 @@ result in the terminal client.
 
 ## Public API
 
+Cloud debug properties use the renderer's CPU `cloud_presentation::CloudDebug`
+catalog. The bounded cloud mesh cache asks `CloudTessellation` for the observer-
+and settings-selected sampling grid; it retains worker cancellation, sample/face
+budgets and publication ownership. Domain weather supplies physical clouds only.
+
 Executable entry point is `src/main.rs`; internal modules provide startup and front-end behavior.
 
 Terrain and weather workers propagate geographic sampling errors to session
@@ -39,9 +44,11 @@ disconnect/reset invalidates the stamp together with the buffer. Waiting scenes
 cannot draw players retained from a previous world.
 
 The desktop host reads the confirmed equipped tool from the active client
-session and supplies its selected `ToolDefinition` to the tool preview. Shovels
-and pickaxes are presentation-only low-poly meshes; gameplay tool use continues
-through the existing authoritative session action.
+session, supplies its selected `ToolDefinition` to the tool preview, and resolves
+its sample-owned model index for the first-person viewmodel pass. The application
+adapts the sample's CPU vertices to the renderer's bounded neutral model catalog;
+the renderer owns upload and draw only. Shovels and pickaxes are presentation-only;
+gameplay tool use continues through the existing authoritative session action.
 
 Camera and tool-preview rays use the shared world `CharacterGeometry` eye and
 radial frame. Remote body meshes and shadow casters are generated from its

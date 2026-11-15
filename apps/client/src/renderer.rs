@@ -97,7 +97,7 @@ struct Renderer {
     cloud_gpu: clouds::CloudGpu,
     ui: minimium_renderer::ui_pipeline::UiGpuResources,
     held_tool: minimium_renderer::held_tool_gpu::HeldToolGpu,
-    held_tool_kind: Option<minimium_world::items::ToolKind>,
+    held_tool_model_index: Option<usize>,
     held_tool_visible: bool,
     initial_world: minimium_renderer::geometry_gpu::StaticVertexBuffer,
     remote_vertices: minimium_renderer::geometry_gpu::DynamicVertexBuffer,

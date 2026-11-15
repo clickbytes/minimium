@@ -10,6 +10,7 @@ pub(crate) struct DesktopRenderView<'a> {
     pub(crate) context: Option<WorldContext>,
     pub(crate) world_catalog: &'a HashMap<WorldInstanceId, WorldMap>,
     pub(crate) equipped_tool: Option<minimium_world::items::ToolKind>,
+    pub(crate) equipped_tool_model_index: Option<usize>,
     pub(crate) equipped_tool_profile: Option<minimium_simulation::tools::ToolDefinition>,
     pub(crate) max_tool_reach_m: f64,
     pub(crate) max_tool_radius_m: f64,
@@ -42,7 +43,12 @@ pub(crate) struct ActiveSceneReady {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ActiveSceneIdentity {
-    Session(WorldContext),
+    Session {
+        context: WorldContext,
+        instance: WorldInstanceId,
+        manifest: minimium_world::world::WorldManifest,
+        map_fingerprint: u64,
+    },
     Bootstrap {
         instance: WorldInstanceId,
         manifest: minimium_world::world::WorldManifest,
@@ -67,7 +73,12 @@ impl ActiveSceneReady {
                     manifest,
                     map_fingerprint,
                 },
-                ActiveSceneIdentity::Session,
+                |context| ActiveSceneIdentity::Session {
+                    context,
+                    instance,
+                    manifest,
+                    map_fingerprint,
+                },
             ),
             terrain_revision,
             collision_revision,
@@ -116,6 +127,8 @@ impl ClientApplication {
             context,
             world_catalog: &self.world_catalog,
             equipped_tool,
+            equipped_tool_model_index: equipped_tool
+                .and_then(minimium_game_sample::tool_model_index),
             equipped_tool_profile: equipped_tool
                 .and_then(|tool| self.tool_profile.definition(tool)),
             max_tool_reach_m: self.tool_profile.max_reach_m(),
@@ -156,8 +169,19 @@ impl ClientApplication {
     /// Install CPU collision readiness only for the active context and exact terrain version.
     pub(crate) fn report_active_scene_ready(&mut self, report: ActiveSceneReady) -> bool {
         match report.identity {
-            ActiveSceneIdentity::Session(context) => {
-                if self.game.session_context() != Some(context)
+            ActiveSceneIdentity::Session {
+                context,
+                instance,
+                manifest,
+                map_fingerprint,
+            } => {
+                if context.instance() != instance
+                    || self.game.session_context() != Some(context)
+                    || self.game.world_manifests.get(&instance) != Some(&manifest)
+                    || self
+                        .world_catalog
+                        .get(&instance)
+                        .is_none_or(|map| map.fingerprint() != map_fingerprint)
                     || self.connection.session().is_none_or(|session| {
                         session
                             .terrain_inputs_for_context(context)

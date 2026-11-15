@@ -208,8 +208,26 @@ impl Renderer {
             &pipeline_layout,
             scene_color_format,
         );
-        let held_tool =
-            minimium_renderer::held_tool_gpu::HeldToolGpu::new(&device, scene_color_format);
+        let held_tool_models = minimium_game_sample::tool_model_catalog()
+            .map(|model| {
+                minimium_renderer::held_tool::HeldToolModel::new(
+                    model
+                        .vertices
+                        .into_iter()
+                        .map(|vertex| minimium_renderer::held_tool::HeldToolVertex {
+                            position: vertex.position,
+                            color: vertex.color,
+                        })
+                        .collect(),
+                )
+            })
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()?;
+        let held_tool = minimium_renderer::held_tool_gpu::HeldToolGpu::new(
+            &device,
+            scene_color_format,
+            &held_tool_models,
+        )?;
         let compressed = device
             .features()
             .contains(wgpu::Features::TEXTURE_COMPRESSION_BC)
@@ -305,7 +323,7 @@ impl Renderer {
             cloud_gpu,
             ui,
             held_tool,
-            held_tool_kind: None,
+            held_tool_model_index: None,
             held_tool_visible: false,
             initial_world,
             remote_vertices,

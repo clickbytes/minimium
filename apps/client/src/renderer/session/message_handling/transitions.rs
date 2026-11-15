@@ -13,7 +13,10 @@ impl DesktopHost {
         if self.application.has_transition_id(transition_id) {
             return;
         }
-        let Some(map) = self.resolved_map_for_context(target_context, manifest) else {
+        let Some(map) =
+            self.application
+                .resolved_map_for_context(target_context, map_fingerprint, manifest)
+        else {
             self.fail_connection("target generation manifest is not supported");
             return;
         };
@@ -50,30 +53,27 @@ impl DesktopHost {
         message: ServerMessage,
         transition_id: minimium_world::world::TransitionId,
         context: minimium_protocol::WorldContext,
-        map_fingerprint: u64,
-        destination: [f32; 3],
-        manifest: WorldManifest,
     ) {
         if !self.application.has_transition(transition_id, context) {
             self.fail_connection("world transfer commit has no matching ready ticket");
             return;
         }
+        let change = match self.application.apply_world_message(&message) {
+            Ok(change) => change,
+            Err(error) => {
+                self.fail_connection(&format!("client transfer state update failed: {error:?}"));
+                return;
+            }
+        };
         if !self.install_world(
             super::super::super::sector_scene::SceneInterestOwner::Pending(transition_id, context),
-            context,
-            map_fingerprint,
-            Some(destination),
-            manifest,
+            change,
         ) {
             self.fail_connection("target world geometry does not match the server");
             return;
         }
         if !self.application.commit_transition(transition_id, context) {
             self.fail_connection("world transfer ticket changed during commit");
-            return;
-        }
-        if let Err(error) = self.application.apply_game_message(&message) {
-            self.fail_connection(&format!("client transfer state update failed: {error:?}"));
             return;
         }
         if self.application.ui.console.open {

@@ -71,6 +71,8 @@ impl DesktopHost {
         self.renderer.scene_visible = gpu_ready;
         let previous_context = change.previous_context;
         let previous_instance = change.previous_instance;
+        self.renderer.clear_remote_vertices();
+        self.gameplay_presentation.clear_remote_players();
         if let Some(scene) = scene.as_ref() {
             if !self.application.report_active_scene_ready(
                 crate::application::ActiveSceneReady::new(

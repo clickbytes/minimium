@@ -1,4 +1,5 @@
 //! Sparse 8^3 bricks. Uniform dyadic level within a cloud avoids LOD seams.
+use crate::cloud_presentation::CloudTessellation;
 use glam::DVec3;
 use minimium_environment::weather::{Cloud, DensityField};
 
@@ -17,8 +18,8 @@ pub struct Voxels {
 }
 
 impl Voxels {
-    pub fn build(cloud: Cloud, level: u8, start: f64, step: f64) -> Self {
-        let (dims, cell) = cloud.grid(level);
+    pub fn build(cloud: Cloud, sampling: CloudTessellation, start: f64, step: f64) -> Self {
+        let (dims, cell) = sampling.grid();
         let counts = dims.map(|n| n.div_ceil(SIDE));
         let mut result = Self {
             dims,
@@ -51,7 +52,7 @@ impl Voxels {
                                 ) * cell
                                     - cloud.size_m * DVec3::new(0.5, 0.0, 0.5);
                                 let pair = std::array::from_fn(|t| {
-                                    let density = if level == cloud.min_level {
+                                    let density = if sampling.area_sampling() {
                                         // Area samples preserve narrow filaments on the coarsest grid.
                                         let mut sum = 0.0;
                                         for dz in [-0.25, 0.25] {

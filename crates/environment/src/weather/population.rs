@@ -47,8 +47,7 @@ pub(super) fn query<T: TerrainSampler>(
                             base_m: conditions.layers[layer].base_m,
                             kind: CloudKind::Cumulus,
                             size_m: DVec3::ONE,
-                            min_level: 2,
-                            max_level: 6,
+                            support_quantum_m: 1.0,
                             opacity: 0.0,
                         };
                         let (max_base, ceiling) =

@@ -6,6 +6,13 @@ Owns world clock algorithms and values, environment descriptors, renderer-indepe
 
 ## Public API
 
+`Cloud` publishes physical support dimensions and their generation quantum in
+metres, density inputs, position and UTC evolution. The existing inward support
+quantization remains part of physical generation: changing it would change cloud
+clearance, visibility and density. It is independent of client quality settings.
+Clouds carry no debug mode, tessellation levels or grid operation; those belong to
+renderer `cloud_presentation`.
+
 `climate` defines validated global and circular regional `ClimateScenario`
 offsets with smooth world-UTC transitions, `ClimateSample` and
 `SurfaceCoverSample`. `WeatherModel` supports seasonal hemispheres and applies the

@@ -1,5 +1,5 @@
 use minimium_environment::time::{ClockMode, OfflinePolicy};
-use minimium_environment::weather::CloudDebug;
+use minimium_renderer::cloud_presentation::CloudDebug;
 use minimium_renderer::{
     atmosphere_debug::AtmosphereDebug, quality::SkyQuality, terrain_debug::TerrainDebug,
 };

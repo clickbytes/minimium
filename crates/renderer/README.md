@@ -6,6 +6,17 @@ Owns presentation contracts, reusable rendering primitives and pass encoding: ca
 
 ## Public API
 
+`cloud_presentation` is available without GPU features and owns `CloudDebug`,
+observer priority bands and `CloudTessellation`. Tessellation derives the minimum
+nested grid from the environment's physical support quantum, caps detail at six,
+and reduces the requested level to the supplied sample allowance. Grid dimensions,
+sample costs and coarsest-grid area sampling share that one selected value. The
+client mesh cache retains its 8M sample budget, weighted face budgets, cancellation,
+cached morph windows and bounded envelope fallback. Physical support snapping,
+density and UTC evolution remain in environment; their arithmetic is unchanged.
+Deferred visual acceptance covers all cloud kinds, detail 2..6, budget fallback,
+debug modes, morph windows and transfer cancellation. No shader or GPU ABI changes.
+
 `CloudGpu::upload_frame` accepts faces, records and uniforms together. It checks
 both fixed capacities and all face/interior record indices before any queue write
 or publication mutation, returning `CloudUploadError` on rejection. The previous
@@ -60,13 +71,18 @@ LUTs, staging, fog and uniforms use approximately 1.71 MiB in the physical path;
 the scene snapshot adds about 15.8 MiB at 1080p or 63.3 MiB at 4K.
 Runtime image/performance acceptance is pending.
 
-`held_tool` contains small camera-local low-poly shovel and pickaxe meshes.
-`HeldToolGpu` draws the equipped mesh as a no-depth viewmodel after atmosphere
-and cloud composition and before UI/output. The confirmed `ToolKind` comes from
-the client session; no equipped tool means no model. It is hidden while the
-scene is unprepared, in overview/map mode, or under the console. Viewmodel
-coordinates are camera-relative screen geometry, so planet origin rebasing and
-radial camera orientation do not move it or clip it against world depth.
+`held_tool` defines a bounded GPU-independent camera-local vertex/model input;
+it does not define game-specific shapes. Models require nonempty triangle lists
+with finite positions/colors, at most 512 vertices each. `HeldToolGpu` accepts
+1..=8 models and at most 4096 total vertices, checking catalog bounds before
+pipeline or buffer allocation. The application adapts sample model vertices and
+supplies the catalog. A model index selects one uploaded mesh; invalid indices
+draw nothing. The no-depth viewmodel
+pass remains after atmosphere and cloud composition and before UI/output. The
+application chooses the index from confirmed inventory and sample content; no
+equipped model means no draw. Coordinates remain camera-relative screen geometry,
+so planet-origin rebasing and radial camera orientation do not move it or clip
+it against world depth.
 
 TerrainVertex (120 bytes) and TerrainGpu form the shared planet surface path
 for overview and FPP. Both cameras use TerrainView, planet_visibility and the
