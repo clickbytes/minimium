@@ -119,11 +119,11 @@ pub struct CloudSnapshot {
 }
 
 pub struct WeatherModel<T: TerrainSampler> {
-    pub manifest: WorldManifest,
-    pub radius: f64,
-    pub scale: f64,
+    manifest: WorldManifest,
+    radius: f64,
+    scale: f64,
     elevation_scale: f64,
-    pub profile: SeasonalProfile,
+    profile: SeasonalProfile,
     scenario: crate::climate::ClimateScenario,
     terrain: T,
     is_earth: bool,
@@ -147,6 +147,14 @@ pub trait TerrainSampler: Send + Sync + 'static {
 }
 
 impl<T: TerrainSampler> WeatherModel<T> {
+    pub fn manifest(&self) -> WorldManifest {
+        self.manifest
+    }
+
+    pub fn radius_m(&self) -> f64 {
+        self.radius
+    }
+
     pub fn new(
         manifest: WorldManifest,
         profile: SeasonalProfile,
