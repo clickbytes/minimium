@@ -118,6 +118,17 @@ Authored instance 1, manual dungeon instance 4 and the sample primary instance
 are selected by the common composition, without a fingerprint-based lookup.
 The former terminal-only world setup and duplicated desktop setup are removed.
 
+Before a session exists, desktop initialization and application scene requests
+bind the local map/manifest to the sample's resolved material and relief policies
+through `world_content::bootstrap_terrain_inputs`. Empty `TerrainInputs` are not
+valid for a generated bootstrap planet. Prediction and scene refresh reuse this
+composition through `ClientApplication::scene_terrain_inputs`; policy errors
+remain typed and prevent publication. Once a session exists, its active content
+is the sole source of scene terrain inputs, including while a transfer prepares.
+Bootstrap does not open Earth geography or manufacture mutable terrain overlays;
+Earth geometry still waits for the session's validated geography. Protocol,
+save, seed/fingerprint and material-package formats are unchanged.
+
 `DesktopHost` and the terminal front end call `ClientApplication::step`; the
 application owns desktop UI state and polls the runtime connection controller.
 The runtime owns its socket, bounded protocol state and local-server guard,

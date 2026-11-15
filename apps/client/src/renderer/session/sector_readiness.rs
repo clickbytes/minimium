@@ -139,12 +139,15 @@ impl DesktopHost {
             }
         }
         let view = self.terrain_view();
-        let terrain_inputs = self
-            .application
-            .connection_view()
-            .session()
-            .map(|session| session.terrain_inputs())
-            .unwrap_or_default();
+        let terrain_inputs = match self.application.scene_terrain_inputs() {
+            Ok(inputs) => inputs,
+            Err(error) => {
+                self.application
+                    .record_diagnostic_failure(error.code(), &error.to_string());
+                self.invalidate_active_scene();
+                return false;
+            }
+        };
         let context = self.application.game_view().session_context();
         let terrain_revision = terrain_inputs.revision();
         let water = self

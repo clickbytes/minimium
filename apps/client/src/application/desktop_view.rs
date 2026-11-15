@@ -129,6 +129,33 @@ impl TransferPresentationReady {
 }
 
 impl ClientApplication {
+    /// Bootstrap has resolved local policies even before a session exists.
+    /// Once connected, all active/pending content comes exclusively from the session.
+    pub(crate) fn scene_terrain_inputs(
+        &self,
+    ) -> Result<minimium_procgen::TerrainInputs, minimium_procgen::GenerationError> {
+        if let Some(session) = self.connection.session() {
+            return Ok(session.terrain_inputs());
+        }
+        let instance = self.game.current_instance;
+        let manifest = self
+            .game
+            .world_manifests
+            .get(&instance)
+            .copied()
+            .ok_or_else(|| {
+                minimium_procgen::GenerationError::invalid_manifest(
+                    "bootstrap world has no manifest",
+                )
+            })?;
+        let map = self.world_catalog.get(&instance).ok_or_else(|| {
+            minimium_procgen::GenerationError::invalid_manifest(
+                "bootstrap world has no resolved map",
+            )
+        })?;
+        crate::world_content::bootstrap_terrain_inputs(manifest, map)
+    }
+
     pub(crate) fn desktop_render_view(&self) -> DesktopRenderView<'_> {
         let context = self.game.session_context();
         let inventory = self.connection.session().map(|session| session.inventory());

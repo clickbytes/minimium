@@ -5,6 +5,22 @@ use minimium_client_runtime::{
 use minimium_world::world::{WorldInstanceId, WorldManifest, WorldMap};
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
+/// Bind the local pre-session scene to the same sample policies as resolved content.
+/// Earth geography and mutable overlays remain session-owned and are not invented here.
+#[cfg(feature = "desktop")]
+pub(crate) fn bootstrap_terrain_inputs(
+    manifest: WorldManifest,
+    map: &WorldMap,
+) -> Result<minimium_procgen::TerrainInputs, minimium_procgen::GenerationError> {
+    Ok(minimium_procgen::TerrainInputs {
+        material_profile: Some(minimium_game_sample::terrain_material_profile(
+            manifest, map,
+        )?),
+        resolved_relief_policy: minimium_game_sample::resolved_planet_relief_policy(manifest, map)?,
+        ..Default::default()
+    })
+}
+
 pub(crate) struct SampleWorldContentResolver {
     known: HashMap<WorldInstanceId, (WorldManifest, Arc<WorldMap>)>,
     earth_package_dir: Option<PathBuf>,
