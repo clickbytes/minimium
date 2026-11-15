@@ -207,6 +207,16 @@ impl EffectBatchOutcome {
                 )
             })
     }
+
+    pub fn has_successes(&self) -> bool {
+        self.results.iter().any(|result| {
+            matches!(
+                result,
+                WorldEffectOutcome::EntityApplied
+                    | WorldEffectOutcome::Transfer(TransferOutcome::Started)
+            )
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]

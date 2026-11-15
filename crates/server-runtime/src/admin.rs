@@ -50,24 +50,8 @@ pub struct AdminServer {
 
 impl AdminServer {
     pub(crate) fn respond_command(&mut self, id: RequestId, reply: &crate::commands::CommandReply) {
-        match (reply.is_success(), reply.payload()) {
-            (true, Some(payload)) => {
-                let text = crate::command_output::render(payload);
-                self.respond(id, true, None, text.as_str());
-            }
-            (false, None) => self.respond(
-                id,
-                false,
-                reply.error_code(),
-                reply.detail().unwrap_or("command failed"),
-            ),
-            _ => self.respond(
-                id,
-                false,
-                Some("server.command.failed"),
-                "invalid command result",
-            ),
-        }
+        let text = crate::command_output::render_reply(reply);
+        self.respond(id, reply.is_success(), reply.error_code(), text.as_str());
     }
     pub fn new(listener: TcpListener, token: String) -> io::Result<Self> {
         listener.set_nonblocking(true)?;
