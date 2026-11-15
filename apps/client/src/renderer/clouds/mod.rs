@@ -21,6 +21,7 @@ struct Stamp {
     manifest: WorldManifest,
     context: WorldContext,
     clock_revision: u64,
+    resolved_relief_policy: Option<minimium_procgen::ResolvedPlanetReliefPolicy>,
 }
 
 #[derive(Clone)]
@@ -34,7 +35,7 @@ struct Request {
     revision: u64,
     detail: u8,
     started: Instant,
-    geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
+    terrain_inputs: minimium_procgen::TerrainInputs,
 }
 
 struct Publication {

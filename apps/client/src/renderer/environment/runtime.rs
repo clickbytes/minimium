@@ -164,7 +164,8 @@ impl Renderer {
                     .flatten()
             });
         let mut eye_height = DEFAULT_OBSERVER_EYE_HEIGHT_MM;
-        let mut meteor_surface_scale = minimium_renderer::meteors::coords::PlanetSurfaceScale::UNIT;
+        let mut meteor_surface_scale =
+            minimium_renderer::planet_coordinates::PlanetSurfaceScale::UNIT;
         if manifest.planet().is_some() {
             match super::observer::camera_reference(manifest, render_view, geography.as_deref()) {
                 Ok((position, surface_scale)) => {

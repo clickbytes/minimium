@@ -28,7 +28,7 @@ The adapter polls synchronously on the runtime owner lane. The process host owns
 
 ## Invariants and errors
 
-Listener/socket failures and identifier exhaustion return typed transport errors. Malformed game frames produce a disconnect event; unsupported protocol versions enqueue the existing protocol error and close after flush. Backpressure, unknown IDs, closed IDs and encoding failure are distinct output errors. Event and output resources remain bounded even if the runtime does not drain events promptly. Shutdown closes admission first, lets runtime reject outstanding admin requests, drains queued responses to the supplied deadline, then closes sockets.
+Listener/socket failures and identifier exhaustion return typed transport errors. Nonzero `ConnectionId` and `AdminRequestId` constructors let alternate hosts create stable IDs; each host must allocate IDs without reuse. Malformed game frames produce a disconnect event; unsupported protocol versions enqueue the existing protocol error and close after flush. Backpressure, unknown game IDs, unknown or expired admin requests, closed IDs and encoding failure are distinct output errors. Event and output resources remain bounded even if the runtime does not drain events promptly. Shutdown closes admission first, lets runtime reject outstanding admin requests, drains only admin responses to the supplied deadline, then closes game and admin sockets. Dropping the TCP host also invalidates game output handles and closes all owned sockets.
 
 ## Verification
 

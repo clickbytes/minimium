@@ -25,6 +25,8 @@ pub struct RenderFrame {
     /// Bounded CPU-only meteor contract (ADR 0013); carried explicitly even
     /// while zero active so later passes consume one stable seam.
     pub meteors: MeteorFrame,
+    /// Selected lights are independent of the producer's visible emission geometry.
+    pub transient_lights: crate::transient_lighting::TransientLightFrame,
     /// Client presentation context attached by the application adapter.
     pub client: Option<ClientFrameState>,
     ui_vertices: Vec<UiVertex>,
@@ -44,6 +46,7 @@ impl RenderFrame {
             environment,
             halo_count,
             meteors: MeteorFrame::disabled(MeteorDisabledReason::NoEnvironment),
+            transient_lights: crate::transient_lighting::TransientLightFrame::empty(),
             client: None,
             ui_vertices: Vec::new(),
         }
@@ -52,6 +55,14 @@ impl RenderFrame {
     /// Attaches the bounded meteor contract built for this prepared frame.
     pub fn with_meteors(mut self, meteors: MeteorFrame) -> Self {
         self.meteors = meteors;
+        self
+    }
+
+    pub fn with_transient_lights(
+        mut self,
+        lights: crate::transient_lighting::TransientLightFrame,
+    ) -> Self {
+        self.transient_lights = lights;
         self
     }
 

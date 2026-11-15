@@ -1,7 +1,7 @@
 //! Bounded HTTP adapter for serving a validated, published material package.
-use crate::materials::{self, MaterialPackage};
-use minimium_assets::terrain_material::{digest, MaterialManifest, MAX_MANIFEST_BYTES};
+mod snapshot;
 use minimium_diagnostics::{DiagnosticEvent, DomainLogger, EventCode, Level};
+use snapshot::PublishedPackage;
 use std::{
     collections::HashMap,
     fs,
@@ -30,6 +30,7 @@ pub struct ContentServer {
     stop: Arc<AtomicBool>,
     accept_thread: Option<JoinHandle<()>>,
     workers: Vec<JoinHandle<()>>,
+    snapshot: Option<Arc<PublishedPackage>>,
     logger: DomainLogger,
 }
 
@@ -40,25 +41,9 @@ impl ContentServer {
         port: u16,
         logger: DomainLogger,
     ) -> io::Result<Self> {
-        let manifest_path = root.join("manifest.ron");
-        let source = materials::read_bounded(&manifest_path, MAX_MANIFEST_BYTES as u64)
-            .map_err(io::Error::other)?;
-        let manifest = MaterialManifest::parse(&source).map_err(io::Error::other)?;
-        for compressed in [true, false] {
-            MaterialPackage::open(root, compressed).map_err(io::Error::other)?;
-        }
-        let mut files = HashMap::from([(
-            "manifest.ron".to_owned(),
-            (manifest_path, source.len() as u64),
-        )]);
-        for variant in &manifest.variants {
-            for file in &variant.maps {
-                files.insert(file.name.clone(), (root.join(&file.name), file.bytes));
-            }
-        }
-        let hash = minimium_assets::terrain_material::decode_hash(&digest(&source))
-            .map_err(io::Error::other)?;
-        let files = Arc::new(files);
+        let snapshot =
+            Arc::new(PublishedPackage::create(root, logger.clone()).map_err(io::Error::other)?);
+        let hash = snapshot.hash();
         let listener = TcpListener::bind((bind_address, port))?;
         listener.set_nonblocking(true)?;
         let bound_port = listener.local_addr()?.port();
@@ -69,7 +54,7 @@ impl ContentServer {
         for worker_id in 0..WORKERS {
             let worker_receiver = shared_receiver.clone();
             let worker_stop = stop.clone();
-            let worker_files = files.clone();
+            let worker_files = snapshot.clone();
             let worker_logger = logger.clone();
             match thread::Builder::new()
                 .name(format!("material-http-{worker_id}"))
@@ -104,12 +89,13 @@ impl ContentServer {
             stop,
             accept_thread: Some(accept_thread),
             workers,
+            snapshot: Some(snapshot),
             logger,
         })
     }
 
-    /// Stops accepting and waits only until `timeout`; returned names identify
-    /// worker threads that exceeded the deadline.
+    /// Stops accepting and bounds worker joins by `timeout`; returned names
+    /// identify unfinished workers or snapshot cleanup failures.
     pub fn shutdown(&mut self, timeout: Duration) -> Vec<String> {
         self.stop.store(true, Ordering::Release);
         let deadline = Instant::now() + timeout;
@@ -129,6 +115,15 @@ impl ContentServer {
                 "worker",
                 name,
             );
+        }
+        if let Some(snapshot) = self.snapshot.take() {
+            // On timeout a detached worker retains its Arc until it exits; the
+            // last owner then cleans up without deleting files under a reader.
+            if let Ok(mut snapshot) = Arc::try_unwrap(snapshot) {
+                if snapshot.cleanup().is_err() {
+                    unfinished.push("material-http-snapshot".to_owned());
+                }
+            }
         }
         unfinished
     }
@@ -186,7 +181,7 @@ fn accept_loop(
 
 fn worker_loop(
     receiver: Arc<Mutex<Receiver<TcpStream>>>,
-    files: Arc<HashMap<String, (PathBuf, u64)>>,
+    files: Arc<PublishedPackage>,
     stop: Arc<AtomicBool>,
     logger: DomainLogger,
 ) {
@@ -204,7 +199,7 @@ fn worker_loop(
             return;
         }
         let mut stream = stream;
-        match serve(&mut stream, &files, &stop) {
+        match serve(&mut stream, files.files(), &stop) {
             Ok(status) => emit(
                 &logger,
                 Level::Info,

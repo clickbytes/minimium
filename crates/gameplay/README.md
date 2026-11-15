@@ -31,6 +31,36 @@ state.
 The server runtime owns the tick and supplies the current tick and per-world
 Startup lifecycle. This crate owns only registration and effect contracts.
 
+`ModuleRegistry::ordered_schedule` validates one graph containing registered
+systems and the stable `BuiltinOperation` IDs. Its immutable `SchedulePlan`
+supplies the runtime's actual operation sequence and ordered stage handlers.
+Built-ins have fixed edges in the order below; stage systems are bounded by the
+listed owner operations and their effect-publication barrier:
+
+| Stage | After | Before publication |
+| --- | --- | --- |
+| Startup | Per-world restore (outside repeated tick) | `engine commands` |
+| FixedUpdate | `engine world inputs` | `engine fixed effects` |
+| Environment | `engine simulation` | `engine environment effects` |
+| PostSimulation | `engine environment effects` | `engine post simulation effects` |
+
+The full tick skeleton is commands → bolids → impacts → excavation → shutdown
+gate → world inputs → fixed effects → simulation → environment effects → post
+simulation effects → clear events. `BuiltinOperation::id()` supplies the exact
+reserved dependency names (all prefixed with `engine `). The host runs a stage's
+ordered handlers together and commits its single bounded batch at the named
+effects barrier; no owner operation can interleave within that stage. Startup
+handlers remain per-world and do not run again in each tick.
+
+Module `before`/`after` constraints resolve both system and built-in IDs. Missing
+targets return `MissingDependency`; reserved-ID collisions return
+`DuplicateSystem`; repeated target/edge declarations return `InvalidDescriptor`;
+reverse phase edges return `InvalidPhaseOrder`; same-phase cycles return
+`DependencyCycle`. Stable system-ID ordering breaks unconstrained ties. An
+invalid graph never produces a plan. Construction uses memory proportional to
+trusted installed descriptors/edges; the host retains the plan and does not
+rebuild it per tick. No registration, effect capacity or clock policy changes.
+
 ## Invariants and errors
 
 Registration errors identify duplicate IDs, missing dependencies or cycles.
@@ -64,7 +94,12 @@ Keep module descriptions and registration generic. Host-specific handlers and wo
 
 ## Verification
 
-Compilation and static validation are deferred to the workspace final verification phase.
+Use Cargo check for gameplay, sample and server-runtime, plus workspace static
+checks. Test execution is deferred to the explicitly authorized final phase.
+S09 acceptance scenarios include references before/after a real built-in,
+reserved collisions, missing/repeated targets, cycles, phase reversals and the
+shutdown/effect-publication order. Compilation does not establish these runtime
+properties.
 
 ## Impact configuration and interaction port
 

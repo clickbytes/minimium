@@ -18,9 +18,23 @@ quota.
 Abandoned staging cleanup recognizes only installer-owned digest/receipt names
 with run and task identifiers; unrelated `.part` files are left intact.
 `material_http::fetch` reads bounded HTTP responses from an explicit endpoint.
+`MaterialPackage::open_manifest` consumes an explicit manifest and its validated
+flat sibling filenames; the existing directory opener delegates to it. The
+`package_client` example packages an executable with both validated variants and
+the original manifest bytes in a new destination. It stages only declared maps,
+copies the same buffers it validates, then publishes the completed directory.
+Failures clean up only the invocation's created files and directories, reporting
+cleanup errors; an existing destination is rejected. It never selects a recipe.
 `ContentServer` serves only a validated published package through four workers
 and a 32-connection bounded queue; request headers and transfer deadlines are
-bounded, and shutdown reports workers that outlive its deadline.
+bounded, and shutdown reports workers or snapshot resources that did not finish.
+Before binding the listener, it reads one bounded manifest and validates each
+variant's exact byte buffers for length, digest, KTX2 format and GPU budgets.
+Those same buffers are copied into exclusively created new snapshot files;
+workers never reopen source files or use hardlinks. Replacing source files,
+including in-place writes of the same length, cannot change a published package.
+Only one variant is retained in memory at a time; scratch disk is bounded by
+both manifest-declared variants plus the manifest (at most 1 GiB + 64 KiB).
 The runtime supplies worker ownership. Prepared Earth geography optionally maps
 `worldcover.bin` with `worldcover.sha256`; absence uses procedural coverage without
 changing the GEBCO identity or geometry. `examples/validate_materials.rs` is an
@@ -40,9 +54,15 @@ Paths and file bytes enter the adapter; validated `WorldMap` or `WorldDefinition
 
 The calling application selects paths and owns loaded definitions. Reads are bounded by parser limits; long-lived callers can use the cancellable geography opener in a worker. ContentCache owns download reservation, cross-process coordination, package leases and eviction; clients own its configured root and lifetime.
 
-The HTTP server's `Drop` only requests stop. Explicit `shutdown(timeout)` owns
-the bounded join and reports unfinished worker names, so dropping after its
-deadline does not start another two-second wait.
+The HTTP server's `Drop` requests stop without joining. Explicit
+`shutdown(timeout)` owns the bounded join. Server and workers share ownership of
+the private snapshot; failed staging removes its created files, and normal
+shutdown removes them after workers exit. A worker that outlives the deadline
+keeps the snapshot until its final reference drops. Cleanup removes only owned
+files and the now-empty owned directory, never recursively traversing a source
+tree. Cleanup failures emit `asset_io.material_snapshot_cleanup_failed`; explicit
+shutdown also returns `material-http-snapshot` when cleanup fails. Dropping after
+the deadline does not start another wait.
 
 ## Invariants and errors
 

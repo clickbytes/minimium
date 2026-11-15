@@ -16,6 +16,7 @@ pub(crate) enum GamePollError {
 
 const MAX_ACCEPTS_PER_POLL: usize = 64;
 const MAX_MESSAGES_PER_POLL: usize = 256;
+const MAX_READ_BYTES_PER_CLIENT_PER_POLL: usize = 1024;
 const MAX_WRITE_BYTES_PER_POLL: usize = 256 * 1024;
 const MAX_WRITE_BYTES_PER_CONNECTION: usize = 16 * 1024;
 const MAX_QUEUED_OUTPUT_BYTES: usize = 64 * 1024;
@@ -30,6 +31,8 @@ pub(crate) struct GameState {
     pub(crate) max_input_bytes: usize,
     pub(crate) max_output_bytes: usize,
     pub(crate) first_write_connection: usize,
+    pub(crate) first_read_connection: usize,
+    pub(crate) closed: bool,
 }
 
 pub(crate) struct GameSocket {
@@ -74,6 +77,9 @@ impl TransportSender {
             .0
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if state.closed {
+            return Err(QueueError::Closed);
+        }
         let encoding_time = {
             let socket = state
                 .connections
@@ -98,6 +104,9 @@ impl TransportSender {
                 .saturating_add(output.reserved_bytes)
                 > MAX_QUEUED_OUTPUT_BYTES
             {
+                return Err(QueueError::Backpressure);
+            }
+            if pending.saturating_add(output.minimum_headroom_bytes) > MAX_QUEUED_OUTPUT_BYTES {
                 return Err(QueueError::Backpressure);
             }
             poll::compact_output(socket);
@@ -195,8 +204,13 @@ pub(crate) use poll::{flush_game, new_game_state, poll_game};
 pub struct ConnectionId(u64);
 
 impl ConnectionId {
-    pub(crate) const fn new(value: u64) -> Self {
-        Self(value)
+    /// Creates an ID for an externally hosted transport; zero is reserved.
+    pub const fn new(value: u64) -> Option<Self> {
+        if value == 0 {
+            None
+        } else {
+            Some(Self(value))
+        }
     }
 
     pub const fn get(self) -> u64 {
@@ -217,6 +231,7 @@ pub struct GameOutput {
     pub close_after_flush: Option<Instant>,
     pub close_reason: Option<GameDisconnectReason>,
     pub reserved_bytes: usize,
+    pub minimum_headroom_bytes: usize,
     pub max_frame_bytes: usize,
 }
 

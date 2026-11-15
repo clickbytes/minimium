@@ -46,8 +46,8 @@ pub trait TransportPort {
     fn flush(&mut self, now: Instant) -> Vec<TransportEvent>;
     fn game_output(&self) -> Arc<dyn crate::GameOutputPort>;
     fn stop_admission(&mut self);
+    fn has_pending_admin_output(&self) -> bool;
     fn close_all(&mut self);
-    fn has_pending_output(&self) -> bool;
     fn respond_admin(
         &mut self,
         id: AdminRequestId,
@@ -156,6 +156,10 @@ impl HostTransport {
         self.admin.stop_admission();
     }
 
+    pub fn has_pending_admin_output(&self) -> bool {
+        self.admin.has_pending_output()
+    }
+
     pub fn close_all(&mut self) {
         let mut game = self
             .game
@@ -163,26 +167,20 @@ impl HostTransport {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         game.listener.take();
         game.connections.clear();
-        self.admin.stop_admission();
-    }
-
-    pub fn has_pending_output(&self) -> bool {
-        self.game
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .connections
-            .values()
-            .any(|socket| socket.output_offset < socket.output.len())
-            || self.admin.has_pending_output()
+        game.closed = true;
+        self.admin.close_all();
     }
 
     pub fn respond_admin(
         &mut self,
-        _id: AdminRequestId,
-        _response: AdminResponse,
+        id: AdminRequestId,
+        response: AdminResponse,
     ) -> Result<(), QueueError> {
-        self.admin.respond(_id, _response);
-        Ok(())
+        if self.admin.respond(id, response) {
+            Ok(())
+        } else {
+            Err(QueueError::UnknownAdminRequest)
+        }
     }
 
     pub fn reject_admin_pending(&mut self) {
@@ -209,6 +207,12 @@ impl HostTransport {
     }
 }
 
+impl Drop for HostTransport {
+    fn drop(&mut self) {
+        self.close_all();
+    }
+}
+
 impl TransportPort for HostTransport {
     fn poll(&mut self, now: Instant) -> Result<Vec<TransportEvent>, TransportError> {
         HostTransport::poll(self, now)
@@ -222,11 +226,11 @@ impl TransportPort for HostTransport {
     fn stop_admission(&mut self) {
         HostTransport::stop_admission(self);
     }
+    fn has_pending_admin_output(&self) -> bool {
+        HostTransport::has_pending_admin_output(self)
+    }
     fn close_all(&mut self) {
         HostTransport::close_all(self);
-    }
-    fn has_pending_output(&self) -> bool {
-        HostTransport::has_pending_output(self)
     }
     fn respond_admin(
         &mut self,

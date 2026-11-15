@@ -13,8 +13,12 @@ pub(crate) fn new_game_state(
         max_input_bytes: 0,
         max_output_bytes: 0,
         first_write_connection: 0,
+        first_read_connection: 0,
+        closed: false,
     }))
 }
+
+const MAX_MESSAGES_PER_CONNECTION_PER_POLL: usize = 32;
 
 pub(crate) fn poll_game(
     state: &Arc<Mutex<GameState>>,
@@ -24,62 +28,35 @@ pub(crate) fn poll_game(
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut events = Vec::with_capacity(MAX_MESSAGES_PER_POLL);
+    if state.closed {
+        return Ok(events);
+    }
     accept_clients(&mut state, now, &mut events)?;
-    let ids = state.connections.keys().copied().collect::<Vec<_>>();
-    let mut read_budget = MAX_MESSAGES_PER_POLL;
+    let mut ids = state.connections.keys().copied().collect::<Vec<_>>();
+    if !ids.is_empty() {
+        let first = state.first_read_connection % ids.len();
+        ids.rotate_left(first);
+        state.first_read_connection = (first + 1) % ids.len();
+    } else {
+        state.first_read_connection = 0;
+    }
     for id in ids {
-        if events.len() >= MAX_MESSAGES_PER_POLL || read_budget == 0 {
+        if events.len() >= MAX_MESSAGES_PER_POLL {
             break;
         }
+        let mut bytes_this_poll = 0usize;
+        let mut messages_this_poll = 0usize;
         let mut buffer = [0u8; 1024];
-        let (bytes_read, input_len, read_error) = {
-            let Some(socket) = state.connections.get_mut(&id) else {
-                continue;
-            };
-            if socket.peer_eof || socket.close_after_flush.is_some() {
-                continue;
+        loop {
+            if events.len() >= MAX_MESSAGES_PER_POLL
+                || messages_this_poll >= MAX_MESSAGES_PER_CONNECTION_PER_POLL
+            {
+                break;
             }
-            let bytes_read = match socket.stream.read(&mut buffer) {
-                Ok(0) => {
-                    socket.peer_eof = true;
-                    0
-                }
-                Ok(count) => {
-                    socket.stats.bytes_in = socket.stats.bytes_in.saturating_add(count as u64);
-                    socket.input.extend_from_slice(&buffer[..count]);
-                    count
-                }
-                Err(error)
-                    if error.kind() == io::ErrorKind::Interrupted
-                        || error.kind() == io::ErrorKind::WouldBlock =>
-                {
-                    0
-                }
-                Err(_) => usize::MAX,
-            };
-            (bytes_read, socket.input.len(), bytes_read == usize::MAX)
-        };
-        if read_error {
-            let socket = state.connections.remove(&id).expect("connection exists");
-            events.push(disconnected(id, socket, GameDisconnectReason::ReadError));
-            continue;
-        }
-        if bytes_read > 0 {
-            state.totals.bytes_in = state.totals.bytes_in.saturating_add(bytes_read as u64);
-        }
-        state.max_input_bytes = state.max_input_bytes.max(input_len);
-        if state
-            .connections
-            .get(&id)
-            .is_some_and(|socket| socket.input.len() > minimium_protocol::MAX_FRAME_BYTES)
-        {
-            let socket = state.connections.remove(&id).expect("connection exists");
-            events.push(disconnected(id, socket, GameDisconnectReason::InvalidFrame));
-            continue;
-        }
-        while events.len() < MAX_MESSAGES_PER_POLL {
             let decoded = {
-                let socket = state.connections.get(&id).expect("connection exists");
+                let Some(socket) = state.connections.get(&id) else {
+                    break;
+                };
                 minimium_protocol::decode_client(&socket.input)
             };
             match decoded {
@@ -96,9 +73,63 @@ pub(crate) fn poll_game(
                         message,
                         at: now,
                     });
-                    read_budget -= 1;
+                    messages_this_poll += 1;
                 }
-                Ok(None) => break,
+                Ok(None) => {
+                    let input_len = state
+                        .connections
+                        .get(&id)
+                        .map_or(0, |socket| socket.input.len());
+                    state.max_input_bytes = state.max_input_bytes.max(input_len);
+                    if input_len > minimium_protocol::MAX_FRAME_BYTES {
+                        let socket = state.connections.remove(&id).expect("connection exists");
+                        events.push(disconnected(id, socket, GameDisconnectReason::InvalidFrame));
+                        break;
+                    }
+                    let can_read = state.connections.get(&id).is_some_and(|socket| {
+                        !socket.peer_eof
+                            && socket.close_after_flush.is_none()
+                            && bytes_this_poll < MAX_READ_BYTES_PER_CLIENT_PER_POLL
+                    });
+                    if !can_read {
+                        break;
+                    }
+                    let available =
+                        (MAX_READ_BYTES_PER_CLIENT_PER_POLL - bytes_this_poll).min(buffer.len());
+                    let read_result = {
+                        let socket = state.connections.get_mut(&id).expect("connection exists");
+                        socket.stream.read(&mut buffer[..available])
+                    };
+                    match read_result {
+                        Ok(0) => {
+                            state
+                                .connections
+                                .get_mut(&id)
+                                .expect("connection exists")
+                                .peer_eof = true;
+                        }
+                        Ok(count) => {
+                            let socket = state.connections.get_mut(&id).expect("connection exists");
+                            socket.stats.bytes_in =
+                                socket.stats.bytes_in.saturating_add(count as u64);
+                            socket.input.extend_from_slice(&buffer[..count]);
+                            state.totals.bytes_in =
+                                state.totals.bytes_in.saturating_add(count as u64);
+                            bytes_this_poll += count;
+                        }
+                        Err(error)
+                            if error.kind() == io::ErrorKind::WouldBlock
+                                || error.kind() == io::ErrorKind::Interrupted =>
+                        {
+                            break
+                        }
+                        Err(_) => {
+                            let socket = state.connections.remove(&id).expect("connection exists");
+                            events.push(disconnected(id, socket, GameDisconnectReason::ReadError));
+                            break;
+                        }
+                    }
+                }
                 Err(minimium_protocol::ProtocolError::UnsupportedVersion(_)) => {
                     let queued = if let Ok(frame) =
                         minimium_protocol::encode_server(&minimium_protocol::ServerMessage::Error(
@@ -210,7 +241,9 @@ pub(crate) fn flush_game(state: &Arc<Mutex<GameState>>, now: Instant) -> Vec<Gam
         write_budget -= written;
     }
     for socket in state.connections.values_mut() {
-        if socket.peer_eof && socket.close_after_flush.is_none() {
+        let has_complete_frame =
+            matches!(minimium_protocol::decode_client(&socket.input), Ok(Some(_)));
+        if socket.peer_eof && !has_complete_frame && socket.close_after_flush.is_none() {
             socket.close_after_flush = Some(now + Duration::from_secs(2));
         }
     }
@@ -220,7 +253,9 @@ pub(crate) fn flush_game(state: &Arc<Mutex<GameState>>, now: Instant) -> Vec<Gam
         .filter_map(|(id, socket)| {
             (socket.write_failed
                 || socket.close_after_flush.is_some_and(|deadline| {
-                    socket.output_offset == socket.output.len() || now >= deadline
+                    (!socket.peer_eof
+                        || !matches!(minimium_protocol::decode_client(&socket.input), Ok(Some(_))))
+                        && (socket.output_offset == socket.output.len() || now >= deadline)
                 }))
             .then_some(*id)
         })
@@ -278,7 +313,7 @@ fn accept_clients(
                     .next_connection_id
                     .ok_or(GamePollError::IdentifierExhausted)?;
                 state.next_connection_id = value.checked_add(1);
-                let id = ConnectionId::new(value);
+                let id = ConnectionId::new(value).expect("host IDs start at one");
                 state.connections.insert(
                     id,
                     GameSocket {

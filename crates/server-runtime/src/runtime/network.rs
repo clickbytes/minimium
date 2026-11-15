@@ -158,19 +158,23 @@ impl ServerRuntime {
                     if self.connections.admin_requests.len() < 64 {
                         self.connections.admin_requests.push_back((id, line));
                     } else {
-                        self.operations
-                            .transport
-                            .respond_admin(
-                                id,
-                                minimium_transport::AdminResponse {
-                                    success: false,
-                                    error_code: Some("server.command.queue_full".to_owned()),
-                                    key: None,
-                                    text: "command queue full".to_owned(),
-                                    usage: None,
-                                },
-                            )
-                            .map_err(std::io::Error::other)?;
+                        if let Err(error) = self.operations.transport.respond_admin(
+                            id,
+                            minimium_transport::AdminResponse {
+                                success: false,
+                                error_code: Some("server.command.queue_full".to_owned()),
+                                key: None,
+                                text: "command queue full".to_owned(),
+                                usage: None,
+                            },
+                        ) {
+                            crate::diagnostics::emit(
+                                &self.server_logger,
+                                minimium_diagnostics::Level::Debug,
+                                "server.admin_response_dropped",
+                                &[("reason", error.to_string())],
+                            );
+                        }
                     }
                 }
             }

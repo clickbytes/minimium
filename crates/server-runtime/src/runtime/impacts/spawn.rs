@@ -86,6 +86,7 @@ impl ServerRuntime {
         let geography = minimium_procgen::TerrainInputs {
             geography: self.prepared_geography.clone(),
             material_profile: Some(owner.terrain_material_profile),
+            resolved_relief_policy: owner.resolved_relief_policy,
             edits: Some(owner.terrain.clone()),
             remnants: Some(owner.remnants.clone()),
             volumes: owner.volumes.clone(),

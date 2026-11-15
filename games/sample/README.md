@@ -20,10 +20,22 @@ the validated `PlanetTerrain` constructor together. Landmark and overview
 sampling errors propagate as `GenerationError` before a world is published;
 successful seed, rounding, manifest and fingerprint behavior is unchanged.
 
+The sample owns the seeded planet route, spawn clearance and entrance marker,
+and selects the +Y relief ramp for its procedural planet recipe. The immutable
+relief policy is bound to the resolved manifest and map fingerprint before
+publication and is carried with world content to terrain, worker and cache
+consumers. Earth uses the identity sampling policy while retaining its existing
+`PeakRelief` behavior. The route and policy are runtime composition data: they
+do not add world parameters or change seed, generator digest or materialized
+map bytes.
+
 `materials/recipe.py` owns deterministic sand, soil, grass, litter, rock and snow
-art recipes. The client build invokes `tools/bake_materials.py` (Python + numpy)
-and caches complete KTX2 arrays in `target/materials/sample-v1`. Recipes do not
-run at client startup. `climate/` contains neutral, warming/drought and cooling
+art recipes. `materials/cook.py OUTPUT` explicitly supplies that recipe to
+`tools/bake_materials.py::bake(recipe_path, output)` (Python + numpy), which returns
+the completed manifest path. Cargo does not cook assets. Cooker stdout contains
+the manifest path; progress goes to stderr. Recipes do not run at client startup.
+The client and packager consume the selected manifest, independent of the sample
+recipe directory. `climate/` contains neutral, warming/drought and cooling
 scenarios with absolute UTC transition windows. See `docs/terrain-materials.md`
 for preparation, packaging, overrides and outstanding visual acceptance.
 
@@ -42,6 +54,11 @@ are asset review aids, not evidence of game rendering or measured performance.
 The interaction system looks up that entity's portal component directly through
 the read-only gameplay context; it does not copy or scan all world components
 for each event.
+
+Its descriptor explicitly depends on `BuiltinOperation::Simulation` and runs
+before `BuiltinOperation::PostSimulationEffects`; the host validates these
+references against the actual tick graph. Portal effects still publish at the
+PostSimulation boundary, with unchanged component encoding and transfer rules.
 
 When adding a sample gameplay feature, define its schema/system in this package
 and register it through `SampleGameplayModule`. `apps/server/src/composition.rs`
@@ -75,7 +92,7 @@ Content is static repository data. Runtime applications own loaded instances.
 
 ## Invariants and errors
 
-All generated sample worlds use generator revision 5. Planet mode selects the
+All generated sample worlds use generator revision 6. Planet mode selects the
 procedural or Earth generation path explicitly. Other generator revisions are
 rejected; they are not reinterpreted as revision 5.
 

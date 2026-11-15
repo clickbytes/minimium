@@ -70,10 +70,14 @@ impl ServerRuntime {
             let command = match crate::admin::parse(&line) {
                 Ok(command) => command,
                 Err(response) => {
-                    self.operations
-                        .transport
-                        .respond_admin(id, response)
-                        .map_err(std::io::Error::other)?;
+                    if let Err(error) = self.operations.transport.respond_admin(id, response) {
+                        crate::diagnostics::emit(
+                            &self.server_logger,
+                            minimium_diagnostics::Level::Debug,
+                            "server.admin_response_dropped",
+                            &[("reason", error.to_string())],
+                        );
+                    }
                     continue;
                 }
             };
@@ -84,10 +88,18 @@ impl ServerRuntime {
                     "server.command.queue_full",
                     "command queue full",
                 );
-                self.operations
+                if let Err(error) = self
+                    .operations
                     .transport
                     .respond_admin(id, crate::admin::response(&reply))
-                    .map_err(std::io::Error::other)?;
+                {
+                    crate::diagnostics::emit(
+                        &self.server_logger,
+                        minimium_diagnostics::Level::Debug,
+                        "server.admin_response_dropped",
+                        &[("reason", error.to_string())],
+                    );
+                }
             }
         }
         if let Some(console_rx) = &self.operations.console_rx {

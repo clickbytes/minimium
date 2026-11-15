@@ -11,7 +11,6 @@ const MAX_LINE_BYTES: usize = 512;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(2);
 const MAX_REPLY_BYTES: usize = 64 * 1024;
-const MAX_REPLY_DETAIL_BYTES: usize = 8 * 1024;
 const MAX_READ_BYTES_PER_CLIENT_PER_POLL: usize = 1024;
 const MAX_WRITE_BYTES_PER_CLIENT_PER_POLL: usize = 4096;
 
@@ -19,8 +18,13 @@ const MAX_WRITE_BYTES_PER_CLIENT_PER_POLL: usize = 4096;
 pub struct AdminRequestId(u64);
 
 impl AdminRequestId {
-    pub(crate) const fn new(value: u64) -> Self {
-        Self(value)
+    /// Creates an ID for an externally hosted transport; zero is reserved.
+    pub const fn new(value: u64) -> Option<Self> {
+        if value == 0 {
+            None
+        } else {
+            Some(Self(value))
+        }
     }
 
     pub const fn get(self) -> u64 {
@@ -171,7 +175,8 @@ impl AdminState {
                                             break;
                                         };
                                         self.next_request_id = value.checked_add(1);
-                                        let id = AdminRequestId::new(value);
+                                        let id = AdminRequestId::new(value)
+                                            .expect("host request IDs start at one");
                                         client.id = Some(id);
                                         client.phase = Phase::AwaitingResponse;
                                         events.push(AdminTransportEvent::Request {
@@ -242,11 +247,11 @@ impl AdminState {
         Ok(events)
     }
 
-    pub(crate) fn respond(&mut self, id: AdminRequestId, response: AdminResponse) {
+    pub(crate) fn respond(&mut self, id: AdminRequestId, response: AdminResponse) -> bool {
         let Some(client) = self.clients.iter_mut().find(|client| {
             client.id == Some(id) && matches!(client.phase, Phase::AwaitingResponse)
         }) else {
-            return;
+            return false;
         };
         let detail_bytes = response
             .text
@@ -254,9 +259,9 @@ impl AdminState {
             .saturating_add(response.key.as_ref().map_or(0, String::len))
             .saturating_add(response.usage.as_ref().map_or(0, String::len))
             .saturating_add(response.error_code.as_ref().map_or(0, String::len));
-        if detail_bytes > MAX_REPLY_DETAIL_BYTES {
+        if detail_bytes > MAX_REPLY_BYTES {
             queue_reply(client, b"ERR reply exceeds size limit\n", Instant::now());
-            return;
+            return true;
         }
         let text = if response.success {
             format!("OK {}", response.text)
@@ -274,15 +279,20 @@ impl AdminState {
         };
         if text.len().saturating_add(1) > MAX_REPLY_BYTES {
             queue_reply(client, b"ERR reply exceeds size limit\n", Instant::now());
-            return;
+            return true;
         }
         let mut bytes = text.into_bytes();
         bytes.push(b'\n');
         queue_reply(client, &bytes, Instant::now());
+        true
     }
 
     pub(crate) fn stop_admission(&mut self) {
         self.listener.take();
+    }
+    pub(crate) fn close_all(&mut self) {
+        self.listener.take();
+        self.clients.clear();
     }
     pub(crate) fn has_pending_output(&self) -> bool {
         self.clients.iter().any(|client| {
@@ -305,7 +315,7 @@ impl AdminState {
             .filter_map(|client| client.id)
             .collect::<Vec<_>>();
         for id in ids {
-            self.respond(
+            let _ = self.respond(
                 id,
                 AdminResponse {
                     success: false,
@@ -349,5 +359,8 @@ fn encode_error_envelope(
         reason,
         usage,
     })
-    .unwrap_or_else(|_| "ERR server.command.failed".to_owned())
+    .map_or_else(
+        |_| "ERR admin error serialization failed".to_owned(),
+        |json| format!("ERRJSON {json}"),
+    )
 }

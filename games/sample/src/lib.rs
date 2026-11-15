@@ -16,7 +16,8 @@ pub use portal::{PortalComponent, SampleGameplayModule, PORTAL_COMPONENT, PORTAL
 pub use scenario::{
     default_terrain_material_profile, generate_demo_worlds, generate_worlds,
     generate_worlds_with_planet, generate_worlds_with_planet_and_geography,
-    materialize_manifest_map, terrain_material_profile, DemoPortal, GeneratedWorld,
+    materialize_manifest_map, planet_relief_sampling_policy, resolved_planet_relief_policy,
+    terrain_material_profile, DemoPortal, GeneratedWorld,
 };
 pub use universe::{demo_universe_catalog, DemoUniverseCatalog};
 

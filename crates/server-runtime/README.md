@@ -33,7 +33,7 @@ an error or partial-effect error rather than a full success. A transfer's
 Started result means its prepare was queued, not that the transition is ready
 or committed.
 
-Rendered command text, module text and failure details are capped at 8 KiB with a UTF-8-safe `[truncated]` marker. This leaves room for worst-case JSON escaping within the existing 64 KiB admin reply cap. List snapshots have separate row caps and report truncation explicitly; metrics client rows are capped at 512.
+Rendered command text, module text and failure details are capped at 8 KiB with a UTF-8-safe `[truncated]` marker. The admin adapter bounds the aggregate response fields before serialization and checks the final JSON against the existing 64 KiB reply cap. List snapshots have separate row caps and report truncation explicitly; metrics client rows are capped at 512.
 
 Property reads preserve their existing successful response for unknown keys and unavailable clock properties through typed `UnknownProperty` and `UnavailableProperty` query results. Mutation validation failures continue to use the established typed error codes.
 The world registry validates every composed manifest before publishing an instance:
@@ -55,6 +55,53 @@ Planet admission and transfer destinations validate the standing capsule against
 that current signed field, retaining a saved tunnel position only while it is clear.
 
 ## Ownership and execution
+
+`ServerSchedule` consumes the validated gameplay `SchedulePlan`. The fixed tick
+dispatches its `BuiltinOperation` sequence, not a second handwritten ordering:
+commands → bolids → impacts → excavation → shutdown gate → world inputs →
+FixedUpdate handlers/effects → simulation → Environment handlers/effects →
+PostSimulation handlers/effects → gameplay-event cleanup. Each stage retains
+one bounded effect batch and its existing publication point. Command batches
+still publish per command. A shutdown requested by commands or asynchronous
+owners still stops at the gate after excavation, before world inputs or module
+stages; tick completion metrics/deadlines remain after the full sequence.
+
+Simulation remains one owner operation: synchronize movement policies, update
+sector readiness/collision, commit ready transfers, move ready players, enforce
+surface constraints and reset jump intent. Module dependencies cannot interleave
+inside that transaction. Startup remains once per prepared world after restore;
+replication remains independently scheduled outside the fixed tick. The module
+registry rejects unknown/reserved/duplicate/cyclic dependencies and reverse
+phase constraints before runtime startup. See the gameplay README for stable
+built-in IDs and extension boundaries. Graph allocation is startup-only;
+dispatch reuses the immutable plan. No tick cadence, monotonic clock, catch-up,
+protocol, save or generator changes.
+
+Pending transfers have an independent 300-second monotonic deadline, matching
+the client content-preparation limit. `WorldRegistry` stores their start instant
+and checks elapsed time supplied by its owner; heartbeat traffic, world UTC,
+time scale and duplicate Ready do not renew it. The runtime expires pending
+transfers before world-input/sector processing; Ready rejects an expired ticket,
+and commit checks expiry again. Expiry preserves active membership, source
+position, inventory and return location, and never reuses consumed epoch or
+transition IDs. A transfer that cannot obtain server geometry also expires.
+
+Explicit cancellation, expiry and destination-obstruction failure return a typed
+`CancelledTransfer` with the source context. One runtime cleanup path releases
+that player's transfer pins and cancels queued/generating tickets only when no
+other consumer retains them. Queued/finished stale worker jobs are discarded;
+already-running bounded jobs finish but cannot install a retired ticket.
+Installed unpinned data remains ordinary cache content. There is no separate
+destination membership or storage reservation before commit. The existing
+`TransitionCancelled` message names the still-active source context, as required
+by the client; output backpressure leaves cleanup complete and schedules the
+existing disconnect path. Late Ready/cancel never recreates pending state.
+
+S15 deferred acceptance: 300 seconds with continued connection traffic, exact
+deadline, Ready before/after expiry, destination collision rejection, shared
+pins, late worker results, cancel output pressure and preservation of source
+world state. Existing fixtures are migrated/compiled only; runtime execution
+remains behind Q03.
 
 `ServerRuntime` owns mutable authoritative state on one lane. Worker threads do not mutate active worlds. Signal, admin `server stop`, and host-owner shutdown converge on the shared `ShutdownRequest`. Shutdown closes game and admin admission, rejects pending admin commands, then keeps the owner lane frozen while bounded workers stop and the final snapshot is captured and persisted. A single absolute deadline is 30 seconds from lifecycle start; worker, save, endpoint/status work has the first 28 seconds and the host diagnostics flush uses the remaining two seconds. A timeout is reported as failure and does not mean blocking operating-system I/O was cancelled. `Attached` client sessions never stop the server; only an `OwnedServer` sends graceful stop and reaps its child.
 
@@ -110,7 +157,8 @@ Preserve current protocol/save compatibility, tick cadence, movement behavior, a
 Startup accepts `--material-package PATH`, `--material-http-port PORT` (0 selects
 an available port), and `--climate-scenario PATH`. Both material variants are
 validated before admission. The HTTP endpoint serves only manifest-listed files;
-it owns one bounded I/O worker and joins it at shutdown. Open the selected HTTP
+it owns four bounded I/O workers and a private validated file snapshot, and joins
+the workers before snapshot cleanup at shutdown. Open the selected HTTP
 port alongside the game port for remote clients. Climate initializes and persists
 in `world.climate.ron` under the world data lock, outside snapshots; subsequent
 starts restore it and reject a replacement initialization argument. The required
@@ -299,11 +347,13 @@ count and storage health. Ordinary impact I/O failure stops new impacts but pres
 replication of the last committed world. The original automatic scheduler remains transient.
 
 Current terrain preparation uses `TerrainInputs` with separate geography,
-resolved material profile, crater and remnant snapshots. `WorldDefinition`
-profiles are checked against the exact manifest and map fingerprint before
-registry publication; duplicate content identities cannot select conflicting
-profiles. The sample composition supplies its canonical 1.5 m profile, while
-the runtime has no independent soil-depth override. Entity batches clone only affected world stores, while
+resolved material profile, resolved relief policy, crater and remnant snapshots.
+`WorldDefinition` supplies the relief policy selected by content composition;
+the registry binds and checks it against the exact manifest and map fingerprint
+before publication. Generated planets reject missing policy, and duplicate
+content identities cannot select conflicting material or relief profiles.
+The sample composition supplies its canonical relief policy and 1.5 m material
+profile, while the runtime has no independent soil-depth override. Entity batches clone only affected world stores, while
 capacity checks still include all untouched entities. Impact settings enter via
 `ServerComposition::impact_profile`, without a specialized module hook.
 `runtime/excavation` coordinates tool intents, profile inventories, immutable

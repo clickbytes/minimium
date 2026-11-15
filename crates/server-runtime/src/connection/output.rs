@@ -96,7 +96,20 @@ pub(crate) fn queue_message_with_limit(
         }),
         message,
         close_after_flush,
-        reserved_bytes,
+        reserved_bytes: if reserved_bytes == minimium_protocol::MAX_SERVER_FRAME_BYTES
+            && max_frame_bytes == minimium_protocol::MAX_SERVER_FRAME_BYTES
+        {
+            0
+        } else {
+            reserved_bytes
+        },
+        minimum_headroom_bytes: if reserved_bytes == minimium_protocol::MAX_SERVER_FRAME_BYTES
+            && max_frame_bytes == minimium_protocol::MAX_SERVER_FRAME_BYTES
+        {
+            minimium_protocol::MAX_SERVER_FRAME_BYTES
+        } else {
+            0
+        },
         max_frame_bytes,
     }) {
         Ok(result) => {

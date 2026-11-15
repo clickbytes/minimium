@@ -67,6 +67,8 @@ cargo build --workspace --release --locked --target-dir "$env:LOCALAPPDATA\Minim
 Run the desktop client with its default local server behavior:
 
 ~~~text
+python games/sample/materials/cook.py target/materials/sample-v1
+$env:MINIMIUM_MATERIAL_MANIFEST = (Resolve-Path target/materials/sample-v1/manifest.ron).Path
 cargo run -p minimium-client
 ~~~
 

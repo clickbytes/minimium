@@ -20,6 +20,7 @@ mod operations;
 mod outbound;
 pub mod schedule;
 mod tick;
+mod transfers;
 use diagnostics::emit_system_effect_diagnostic;
 
 use crate::server_command::ServerCommand;

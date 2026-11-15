@@ -29,7 +29,7 @@ mod transfers;
 use membership::Membership;
 pub(crate) use placement::{terrain_capsule_clear, TerrainReads};
 use transfers::PendingTransfer;
-pub(crate) use transfers::{CommittedTransfer, TransferRequestRejection};
+pub(crate) use transfers::{CancelledTransfer, CommittedTransfer, TransferRequestRejection};
 
 #[cfg(test)]
 mod tests;
@@ -43,6 +43,7 @@ pub(crate) struct WorldInstance {
     pub(crate) environment_profile: EnvironmentProfile,
     pub(crate) manifest: WorldManifest,
     pub(crate) terrain_material_profile: minimium_procgen::ResolvedTerrainMaterialProfile,
+    pub(crate) resolved_relief_policy: Option<minimium_procgen::ResolvedPlanetReliefPolicy>,
     pub(crate) map: Arc<WorldMap>,
     pub(crate) world: World,
     pub(crate) collision_source_revision: u64,
@@ -63,6 +64,7 @@ pub(crate) enum RegistryError {
     InvalidSectorState,
     InvalidManifest,
     InvalidTerrainMaterialProfile,
+    InvalidReliefPolicy,
     InvalidEntityState,
     StaleSectorRevision,
     SectorStateCapacity,

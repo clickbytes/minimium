@@ -55,6 +55,7 @@ pub struct WorldDefinition {
     pub manifest: WorldManifest,
     pub map: WorldMap,
     pub terrain_material_profile: minimium_procgen::ResolvedTerrainMaterialProfile,
+    pub resolved_relief_policy: Option<minimium_procgen::ResolvedPlanetReliefPolicy>,
     pub initial_entities: Vec<InitialEntity>,
 }
 

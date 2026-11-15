@@ -9,19 +9,13 @@ impl ServerRuntime {
         if Instant::now() >= self.scheduler.next_tick {
             let tick_started = Instant::now();
             self.scheduler.simulation_tick = self.scheduler.simulation_tick.saturating_add(1);
-            self.apply_commands();
-            self.update_bolids();
-            self.update_impacts();
-            self.update_excavation();
-            if self.shutdown_request.is_requested() {
-                return;
+            let mut index = 0;
+            while let Some(operation) = self.schedule.tick_operation(index) {
+                if !self.run_tick_operation(operation) {
+                    return;
+                }
+                index += 1;
             }
-            self.apply_world_inputs();
-            self.run_tick_system_stage(crate::modules::Stage::FixedUpdate);
-            self.simulate_tick();
-            self.run_tick_system_stage(crate::modules::Stage::Environment);
-            self.run_tick_system_stage(crate::modules::Stage::PostSimulation);
-            self.game.gameplay_events.clear();
             self.metrics.ticks = self.metrics.ticks.saturating_add(1);
             self.metrics.last_tick = tick_started.elapsed();
             self.metrics.tick.record(self.metrics.last_tick);
@@ -36,6 +30,24 @@ impl ServerRuntime {
                 self.scheduler.next_tick = now + TICK;
             }
         }
+    }
+
+    fn run_tick_operation(&mut self, operation: crate::modules::BuiltinOperation) -> bool {
+        use crate::modules::{BuiltinOperation as Op, Stage};
+        match operation {
+            Op::Commands => self.apply_commands(),
+            Op::Bolids => self.update_bolids(),
+            Op::Impacts => self.update_impacts(),
+            Op::Excavation => self.update_excavation(),
+            Op::ShutdownGate => return !self.shutdown_request.is_requested(),
+            Op::WorldInputs => self.apply_world_inputs(),
+            Op::FixedEffects => self.run_tick_system_stage(Stage::FixedUpdate),
+            Op::Simulation => self.simulate_tick(),
+            Op::EnvironmentEffects => self.run_tick_system_stage(Stage::Environment),
+            Op::PostSimulationEffects => self.run_tick_system_stage(Stage::PostSimulation),
+            Op::ClearEvents => self.game.gameplay_events.clear(),
+        }
+        true
     }
 
     fn run_tick_system_stage(&mut self, stage: crate::modules::Stage) {
@@ -207,6 +219,7 @@ impl ServerRuntime {
     fn apply_world_inputs(&mut self) {
         let input_phase = allocations::enter(Phase::Input);
         let input_apply_started = Instant::now();
+        self.expire_pending_transfers(Instant::now());
         self.apply_inputs();
         self.metrics
             .input_apply
@@ -227,10 +240,11 @@ impl ServerRuntime {
                     (*instance, read as &dyn minimium_world::terrain::TerrainRead)
                 })
                 .collect();
-        let (committed, cancelled) = self
-            .game
-            .worlds
-            .commit_ready_transfers_with_terrain(sector_ready, &reads);
+        let (committed, cancelled) = self.game.worlds.commit_ready_transfers_with_terrain(
+            sector_ready,
+            &reads,
+            Instant::now(),
+        );
         let mut committed_players = HashSet::with_capacity(committed.len());
         if !committed.is_empty() {
             self.scheduler.next_snapshot = Instant::now();
@@ -239,28 +253,8 @@ impl ServerRuntime {
             committed_players.insert(transfer.player);
             self.send_transition_committed(transfer);
         }
-        for (player, transition_id, context) in cancelled {
-            let Some(index) = self
-                .connections
-                .client_indices_by_player
-                .get(&player)
-                .copied()
-            else {
-                continue;
-            };
-            if !crate::connection::queue_message(
-                &mut self.connections.clients[index],
-                &mut self.metrics,
-                minimium_protocol::ServerMessage::TransitionCancelled {
-                    transition_id,
-                    context,
-                },
-            ) {
-                self.metrics.dropped_messages = self.metrics.dropped_messages.saturating_add(1);
-                self.connections.clients[index].disconnect_reason =
-                    Some(crate::connection::CloseReason::Backpressure);
-                self.connections.disconnected.push(index);
-            }
+        for cancelled in cancelled {
+            self.finish_transfer_cancellation(cancelled);
         }
         committed_players
     }

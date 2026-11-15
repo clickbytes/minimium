@@ -1,5 +1,5 @@
 use crate::{
-    client_commands::{execute, help_lines, parse_command_typed, CommandContext, CommandResult},
+    client_commands::{execute_text, help_lines, CommandContext, CommandSource, TextCommandResult},
     messages::ClientText as Text,
     options::ClientOptions,
     session::{SessionEvent, SessionState},
@@ -62,7 +62,8 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
     let mut last_environment_status_at = None;
 
     if let Some(address) = options.connect.as_ref() {
-        start_remote(&mut connection, address, &localizer, options.locale);
+        let result = start_remote(&mut connection, address);
+        format_startup_output(result, &localizer, options.locale);
     }
 
     loop {
@@ -193,23 +194,9 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
         match receiver.recv_timeout(Duration::from_millis(25)) {
             Ok(line) => {
                 prompt_needed = true;
-                let command = match parse_command_typed(&line) {
-                    Ok(Some(command)) => command,
-                    Ok(None) => continue,
-                    Err(error) => {
-                        println!(
-                            "{}",
-                            crate::client_commands::command_error(
-                                &error,
-                                &localizer,
-                                options.locale,
-                            )
-                        );
-                        continue;
-                    }
-                };
-                let result = execute(
-                    command,
+                let result = execute_text(
+                    &line,
+                    CommandSource::Terminal,
                     &mut CommandContext {
                         connection: &mut connection,
                         action_executor: &mut action_executor,
@@ -221,8 +208,13 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                     },
                 );
                 match result {
-                    CommandResult::Sent => {}
-                    CommandResult::QueueError(error) => {
+                    TextCommandResult::Empty => {}
+                    TextCommandResult::Rejected(error) => println!(
+                        "{}",
+                        crate::client_commands::command_error(&error, &localizer, options.locale)
+                    ),
+                    TextCommandResult::Queued { .. } => {}
+                    TextCommandResult::QueueRejected { error, .. } => {
                         println!(
                             "{}",
                             Text::CouldNotQueueCommand(error.into())
@@ -230,9 +222,9 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                         )
                     }
                     #[cfg(feature = "desktop")]
-                    CommandResult::Suppressed(_) => {}
-                    CommandResult::Action(action) => {
-                        if actions::handle(
+                    TextCommandResult::Suppressed(_) => {}
+                    TextCommandResult::Action(action) => {
+                        let (should_exit, result) = actions::handle(
                             action,
                             &mut options,
                             &mut connection,
@@ -242,7 +234,60 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                             &log_dir,
                             &parent_run_id,
                             &mut text_properties,
-                        )? {
+                        );
+                        for output in result.outputs {
+                            match output {
+                                crate::client_commands::CommandOutput::Line(line) => {
+                                    println!("{line}")
+                                }
+                                #[cfg(feature = "desktop")]
+                                crate::client_commands::CommandOutput::UiMessage(message)
+                                | crate::client_commands::CommandOutput::UiError(message) => {
+                                    println!("{}", localizer.format(options.locale, &message))
+                                }
+                                crate::client_commands::CommandOutput::ClientText {
+                                    message,
+                                    ..
+                                } => {
+                                    println!("{}", message.localized(&localizer, options.locale));
+                                }
+                                crate::client_commands::CommandOutput::Clear => {
+                                    print!("\x1B[2J\x1B[H")
+                                }
+                                crate::client_commands::CommandOutput::Presentation(result) => {
+                                    match result {
+                                        #[cfg(feature = "desktop")]
+                                        crate::client_commands::PresentationResult::Output(
+                                            lines,
+                                        ) => {
+                                            for line in lines {
+                                                println!("{line}");
+                                            }
+                                        }
+                                        crate::client_commands::PresentationResult::Unavailable(
+                                            capability,
+                                        ) => {
+                                            let notice = match capability {
+                                            crate::client_commands::PresentationCapability::DeveloperRenderer
+                                            | crate::client_commands::PresentationCapability::WeatherDiagnostics => minimium_localization::UiNotice::WeatherRequiresDesktop,
+                                            crate::client_commands::PresentationCapability::SkyDiagnostics => minimium_localization::UiNotice::SkyInfoDesktopOnly,
+                                            crate::client_commands::PresentationCapability::MeteorDiagnostics => minimium_localization::UiNotice::MeteorsRequireDesktop,
+                                        };
+                                            println!(
+                                                "{}",
+                                                localizer.format(
+                                                    options.locale,
+                                                    &minimium_localization::UiMessage::Notice(
+                                                        notice
+                                                    )
+                                                )
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if should_exit {
                             break;
                         }
                     }
@@ -263,49 +308,50 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
     diagnostics_result?;
     Ok(())
 }
+
+pub(super) fn format_startup_output(
+    result: crate::client_commands::CommandActionResult,
+    localizer: &minimium_localization::Localizer,
+    locale: minimium_localization::Locale,
+) {
+    for output in result.outputs {
+        if let crate::client_commands::CommandOutput::ClientText { message, .. } = output {
+            println!("{}", message.localized(localizer, locale));
+        }
+    }
+}
 pub(super) fn start_remote(
     connection: &mut ConnectionController,
     address: &str,
-    localizer: &minimium_localization::Localizer,
-    locale: minimium_localization::Locale,
-) {
+) -> crate::client_commands::CommandActionResult {
     match connection.start_remote(address.to_owned()) {
-        Ok(()) => println!(
-            "{}",
-            Text::ConnectingTo(address.to_owned()).localized(localizer, locale)
-        ),
-        Err(error) => print_start_error(error, localizer, locale),
+        Ok(()) => crate::client_commands::CommandActionResult {
+            outputs: vec![crate::client_commands::CommandOutput::ClientText {
+                message: Text::ConnectingTo(address.to_owned()),
+                error: false,
+            }],
+        },
+        Err(error) => start_error_output(error),
     }
 }
 
-pub(super) fn print_start_error(
-    error: StartError,
-    localizer: &minimium_localization::Localizer,
-    locale: minimium_localization::Locale,
-) {
-    match error {
+pub(super) fn start_error_output(error: StartError) -> crate::client_commands::CommandActionResult {
+    let message = match error {
         StartError::Busy {
             active_attempt: Some(active_attempt),
-        } => {
-            println!(
-                "{}",
-                Text::BusyAttempt {
-                    attempt_id: active_attempt.get()
-                }
-                .localized(localizer, locale)
-            )
-        }
+        } => Text::BusyAttempt {
+            attempt_id: active_attempt.get(),
+        },
         StartError::Busy {
             active_attempt: None,
-        } => println!("{}", Text::DisconnectOrWait.localized(localizer, locale)),
-        StartError::AttemptIdsExhausted => {
-            println!("{}", Text::AttemptIdsExhausted.localized(localizer, locale))
-        }
-        StartError::WorkerSpawn(error) => {
-            println!(
-                "{}",
-                Text::WorkerStartFailed(error.to_string()).localized(localizer, locale)
-            )
-        }
+        } => Text::DisconnectOrWait,
+        StartError::AttemptIdsExhausted => Text::AttemptIdsExhausted,
+        StartError::WorkerSpawn(error) => Text::WorkerStartFailed(error.to_string()),
+    };
+    crate::client_commands::CommandActionResult {
+        outputs: vec![crate::client_commands::CommandOutput::ClientText {
+            message,
+            error: true,
+        }],
     }
 }

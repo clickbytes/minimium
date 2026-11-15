@@ -5,22 +5,28 @@ use super::*;
 use crate::messages::ClientText as Text;
 
 impl Renderer {
-    pub(crate) fn start_remote_attempt(&mut self, address: &str) {
+    pub(crate) fn start_remote_attempt(
+        &mut self,
+        address: &str,
+    ) -> crate::client_commands::CommandActionResult {
         match self.application.start_remote(address.to_owned()) {
             Ok(()) => {
                 self.connection_attempt_started();
-                self.application.ui.console.push_client_text(
-                    Text::ConnectingTo(address.to_owned()),
-                    false,
-                    &self.localizer,
-                    self.application.settings.locale,
-                );
+                crate::client_commands::CommandActionResult {
+                    outputs: vec![crate::client_commands::CommandOutput::ClientText {
+                        message: Text::ConnectingTo(address.to_owned()),
+                        error: false,
+                    }],
+                }
             }
             Err(error) => self.report_start_error(error),
         }
     }
 
-    pub(crate) fn start_local_attempt(&mut self, threads: Option<crate::options::ThreadLane>) {
+    pub(crate) fn start_local_attempt(
+        &mut self,
+        threads: Option<crate::options::ThreadLane>,
+    ) -> crate::client_commands::CommandActionResult {
         let mut config = self.application.settings.local_server_config.clone();
         if let Some(threads) = threads {
             if config
@@ -28,25 +34,24 @@ impl Renderer {
                 .insert("server.threads".to_owned(), threads.as_str().to_owned())
                 .is_some()
             {
-                self.application.ui.console.push_ui_error_message(
-                    minimium_localization::UiMessage::Notice(
-                        minimium_localization::UiNotice::LocalServerThreadsConflict,
-                    ),
-                    &self.localizer,
-                    self.application.settings.locale,
-                );
-                return;
+                return crate::client_commands::CommandActionResult {
+                    outputs: vec![crate::client_commands::CommandOutput::UiError(
+                        minimium_localization::UiMessage::Notice(
+                            minimium_localization::UiNotice::LocalServerThreadsConflict,
+                        ),
+                    )],
+                };
             }
         }
         match self.application.start_local(config) {
             Ok(()) => {
                 self.connection_attempt_started();
-                self.application.ui.console.push_client_text(
-                    Text::StartingLocalServer,
-                    false,
-                    &self.localizer,
-                    self.application.settings.locale,
-                );
+                crate::client_commands::CommandActionResult {
+                    outputs: vec![crate::client_commands::CommandOutput::ClientText {
+                        message: Text::StartingLocalServer,
+                        error: false,
+                    }],
+                }
             }
             Err(error) => self.report_start_error(error),
         }
@@ -63,7 +68,10 @@ impl Renderer {
         }
     }
 
-    fn report_start_error(&mut self, error: StartError) {
+    fn report_start_error(
+        &mut self,
+        error: StartError,
+    ) -> crate::client_commands::CommandActionResult {
         let text = match error {
             StartError::Busy {
                 active_attempt: Some(active_attempt),
@@ -79,12 +87,12 @@ impl Renderer {
         if self.application.settings.require_earth {
             self.application.status = crate::application::ClientStatus::ClientText(text.clone());
         }
-        self.application.ui.console.push_client_text(
-            text,
-            true,
-            &self.localizer,
-            self.application.settings.locale,
-        );
+        crate::client_commands::CommandActionResult {
+            outputs: vec![crate::client_commands::CommandOutput::ClientText {
+                message: text,
+                error: true,
+            }],
+        }
     }
 
     pub(super) fn poll_connector(&mut self) {

@@ -214,17 +214,7 @@ impl GpuResources {
             .features()
             .contains(wgpu::Features::TEXTURE_COMPRESSION_BC)
             && device.limits().max_texture_dimension_2d >= 4096;
-        let material_path = std::env::current_exe()?
-            .parent()
-            .ok_or("client executable has no directory")?
-            .join("materials/sample-v1");
-        let material_path = if material_path.exists() {
-            material_path
-        } else {
-            std::path::PathBuf::from(env!("MINIMIUM_BUILT_MATERIALS"))
-        };
-        let package =
-            minimium_asset_io::materials::MaterialPackage::open(&material_path, compressed)?;
+        let package = super::materials::open_offline_materials(compressed)?;
         let terrain_gpu = minimium_renderer::terrain_gpu::TerrainGpu::new(
             &device,
             &queue,

@@ -30,6 +30,7 @@ impl ServerRuntime {
             self.plan_sleep();
         }
         let persistence_deadline = self.shutdown_request.begin_shutdown() - Duration::from_secs(2);
+        self.operations.transport.stop_admission();
         if let Err(error) = self.shutdown_excavation(persistence_deadline) {
             runtime_error = Some(error);
         }

@@ -20,6 +20,14 @@ impl ClientSession {
         {
             inputs.material_profile = Some(profile);
         }
+        if let Some(policy) = self
+            .active_world_content
+            .as_ref()
+            .filter(|content| Some(content.context) == self.world_context)
+            .and_then(|content| content.content.resolved_relief_policy)
+        {
+            inputs.resolved_relief_policy = Some(policy);
+        }
         if self.impacts.context == self.world_context && self.impacts.ready {
             inputs.remnants = self
                 .impacts
@@ -43,10 +51,12 @@ impl ClientSession {
             .pending_world_content
             .as_ref()
             .filter(|pending| pending.context == context)?;
-        Some(
-            minimium_procgen::TerrainInputs::from(pending.content.geography.clone())
-                .with_material_profile(pending.content.terrain_material_profile),
-        )
+        let mut inputs = minimium_procgen::TerrainInputs::from(pending.content.geography.clone())
+            .with_material_profile(pending.content.terrain_material_profile);
+        if let Some(policy) = pending.content.resolved_relief_policy {
+            inputs = inputs.with_resolved_relief_policy(policy);
+        }
+        Some(inputs)
     }
 
     pub fn excavation_ready(&self) -> bool {

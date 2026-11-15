@@ -44,6 +44,18 @@ pub(crate) struct SectorGenerationPool {
 }
 
 impl SectorGenerationPool {
+    /// Releases queued/results capacity for retired tickets. In-flight workers
+    /// finish normally; installation still rejects their stale ticket identity.
+    pub(crate) fn discard_cancelled(&self, sectors: &SectorManager<SectorPayload>) {
+        let mut state = self.shared.0.lock().unwrap();
+        state
+            .pending
+            .retain(|job| sectors.state(job.ticket).is_some());
+        state
+            .finished
+            .retain(|result| sectors.state(result.ticket).is_some());
+    }
+
     /// Structural edits share the bounded sector worker pool and thread budget.
     pub(crate) fn prepare(&self, task: Box<dyn FnOnce() + Send>) -> io::Result<()> {
         let mut state = self.shared.0.lock().unwrap();
@@ -267,6 +279,7 @@ impl SectorGenerationPool {
                 geography: minimium_procgen::TerrainInputs {
                     geography: geography.clone(),
                     material_profile: Some(instance.terrain_material_profile),
+                    resolved_relief_policy: instance.resolved_relief_policy,
                     edits: Some(instance.terrain.clone()),
                     remnants: Some(instance.remnants.clone()),
                     volumes: instance.volumes.clone(),

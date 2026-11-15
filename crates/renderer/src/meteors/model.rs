@@ -1,7 +1,7 @@
 //! CPU-only meteor contract types validated at the boundary (ADR 0013 § 3-4).
 //!
 //! Physics lives in physical metres on world-aligned axes centred on the planet;
-//! every conversion to game or render units is owned by [`crate::meteors::coords`].
+//! every conversion to game or render units is owned by [`crate::planet_coordinates`].
 //! The types carry no `wgpu`, window, protocol, storage or lifetime dependencies,
 //! so the terminal `--no-default-features` build compiles them unchanged.
 //! `Tracked` is fed by the client adapter for authoritative impact bodies.
@@ -59,10 +59,6 @@ pub const VELOCITY_M_S_MAX: f64 = 100_000.0;
 pub const RADIUS_PHYS_M_MAX: f64 = 2_048.0;
 /// Linear HDR luminous-power envelope far above any observed bolide intensity.
 pub const INTENSITY_MAX: f64 = 1.0e12;
-/// Actionable maximum distance of one transient light centre.
-pub const RANGE_M_MAX: f64 = 1.0e7;
-/// A transient light never outlives five minutes; shorter values stay valid.
-pub const TTL_S_MAX: f64 = 300.0;
 
 /// Boundary validation failure with the offending named domain.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -203,61 +199,6 @@ impl MeteorTrailSample {
         )?;
         check_between("opacity", self.opacity, 0.0, 1.0)?;
         check_between("trail intensity", self.intensity, 0.0, INTENSITY_MAX)?;
-        Ok(())
-    }
-}
-
-/// One emitting centre feeding the shared transient-light uniform.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct TransientLightSample {
-    /// Deterministic identity; received-luminance ties break by ascending id.
-    pub id: MeteorId,
-    /// World-aligned, planet-centred position in physical metres.
-    pub position_phys_m: [f64; 3],
-    /// Emission colour in linear HDR, components in `[0, 1]`.
-    pub linear_rgb: [f64; 3],
-    /// Scene-linear radiant intensity (visible power / 4 pi), before exposure.
-    pub luminous_intensity: f64,
-    /// Actionable maximum lighting distance in physical metres.
-    pub range_m: f64,
-    /// Remaining client-monotonic life in seconds.
-    pub ttl_s: f64,
-}
-
-impl TransientLightSample {
-    /// Validates light colour, power, range and time-to-live.
-    pub fn new(
-        id: MeteorId,
-        position_phys_m: [f64; 3],
-        linear_rgb: [f64; 3],
-        luminous_intensity: f64,
-        range_m: f64,
-        ttl_s: f64,
-    ) -> Result<Self, MeteorContractError> {
-        let sample = Self {
-            id,
-            position_phys_m,
-            linear_rgb,
-            luminous_intensity,
-            range_m,
-            ttl_s,
-        };
-        sample.validate()?;
-        Ok(sample)
-    }
-
-    /// Rechecks a mutated sample.
-    pub fn validate(&self) -> Result<(), MeteorContractError> {
-        check_bounded("position_phys_m", self.position_phys_m, POSITION_ABS_M_MAX)?;
-        check_unit("linear_rgb", self.linear_rgb)?;
-        check_between(
-            "luminous_intensity",
-            self.luminous_intensity,
-            0.0,
-            INTENSITY_MAX,
-        )?;
-        check_between("range_m", self.range_m, 0.0, RANGE_M_MAX)?;
-        check_between("ttl_s", self.ttl_s, 0.0, TTL_S_MAX)?;
         Ok(())
     }
 }

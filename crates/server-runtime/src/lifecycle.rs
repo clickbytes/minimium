@@ -94,7 +94,7 @@ fn drain_transport(
     runtime_error: &mut Option<io::Error>,
     deadline: Instant,
 ) {
-    while transport.has_pending_output() && Instant::now() < deadline {
+    while transport.has_pending_admin_output() && Instant::now() < deadline {
         match transport.poll(Instant::now()) {
             Ok(events) => {
                 for event in events {

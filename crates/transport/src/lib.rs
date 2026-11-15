@@ -19,6 +19,7 @@ pub use host::{
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum QueueError {
     UnknownConnection,
+    UnknownAdminRequest,
     Backpressure,
     Closed,
     Encoding,

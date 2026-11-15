@@ -17,9 +17,13 @@ impl ServerRuntime {
             if owner.manifest.planet().is_none() {
                 continue;
             }
+            let relief_policy = owner
+                .resolved_relief_policy
+                .ok_or_else(|| io::Error::other("water catalog relief policy unavailable"))?;
             let terrain = scene::planet(
                 owner.manifest,
-                minimium_procgen::TerrainInputs::from(self.prepared_geography.clone()),
+                minimium_procgen::TerrainInputs::from(self.prepared_geography.clone())
+                    .with_resolved_relief_policy(relief_policy),
             )
             .ok_or_else(|| io::Error::other("water catalog planet unavailable"))?;
             let catalog = minimium_procgen::WaterCatalog::build(
