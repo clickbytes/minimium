@@ -45,7 +45,7 @@ responsibility = "Client-side astronomy backend and FFI adapter."
 [[package]]
 name = "minimium-procgen"
 role = "engine-domain"
-responsibility = "Seeded procedural generation, typed generation errors, sector geometry, terrain sampling through the shared Earth relief curve, separate presentation ground/sea-level sampling and typed surface/normal/coverage and landform sampling through prepared geography ports, with validated presentation recipes independent of generator identity. Consumes explicit current-terrain inputs separately from immutable geography, supplies volumetric base-field sampling, guarded shared render/collision excavation meshes, material cross-sections, connected finite-water catalogs and independent meteorite object meshes."
+responsibility = "Seeded procedural generation, typed generation errors, sector geometry, terrain sampling through the shared Earth relief curve, separate presentation ground/sea-level sampling and typed surface/normal/coverage and landform sampling through prepared geography ports, with validated presentation recipes independent of generator identity. Consumes explicit current-terrain inputs separately from immutable geography and owns the typed SectorContentVersion contract over monotone edit, remnant and volume revisions. Supplies volumetric base-field sampling, guarded shared render/collision excavation meshes, material cross-sections, connected finite-water catalogs and independent meteorite object meshes."
 forbidden_dependencies = ["minimium-asset-io", "minimium-renderer", "minimium-game-sample"]
 
 [[package]]

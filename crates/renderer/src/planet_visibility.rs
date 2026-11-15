@@ -8,6 +8,7 @@ use std::sync::Arc;
 const MAX_VISIBLE_SECTORS: usize = 512;
 
 pub fn render_patches_for_view(
+    world: minimium_world::world::WorldInstanceId,
     manifest: WorldManifest,
     view: crate::terrain_view::TerrainView,
     collision: &[(SectorKey, Arc<SectorGeometry>)],
@@ -15,6 +16,7 @@ pub fn render_patches_for_view(
     cache: &mut crate::render_patch_cache::RenderPatchCache,
     cancelled: &dyn Fn() -> bool,
 ) -> Result<Vec<(SectorKey, u8, Arc<SectorGeometry>)>, minimium_procgen::ExcavationGeometryError> {
+    cache.set_context(world, manifest);
     let position = view.position;
     if manifest.planet().is_some() {
         return dense_render_patches(manifest, view, collision, geography, cache, cancelled);
@@ -86,25 +88,30 @@ pub fn render_patches_for_view(
     for region in regions {
         let sector = SectorKey::Planet(region.sector);
         let patch = if let Some(prepared) = bases.region(region) {
-            cache.get_revision_result(sector, region.lod, prepared.cache_revision, || {
-                let contours = bases.contours(&prepared);
-                let mut geometry = minimium_procgen::integrate_volume_sector_with_contours(
-                    &terrain,
-                    region.sector,
-                    count,
-                    &prepared.geometry,
-                    &contours,
-                    1.5,
-                )?;
-                if let Some((_, collision_geometry)) =
-                    collision.iter().find(|(key, _)| *key == sector)
-                {
-                    geometry.boxes = collision_geometry.boxes.clone();
-                }
-                Ok(geometry)
-            })?
+            cache.get_revision_result(
+                sector,
+                region.lod,
+                prepared.cache_revision.clone(),
+                || {
+                    let contours = bases.contours(&prepared);
+                    let mut geometry = minimium_procgen::integrate_volume_sector_with_contours(
+                        &terrain,
+                        region.sector,
+                        count,
+                        &prepared.geometry,
+                        &contours,
+                        1.5,
+                    )?;
+                    if let Some((_, collision_geometry)) =
+                        collision.iter().find(|(key, _)| *key == sector)
+                    {
+                        geometry.boxes = collision_geometry.boxes.clone();
+                    }
+                    Ok(geometry)
+                },
+            )?
         } else {
-            let revision = terrain.inputs().sector_revision(sector, 1, count);
+            let revision = terrain.inputs().sector_version(sector, 1, count);
             cache.get_revision_result(sector, region.lod, revision, || {
                 Ok(
                     minimium_procgen::generate_planet_render_patch_with_geography(
@@ -308,7 +315,7 @@ fn dense_render_patches(
         }
         let key = SectorKey::Planet(region.sector);
         let geometry = if let Some(prepared) = bases.region(region) {
-            cache.get_revision_result(key, region.lod, prepared.cache_revision, || {
+            cache.get_revision_result(key, region.lod, prepared.cache_revision.clone(), || {
                 let contours = bases.contours(&prepared);
                 let (u, v) = region.sector.coordinates();
                 let mut geometry = minimium_procgen::integrate_volume_region_with_contours(
@@ -332,7 +339,7 @@ fn dense_render_patches(
                 Ok(geometry)
             })?
         } else {
-            let revision = terrain.inputs().sector_revision(key, region.span, count);
+            let revision = terrain.inputs().sector_version(key, region.span, count);
             cache.get_revision_result(key, region.lod, revision, || {
                 Ok(
                     minimium_procgen::generate_planet_render_block_with_geography(

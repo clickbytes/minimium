@@ -5,7 +5,7 @@ use water::build_water_vertices;
 pub(super) use water::WaterPresentation;
 
 use super::sector_scene::SectorWorkerError;
-use minimium_procgen::{planet_surface_for, PlanetTerrain, SectorGeometry};
+use minimium_procgen::{planet_surface_for, PlanetTerrain, SectorContentVersion, SectorGeometry};
 use minimium_renderer::{prepared_sector::PreparedSector, render_patch_cache::RenderPatchCache};
 use minimium_world::world::{SectorKey, WorldInstanceId, WorldManifest};
 use std::{
@@ -15,7 +15,7 @@ use std::{
 };
 #[derive(Clone, Copy, PartialEq)]
 struct Key {
-    terrain_revision: (u64, u64, u64),
+    terrain_revision: SectorContentVersion,
     world: WorldInstanceId,
     manifest: WorldManifest,
     origin: [f32; 3],
@@ -49,7 +49,7 @@ pub(super) struct PreparedScene {
     pub cache_bytes: usize,
 }
 impl PreparedScene {
-    pub fn terrain_revision(&self) -> (u64, u64, u64) {
+    pub fn terrain_revision(&self) -> SectorContentVersion {
         self.key.terrain_revision
     }
     pub fn matches(
@@ -76,7 +76,7 @@ impl PreparedScene {
         manifest: WorldManifest,
         origin: [f32; 3],
         origin_generation: u64,
-        terrain_revision: (u64, u64, u64),
+        terrain_revision: SectorContentVersion,
     ) -> bool {
         self.key.world == world
             && self.key.manifest == manifest
@@ -212,6 +212,7 @@ impl SectorWorker {
                     let meshes =
                         if manifest.topology() == minimium_world::world::WorldTopology::Planet {
                             minimium_renderer::planet_visibility::render_patches_for_view(
+                                request.key.world,
                                 manifest,
                                 request.key.view,
                                 &request.collision,

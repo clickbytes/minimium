@@ -5,7 +5,6 @@ use minimium_procgen::SectorGeometry;
 use minimium_world::world::{MapTriangle, PlanetSectorKey, SectorKey, WorldManifest};
 use std::{
     collections::{BTreeSet, HashMap},
-    hash::{Hash, Hasher},
     sync::Arc,
 };
 
@@ -28,16 +27,16 @@ pub(crate) struct RenderRegion {
 pub(crate) struct PreparedRenderRegion {
     pub geometry: Arc<SectorGeometry>,
     contour_sources: Vec<RegionKey>,
-    pub cache_revision: u64,
+    pub cache_revision: crate::render_patch_cache::RenderPatchVersion,
 }
 
 pub(crate) struct RenderContourPrepass {
-    bases: HashMap<RegionKey, (u64, Arc<SectorGeometry>)>,
+    bases: HashMap<RegionKey, (minimium_procgen::SectorContentVersion, Arc<SectorGeometry>)>,
     sources: HashMap<RegionKey, Vec<RegionKey>>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct RegionKey {
+pub(crate) struct RegionKey {
     sector: PlanetSectorKey,
     span: u16,
     lod: u8,
@@ -135,7 +134,7 @@ pub(crate) fn prepare(
     let mut bases = HashMap::with_capacity(needed.len());
     let mut bytes = 0usize;
     for region in &needed {
-        let revision = inputs.sector_revision(SectorKey::Planet(region.sector), region.span, count);
+        let revision = inputs.sector_version(SectorKey::Planet(region.sector), region.span, count);
         let geometry = cache.get_base_revision(
             SectorKey::Planet(region.sector),
             region.lod,
@@ -187,13 +186,12 @@ impl RenderContourPrepass {
         let region_key = key(region);
         let (_, geometry) = self.bases.get(&region_key)?;
         let source_keys = self.sources.get(&region_key)?;
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        region_key.hash(&mut hasher);
-        for source in source_keys {
-            source.hash(&mut hasher);
-            self.bases[source].0.hash(&mut hasher);
-        }
-        let cache_revision = hasher.finish();
+        let content = self.bases[source_keys.first()?].0;
+        let cache_revision = crate::render_patch_cache::RenderPatchVersion::with_contour_layout(
+            content,
+            region_key,
+            source_keys.clone(),
+        );
         Some(PreparedRenderRegion {
             geometry: geometry.clone(),
             contour_sources: source_keys.clone(),
