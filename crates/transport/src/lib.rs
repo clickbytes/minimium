@@ -1,5 +1,6 @@
 //! Host-owned nonblocking game and administrative TCP transport.
 mod admin;
+pub mod client;
 mod game;
 mod host;
 

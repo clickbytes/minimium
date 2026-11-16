@@ -3,7 +3,7 @@ mod dispatch;
 use super::*;
 
 impl ClientSession {
-    pub(super) fn decode_available(&mut self, events: &mut Vec<SessionEvent>) {
+    pub(in crate::session) fn decode_available(&mut self, events: &mut Vec<SessionEvent>) {
         loop {
             if let Some((deferred, decoded_at_ms)) = self.deferred_world_message.take() {
                 if self
@@ -31,20 +31,11 @@ impl ClientSession {
                         return;
                     }
                     self.deferred_world_message = Some((deferred.clone(), decoded_at_ms));
-                    let (next, frame_bytes) = match decode_server(&self.receive_buffer) {
-                        Ok(Some(decoded)) => decoded,
-                        Ok(None) => {
-                            if self.receive_buffer.len() > MAX_FRAME_BYTES {
-                                self.disconnect(DisconnectReason::BufferLimit, events);
-                            }
-                            return;
-                        }
-                        Err(ProtocolError::UnsupportedEnvironment) => {
-                            self.disconnect(DisconnectReason::EnvironmentMismatch, events);
-                            return;
-                        }
-                        Err(error) => {
-                            self.disconnect(DisconnectReason::Protocol(error), events);
+                    let next = match self.front_message() {
+                        Ok(Some(message)) => message,
+                        Ok(None) => return,
+                        Err(reason) => {
+                            self.disconnect(reason, events);
                             return;
                         }
                     };
@@ -63,7 +54,7 @@ impl ClientSession {
                                 self.disconnect(DisconnectReason::UnexpectedMessage, events);
                                 return;
                             }
-                            self.receive_buffer.drain(..frame_bytes);
+                            self.consume_message();
                             continue;
                         }
                         (
@@ -87,7 +78,7 @@ impl ClientSession {
                             self.deferred_world_message = None;
                             self.world_content_request = None;
                             self.world_content_started = None;
-                            self.receive_buffer.drain(..frame_bytes);
+                            self.consume_message();
                             continue;
                         }
                         (_, next @ ServerMessage::TransitionPrepare { source_context, .. })
@@ -121,7 +112,7 @@ impl ClientSession {
                             self.world_content_started = Some(Instant::now());
                             self.deferred_world_message =
                                 Some((next.clone(), self.clock.local_monotonic_ms()));
-                            self.receive_buffer.drain(..frame_bytes);
+                            self.consume_message();
                             continue;
                         }
                         (_, ServerMessage::Error(_) | ServerMessage::Bye) => {
@@ -129,7 +120,7 @@ impl ClientSession {
                             self.deferred_world_message = None;
                             self.world_content_request = None;
                             self.world_content_started = None;
-                            self.receive_buffer.drain(..frame_bytes);
+                            self.consume_message();
                             if matches!(
                                 dispatch::dispatch_message(
                                     self,
@@ -159,20 +150,11 @@ impl ClientSession {
                     }
                 }
             }
-            let (message, frame_bytes) = match decode_server(&self.receive_buffer) {
-                Ok(Some(decoded)) => decoded,
-                Ok(None) => {
-                    if self.receive_buffer.len() > MAX_FRAME_BYTES {
-                        self.disconnect(DisconnectReason::BufferLimit, events);
-                    }
-                    return;
-                }
-                Err(ProtocolError::UnsupportedEnvironment) => {
-                    self.disconnect(DisconnectReason::EnvironmentMismatch, events);
-                    return;
-                }
-                Err(error) => {
-                    self.disconnect(DisconnectReason::Protocol(error), events);
+            let message = match self.front_message() {
+                Ok(Some(message)) => message,
+                Ok(None) => return,
+                Err(reason) => {
+                    self.disconnect(reason, events);
                     return;
                 }
             };
@@ -182,16 +164,16 @@ impl ClientSession {
                 dispatch::DispatchResult::Stop => return,
                 dispatch::DispatchResult::Pending => {
                     self.deferred_world_message = Some((message, decoded_at_ms));
-                    self.receive_buffer.drain(..frame_bytes);
+                    self.consume_message();
                     continue;
                 }
                 dispatch::DispatchResult::Skip => {
-                    self.receive_buffer.drain(..frame_bytes);
+                    self.consume_message();
                     continue;
                 }
                 dispatch::DispatchResult::Emit => {}
             }
-            self.receive_buffer.drain(..frame_bytes);
+            self.consume_message();
 
             if let ServerMessage::Snapshot { context, .. } = &message {
                 if Some(*context) != self.world_context {

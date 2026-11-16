@@ -142,6 +142,7 @@ impl From<QueueError> for QueueProblem {
             QueueError::StaleWorldContext => Self::StaleWorldContext,
             QueueError::BufferFull => Self::BufferFull,
             QueueError::InputSequenceExhausted => Self::InputSequenceExhausted,
+            QueueError::TransportIdentifierExhausted => Self::Disconnected,
             QueueError::Protocol(error) => Self::Protocol(error),
         }
     }

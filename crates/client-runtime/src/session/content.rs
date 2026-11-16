@@ -78,7 +78,7 @@ impl ClientSession {
             ));
         }
         let mut endpoint = self
-            .stream
+            .transport
             .as_ref()
             .ok_or_else(|| {
                 SessionFailure::new("session.game_socket_missing", "missing game socket")

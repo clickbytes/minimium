@@ -1,4 +1,6 @@
 use super::*;
+#[path = "../../examples/support/local_transport.rs"]
+mod local_transport;
 use minimium_protocol::ClientWorldInput;
 use minimium_world::world::{
     GeneratorDigest, MembershipEpoch, WorldContentRevision, WorldInstanceId,
@@ -20,7 +22,7 @@ fn connected_session(context: WorldContext) -> ClientSession {
         tools: Default::default(),
         diagnostic_logger: None,
         content: Default::default(),
-        stream: None,
+        transport: Some(Box::new(local_transport::LocalTransport::default())),
         state: SessionState::Connected,
         world_context: Some(context),
         server_tick: 1,
@@ -53,10 +55,7 @@ fn connected_session(context: WorldContext) -> ClientSession {
         state_since: now,
         last_heartbeat_at: now,
         pending_ping_at: None,
-        pending_ping_end: None,
-        receive_buffer: Vec::new(),
-        send_buffer: Vec::new(),
-        send_offset: 0,
+        pending_ping_frame: None,
         metrics: SessionMetrics::default(),
         content_cache_dir: None,
         content_cache_limit_bytes: minimium_asset_io::DEFAULT_CACHE_LIMIT_BYTES,
