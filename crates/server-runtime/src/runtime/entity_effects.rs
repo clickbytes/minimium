@@ -30,7 +30,9 @@ impl ServerRuntime {
             emit_system_effect_diagnostic(
                 &self.world_logger,
                 "effect_receipt:backpressure",
-                &format!("{backpressured} effects refused before acceptance because receipt capacity was full"),
+                &format!(
+                    "{backpressured} effects refused before acceptance because receipt capacity was full"
+                ),
             );
         }
     }
@@ -78,11 +80,11 @@ impl ServerRuntime {
                 .collect();
 
             if !entity_effects.is_empty() {
-                let protected_entities = self.impacts.protected_entities();
                 let result = self.game.worlds.stage_entity_effect_batch(
                     &entity_effects,
                     &self.component_registry,
-                    &protected_entities,
+                    &self.component_owner_authority,
+                    None,
                 );
                 let (rejection, spawned) = match result {
                     Ok(staged) => {
@@ -154,6 +156,82 @@ impl ServerRuntime {
                 "gameplay effect outcome count did not match the bounded input batch",
             ),
         })
+    }
+
+    /// Applies an owner-authenticated entity batch through the same atomic
+    /// staging and storage-reservation path used by ordinary effects.
+    pub fn apply_owned_component_effects(
+        &mut self,
+        port: &super::ComponentOwnerPort,
+        effects: &[WorldEffect],
+    ) -> Result<(), super::ComponentOwnerError> {
+        use super::ComponentOwnerError as OwnerError;
+
+        if self.shutdown_request.is_requested() {
+            return Err(OwnerError::Revoked);
+        }
+        if !self.component_registry.contains_owner(port.owner()) {
+            return Err(OwnerError::ForeignPort);
+        }
+        self.component_owner_authority
+            .validate(port, port.owner(), port.world())?;
+        if effects.is_empty() {
+            return Ok(());
+        }
+        if effects.len() > crate::modules::MAX_WORLD_EFFECTS_PER_STAGE {
+            return Err(OwnerError::InvalidMutation);
+        }
+        let mut payload_bytes = 0usize;
+        for effect in effects {
+            let bytes = match effect {
+                WorldEffect::SpawnEntity { components, .. } => {
+                    if components.len() > minimium_world::entity::MAX_COMPONENTS_PER_ENTITY {
+                        return Err(OwnerError::InvalidMutation);
+                    }
+                    components
+                        .iter()
+                        .try_fold(0usize, |total, component| {
+                            total.checked_add(component.bytes.len())
+                        })
+                        .ok_or(OwnerError::InvalidMutation)?
+                }
+                WorldEffect::SetComponent { component, .. } => component.bytes.len(),
+                _ => 0,
+            };
+            payload_bytes = payload_bytes
+                .checked_add(bytes)
+                .filter(|total| *total <= crate::modules::MAX_WORLD_EFFECT_BYTES_PER_STAGE)
+                .ok_or(OwnerError::InvalidMutation)?;
+        }
+        if effects
+            .iter()
+            .any(|effect| matches!(effect, WorldEffect::RequestTransfer { .. }))
+        {
+            return Err(OwnerError::InvalidMutation);
+        }
+        let staged = self
+            .game
+            .worlds
+            .stage_entity_effect_batch(
+                effects,
+                &self.component_registry,
+                &self.component_owner_authority,
+                Some(port),
+            )
+            .map_err(|error| match error {
+                crate::world_registry::RegistryError::SnapshotBudgetExceeded => {
+                    OwnerError::StorageBudget
+                }
+                _ => OwnerError::Validation,
+            })?;
+        let reservation = self
+            .operations
+            .player_store
+            .snapshot_budget_mut()
+            .prepare_entity_changes(staged.changes())
+            .map_err(|_| OwnerError::StorageBudget)?;
+        staged.commit(reservation);
+        Ok(())
     }
 
     pub(super) fn report_effect_batch_outcome(&self, source: &str, outcome: &EffectBatchOutcome) {

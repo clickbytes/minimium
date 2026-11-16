@@ -49,7 +49,7 @@ pub(crate) fn component_registry(
     let mut registry = minimium_world::entity::ComponentRegistry::default();
     minimium_world::impact::register_component(&mut registry)?;
     for component in modules.components() {
-        registry.register(component.descriptor)?;
+        registry.register_module_component(component.module, component.descriptor)?;
     }
     Ok(registry)
 }
@@ -383,7 +383,7 @@ pub fn execute(
                         return CommandReply::error(
                             "server.command.invalid_arguments",
                             "players cursor is invalid or stale",
-                        )
+                        );
                     }
                 }
             }

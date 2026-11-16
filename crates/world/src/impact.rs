@@ -17,7 +17,8 @@ pub const BODY_SCHEMA: crate::entity::SchemaVersion = match crate::entity::Schem
 pub fn register_component(
     registry: &mut crate::entity::ComponentRegistry,
 ) -> Result<(), crate::entity::ComponentError> {
-    registry.register(component_descriptor())
+    registry.register_builtin("engine.impact", component_descriptor())?;
+    Ok(())
 }
 
 fn component_descriptor() -> crate::entity::ComponentDescriptor {
@@ -34,6 +35,7 @@ fn component_descriptor() -> crate::entity::ComponentDescriptor {
         visibility: crate::entity::ReplicationVisibility::Spatial {
             position: |bytes| Some(BodyState::decode(bytes)?.position.map(|v| v as f32)),
         },
+        mutation_policy: crate::entity::ComponentMutationPolicy::OwnerOnly,
     }
 }
 

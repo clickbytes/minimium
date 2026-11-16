@@ -30,7 +30,28 @@ impl Publication<'_> {
         }
         let before = self.inputs(mutation.world()).unwrap();
         for body in mutation.impact_bodies() {
-            impacts::projection::prepare(self.worlds, self.components, *body, true)?;
+            let port = self
+                .impacts
+                .owner_ports
+                .get(&body.world)
+                .ok_or_else(|| io::Error::other("impact owner port missing"))?;
+            if !self
+                .components
+                .owns(port.owner(), minimium_world::impact::BODY_COMPONENT)
+            {
+                return Err(io::Error::other("impact owner port mismatch"));
+            }
+            self.owner_authority
+                .validate(port, port.owner(), body.world)
+                .map_err(io::Error::other)?;
+            impacts::projection::prepare(
+                self.worlds,
+                self.components,
+                self.owner_authority,
+                port,
+                *body,
+                true,
+            )?;
         }
         if let Some(terrain) = prepared.terrain {
             let owner = self.worlds.get(mutation.world()).unwrap();
@@ -51,7 +72,22 @@ impl Publication<'_> {
                 )
                 .map_err(|_| io::Error::other("sector ticket space exhausted"))?;
             for body in mutation.impact_bodies() {
-                impacts::projection::publish(self.worlds, self.components, *body, true)?;
+                let port = self
+                    .impacts
+                    .owner_ports
+                    .get(&body.world)
+                    .ok_or_else(|| io::Error::other("impact owner port missing"))?;
+                self.owner_authority
+                    .validate(port, port.owner(), body.world)
+                    .map_err(io::Error::other)?;
+                impacts::projection::publish(
+                    self.worlds,
+                    self.components,
+                    self.owner_authority,
+                    port,
+                    *body,
+                    true,
+                )?;
             }
             let remnants = self
                 .worlds

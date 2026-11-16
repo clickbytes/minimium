@@ -43,6 +43,7 @@ impl ServerRuntime {
                 &mut self.game.sectors,
                 &mut self.impacts,
                 &self.component_registry,
+                &self.component_owner_authority,
                 &self.prepared_geography,
                 &self.world_logger,
                 &self.shutdown_request,

@@ -90,6 +90,7 @@ impl ServerRuntime {
             logger: &self.server_logger,
             runtime_error,
         });
+        self.component_owner_authority.revoke_all();
         crate::ShutdownOutcome {
             commands,
             effect_receipts,

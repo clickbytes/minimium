@@ -1,7 +1,8 @@
 use super::*;
-use crate::runtime::ProtectedImpactEntities;
+use crate::runtime::{ComponentOwnerAuthority, ComponentOwnerPort};
 use minimium_world::entity::{
-    ComponentBlob, ComponentMutation, ComponentRegistry, EntityStore, WorldEntityChange,
+    ComponentBlob, ComponentMutation, ComponentMutationPolicy, ComponentRegistry, EntityStore,
+    WorldEntityChange,
 };
 use std::collections::HashSet;
 
@@ -54,7 +55,8 @@ impl WorldRegistry {
         &'a mut self,
         effects: &[crate::modules::WorldEffect],
         registry: &ComponentRegistry,
-        protected_entities: &ProtectedImpactEntities,
+        reservations: &ComponentOwnerAuthority,
+        authorization: Option<&ComponentOwnerPort>,
     ) -> Result<StagedEntityBatch<'a>, RegistryError> {
         let mut stores = BTreeMap::new();
         let mut changes = Vec::new();
@@ -67,6 +69,9 @@ impl WorldRegistry {
                 | crate::modules::WorldEffect::RemoveComponent { world, .. } => *world,
                 crate::modules::WorldEffect::RequestTransfer { .. } => continue,
             };
+            if let Some(port) = authorization {
+                validate_owner_access(registry, reservations, port, port.owner(), instance)?;
+            }
             if let std::collections::btree_map::Entry::Vacant(entry) = stores.entry(instance) {
                 let owner = self
                     .instances
@@ -88,12 +93,6 @@ impl WorldRegistry {
                     sector,
                     components,
                 } => {
-                    if components
-                        .iter()
-                        .any(|component| component.kind == minimium_world::impact::BODY_COMPONENT)
-                    {
-                        return Err(RegistryError::InvalidEntityState);
-                    }
                     let total =
                         untouched_entities + stores.values().map(EntityStore::len).sum::<usize>();
                     if total >= minimium_world::entity::MAX_PERSISTENT_ENTITIES {
@@ -130,6 +129,13 @@ impl WorldRegistry {
                         if !kinds.insert(component.kind) {
                             return Err(RegistryError::Component(ComponentError::InvalidPayload));
                         }
+                        validate_component_mutation(
+                            registry,
+                            reservations,
+                            authorization,
+                            *world,
+                            component.kind,
+                        )?;
                         store
                             .insert(
                                 registry,
@@ -151,10 +157,20 @@ impl WorldRegistry {
                     let store = stores
                         .get_mut(world)
                         .ok_or(RegistryError::UnknownInstance)?;
-                    if protected_entities.contains(*world, entity.get())
-                        || store
-                            .get(*entity, minimium_world::impact::BODY_COMPONENT)
-                            .is_some()
+                    let owns_protected_components = store
+                        .iter_components()
+                        .filter(|(id, _, _)| *id == *entity)
+                        .all(|(_, kind, _)| {
+                            validate_component_mutation(
+                                registry,
+                                reservations,
+                                authorization,
+                                *world,
+                                kind,
+                            )
+                            .is_ok()
+                        });
+                    if reservations.is_reserved(*world, entity.get()) || !owns_protected_components
                     {
                         return Err(RegistryError::InvalidEntityState);
                     }
@@ -171,9 +187,13 @@ impl WorldRegistry {
                     entity,
                     component,
                 } => {
-                    if component.kind == minimium_world::impact::BODY_COMPONENT {
-                        return Err(RegistryError::InvalidEntityState);
-                    }
+                    validate_component_mutation(
+                        registry,
+                        reservations,
+                        authorization,
+                        *world,
+                        component.kind,
+                    )?;
                     let store = stores
                         .get_mut(world)
                         .ok_or(RegistryError::UnknownInstance)?;
@@ -198,9 +218,13 @@ impl WorldRegistry {
                     entity,
                     kind,
                 } => {
-                    if *kind == minimium_world::impact::BODY_COMPONENT {
-                        return Err(RegistryError::InvalidEntityState);
-                    }
+                    validate_component_mutation(
+                        registry,
+                        reservations,
+                        authorization,
+                        *world,
+                        *kind,
+                    )?;
                     let store = stores
                         .get_mut(world)
                         .ok_or(RegistryError::UnknownInstance)?;
@@ -316,4 +340,42 @@ impl WorldRegistry {
         }
         Ok(())
     }
+}
+
+fn validate_owner_access(
+    registry: &ComponentRegistry,
+    authority: &ComponentOwnerAuthority,
+    port: &ComponentOwnerPort,
+    owner: &minimium_world::entity::ComponentOwnerId,
+    world: WorldInstanceId,
+) -> Result<(), RegistryError> {
+    if port.world() != world || !registry.contains_owner(owner) {
+        return Err(RegistryError::InvalidEntityState);
+    }
+    authority
+        .validate(port, owner, world)
+        .map_err(|_| RegistryError::InvalidEntityState)
+}
+
+fn validate_component_mutation(
+    registry: &ComponentRegistry,
+    authority: &ComponentOwnerAuthority,
+    authorization: Option<&ComponentOwnerPort>,
+    world: WorldInstanceId,
+    component: minimium_world::entity::ComponentTypeId,
+) -> Result<(), RegistryError> {
+    let Some(descriptor) = registry.descriptor(component) else {
+        return Ok(());
+    };
+    if descriptor.mutation_policy == ComponentMutationPolicy::General {
+        return Ok(());
+    }
+    let owner = registry
+        .owner_for_component(component)
+        .ok_or(RegistryError::InvalidEntityState)?;
+    let port = authorization.ok_or(RegistryError::InvalidEntityState)?;
+    if !registry.owns(port.owner(), component) {
+        return Err(RegistryError::InvalidEntityState);
+    }
+    validate_owner_access(registry, authority, port, &owner, world)
 }
