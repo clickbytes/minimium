@@ -10,6 +10,7 @@ mod effects;
 mod read_views;
 mod schedule;
 mod system;
+mod world_changes;
 pub use commands::{
     ModuleCommandContext, ModuleCommandErrorCode, ModuleCommandErrorCodeError,
     ModuleCommandHandler, ModuleCommandResult, ModuleCommandText,
@@ -30,6 +31,11 @@ pub use read_views::{
 };
 pub use schedule::{BuiltinOperation, SchedulePlan};
 pub use system::{GameplaySystem, GameplaySystemContext};
+pub use world_changes::{
+    RestoredWorldChanges, WorldChangeAck, WorldChangeCommitment, WorldChangeFailure,
+    WorldChangePlan, WorldChangePlanError, WorldChangeState, MAX_WORLD_CHANGE_BODIES,
+    MAX_WORLD_CHANGE_CHUNKS,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ModuleDescriptor {

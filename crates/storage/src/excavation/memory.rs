@@ -1,10 +1,11 @@
 use super::*;
 use crate::memory::Lease;
+use minimium_gameplay::{WorldChangeAck, WorldChangeCommitment, WorldChangeFailure};
 use std::collections::VecDeque;
 
 pub(crate) struct MemoryExcavation {
     lease: Arc<Lease>,
-    pending: Mutex<VecDeque<WorldMutation>>,
+    pending: Mutex<VecDeque<WorldChangePlan>>,
     config: JournalConfig,
     stopped: bool,
 }
@@ -18,13 +19,23 @@ impl MemoryExcavation {
             stopped: false,
         }
     }
-    fn check(&self, mutation: &WorldMutation, state: &ExcavationRestore) -> io::Result<()> {
+    fn check(
+        &self,
+        plan: &WorldChangePlan,
+        state: &ExcavationRestore,
+    ) -> Result<(), PersistenceError> {
+        let mutation = stored_mutation(plan);
         if mutation.expected_chunk_revisions.len() > 64
             || mutation.craters.len() > minimium_world::terrain_edits::MAX_TERRAIN_EDITS
         {
-            return Err(invalid_request("excavation mutation count exceeds limit"));
+            return Err(PersistenceError::new(WorldChangeFailure::LimitExceeded));
         }
-        validate_mutation(mutation, state)?;
+        validate_mutation(&mutation, state).map_err(|error| {
+            PersistenceError::with_source(
+                error.kind,
+                io::Error::new(io::ErrorKind::InvalidData, error.detail),
+            )
+        })?;
         // Reject before the encoder allocates: a smaller host transaction cap
         // must also bound the staging image, not just accepted queue entries.
         let mut bytes = 51usize;
@@ -38,69 +49,66 @@ impl MemoryExcavation {
         bytes = bytes.saturating_add(usize::from(mutation.inventory.is_some()) * 27);
         bytes = bytes.saturating_add(usize::from(mutation.water_catalog_digest.is_some()) * 32);
         if let Some(fluid) = &mutation.fluids {
-            bytes = bytes.saturating_add(budget::fluid_size(fluid)?);
+            bytes = bytes.saturating_add(budget::fluid_size(fluid).map_err(PersistenceError::new)?);
         }
         if bytes > self.config.transaction_budget {
-            return Err(invalid_request(
-                "excavation transaction byte budget exceeded",
-            ));
+            return Err(PersistenceError::new(WorldChangeFailure::LimitExceeded));
         }
-        if encode_mutation(mutation)?.len() > self.config.transaction_budget {
-            return Err(invalid_request(
-                "excavation transaction byte budget exceeded",
-            ));
+        if encode_mutation(&mutation)
+            .map_err(|e| PersistenceError::with_source(WorldChangeFailure::Failure, e))?
+            .len()
+            > self.config.transaction_budget
+        {
+            return Err(PersistenceError::new(WorldChangeFailure::LimitExceeded));
         }
         let mut candidate = state.clone();
-        apply(&mut candidate, mutation);
+        apply(&mut candidate, &mutation);
         restore_validation::checked_checkpoint(&candidate, self.config.byte_budget as usize)?;
         Ok(())
     }
 }
 
 impl ExcavationJournalPort for MemoryExcavation {
-    fn submit(&self, mutation: WorldMutation) -> io::Result<()> {
-        self.validate(&mutation)?;
+    fn submit(&self, plan: WorldChangePlan) -> Result<(), PersistenceError> {
+        self.validate(&plan)?;
         let mut pending = self
             .pending
             .lock()
-            .map_err(|_| invalid("memory journal poisoned"))?;
+            .map_err(|_| PersistenceError::new(WorldChangeFailure::Failure))?;
         if pending.len() >= QUEUE_CAPACITY {
-            return Err(io::Error::new(
-                io::ErrorKind::WouldBlock,
-                "excavation queue full",
-            ));
+            return Err(PersistenceError::new(WorldChangeFailure::Busy));
         }
-        pending.push_back(mutation);
+        pending.push_back(plan);
         Ok(())
     }
-    fn validate(&self, mutation: &WorldMutation) -> io::Result<()> {
+    fn validate(&self, plan: &WorldChangePlan) -> Result<(), PersistenceError> {
         if self.stopped {
-            return Err(io::Error::new(
-                io::ErrorKind::BrokenPipe,
-                "excavation journal stopped",
-            ));
+            return Err(PersistenceError::new(WorldChangeFailure::Unavailable));
         }
         let state = self
             .lease
             .state
             .lock()
-            .map_err(|_| invalid("memory backend poisoned"))?;
-        self.check(mutation, &state.excavation)
+            .map_err(|_| PersistenceError::new(WorldChangeFailure::Failure))?;
+        self.check(plan, &state.excavation)
     }
-    fn poll_durable(&self) -> Option<io::Result<WorldMutation>> {
+    fn poll_acknowledged(&self) -> Option<Result<WorldChangeAck, PersistenceError>> {
         let mutation = match self.pending.lock() {
             Ok(mut pending) => pending.pop_front()?,
-            Err(_) => return Some(Err(invalid("memory journal poisoned"))),
+            Err(_) => return Some(Err(PersistenceError::new(WorldChangeFailure::Failure))),
         };
         Some((|| {
             let mut state = self
                 .lease
                 .state
                 .lock()
-                .map_err(|_| invalid("memory backend poisoned"))?;
+                .map_err(|_| PersistenceError::new(WorldChangeFailure::Failure))?;
             self.check(&mutation, &state.excavation)?;
-            apply(&mut state.excavation, &mutation);
-            Ok(mutation)
+            apply(&mut state.excavation, &stored_mutation(&mutation));
+            Ok(WorldChangeAck {
+                plan: mutation,
+                commitment: WorldChangeCommitment::Volatile,
+            })
         })())
     }
     fn counters(&self) -> (u64, u64) {
@@ -123,7 +131,8 @@ impl ExcavationJournalPort for MemoryExcavation {
         Ok(restore_validation::checked_checkpoint(
             &state.excavation,
             self.config.byte_budget as usize,
-        )?
+        )
+        .map_err(io::Error::other)?
         .len() as u64)
     }
     fn shutdown_until(&mut self, deadline: Instant) -> io::Result<()> {
@@ -139,8 +148,8 @@ impl ExcavationJournalPort for MemoryExcavation {
                     "memory journal shutdown timeout",
                 ));
             }
-            if let Some(result) = self.poll_durable() {
-                result?;
+            if let Some(result) = self.poll_acknowledged() {
+                result.map_err(io::Error::other)?;
             }
         }
         self.stopped = true;

@@ -75,7 +75,7 @@ impl ExcavationCoordinator {
             || self
                 .pending
                 .as_ref()
-                .is_some_and(|p| p.prepared.mutation.world == world)
+                .is_some_and(|p| p.prepared.mutation.world() == world)
     }
 
     pub(super) fn contains_action(&self, player: PlayerId, context: WorldContext, id: u64) -> bool {
@@ -95,7 +95,7 @@ impl ExcavationCoordinator {
             .as_ref()?
             .prepared
             .mutation
-            .inventory
+            .inventory()
             .filter(|(owner, _)| *owner == profile)
             .map(|(_, inventory)| inventory)
     }
@@ -113,12 +113,20 @@ impl ExcavationCoordinator {
         self.failure = Some(reason);
     }
 
-    pub(super) fn storage_rejection(&mut self, error: io::Error) -> ActionRejection {
-        match error.kind() {
-            io::ErrorKind::InvalidInput => ActionRejection::Capacity,
-            io::ErrorKind::WouldBlock => ActionRejection::Busy,
-            _ => {
-                self.fail(error.to_string());
+    pub(super) fn storage_rejection(
+        &mut self,
+        error: minimium_storage::excavation::PersistenceError,
+    ) -> ActionRejection {
+        use minimium_gameplay::WorldChangeFailure as Failure;
+        match error.kind {
+            Failure::IdentityConflict | Failure::RevisionConflict => ActionRejection::Stale,
+            Failure::LimitExceeded | Failure::InvalidPlan => ActionRejection::Capacity,
+            Failure::Busy => ActionRejection::Busy,
+            Failure::Unavailable | Failure::Failure => {
+                let detail = error
+                    .source_error()
+                    .map_or_else(|| format!("{:?}", error.kind), ToString::to_string);
+                self.fail(detail);
                 ActionRejection::Storage
             }
         }
@@ -149,11 +157,14 @@ impl ExcavationCoordinator {
     }
 
     /// Queue acceptance reserves the slot; only advance can authorize publication.
-    pub(super) fn submit(&mut self, prepared: Prepared, origin: Origin) -> io::Result<()> {
+    pub(super) fn submit(
+        &mut self,
+        prepared: Prepared,
+        origin: Origin,
+    ) -> Result<(), minimium_storage::excavation::PersistenceError> {
         if self.busy() {
-            return Err(io::Error::new(
-                io::ErrorKind::WouldBlock,
-                "excavation transaction is reserved",
+            return Err(minimium_storage::excavation::PersistenceError::new(
+                minimium_gameplay::WorldChangeFailure::Busy,
             ));
         }
         self.journal.submit(prepared.mutation.clone())?;

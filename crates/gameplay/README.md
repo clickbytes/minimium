@@ -54,7 +54,7 @@ mutable values such as player position are read live on each request.
 
 ## Dependencies
 
-Depends on generic command metadata and world component descriptors. It does not depend on `minimium-server-runtime`, `minimium-storage`, transport, or GPU packages.
+Depends on generic command metadata, world component descriptors, and neutral terrain/fluid value models for world-change plans. It does not depend on `minimium-server-runtime`, `minimium-storage`, transport, or GPU packages.
 
 ## Data flow
 
@@ -158,3 +158,12 @@ terrain remain unavailable rather than being treated as empty space.
 `EntityInteractionRequested` is the generic interaction event; the sample portal
 consumer accepts it and the earlier `PortalUseRequested` compatibility variant.
 Inventory, mining rewards and damage policy are not implied by the impact profile.
+
+`WorldChangePlan` is an immutable bounded envelope for one coherent terrain,
+inventory, fluid, impact, crater and water-catalog update. Its constructor checks
+plan identity, local collection bounds and world consistency; persistence validates
+optimistic revisions and aggregate backend budgets. Clones carry one opaque plan
+identity, so an acknowledgement can confirm exactly the envelope that was queued.
+`WorldChangeState` and `RestoredWorldChanges` describe materialized domain state;
+they contain no journal offsets or replay records. `WorldChangeCommitment` marks
+file commits durable and memory-backend commits volatile.

@@ -3,6 +3,9 @@ use minimium_core::identity::PlayerProfileId;
 use minimium_fluids::{
     CellWater, FluidConfig, FluidSnapshot, Reservoir, ReservoirKind, VolumeLevel,
 };
+use minimium_gameplay::{
+    RestoredWorldChanges, WorldChangeFailure, WorldChangePlan, WorldChangeState,
+};
 use minimium_terrain::ChunkImage;
 use minimium_world::{
     impact::BodyState,
@@ -12,7 +15,7 @@ use minimium_world::{
     world::WorldInstanceId,
 };
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, HashSet},
     fs::{File, OpenOptions},
     io::{self, Read, Seek, SeekFrom, Write},
     path::Path,
@@ -52,7 +55,7 @@ impl JournalConfig {
 }
 
 #[derive(Clone)]
-pub struct WorldMutation {
+struct WorldMutation {
     pub id: u64,
     pub world: WorldInstanceId,
     pub world_seed: u128,
@@ -65,28 +68,11 @@ pub struct WorldMutation {
     pub water_catalog_digest: Option<[u8; 32]>,
 }
 
-#[derive(Clone, Default)]
-pub struct RestoredWorld {
-    pub world_seed: u128,
-    pub last_mutation: u64,
-    pub chunks: BTreeMap<[i32; 3], Arc<ChunkImage>>,
-    pub fluids: Option<FluidSnapshot>,
-    pub impact_bodies: BTreeMap<u64, BodyState>,
-    pub craters: BTreeMap<u64, CraterStamp>,
-    pub water_catalog_digest: Option<[u8; 32]>,
-}
-
-#[derive(Clone, Default)]
-pub struct ExcavationRestore {
-    pub worlds: BTreeMap<WorldInstanceId, RestoredWorld>,
-    pub inventories: HashMap<PlayerProfileId, Inventory>,
-    pub last_mutation_id: u64,
-    pub mutation_count: u64,
-}
+type ExcavationRestore = WorldChangeState;
 
 mod journal;
 pub use journal::ExcavationJournal;
-pub use journal::ExcavationJournalPort;
+pub use journal::{ExcavationJournalPort, PersistenceError};
 mod budget;
 use budget::checkpoint_size;
 mod validation;
@@ -100,26 +86,28 @@ fn commit(
     path: &Path,
     file: &mut Option<File>,
     state: &mut ExcavationRestore,
-    mutation: WorldMutation,
+    plan: WorldChangePlan,
     config: JournalConfig,
-) -> io::Result<WorldMutation> {
-    validate_mutation(&mutation, state).map_err(|error| invalid_request(&error.to_string()))?;
-    let bytes = encode_mutation(&mutation)?;
-    if checkpoint_size(state, &mutation).map_err(|error| invalid_request(&error.to_string()))?
-        as u64
-        > config.byte_budget
+) -> Result<WorldChangePlan, PersistenceError> {
+    let mutation = stored_mutation(&plan);
+    validate_mutation(&mutation, state).map_err(|error| {
+        PersistenceError::with_source(
+            error.kind,
+            io::Error::new(io::ErrorKind::InvalidData, error.detail),
+        )
+    })?;
+    let bytes = encode_mutation(&mutation).map_err(PersistenceError::from)?;
+    if checkpoint_size(state, &mutation).map_err(PersistenceError::new)? as u64 > config.byte_budget
     {
-        return Err(invalid_request(
-            "restored state exceeds configured byte budget",
-        ));
+        return Err(PersistenceError::new(WorldChangeFailure::LimitExceeded));
     }
     let writer = file
         .as_mut()
-        .ok_or_else(|| invalid("excavation journal closed"))?;
+        .ok_or_else(|| PersistenceError::new(WorldChangeFailure::Unavailable))?;
     let record_size = bytes
         .len()
         .checked_add(12)
-        .ok_or_else(|| invalid("record size overflow"))?;
+        .ok_or_else(|| PersistenceError::new(WorldChangeFailure::LimitExceeded))?;
     if bytes.len() > config.transaction_budget
         || writer
             .metadata()?
@@ -127,7 +115,7 @@ fn commit(
             .checked_add(record_size as u64)
             .is_none_or(|length| length > config.byte_budget)
     {
-        return Err(invalid_request("excavation journal budget exceeded"));
+        return Err(PersistenceError::new(WorldChangeFailure::LimitExceeded));
     }
     writer.write_all(&(bytes.len() as u32).to_le_bytes())?;
     writer.write_all(&bytes)?;
@@ -137,7 +125,7 @@ fn commit(
     if file.as_ref().unwrap().metadata()?.len() >= CHECKPOINT_AT.min(config.byte_budget / 2) {
         let _ = compact(path, state, file, config);
     }
-    Ok(mutation)
+    Ok(plan)
 }
 
 fn apply(state: &mut ExcavationRestore, mutation: &WorldMutation) {
@@ -227,7 +215,7 @@ fn load(path: &Path, config: JournalConfig) -> io::Result<(File, ExcavationResto
                 return Err(invalid("oversized excavation mutation"));
             }
             let mutation = decode_mutation(record)?;
-            validate_mutation(&mutation, &state)?;
+            validate_mutation(&mutation, &state).map_err(|error| invalid(error.detail))?;
             apply(&mut state, &mutation);
             replayed += 1;
         }
@@ -277,6 +265,17 @@ use codec::{
     checksum, decode_checkpoint, decode_mutation, encode_checkpoint, encode_mutation, invalid,
 };
 
-fn invalid_request(message: &str) -> io::Error {
-    io::Error::new(io::ErrorKind::InvalidInput, message)
+fn stored_mutation(plan: &WorldChangePlan) -> WorldMutation {
+    WorldMutation {
+        id: plan.id(),
+        world: plan.world(),
+        world_seed: plan.world_seed(),
+        expected_chunk_revisions: plan.expected_chunk_revisions().to_vec(),
+        resulting_chunks: plan.resulting_chunks().to_vec(),
+        inventory: plan.inventory(),
+        fluids: plan.fluids().cloned(),
+        impact_bodies: plan.impact_bodies().to_vec(),
+        craters: plan.craters().to_vec(),
+        water_catalog_digest: plan.water_catalog_digest(),
+    }
 }

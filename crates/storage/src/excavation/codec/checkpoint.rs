@@ -113,7 +113,7 @@ pub(crate) fn decode_checkpoint(bytes: &[u8]) -> io::Result<ExcavationRestore> {
         let water_catalog_digest = reader.digest()?;
         state.worlds.insert(
             id,
-            RestoredWorld {
+            RestoredWorldChanges {
                 world_seed: seed,
                 last_mutation,
                 chunks,

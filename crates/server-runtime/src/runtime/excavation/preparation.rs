@@ -22,18 +22,9 @@ impl ToolPreparation {
             .store
             .prepare(&base, self.request)
             .map_err(scene::edit_error)?;
-        let mut mutation = WorldMutation {
-            id: self.request.mutation_id,
-            world: self.store.world(),
-            world_seed: self.manifest.generation().seed().get(),
-            expected_chunk_revisions: edit.expected().to_vec(),
-            resulting_chunks: edit.chunks().to_vec(),
-            inventory: None,
-            fluids: None,
-            impact_bodies: Vec::new(),
-            craters: Vec::new(),
-            water_catalog_digest: self.water_catalog_digest,
-        };
+        let expected = edit.expected().to_vec();
+        let resulting = edit.chunks().to_vec();
+        let mut fluids = None;
         let mut candidate = (*self.store).clone();
         candidate.commit(edit).map_err(scene::edit_error)?;
         let candidate = Arc::new(candidate);
@@ -65,14 +56,10 @@ impl ToolPreparation {
                     self.water_budget,
                 )
                 .map_err(|_| ActionRejection::Capacity)?;
-            mutation.fluids = Some(prepared_water.snapshot().clone());
+            fluids = Some(prepared_water.snapshot().clone());
             state.publish_terrain_edit(prepared_water);
         }
-        let changed: Vec<_> = mutation
-            .resulting_chunks
-            .iter()
-            .map(|chunk| chunk.key())
-            .collect();
+        let changed: Vec<_> = resulting.iter().map(|chunk| chunk.key()).collect();
         let chunk_coordinates = changed.iter().take(8).map(|key| key.coordinates).collect();
         let collision_started = Instant::now();
         let geometries = minimium_procgen::validate_volume_geometry(
@@ -93,6 +80,19 @@ impl ToolPreparation {
             .into_iter()
             .map(|(key, geometry)| (key, Arc::new(SectorPayload::new(geometry))))
             .collect();
+        let mutation = WorldChangePlan::new(
+            self.request.mutation_id,
+            self.store.world(),
+            self.manifest.generation().seed().get(),
+            expected,
+            resulting,
+            None,
+            fluids,
+            Vec::new(),
+            Vec::new(),
+            self.water_catalog_digest,
+        )
+        .map_err(|_| ActionRejection::Capacity)?;
         Ok(Prepared {
             mutation,
             terrain: Some(candidate),

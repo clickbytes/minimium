@@ -12,7 +12,7 @@ pub(super) struct WaterFailure {
 }
 
 impl ServerRuntime {
-    pub(super) fn restore_water(&mut self, restored: &ExcavationRestore) -> io::Result<()> {
+    pub(super) fn restore_water(&mut self, restored: &WorldChangeState) -> io::Result<()> {
         for (world, owner) in self.game.worlds.iter_mut() {
             if owner.manifest.planet().is_none() {
                 continue;
@@ -324,28 +324,32 @@ impl ServerRuntime {
             .worlds
             .get(world)
             .ok_or_else(|| io::Error::other("unknown water world"))?;
-        let mutation = WorldMutation {
+        let mutation = WorldChangePlan::new(
             id,
             world,
-            world_seed: owner.manifest.generation().seed().get(),
-            expected_chunk_revisions: Vec::new(),
-            resulting_chunks: Vec::new(),
-            inventory: None,
-            fluids: Some(self.excavation.state.waters[&world].snapshot().clone()),
-            impact_bodies: Vec::new(),
-            craters: Vec::new(),
-            water_catalog_digest: self.excavation.state.water_catalogs.get(&world).copied(),
-        };
-        self.excavation.coordinator.submit(
-            Prepared {
-                mutation,
-                terrain: None,
-                sectors: Default::default(),
-                collision_elapsed: Duration::ZERO,
-                water: None,
-                craters: None,
-            },
-            Origin::default(),
+            owner.manifest.generation().seed().get(),
+            Vec::new(),
+            Vec::new(),
+            None,
+            Some(self.excavation.state.waters[&world].snapshot().clone()),
+            Vec::new(),
+            Vec::new(),
+            self.excavation.state.water_catalogs.get(&world).copied(),
         )
+        .map_err(|_| io::Error::other("invalid world change plan"))?;
+        self.excavation
+            .coordinator
+            .submit(
+                Prepared {
+                    mutation,
+                    terrain: None,
+                    sectors: Default::default(),
+                    collision_elapsed: Duration::ZERO,
+                    water: None,
+                    craters: None,
+                },
+                Origin::default(),
+            )
+            .map_err(io::Error::other)
     }
 }

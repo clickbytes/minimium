@@ -1290,6 +1290,7 @@ version = "0.1.0"
 dependencies = [
  "minimium-commands",
  "minimium-core",
+ "minimium-fluids",
  "minimium-terrain",
  "minimium-world",
 ]
@@ -1442,6 +1443,7 @@ dependencies = [
  "minimium-diagnostics",
  "minimium-environment",
  "minimium-fluids",
+ "minimium-gameplay",
  "minimium-platform",
  "minimium-simulation",
  "minimium-telemetry",

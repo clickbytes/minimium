@@ -15,8 +15,9 @@ mod scene;
 mod streaming;
 mod water;
 use super::*;
+use minimium_gameplay::{WorldChangePlan, WorldChangeState};
 use minimium_protocol::{ExcavationInput, ExcavationMessage, ServerMessage, WorldContext};
-use minimium_storage::excavation::{ExcavationJournalPort, ExcavationRestore, WorldMutation};
+use minimium_storage::excavation::ExcavationJournalPort;
 use minimium_terrain::{TerrainEditRequest, TerrainStore};
 use minimium_world::{
     items::{ActionRejection, ActionResult, Inventory, ToolUseIntent},
@@ -31,7 +32,7 @@ pub(super) struct Excavation {
 struct ExcavationState {
     config: crate::composition::ExcavationConfig,
     async_work_policy: crate::AsyncWorkPolicy,
-    restored: ExcavationRestore,
+    restored: WorldChangeState,
     inventories: HashMap<PlayerProfileId, Inventory>,
     inventory_requests: HashMap<PlayerId, (WorldContext, Inventory)>,
     action_results: HashMap<PlayerId, (WorldContext, ActionResult)>,
@@ -67,7 +68,7 @@ impl From<ActionRejection> for PreparationError {
 }
 
 struct Prepared {
-    mutation: WorldMutation,
+    mutation: WorldChangePlan,
     terrain: Option<Arc<TerrainStore>>,
     sectors: std::collections::BTreeMap<minimium_world::world::SectorKey, Arc<SectorPayload>>,
     collision_elapsed: Duration,
@@ -78,7 +79,7 @@ struct Prepared {
 impl Excavation {
     pub(super) fn from_storage(
         journal: Box<dyn ExcavationJournalPort>,
-        restored: ExcavationRestore,
+        restored: WorldChangeState,
         config: crate::composition::ExcavationConfig,
         async_work_policy: crate::AsyncWorkPolicy,
         now: Instant,
@@ -118,7 +119,10 @@ impl Excavation {
 }
 
 impl ServerRuntime {
-    fn excavation_storage_rejection(&mut self, error: io::Error) -> ActionRejection {
+    fn excavation_storage_rejection(
+        &mut self,
+        error: minimium_storage::excavation::PersistenceError,
+    ) -> ActionRejection {
         self.excavation.coordinator.storage_rejection(error)
     }
 

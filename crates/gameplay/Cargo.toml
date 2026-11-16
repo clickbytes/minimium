@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 minimium-terrain = { path = "../terrain" }
+minimium-fluids = { path = "../fluids" }
 minimium-core = { path = "../core" }
 minimium-commands = { path = "../commands" }
 minimium-world = { path = "../world" }
