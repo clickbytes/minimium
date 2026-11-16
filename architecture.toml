@@ -36,6 +36,75 @@ features = []
 example = "embedded_host"
 forbidden_dependencies = ["minimium-game-sample", "minimium-renderer", "wgpu", "wgpu-core", "wgpu-hal", "winit", "minimium-astronomy"]
 forbidden_package_features = {}
+allowed_dev_dependencies = ["minimium-game-sample"]
+dev_dependency_rationale = "The server-runtime package has this pre-existing direct dev-dependency for fixtures. It remains forbidden in its normal/build graph and is surfaced in the all-target dev graph."
+
+# E050 external consumers are compiled from the package's public Cargo targets.
+# Their target graphs include dev edges so a demo cannot hide a forbidden host
+# dependency in a package dev-dependency. The pre-existing server-runtime
+# sample dev edge is explicitly scoped to that crate and reported separately.
+[[feature_contract]]
+name = "neutral-gameplay-consumers"
+package = "minimium-gameplay"
+no_default_features = true
+features = []
+examples = ["neutral_command_module", "world_discovery", "effect_feedback", "host_schedule"]
+forbidden_dependencies = ["minimium-server-runtime", "minimium-storage", "minimium-transport", "minimium-platform", "minimium-renderer", "minimium-client", "minimium-client-runtime", "minimium-server", "minimium-game-sample", "minimium-astronomy", "wgpu", "wgpu-core", "wgpu-hal", "winit"]
+forbidden_package_features = {}
+
+[[feature_contract]]
+name = "server-runtime-e050-consumers"
+package = "minimium-server-runtime"
+no_default_features = true
+features = []
+examples = ["typed_replies", "typed_host_commands", "paged_reads", "embedded_host", "owned_components"]
+forbidden_dependencies = ["minimium-game-sample", "minimium-renderer", "minimium-client", "minimium-client-runtime", "minimium-server", "wgpu", "wgpu-core", "wgpu-hal", "winit", "minimium-astronomy"]
+forbidden_package_features = {}
+allowed_dev_dependencies = ["minimium-game-sample"]
+dev_dependency_rationale = "Pre-existing server-runtime development dependency used by existing fixtures. It is forbidden in the normal/build graph, and remains visible as the sole declared development-edge exception; E050 examples compose neutral APIs."
+
+[[feature_contract]]
+name = "prepared-terrain-consumer"
+package = "minimium-procgen"
+no_default_features = true
+features = []
+examples = ["prepared_terrain_source"]
+forbidden_dependencies = ["minimium-game-sample", "minimium-asset-io", "minimium-renderer", "minimium-client", "minimium-server-runtime", "wgpu", "wgpu-core", "wgpu-hal", "winit"]
+forbidden_package_features = {}
+
+[[feature_contract]]
+name = "client-runtime-e050-consumers"
+package = "minimium-client-runtime"
+no_default_features = true
+features = []
+examples = ["injected_transport", "injected_content_jobs", "host_clock", "collision_ready", "cpu_client"]
+forbidden_dependencies = ["minimium-game-sample", "minimium-astronomy", "minimium-renderer", "minimium-client", "minimium-server-runtime", "minimium-server", "wgpu", "wgpu-core", "wgpu-hal", "winit"]
+forbidden_package_features = {}
+
+[[feature_contract]]
+name = "neutral-persistence-consumer"
+package = "minimium-storage"
+no_default_features = true
+features = []
+examples = ["neutral_world_change"]
+forbidden_dependencies = ["minimium-game-sample", "minimium-server-runtime", "minimium-server", "minimium-transport", "minimium-renderer", "wgpu", "wgpu-core", "wgpu-hal", "winit"]
+forbidden_package_features = {}
+
+[[feature_contract]]
+name = "desktop-stdin-production-consumer"
+package = "minimium-client"
+no_default_features = true
+features = ["desktop"]
+forbidden_dependencies = ["minimium-server-runtime", "minimium-server"]
+forbidden_package_features = {}
+
+[[feature_contract]]
+name = "process-server-production-consumer"
+package = "minimium-server"
+no_default_features = true
+features = []
+forbidden_dependencies = ["minimium-client", "minimium-client-runtime", "minimium-renderer", "wgpu", "wgpu-core", "wgpu-hal", "winit", "minimium-astronomy"]
+forbidden_package_features = {}
 
 [[package]]
 name = "minimium-terrain"

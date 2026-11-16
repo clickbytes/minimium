@@ -54,12 +54,36 @@ def validate_contracts(declaration: dict, packages: dict, known_names: set[str])
                 raise ValueError(f"{name}: invalid feature restriction for {target}")
             if any(feature not in packages[target]["features"] for feature in features):
                 raise ValueError(f"{name}: unknown forbidden feature for {target}")
-        example = contract.get("example")
-        if example is not None and not any(
-            target["name"] == example and "example" in target["kind"]
-            for target in packages[package]["targets"]
-        ):
-            raise ValueError(f"{name}: missing actual example target {example!r}")
+        examples = contract.get("examples", [])
+        if "example" in contract:
+            if examples:
+                raise ValueError(f"{name}: use examples instead of both example and examples")
+            examples = [contract["example"]]
+        if not string_list(examples):
+            raise ValueError(f"{name}: examples must be a list of target names")
+        available_examples = {
+            target["name"] for target in packages[package]["targets"]
+            if "example" in target["kind"]
+        }
+        missing_examples = sorted(set(examples) - available_examples)
+        if missing_examples:
+            raise ValueError(f"{name}: missing actual example targets: {missing_examples}")
+        allow_dev = contract.get("allowed_dev_dependencies", [])
+        if not string_list(allow_dev):
+            raise ValueError(f"{name}: allowed_dev_dependencies must be a list")
+        unknown_allowlist = set(allow_dev) - known_names
+        if unknown_allowlist:
+            raise ValueError(f"{name}: unknown allowed dev dependencies: {sorted(unknown_allowlist)}")
+        if set(allow_dev) - set(contract["forbidden_dependencies"]):
+            raise ValueError(f"{name}: dev exceptions must also be forbidden dependencies")
+        if allow_dev and not contract.get("dev_dependency_rationale"):
+            raise ValueError(f"{name}: dev dependency exceptions require a rationale")
+        direct_dev = {
+            dependency["name"] for dependency in packages[package]["dependencies"]
+            if dependency.get("kind") == "dev"
+        }
+        if not set(allow_dev) <= direct_dev:
+            raise ValueError(f"{name}: dev exceptions must name direct dev dependencies of {package}")
     return contracts
 
 
@@ -80,31 +104,51 @@ def graph_violations(
     try:
         contracts = validate_contracts(declaration, packages, known_names)
         for contract in contracts:
-            command = ["cargo", "tree", *selection(contract), "--edges", "normal,build",
-                       "--target", "all", "--prefix", "none", "--format", "{p}|{f}",
-                       "--color", "never"]
-            output = subprocess.check_output(command, cwd=repository, text=True, encoding="utf-8")
-            active: dict[str, set[str]] = {}
-            for line in output.splitlines():
-                if not line.strip():
-                    continue
-                package, separator, features = line.partition("|")
-                if not separator or " v" not in package:
-                    raise ValueError(f"unrecognized cargo tree output: {line!r}")
-                name = package.split(" v", 1)[0]
-                active.setdefault(name, set()).update(
-                    feature for feature in features.removesuffix(" (*)").split(",") if feature
-                )
-            if contract["package"] not in active:
+            def active_packages(edges: str) -> dict[str, set[str]]:
+                command = ["cargo", "tree", *selection(contract), "--edges", edges,
+                           "--target", "all", "--prefix", "none", "--format", "{p}|{f}",
+                           "--color", "never"]
+                output = subprocess.check_output(command, cwd=repository, text=True, encoding="utf-8")
+                result: dict[str, set[str]] = {}
+                for line in output.splitlines():
+                    if not line.strip():
+                        continue
+                    package, separator, features = line.partition("|")
+                    if not separator or " v" not in package:
+                        raise ValueError(f"unrecognized cargo tree output: {line!r}")
+                    name = package.split(" v", 1)[0]
+                    result.setdefault(name, set()).update(
+                        feature for feature in features.removesuffix(" (*)").split(",") if feature
+                    )
+                return result
+
+            production = active_packages("normal,build")
+            has_example = bool(contract.get("examples") or contract.get("example"))
+            edges = "normal,build,dev" if has_example else "normal,build"
+            active = active_packages(edges) if has_example else production
+            if contract["package"] not in active or contract["package"] not in production:
                 raise ValueError(f"{contract['name']}: Cargo omitted the selected root")
-            forbidden = set(contract["forbidden_dependencies"]) & active.keys()
+            dev_exceptions = set(contract.get("allowed_dev_dependencies", []))
+            forbidden = set(contract["forbidden_dependencies"]) & production.keys()
+            if has_example:
+                forbidden |= (set(contract["forbidden_dependencies"]) - dev_exceptions) & active.keys()
+                bad_exceptions = dev_exceptions & production.keys()
+                for package in sorted(bad_exceptions):
+                    errors.append(f"{contract['name']}: declared dev exception {package} is also in normal/build graph")
             for package in sorted(forbidden):
                 errors.append(f"{contract['name']}: production graph reaches {package}")
             for package, features in contract["forbidden_package_features"].items():
                 for feature in sorted(set(features) & active.get(package, set())):
                     errors.append(f"{contract['name']}: activates {package}/{feature}")
             if not forbidden and not any(error.startswith(contract["name"] + ":") for error in errors):
-                print(f"Feature graph PASS: {contract['name']} ({len(active)} packages; normal/build, all targets)")
+                if has_example and dev_exceptions & active.keys():
+                    print(
+                        f"Feature graph PASS: {contract['name']} ({len(active)} packages; "
+                        f"{edges}, all targets; declared dev edge(s): "
+                        f"{', '.join(sorted(dev_exceptions & active.keys()))})"
+                    )
+                else:
+                    print(f"Feature graph PASS: {contract['name']} ({len(active)} packages; {edges}, all targets)")
     except (OSError, subprocess.CalledProcessError, ValueError, KeyError, TypeError) as error:
         errors.append(f"Cannot inspect feature contracts: {error}")
     return errors
@@ -133,15 +177,22 @@ def main() -> int:
             return 0
         for contract in validate_contracts(declaration, packages, known_names):
             command = ["cargo", "check", *selection(contract)]
+            examples = contract.get("examples", [])
             if "example" in contract:
-                command.extend(["--example", contract["example"]])
-            if args.target_dir:
-                command.extend(["--target-dir", args.target_dir])
-            print("Compile command: " + shlex.join(command), flush=True)
-            result = subprocess.run(command, cwd=ROOT, check=False)
-            print(f"Consumer {'PASS' if result.returncode == 0 else 'FAIL'}: {contract['name']} (exit {result.returncode})")
-            if result.returncode:
-                return 1
+                examples = [contract["example"]]
+            targets = examples or [None]
+            for example in targets:
+                target_command = list(command)
+                if example:
+                    target_command.extend(["--example", example])
+                if args.target_dir:
+                    target_command.extend(["--target-dir", args.target_dir])
+                label = f"{contract['name']}::{example}" if example else contract["name"]
+                print("Compile command: " + shlex.join(target_command), flush=True)
+                result = subprocess.run(target_command, cwd=ROOT, check=False)
+                print(f"Consumer {'PASS' if result.returncode == 0 else 'FAIL'}: {label} (exit {result.returncode})")
+                if result.returncode:
+                    return 1
     except (OSError, subprocess.CalledProcessError, ValueError, KeyError, TypeError) as error:
         print(f"Cannot check feature consumers: {error}", file=sys.stderr)
         return 1
