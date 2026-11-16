@@ -4,7 +4,7 @@ use crate::{
     composition::{AsyncWorkPolicy, ExcavationConfig, ServerCombatConfig, ShutdownRequest},
     executor,
     modules::ModuleRegistry,
-    runtime, sector_streaming, server_command, ModuleCommandHandler, ServerGameplayModule,
+    runtime, sector_streaming, server_command, ServerGameplayModule,
 };
 use minimium_diagnostics::DomainLogger;
 use minimium_environment::time::{SessionNonce, WorldTimeMs};
@@ -63,7 +63,8 @@ impl RuntimeTime {
 
 /// Validated module/component catalog shared by storage loading and construction.
 pub struct RuntimeModules {
-    pub(crate) registry: ModuleRegistry<ModuleCommandHandler, runtime::schedule::SystemFn>,
+    pub(crate) registry:
+        ModuleRegistry<crate::commands::ModuleHandler, runtime::schedule::SystemFn>,
     pub(crate) components: minimium_world::entity::ComponentRegistry,
 }
 impl RuntimeModules {

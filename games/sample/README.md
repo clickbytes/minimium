@@ -15,6 +15,10 @@ soil-depth setting.
 
 ## Public API
 
+`SampleGameplayModule` implements the neutral gameplay command-handler contract
+alongside its existing component and system registrations. It does not depend
+on server-runtime or register a sample-only production command.
+
 Planet scenario composition supplies the definition and prepared geography to
 the validated `PlanetTerrain` constructor together. Landmark and overview
 sampling errors propagate as `GenerationError` before a world is published;

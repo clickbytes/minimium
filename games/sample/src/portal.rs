@@ -1,7 +1,7 @@
 use minimium_gameplay::{
     BuiltinOperation, ComponentValue, EngineModule, GameplayEvent, GameplaySystem,
-    GameplaySystemContext, ModuleDescriptor, ModuleError, ModuleRegistrar, Stage, SystemDefinition,
-    WorldEffect, WorldLifecycle,
+    GameplaySystemContext, ModuleCommandHandler, ModuleDescriptor, ModuleError, ModuleRegistrar,
+    Stage, SystemDefinition, WorldEffect, WorldLifecycle,
 };
 use minimium_world::entity::{
     ComponentDescriptor, ComponentError, ComponentTypeId, ReplicationPolicy, SchemaVersion,
@@ -77,7 +77,7 @@ fn read_f32(bytes: &[u8], offset: usize) -> Option<f32> {
 /// Registers sample-game component schemas with the host runtime.
 pub struct SampleGameplayModule;
 
-impl<H> EngineModule<H, GameplaySystem> for SampleGameplayModule {
+impl EngineModule<ModuleCommandHandler, GameplaySystem> for SampleGameplayModule {
     fn descriptor(&self) -> ModuleDescriptor {
         ModuleDescriptor {
             id: "sample",
@@ -88,7 +88,7 @@ impl<H> EngineModule<H, GameplaySystem> for SampleGameplayModule {
 
     fn register(
         &self,
-        registrar: &mut ModuleRegistrar<'_, H, GameplaySystem>,
+        registrar: &mut ModuleRegistrar<'_, ModuleCommandHandler, GameplaySystem>,
     ) -> Result<(), ModuleError> {
         registrar.component(ComponentDescriptor {
             id: PORTAL_COMPONENT,
