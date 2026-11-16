@@ -1,23 +1,37 @@
 use super::*;
 
 pub(in crate::renderer) fn prepare_prediction_scene(
-    sector_cache: &mut super::super::sector_scene::ClientSectorCache,
-    renderer: &mut super::Renderer,
+    cpu: &mut minimium_client_runtime::world_readiness::WorldReadiness,
     request: crate::application::PredictionSceneRequest<'_>,
-    water: Option<super::super::sector_worker::WaterPresentation>,
-    fov_degrees: f32,
-    published_terrain: Option<(
-        minimium_protocol::WorldContext,
-        minimium_procgen::SectorContentVersion,
-    )>,
-) -> Result<Option<crate::application::ActiveSceneReady>, String> {
-    if !request.session_content_ready {
-        return Ok(None);
-    }
+) -> Result<Option<minimium_client_runtime::world_readiness::CollisionSnapshot>, String> {
     let owner = request.context.map_or_else(
         || super::super::sector_scene::SceneInterestOwner::Bootstrap(request.instance),
         super::super::sector_scene::SceneInterestOwner::Active,
     );
+    let Some(map) = request.world_catalog.get(&request.instance) else {
+        return Ok(None);
+    };
+    match cpu.ensure_collision_for_step(
+        owner,
+        request.manifest,
+        request.previous_position,
+        request.position,
+        map,
+        request.terrain_inputs.clone(),
+    ) {
+        Ok(snapshot) => Ok(snapshot),
+        Err(error) => Err(format!("{}: {error}", error.code())),
+    }
+}
+
+pub(in crate::renderer) fn prepare_prediction_presentation(
+    presentation: &mut super::super::sector_scene::SectorPresentationCache,
+    renderer: &mut super::Renderer,
+    snapshot: &minimium_client_runtime::world_readiness::CollisionSnapshot,
+    request: crate::application::PredictionPresentationRequest,
+    water: Option<super::super::sector_worker::WaterPresentation>,
+    fov_degrees: f32,
+) -> Result<bool, String> {
     let view = minimium_renderer::terrain_view::TerrainView::new(
         request.position,
         fov_degrees.to_radians(),
@@ -25,55 +39,32 @@ pub(in crate::renderer) fn prepare_prediction_scene(
     );
     let origin = renderer.render_origin;
     let origin_generation = renderer.world_geometry.origin_generation();
-    let terrain_revision = request.terrain_inputs.revision();
-    let scene = match sector_cache.ensure_scene(
-        owner,
-        request.instance,
-        request.manifest,
-        request.position,
+    let scene = match presentation.prepare_scene(
+        snapshot.clone(),
         view,
         origin,
         origin_generation,
-        request.world_catalog,
-        request.world_manifests,
-        None,
         request.terrain_inputs,
         water,
     ) {
-        Ok(Some(scene)) => scene,
-        Ok(None) => return Ok(None),
+        Ok(Some(scene)) => Some(scene),
+        Ok(None) => return Ok(false),
         Err(error) => return Err(format!("{}: {error}", error.code())),
     };
-    if !request.water_covers_candidate {
-        return Ok(None);
-    }
-    if request.manifest.planet().is_some() && scene.prepared.is_none() {
-        return Ok(None);
-    }
-    let map_fingerprint = request
-        .world_catalog
-        .get(&request.instance)
-        .map_or(0, |map| map.fingerprint());
-    if !renderer.cache_sector_scene(request.instance, &scene)
-        || !renderer.activate_sector_scene(request.instance, &scene, map_fingerprint)
+    if let Some(scene) =
+        scene.filter(|scene| request.manifest.planet().is_none() || scene.prepared.is_some())
     {
-        let current = request.context.map(|context| (context, terrain_revision));
-        if current.is_none() || published_terrain != current {
-            return Ok(None);
+        if renderer.cache_sector_scene(snapshot.instance(), &scene)
+            && renderer.activate_sector_scene(
+                snapshot.instance(),
+                &scene,
+                snapshot.map_fingerprint(),
+            )
+        {
+            return Ok(true);
         }
     }
-    Ok(Some(
-        crate::application::ActiveSceneReady::new_for_candidate(
-            request.context,
-            request.instance,
-            request.manifest,
-            map_fingerprint,
-            terrain_revision,
-            scene.collision_revision,
-            scene.collision,
-            request.position,
-        ),
-    ))
+    Ok(false)
 }
 
 impl DesktopHost {
@@ -218,20 +209,10 @@ impl DesktopHost {
                 self.invalidate_active_scene();
                 return false;
             }
-            if !self.application.report_active_scene_ready(
-                crate::application::ActiveSceneReady::new(
-                    context,
-                    self.application.game_view().current_instance,
-                    manifest,
-                    self.application
-                        .world_catalog_view()
-                        .get(&self.application.game_view().current_instance)
-                        .map_or(0, |map| map.fingerprint()),
-                    terrain_revision,
-                    scene.collision_revision,
-                    scene.collision,
-                ),
-            ) {
+            if !self
+                .application
+                .report_active_scene_ready(scene.cpu.clone())
+            {
                 return false;
             }
             self.last_render_position = [f32::INFINITY; 3];
@@ -254,18 +235,7 @@ impl DesktopHost {
         }
         if !self
             .application
-            .report_active_scene_ready(crate::application::ActiveSceneReady::new(
-                context,
-                self.application.game_view().current_instance,
-                manifest,
-                self.application
-                    .world_catalog_view()
-                    .get(&self.application.game_view().current_instance)
-                    .map_or(0, |map| map.fingerprint()),
-                terrain_revision,
-                scene.collision_revision,
-                scene.collision,
-            ))
+            .report_active_scene_ready(scene.cpu.clone())
         {
             return false;
         }
@@ -288,7 +258,6 @@ impl DesktopHost {
         };
         let ticket = pending.ticket;
         let transition = pending.transition;
-        let terrain_revision = pending.terrain_inputs.revision();
         let terrain_inputs = pending.terrain_inputs.clone();
         let transition_id = ticket.transition_id();
         let context = ticket.context();
@@ -333,7 +302,7 @@ impl DesktopHost {
         if !self.renderer.cache_sector_scene(instance, &scene) {
             return;
         }
-        let ready = crate::application::TransferPresentationReady::new(ticket, terrain_revision);
+        let ready = crate::application::TransferPresentationReady::new(ticket, scene.cpu.clone());
         let _ = self
             .application
             .report_transfer_presentation_ready(ready, crate::host_time::sample());

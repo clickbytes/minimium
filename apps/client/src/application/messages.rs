@@ -1,7 +1,7 @@
 use super::ClientApplication;
 use minimium_protocol::ServerMessage;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) enum ApplicationMessageError {
     Time(minimium_client_runtime::ClientTimeError),
     MissingWorldContent,
@@ -12,11 +12,12 @@ pub(crate) enum ApplicationMessageError {
     RequiredEarthUnavailable,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct ApplicationTransferPreparation {
     pub(crate) ticket: minimium_client_runtime::TransferTicket,
     pub(crate) map_fingerprint: u64,
     pub(crate) manifest: minimium_world::world::WorldManifest,
+    pub(crate) destination: [f32; 3],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -50,6 +51,7 @@ impl ClientApplication {
                 target_context,
                 map_fingerprint,
                 manifest,
+                destination,
                 ..
             } => {
                 let ticket =
@@ -61,6 +63,7 @@ impl ClientApplication {
                             ticket,
                             map_fingerprint: *map_fingerprint,
                             manifest: *manifest,
+                            destination: *destination,
                         });
                         Ok(())
                     }

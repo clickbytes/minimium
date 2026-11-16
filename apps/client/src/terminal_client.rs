@@ -77,6 +77,7 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
     let mut last_snapshot: Option<ServerMessage> = None;
     let mut last_environment_status = None;
     let mut last_environment_status_at = None;
+    let mut cpu_readiness = minimium_client_runtime::world_readiness::WorldReadiness::new()?;
 
     if let Some(address) = options.connect.as_ref() {
         let result = start_remote(&mut application, address);
@@ -90,9 +91,17 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
             prediction: None,
         };
         #[cfg(feature = "desktop")]
-        let step = application.step(input, |_| Ok(None))?;
+        let step = application.step(input, |_| Ok(None), |_, _| Ok(true))?;
         #[cfg(not(feature = "desktop"))]
         let step = application.step(input)?;
+        if let Err(error) = application.retain_terminal_readiness_interests(&mut cpu_readiness) {
+            application.record_diagnostic_failure("client.collision_readiness_failed", &error);
+        }
+        {
+            if let Err(error) = application.ensure_active_collision(&mut cpu_readiness) {
+                application.record_diagnostic_failure("client.collision_readiness_failed", &error);
+            }
+        }
         if let Some(result) = step.admin_result {
             match result {
                 Ok(response) => println!("{}", response.trim()),
@@ -157,8 +166,17 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
             }
         }
         if application.session().is_some() {
-            if let Some(ticket) = application.pending_transfer_ticket() {
-                let _ = application.report_transfer_host_ready(ticket, crate::host_time::sample());
+            match application.ensure_pending_transfer_collision(&mut cpu_readiness) {
+                Ok(Some((ticket, snapshot))) => {
+                    let _ = application.report_transfer_host_ready(
+                        ticket,
+                        snapshot,
+                        crate::host_time::sample(),
+                    );
+                }
+                Ok(None) => {}
+                Err(error) => application
+                    .record_diagnostic_failure("client.collision_readiness_failed", &error),
             }
         }
         if let Some(mut disconnect) = step.disconnect {
@@ -317,10 +335,18 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
     }
 
     let shutdown_deadline = Instant::now() + Duration::from_secs(30);
-    let cleanup_result = application.finish_until(
-        shutdown_deadline - Duration::from_secs(2),
-        crate::host_time::sample(),
-    );
+    let worker_deadline = shutdown_deadline - Duration::from_secs(2);
+    let cleanup_result = application.finish_until(worker_deadline, crate::host_time::sample());
+    let unfinished = cpu_readiness.shutdown_until(worker_deadline);
+    if !unfinished.is_empty() {
+        application.record_diagnostic_failure(
+            "client.worker_shutdown_timeout",
+            &format!(
+                "unfinished CPU readiness workers: {}",
+                unfinished.join(", ")
+            ),
+        );
+    }
     drop(application);
     drop(localizer);
     drop(logger);

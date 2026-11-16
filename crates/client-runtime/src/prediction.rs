@@ -39,6 +39,18 @@ impl ClientPrediction {
         self.physics_accumulator += delta_seconds;
     }
 
+    /// Consumes one due input interval while collision data is unavailable,
+    /// without integrating against an unproved index. The host can queue its
+    /// existing neutral intent at fixed-step cadence; no position/history or
+    /// input sequence is changed here.
+    pub fn skip_unready_step(&mut self) -> bool {
+        if self.physics_accumulator < minimium_simulation::SIMULATION_STEP_SECONDS {
+            return false;
+        }
+        self.physics_accumulator -= minimium_simulation::SIMULATION_STEP_SECONDS;
+        true
+    }
+
     pub fn set_water_read(&mut self, water: Option<Arc<dyn minimium_world::fluid::WaterRead>>) {
         self.water_read = water;
     }

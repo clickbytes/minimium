@@ -212,5 +212,3 @@ struct DesktopHost {
 }
 
 pub use window::run;
-
-mod collision_worker;

@@ -1,5 +1,27 @@
 # minimium-client
 
+## Collision and presentation readiness
+
+The runtime `WorldReadiness` provider owns CPU sector materialization and collision
+aggregation. The desktop's `ClientSectorCache` holds that provider and separately
+stages presentation from its immutable `CollisionSnapshot` sectors. CPU requests
+contain no FOV, viewport or render origin. Upload/activation confirms presentation
+for the same world, content/terrain and collision identity; it does not construct
+or relabel collision data. Map/source or terrain changes invalidate derived work.
+
+Prediction consumes a CPU snapshot and validates the speculative destination and
+water coverage. Missing CPU coverage rolls back the speculative character and
+queues the existing neutral movement result. The desktop explicitly retains its
+additional presentation gate, with the existing flight exception confined to
+presentation. Terminal prepares CPU readiness before reporting transfer readiness.
+Pending target snapshots stay separate from active membership until authoritative
+commit; cancel/disconnect release the corresponding interest and late work.
+Origin shifts and resize affect presentation staging, not physical collision.
+
+This is the readiness migration; application-core extraction remains a separate
+task. Protocol/save/generator formats and geometry/simulation algorithms remain
+unchanged. Runtime, visual and performance acceptance are deferred.
+
 `start-earth.ps1` starts its owned local server in developer mode, granting the
 local profile the `DeveloperTeleport` permission required by `map_telepo`.
 The desktop quit path hides the window before bounded worker and diagnostics

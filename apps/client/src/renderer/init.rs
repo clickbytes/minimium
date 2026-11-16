@@ -78,7 +78,7 @@ impl DesktopHost {
         let vertices: Vec<_> = initial_scene
             .as_ref()
             .into_iter()
-            .flat_map(|scene| scene.sectors.iter())
+            .flat_map(|scene| scene.cpu.sectors().iter())
             .flat_map(|(_, geometry)| sector_geometry(geometry))
             .collect();
         let dpi_scale = window.scale_factor();
@@ -103,7 +103,7 @@ impl DesktopHost {
         gpu.scene_visible = !require_earth && gpu_ready;
         let collision_index = initial_scene.as_ref().map_or_else(
             || minimium_simulation::CollisionIndex::from_geometry(Vec::new(), Vec::new()),
-            |scene| scene.collision.clone(),
+            |scene| scene.cpu.collision().clone(),
         );
         let sectors_ready = initial_scene.is_some();
         let mut frame_stats = crate::stats::FrameStats::default();

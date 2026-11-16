@@ -31,7 +31,6 @@ impl DesktopHost {
         else {
             return false;
         };
-        let terrain_revision = terrain_inputs.revision();
         let scene = match self.sector_cache.ensure_scene(
             owner,
             instance,
@@ -74,17 +73,11 @@ impl DesktopHost {
         self.renderer.clear_remote_vertices();
         self.gameplay_presentation.clear_remote_players();
         if let Some(scene) = scene.as_ref() {
-            if !self.application.report_active_scene_ready(
-                crate::application::ActiveSceneReady::new(
-                    Some(context),
-                    instance,
-                    manifest,
-                    fingerprint,
-                    terrain_revision,
-                    scene.collision_revision,
-                    scene.collision.clone(),
-                ),
-            ) {
+            if owner == super::super::sector_scene::SceneInterestOwner::Active(context)
+                && !self
+                    .application
+                    .report_active_scene_ready(scene.cpu.clone())
+            {
                 return false;
             }
         }

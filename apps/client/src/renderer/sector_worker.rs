@@ -1,4 +1,5 @@
 //! Latest-request worker with bounded geometry/prepared caches; never owns GPU handles.
+mod prepared;
 mod water;
 
 use water::build_water_vertices;
@@ -15,6 +16,7 @@ use std::{
 };
 #[derive(Clone, Copy, PartialEq)]
 struct Key {
+    map_fingerprint: u64,
     terrain_revision: SectorContentVersion,
     material_profile: Option<minimium_procgen::ResolvedTerrainMaterialProfile>,
     resolved_relief_policy: Option<minimium_procgen::ResolvedPlanetReliefPolicy>,
@@ -29,6 +31,7 @@ struct Key {
 impl Key {
     fn same_geometry(self, other: Self) -> bool {
         self.world == other.world
+            && self.map_fingerprint == other.map_fingerprint
             && self.manifest == other.manifest
             && self.terrain_revision == other.terrain_revision
             && self.material_profile == other.material_profile
@@ -53,54 +56,6 @@ pub(super) struct PreparedScene {
     pub water_vertices: Arc<Vec<minimium_renderer::ocean_geometry::OceanVertex>>,
     pub build_ms: f64,
     pub cache_bytes: usize,
-}
-impl PreparedScene {
-    pub fn terrain_revision(&self) -> SectorContentVersion {
-        self.key.terrain_revision
-    }
-    pub fn matches(
-        &self,
-        world: WorldInstanceId,
-        manifest: WorldManifest,
-        view: minimium_renderer::terrain_view::TerrainView,
-        origin: [f32; 3],
-        origin_generation: u64,
-        water_level_revision: u64,
-        fluid_revision: u64,
-        material_profile: Option<minimium_procgen::ResolvedTerrainMaterialProfile>,
-        resolved_relief_policy: Option<minimium_procgen::ResolvedPlanetReliefPolicy>,
-    ) -> bool {
-        self.key.world == world
-            && self.key.manifest == manifest
-            && self.key.view == view
-            && self.key.origin == origin
-            && self.key.origin_generation == origin_generation
-            && self.key.water_level_revision == water_level_revision
-            && self.key.fluid_revision == fluid_revision
-            && self.key.material_profile == material_profile
-            && self.key.resolved_relief_policy == resolved_relief_policy
-    }
-    pub fn geometry_matches(
-        &self,
-        world: WorldInstanceId,
-        manifest: WorldManifest,
-        origin: [f32; 3],
-        origin_generation: u64,
-        terrain_revision: SectorContentVersion,
-        material_profile: Option<minimium_procgen::ResolvedTerrainMaterialProfile>,
-        resolved_relief_policy: Option<minimium_procgen::ResolvedPlanetReliefPolicy>,
-    ) -> bool {
-        self.key.world == world
-            && self.key.manifest == manifest
-            && self.key.origin == origin
-            && self.key.origin_generation == origin_generation
-            && self.key.terrain_revision == terrain_revision
-            && self.key.material_profile == material_profile
-            && self.key.resolved_relief_policy == resolved_relief_policy
-    }
-    pub fn position(&self) -> [f32; 3] {
-        self.key.view.position
-    }
 }
 #[derive(Default)]
 struct State {
@@ -214,7 +169,11 @@ impl SectorWorker {
                             mesh
                         }
                     };
-                    let next_scope = (request.key.world, request.key.manifest);
+                    let next_scope = (
+                        request.key.world,
+                        request.key.manifest,
+                        request.key.map_fingerprint,
+                    );
                     if scope != Some(next_scope) {
                         geometry = RenderPatchCache::default();
                         edges = Default::default();
@@ -400,6 +359,7 @@ impl SectorWorker {
         geography: minimium_procgen::TerrainInputs,
     ) -> Result<Option<Arc<PreparedScene>>, SectorWorkerError> {
         let key = Key {
+            map_fingerprint: geography.source().map_fingerprint(),
             terrain_revision: geography.revision(),
             material_profile: Some(geography.source().material_profile()),
             resolved_relief_policy: geography.source().relief_policy(),

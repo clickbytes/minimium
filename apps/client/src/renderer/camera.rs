@@ -45,10 +45,12 @@ impl DesktopHost {
         let context = self.application.game_view().session_context();
         let water = context.and_then(|context| self.water_presentation_for(context));
         let fov_degrees = self.fov_degrees;
-        let published_terrain = self.impacts.published_terrain;
+        let require_presentation = !self.application.connection_view().movement.can_fly;
         let application = &mut self.application;
         let sector_cache = &mut self.sector_cache;
         let renderer = &mut self.renderer;
+        let cpu = &mut sector_cache.cpu;
+        let presentation = &mut sector_cache.presentation;
         let output = application.step(
             crate::application::ClientStepInput {
                 now: crate::host_time::sample(),
@@ -58,14 +60,18 @@ impl DesktopHost {
                     jump_pending: self.input.jump_pending,
                 }),
             },
-            |request| {
-                super::session::prepare_prediction_scene(
-                    sector_cache,
+            |request| super::session::prepare_prediction_scene(cpu, request),
+            |snapshot, request| {
+                if !require_presentation {
+                    return Ok(true);
+                }
+                super::session::prepare_prediction_presentation(
+                    presentation,
                     renderer,
+                    snapshot,
                     request,
                     water.clone(),
                     fov_degrees,
-                    published_terrain,
                 )
             },
         );

@@ -7,7 +7,6 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 /// Bind the local pre-session scene to the same sample policies as resolved content.
 /// Earth geography and mutable overlays remain session-owned and are not invented here.
-#[cfg(feature = "desktop")]
 pub(crate) fn bootstrap_terrain_inputs(
     instance: WorldInstanceId,
     manifest: WorldManifest,

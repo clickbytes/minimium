@@ -1227,6 +1227,7 @@ dependencies = [
  "minimium-platform",
  "minimium-procgen",
  "minimium-protocol",
+ "minimium-sectors",
  "minimium-simulation",
  "minimium-terrain",
  "minimium-transport",

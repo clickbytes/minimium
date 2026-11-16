@@ -1,6 +1,8 @@
 mod message_handling;
 mod sector_readiness;
-pub(in crate::renderer) use sector_readiness::prepare_prediction_scene;
+pub(in crate::renderer) use sector_readiness::{
+    prepare_prediction_presentation, prepare_prediction_scene,
+};
 
 use super::*;
 use crate::messages::ClientText as Text;

@@ -1,5 +1,11 @@
 # minimium-renderer
 
+Client CPU collision readiness belongs to `minimium-client-runtime::world_readiness`.
+The application presentation adapter consumes its immutable sector payloads and
+stages/uploads their derived geometry. Its presentation report binds the same
+world/map/terrain/collision identity while retaining origin and viewport as
+presentation-only inputs. Renderer upload does not certify collision readiness.
+
 ## Purpose / Non-goals
 
 Owns presentation contracts, reusable rendering primitives and pass encoding: camera/frame values, geometry conversion, visibility and LOD selection, visual lighting, quality profiles, WGSL sources, GPU resources and pipelines. The client still owns window lifecycle, frame scheduling, scene visibility decisions, shadow caster selection and some GPU resources. This crate does not own sessions, simulation state, or a window.

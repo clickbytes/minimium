@@ -2,7 +2,7 @@ use minimium_procgen::SectorGeometry;
 use minimium_simulation::CollisionIndex;
 use minimium_world::world::{Aabb, MapBox, MapTriangle};
 
-pub(in crate::renderer) fn collision_from_sectors<'a>(
+pub(super) fn collision_from_sectors<'a>(
     sectors: impl Iterator<Item = &'a SectorGeometry>,
 ) -> CollisionIndex {
     let mut colliders = Vec::new();
