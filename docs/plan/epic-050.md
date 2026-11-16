@@ -149,6 +149,18 @@ including example dev dependencies; private-import shortcuts and dead stubs fail
 | 19 | `docs/plan/epic-050/item-catalog-decision.md`, actual codecs/IDs, separate A/B compatibility decisions; no code fix claim |
 | 20 | Complete AR/task/PR/merge/owner/consumer/check ledger, existing CI enforcement and one Q03 handoff |
 
+## Integrated status — 2026-11-17
+
+Fresh GitHub reads and local first-parent history confirm stages 00–19 are
+CLOSED/completed and merged through #565 at
+`4554472f2f461689385b53348c76bff0888d6039`. Stage 20's architecture/feature
+gates now PASS on the integration worktree; its ledger is in
+[20-closeout](evidence/epic-050/20-closeout.md). The #543 completion record will
+capture this branch's review PR, remote CI logs, post-merge main read-back and
+issue state once those steps happen; no merge or GitHub write is claimed here.
+Q03, E049 and meteor issue states remain as recorded below; administrative
+closure is not runtime acceptance.
+
 For each implementation: capture HEAD/worktree; read policy/owner/callers; record
 before/after flow and removed paths; review actual diff; run applicable static
 checks from the card with command, SHA and exit status. Required FAIL blocks
