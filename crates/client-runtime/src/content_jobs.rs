@@ -234,4 +234,7 @@ impl ContentJobsSession {
     pub(crate) fn port(&self) -> &dyn ContentJobsPort {
         self.port.as_ref()
     }
+    pub(crate) fn port_arc(&self) -> Arc<dyn ContentJobsPort> {
+        self.port.clone()
+    }
 }

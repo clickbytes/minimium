@@ -99,16 +99,8 @@ impl MapOverviewModel {
 
 pub(crate) struct WorldTransitionController {
     pending: HashMap<TransitionId, PendingSectorTransition>,
-    map_teleport: MapTeleportPhase,
+    map_teleport_armed: bool,
     presentation: TransferPresentationPhase,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-enum MapTeleportPhase {
-    #[default]
-    Idle,
-    Armed,
-    Pending,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -122,7 +114,7 @@ impl WorldTransitionController {
     pub(crate) fn new(teleport_loading: bool) -> Self {
         Self {
             pending: HashMap::new(),
-            map_teleport: MapTeleportPhase::Idle,
+            map_teleport_armed: false,
             presentation: if teleport_loading {
                 TransferPresentationPhase::Loading
             } else {
@@ -199,35 +191,23 @@ impl WorldTransitionController {
     }
 
     pub(crate) fn map_teleport_armed(&self) -> bool {
-        self.map_teleport == MapTeleportPhase::Armed
-    }
-
-    pub(crate) fn map_teleport_pending(&self) -> bool {
-        self.map_teleport == MapTeleportPhase::Pending
+        self.map_teleport_armed
     }
 
     pub(crate) fn arm_map_teleport(&mut self) -> bool {
-        if self.map_teleport != MapTeleportPhase::Idle {
+        if self.map_teleport_armed {
             return false;
         }
-        self.map_teleport = MapTeleportPhase::Armed;
+        self.map_teleport_armed = true;
         true
     }
 
-    pub(crate) fn request_map_teleport(&mut self) -> bool {
-        if self.map_teleport != MapTeleportPhase::Armed {
-            return false;
-        }
-        self.map_teleport = MapTeleportPhase::Pending;
-        true
-    }
-
-    pub(crate) fn resolve_map_teleport(&mut self) {
-        self.map_teleport = MapTeleportPhase::Idle;
+    pub(crate) fn clear_map_teleport_arm(&mut self) {
+        self.map_teleport_armed = false;
     }
 
     pub(crate) fn reset(&mut self) {
-        self.map_teleport = MapTeleportPhase::Idle;
+        self.map_teleport_armed = false;
         self.presentation = TransferPresentationPhase::Ready;
     }
 

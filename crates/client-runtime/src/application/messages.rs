@@ -1,44 +1,44 @@
-use super::ClientApplication;
+use super::ClientApplicationCore;
 use minimium_protocol::ServerMessage;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum ApplicationMessageError {
-    Time(minimium_client_runtime::ClientTimeError),
+pub enum ApplicationMessageError {
+    Time(crate::ClientTimeError),
     MissingWorldContent,
     WorldContentMismatch,
     StaleWorldContext,
     VisiblePlayerLimitExceeded,
-    #[cfg(feature = "desktop")]
     RequiredEarthUnavailable,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct ApplicationTransferPreparation {
-    pub(crate) ticket: minimium_client_runtime::TransferTicket,
+    pub(crate) ticket: crate::TransferTicket,
+    pub(crate) source_context: minimium_protocol::WorldContext,
     pub(crate) map_fingerprint: u64,
     pub(crate) manifest: minimium_world::world::WorldManifest,
     pub(crate) destination: [f32; 3],
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct WorldContextChange {
-    pub(crate) previous_context: Option<minimium_protocol::WorldContext>,
-    pub(crate) previous_instance: minimium_world::world::WorldInstanceId,
-    pub(crate) context: minimium_protocol::WorldContext,
-    pub(crate) map_fingerprint: u64,
-    pub(crate) position: [f32; 3],
-    pub(crate) position_mm: minimium_world::world::Position3Mm,
-    pub(crate) health: u16,
-    pub(crate) manifest: minimium_world::world::WorldManifest,
+pub struct WorldContextChange {
+    pub previous_context: Option<minimium_protocol::WorldContext>,
+    pub previous_instance: minimium_world::world::WorldInstanceId,
+    pub context: minimium_protocol::WorldContext,
+    pub map_fingerprint: u64,
+    pub position: [f32; 3],
+    pub position_mm: minimium_world::world::Position3Mm,
+    pub health: u16,
+    pub manifest: minimium_world::world::WorldManifest,
 }
 
-impl ClientApplication {
+impl ClientApplicationCore {
     /// Apply session data that changes the CPU game view. Host presentation
     /// effects such as GPU installation remain separate from this state update.
     pub(crate) fn apply_game_message(
         &mut self,
         message: &ServerMessage,
-        now: minimium_client_runtime::ClientTime,
+        now: crate::ClientTime,
     ) -> Result<(), ApplicationMessageError> {
         self.accept_time(now)
             .map_err(ApplicationMessageError::Time)?;
@@ -48,19 +48,28 @@ impl ClientApplication {
             }
             ServerMessage::TransitionPrepare {
                 transition_id,
+                source_context,
                 target_context,
                 map_fingerprint,
                 manifest,
                 destination,
                 ..
             } => {
-                let ticket =
-                    minimium_client_runtime::TransferTicket::new(*transition_id, *target_context);
+                if self.game.session_context() != Some(*source_context) {
+                    return Err(ApplicationMessageError::StaleWorldContext);
+                }
+                let ticket = crate::TransferTicket::new(*transition_id, *target_context);
                 match self.pending_transfer {
-                    Some(current) if current.ticket == ticket => Ok(()),
+                    Some(current)
+                        if current.ticket == ticket
+                            && current.source_context == *source_context =>
+                    {
+                        Ok(())
+                    }
                     _ => {
                         self.pending_transfer = Some(ApplicationTransferPreparation {
                             ticket,
+                            source_context: *source_context,
                             map_fingerprint: *map_fingerprint,
                             manifest: *manifest,
                             destination: *destination,
@@ -69,11 +78,15 @@ impl ClientApplication {
                     }
                 }
             }
-            ServerMessage::TransitionCancelled { transition_id, .. } => {
-                if self
-                    .pending_transfer
-                    .is_some_and(|preparation| preparation.ticket.transition_id() == *transition_id)
-                {
+            ServerMessage::TransitionCancelled {
+                transition_id,
+                context,
+            } => {
+                if self.pending_transfer.is_some_and(|preparation| {
+                    preparation.ticket.transition_id() == *transition_id
+                        && preparation.ticket.context() == *context
+                        && self.game.session_context() == Some(preparation.source_context)
+                }) {
                     self.pending_transfer = None;
                 }
                 Ok(())
@@ -141,7 +154,6 @@ impl ClientApplication {
                 .apply_health_update(*health)
                 .then_some(())
                 .ok_or(ApplicationMessageError::StaleWorldContext),
-            #[cfg(feature = "desktop")]
             ServerMessage::MapTeleportResult { position_mm } => self
                 .apply_map_teleport_position(*position_mm)
                 .then_some(())
@@ -184,6 +196,7 @@ impl ClientApplication {
                 if !self.pending_transfer.is_some_and(|preparation| {
                     preparation.ticket.transition_id() == *transition_id
                         && preparation.ticket.context() == *context
+                        && self.game.session_context() == Some(preparation.source_context)
                 }) {
                     return Err(ApplicationMessageError::StaleWorldContext);
                 }
@@ -235,7 +248,6 @@ impl ClientApplication {
         self.game.current_instance = context.instance();
         self.game.set_session_context(Some(context));
         self.game.gameplay.health = health;
-        #[cfg(feature = "desktop")]
         self.action_executor.clear_input_cooldown();
         self.game.gameplay.clear_remote_players();
         self.game.gameplay.prediction.reset();

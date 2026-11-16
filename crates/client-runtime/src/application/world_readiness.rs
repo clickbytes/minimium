@@ -1,51 +1,48 @@
-use super::ClientApplication;
+use super::ClientApplicationCore;
 
-impl ClientApplication {
-    pub(crate) fn retain_terminal_readiness_interests(
+impl ClientApplicationCore {
+    pub fn retain_terminal_readiness_interests(
         &self,
-        readiness: &mut minimium_client_runtime::world_readiness::WorldReadiness,
-    ) -> Result<(), minimium_client_runtime::world_readiness::WorldReadinessError> {
+        readiness: &mut crate::world_readiness::WorldReadiness,
+    ) -> Result<(), crate::world_readiness::WorldReadinessError> {
         let instance = self.game.current_instance;
         let active = self.game.session_context().map_or_else(
-            || minimium_client_runtime::world_readiness::WorldReadinessOwner::Bootstrap(instance),
-            minimium_client_runtime::world_readiness::WorldReadinessOwner::Active,
+            || crate::world_readiness::WorldReadinessOwner::Bootstrap(instance),
+            crate::world_readiness::WorldReadinessOwner::Active,
         );
         let mut owners = vec![active];
         if let Some(preparation) = self.pending_transfer {
-            owners.push(
-                minimium_client_runtime::world_readiness::WorldReadinessOwner::Pending(
-                    preparation.ticket.transition_id(),
-                    preparation.ticket.context(),
-                ),
-            );
+            owners.push(crate::world_readiness::WorldReadinessOwner::Pending(
+                preparation.ticket.transition_id(),
+                preparation.ticket.context(),
+            ));
         }
         readiness.retain_interests(&owners)
     }
 
-    pub(crate) fn report_transfer_host_ready(
+    pub fn report_transfer_host_ready(
         &mut self,
-        ticket: minimium_client_runtime::TransferTicket,
-        snapshot: minimium_client_runtime::world_readiness::CollisionSnapshot,
-        now: minimium_client_runtime::ClientTime,
-    ) -> Result<(), crate::session::QueueError> {
-        self.accept_time(now)
-            .map_err(crate::session::QueueError::Time)?;
+        ticket: crate::TransferTicket,
+        snapshot: crate::world_readiness::CollisionSnapshot,
+        now: crate::ClientTime,
+    ) -> Result<(), crate::QueueError> {
+        self.accept_time(now).map_err(crate::QueueError::Time)?;
         if !self.transfer_cpu_content_ready(ticket) {
-            return Err(crate::session::QueueError::StaleWorldContext);
+            return Err(crate::QueueError::StaleWorldContext);
         }
         let Some(preparation) = self.pending_transfer else {
-            return Err(crate::session::QueueError::StaleWorldContext);
+            return Err(crate::QueueError::StaleWorldContext);
         };
         let Some(session) = self.connection.session() else {
-            return Err(crate::session::QueueError::StaleWorldContext);
+            return Err(crate::QueueError::StaleWorldContext);
         };
         let Some(content) = session.resolved_world_content_for_context(ticket.context()) else {
-            return Err(crate::session::QueueError::StaleWorldContext);
+            return Err(crate::QueueError::StaleWorldContext);
         };
         let Some(terrain) = session.terrain_inputs_for_context(ticket.context()) else {
-            return Err(crate::session::QueueError::StaleWorldContext);
+            return Err(crate::QueueError::StaleWorldContext);
         };
-        let owner = minimium_client_runtime::world_readiness::WorldReadinessOwner::Pending(
+        let owner = crate::world_readiness::WorldReadinessOwner::Pending(
             ticket.transition_id(),
             ticket.context(),
         );
@@ -54,7 +51,7 @@ impl ClientApplication {
             || !snapshot.matches(owner, preparation.manifest, content.map(), &terrain)
             || !snapshot.covers_position(preparation.destination)
         {
-            return Err(crate::session::QueueError::StaleWorldContext);
+            return Err(crate::QueueError::StaleWorldContext);
         }
         if session.host_readiness_requested(ticket) {
             return Ok(());
@@ -62,55 +59,62 @@ impl ClientApplication {
         self.connection.report_transfer_host_ready(ticket, now)
     }
 
-    pub(crate) fn ensure_active_collision(
+    pub fn ensure_active_collision(
         &mut self,
-        readiness: &mut minimium_client_runtime::world_readiness::WorldReadiness,
-    ) -> Result<Option<minimium_client_runtime::world_readiness::CollisionSnapshot>, String> {
+        readiness: &mut crate::world_readiness::WorldReadiness,
+        now: crate::ClientTime,
+    ) -> Result<Option<crate::world_readiness::CollisionSnapshot>, super::ClientReadinessError>
+    {
+        self.accept_time(now)
+            .map_err(super::ClientReadinessError::Time)?;
         let instance = self.game.current_instance;
         let owner = self.game.session_context().map_or_else(
-            || minimium_client_runtime::world_readiness::WorldReadinessOwner::Bootstrap(instance),
-            minimium_client_runtime::world_readiness::WorldReadinessOwner::Active,
+            || crate::world_readiness::WorldReadinessOwner::Bootstrap(instance),
+            crate::world_readiness::WorldReadinessOwner::Active,
         );
         let manifest = self
             .game
             .world_manifests
             .get(&instance)
             .copied()
-            .ok_or_else(|| "active world manifest is unavailable".to_owned())?;
+            .ok_or(super::ClientReadinessError::MissingManifest)?;
         let map = self
             .world_catalog
             .get(&instance)
-            .ok_or_else(|| "active world map is unavailable".to_owned())?;
+            .ok_or(super::ClientReadinessError::MissingMap)?;
         let position = self.game.gameplay.prediction.character.position;
         let terrain = if let Some(context) = owner.context() {
             self.connection
                 .session()
                 .and_then(|session| session.terrain_inputs_for_context(context))
         } else {
-            crate::world_content::bootstrap_terrain_inputs(instance, manifest, map).ok()
+            self.bootstrap_terrain.clone()
         };
         let Some(terrain) = terrain else {
             return Ok(None);
         };
         let snapshot = readiness
             .ensure_collision(owner, manifest, position, map, terrain)
-            .map_err(|error| error.to_string())?;
+            .map_err(super::ClientReadinessError::Worker)?;
         if let Some(snapshot) = snapshot.as_ref() {
-            let _ = self.report_active_scene_ready(snapshot.clone());
+            let _ = self.report_active_scene_ready_admitted(snapshot.clone());
         }
         Ok(snapshot)
     }
 
-    pub(crate) fn ensure_pending_transfer_collision(
+    pub fn ensure_pending_transfer_collision(
         &mut self,
-        readiness: &mut minimium_client_runtime::world_readiness::WorldReadiness,
+        readiness: &mut crate::world_readiness::WorldReadiness,
+        now: crate::ClientTime,
     ) -> Result<
         Option<(
-            minimium_client_runtime::TransferTicket,
-            minimium_client_runtime::world_readiness::CollisionSnapshot,
+            crate::TransferTicket,
+            crate::world_readiness::CollisionSnapshot,
         )>,
-        String,
+        super::ClientReadinessError,
     > {
+        self.accept_time(now)
+            .map_err(super::ClientReadinessError::Time)?;
         let Some(preparation) = self.pending_transfer else {
             return Ok(None);
         };
@@ -120,6 +124,9 @@ impl ClientApplication {
         let Some(session) = self.connection.session() else {
             return Ok(None);
         };
+        if session.active_world_context() != Some(preparation.source_context) {
+            return Ok(None);
+        }
         let Some(content) =
             session.resolved_world_content_for_context(preparation.ticket.context())
         else {
@@ -133,7 +140,7 @@ impl ClientApplication {
         {
             return Ok(None);
         }
-        let owner = minimium_client_runtime::world_readiness::WorldReadinessOwner::Pending(
+        let owner = crate::world_readiness::WorldReadinessOwner::Pending(
             preparation.ticket.transition_id(),
             preparation.ticket.context(),
         );
@@ -145,18 +152,27 @@ impl ClientApplication {
                 content.map(),
                 terrain,
             )
-            .map_err(|error| error.to_string())?;
+            .map_err(super::ClientReadinessError::Worker)?;
         Ok(snapshot.map(|snapshot| (preparation.ticket, snapshot)))
     }
 
-    pub(crate) fn report_active_scene_ready(
+    pub fn report_active_scene_ready(
         &mut self,
-        snapshot: minimium_client_runtime::world_readiness::CollisionSnapshot,
+        snapshot: crate::world_readiness::CollisionSnapshot,
+        now: crate::ClientTime,
+    ) -> Result<bool, crate::ClientTimeError> {
+        self.accept_time(now)?;
+        Ok(self.report_active_scene_ready_admitted(snapshot))
+    }
+
+    pub(crate) fn report_active_scene_ready_admitted(
+        &mut self,
+        snapshot: crate::world_readiness::CollisionSnapshot,
     ) -> bool {
         let instance = self.game.current_instance;
         let owner = self.game.session_context().map_or_else(
-            || minimium_client_runtime::world_readiness::WorldReadinessOwner::Bootstrap(instance),
-            minimium_client_runtime::world_readiness::WorldReadinessOwner::Active,
+            || crate::world_readiness::WorldReadinessOwner::Bootstrap(instance),
+            crate::world_readiness::WorldReadinessOwner::Active,
         );
         let Some(manifest) = self.game.world_manifests.get(&instance).copied() else {
             return false;
@@ -169,7 +185,7 @@ impl ClientApplication {
                 .session()
                 .and_then(|session| session.terrain_inputs_for_context(context))
         } else {
-            crate::world_content::bootstrap_terrain_inputs(instance, manifest, map).ok()
+            self.bootstrap_terrain.clone()
         };
         let Some(terrain) = terrain else {
             return false;

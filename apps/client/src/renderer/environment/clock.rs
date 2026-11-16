@@ -14,13 +14,12 @@ impl DesktopHost {
         {
             let frame = session.environment_frame();
             let context_matches = frame.context.is_some_and(|context| {
-                Some(context) == self.application.game_view().session_context()
-                    && context.instance() == self.application.game_view().current_instance
+                Some(context) == self.application.core_view().context
+                    && context.instance() == self.application.core_view().world_instance
                     && self
                         .application
-                        .game_view()
-                        .world_manifests
-                        .get(&self.application.game_view().current_instance)
+                        .world_manifest_catalog_view()
+                        .get(&self.application.core_view().world_instance)
                         .is_some_and(|manifest| {
                             context.content_revision() == manifest.content_revision()
                         })
@@ -36,15 +35,14 @@ impl DesktopHost {
         if self.application.settings.demo {
             let manifest = self
                 .application
-                .game_view()
-                .world_manifests
-                .get(&self.application.game_view().current_instance)
+                .world_manifest_catalog_view()
+                .get(&self.application.core_view().world_instance)
                 .copied();
             self.environment_frame = match (self.demo_environment.as_ref(), manifest) {
                 (Some(demo), Some(manifest)) => demo.frame(
                     manifest,
                     Some(WorldContext::new(
-                        self.application.game_view().current_instance,
+                        self.application.core_view().world_instance,
                         manifest.content_revision(),
                         MembershipEpoch::new(1).expect("local demo membership epoch is nonzero"),
                     )),

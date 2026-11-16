@@ -92,8 +92,20 @@ fn world_inputs_from_a_previous_membership_epoch_are_rejected() {
 
 #[test]
 fn client_rejects_a_manifest_with_an_unknown_generator_digest() {
-    let generated = minimium_game_sample::generate_demo_worlds().unwrap();
-    let manifest = generated[0].manifest;
+    let topology = minimium_world::world::WorldTopology::Dungeon;
+    let generation = minimium_world::world::GenerationSpec::new(
+        minimium_world::world::WorldSeed::new(7),
+        minimium_world::world::GenerationRevision::new(6).unwrap(),
+        1,
+    )
+    .unwrap();
+    let manifest = minimium_world::world::WorldManifest::new(
+        minimium_world::world::WorldDefinitionId::new(1).unwrap(),
+        topology,
+        generation,
+        minimium_world::world::WorldContentRevision::new(1).unwrap(),
+        minimium_procgen::generator_digest(topology, generation),
+    );
     assert!(manifest_matches_generator(&manifest));
     let mismatched = minimium_world::world::WorldManifest::new(
         manifest.definition_id(),

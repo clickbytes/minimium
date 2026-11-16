@@ -3,9 +3,9 @@ use minimium_world::world::{WorldInstanceId, WorldManifest};
 use std::collections::HashMap;
 
 pub(crate) struct GameplayState {
-    pub(crate) reconciliation: minimium_client_runtime::SnapshotReconciler,
+    pub(crate) reconciliation: crate::SnapshotReconciler,
     pub(crate) remote_positions_mm: Vec<[i64; 3]>,
-    pub(crate) prediction: minimium_client_runtime::ClientPrediction,
+    pub(crate) prediction: crate::ClientPrediction,
     pub(crate) health: u16,
     pub(crate) collision_index: minimium_simulation::CollisionIndex,
     pub(crate) collision_query: minimium_simulation::CollisionQuery,
@@ -39,8 +39,8 @@ impl GameplayState {
         geography: Option<std::sync::Arc<dyn minimium_procgen::PreparedGeography>>,
         players: &minimium_protocol::RemotePlayers,
         removed_players: &minimium_protocol::RemotePlayerIds,
-        now: minimium_client_runtime::ClientTime,
-    ) -> Result<bool, minimium_client_runtime::ClientTimeError> {
+        now: crate::ClientTime,
+    ) -> Result<bool, crate::ClientTimeError> {
         if !self.reconciliation.apply_remote_snapshot(
             server_time_ms,
             full_snapshot,
@@ -79,8 +79,7 @@ impl GameplayState {
     }
 }
 
-#[cfg(feature = "desktop")]
-pub(crate) use minimium_client_runtime::PredictedStep;
+pub(crate) use crate::PredictedStep;
 
 impl ClientGameState {
     pub(crate) fn for_initial_world(
@@ -96,9 +95,9 @@ impl ClientGameState {
             .unwrap_or_default();
         let character = minimium_simulation::CharacterState::at_spawn_with_gravity(spawn, gravity);
         let gameplay = GameplayState {
-            reconciliation: minimium_client_runtime::SnapshotReconciler::default(),
+            reconciliation: crate::SnapshotReconciler::default(),
             remote_positions_mm: Vec::new(),
-            prediction: minimium_client_runtime::ClientPrediction::new(character, None),
+            prediction: crate::ClientPrediction::new(character, None),
             health: minimium_simulation::PLAYER_MAX_HEALTH,
             collision_index: minimium_simulation::CollisionIndex::default(),
             collision_query: minimium_simulation::CollisionQuery::default(),
@@ -129,25 +128,24 @@ impl ClientGameState {
         self.session_context = context;
     }
 
-    #[cfg(feature = "desktop")]
-    pub(crate) fn view(&self) -> minimium_client_runtime::ClientView<'_> {
-        minimium_client_runtime::ClientView::new(
+    pub(crate) fn view(&self) -> crate::ClientView<'_> {
+        crate::ClientView::new(
             self.current_instance,
+            self.session_context,
             self.world_manifests.get(&self.current_instance).copied(),
             self.gameplay.prediction.character,
             self.gameplay.prediction.position_mm,
             self.gameplay.health,
+            self.gameplay.reconciliation.player_count(),
             &self.gameplay.remote_positions_mm,
             self.gameplay.sectors_ready,
         )
     }
 
-    #[cfg(feature = "desktop")]
     pub(crate) fn accumulate_prediction_time(&mut self, delta_seconds: f32) {
         self.gameplay.prediction.accumulate_time(delta_seconds);
     }
 
-    #[cfg(feature = "desktop")]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn predict_next(
         &mut self,

@@ -27,7 +27,7 @@ impl DesktopHost {
             .build_frame(&self.render_environment_frame)
             .with_quality(self.meteors.effective_quality(self.sky_quality.effective));
         self.impacts.append(
-            self.application.game_view().session_context(),
+            self.application.core_view().context,
             &mut meteors,
             self.meteors.now_s(),
             &mut self.meteors.audio,
@@ -92,15 +92,14 @@ impl DesktopHost {
         };
         let Some(manifest) = self
             .application
-            .game_view()
-            .world_manifests
-            .get(&self.application.game_view().current_instance)
+            .world_manifest_catalog_view()
+            .get(&self.application.core_view().world_instance)
             .copied()
         else {
             self.publish_unavailable(render_view, "world manifest is unavailable");
             return None;
         };
-        if context.instance() != self.application.game_view().current_instance
+        if context.instance() != self.application.core_view().world_instance
             || context.content_revision() != manifest.content_revision()
         {
             self.publish_unavailable(
@@ -151,27 +150,13 @@ impl DesktopHost {
         render_view: RenderViewFrame,
         geography: Option<std::sync::Arc<dyn minimium_procgen::PreparedGeography>>,
     ) -> Option<PreparedStarUpload> {
-        let mut feet_position_mm = self
-            .application
-            .game_view()
-            .gameplay
-            .prediction
-            .position_mm
-            .or_else(|| {
-                (self.environment_frame.quality
-                    == crate::environment::SynchronizationQuality::LocalDemo)
-                    .then(|| {
-                        demo_position_mm(
-                            self.application
-                                .game_view()
-                                .gameplay
-                                .prediction
-                                .character
-                                .position,
-                        )
-                    })
-                    .flatten()
-            });
+        let core_view = self.application.core_view();
+        let mut feet_position_mm = core_view.position_mm.or_else(|| {
+            (self.environment_frame.quality
+                == crate::environment::SynchronizationQuality::LocalDemo)
+                .then(|| demo_position_mm(core_view.character.position))
+                .flatten()
+        });
         let mut eye_height = DEFAULT_OBSERVER_EYE_HEIGHT_MM;
         let mut meteor_surface_scale =
             minimium_renderer::planet_coordinates::PlanetSurfaceScale::UNIT;

@@ -192,6 +192,14 @@ struct PendingWorldContent {
 }
 
 impl ClientSession {
+    pub(crate) fn content_jobs_session_id(&self) -> u64 {
+        self.content_jobs.session_id()
+    }
+
+    pub(crate) fn content_jobs_port(&self) -> Arc<dyn crate::ContentJobsPort> {
+        self.content_jobs.port_arc()
+    }
+
     fn log_failure(&self, failure: &SessionFailure) {
         if let Some(logger) = &self.diagnostic_logger {
             crate::diagnostics::emit(

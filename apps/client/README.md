@@ -18,8 +18,12 @@ Pending target snapshots stay separate from active membership until authoritativ
 commit; cancel/disconnect release the corresponding interest and late work.
 Origin shifts and resize affect presentation staging, not physical collision.
 
-This is the readiness migration; application-core extraction remains a separate
-task. Protocol/save/generator formats and geometry/simulation algorithms remain
+The runtime core owns logical client/session/world state, prediction,
+reconciliation, typed actions and CPU readiness identity. The app facade owns
+settings, UI, input policy, renderer staging and presentation readiness; it
+exposes immutable views and narrow operations without duplicate logical state.
+Terminal and desktop dispatch session events through the same core step.
+Protocol, save and generator formats and geometry/simulation algorithms remain
 unchanged. Runtime, visual and performance acceptance are deferred.
 
 `start-earth.ps1` starts its owned local server in developer mode, granting the

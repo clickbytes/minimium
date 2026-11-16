@@ -5,11 +5,8 @@
 //! sends world-action intents through the application executor and reports UI/process work as a typed
 //! [`FrontendAction`], leaving each front end in control of its own event loop.
 
-#[cfg(feature = "desktop")]
 use crate::application::SuppressionReason;
-use crate::application::{
-    ClientAction, ClientActionExecutor, LocalActionOutcome, QueuedActionKind,
-};
+use crate::application::{ClientAction, LocalActionOutcome, QueuedActionKind};
 use crate::{options::ThreadLane, session::QueueError};
 use minimium_commands::{
     lex_command_line_with_spans, CommandError, CommandErrorCode, CommandOutcome,
@@ -210,9 +207,10 @@ pub(crate) fn parse_command(input: &str) -> Result<Option<ClientCommand>, ParseE
 }
 
 pub(crate) struct CommandContext<'a> {
-    pub now: minimium_client_runtime::ClientTime,
-    pub connection: &'a mut minimium_client_runtime::ConnectionController,
-    pub action_executor: &'a mut ClientActionExecutor,
+    pub movement: minimium_simulation::MovementPolicy,
+    pub flight_enabled: bool,
+    pub portal_entity: Option<minimium_world::entity::EntityId>,
+    pub execute_action: &'a mut dyn FnMut(ClientAction) -> LocalActionOutcome,
     /// Direction used for `fire`; terminal callers pass [1, 0, 0].
     pub fire_direction: [f32; 3],
     pub player_position: Option<[f32; 3]>,
@@ -253,7 +251,6 @@ pub(crate) enum CommandResult {
         kind: QueuedActionKind,
         error: QueueError,
     },
-    #[cfg(feature = "desktop")]
     Suppressed(SuppressionReason),
     Action(FrontendAction),
 }
@@ -269,7 +266,7 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
             )))
         }
         ClientCommand::SetAltitude(km) => {
-            if !context.connection.flight_enabled || !context.connection.movement.can_fly {
+            if !context.flight_enabled || !context.movement.can_fly {
                 return CommandResult::Action(FrontendAction::Notice(
                     minimium_localization::UiNotice::AltitudeRequiresFlight,
                 ));
@@ -308,17 +305,12 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
             ..Default::default()
         }),
         ClientCommand::InteractPortal => {
-            let Some(position) = context.player_position else {
+            if context.player_position.is_none() {
                 return CommandResult::Action(FrontendAction::Notice(
                     minimium_localization::UiNotice::PortalSnapshotUnavailable,
                 ));
-            };
-            let entity = context
-                .connection
-                .session()
-                .and_then(|session| session.replicated_entities())
-                .and_then(|replicas| nearest_portal_entity(replicas, position));
-            let Some(entity) = entity else {
+            }
+            let Some(entity) = context.portal_entity else {
                 return CommandResult::Action(FrontendAction::Notice(
                     minimium_localization::UiNotice::PortalUnavailable,
                 ));
@@ -416,15 +408,12 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
             return CommandResult::Action(FrontendAction::SpawnRandomMeteorid)
         }
     };
-    let result = context
-        .action_executor
-        .execute(context.connection, action, context.now);
+    let result = (context.execute_action)(action);
     match result {
         LocalActionOutcome::Queued { kind, .. } => CommandResult::Queued { kind },
         LocalActionOutcome::Rejected { kind, error } => {
             CommandResult::QueueRejected { kind, error }
         }
-        #[cfg(feature = "desktop")]
         LocalActionOutcome::Suppressed(reason) => CommandResult::Suppressed(reason),
     }
 }

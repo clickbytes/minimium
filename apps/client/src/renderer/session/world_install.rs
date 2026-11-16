@@ -44,7 +44,7 @@ impl DesktopHost {
             self.renderer.render_origin,
             self.renderer.world_geometry.origin_generation(),
             &self.application.world_catalog_view(),
-            &self.application.game_view().world_manifests,
+            self.application.world_manifest_catalog_view(),
             Some((map.as_ref(), manifest)),
             terrain_inputs,
             water,
@@ -76,7 +76,7 @@ impl DesktopHost {
             if owner == super::super::sector_scene::SceneInterestOwner::Active(context)
                 && !self
                     .application
-                    .report_active_scene_ready(scene.cpu.clone())
+                    .report_active_scene_ready(scene.cpu.clone(), crate::host_time::sample())
             {
                 return false;
             }
@@ -124,11 +124,10 @@ impl DesktopHost {
     pub(super) fn refresh_after_position_change(&mut self) {
         self.renderer.set_render_origin(
             self.application
-                .game_view()
-                .gameplay
-                .prediction
-                .character
-                .position
+                .core_view()
+                .position_mm
+                .map(|position| position.0.map(|v| v as f32 / 1000.0))
+                .unwrap_or_else(|| self.application.core_view().character.position)
                 .map(|v| (v / 4096.0).round() * 4096.0),
         );
         self.shadow_state

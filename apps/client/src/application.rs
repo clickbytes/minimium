@@ -2,35 +2,17 @@
 mod desktop_ops;
 #[cfg(feature = "desktop")]
 mod desktop_view;
-mod game;
-mod messages;
 mod settings;
-mod step;
-mod time;
 #[cfg(feature = "desktop")]
 mod transitions;
 #[cfg(feature = "desktop")]
 mod ui;
-mod world_readiness;
 
 #[cfg(feature = "desktop")]
 pub(crate) use desktop_view::TransferPresentationReady;
-pub(crate) use game::ClientGameState;
-#[cfg(feature = "desktop")]
-pub(crate) use game::GameplayState;
-pub(crate) use messages::ApplicationMessageError;
-#[cfg(feature = "desktop")]
-pub(crate) use messages::WorldContextChange;
 #[cfg(feature = "desktop")]
 pub(crate) use settings::ClientSettings;
 pub(crate) use settings::{SettingsStore, StartupSettings};
-pub(crate) use step::ClientStepInput;
-#[cfg(feature = "desktop")]
-pub(crate) use step::PredictionPresentationRequest;
-#[cfg(feature = "desktop")]
-pub(crate) use step::PredictionSceneRequest;
-#[cfg(feature = "desktop")]
-pub(crate) use step::{AppliedSessionEvent, ClientStepDisconnect, PredictionInput};
 #[cfg(feature = "desktop")]
 pub(crate) use transitions::{
     MapOverviewModel, PendingSectorTransition, WorldTransitionController,
@@ -38,38 +20,42 @@ pub(crate) use transitions::{
 #[cfg(feature = "desktop")]
 pub(crate) use transitions::{MAX_OVERVIEW_ZOOM, MIN_OVERVIEW_ZOOM};
 #[cfg(feature = "desktop")]
-pub(crate) use ui::ClientStatus;
-#[cfg(feature = "desktop")]
-pub(crate) use ui::UiModel;
+pub(crate) use ui::{ClientStatus, UiModel};
 
-use minimium_client_runtime::{ClientTime, ClientTimeError, ConnectionController};
+use minimium_client_runtime::{
+    ClientApplicationConfig, ClientApplicationCore, ClientTime, ClientTimeError,
+    ConnectionController,
+};
+#[cfg(feature = "desktop")]
 use minimium_world::world::{WorldInstanceId, WorldMap};
+#[cfg(feature = "desktop")]
 use std::collections::HashMap;
 
-/// Shared client state owner; presentation resources belong to the host renderer.
+pub(crate) use minimium_client_runtime::QueuedActionKind;
+pub(crate) use minimium_client_runtime::{
+    ApplicationMessageError, ClientAction, ClientStepInput, ClientStepOutput, LocalActionOutcome,
+    PredictionPresentationRequest, PredictionSceneRequest, SuppressionReason,
+};
+#[cfg(feature = "desktop")]
+pub(crate) use minimium_client_runtime::{
+    AppliedSessionEvent, ClientStepDisconnect, PredictionInput, UseTrigger, WorldContextChange,
+};
+
+/// Host facade: one runtime core plus UI, input and presentation state.
 pub(crate) struct ClientApplication {
-    last_operation_at: ClientTime,
+    core: ClientApplicationCore,
     #[cfg(feature = "desktop")]
     pub(crate) ui: UiModel,
-    game: ClientGameState,
-    connection: ConnectionController,
-    action_executor: ClientActionExecutor,
-    pending_transfer: Option<messages::ApplicationTransferPreparation>,
-    #[cfg(feature = "desktop")]
-    tool_profile: minimium_simulation::tools::ToolProfile,
     #[cfg(feature = "desktop")]
     pub(crate) settings: ClientSettings,
     #[cfg(feature = "desktop")]
     pub(crate) input: crate::input::InputMapper,
-    world_catalog: HashMap<WorldInstanceId, WorldMap>,
     #[cfg(feature = "desktop")]
-    last_step_at: Option<ClientTime>,
+    pub(crate) status: ClientStatus,
     #[cfg(feature = "desktop")]
     transitions: WorldTransitionController,
     #[cfg(feature = "desktop")]
     overview: MapOverviewModel,
-    #[cfg(feature = "desktop")]
-    pub(crate) status: ClientStatus,
 }
 
 #[cfg(feature = "desktop")]
@@ -86,78 +72,44 @@ pub(crate) struct HeadlessApplicationSettings {
 pub(crate) struct HeadlessApplicationSettings;
 
 impl ClientApplication {
-    pub(crate) fn apply_altitude_result(
-        &mut self,
-        context: minimium_protocol::WorldContext,
-        position: Option<minimium_world::world::Position3Mm>,
-    ) -> bool {
-        if self.game.session_context() != Some(context)
-            || self
-                .connection
-                .session()
-                .is_none_or(|session| session.active_world_context() != Some(context))
-        {
-            return false;
-        }
-        if let Some(position) = position {
-            let prediction = &mut self.game.gameplay.prediction;
-            prediction.position_mm = Some(position);
-            prediction.character.position = position.0.map(|value| value as f32 / 1000.0);
-            prediction.character.velocity = [0.0; 3];
-            prediction.character.grounded = false;
-            prediction.reset();
-            self.game.gameplay.sectors_ready = false;
-        }
-        true
-    }
-
-    pub(crate) fn apply_health_update(&mut self, health: u16) -> bool {
-        let Some(context) = self.game.session_context() else {
-            return false;
-        };
-        if self
-            .connection
-            .session()
-            .is_none_or(|session| session.active_world_context() != Some(context))
-        {
-            return false;
-        }
-        self.game.gameplay.health = health;
-        true
-    }
-
     #[cfg(feature = "desktop")]
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         ui: UiModel,
-        game: ClientGameState,
         connection: ConnectionController,
         settings: ClientSettings,
         input: crate::input::InputMapper,
+        current_instance: WorldInstanceId,
         world_catalog: HashMap<WorldInstanceId, WorldMap>,
+        world_manifests: HashMap<WorldInstanceId, minimium_world::world::WorldManifest>,
+        bootstrap_terrain: Option<minimium_procgen::TerrainInputs>,
+        initial_collision: Option<minimium_client_runtime::world_readiness::CollisionSnapshot>,
         transitions: WorldTransitionController,
         overview: MapOverviewModel,
         status: ClientStatus,
         now: ClientTime,
-    ) -> Result<Self, ClientTimeError> {
-        connection.validate_time(now)?;
-        game.gameplay.reconciliation.validate_time(now)?;
-        Ok(Self {
-            last_operation_at: now,
-            ui,
-            game,
-            connection,
-            action_executor: ClientActionExecutor::new(now),
-            pending_transfer: None,
-            #[cfg(feature = "desktop")]
+    ) -> Result<Self, minimium_client_runtime::ClientApplicationCreateError> {
+        let require_earth = settings.require_earth;
+        let config = ClientApplicationConfig {
+            current_instance,
+            world_catalog,
+            world_manifests,
+            bootstrap_terrain,
             tool_profile: minimium_game_sample::DEFAULT_TOOL_PROFILE,
+            require_earth,
+        };
+        let mut core = ClientApplicationCore::new(connection, config, None, now)?;
+        if let Some(snapshot) = initial_collision {
+            let _ = core.report_active_scene_ready(snapshot, now);
+        }
+        Ok(Self {
+            core,
+            ui,
             settings,
             input,
-            world_catalog,
-            #[cfg(feature = "desktop")]
-            last_step_at: None,
+            status,
             transitions,
             overview,
-            status,
         })
     }
 
@@ -166,17 +118,45 @@ impl ClientApplication {
         worlds: crate::bootstrap::InitialWorlds,
         settings: HeadlessApplicationSettings,
         now: ClientTime,
-    ) -> Result<Self, ClientTimeError> {
-        connection.validate_time(now)?;
-        let game = ClientGameState::for_initial_world(
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let manifest = *worlds
+            .world_manifests
+            .get(&worlds.instance)
+            .ok_or("initial world manifest is unavailable")?;
+        let bootstrap_terrain = match crate::world_content::bootstrap_terrain_inputs(
             worlds.instance,
-            worlds.map.spawn(),
-            worlds.world_manifests,
-        );
+            manifest,
+            &worlds.map,
+        ) {
+            Ok(terrain) => Some(terrain),
+            Err(error)
+                if error.kind()
+                    == minimium_procgen::GenerationErrorKind::Sampling(
+                        minimium_procgen::EarthSampleError::PackageUnavailable,
+                    ) =>
+            {
+                None
+            }
+            Err(error) => return Err(Box::new(error)),
+        };
+        let config = ClientApplicationConfig {
+            current_instance: worlds.instance,
+            world_catalog: worlds.world_catalog,
+            world_manifests: worlds.world_manifests,
+            bootstrap_terrain,
+            tool_profile: minimium_game_sample::DEFAULT_TOOL_PROFILE,
+            #[cfg(feature = "desktop")]
+            require_earth: settings.require_earth,
+            #[cfg(not(feature = "desktop"))]
+            require_earth: false,
+        };
+        let core = ClientApplicationCore::new(connection, config, None, now).map_err(|error| {
+            std::io::Error::other(format!("client application setup failed: {error:?}"))
+        })?;
         #[cfg(not(feature = "desktop"))]
         let _ = settings;
         #[cfg(feature = "desktop")]
-        let desktop = (
+        let (ui, settings, input, status) = (
             UiModel {
                 console: crate::console::Console::new(),
             },
@@ -191,30 +171,48 @@ impl ClientApplication {
             crate::input::InputMapper::default(),
             ClientStatus::ClientText(crate::messages::ClientText::TerminalIntro),
         );
+        #[cfg(feature = "desktop")]
+        let (transitions, overview) = (
+            WorldTransitionController::new(false),
+            MapOverviewModel::new(2.8),
+        );
+        #[cfg(not(feature = "desktop"))]
+        let _ = (&core, now);
         Ok(Self {
-            last_operation_at: now,
+            core,
             #[cfg(feature = "desktop")]
-            ui: desktop.0,
-            game,
-            connection,
-            action_executor: ClientActionExecutor::new(now),
-            pending_transfer: None,
+            ui,
             #[cfg(feature = "desktop")]
-            tool_profile: minimium_game_sample::DEFAULT_TOOL_PROFILE,
+            settings,
             #[cfg(feature = "desktop")]
-            settings: desktop.1,
+            input,
             #[cfg(feature = "desktop")]
-            input: desktop.2,
-            world_catalog: worlds.world_catalog,
+            status,
             #[cfg(feature = "desktop")]
-            last_step_at: None,
+            transitions,
             #[cfg(feature = "desktop")]
-            transitions: WorldTransitionController::new(false),
-            #[cfg(feature = "desktop")]
-            overview: MapOverviewModel::new(2.8),
-            #[cfg(feature = "desktop")]
-            status: desktop.3,
+            overview,
         })
+    }
+
+    pub(crate) fn session(&self) -> Option<&minimium_client_runtime::ClientSession> {
+        self.core.session()
+    }
+
+    pub(crate) fn connection_view(&self) -> &ConnectionController {
+        self.core.connection_view()
+    }
+
+    pub(crate) fn is_connection_busy(&self) -> bool {
+        self.core.is_connection_busy()
+    }
+
+    pub(crate) fn record_diagnostic_failure(
+        &self,
+        code: &'static str,
+        error: &impl std::fmt::Display,
+    ) {
+        self.core.record_diagnostic_failure(code, error);
     }
 
     pub(crate) fn start_remote(
@@ -222,9 +220,7 @@ impl ClientApplication {
         address: String,
         now: ClientTime,
     ) -> Result<(), minimium_client_runtime::connector::StartError> {
-        self.accept_time(now)
-            .map_err(minimium_client_runtime::connector::StartError::Time)?;
-        self.connection.start_remote(address, now)
+        self.core.start_remote(address, now)
     }
 
     pub(crate) fn start_local(
@@ -232,98 +228,25 @@ impl ClientApplication {
         config: minimium_client_runtime::LocalServerLaunchConfig,
         now: ClientTime,
     ) -> Result<(), minimium_client_runtime::connector::StartError> {
-        self.accept_time(now)
-            .map_err(minimium_client_runtime::connector::StartError::Time)?;
-        self.connection.start_local(config, now)
+        self.core.start_local(config, now)
     }
 
     pub(crate) fn cancel_connection_attempt(
         &mut self,
         now: ClientTime,
     ) -> Result<(), ClientTimeError> {
-        self.accept_time(now)?;
-        self.connection.cancel(now)
+        self.core.cancel_connection_attempt(now)
     }
 
-    fn poll_connector(
+    pub(crate) fn disconnect_session(
         &mut self,
         now: ClientTime,
-    ) -> Result<minimium_client_runtime::ConnectionEvent, ClientTimeError> {
-        self.connection.poll_connector(now)
-    }
-
-    fn poll_admin_result(
-        &mut self,
-        now: ClientTime,
-    ) -> Result<Option<Result<String, minimium_client_runtime::ControllerError>>, ClientTimeError>
-    {
-        self.connection.poll_admin_result(now)
-    }
-
-    fn poll_session(
-        &mut self,
-        events: &mut Vec<crate::session::SessionEvent>,
-        now: ClientTime,
-    ) -> Result<(), ClientTimeError> {
-        self.connection.poll_session(events, now)
-    }
-
-    pub(crate) fn session(&self) -> Option<&crate::session::ClientSession> {
-        self.connection.session()
-    }
-
-    pub(crate) fn connection_view(&self) -> &ConnectionController {
-        &self.connection
-    }
-
-    pub(crate) fn is_connection_busy(&self) -> bool {
-        self.connection.busy()
-    }
-
-    pub(crate) fn record_diagnostic_failure(
-        &mut self,
-        code: &'static str,
-        error: &impl std::fmt::Display,
-    ) {
-        self.connection.record_diagnostic_failure(code, error);
-    }
-
-    pub(crate) fn transfer_cpu_content_ready(
-        &self,
-        ticket: minimium_client_runtime::TransferTicket,
-    ) -> bool {
-        let Some(preparation) = self.pending_transfer else {
-            return false;
-        };
-        if preparation.ticket != ticket {
-            return false;
-        }
-        let Some(session) = self.connection.session() else {
-            return false;
-        };
-        let Some(content) = session.resolved_world_content_for_context(ticket.context()) else {
-            return false;
-        };
-        if content.manifest() != preparation.manifest
-            || content.map().fingerprint() != preparation.map_fingerprint
-        {
-            return false;
-        }
-        let Some(terrain) = session.terrain_inputs_for_context(ticket.context()) else {
-            return false;
-        };
-        if preparation
-            .manifest
-            .planet()
-            .is_some_and(|planet| planet.mode == 1)
-            && terrain.source().geography().is_none()
-        {
-            return false;
-        }
-        preparation.manifest.planet().is_none()
-            || session
-                .water_catalog_for_context(ticket.context())
-                .is_some()
+    ) -> Result<Option<minimium_client_runtime::ClientSession>, ClientTimeError> {
+        let session = self.core.disconnect_session(now)?;
+        #[cfg(feature = "desktop")]
+        self.transitions.reset();
+        self.prepare_bootstrap_terrain(now);
+        Ok(session)
     }
 
     pub(crate) fn finish_until(
@@ -331,62 +254,7 @@ impl ClientApplication {
         deadline: std::time::Instant,
         now: ClientTime,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.accept_time(now)?;
-        self.connection.finish_until(deadline, now)
-    }
-
-    pub(crate) fn request_set_time(
-        &mut self,
-        minute: u16,
-        longitude: f64,
-        now: ClientTime,
-    ) -> Result<(), minimium_client_runtime::ControllerError> {
-        self.accept_controller_time(now)?;
-        self.connection.request_set_time(minute, longitude, now)
-    }
-
-    pub(crate) fn request_time_scale(
-        &mut self,
-        value: String,
-        now: ClientTime,
-    ) -> Result<(), minimium_client_runtime::ControllerError> {
-        self.accept_controller_time(now)?;
-        self.connection.request_time_scale(value, now)
-    }
-
-    pub(crate) fn request_time_mode(
-        &mut self,
-        mode: &str,
-        now: ClientTime,
-    ) -> Result<(), minimium_client_runtime::ControllerError> {
-        self.accept_controller_time(now)?;
-        self.connection.request_time_mode(mode, now)
-    }
-
-    pub(crate) fn request_time_offline_policy(
-        &mut self,
-        policy: &str,
-        now: ClientTime,
-    ) -> Result<(), minimium_client_runtime::ControllerError> {
-        self.accept_controller_time(now)?;
-        self.connection.request_time_offline_policy(policy, now)
-    }
-
-    pub(crate) fn request_random_bolid(
-        &mut self,
-        count: u16,
-        now: ClientTime,
-    ) -> Result<(), minimium_client_runtime::ControllerError> {
-        self.accept_controller_time(now)?;
-        self.connection.request_random_bolid(count, now)
-    }
-
-    pub(crate) fn request_random_meteorid(
-        &mut self,
-        now: ClientTime,
-    ) -> Result<(), minimium_client_runtime::ControllerError> {
-        self.accept_controller_time(now)?;
-        self.connection.request_random_meteorid(now)
+        self.core.finish_until(deadline, now)
     }
 
     pub(crate) fn execute_text_command(
@@ -397,45 +265,176 @@ impl ClientApplication {
         player_position: Option<[f32; 3]>,
         now: ClientTime,
     ) -> crate::client_commands::TextCommandResult {
-        if let Err(error) = self.accept_time(now) {
+        if let Err(error) = self.core.validate_time(now) {
             return crate::client_commands::TextCommandResult::QueueRejected {
                 kind: QueuedActionKind::Other,
                 error: crate::session::QueueError::Time(error),
             };
         }
+        let movement = self.core.connection_view().movement;
+        let flight_enabled = self.core.connection_view().flight_enabled;
+        let portal_entity = player_position.and_then(|position| {
+            self.core
+                .session()
+                .and_then(|session| session.replicated_entities())
+                .and_then(|replicas| {
+                    crate::client_commands::nearest_portal_entity(replicas, position)
+                })
+        });
+        let mut execute_action = |action| self.core.execute_action(action, now);
         let mut context = crate::client_commands::CommandContext {
-            now,
-            connection: &mut self.connection,
-            action_executor: &mut self.action_executor,
+            movement,
+            flight_enabled,
+            portal_entity,
+            execute_action: &mut execute_action,
             fire_direction,
             player_position,
         };
         crate::client_commands::execute_text(input, source, &mut context)
     }
 
-    pub(crate) fn disconnect_session(
+    pub(crate) fn step(
+        &mut self,
+        input: ClientStepInput,
+        candidate_readiness: impl FnMut(
+            PredictionSceneRequest<'_>,
+        ) -> Result<
+            Option<minimium_client_runtime::world_readiness::CollisionSnapshot>,
+            String,
+        >,
+        presentation_ready: Option<
+            &mut dyn FnMut(
+                &minimium_client_runtime::world_readiness::CollisionSnapshot,
+                PredictionPresentationRequest,
+            ) -> Result<bool, String>,
+        >,
+    ) -> Result<ClientStepOutput, ClientTimeError> {
+        let now = input.now;
+        let output = self
+            .core
+            .step(input, candidate_readiness, presentation_ready)?;
+        if output.disconnect.is_some() {
+            #[cfg(feature = "desktop")]
+            self.transitions.reset();
+            self.prepare_bootstrap_terrain(now);
+        }
+        Ok(output)
+    }
+
+    pub(crate) fn retain_terminal_readiness_interests(
+        &self,
+        readiness: &mut minimium_client_runtime::world_readiness::WorldReadiness,
+    ) -> Result<(), minimium_client_runtime::world_readiness::WorldReadinessError> {
+        self.core.retain_terminal_readiness_interests(readiness)
+    }
+
+    pub(crate) fn ensure_active_collision(
+        &mut self,
+        readiness: &mut minimium_client_runtime::world_readiness::WorldReadiness,
+        now: ClientTime,
+    ) -> Result<Option<minimium_client_runtime::world_readiness::CollisionSnapshot>, String> {
+        self.core
+            .ensure_active_collision(readiness, now)
+            .map_err(|error| error.to_string())
+    }
+
+    pub(crate) fn ensure_pending_transfer_collision(
+        &mut self,
+        readiness: &mut minimium_client_runtime::world_readiness::WorldReadiness,
+        now: ClientTime,
+    ) -> Result<
+        Option<(
+            minimium_client_runtime::TransferTicket,
+            minimium_client_runtime::world_readiness::CollisionSnapshot,
+        )>,
+        String,
+    > {
+        self.core
+            .ensure_pending_transfer_collision(readiness, now)
+            .map_err(|error| error.to_string())
+    }
+
+    pub(crate) fn report_transfer_host_ready(
+        &mut self,
+        ticket: minimium_client_runtime::TransferTicket,
+        snapshot: minimium_client_runtime::world_readiness::CollisionSnapshot,
+        now: ClientTime,
+    ) -> Result<(), crate::session::QueueError> {
+        self.core.report_transfer_host_ready(ticket, snapshot, now)
+    }
+
+    pub(crate) fn request_set_time(
+        &mut self,
+        minute: u16,
+        longitude: f64,
+        now: ClientTime,
+    ) -> Result<(), minimium_client_runtime::ControllerError> {
+        self.core.request_set_time(minute, longitude, now)
+    }
+    pub(crate) fn request_time_scale(
+        &mut self,
+        value: String,
+        now: ClientTime,
+    ) -> Result<(), minimium_client_runtime::ControllerError> {
+        self.core.request_time_scale(value, now)
+    }
+    pub(crate) fn request_time_mode(
+        &mut self,
+        mode: &str,
+        now: ClientTime,
+    ) -> Result<(), minimium_client_runtime::ControllerError> {
+        self.core.request_time_mode(mode, now)
+    }
+    pub(crate) fn request_time_offline_policy(
+        &mut self,
+        policy: &str,
+        now: ClientTime,
+    ) -> Result<(), minimium_client_runtime::ControllerError> {
+        self.core.request_time_offline_policy(policy, now)
+    }
+    pub(crate) fn request_random_bolid(
+        &mut self,
+        count: u16,
+        now: ClientTime,
+    ) -> Result<(), minimium_client_runtime::ControllerError> {
+        self.core.request_random_bolid(count, now)
+    }
+    pub(crate) fn request_random_meteorid(
         &mut self,
         now: ClientTime,
-    ) -> Result<Option<crate::session::ClientSession>, ClientTimeError> {
-        self.accept_time(now)?;
-        let session = self.connection.take_session(now)?;
-        self.game.set_session_context(None);
-        self.pending_transfer = None;
-        self.game.gameplay.clear_remote_players();
-        self.game.gameplay.health = minimium_simulation::PLAYER_MAX_HEALTH;
-        self.game.gameplay.sectors_ready = false;
-        self.game.gameplay.collision_index = minimium_simulation::CollisionIndex::default();
-        self.game.gameplay.collision_revision =
-            self.game.gameplay.collision_revision.wrapping_add(1).max(1);
-        #[cfg(feature = "desktop")]
-        self.action_executor.clear_input_cooldown();
-        #[cfg(feature = "desktop")]
-        self.transitions.reset();
-        Ok(session)
+    ) -> Result<(), minimium_client_runtime::ControllerError> {
+        self.core.request_random_meteorid(now)
+    }
+
+    fn prepare_bootstrap_terrain(&mut self, now: ClientTime) {
+        let view = self.core.view();
+        let instance = view.world_instance;
+        let Some(manifest) = view.manifest else {
+            return;
+        };
+        let Some(map) = self.core.world_catalog().get(&instance) else {
+            return;
+        };
+        let terrain = match crate::world_content::bootstrap_terrain_inputs(instance, manifest, map)
+        {
+            Ok(terrain) => Some(terrain),
+            Err(error)
+                if error.kind()
+                    == minimium_procgen::GenerationErrorKind::Sampling(
+                        minimium_procgen::EarthSampleError::PackageUnavailable,
+                    ) =>
+            {
+                None
+            }
+            Err(error) => {
+                self.core
+                    .record_diagnostic_failure(error.code(), &error.to_string());
+                None
+            }
+        };
+        if let Err(error) = self.core.provide_bootstrap_terrain(terrain, now) {
+            self.core
+                .record_diagnostic_failure("client.bootstrap_terrain_rejected", &error);
+        }
     }
 }
-mod actions;
-pub(crate) use actions::QueuedActionKind;
-pub(crate) use actions::{ClientAction, ClientActionExecutor, LocalActionOutcome};
-#[cfg(feature = "desktop")]
-pub(crate) use actions::{SuppressionReason, UseTrigger};

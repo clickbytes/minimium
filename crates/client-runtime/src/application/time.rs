@@ -1,9 +1,9 @@
-use super::ClientApplication;
-use minimium_client_runtime::{ClientTime, ClientTimeError};
+use super::ClientApplicationCore;
+use crate::{ClientTime, ClientTimeError, ControllerError};
 
-impl ClientApplication {
+impl ClientApplicationCore {
     /// Checks every participating mutable owner before a host operation starts.
-    pub(crate) fn validate_time(&self, now: ClientTime) -> Result<(), ClientTimeError> {
+    pub fn validate_time(&self, now: ClientTime) -> Result<(), ClientTimeError> {
         now.validate_after(self.last_operation_at)?;
         self.action_executor.validate_time(now)?;
         self.connection.validate_time(now)?;
@@ -19,9 +19,9 @@ impl ClientApplication {
     pub(crate) fn accept_controller_time(
         &mut self,
         now: ClientTime,
-    ) -> Result<(), minimium_client_runtime::ControllerError> {
+    ) -> Result<(), ControllerError> {
         self.accept_time(now).map_err(|error| {
-            minimium_client_runtime::ControllerError::caused_by(
+            ControllerError::caused_by(
                 error.code(),
                 error.to_string(),
                 std::io::Error::other(error),

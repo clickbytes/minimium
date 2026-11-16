@@ -23,12 +23,12 @@ impl DesktopHost {
                 live,
                 ..
             } => {
-                if Some(context) == self.application.game_view().session_context() {
+                if Some(context) == self.application.core_view().context {
                     self.impacts.observe(context, body, live);
                 }
             }
             ServerMessage::Bolid { context, event } => {
-                if Some(context) != self.application.game_view().session_context() {
+                if Some(context) != self.application.core_view().context {
                     return;
                 }
                 self.bolids.retain(|(existing, bolid, at, _)| {

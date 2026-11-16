@@ -87,18 +87,16 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
     loop {
         let input = crate::application::ClientStepInput {
             now: crate::host_time::sample(),
-            #[cfg(feature = "desktop")]
             prediction: None,
         };
-        #[cfg(feature = "desktop")]
-        let step = application.step(input, |_| Ok(None), |_, _| Ok(true))?;
-        #[cfg(not(feature = "desktop"))]
-        let step = application.step(input)?;
+        let step = application.step(input, |_| Ok(None), None)?;
         if let Err(error) = application.retain_terminal_readiness_interests(&mut cpu_readiness) {
             application.record_diagnostic_failure("client.collision_readiness_failed", &error);
         }
         {
-            if let Err(error) = application.ensure_active_collision(&mut cpu_readiness) {
+            if let Err(error) =
+                application.ensure_active_collision(&mut cpu_readiness, crate::host_time::sample())
+            {
                 application.record_diagnostic_failure("client.collision_readiness_failed", &error);
             }
         }
@@ -166,7 +164,9 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
             }
         }
         if application.session().is_some() {
-            match application.ensure_pending_transfer_collision(&mut cpu_readiness) {
+            match application
+                .ensure_pending_transfer_collision(&mut cpu_readiness, crate::host_time::sample())
+            {
                 Ok(Some((ticket, snapshot))) => {
                     let _ = application.report_transfer_host_ready(
                         ticket,
@@ -257,7 +257,6 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                                 .localized(&localizer, options.locale)
                         )
                     }
-                    #[cfg(feature = "desktop")]
                     TextCommandResult::Suppressed(_) => {}
                     TextCommandResult::Action(action) => {
                         let (should_exit, result) = actions::handle(

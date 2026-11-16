@@ -1223,7 +1223,6 @@ dependencies = [
  "minimium-diagnostics",
  "minimium-environment",
  "minimium-fluids",
- "minimium-game-sample",
  "minimium-platform",
  "minimium-procgen",
  "minimium-protocol",

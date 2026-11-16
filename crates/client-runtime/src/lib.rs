@@ -1,4 +1,5 @@
 //! UI-independent client session and environment synchronization runtime.
+mod application;
 mod authentication;
 pub mod bootstrap;
 mod client_time;
@@ -19,10 +20,17 @@ mod water_replica;
 mod world_content;
 pub mod world_readiness;
 
+pub use application::{
+    ApplicationMessageError, AppliedSessionEvent, ClientAction, ClientApplicationConfig,
+    ClientApplicationCore, ClientApplicationCreateError, ClientReadinessError,
+    ClientStepDisconnect, ClientStepInput, ClientStepOutput, LocalActionOutcome, PredictionInput,
+    PredictionPresentationRequest, PredictionSceneRequest, QueuedActionKind, SuppressionReason,
+    UseTrigger, WorldContextChange,
+};
 pub use authentication::{ClientAuthentication, ClientAuthenticationError};
 pub use bootstrap::LocalServerLaunchConfig;
 pub use client_time::{ClientTime, ClientTimeError};
-pub use connection_controller::{ConnectionController, ConnectionEvent};
+pub use connection_controller::{ConnectionController, ConnectionEvent, PreparedSessionError};
 pub use content_jobs::{
     ContentCancelStatus, ContentJobCompletion, ContentJobHandle, ContentJobPoll, ContentJobRequest,
     ContentJobResult, ContentJobTicket, ContentJobsPort, ContentJobsSession, ContentShutdownStatus,

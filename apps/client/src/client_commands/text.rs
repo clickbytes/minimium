@@ -3,7 +3,6 @@ use super::{
     ParseError, PresentationResult,
 };
 use crate::application::QueuedActionKind;
-#[cfg(feature = "desktop")]
 use crate::application::SuppressionReason;
 use crate::session::QueueError;
 use minimium_commands::{CommandError, CommandErrorCode};
@@ -62,7 +61,6 @@ pub(crate) enum TextCommandResult {
         kind: QueuedActionKind,
         error: QueueError,
     },
-    #[cfg(feature = "desktop")]
     Suppressed(SuppressionReason),
     Action(FrontendAction),
 }
@@ -101,7 +99,6 @@ pub(crate) fn execute_text(
         CommandResult::QueueRejected { kind, error } => {
             TextCommandResult::QueueRejected { kind, error }
         }
-        #[cfg(feature = "desktop")]
         CommandResult::Suppressed(reason) => TextCommandResult::Suppressed(reason),
         CommandResult::Action(action) => TextCommandResult::Action(action),
     }

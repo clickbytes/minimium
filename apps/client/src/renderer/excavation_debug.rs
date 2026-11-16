@@ -18,7 +18,7 @@ impl DesktopHost {
         context: WorldContext,
         message: &ExcavationMessage,
     ) {
-        if Some(context) != self.application.game_view().session_context() {
+        if Some(context) != self.application.core_view().context {
             return;
         }
         if self.excavation_debug.context != Some(context) {
@@ -78,7 +78,7 @@ impl DesktopHost {
             return None;
         }
         let ready = self.renderer.scene_visible
-            && self.application.game_view().gameplay.sectors_ready
+            && self.application.core_view().sectors_ready
             && session.excavation_ready();
         let query_reach = selected_definition
             .map_or(application_view.max_tool_reach_m, |definition| {
@@ -139,11 +139,10 @@ impl DesktopHost {
             color,
             controls: self.tool_notice(ToolNotice::Controls),
             preview: self.tool_notice(ToolNotice::Preview),
-            result: (self.excavation_debug.context
-                == self.application.game_view().session_context())
-            .then_some(self.excavation_debug.last_result)
-            .flatten()
-            .map(|result| format(self.tool_result_message(result))),
+            result: (self.excavation_debug.context == self.application.core_view().context)
+                .then_some(self.excavation_debug.last_result)
+                .flatten()
+                .map(|result| format(self.tool_result_message(result))),
             outline: hit.map_or_else(Vec::new, |hit| {
                 outline(
                     hit,
@@ -157,10 +156,9 @@ impl DesktopHost {
     }
 
     fn preview_tool_hit(&self, reach_m: f64) -> Option<SurfaceHit> {
-        let gameplay = &self.application.game_view().gameplay;
-        let character = gameplay.prediction.character;
-        let feet = gameplay
-            .prediction
+        let view = self.application.core_view();
+        let character = view.character;
+        let feet = view
             .position_mm
             .map_or(character.position.map(f64::from), |p| {
                 p.0.map(|v| v as f64 / 1000.0)
@@ -171,30 +169,15 @@ impl DesktopHost {
             camera::camera_direction_from_geometry(geometry, self.input.yaw, self.input.pitch)
                 .as_dvec3()
                 .to_array();
-        let blockers = gameplay
-            .reconciliation
-            .tracks()
-            .iter()
-            .flatten()
-            .filter_map(|track| {
-                let feet_m = track.displayed_position_mm.map(|v| v as f64 / 1000.0);
-                CharacterGeometry::new(feet_m, character.gravity)
-                    .map(|geometry| minimium_simulation::ToolRayCapsule { geometry })
-            });
-        let mut hit = gameplay.collision_index.tool_surface_hit(
-            self.application.game_view().current_instance,
-            eye,
-            direction,
-            reach_m,
-            blockers,
-        )?;
+        let mut hit = self
+            .application
+            .preview_tool_surface_hit(eye, direction, reach_m)?;
         if let SurfaceTarget::Terrain(_) = hit.target {
             let session = self.application.connection_view().session()?;
             let manifest = *self
                 .application
-                .game_view()
-                .world_manifests
-                .get(&self.application.game_view().current_instance)?;
+                .world_manifest_catalog_view()
+                .get(&self.application.core_view().world_instance)?;
             let inputs = session.terrain_inputs()?;
             let store = inputs.overlays().volumes()?.clone();
             let terrain = minimium_procgen::PlanetTerrain::for_manifest(manifest, inputs).ok()?;
