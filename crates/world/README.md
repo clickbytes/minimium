@@ -18,6 +18,19 @@ same axis-aligned body bounds at those orientations.
 
 Component schemas require an exact registered version; the world crate does not migrate older component payloads. Every descriptor provides a payload validator, which the registry runs after enforcing size and schema and before creating a component blob. Insert, restore and persistence loading share this validation path; staged effect/store changes are published only after validation succeeds. Replicated descriptors explicitly declare either a spatial position decoder or global visibility; spatial entities are filtered through active sectors, and global visibility is never inferred from a missing position. Payloads are limited to 2048 bytes, each entity to 16 components, and each store to 16,384 entities; storage/runtime enforces the 4 MiB aggregate snapshot component payload cap across worlds. Store mutations advance a monotone revision and remain available through `changes_since`; component removal and entity despawn are explicit change records. Component persistence belongs to storage/runtime composition and is not encoded into sector object blobs.
 
+Each descriptor also declares an independent `ComponentMutationPolicy`:
+`General` preserves ordinary entity-effect mutation, while `OwnerOnly` requires a
+validated owner registration. `ComponentRegistry` binds owner-only module
+components to their `ModuleRegistry` module identity and the built-in impact
+component to its host registration, minting registry-scoped opaque owner IDs.
+An owner ID is metadata, not authority. The server host issues a world-scoped
+owner port only for a registered module component; the module's `WorldEffect`
+does not carry that port. Runtime staging validates spawn, set, remove and
+despawn policy before committing a batch. A separate host restore path validates
+the registered owner binding, exact schema and payload without changing saved
+records or component encoding. Replication visibility and mutation rights remain
+independent.
+
 The entity store also exposes membership-only revisions for entity and
 component collections. They advance only when a member is created, removed or
 restored, so bounded read cursors remain valid when an existing component value

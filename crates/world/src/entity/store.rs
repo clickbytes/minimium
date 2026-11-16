@@ -278,7 +278,9 @@ impl EntityStore {
 
 #[cfg(test)]
 mod tests {
-    use super::super::{ComponentDescriptor, ReplicationPolicy, ReplicationVisibility};
+    use super::super::{
+        ComponentDescriptor, ComponentMutationPolicy, ReplicationPolicy, ReplicationVisibility,
+    };
     use super::*;
 
     fn descriptor(id: u32, name: &'static str) -> ComponentDescriptor {
@@ -293,6 +295,7 @@ mod tests {
             },
             replication: ReplicationPolicy::default(),
             visibility: ReplicationVisibility::Global,
+            mutation_policy: ComponentMutationPolicy::General,
         }
     }
 

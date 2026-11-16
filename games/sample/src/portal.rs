@@ -4,7 +4,8 @@ use minimium_gameplay::{
     Stage, SystemDefinition, WorldEffect, WorldLifecycle,
 };
 use minimium_world::entity::{
-    ComponentDescriptor, ComponentError, ComponentTypeId, ReplicationPolicy, SchemaVersion,
+    ComponentDescriptor, ComponentError, ComponentMutationPolicy, ComponentTypeId,
+    ReplicationPolicy, SchemaVersion,
 };
 use minimium_world::world::WorldInstanceId;
 
@@ -103,6 +104,7 @@ impl EngineModule<ModuleCommandHandler, GameplaySystem> for SampleGameplayModule
             visibility: minimium_world::entity::ReplicationVisibility::Spatial {
                 position: portal_position,
             },
+            mutation_policy: ComponentMutationPolicy::General,
         })?;
         registrar.system(SystemDefinition {
             id: "sample-world-startup",

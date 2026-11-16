@@ -114,7 +114,19 @@ Coordinates world, simulation, environment, protocol, transport, storage, platfo
 
 ## Data flow
 
-The process preflights snapshot and excavation journal versions before creating its data lock, composes and loads saved world state read-only, then acquires the lock and revalidates persistent format headers and world seed/planet inputs before any startup cleanup or writes. The application owns saved planet and snapshot seed discovery and requests randomness only when no seed is available. The world impact owner registers its ServerOnly body descriptor in the base component registry before application module schemas; the complete registry is ready before `PlayerStore::load`. The storage parser validates saved component types and versions before publishing `LoadedState`. The runtime restores the complete entity set, counters and initialization markers into staged world stores, then applies bounded network inputs on the owner lane. Live entity effects also stage ordered neutral changes alongside cloned world stores; storage prepares encoded-record and aggregate-payload reservations, and the owner commits both candidates in one operation before later effects run. Workers publish typed results back to the runtime; immutable, revisioned save snapshots cross into storage.
+The process preflights snapshot and excavation journal versions before creating its data lock, composes and loads saved world state read-only, then acquires the lock and revalidates persistent format headers and world seed/planet inputs before any startup cleanup or writes. The application owns saved planet and snapshot seed discovery and requests randomness only when no seed is available. The world impact owner registers its ServerOnly, `OwnerOnly` body descriptor in the base component registry before application module schemas; module-owned descriptors bind to their validated `RegisteredComponent.module` identity. The complete registry is ready before `PlayerStore::load`. The storage parser validates saved component types, owner bindings and versions before publishing `LoadedState`. The runtime restores the complete entity set, counters and initialization markers into staged world stores, then applies bounded network inputs on the owner lane. Live entity effects also stage ordered neutral changes alongside cloned world stores; storage prepares encoded-record and aggregate-payload reservations, and the owner commits both candidates in one operation before later effects run. Workers publish typed results back to the runtime; immutable, revisioned save snapshots cross into storage.
+
+`ComponentOwnerPort` is host-issued for a registered module-owned component and
+one active world instance. The opaque registry identity, runtime issuer, world
+lease and revocable port lease must all match at use. A host can use the port to
+reserve an entity before publishing an owner-only component, apply an atomic
+owner batch through the common staged store and snapshot-reservation path, and
+release one reservation or the whole port. Clones become invalid when the host
+releases their shared port lease. Reservation state stays in the runtime owner
+lane, is capped by `MAX_PERSISTENT_ENTITIES`, and blocks generic despawn while
+allowing ordinary component changes on the same entity. `WorldRegistry` has no
+world-removal API; if one is added, that same operation must revoke its lease and
+clear reservations. Replication policy remains independent from mutation policy.
 
 `PreparedRuntime` contains loaded snapshot records and opened persistence, excavation, impact, content and optional process-lifecycle ports. The file bootstrap still validates journal headers/records and bounded snapshot formats; runtime installation independently checks world identities, impact body validity/uniqueness/capacity, entity schemas/capacities, terrain restoration and water snapshots before publication. External backends must return bounded journal restores consistent with their own durable format contract.
 
@@ -237,7 +249,7 @@ than 4,096 intersected sectors, or more than 65,536 conservative candidate
 cells before sector iteration. Those capacity failures return Busy without
 applying the shot; the next attempt can request a new bounded demand.
 
-Persistent sector replacements validate new totals and reserve the exact encoded record size before publication. Startup restores the complete sector set with staged state and budget copies, so a rejected restore leaves both unchanged. Startup also restores component entities against the already-registered exact component schemas using staged per-world stores, entity counters and content-initialization markers; a rejected entity restore leaves the live registry unchanged. All live entity spawn, update, component removal and despawn effects use one staged batch path that reserves encoded record bytes and aggregate raw component payload bytes before publishing the world stores, journal and budget together. A failed batch changes none of those states. The saved entity list is recaptured from the current registry on every autosave and final shutdown capture, including entities with zero components.
+Persistent sector replacements validate new totals and reserve the exact encoded record size before publication. Startup restores the complete sector set with staged state and budget copies, so a rejected restore leaves both unchanged. Startup also restores component entities against the already-registered exact component schemas and owner bindings using staged per-world stores, entity counters and content-initialization markers; a rejected entity restore leaves the live registry unchanged. Ordinary live spawn, set, remove and despawn effects use one staged batch path that reads descriptor mutation policy and generic world-scoped owner reservations, then reserves encoded record bytes and aggregate raw component payload bytes before publishing the world stores, journal and budget together. An owner-authorized batch uses that same path and carries the validated owner port separately from `WorldEffect`. A failed batch changes none of those states. The saved entity list is recaptured from the current registry on every autosave and final shutdown capture, including entities with zero components.
 
 Entity replication keeps one immutable pending image or delta per client, bounded to 256 visible entities and the shared 4 MiB component-payload cap. Only components whose own visibility rule is satisfied enter that client's image; persistent entities with no visible replicated components have no client replica, and losing the last visible component despawns that replica. The server retains the 4 MiB change journal and client-specific acknowledged revisions; journal overrun or a 30-second pending sync restarts from a full image. Per-client entity-sync output is charged by exact encoded frame lengths against 64 KiB per replication tick, while `queue_encoded_frame_with_reserve` leaves one maximum server frame for control traffic. Client output, staging entities, components and payload bytes have independent limits; successful end commits atomically before its ack is queued.
 
@@ -436,10 +448,14 @@ acknowledgement. Parent and daughter share one commit. Acknowledgements update
 the projection only when they match the owner's exact pending checkpoint; a
 stale or duplicate acknowledgement requests shutdown before changing the
 projection or pending state. A matching acknowledgement does not rewind a
-newer live state. Generic entity effects
-cannot spawn, replace or remove the impact component, or despawn a protected
-live or checkpointed impact entity. Restored state is bound to world ID, seed
-and radius before startup systems allocate new entities.
+newer live state. The generic entity executor has no impact component ID guard:
+the descriptor's `OwnerOnly` policy rejects ordinary spawn, set and remove, while
+the runtime reservation ledger blocks despawn for live, pending and preprojection
+impact entities. A private host-issued impact port performs checkpoint projection
+updates only after the matching durable acknowledgement; the port is not exposed
+to modules. Other owner-only components use the same policy and staging validator.
+Ordinary component updates on an impact entity remain allowed. Restored state is
+bound to world ID, seed and radius before startup systems allocate new entities.
 The private `ExcavationCoordinator` owns the single preparation/durable-write
 slot, mutation IDs, journal acknowledgements, failure and shutdown state. Tool,
 impact, equipment and fluid-checkpoint producers use its controlled operations;
@@ -458,6 +474,15 @@ cadence and network cursors remain separate from transaction state. The file
 journal backend implements the explicit persistence ports; hosted shutdown uses
 the same coordinator and host-supplied deadline. Memory-backend acknowledgements
 confirm volatile retention rather than disk durability.
+
+Impact reservations are installed before an impact projection can appear. A
+failed initial checkpoint releases a reservation when that body never became
+live; a live body's reservation remains through checkpoint cancellation. Full
+runtime shutdown drains accepted impact acknowledgements first, then revokes
+all owner-port leases and clears their reservations. The current world registry
+has no individual world-release operation, and rejects duplicate instance IDs;
+any future removal path must revoke that world's lease before allowing the ID
+to be registered again.
 
 The shared excavation coordinator prepares replacement geometry, collision leaves
 and displaced water before durable commit. Acknowledgement installs the prepared

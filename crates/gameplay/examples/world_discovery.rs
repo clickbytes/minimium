@@ -4,7 +4,8 @@ use minimium_gameplay::{
     SystemDefinition,
 };
 use minimium_world::entity::{
-    ComponentDescriptor, ComponentError, ComponentTypeId, ReplicationPolicy, SchemaVersion,
+    ComponentDescriptor, ComponentError, ComponentMutationPolicy, ComponentTypeId,
+    ReplicationPolicy, SchemaVersion,
 };
 
 const DISCOVERY_PAGE_ROWS: usize = 8;
@@ -46,6 +47,7 @@ impl EngineModule<ModuleCommandHandler, GameplaySystem> for WorldDiscoveryModule
             validate_payload: validate_sample_component,
             replication: ReplicationPolicy::ServerOnly,
             visibility: minimium_world::entity::ReplicationVisibility::Global,
+            mutation_policy: ComponentMutationPolicy::General,
         })?;
         registrar.system(SystemDefinition {
             id: "example-world-discovery",

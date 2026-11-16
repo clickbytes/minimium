@@ -8,6 +8,14 @@ Owns neutral descriptors and validated registration for modules, commands, syste
 
 `ModuleRegistry`, `EngineModule`, `ModuleRegistrar`, and the command, system and module descriptors define static extension contracts. Game modules register commands with the neutral `ModuleCommandHandler` and return `ModuleCommandResult`; `ModuleCommandText` bounds UTF-8 text to 8 KiB with the existing ` [truncated]` marker, while `ModuleCommandErrorCode` validates stable codes. A host adapts the neutral handler into its own registry during transactional installation. Systems use `GameplaySystemContext`, a host-neutral trait, so game packages can implement systems without depending on a server runtime. They declare `before`/`after` constraints and run in stable topological order with system ID as a deterministic tie-break; missing, duplicate and cyclic dependencies return typed registration errors. The bounded `WorldEffectBuffer` carries entity/component changes and transfer requests; it accepts at most 256 operations and 1 MiB of component payload per stage. Each accepted `emit` returns a producer-scoped `EffectToken` containing stable module/system or module/command identity and a nonwrapping local sequence. `EffectBatchOutcome::receipts` pairs each token with its ordered typed result. Spawn results contain their `WorldInstanceId` and `EntityId` only after the entire entity subgroup passes staging, snapshot reservation and publication. The batch also retains its saturating aggregate count of buffer-rejected pushes. The system context exposes the current simulation tick, stage, optional startup world and New/Restored lifecycle, read-only world/component and initial-entity data, prior receipts and gameplay events, without process or I/O handles.
 
+Component descriptors declare `General` or `OwnerOnly` mutation policy
+independently of replication. A component marked `OwnerOnly` is bound by the
+host's validated registration to the registered module identity. Module systems
+and commands still receive only their read view and ordinary effect buffer;
+neither receives a mutable runtime handle or owner port. The server host may
+issue a registry-validated, world-scoped port to the owning module's host
+integration. Ordinary world effects cannot claim owner authority.
+
 Startup runs once for each prepared world instance. Startup effects are validated and committed for that world before the runtime marks its initial content as initialized. A restored world receives `WorldLifecycle::Restored`; a world with no saved initialization marker receives `WorldLifecycle::New`.
 
 The context offers a borrowed component lookup by world, entity and type for

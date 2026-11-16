@@ -1,7 +1,6 @@
 //! Owner-lane impact lifecycle. Workers return immutable durable acknowledgements.
 mod owner;
 pub(super) mod projection;
-pub(crate) use owner::ProtectedImpactEntities;
 mod replication;
 mod spawn;
 use super::*;
@@ -19,6 +18,7 @@ pub(super) struct Impacts {
     journal: Box<dyn minimium_storage::ImpactJournalPort>,
     bodies: BTreeMap<(WorldInstanceId, u64), BodyState>,
     pending: BTreeMap<(WorldInstanceId, u64), BodyState>,
+    pub(super) owner_ports: BTreeMap<WorldInstanceId, ComponentOwnerPort>,
     clients: HashMap<PlayerId, replication::Cursor>,
     last_manual: Option<Instant>,
     failure: Option<String>,
@@ -64,6 +64,7 @@ impl Impacts {
             journal,
             bodies: restored.into_iter().map(|b| ((b.world, b.id), b)).collect(),
             pending: BTreeMap::new(),
+            owner_ports: BTreeMap::new(),
             clients: HashMap::new(),
             last_manual: None,
             failure: None,
@@ -103,10 +104,19 @@ impl ServerRuntime {
         body: BodyState,
         restoring: bool,
     ) -> io::Result<()> {
+        let port = self
+            .impact_owner_port(body.world)
+            .map_err(io::Error::other)?
+            .clone();
+        self.component_owner_authority
+            .validate(&port, port.owner(), body.world)
+            .map_err(io::Error::other)?;
         // Validate every fallible mutation before publishing entity and terrain together.
         let changed = projection::publish(
             &mut self.game.worlds,
             &self.component_registry,
+            &self.component_owner_authority,
+            &port,
             body,
             restoring,
         )?;
@@ -250,25 +260,48 @@ impl ServerRuntime {
 
     fn queue_body_batch(&mut self, batch: Vec<BodyState>) -> io::Result<()> {
         if batch.len() == 1 && self.impact_projection_matches(batch[0]) {
+            self.release_unowned_impact_reservations(&batch);
             return Ok(());
         }
         if batch
             .iter()
             .any(|body| self.impact_projection_matches(*body))
         {
+            self.release_unowned_impact_reservations(&batch);
             return Err(io::Error::other(
                 "impact checkpoint batch repeats a durable body state",
             ));
         }
-        for body in &batch {
-            projection::prepare(&self.game.worlds, &self.component_registry, *body, false)?;
-            self.reserve_body_budget(*body)?;
+        let prepared = (|| {
+            for body in &batch {
+                let port = self
+                    .impact_owner_port(body.world)
+                    .map_err(io::Error::other)?
+                    .clone();
+                self.component_owner_authority
+                    .validate(&port, port.owner(), body.world)
+                    .map_err(io::Error::other)?;
+                projection::prepare(
+                    &self.game.worlds,
+                    &self.component_registry,
+                    &self.component_owner_authority,
+                    &port,
+                    *body,
+                    false,
+                )?;
+                self.reserve_body_budget(*body)?;
+            }
+            self.impacts.begin_checkpoints(&batch)
+        })();
+        if let Err(error) = prepared {
+            self.release_unowned_impact_reservations(&batch);
+            return Err(error);
         }
-        self.impacts.begin_checkpoints(&batch)?;
         if let Err(error) = self.impacts.journal.submit_batch(batch.clone()) {
             for body in &batch {
                 self.impacts.discard_pending_checkpoint(body);
             }
+            self.release_unowned_impact_reservations(&batch);
             return Err(error);
         }
         Ok(())
@@ -341,26 +374,37 @@ impl ServerRuntime {
                 minimium_procgen::planet_sector_count(owner.manifest),
             ),
         );
-        let staged = self
-            .game
-            .worlds
-            .stage_entity_effect_batch(
-                &[crate::modules::WorldEffect::SpawnEntity {
-                    world,
-                    sector,
-                    components: Vec::new(),
-                }],
-                &self.component_registry,
-                &self.impacts.protected_entities(),
-            )
-            .map_err(|e| io::Error::other(format!("impact allocation: {e:?}")))?;
-        let reservation = self
-            .operations
-            .player_store
-            .snapshot_budget_mut()
-            .prepare_entity_changes(staged.changes())
-            .map_err(|_| io::Error::other("impact allocation: SnapshotBudgetExceeded"))?;
-        staged.commit(reservation);
+        let entity = EntityId::new(id).ok_or_else(|| io::Error::other("invalid impact ID"))?;
+        self.reserve_impact_entity(world, entity)
+            .map_err(io::Error::other)?;
+        let staged_result = (|| {
+            let staged = self
+                .game
+                .worlds
+                .stage_entity_effect_batch(
+                    &[crate::modules::WorldEffect::SpawnEntity {
+                        world,
+                        sector,
+                        components: Vec::new(),
+                    }],
+                    &self.component_registry,
+                    &self.component_owner_authority,
+                    None,
+                )
+                .map_err(|e| io::Error::other(format!("impact allocation: {e:?}")))?;
+            let reservation = self
+                .operations
+                .player_store
+                .snapshot_budget_mut()
+                .prepare_entity_changes(staged.changes())
+                .map_err(|_| io::Error::other("impact allocation: SnapshotBudgetExceeded"))?;
+            staged.commit(reservation);
+            Ok(())
+        })();
+        if let Err(error) = staged_result {
+            let _ = self.release_impact_entity(world, entity);
+            return Err(error);
+        }
         Ok(id)
     }
 

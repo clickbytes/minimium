@@ -4,6 +4,7 @@ mod altitude;
 mod bolid;
 mod clock;
 mod combat;
+mod component_ownership;
 mod diagnostics;
 mod effect_receipts;
 mod entity_effects;
@@ -12,10 +13,11 @@ mod equipment;
 mod excavation;
 mod gameplay_terrain;
 mod impacts;
+pub(crate) use component_ownership::ComponentOwnerAuthority;
+pub use component_ownership::{ComponentOwnerError, ComponentOwnerPort};
 pub use effect_receipts::StartupEffectFailure;
 pub use excavation::ExcavationStatus;
 pub use impacts::ImpactStatus;
-pub(crate) use impacts::ProtectedImpactEntities;
 mod hosted;
 mod inputs;
 mod r#loop;
@@ -110,6 +112,7 @@ pub struct ServerRuntime {
     equipment: equipment::Equipment,
     excavation: excavation::Excavation,
     impacts: impacts::Impacts,
+    pub(super) component_owner_authority: component_ownership::ComponentOwnerAuthority,
     pub(crate) server_logger: minimium_diagnostics::DomainLogger,
     shutdown_request: crate::composition::ShutdownRequest,
     pub(crate) transport_logger: minimium_diagnostics::DomainLogger,
@@ -337,6 +340,9 @@ impl ServerRuntime {
             io::Error::other(format!("gameplay system schedule is invalid: {error}"))
         })?;
         let autosave_interval = Duration::from_secs(config.autosave_seconds);
+        let component_owner_authority = component_ownership::ComponentOwnerAuthority::new(
+            game.worlds.iter().map(|(instance, _)| instance),
+        );
         let mut runtime = Self {
             now: time.monotonic,
             equipment,
@@ -353,6 +359,7 @@ impl ServerRuntime {
                 impact_profile,
                 async_work_policy,
             )?,
+            component_owner_authority,
             server_logger,
             shutdown_request,
             transport_logger,
@@ -411,6 +418,7 @@ impl ServerRuntime {
             last_manual_bolid_at: None,
             bolid_shower: None,
         };
+        runtime.initialize_component_owner_ports()?;
         runtime.restore_excavation_impacts()?;
         runtime.restore_impacts()?;
         runtime.restore_excavation()?;

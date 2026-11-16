@@ -22,9 +22,11 @@ fn spawned_component_entity_uses_the_budgeted_entity_effect_path() {
             },
             replication: ReplicationPolicy::ServerOnly,
             visibility: minimium_world::entity::ReplicationVisibility::Global,
+            mutation_policy: minimium_world::entity::ComponentMutationPolicy::General,
         })
         .unwrap();
     let sector = SectorKey::planet(PlanetFace::PositiveY, 3, 4).unwrap();
+    let reservations = crate::runtime::ComponentOwnerAuthority::new([instance]);
     let staged = owner
         .stage_entity_effect_batch(
             &[crate::modules::WorldEffect::SpawnEntity {
@@ -37,7 +39,8 @@ fn spawned_component_entity_uses_the_budgeted_entity_effect_path() {
                 }],
             }],
             &components,
-            &crate::runtime::ProtectedImpactEntities::test_empty(),
+            &reservations,
+            None,
         )
         .unwrap();
     let reservation = budget.prepare_entity_changes(staged.changes()).unwrap();

@@ -3,6 +3,8 @@ use super::*;
 pub(in crate::runtime) fn prepare(
     worlds: &WorldRegistry,
     components: &minimium_world::entity::ComponentRegistry,
+    authority: &super::ComponentOwnerAuthority,
+    port: &super::ComponentOwnerPort,
     body: BodyState,
     restoring: bool,
 ) -> io::Result<(
@@ -10,6 +12,15 @@ pub(in crate::runtime) fn prepare(
     Arc<RemnantSnapshot>,
     bool,
 )> {
+    let owner = components
+        .owner_for_component(BODY_COMPONENT)
+        .ok_or_else(|| io::Error::other("impact component owner is not registered"))?;
+    if !components.owns(port.owner(), BODY_COMPONENT) {
+        return Err(io::Error::other("impact owner port is invalid"));
+    }
+    authority
+        .validate(port, &owner, body.world)
+        .map_err(io::Error::other)?;
     let owner = worlds
         .get(body.world)
         .ok_or_else(|| io::Error::other("impact world missing"))?;
@@ -55,10 +66,13 @@ pub(in crate::runtime) fn prepare(
 pub(in crate::runtime) fn publish(
     worlds: &mut WorldRegistry,
     components: &minimium_world::entity::ComponentRegistry,
+    authority: &super::ComponentOwnerAuthority,
+    port: &super::ComponentOwnerPort,
     body: BodyState,
     restoring: bool,
 ) -> io::Result<bool> {
-    let (entities, remnants, changed) = prepare(worlds, components, body, restoring)?;
+    let (entities, remnants, changed) =
+        prepare(worlds, components, authority, port, body, restoring)?;
     let entity_membership_changed = worlds.get(body.world).is_some_and(|owner| {
         owner.entities.membership_revision() != entities.membership_revision()
     });

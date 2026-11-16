@@ -1,18 +1,5 @@
 use super::*;
 
-pub(crate) struct ProtectedImpactEntities(std::collections::BTreeSet<(WorldInstanceId, u64)>);
-
-impl ProtectedImpactEntities {
-    pub(crate) fn contains(&self, world: WorldInstanceId, entity: u64) -> bool {
-        self.0.contains(&(world, entity))
-    }
-
-    #[cfg(test)]
-    pub(crate) fn test_empty() -> Self {
-        Self(std::collections::BTreeSet::new())
-    }
-}
-
 impl Impacts {
     pub(in crate::runtime) fn bodies(&self) -> impl Iterator<Item = &BodyState> {
         self.bodies.values()
@@ -42,16 +29,6 @@ impl Impacts {
         self.pending
             .keys()
             .any(|(pending_world, _)| *pending_world == world)
-    }
-
-    pub(in crate::runtime) fn protected_entities(&self) -> ProtectedImpactEntities {
-        ProtectedImpactEntities(
-            self.bodies
-                .keys()
-                .chain(self.pending.keys())
-                .copied()
-                .collect(),
-        )
     }
 
     pub(super) fn advance_live_body(&mut self, body: BodyState) -> Result<(), &'static str> {
@@ -168,6 +145,19 @@ impl Impacts {
             self.pending.insert((body.world, body.id), *body);
         }
         Ok(())
+    }
+}
+
+impl ServerRuntime {
+    pub(super) fn release_unowned_impact_reservations(&mut self, batch: &[BodyState]) {
+        for body in batch {
+            let key = (body.world, body.id);
+            if !self.impacts.contains_body(&key) && !self.impacts.contains_pending(&key) {
+                if let Some(entity) = EntityId::new(body.id) {
+                    let _ = self.release_impact_entity(body.world, entity);
+                }
+            }
+        }
     }
 }
 
