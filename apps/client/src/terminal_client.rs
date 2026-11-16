@@ -300,11 +300,19 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                                             }
                                         }
                                         crate::client_commands::PresentationResult::Unavailable(
-                                            capability,
+                                            unavailable,
                                         ) => {
-                                            let notice = match capability {
+                                            if unavailable.reason
+                                                != crate::client_commands::PresentationUnavailableReason::UnsupportedHost
+                                            {
+                                                println!("{}", unavailable.message());
+                                                continue;
+                                            }
+                                            let notice = match unavailable.capability {
                                             crate::client_commands::PresentationCapability::DeveloperRenderer
                                             | crate::client_commands::PresentationCapability::WeatherDiagnostics => minimium_localization::UiNotice::WeatherRequiresDesktop,
+                                            #[cfg(feature = "desktop")]
+                                            crate::client_commands::PresentationCapability::EarthMapTeleport => minimium_localization::UiNotice::MapTeleportDesktopOnly,
                                             crate::client_commands::PresentationCapability::SkyDiagnostics => minimium_localization::UiNotice::SkyInfoDesktopOnly,
                                             crate::client_commands::PresentationCapability::MeteorDiagnostics => minimium_localization::UiNotice::MeteorsRequireDesktop,
                                         };

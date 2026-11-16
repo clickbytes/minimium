@@ -281,6 +281,11 @@ impl DesktopHost {
         let Some(p) = &self.weather.published else {
             return vec!["dev: no published clouds".into()];
         };
+        if self.render_environment_frame.context != Some(p.request.stamp.context)
+            || self.application.core_view().manifest != Some(p.request.stamp.manifest)
+        {
+            return vec!["dev: no published clouds for the current world".into()];
+        }
         let view = self.render_environment_frame.render_view;
         let eye = DVec3::from_array(view.camera_eye_world_m);
         let character = self.application.core_view().character;

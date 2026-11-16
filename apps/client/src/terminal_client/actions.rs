@@ -365,38 +365,15 @@ pub(super) fn handle(
             }
         }
         FrontendAction::Presentation(operation) => {
-            let capability = match operation {
-                crate::client_commands::PresentationOperation::Developer(_) => {
-                    crate::client_commands::PresentationCapability::DeveloperRenderer
-                }
-                crate::client_commands::PresentationOperation::AtmosphereStatus
-                | crate::client_commands::PresentationOperation::WeatherStatus
-                | crate::client_commands::PresentationOperation::TerrainStatus => {
-                    crate::client_commands::PresentationCapability::WeatherDiagnostics
-                }
-                crate::client_commands::PresentationOperation::SkyInfo
-                | crate::client_commands::PresentationOperation::SkyBodies => {
-                    crate::client_commands::PresentationCapability::SkyDiagnostics
-                }
-                crate::client_commands::PresentationOperation::MeteorStatus
-                | crate::client_commands::PresentationOperation::MeteorSpawn(_, _)
-                | crate::client_commands::PresentationOperation::MeteorClear
-                | crate::client_commands::PresentationOperation::MeteorLight(_)
-                | crate::client_commands::PresentationOperation::MeteorDebug(_) => {
-                    crate::client_commands::PresentationCapability::MeteorDiagnostics
-                }
+            let unavailable_result = crate::client_commands::PresentationUnavailable {
+                capability: operation.capability(),
+                requirement: operation.requirement(),
+                reason: crate::client_commands::PresentationUnavailableReason::UnsupportedHost,
             };
-            unavailable(&mut result, capability);
+            result.outputs.push(CommandOutput::Presentation(
+                crate::client_commands::PresentationResult::Unavailable(unavailable_result),
+            ));
         }
     }
     (false, result)
-}
-
-fn unavailable(
-    result: &mut CommandActionResult,
-    capability: crate::client_commands::PresentationCapability,
-) {
-    result.outputs.push(CommandOutput::Presentation(
-        crate::client_commands::PresentationResult::Unavailable(capability),
-    ));
 }

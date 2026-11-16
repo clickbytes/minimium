@@ -52,16 +52,154 @@ pub(crate) struct BolidPath {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PresentationCapability {
     DeveloperRenderer,
+    #[cfg(feature = "desktop")]
+    EarthMapTeleport,
     WeatherDiagnostics,
     SkyDiagnostics,
     MeteorDiagnostics,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PresentationRequirement {
+    HostOnly,
+    ReadyPresentation,
+    ActiveWorldPresentation,
+    ActiveEarthWorld,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PresentationUnavailableReason {
+    #[cfg(feature = "desktop")]
+    MissingSession,
+    #[cfg(feature = "desktop")]
+    NoActiveWorld,
+    #[cfg(feature = "desktop")]
+    CpuReadinessPending,
+    #[cfg(feature = "desktop")]
+    PresentationPending,
+    #[cfg(feature = "desktop")]
+    WorldTransferPending,
+    #[cfg(feature = "desktop")]
+    WrongWorld,
+    UnsupportedHost,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct PresentationUnavailable {
+    pub capability: PresentationCapability,
+    pub requirement: PresentationRequirement,
+    pub reason: PresentationUnavailableReason,
+}
+
+impl PresentationCapability {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::DeveloperRenderer => "developer renderer",
+            #[cfg(feature = "desktop")]
+            Self::EarthMapTeleport => "Earth map teleport",
+            Self::WeatherDiagnostics => "weather diagnostics",
+            Self::SkyDiagnostics => "sky diagnostics",
+            Self::MeteorDiagnostics => "meteor diagnostics",
+        }
+    }
+}
+
+impl PresentationRequirement {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::HostOnly => "an initialized host",
+            Self::ReadyPresentation => "a ready presentation matching the current context",
+            Self::ActiveWorldPresentation => "an active world with ready presentation",
+            Self::ActiveEarthWorld => "an active, ready Earth world",
+        }
+    }
+}
+
+impl PresentationUnavailableReason {
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            #[cfg(feature = "desktop")]
+            Self::MissingSession => "there is no connected session",
+            #[cfg(feature = "desktop")]
+            Self::NoActiveWorld => "there is no active world",
+            #[cfg(feature = "desktop")]
+            Self::CpuReadinessPending => "world content is still loading",
+            #[cfg(feature = "desktop")]
+            Self::PresentationPending => "the scene is not ready",
+            #[cfg(feature = "desktop")]
+            Self::WorldTransferPending => "a world transfer or teleport is pending",
+            #[cfg(feature = "desktop")]
+            Self::WrongWorld => "the active world is not Earth",
+            Self::UnsupportedHost => "this host has no presentation adapter",
+        }
+    }
+}
+
+impl PresentationUnavailable {
+    pub(crate) fn message(self) -> String {
+        format!(
+            "unavailable: {} requires {}; {}",
+            self.capability.label(),
+            self.requirement.label(),
+            self.reason.label()
+        )
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum PresentationResult {
     #[cfg(feature = "desktop")]
     Output(Vec<String>),
-    Unavailable(PresentationCapability),
+    Unavailable(PresentationUnavailable),
+}
+
+impl PresentationOperation {
+    pub(crate) fn capability(&self) -> PresentationCapability {
+        match self {
+            Self::Developer(_) => PresentationCapability::DeveloperRenderer,
+            Self::AtmosphereStatus | Self::WeatherStatus | Self::TerrainStatus => {
+                PresentationCapability::WeatherDiagnostics
+            }
+            Self::SkyInfo | Self::SkyBodies => PresentationCapability::SkyDiagnostics,
+            Self::MeteorStatus
+            | Self::MeteorSpawn(_, _)
+            | Self::MeteorClear
+            | Self::MeteorLight(_)
+            | Self::MeteorDebug(_) => PresentationCapability::MeteorDiagnostics,
+        }
+    }
+
+    pub(crate) fn requirement(&self) -> PresentationRequirement {
+        match self {
+            Self::Developer(DeveloperOperation::BolidTransmission(_))
+            | Self::Developer(DeveloperOperation::Look { .. })
+            | Self::AtmosphereStatus
+            | Self::WeatherStatus
+            | Self::TerrainStatus
+            | Self::MeteorStatus
+            | Self::MeteorClear
+            | Self::MeteorLight(_)
+            | Self::MeteorDebug(_) => PresentationRequirement::HostOnly,
+            Self::Developer(DeveloperOperation::BolidStatus) => {
+                PresentationRequirement::ActiveWorldPresentation
+            }
+            Self::Developer(DeveloperOperation::Goto { .. }) => {
+                PresentationRequirement::ActiveEarthWorld
+            }
+            Self::Developer(DeveloperOperation::BolidReplay { .. }) => {
+                PresentationRequirement::ActiveWorldPresentation
+            }
+            Self::Developer(DeveloperOperation::BolidPath(_))
+            | Self::Developer(DeveloperOperation::BolidFragments)
+            | Self::Developer(DeveloperOperation::BolidLighting) => {
+                PresentationRequirement::ActiveWorldPresentation
+            }
+            Self::SkyInfo | Self::SkyBodies => PresentationRequirement::ReadyPresentation,
+            Self::Developer(DeveloperOperation::Clouds) | Self::MeteorSpawn(_, _) => {
+                PresentationRequirement::ReadyPresentation
+            }
+        }
+    }
 }
 
 pub(super) fn parse(input: &str) -> Option<Result<PresentationOperation, CommandError>> {

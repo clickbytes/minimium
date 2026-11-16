@@ -57,11 +57,7 @@ pub(super) fn execute(
             renderer.clear_connection();
             output.push_client_text(Text::Disconnected, false);
         }
-        FrontendAction::FpsShow => renderer
-            .application
-            .ui
-            .console
-            .push_line(renderer.metrics.frame_stats.summary()),
+        FrontendAction::FpsShow => output.push_line(renderer.metrics.frame_stats.summary()),
         FrontendAction::NetStats => {
             let metrics = renderer
                 .application
@@ -93,7 +89,22 @@ pub(super) fn execute(
             },
             false,
         ),
-        FrontendAction::MapTeleport => renderer.arm_map_teleport(),
+        FrontendAction::MapTeleport => {
+            if let Some(unavailable) = super::presentation::unavailable_for(
+                renderer,
+                client_commands::PresentationCapability::EarthMapTeleport,
+                client_commands::PresentationRequirement::ActiveEarthWorld,
+            ) {
+                output
+                    .result
+                    .outputs
+                    .push(client_commands::CommandOutput::Presentation(
+                        client_commands::PresentationResult::Unavailable(unavailable),
+                    ));
+            } else {
+                renderer.arm_map_teleport();
+            }
+        }
         FrontendAction::Clear => output.clear_lines(),
         FrontendAction::Property(command) => {
             for line in renderer.apply_property(command).lines() {
@@ -156,11 +167,9 @@ pub(super) fn execute(
                 }
             }
         }
-        FrontendAction::TimeStatus => renderer
-            .application
-            .ui
-            .console
-            .push_line(renderer.environment_frame.time_status_line()),
+        FrontendAction::TimeStatus => {
+            output.push_line(renderer.environment_frame.time_status_line())
+        }
         FrontendAction::TimeScale(value) => match renderer
             .application
             .request_time_scale(value, crate::host_time::sample())
@@ -185,11 +194,26 @@ pub(super) fn execute(
             }
         },
         FrontendAction::SpawnRandomBolid(count) => {
-            // Publish the current gaze before the separate admin request, also
-            // when already connected and the camera just moved.
-            renderer.pending_bolid_request = Some(count);
-            renderer.last_sky_view_at = None;
-            renderer.bolid_notice(minimium_localization::UiNotice::BolidRequestQueued);
+            if let Some(unavailable) = super::presentation::unavailable_for(
+                renderer,
+                client_commands::PresentationCapability::DeveloperRenderer,
+                client_commands::PresentationRequirement::ActiveWorldPresentation,
+            ) {
+                output
+                    .result
+                    .outputs
+                    .push(client_commands::CommandOutput::Presentation(
+                        client_commands::PresentationResult::Unavailable(unavailable),
+                    ));
+            } else {
+                // Publish the current gaze before the separate admin request,
+                // including when the camera just moved.
+                renderer.pending_bolid_request = Some(count);
+                renderer.last_sky_view_at = None;
+                output.push_ui_message(minimium_localization::UiMessage::Notice(
+                    minimium_localization::UiNotice::BolidRequestQueued,
+                ));
+            }
         }
         FrontendAction::SpawnRandomMeteorid => {
             let text = match renderer

@@ -54,5 +54,7 @@ pub(crate) fn help_lines() -> Vec<String> {
     lines.push("Properties: get KEY | set KEY VALUE | reset KEY | list [PREFIX]".into());
     lines
         .push("Use help KEY for property details. PageUp/PageDown or wheel scrolls output.".into());
+    #[cfg(feature = "desktop")]
+    lines.push("Developer stdin (--dev --dev-stdin) accepts bounded commands during loading; scene-bound operations explain when presentation is unavailable.".into());
     lines
 }
