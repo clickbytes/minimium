@@ -10,7 +10,7 @@ impl DesktopHost {
             crate::application::ApplicationMessageError,
         >,
     ) {
-        if update.is_err() || self.application.game_view().session_context() != Some(context) {
+        if update.is_err() || self.application.core_view().context != Some(context) {
             return;
         }
         if position_mm.is_some() {
@@ -42,13 +42,7 @@ impl DesktopHost {
         }
         if position_mm.is_some() {
             self.meteors.audio.clear();
-            let position = self
-                .application
-                .game_view()
-                .gameplay
-                .prediction
-                .character
-                .position;
+            let position = self.application.core_view().character.position;
             let origin = position.map(|coordinate| (coordinate / 256.0).round() * 256.0);
             self.renderer.set_render_origin(origin);
             self.shadow_state

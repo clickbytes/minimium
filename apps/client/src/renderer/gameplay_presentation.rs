@@ -1,5 +1,5 @@
 use super::{cube, CharacterGeometry, GameplayPresentation, Vertex};
-use crate::application::GameplayState;
+use minimium_client_runtime::ClientView;
 
 impl GameplayPresentation {
     pub(super) fn clear_remote_players(&mut self) {
@@ -11,7 +11,7 @@ impl GameplayPresentation {
 
     pub(super) fn update_remote_vertices(
         &mut self,
-        gameplay: &GameplayState,
+        client: &ClientView<'_>,
         moved: bool,
         origin: [f32; 3],
     ) -> bool {
@@ -19,11 +19,9 @@ impl GameplayPresentation {
             return false;
         }
         self.remote_vertices.clear();
-        for position_mm in &gameplay.remote_positions_mm {
+        for position_mm in client.remote_positions_mm {
             let feet_m = position_mm.map(|value| value as f64 / 1000.0);
-            let Some(geometry) =
-                CharacterGeometry::new(feet_m, gameplay.prediction.character.gravity)
-            else {
+            let Some(geometry) = CharacterGeometry::new(feet_m, client.character.gravity) else {
                 continue;
             };
             append_character_mesh(
@@ -39,18 +37,14 @@ impl GameplayPresentation {
 
     pub(super) fn update_remote_shadow_vertices(
         &mut self,
-        gameplay: &GameplayState,
+        client: &ClientView<'_>,
         center: [f64; 3],
         origin: [f32; 3],
     ) -> bool {
-        let mut shadow_vertices = Vec::with_capacity(gameplay.reconciliation.player_count() * 36);
-        for track in gameplay.reconciliation.tracks().iter().flatten() {
-            let feet_m = track
-                .displayed_position_mm
-                .map(|value| value as f64 / 1000.0);
-            let Some(geometry) =
-                CharacterGeometry::new(feet_m, gameplay.prediction.character.gravity)
-            else {
+        let mut shadow_vertices = Vec::with_capacity(client.remote_positions_mm.len() * 36);
+        for position_mm in client.remote_positions_mm {
+            let feet_m = position_mm.map(|value| value as f64 / 1000.0);
+            let Some(geometry) = CharacterGeometry::new(feet_m, client.character.gravity) else {
                 continue;
             };
             let shape_center = geometry.body_center_m();

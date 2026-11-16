@@ -25,8 +25,17 @@ pub(super) fn open_offline_materials(
 
 impl DesktopHost {
     pub(super) fn prepare_session_materials(&mut self) {
-        let Some(package) = self.application.take_material_package_if_awaiting_gpu() else {
-            return;
+        let package = match self
+            .application
+            .take_material_package_if_awaiting_gpu(crate::host_time::sample())
+        {
+            Ok(Some(package)) => package,
+            Ok(None) => return,
+            Err(error) => {
+                self.application
+                    .record_diagnostic_failure("client.invalid_time", &error);
+                return;
+            }
         };
         self.renderer.scene_visible = false;
         self.application.status = crate::application::ClientStatus::Status(

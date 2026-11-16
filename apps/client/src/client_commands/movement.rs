@@ -113,17 +113,14 @@ enum Setting {
 }
 
 fn apply(setting: Setting, context: &mut CommandContext<'_>) -> CommandResult {
-    let mut settings = context.connection.movement;
+    let mut settings = context.movement;
     let change = match setting {
         Setting::Fly(value) => {
             if let Some(value) = value {
-                if let crate::application::LocalActionOutcome::Rejected { error, .. } =
-                    context.action_executor.execute(
-                        context.connection,
-                        crate::application::ClientAction::SetFlightEnabled(value),
-                        context.now,
-                    )
-                {
+                if let crate::application::LocalActionOutcome::Rejected { error, .. } = (context
+                    .execute_action)(
+                    crate::application::ClientAction::SetFlightEnabled(value),
+                ) {
                     return CommandResult::QueueRejected {
                         kind: crate::application::QueuedActionKind::Other,
                         error,
@@ -131,7 +128,7 @@ fn apply(setting: Setting, context: &mut CommandContext<'_>) -> CommandResult {
                 }
                 return CommandResult::Action(FrontendAction::Print(format_movement(
                     settings,
-                    context.connection.flight_enabled,
+                    context.flight_enabled,
                     true,
                 )));
             }
@@ -152,14 +149,10 @@ fn apply(setting: Setting, context: &mut CommandContext<'_>) -> CommandResult {
     };
     let queued = if change {
         if let crate::application::LocalActionOutcome::Rejected { error, .. } =
-            context.action_executor.execute(
-                context.connection,
-                crate::application::ClientAction::SetMovementPolicy {
-                    speed: settings.speed,
-                    accel: settings.accel,
-                },
-                context.now,
-            )
+            (context.execute_action)(crate::application::ClientAction::SetMovementPolicy {
+                speed: settings.speed,
+                accel: settings.accel,
+            })
         {
             return CommandResult::QueueRejected {
                 kind: crate::application::QueuedActionKind::Other,
@@ -172,15 +165,15 @@ fn apply(setting: Setting, context: &mut CommandContext<'_>) -> CommandResult {
     };
     CommandResult::Action(FrontendAction::Print(format_movement(
         settings,
-        context.connection.flight_enabled,
+        context.flight_enabled,
         queued,
     )))
 }
 
 fn report(key: Key, context: &CommandContext<'_>) -> CommandResult {
-    let settings = context.connection.movement;
+    let settings = context.movement;
     let value = match key {
-        Key::MovementFly => context.connection.flight_enabled.to_string(),
+        Key::MovementFly => context.flight_enabled.to_string(),
         Key::MovementSpeed => settings.speed.to_string(),
         Key::MovementAccel => settings.accel.to_string(),
         _ => unreachable!("movement property key was matched"),

@@ -4,8 +4,8 @@ Additional instructions for `crates/client-runtime/`. Root `AGENTS.md`, `crates/
 
 ## Scope and owners
 
-- This runtime owns nonblocking protocol sessions, connection controller/connector, process-owned local-server guard, bounded content preparation, client-side prediction/reconciliation and synchronized clock estimates.
-- The host application owns its window, console, local input, GPU resources, render geometry, collision snapshots and world-content resolver implementation. No `wgpu`, `winit`, renderer, application or sample-game dependency may be introduced here.
+- This runtime owns nonblocking protocol sessions, connection controller/connector, process-owned local-server guard, bounded content preparation, the public CPU application core, client-side prediction/reconciliation and private identity-bound collision snapshots/readiness.
+- The host application owns its window, console, local input, GPU resources, render geometry and world-content resolver implementation. No `wgpu`, `winit`, renderer, application or sample-game dependency may be introduced here.
 - Network/server snapshots are authoritative. Prediction is provisional and must reconcile through the shared simulation integrator; presentation offsets do not change simulated position.
 - A queue result proves only local buffer acceptance, not that the server accepted the gameplay action.
 
@@ -16,6 +16,7 @@ Additional instructions for `crates/client-runtime/`. Root `AGENTS.md`, `crates/
 - Carry `WorldContext`, instance, content identity and preparation ticket through asynchronous results. Reject completions from a stale context/ticket before publication.
 - Prepared content for a destination stays **pending** until the corresponding `Prepare/Ready/Commit` handshake finishes; `Cancel/Fail/Disconnect` removes pending work without corrupting active content. Do not replace the active geography with a pending-world value.
 - Desktop and terminal may have different readiness adapters, but must complete the same protocol lifecycle. No session state may rely on a console widget being present.
+- `ClientApplicationCore::step` is the sole public application step and session-message application path. Keep message application crate-private; hosts consume immutable `ClientView` values and use typed actions/readiness reports with explicit `ClientTime`.
 
 ## Time and movement
 

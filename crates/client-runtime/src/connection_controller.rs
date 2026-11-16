@@ -1,5 +1,7 @@
+mod prepared_session;
 mod shutdown;
 mod time;
+pub use prepared_session::PreparedSessionError;
 
 use crate::session::{ClientSession, QueueError, SessionEvent, SessionState};
 use crate::ControllerError;

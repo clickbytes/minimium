@@ -50,10 +50,7 @@ impl DesktopHost {
     pub(in crate::renderer) fn update_weather(&mut self, frame: &EnvironmentFrame) {
         // The inexpensive seasonal fallback is available even before cloud publication.
         if let (Some(manifest), Some(utc)) = (
-            self.application
-                .game_view()
-                .world_manifests
-                .get(&self.application.game_view().current_instance),
+            self.application.core_view().manifest,
             self.environment_frame.render_world_utc_ms,
         ) {
             let utc = utc as f64 / 1000.0;
@@ -78,10 +75,8 @@ impl DesktopHost {
         }
         let inputs = self
             .application
-            .game_view()
-            .world_manifests
-            .get(&self.application.game_view().current_instance)
-            .copied()
+            .core_view()
+            .manifest
             .zip(self.environment_frame.context)
             .zip(self.environment_frame.revision)
             .zip(self.environment_frame.render_world_utc_ms);
@@ -288,7 +283,7 @@ impl DesktopHost {
         };
         let view = self.render_environment_frame.render_view;
         let eye = DVec3::from_array(view.camera_eye_world_m);
-        let character = self.application.game_view().gameplay.prediction.character;
+        let character = self.application.core_view().character;
         let forward = super::super::camera::camera_direction(character, 0.0, 0.0).as_dvec3();
         let right =
             super::super::camera::camera_direction(character, std::f32::consts::FRAC_PI_2, 0.0)
@@ -449,9 +444,8 @@ impl DesktopHost {
                 s.observer
                     .dot(
                         DVec3::from_array(
-                            self.application.game_view()
-                                .gameplay
-                                .prediction
+                            self.application
+                                .core_view()
                                 .character
                                 .position
                                 .map(f64::from)

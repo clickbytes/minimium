@@ -7,7 +7,7 @@ use crate::{
 };
 use minimium_client_runtime::{connector::StartError, ConnectionEvent};
 use minimium_protocol::{ServerMessage, MAX_VISIBLE_PLAYERS};
-use minimium_simulation::{CharacterState, CollisionQuery, PLAYER_MAX_HEALTH};
+use minimium_simulation::CharacterState;
 use minimium_world::world::{
     character_frame, CharacterGeometry, CharacterGravity, WorldManifest, WorldTopology,
 };

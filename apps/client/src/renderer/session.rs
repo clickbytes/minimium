@@ -205,22 +205,15 @@ impl DesktopHost {
                 .record_diagnostic_failure("client.invalid_time", &error);
             return;
         }
-        let mut step_disconnect = self.pending_step_disconnect.take();
-        self.application.clear_action_input_cooldown();
+        let step_disconnect = self.pending_step_disconnect.take();
         self.excavation_debug = Default::default();
         self.pending_bolid_request = None;
         self.last_sky_view_at = None;
         self.bolids.clear();
         self.diagnostic_bolid_age = None;
-        if let Some(disconnect) = step_disconnect.as_mut() {
-            for pending in disconnect.pending_transitions.drain(..) {
-                self.release_prepared_target(pending.transition_id, pending.context);
-            }
-        } else {
-            self.clear_pending_sector_transitions();
-        }
+        self.clear_pending_sector_transitions();
         let previous_instance = step_disconnect.as_ref().map_or_else(
-            || self.application.game_view().current_instance,
+            || self.application.core_view().world_instance,
             |disconnect| disconnect.previous_instance,
         );
         let bootstrap = super::sector_scene::SceneInterestOwner::Bootstrap(previous_instance);
@@ -228,7 +221,7 @@ impl DesktopHost {
         self.renderer
             .release_scene_stage(bootstrap.instance(), bootstrap);
         let previous_context = step_disconnect.as_ref().map_or_else(
-            || self.application.game_view().session_context(),
+            || self.application.core_view().context,
             |disconnect| disconnect.previous_context,
         );
         if let Some(context) = previous_context {
@@ -276,7 +269,6 @@ impl DesktopHost {
             }
         }
         self.renderer.clear_remote_vertices();
-        self.application.clear_remote_players();
         self.gameplay_presentation.clear_remote_players();
     }
 
@@ -414,9 +406,9 @@ impl DesktopHost {
     }
 
     pub(super) fn queue_fire(&mut self) {
-        let prediction = &self.application.game_view().gameplay.prediction;
-        let character = prediction.character;
-        let feet_m = prediction.position_mm.map_or_else(
+        let view = self.application.core_view();
+        let character = view.character;
+        let feet_m = view.position_mm.map_or_else(
             || character.position.map(f64::from),
             |position| position.0.map(|value| value as f64 / 1000.0),
         );
@@ -468,13 +460,7 @@ impl DesktopHost {
     }
 
     pub(crate) fn queue_portal(&mut self) {
-        let position = self
-            .application
-            .game_view()
-            .gameplay
-            .prediction
-            .character
-            .position;
+        let position = self.application.core_view().character.position;
         let entity = self
             .application
             .connection_view()

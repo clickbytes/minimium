@@ -1,8 +1,8 @@
-use super::super::{ClientApplication, PredictionPresentationRequest, PredictionSceneRequest};
-use minimium_client_runtime::world_readiness::CollisionSnapshot;
+use super::{ClientApplicationCore, PredictionPresentationRequest, PredictionSceneRequest};
+use crate::world_readiness::CollisionSnapshot;
 
 pub(super) fn prediction_request(
-    application: &ClientApplication,
+    application: &ClientApplicationCore,
     previous_position: [f32; 3],
     position: [f32; 3],
 ) -> Result<Option<PredictionSceneRequest<'_>>, String> {
@@ -30,7 +30,7 @@ pub(super) fn prediction_request(
     }))
 }
 
-pub(super) fn water_covers(application: &ClientApplication, position: [f32; 3]) -> bool {
+pub(super) fn water_covers(application: &ClientApplicationCore, position: [f32; 3]) -> bool {
     let Some(manifest) = application
         .game
         .world_manifests
@@ -62,15 +62,14 @@ pub(super) fn water_covers(application: &ClientApplication, position: [f32; 3]) 
 }
 
 pub(super) fn scene_ready(
-    application: &mut ClientApplication,
+    application: &mut ClientApplicationCore,
     previous_position: [f32; 3],
     position: [f32; 3],
     can_fly: bool,
     readiness: &mut impl FnMut(PredictionSceneRequest<'_>) -> Result<Option<CollisionSnapshot>, String>,
-    presentation: &mut impl FnMut(
-        &CollisionSnapshot,
-        PredictionPresentationRequest,
-    ) -> Result<bool, String>,
+    presentation: &mut Option<
+        &mut dyn FnMut(&CollisionSnapshot, PredictionPresentationRequest) -> Result<bool, String>,
+    >,
 ) -> Result<bool, String> {
     let Some(request) = prediction_request(application, previous_position, position)? else {
         return Ok(false);
@@ -90,27 +89,27 @@ pub(super) fn scene_ready(
     if !snapshot.covers_position(position)
         || !water_covers(application, position)
         || !session_ready
-        || !application.report_active_scene_ready(snapshot.clone())
+        || !application.report_active_scene_ready_admitted(snapshot.clone())
     {
         return Ok(false);
     }
-    if can_fly {
+    if can_fly || presentation.is_none() {
         Ok(true)
     } else {
-        presentation(&snapshot, presentation_request)
+        presentation.as_deref_mut().expect("checked above")(&snapshot, presentation_request)
     }
 }
 
 pub(super) fn skip_unready_steps(
-    application: &mut ClientApplication,
+    application: &mut ClientApplicationCore,
     movement: minimium_simulation::MovementPolicy,
-    now: minimium_client_runtime::ClientTime,
-) -> Option<crate::session::QueueError> {
+    now: crate::ClientTime,
+) -> Option<crate::QueueError> {
     while application.game.gameplay.prediction.skip_unready_step() {
         if !application
             .connection
             .session()
-            .is_some_and(|session| session.state() == crate::session::SessionState::Connected)
+            .is_some_and(|session| session.state() == crate::SessionState::Connected)
         {
             continue;
         }

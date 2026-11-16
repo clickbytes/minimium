@@ -47,6 +47,33 @@ Owns the nonblocking protocol session, connection controller, connector, local-s
 unconfirmed tool action. Developer overlays combine it with confirmed inventory
 and the same simulation collision query used by the server; they cannot approve edits.
 
+## Public CPU application core
+
+`ClientApplicationCore` is the single GPU-independent owner for active session,
+world identity/catalog, prediction, reconciliation, typed actions and transfer
+state. Its constructor accepts prepared maps/manifests, logical policy, an
+explicit tool profile, optional already-prepared bootstrap terrain, the shared
+`ConnectionController`, an optional already-prepared AwaitingWelcome session and
+host `ClientTime`. It starts no workers or transports; session adoption remains
+inside the controller and does not create a second session owner.
+
+Hosts advance the core through `step`; raw server messages are applied only
+there. Prediction accepts explicit horizontal/vertical input suppression and
+separate CPU-readiness and optional presentation gates. A CPU host can omit
+prediction and presentation; the desktop supplies UI policy and its additional
+presentation gate. `view()` returns a read-only `ClientView`, while commands use
+typed actions and host readiness uses validated time-bearing reports.
+Authoritative altitude, health, teleport and snapshot results are applied by the
+core during session dispatch.
+
+Bootstrap terrain is host-prepared and bound to the exact current instance,
+manifest, map fingerprint and overlay world. `None` remains valid for cold Earth
+content. Disconnect clears the prior source; the host can reprovision terrain
+for the current offline world after the core releases the session. The
+`cpu_client` example composes bounded local transport/content ports, dispatches
+Welcome, initial readiness sync and Snapshot through `step`, and reads the
+immutable view. It is compiled only; examples and tests are not executed here.
+
 ## Public API
 
 `ClientSession::new` and `with_presentation` take a boxed

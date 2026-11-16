@@ -63,7 +63,7 @@ impl DesktopHost {
             return;
         }
         let direction = camera::camera_direction(
-            self.application.game_view().gameplay.prediction.character,
+            self.application.core_view().character,
             self.input.yaw,
             self.input.pitch,
         )
@@ -84,9 +84,8 @@ impl DesktopHost {
         let context = self.render_environment_frame.context;
         let length_scale = self
             .application
-            .game_view()
-            .world_manifests
-            .get(&self.application.game_view().current_instance)
+            .core_view()
+            .manifest
             .and_then(|m| m.planet())
             .filter(|p| p.mode == 1)
             .map_or(1.0, |p| f64::from(p.height_scale_permille) / 1000.0);

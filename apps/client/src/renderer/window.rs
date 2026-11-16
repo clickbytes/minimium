@@ -55,8 +55,6 @@ impl ApplicationHandler for App {
                 .expect("idle client connection is available"),
             diagnostic_logger: self.diagnostic_logger.clone(),
             renderer_logger: self.renderer_logger.clone(),
-            map_path: self.options.map_path.clone(),
-            world_definition_path: self.options.world_definition_path.clone(),
             local_server_config: self
                 .options
                 .local_server_launch_config(
@@ -163,12 +161,7 @@ impl ApplicationHandler for App {
                     renderer.renderer.world_geometry.publication().cloned(),
                     client_view.context,
                 );
-                let submerged = renderer
-                    .application
-                    .game_view()
-                    .gameplay
-                    .prediction
-                    .submerged_fraction();
+                let submerged = renderer.application.submerged_fraction();
                 let draws = match renderer.renderer.render(&scene, submerged) {
                     Ok(draws) => draws,
                     Err(
@@ -214,9 +207,7 @@ impl ApplicationHandler for App {
                     {
                         let [x, y, z] = renderer
                             .application
-                            .game_view()
-                            .gameplay
-                            .prediction
+                            .core_view()
                             .character
                             .position
                             .map(f64::from);
@@ -233,7 +224,7 @@ impl ApplicationHandler for App {
                         "{} | {}{} | {}",
                         Text::WindowTitleStatus {
                             fps,
-                            health: renderer.application.game_view().gameplay.health
+                            health: renderer.application.core_view().health
                         }
                         .localized(&renderer.localizer, renderer.application.settings.locale),
                         renderer

@@ -114,7 +114,7 @@ def main() -> int:
         errors.append(str(error))
 
     ownership = {
-        "ClientGameState": ROOT / "apps/client/src/application/game.rs",
+        "ClientGameState": ROOT / "crates/client-runtime/src/application/game.rs",
         "WorldTransitionController": ROOT / "apps/client/src/application/transitions.rs",
         "AppPaths": ROOT / "crates/platform/src/app_paths.rs",
         "RenderFrame": ROOT / "crates/renderer/src/render_frame.rs",

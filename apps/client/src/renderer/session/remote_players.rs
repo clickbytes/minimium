@@ -9,29 +9,23 @@ impl DesktopHost {
             return;
         }
         if self.application.connection_view().session().is_none() {
-            self.application.clear_action_input_cooldown();
-            self.application.clear_remote_players();
             self.gameplay_presentation.clear_remote_players();
             self.renderer.clear_remote_vertices();
             self.renderer.update_remote_shadow_vertices(&[], None);
             return;
         }
-        let stamp = self
-            .application
-            .game_view()
-            .session_context()
-            .and_then(|context| {
-                let session = self.application.connection_view().session()?;
-                let publication = self.renderer.world_geometry.publication()?.stamp;
-                (self.renderer.scene_visible
-                    && session.active_world_context() == Some(context)
-                    && publication.instance == context.instance()
-                    && publication.content_revision == context.content_revision())
-                .then_some(RemotePlayerGeometryStamp {
-                    context,
-                    publication,
-                })
-            });
+        let stamp = self.application.core_view().context.and_then(|context| {
+            let session = self.application.connection_view().session()?;
+            let publication = self.renderer.world_geometry.publication()?.stamp;
+            (self.renderer.scene_visible
+                && session.active_world_context() == Some(context)
+                && publication.instance == context.instance()
+                && publication.content_revision == context.content_revision())
+            .then_some(RemotePlayerGeometryStamp {
+                context,
+                publication,
+            })
+        });
         let Some(stamp) = stamp else {
             self.renderer.clear_remote_vertices();
             self.renderer.update_remote_shadow_vertices(&[], None);
@@ -53,34 +47,18 @@ impl DesktopHost {
                 return;
             }
         };
+        let view = self.application.core_view();
         if self.gameplay_presentation.update_remote_vertices(
-            &self.application.game_view().gameplay,
+            &view,
             moved,
             self.renderer.render_origin,
         ) {
             self.renderer
                 .update_remote_vertices(&self.gameplay_presentation.remote_vertices, stamp);
         }
-        let center = self
-            .application
-            .game_view()
-            .gameplay
-            .prediction
-            .position_mm
-            .map_or_else(
-                || {
-                    self.application
-                        .game_view()
-                        .gameplay
-                        .prediction
-                        .character
-                        .position
-                        .map(f64::from)
-                },
-                |position| position.0.map(|value| value as f64 / 1000.0),
-            );
+        let center = view.player_position_m;
         let shadow_vertices_changed = self.gameplay_presentation.update_remote_shadow_vertices(
-            &self.application.game_view().gameplay,
+            &view,
             center,
             self.renderer.render_origin,
         );

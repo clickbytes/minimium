@@ -269,8 +269,6 @@ fn goto(renderer: &mut DesktopHost, latitude: f32, longitude: f32, lines: &mut V
         crate::host_time::sample(),
     ) {
         crate::application::LocalActionOutcome::Queued { .. } => {
-            renderer.application.arm_map_teleport();
-            renderer.application.request_map_teleport();
             lines.push("dev: Earth move requested".to_owned());
         }
         crate::application::LocalActionOutcome::Rejected { error, .. } => {

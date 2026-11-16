@@ -3,18 +3,17 @@ use super::DesktopHost;
 
 impl DesktopHost {
     pub(super) fn terrain_status(&self) -> Vec<String> {
-        let instance = self.application.game_view().current_instance;
+        let instance = self.application.core_view().world_instance;
         let scene = self
             .application
-            .game_view()
-            .session_context()
+            .core_view()
+            .context
             .map(super::sector_scene::SceneInterestOwner::Active)
             .or_else(|| Some(super::sector_scene::SceneInterestOwner::Bootstrap(instance)))
             .and_then(|owner| self.sector_cache.presentation(owner));
         let relief = self
             .application
-            .game_view()
-            .world_manifests
+            .world_manifest_catalog_view()
             .get(&instance)
             .and_then(|m| m.planet())
             .map(|p| p.peak_relief)

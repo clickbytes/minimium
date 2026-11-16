@@ -277,7 +277,7 @@ impl DesktopHost {
         environment: &EnvironmentFrame,
         player_position_m: [f64; 3],
     ) {
-        let instance = self.application.game_view().current_instance;
+        let instance = self.application.core_view().world_instance;
         let publication = self.renderer.world_geometry.publication().cloned();
         let active_sectors = publication
             .as_ref()

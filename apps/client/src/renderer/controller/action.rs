@@ -80,34 +80,16 @@ pub(super) fn execute(
                         .previous_bytes_received
                         .saturating_add(metrics.bytes_received),
                     ping_milliseconds: metrics.ping_round_trip.map(|duration| duration.as_millis()),
-                    nearby_players: Some(
-                        renderer
-                            .application
-                            .game_view()
-                            .gameplay
-                            .reconciliation
-                            .player_count(),
-                    ),
+                    nearby_players: Some(renderer.application.core_view().remote_player_count),
                 },
                 false,
             );
         }
         FrontendAction::State => output.push_client_text(
             Text::PlayerState {
-                position: renderer
-                    .application
-                    .game_view()
-                    .gameplay
-                    .prediction
-                    .character
-                    .position,
-                health: renderer.application.game_view().gameplay.health,
-                nearby_players: renderer
-                    .application
-                    .game_view()
-                    .gameplay
-                    .reconciliation
-                    .player_count(),
+                position: renderer.application.core_view().character.position,
+                health: renderer.application.core_view().health,
+                nearby_players: renderer.application.core_view().remote_player_count,
             },
             false,
         ),
@@ -140,7 +122,7 @@ pub(super) fn execute(
             }
         }
         FrontendAction::SetTime { minute, local } => {
-            let [x, _, z] = renderer.application.game_view().view().player_position_m;
+            let [x, _, z] = renderer.application.core_view().player_position_m;
             let result = if local && (!renderer.is_earth_world() || x.hypot(z) < 1.0e-6) {
                 Err(minimium_client_runtime::ControllerError::new(
                     "client.local_time_unavailable",

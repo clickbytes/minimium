@@ -23,24 +23,13 @@ pub(super) fn execute_input(
     source: client_commands::CommandSource,
 ) -> (bool, client_commands::CommandActionResult) {
     let direction = super::camera::camera_direction(
-        renderer
-            .application
-            .game_view()
-            .gameplay
-            .prediction
-            .character,
+        renderer.application.core_view().character,
         renderer.input.yaw,
         renderer.input.pitch,
     )
     .normalize()
     .to_array();
-    let player_position = renderer
-        .application
-        .game_view()
-        .gameplay
-        .prediction
-        .character
-        .position;
+    let player_position = renderer.application.core_view().character.position;
     let result = renderer.application.execute_text_command(
         input,
         source,

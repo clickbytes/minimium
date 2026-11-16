@@ -1,23 +1,19 @@
-use crate::session::QueueError;
-use minimium_client_runtime::{ClientTime, ClientTimeError, ConnectionController};
+use crate::{ClientTime, ClientTimeError, ConnectionController, QueueError};
 use minimium_protocol::{
     excavation::ExcavationInput, ClientMessage, ClientWorldInput, MovementSample,
 };
 use minimium_simulation::MovementIntent;
 use minimium_world::entity::EntityId;
-#[cfg(feature = "desktop")]
 use std::time::Duration;
 
-#[cfg(feature = "desktop")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum UseTrigger {
+pub enum UseTrigger {
     Pressed,
     Held,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum ClientAction {
-    #[cfg(feature = "desktop")]
+pub enum ClientAction {
     UseEquipped {
         direction: [f32; 3],
         trigger: UseTrigger,
@@ -26,7 +22,6 @@ pub(crate) enum ClientAction {
         direction: [f32; 3],
     },
     Motion(MovementIntent),
-    #[cfg(feature = "desktop")]
     MapTeleport {
         direction: [f32; 3],
     },
@@ -42,7 +37,6 @@ pub(crate) enum ClientAction {
         entity: EntityId,
     },
     GrantTools,
-    #[cfg(feature = "desktop")]
     EquipTool {
         slot: Option<u8>,
     },
@@ -51,31 +45,29 @@ pub(crate) enum ClientAction {
     Ping,
 }
 
-#[cfg(feature = "desktop")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum SuppressionReason {
+pub enum SuppressionReason {
     NoSession,
     SessionNotConnected,
     ToolUnavailable,
     ToolPendingOrCoolingDown,
     WeaponInputCooldown,
+    MapTeleportPending,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum QueuedActionKind {
+pub enum QueuedActionKind {
     WeaponFire,
-    #[cfg(feature = "desktop")]
     ToolUse,
     Other,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum LocalActionOutcome {
+pub enum LocalActionOutcome {
     Queued {
         movement: Option<MovementSample>,
         kind: QueuedActionKind,
     },
-    #[cfg(feature = "desktop")]
     Suppressed(SuppressionReason),
     Rejected {
         kind: QueuedActionKind,
@@ -86,7 +78,6 @@ pub(crate) enum LocalActionOutcome {
 /// The single application-owned path for client-authored world actions.
 pub(crate) struct ClientActionExecutor {
     last_operation_at: ClientTime,
-    #[cfg(feature = "desktop")]
     last_input_fire_at: Option<ClientTime>,
 }
 
@@ -94,7 +85,6 @@ impl ClientActionExecutor {
     pub(crate) fn new(now: ClientTime) -> Self {
         Self {
             last_operation_at: now,
-            #[cfg(feature = "desktop")]
             last_input_fire_at: None,
         }
     }
@@ -103,7 +93,6 @@ impl ClientActionExecutor {
         now.validate_after(self.last_operation_at)
     }
 
-    #[cfg(feature = "desktop")]
     pub(crate) fn clear_input_cooldown(&mut self) {
         self.last_input_fire_at = None;
     }
@@ -125,7 +114,6 @@ impl ClientActionExecutor {
         }
         self.last_operation_at = now;
         match action {
-            #[cfg(feature = "desktop")]
             ClientAction::UseEquipped { direction, trigger } => {
                 let Some(session) = connection.session_mut() else {
                     return LocalActionOutcome::Suppressed(SuppressionReason::NoSession);
@@ -136,7 +124,6 @@ impl ClientActionExecutor {
                             movement: None,
                             kind: QueuedActionKind::ToolUse,
                         },
-                        #[cfg(feature = "desktop")]
                         Ok(false) => LocalActionOutcome::Suppressed(
                             SuppressionReason::ToolPendingOrCoolingDown,
                         ),
@@ -149,7 +136,7 @@ impl ClientActionExecutor {
                 if trigger == UseTrigger::Held {
                     return LocalActionOutcome::Suppressed(SuppressionReason::ToolUnavailable);
                 }
-                if session.state() != minimium_client_runtime::SessionState::Connected {
+                if session.state() != crate::SessionState::Connected {
                     return LocalActionOutcome::Suppressed(SuppressionReason::SessionNotConnected);
                 }
                 if self.last_input_fire_at.is_some_and(|last| {
@@ -181,7 +168,6 @@ impl ClientActionExecutor {
                 QueuedActionKind::Other,
                 now,
             ),
-            #[cfg(feature = "desktop")]
             ClientAction::MapTeleport { direction } => Self::queue_world(
                 connection,
                 ClientWorldInput::MapTeleport { direction },
@@ -218,7 +204,6 @@ impl ClientActionExecutor {
                 QueuedActionKind::Other,
                 now,
             ),
-            #[cfg(feature = "desktop")]
             ClientAction::EquipTool { slot } => Self::queue_world(
                 connection,
                 ClientWorldInput::Excavation(ExcavationInput::Equip { slot }),

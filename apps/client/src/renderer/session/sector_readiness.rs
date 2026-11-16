@@ -69,10 +69,11 @@ pub(in crate::renderer) fn prepare_prediction_presentation(
 
 impl DesktopHost {
     fn invalidate_active_scene(&mut self) {
-        let view = self.application.game_view();
-        let context = view.session_context();
-        let instance = view.current_instance;
-        self.application.invalidate_active_scene(context, instance);
+        let view = self.application.core_view();
+        let context = view.context;
+        let instance = view.world_instance;
+        self.application
+            .invalidate_active_scene(context, instance, crate::host_time::sample());
     }
 
     pub(in crate::renderer) fn water_presentation_for(
@@ -96,26 +97,21 @@ impl DesktopHost {
             self.invalidate_active_scene();
             return false;
         }
-        let Some(manifest) = self
-            .application
-            .game_view()
-            .world_manifests
-            .get(&self.application.game_view().current_instance)
-            .copied()
-        else {
+        let current = self.application.core_view();
+        let instance = current.world_instance;
+        let Some(manifest) = current.manifest else {
             self.invalidate_active_scene();
             return false;
         };
         if manifest.planet().is_some() {
-            let prediction = &self.application.game_view().gameplay.prediction;
-            let feet = prediction
+            let feet = current
                 .position_mm
-                .map_or(prediction.character.position.map(f64::from), |position| {
+                .map_or(current.character.position.map(f64::from), |position| {
                     position.0.map(|v| v as f64 / 1000.0)
                 });
             let up = minimium_world::world::character_frame(
-                prediction.character.gravity,
-                prediction.character.position,
+                current.character.gravity,
+                current.character.position,
             )
             .0
             .map(f64::from);
@@ -143,35 +139,26 @@ impl DesktopHost {
                 return false;
             }
         };
-        let context = self.application.game_view().session_context();
+        let context = current.context;
         let terrain_revision = terrain_inputs.revision();
         let water = self
             .application
-            .game_view()
-            .session_context()
+            .core_view()
+            .context
             .and_then(|context| self.water_presentation_for(context));
         let scene = match self.sector_cache.ensure_scene(
-            self.application.game_view().session_context().map_or_else(
-                || {
-                    super::super::sector_scene::SceneInterestOwner::Bootstrap(
-                        self.application.game_view().current_instance,
-                    )
-                },
+            context.map_or_else(
+                || super::super::sector_scene::SceneInterestOwner::Bootstrap(instance),
                 super::super::sector_scene::SceneInterestOwner::Active,
             ),
-            self.application.game_view().current_instance,
+            instance,
             manifest,
-            self.application
-                .game_view()
-                .gameplay
-                .prediction
-                .character
-                .position,
+            self.application.core_view().character.position,
             view,
             self.renderer.render_origin,
             self.renderer.world_geometry.origin_generation(),
             &self.application.world_catalog_view(),
-            &self.application.game_view().world_manifests,
+            &self.application.world_manifest_catalog_view(),
             None,
             terrain_inputs,
             water,
@@ -192,15 +179,13 @@ impl DesktopHost {
             self.invalidate_active_scene();
             return false;
         }
-        if !self
-            .renderer
-            .cache_sector_scene(self.application.game_view().current_instance, &scene)
+        if !self.renderer.cache_sector_scene(instance, &scene)
             || !self.renderer.activate_sector_scene(
-                self.application.game_view().current_instance,
+                instance,
                 &scene,
                 self.application
                     .world_catalog_view()
-                    .get(&self.application.game_view().current_instance)
+                    .get(&instance)
                     .map_or(0, |map| map.fingerprint()),
             )
         {
@@ -211,17 +196,14 @@ impl DesktopHost {
             }
             if !self
                 .application
-                .report_active_scene_ready(scene.cpu.clone())
+                .report_active_scene_ready(scene.cpu.clone(), crate::host_time::sample())
             {
                 return false;
             }
             self.last_render_position = [f32::INFINITY; 3];
             return true;
         }
-        if let (Some(context), Some(prepared)) = (
-            self.application.game_view().session_context(),
-            scene.prepared.as_ref(),
-        ) {
+        if let (Some(context), Some(prepared)) = (current.context, scene.prepared.as_ref()) {
             self.impacts.published_terrain = Some((context, prepared.terrain_revision()));
             self.impacts.published_craters = self
                 .application
@@ -235,19 +217,16 @@ impl DesktopHost {
         }
         if !self
             .application
-            .report_active_scene_ready(scene.cpu.clone())
+            .report_active_scene_ready(scene.cpu.clone(), crate::host_time::sample())
         {
             return false;
         }
-        self.last_render_position = scene.prepared.as_ref().map_or(
-            self.application
-                .game_view()
-                .gameplay
-                .prediction
-                .character
-                .position,
-            |p| p.position(),
-        );
+        self.last_render_position = scene
+            .prepared
+            .as_ref()
+            .map_or(self.application.core_view().character.position, |p| {
+                p.position()
+            });
         true
     }
 
@@ -276,7 +255,7 @@ impl DesktopHost {
             self.renderer.render_origin,
             self.renderer.world_geometry.origin_generation(),
             view.world_catalog,
-            &self.application.game_view().world_manifests,
+            self.application.world_manifest_catalog_view(),
             Some((transition.map.as_ref(), transition.manifest)),
             terrain_inputs,
             water,
@@ -326,7 +305,7 @@ impl DesktopHost {
             context.instance(),
             super::super::sector_scene::SceneInterestOwner::Pending(transition_id, context),
         );
-        if context.instance() != self.application.game_view().current_instance {
+        if context.instance() != self.application.core_view().world_instance {
             self.release_world_sectors(context.instance());
         }
     }

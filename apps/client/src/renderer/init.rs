@@ -6,8 +6,6 @@ pub(super) struct RendererSetup {
     pub(super) connection: crate::bootstrap::ClientConnection,
     pub(super) diagnostic_logger: minimium_diagnostics::DomainLogger,
     pub(super) renderer_logger: minimium_diagnostics::DomainLogger,
-    pub(super) map_path: Option<PathBuf>,
-    pub(super) world_definition_path: Option<PathBuf>,
     pub(super) local_server_config: minimium_client_runtime::LocalServerLaunchConfig,
     pub(super) startup_settings: crate::application::StartupSettings,
     pub(super) config_file_settings: std::collections::BTreeMap<String, String>,
@@ -23,8 +21,6 @@ impl DesktopHost {
             connection,
             diagnostic_logger,
             renderer_logger,
-            map_path,
-            world_definition_path,
             local_server_config,
             startup_settings,
             config_file_settings,
@@ -46,25 +42,29 @@ impl DesktopHost {
             .copied()
             .ok_or("initial world has no generation manifest")?;
         let mut sector_cache = sector_scene::ClientSectorCache::new()?;
+        let mut bootstrap_terrain = None;
         let initial_scene = match crate::world_content::bootstrap_terrain_inputs(
             current_instance,
             current_manifest,
             &map,
         ) {
-            Ok(terrain_inputs) => sector_cache.ensure_scene(
-                sector_scene::SceneInterestOwner::Bootstrap(current_instance),
-                current_instance,
-                current_manifest,
-                map.spawn(),
-                minimium_renderer::terrain_view::TerrainView::new(map.spawn(), 1.287, 1_000),
-                [0.0; 3],
-                0,
-                &world_catalog,
-                &world_manifests,
-                None,
-                terrain_inputs,
-                None,
-            )?,
+            Ok(terrain_inputs) => {
+                bootstrap_terrain = Some(terrain_inputs.clone());
+                sector_cache.ensure_scene(
+                    sector_scene::SceneInterestOwner::Bootstrap(current_instance),
+                    current_instance,
+                    current_manifest,
+                    map.spawn(),
+                    minimium_renderer::terrain_view::TerrainView::new(map.spawn(), 1.287, 1_000),
+                    [0.0; 3],
+                    0,
+                    &world_catalog,
+                    &world_manifests,
+                    None,
+                    terrain_inputs,
+                    None,
+                )?
+            }
             Err(error)
                 if error.kind()
                     == minimium_procgen::GenerationErrorKind::Sampling(
@@ -101,11 +101,6 @@ impl DesktopHost {
                 && gpu.activate_sector_scene(current_instance, scene, map.fingerprint())
         });
         gpu.scene_visible = !require_earth && gpu_ready;
-        let collision_index = initial_scene.as_ref().map_or_else(
-            || minimium_simulation::CollisionIndex::from_geometry(Vec::new(), Vec::new()),
-            |scene| scene.cpu.collision().clone(),
-        );
-        let sectors_ready = initial_scene.is_some();
         let mut frame_stats = crate::stats::FrameStats::default();
         frame_stats.set_gpu_bytes(
             gpu.fixed_gpu_bytes
@@ -148,11 +143,6 @@ impl DesktopHost {
                 );
                 None
             }
-        };
-        let gravity = if map_path.is_none() && world_definition_path.is_none() {
-            CharacterGravity::Radial { center: [0.0; 3] }
-        } else {
-            CharacterGravity::FixedY
         };
         let connection = connection.for_host(crate::bootstrap::HostCapabilities::Desktop {
             compressed_materials: gpu
@@ -231,23 +221,6 @@ impl DesktopHost {
             excavation_debug: Default::default(),
             application: crate::application::ClientApplication::new(
                 crate::application::UiModel { console },
-                crate::application::ClientGameState::new(
-                    crate::application::GameplayState {
-                        reconciliation: minimium_client_runtime::SnapshotReconciler::default(),
-                        remote_positions_mm: Vec::with_capacity(MAX_VISIBLE_PLAYERS),
-                        prediction: minimium_client_runtime::ClientPrediction::new(
-                            CharacterState::at_spawn_with_gravity(map.spawn(), gravity),
-                            None,
-                        ),
-                        health: PLAYER_MAX_HEALTH,
-                        collision_index,
-                        collision_query: CollisionQuery::default(),
-                        collision_revision: 1,
-                        sectors_ready,
-                    },
-                    current_instance,
-                    world_manifests,
-                ),
                 connection,
                 crate::application::ClientSettings::new(
                     locale,
@@ -258,7 +231,11 @@ impl DesktopHost {
                     setting_values,
                 ),
                 input_mapper,
+                current_instance,
                 world_catalog,
+                world_manifests,
+                bootstrap_terrain,
+                initial_scene.as_ref().map(|scene| scene.cpu.clone()),
                 crate::application::WorldTransitionController::new(!require_earth && !gpu_ready),
                 crate::application::MapOverviewModel::new(2.8),
                 crate::application::ClientStatus::Status(if require_earth {

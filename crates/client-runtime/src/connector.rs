@@ -180,6 +180,22 @@ impl Connector {
         now.validate_after(self.now)
     }
 
+    pub(crate) fn has_active_worker(&self) -> bool {
+        self.active.is_some()
+    }
+
+    pub(crate) fn can_reserve_attempt_ids_through(&self, id: u64) -> bool {
+        self.active.is_none() && id > self.next_id
+    }
+
+    pub(crate) fn reserve_attempt_ids_through(&mut self, id: u64) -> bool {
+        if !self.can_reserve_attempt_ids_through(id) {
+            return false;
+        }
+        self.next_id = id;
+        true
+    }
+
     fn accept_time(&mut self, now: ClientTime) -> Result<(), ClientTimeError> {
         self.validate_time(now)?;
         self.now = now;

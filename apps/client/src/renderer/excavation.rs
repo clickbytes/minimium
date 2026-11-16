@@ -15,9 +15,9 @@ impl DesktopHost {
     }
 
     pub(super) fn queue_equipped_use(&mut self, trigger: crate::application::UseTrigger) {
-        let prediction = &self.application.game_view().gameplay.prediction;
-        let character = prediction.character;
-        let feet_m = prediction.position_mm.map_or_else(
+        let view = self.application.core_view();
+        let character = view.character;
+        let feet_m = view.position_mm.map_or_else(
             || character.position.map(f64::from),
             |position| position.0.map(|value| value as f64 / 1000.0),
         );
