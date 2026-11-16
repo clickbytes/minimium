@@ -210,6 +210,7 @@ pub(crate) fn parse_command(input: &str) -> Result<Option<ClientCommand>, ParseE
 }
 
 pub(crate) struct CommandContext<'a> {
+    pub now: minimium_client_runtime::ClientTime,
     pub connection: &'a mut minimium_client_runtime::ConnectionController,
     pub action_executor: &'a mut ClientActionExecutor,
     /// Direction used for `fire`; terminal callers pass [1, 0, 0].
@@ -415,7 +416,9 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
             return CommandResult::Action(FrontendAction::SpawnRandomMeteorid)
         }
     };
-    let result = context.action_executor.execute(context.connection, action);
+    let result = context
+        .action_executor
+        .execute(context.connection, action, context.now);
     match result {
         LocalActionOutcome::Queued { kind, .. } => CommandResult::Queued { kind },
         LocalActionOutcome::Rejected { kind, error } => {

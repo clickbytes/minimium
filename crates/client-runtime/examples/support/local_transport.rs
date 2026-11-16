@@ -2,8 +2,8 @@
 use minimium_protocol::{encode_client, encode_server, ClientMessage, ServerMessage};
 use minimium_transport::client::{
     ClientFlushProgress, ClientFrameToken, ClientQueueError, ClientReadStatus,
-    ClientTransportError, ClientTransportMetrics, ClientTransportPort, MAX_CLIENT_BUFFER_BYTES,
-    MAX_CLIENT_READ_BYTES_PER_POLL,
+    ClientTransportError, ClientTransportMetrics, ClientTransportPort, ClientTransportTimeError,
+    MAX_CLIENT_BUFFER_BYTES, MAX_CLIENT_READ_BYTES_PER_POLL,
 };
 use std::{
     collections::VecDeque,
@@ -81,6 +81,7 @@ pub struct LocalTransport {
     closed: bool,
     peer: Arc<SharedPeer>,
     metrics: ClientTransportMetrics,
+    last_flush_at: Option<Instant>,
 }
 
 impl LocalTransport {
@@ -96,6 +97,14 @@ impl Drop for LocalTransport {
 }
 
 impl ClientTransportPort for LocalTransport {
+    fn validate_time(&self, now: Instant) -> Result<(), ClientTransportTimeError> {
+        if self.last_flush_at.is_some_and(|previous| now < previous) {
+            return Err(ClientTransportTimeError::Backward);
+        }
+        now.checked_add(std::time::Duration::from_secs(300))
+            .ok_or(ClientTransportTimeError::Overflow)?;
+        Ok(())
+    }
     fn read_available(&mut self) -> Result<ClientReadStatus, ClientTransportError> {
         if self.closed {
             return Ok(ClientReadStatus::PeerClosed);
@@ -154,7 +163,11 @@ impl ClientTransportPort for LocalTransport {
     fn flush(
         &mut self,
         tracked: Option<ClientFrameToken>,
+        now: Instant,
     ) -> Result<ClientFlushProgress, ClientTransportError> {
+        self.validate_time(now)
+            .map_err(ClientTransportError::Time)?;
+        self.last_flush_at = Some(now);
         let mut tracked_frame_sent_at = None;
         let Some(mut state) = self.peer.try_state() else {
             return Ok(ClientFlushProgress::default());
@@ -169,7 +182,7 @@ impl ClientTransportPort for LocalTransport {
             self.outgoing_bytes -= bytes;
             self.metrics.bytes_sent = self.metrics.bytes_sent.saturating_add(bytes as u64);
             if tracked == Some(token) {
-                tracked_frame_sent_at = Some(Instant::now());
+                tracked_frame_sent_at = Some(now);
             }
         }
         Ok(ClientFlushProgress {

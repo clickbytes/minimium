@@ -2,9 +2,11 @@ use super::*;
 
 impl DesktopHost {
     pub(super) fn equip_tool(&mut self, slot: Option<u8>) {
-        if let crate::application::LocalActionOutcome::Rejected { error, .. } = self
-            .application
-            .execute_action(crate::application::ClientAction::EquipTool { slot })
+        if let crate::application::LocalActionOutcome::Rejected { error, .. } =
+            self.application.execute_action(
+                crate::application::ClientAction::EquipTool { slot },
+                crate::host_time::sample(),
+            )
         {
             if error != crate::session::QueueError::Disconnected {
                 self.fail_connection(format!("Could not equip tool: {error:?}"));
@@ -29,9 +31,11 @@ impl DesktopHost {
         )
         .normalize()
         .to_array();
-        if let crate::application::LocalActionOutcome::Rejected { error, .. } = self
-            .application
-            .execute_action(crate::application::ClientAction::UseEquipped { direction, trigger })
+        if let crate::application::LocalActionOutcome::Rejected { error, .. } =
+            self.application.execute_action(
+                crate::application::ClientAction::UseEquipped { direction, trigger },
+                crate::host_time::sample(),
+            )
         {
             self.fail_connection(format!("Could not use tool: {error:?}"));
         }

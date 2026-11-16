@@ -17,7 +17,7 @@ fn context(epoch: u64) -> WorldContext {
 }
 
 fn connected_session(context: WorldContext) -> ClientSession {
-    let now = Instant::now();
+    let now = ClientTime::new(std::time::Instant::now());
     ClientSession {
         impacts: Default::default(),
         excavation: Default::default(),
@@ -56,6 +56,7 @@ fn connected_session(context: WorldContext) -> ClientSession {
         environment_descriptor: None,
         pending_environment: None,
         clock: clock::ClientClock::new(now, None),
+        now,
         state_since: now,
         last_heartbeat_at: now,
         pending_ping_at: None,
@@ -75,7 +76,10 @@ fn world_inputs_from_a_previous_membership_epoch_are_rejected() {
             entity: minimium_world::entity::EntityId::new(1).unwrap(),
         },
     };
-    assert_eq!(session.queue(&input), Err(QueueError::StaleWorldContext));
+    assert_eq!(
+        session.queue(&input, session.now),
+        Err(QueueError::StaleWorldContext)
+    );
 
     let current_input = ClientMessage::WorldInput {
         context: current,
@@ -83,7 +87,7 @@ fn world_inputs_from_a_previous_membership_epoch_are_rejected() {
             entity: minimium_world::entity::EntityId::new(1).unwrap(),
         },
     };
-    assert_eq!(session.queue(&current_input), Ok(()));
+    assert_eq!(session.queue(&current_input, session.now), Ok(()));
 }
 
 #[test]

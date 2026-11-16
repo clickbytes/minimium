@@ -317,7 +317,13 @@ impl DesktopHost {
             Err(error) => {
                 self.application
                     .record_diagnostic_failure(error.code(), &error.to_string());
-                self.application.request_pending_transition_cancel();
+                if let Err(error) = self
+                    .application
+                    .request_pending_transition_cancel(crate::host_time::sample())
+                {
+                    self.application
+                        .record_diagnostic_failure("client.invalid_time", &error);
+                }
                 if let Some(failed) = self.application.fail_transition(transition_id) {
                     self.release_prepared_target(transition_id, failed.context);
                 }
@@ -328,7 +334,9 @@ impl DesktopHost {
             return;
         }
         let ready = crate::application::TransferPresentationReady::new(ticket, terrain_revision);
-        let _ = self.application.report_transfer_presentation_ready(ready);
+        let _ = self
+            .application
+            .report_transfer_presentation_ready(ready, crate::host_time::sample());
     }
 
     pub(in crate::renderer) fn clear_pending_sector_transitions(&mut self) {

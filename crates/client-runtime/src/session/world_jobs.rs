@@ -149,7 +149,7 @@ impl ClientSession {
         }
         if self
             .world_content_started
-            .is_some_and(|started| started.elapsed() >= Duration::from_secs(300))
+            .is_some_and(|started| self.now.elapsed_since(started) >= Duration::from_secs(300))
         {
             self.cancel_world_content_job();
             return Err(SessionFailure::new(
@@ -165,7 +165,7 @@ impl ClientSession {
                 manifest,
                 expected_fingerprint,
             });
-            self.world_content_started.get_or_insert_with(Instant::now);
+            self.world_content_started.get_or_insert(self.now);
         }
         self.pump_world_content_job();
         let Some(result) = self.world_content_result.take() else {

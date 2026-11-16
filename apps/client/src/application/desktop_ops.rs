@@ -23,8 +23,19 @@ impl ClientApplication {
             .then(|| content.map().clone())
     }
 
-    pub(crate) fn execute_action(&mut self, action: ClientAction) -> LocalActionOutcome {
-        self.action_executor.execute(&mut self.connection, action)
+    pub(crate) fn execute_action(
+        &mut self,
+        action: ClientAction,
+        now: ClientTime,
+    ) -> LocalActionOutcome {
+        if let Err(error) = self.accept_time(now) {
+            return LocalActionOutcome::Rejected {
+                kind: QueuedActionKind::Other,
+                error: crate::session::QueueError::Time(error),
+            };
+        }
+        self.action_executor
+            .execute(&mut self.connection, action, now)
     }
 
     pub(crate) fn clear_remote_players(&mut self) {
@@ -33,9 +44,10 @@ impl ClientApplication {
 
     pub(crate) fn interpolate_remote_players(
         &mut self,
-        now: std::time::Instant,
+        now: ClientTime,
         delay: std::time::Duration,
-    ) -> bool {
+    ) -> Result<bool, ClientTimeError> {
+        self.accept_time(now)?;
         self.game.gameplay.reconciliation.interpolate_positions(
             now,
             delay,
@@ -62,29 +74,40 @@ impl ClientApplication {
         context: minimium_protocol::WorldContext,
         direction: [f32; 3],
         night: bool,
-    ) -> bool {
+        now: ClientTime,
+    ) -> Result<bool, ClientTimeError> {
+        self.accept_time(now)?;
         if self.game.session_context() != Some(context) {
-            return false;
+            return Ok(false);
         }
-        self.connection.session_mut().is_some_and(|session| {
+        Ok(self.connection.session_mut().is_some_and(|session| {
             session
-                .queue(&minimium_protocol::ClientMessage::SkyView {
-                    context,
-                    direction,
-                    night,
-                })
+                .queue(
+                    &minimium_protocol::ClientMessage::SkyView {
+                        context,
+                        direction,
+                        night,
+                    },
+                    now,
+                )
                 .is_ok()
-        })
+        }))
     }
 
-    pub(crate) fn cancel_transition_request(&mut self) {
-        self.connection.cancel_transition();
+    pub(crate) fn cancel_transition_request(
+        &mut self,
+        now: ClientTime,
+    ) -> Result<(), ClientTimeError> {
+        self.accept_time(now)?;
+        self.connection.cancel_transition(now).map(|_| ())
     }
 
-    pub(crate) fn request_pending_transition_cancel(&mut self) -> bool {
-        self.connection
-            .session_mut()
-            .is_some_and(|session| session.cancel_pending_transition())
+    pub(crate) fn request_pending_transition_cancel(
+        &mut self,
+        now: ClientTime,
+    ) -> Result<bool, ClientTimeError> {
+        self.accept_time(now)?;
+        self.connection.cancel_transition(now)
     }
 
     pub(crate) fn apply_map_teleport_position(
@@ -232,10 +255,16 @@ impl ClientApplication {
             .then(|| session.take_material_package())
     }
 
-    pub(crate) fn finish_material_content(&mut self) -> Option<Result<(), String>> {
+    pub(crate) fn finish_material_content(
+        &mut self,
+        now: ClientTime,
+    ) -> Option<Result<(), String>> {
+        if let Err(error) = self.accept_time(now) {
+            return Some(Err(error.to_string()));
+        }
         self.connection
             .session_mut()
-            .map(crate::session::ClientSession::finish_content)
+            .map(|session| session.finish_content(now))
             .map(|result| result.map_err(|error| error.to_string()))
     }
 }

@@ -1,6 +1,7 @@
 //! UI-independent client session and environment synchronization runtime.
 mod authentication;
 pub mod bootstrap;
+mod client_time;
 mod connection_controller;
 pub mod connector;
 mod content_jobs;
@@ -19,6 +20,7 @@ mod world_content;
 
 pub use authentication::{ClientAuthentication, ClientAuthenticationError};
 pub use bootstrap::LocalServerLaunchConfig;
+pub use client_time::{ClientTime, ClientTimeError};
 pub use connection_controller::{ConnectionController, ConnectionEvent};
 pub use content_jobs::{
     ContentCancelStatus, ContentJobCompletion, ContentJobHandle, ContentJobPoll, ContentJobRequest,

@@ -8,6 +8,9 @@ pub struct ControllerError {
 }
 
 impl ControllerError {
+    pub(crate) fn from_time(error: crate::ClientTimeError) -> Self {
+        Self::caused_by(error.code(), error.to_string(), io::Error::other(error))
+    }
     pub fn new(code: &'static str, message: impl Into<String>) -> Self {
         Self {
             code,

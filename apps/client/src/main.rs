@@ -1,4 +1,5 @@
 use messages::ClientText as Text;
+mod host_time;
 use std::{
     io::{self, BufRead},
     sync::mpsc,

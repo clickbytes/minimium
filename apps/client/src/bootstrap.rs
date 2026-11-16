@@ -67,7 +67,7 @@ impl ClientBootstrap {
                 .field("initial_world", &worlds.instance.to_string()),
         );
         let earth_package_dir = AppPaths::resolve_path(&options.earth_package_dir)?;
-        let mut connection = ConnectionController::new();
+        let mut connection = ConnectionController::new(crate::host_time::sample())?;
         connection.register_replica_schema(
             minimium_game_sample::PORTAL_COMPONENT,
             minimium_game_sample::PORTAL_SCHEMA,

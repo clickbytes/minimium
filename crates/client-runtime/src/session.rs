@@ -7,17 +7,15 @@
 //! polling if it should contain only the latest poll's events.
 
 use crate::world_content::{ContentResolutionTicket, ResolvedWorldContent, WorldContentRequest};
-use crate::{ContentJobHandle, ContentJobsSession, PreparedWorldContent};
+use crate::{
+    ClientTime, ClientTimeError, ContentJobHandle, ContentJobsSession, PreparedWorldContent,
+};
 use minimium_environment::{time::ClockSample, EnvironmentDescriptor};
 use minimium_protocol::{ClientMessage, ProtocolError, ServerMessage, WorldContext};
 use minimium_transport::client::{ClientFrameToken, ClientQueueError, ClientTransportPort};
 use minimium_world::entity::{ComponentTypeId, SchemaVersion};
 use minimium_world::world::TransitionId;
-use std::{
-    collections::HashMap,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 mod failure;
 pub use failure::SessionFailure;
@@ -28,6 +26,7 @@ mod content_access;
 mod environment;
 mod excavation;
 mod impacts;
+mod operation_error;
 mod receive;
 mod replication;
 mod transfer;
@@ -69,6 +68,7 @@ pub enum DisconnectReason {
     Materials(SessionFailure),
     EnvironmentMismatch,
     Io(SessionIoFailure),
+    Time(ClientTimeError),
     BufferLimit,
     Replication(crate::ReplicaError),
 }
@@ -125,6 +125,7 @@ pub enum QueueError {
     InputSequenceExhausted,
     TransportIdentifierExhausted,
     Protocol(ProtocolError),
+    Time(ClientTimeError),
 }
 
 /// Logical session over a host-supplied bounded nonblocking message transport.
@@ -146,7 +147,7 @@ pub struct ClientSession {
     world_content_request: Option<WorldContentRequest>,
     next_world_content_request_id: u64,
     next_material_content_request_id: u64,
-    world_content_started: Option<Instant>,
+    world_content_started: Option<ClientTime>,
     deferred_world_message: Option<(ServerMessage, u64)>,
     active_world_content: Option<ActiveWorldContent>,
     pending_world_content: Option<PendingWorldContent>,
@@ -168,9 +169,10 @@ pub struct ClientSession {
         EnvironmentDescriptor,
     )>,
     clock: clock::ClientClock,
-    state_since: Instant,
-    last_heartbeat_at: Instant,
-    pending_ping_at: Option<Instant>,
+    now: ClientTime,
+    state_since: ClientTime,
+    last_heartbeat_at: ClientTime,
+    pending_ping_at: Option<ClientTime>,
     pending_ping_frame: Option<ClientFrameToken>,
     metrics: SessionMetrics,
 }
@@ -207,8 +209,9 @@ impl ClientSession {
         transport: Box<dyn ClientTransportPort>,
         authentication: crate::authentication::ClientAuthentication,
         content_jobs: ContentJobsSession,
-    ) -> Result<Self, ClientQueueError> {
-        Self::with_presentation(transport, authentication, None, content_jobs)
+        now: ClientTime,
+    ) -> Result<Self, QueueError> {
+        Self::with_presentation(transport, authentication, None, content_jobs, now)
     }
 
     pub fn with_presentation(
@@ -216,8 +219,9 @@ impl ClientSession {
         authentication: crate::authentication::ClientAuthentication,
         capability: Option<bool>,
         content_jobs: ContentJobsSession,
-    ) -> Result<Self, ClientQueueError> {
-        let now = Instant::now();
+        now: ClientTime,
+    ) -> Result<Self, QueueError> {
+        now.validate_after(now).map_err(QueueError::Time)?;
         let mut content = content::ContentPreparation::default();
         content.capability = capability;
         let mut session = Self {
@@ -255,12 +259,14 @@ impl ClientSession {
             environment_descriptor: None,
             pending_environment: None,
             clock: clock::ClientClock::new(now, None),
+            now,
             state_since: now,
             last_heartbeat_at: now,
             pending_ping_at: None,
             pending_ping_frame: None,
             metrics: SessionMetrics::default(),
         };
+        session.validate_time(now).map_err(QueueError::Time)?;
         let handshake = session
             .queue_transport(&ClientMessage::Presentation(capability))
             .and_then(|_| {
@@ -270,8 +276,8 @@ impl ClientSession {
                 })
             });
         if let Err(error) = handshake {
-            session.close();
-            return Err(error);
+            session.close_resources();
+            return Err(transport::queue_error(error));
         }
         Ok(session)
     }
@@ -308,8 +314,37 @@ impl ClientSession {
         self.clock.frame()
     }
 
+    /// Pure preflight for a host operation, including the injected port.
+    pub fn validate_time(&self, now: ClientTime) -> Result<(), ClientTimeError> {
+        now.validate_after(self.now)?;
+        self.clock.validate_time(now)?;
+        if let Some(transport) = self.transport.as_ref() {
+            transport
+                .validate_time(now.as_instant())
+                .map_err(ClientTimeError::from)?;
+        }
+        Ok(())
+    }
+
+    pub fn current_time(&self) -> ClientTime {
+        self.now
+    }
+
+    fn accept_time(&mut self, now: ClientTime) -> Result<(), ClientTimeError> {
+        self.validate_time(now)?;
+        self.clock.set_time(now)?;
+        self.now = now;
+        Ok(())
+    }
+
     /// Close the current transport and discard all buffered data.
-    pub fn close(&mut self) {
+    pub fn close(&mut self, now: ClientTime) -> Result<(), ClientTimeError> {
+        self.accept_time(now)?;
+        self.close_resources();
+        Ok(())
+    }
+
+    pub(crate) fn close_resources(&mut self) {
         self.cancel_content_jobs();
         self.content = Default::default();
         if let Some(mut transport) = self.transport.take() {
@@ -333,13 +368,18 @@ impl ClientSession {
         self.clock_sample = None;
         self.environment_descriptor = None;
         self.pending_environment = None;
-        self.clock.reset();
+        self.clock.reset(self.now);
     }
 
     /// Queues an application message. Authentication is reserved for construction;
     /// all other messages are accepted only after Welcome. A full bounded send
     /// buffer is reported without disconnecting so the caller can retry.
-    pub fn queue(&mut self, message: &ClientMessage) -> Result<(), QueueError> {
+    pub fn queue(&mut self, message: &ClientMessage, now: ClientTime) -> Result<(), QueueError> {
+        self.accept_time(now).map_err(QueueError::Time)?;
+        self.queue_current(message)
+    }
+
+    fn queue_current(&mut self, message: &ClientMessage) -> Result<(), QueueError> {
         match self.state {
             SessionState::Disconnected => return Err(QueueError::Disconnected),
             SessionState::AwaitingWelcome => return Err(QueueError::AwaitingWelcome),
@@ -370,7 +410,9 @@ impl ClientSession {
     pub fn queue_world_input(
         &mut self,
         mut input: minimium_protocol::ClientWorldInput,
+        now: ClientTime,
     ) -> Result<Option<minimium_protocol::MovementSample>, QueueError> {
+        self.accept_time(now).map_err(QueueError::Time)?;
         let context = self.world_context.ok_or(QueueError::AwaitingWelcome)?;
         let mut queued_sample = None;
         let mut motion_counters = None;
@@ -388,7 +430,7 @@ impl ClientSession {
             motion_counters = Some((next_input_seq, next_target_tick));
             queued_sample = Some(*sample);
         }
-        self.queue(&ClientMessage::WorldInput { context, input })?;
+        self.queue_current(&ClientMessage::WorldInput { context, input })?;
         if let Some((next_input_seq, next_target_tick)) = motion_counters {
             self.next_input_seq = next_input_seq;
             self.next_target_tick = next_target_tick;

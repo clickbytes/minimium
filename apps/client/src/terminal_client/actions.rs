@@ -76,7 +76,7 @@ pub(super) fn handle(
                     return (false, result);
                 }
             };
-            match application.start_local(config) {
+            match application.start_local(config, crate::host_time::sample()) {
                 Ok(()) => {
                     println!(
                         "{}",
@@ -99,9 +99,21 @@ pub(super) fn handle(
             }
         }
         FrontendAction::Disconnect => {
-            application.cancel_connection_attempt();
-            if let Some(mut current) = application.disconnect_session() {
-                current.close();
+            if let Err(error) = application.cancel_connection_attempt(crate::host_time::sample()) {
+                println!("{error}");
+                return (false, result);
+            }
+            match application.disconnect_session(crate::host_time::sample()) {
+                Ok(Some(mut current)) => {
+                    if let Err(error) = current.close(crate::host_time::sample()) {
+                        println!("{error}");
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    println!("{error}");
+                    return (false, result);
+                }
             }
             *last_snapshot = None;
             println!(
@@ -221,7 +233,7 @@ pub(super) fn handle(
                 .ok_or_else(|| "player longitude is unavailable".to_owned())
                 .and_then(|longitude| {
                     application
-                        .request_set_time(minute, longitude)
+                        .request_set_time(minute, longitude, crate::host_time::sample())
                         .map_err(|error| error.to_string())
                 });
             match result {
@@ -256,7 +268,9 @@ pub(super) fn handle(
                 .unwrap_or_else(|| unavailable.time_status_line());
             println!("{status}");
         }
-        FrontendAction::TimeScale(value) => match application.request_time_scale(value) {
+        FrontendAction::TimeScale(value) => match application
+            .request_time_scale(value, crate::host_time::sample())
+        {
             Ok(()) => println!(
                 "{}",
                 localizer.format(
@@ -279,23 +293,29 @@ pub(super) fn handle(
                 );
             }
         },
-        FrontendAction::SpawnRandomBolid(count) => match application.request_random_bolid(count) {
-            Ok(()) => println!(
-                "{}",
-                localizer.format(
-                    options.locale,
-                    &minimium_localization::UiMessage::Notice(
-                        minimium_localization::UiNotice::BolidRequestSent
+        FrontendAction::SpawnRandomBolid(count) => {
+            match application.request_random_bolid(count, crate::host_time::sample()) {
+                Ok(()) => println!(
+                    "{}",
+                    localizer.format(
+                        options.locale,
+                        &minimium_localization::UiMessage::Notice(
+                            minimium_localization::UiNotice::BolidRequestSent
+                        )
                     )
-                )
-            ),
-            Err(error) => println!("spawn_random_bolid: {error}"),
-        },
-        FrontendAction::SpawnRandomMeteorid => match application.request_random_meteorid() {
-            Ok(()) => println!("Meteorite request sent"),
-            Err(error) => println!("spawn_random_meteorid: {error}"),
-        },
-        FrontendAction::TimeMode(mode) => match application.request_time_mode(&mode) {
+                ),
+                Err(error) => println!("spawn_random_bolid: {error}"),
+            }
+        }
+        FrontendAction::SpawnRandomMeteorid => {
+            match application.request_random_meteorid(crate::host_time::sample()) {
+                Ok(()) => println!("Meteorite request sent"),
+                Err(error) => println!("spawn_random_meteorid: {error}"),
+            }
+        }
+        FrontendAction::TimeMode(mode) => match application
+            .request_time_mode(&mode, crate::host_time::sample())
+        {
             Ok(()) => println!(
                 "{}",
                 localizer.format(
@@ -319,7 +339,7 @@ pub(super) fn handle(
             }
         },
         FrontendAction::TimeOfflinePolicy(policy) => {
-            match application.request_time_offline_policy(&policy) {
+            match application.request_time_offline_policy(&policy, crate::host_time::sample()) {
                 Ok(()) => println!(
                     "{}",
                     localizer.format(

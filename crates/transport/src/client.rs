@@ -43,21 +43,36 @@ pub enum ClientReadStatus {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ClientFlushProgress {
-    /// The instant a write completed the tracked frame during this flush.
+    /// The supplied host sample when a write completed the tracked frame.
     /// Queue acceptance alone never produces a completion timestamp.
     pub tracked_frame_sent_at: Option<Instant>,
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ClientTransportTimeError {
+    Backward,
+    Overflow,
+}
+
+impl fmt::Display for ClientTransportTimeError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "client transport time: {self:?}")
+    }
+}
+impl std::error::Error for ClientTransportTimeError {}
 
 #[derive(Debug)]
 pub enum ClientTransportError {
     Io(io::Error),
     Protocol(ProtocolError),
     BufferLimit,
+    Time(ClientTransportTimeError),
 }
 
 impl fmt::Display for ClientTransportError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Time(error) => error.fmt(formatter),
             Self::Io(error) => write!(formatter, "client transport I/O: {error}"),
             Self::Protocol(error) => write!(formatter, "client transport protocol: {error}"),
             Self::BufferLimit => formatter.write_str("client receive buffer limit exceeded"),
@@ -68,6 +83,7 @@ impl fmt::Display for ClientTransportError {
 impl std::error::Error for ClientTransportError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::Time(error) => Some(error),
             Self::Io(error) => Some(error),
             Self::Protocol(error) => Some(error),
             Self::BufferLimit => None,
@@ -111,6 +127,8 @@ impl std::error::Error for ClientQueueError {
 /// without draining arbitrary messages into another queue. All partial frames,
 /// wire codecs and partial-write offsets belong to the adapter.
 pub trait ClientTransportPort: Send {
+    /// Pure preflight before the logical owner mutates or performs I/O.
+    fn validate_time(&self, now: Instant) -> Result<(), ClientTransportTimeError>;
     /// Reads at most the per-poll budget. EOF retains complete buffered frames;
     /// other errors are terminal and do not imply successful message delivery.
     fn read_available(&mut self) -> Result<ClientReadStatus, ClientTransportError>;
@@ -121,10 +139,11 @@ pub trait ClientTransportPort: Send {
     /// `flush` advances outbound delivery and reports frame completion.
     fn try_queue(&mut self, message: &ClientMessage) -> Result<ClientFrameToken, ClientQueueError>;
     /// Attempts pending writes until blocked. Supply a still-pending frame token
-    /// to observe its exact completion instant during this flush.
+    /// to observe completion at the supplied host sample during this flush.
     fn flush(
         &mut self,
         tracked: Option<ClientFrameToken>,
+        now: Instant,
     ) -> Result<ClientFlushProgress, ClientTransportError>;
     fn metrics(&self) -> ClientTransportMetrics;
     /// Metadata used by the current separate content HTTP adapter. This exposes

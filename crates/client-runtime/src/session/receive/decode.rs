@@ -7,10 +7,9 @@ impl ClientSession {
         loop {
             if let Some((deferred, decoded_at_ms)) = self.deferred_world_message.take() {
                 if self.world_content_pending() {
-                    if self
-                        .world_content_started
-                        .is_some_and(|started| started.elapsed() >= Duration::from_secs(300))
-                    {
+                    if self.world_content_started.is_some_and(|started| {
+                        self.now.elapsed_since(started) >= Duration::from_secs(300)
+                    }) {
                         self.cancel_world_content_job();
                         let mut error = SessionFailure::new(
                             "session.world_content_timeout",
@@ -110,7 +109,7 @@ impl ClientSession {
                             self.cancel_world_content_job();
                             self.pending_world_content = None;
                             self.world_content_request = None;
-                            self.world_content_started = Some(Instant::now());
+                            self.world_content_started = Some(self.now);
                             self.deferred_world_message =
                                 Some((next.clone(), self.clock.local_monotonic_ms()));
                             self.consume_message();
@@ -193,7 +192,7 @@ impl ClientSession {
             }
             if matches!(&message, ServerMessage::Pong) {
                 if let Some(sent_at) = self.pending_ping_at.take() {
-                    let rtt = Instant::now().saturating_duration_since(sent_at);
+                    let rtt = self.now.elapsed_since(sent_at);
                     self.metrics.ping_round_trip = Some(rtt);
                     events.push(SessionEvent::PingRoundTrip(rtt));
                     continue;

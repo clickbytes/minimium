@@ -1,7 +1,13 @@
 use super::*;
 
 impl DesktopHost {
-    pub(in crate::renderer) fn update_remote_player_rendering(&mut self, now: Instant) {
+    pub(in crate::renderer) fn update_remote_player_rendering(&mut self) {
+        let now = crate::host_time::sample();
+        if let Err(error) = self.application.validate_time(now) {
+            self.application
+                .record_diagnostic_failure("client.invalid_time", &error);
+            return;
+        }
         if self.application.connection_view().session().is_none() {
             self.application.clear_action_input_cooldown();
             self.application.clear_remote_players();
@@ -39,6 +45,14 @@ impl DesktopHost {
         let moved = self
             .application
             .interpolate_remote_players(now, super::super::REMOTE_INTERPOLATION_DELAY);
+        let moved = match moved {
+            Ok(moved) => moved,
+            Err(error) => {
+                self.application
+                    .record_diagnostic_failure("client.invalid_time", &error);
+                return;
+            }
+        };
         if self.gameplay_presentation.update_remote_vertices(
             &self.application.game_view().gameplay,
             moved,

@@ -39,14 +39,16 @@ impl GameplayState {
         geography: Option<std::sync::Arc<dyn minimium_procgen::PreparedGeography>>,
         players: &minimium_protocol::RemotePlayers,
         removed_players: &minimium_protocol::RemotePlayerIds,
-    ) -> bool {
+        now: minimium_client_runtime::ClientTime,
+    ) -> Result<bool, minimium_client_runtime::ClientTimeError> {
         if !self.reconciliation.apply_remote_snapshot(
             server_time_ms,
             full_snapshot,
             players,
             removed_players,
-        ) {
-            return false;
+            now,
+        )? {
+            return Ok(false);
         }
         let precise_position = self
             .prediction
@@ -68,7 +70,7 @@ impl GameplayState {
             manifest,
             geography,
         );
-        true
+        Ok(true)
     }
 
     pub(crate) fn clear_remote_players(&mut self) {

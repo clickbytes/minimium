@@ -1,12 +1,10 @@
 use super::messages::WorldContextChange;
 use super::{ApplicationMessageError, ClientApplication};
 use crate::session::{SessionEvent, SessionState};
-use minimium_client_runtime::ConnectionEvent;
+use minimium_client_runtime::{ClientTime, ClientTimeError, ConnectionEvent};
 use minimium_protocol::ServerMessage;
 #[cfg(feature = "desktop")]
 use std::time::Duration;
-#[cfg(feature = "desktop")]
-use std::time::Instant;
 
 #[cfg(feature = "desktop")]
 #[derive(Clone, Copy, Debug, Default)]
@@ -18,8 +16,7 @@ pub(crate) struct PredictionInput {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ClientStepInput {
-    #[cfg(feature = "desktop")]
-    pub(crate) now: Instant,
+    pub(crate) now: ClientTime,
     /// `None` is the CPU-only host: it polls and applies session state without
     /// synthesizing desktop movement or Motion messages.
     #[cfg(feature = "desktop")]
@@ -88,17 +85,16 @@ impl ClientApplication {
             Option<super::ActiveSceneReady>,
             String,
         >,
-    ) -> ClientStepOutput {
-        #[cfg(not(feature = "desktop"))]
-        let _ = input;
+    ) -> Result<ClientStepOutput, ClientTimeError> {
+        self.accept_time(input.now)?;
         #[cfg(feature = "desktop")]
-        let elapsed = self.elapsed_since_step(input.now);
+        let elapsed = self.elapsed_since_step(input.now)?;
         #[cfg(feature = "desktop")]
         let (movement_queue_error, jump_consumed, candidate_scene_pending, candidate_scene_error) =
             input
                 .prediction
                 .map_or((None, false, false, None::<String>), |prediction| {
-                    self.step_prediction(elapsed, prediction, &mut candidate_readiness)
+                    self.step_prediction(elapsed, prediction, &mut candidate_readiness, input.now)
                 });
         #[cfg(not(feature = "desktop"))]
         let (movement_queue_error, jump_consumed): (
@@ -117,8 +113,8 @@ impl ClientApplication {
         #[cfg(not(feature = "desktop"))]
         let _ = jump_consumed;
 
-        let admin_result = self.poll_admin_result();
-        let connection = self.poll_connector();
+        let admin_result = self.poll_admin_result(input.now)?;
+        let connection = self.poll_connector(input.now)?;
         #[cfg(feature = "desktop")]
         if matches!(connection, ConnectionEvent::SessionStarted) {
             self.clear_action_input_cooldown();
@@ -126,13 +122,13 @@ impl ClientApplication {
         }
         let mut polled_events = Vec::with_capacity(16);
         if movement_queue_error.is_none() {
-            self.poll_session(&mut polled_events);
+            self.poll_session(&mut polled_events, input.now)?;
         }
         let mut session_events = Vec::with_capacity(polled_events.len());
         let mut disconnect_requested = false;
         for event in polled_events {
             let update = match &event {
-                SessionEvent::Message(message) => self.apply_step_message(message),
+                SessionEvent::Message(message) => self.apply_step_message(message, input.now),
                 _ => Ok(None),
             };
             let stop = matches!(event, SessionEvent::Disconnected(_))
@@ -146,14 +142,18 @@ impl ClientApplication {
                 break;
             }
         }
-        let disconnect = (disconnect_requested
+        let disconnect = if disconnect_requested
             || self
                 .connection
                 .session()
-                .is_some_and(|session| session.state() == SessionState::Disconnected))
-        .then(|| self.disconnect_for_step());
+                .is_some_and(|session| session.state() == SessionState::Disconnected)
+        {
+            Some(self.disconnect_for_step(input.now)?)
+        } else {
+            None
+        };
 
-        ClientStepOutput {
+        Ok(ClientStepOutput {
             admin_result,
             connection,
             session_events,
@@ -168,34 +168,36 @@ impl ClientApplication {
             candidate_scene_pending,
             #[cfg(feature = "desktop")]
             visual_offset,
-        }
+        })
     }
 
-    fn disconnect_for_step(&mut self) -> ClientStepDisconnect {
+    fn disconnect_for_step(
+        &mut self,
+        now: ClientTime,
+    ) -> Result<ClientStepDisconnect, ClientTimeError> {
         let previous_context = self.game.session_context();
         let previous_instance = self.game.current_instance;
         #[cfg(feature = "desktop")]
         let pending_transitions = self.clear_transitions();
-        let session = self.disconnect_session();
-        ClientStepDisconnect {
+        let session = self.disconnect_session(now)?;
+        Ok(ClientStepDisconnect {
             previous_context,
             previous_instance,
             session,
             #[cfg(feature = "desktop")]
             pending_transitions,
-        }
+        })
     }
 
     #[cfg(feature = "desktop")]
-    fn elapsed_since_step(&mut self, now: Instant) -> Duration {
-        let elapsed = self.last_step_at.map_or(Duration::ZERO, |previous| {
+    fn elapsed_since_step(&mut self, now: ClientTime) -> Result<Duration, ClientTimeError> {
+        let elapsed = self.last_step_at.map_or(Ok(Duration::ZERO), |previous| {
             now.checked_duration_since(previous)
-                .unwrap_or(Duration::ZERO)
-        });
-        self.last_step_at = Some(self.last_step_at.map_or(now, |previous| previous.max(now)));
-        elapsed.min(Duration::from_secs_f32(
+        })?;
+        self.last_step_at = Some(now);
+        Ok(elapsed.min(Duration::from_secs_f32(
             minimium_simulation::SIMULATION_STEP_SECONDS,
-        ))
+        )))
     }
 
     #[cfg(feature = "desktop")]
@@ -206,6 +208,7 @@ impl ClientApplication {
         candidate_readiness: &mut impl FnMut(
             PredictionSceneRequest<'_>,
         ) -> Result<Option<super::ActiveSceneReady>, String>,
+        now: ClientTime,
     ) -> (
         Option<crate::session::QueueError>,
         bool,
@@ -339,10 +342,11 @@ impl ClientApplication {
                 .session()
                 .is_some_and(|session| session.state() == SessionState::Connected)
             {
-                match self
-                    .action_executor
-                    .execute(&mut self.connection, super::ClientAction::Motion(movement))
-                {
+                match self.action_executor.execute(
+                    &mut self.connection,
+                    super::ClientAction::Motion(movement),
+                    now,
+                ) {
                     super::LocalActionOutcome::Rejected { error, .. } => {
                         queue_error = Some(error);
                         break;
@@ -373,6 +377,7 @@ impl ClientApplication {
     fn apply_step_message(
         &mut self,
         message: &ServerMessage,
+        now: ClientTime,
     ) -> Result<Option<WorldContextChange>, ApplicationMessageError> {
         match message {
             ServerMessage::Welcome { manifest, .. } => {
@@ -389,7 +394,7 @@ impl ClientApplication {
             ServerMessage::TransitionCommitted { .. } => {
                 self.apply_world_message(message).map(Some)
             }
-            _ => self.apply_game_message(message).map(|()| None),
+            _ => self.apply_game_message(message, now).map(|()| None),
         }
     }
 

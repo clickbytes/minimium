@@ -276,10 +276,10 @@ impl DesktopHost {
             return;
         }
         let direction = (eye + ray * distance).normalize().to_array();
-        match self
-            .application
-            .execute_action(crate::application::ClientAction::MapTeleport { direction })
-        {
+        match self.application.execute_action(
+            crate::application::ClientAction::MapTeleport { direction },
+            crate::host_time::sample(),
+        ) {
             crate::application::LocalActionOutcome::Queued { .. } => {
                 self.application.request_map_teleport();
                 self.application.status = crate::application::ClientStatus::Status(

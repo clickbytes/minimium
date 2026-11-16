@@ -10,7 +10,7 @@ use minimium_environment::climate::ClimateScenario;
 #[derive(Default)]
 pub(super) struct ContentPreparation {
     pub capability: Option<bool>,
-    pub started: Option<Instant>,
+    pub started: Option<ClientTime>,
     pub hash: [u8; 32],
     pub climate: Arc<ClimateScenario>,
     pub awaiting_gpu: bool,
@@ -31,15 +31,17 @@ impl ClientSession {
     }
 
     /// The presentation host acknowledges only after successful GPU installation.
-    pub fn finish_content(&mut self) -> Result<(), ProtocolError> {
+    pub fn finish_content(&mut self, now: ClientTime) -> Result<(), QueueError> {
+        self.accept_time(now).map_err(QueueError::Time)?;
         if !self.content.awaiting_gpu {
-            return Err(ProtocolError::InvalidPayload);
+            return Err(QueueError::Protocol(ProtocolError::InvalidPayload));
         }
-        self.append_encoded(&ClientMessage::ContentReady(self.content.hash))?;
+        self.append_encoded(&ClientMessage::ContentReady(self.content.hash))
+            .map_err(QueueError::Protocol)?;
         self.content.awaiting_gpu = false;
         self.content.started = None;
         self.content.request = None;
-        self.state_since = Instant::now();
+        self.state_since = self.now;
         Ok(())
     }
 
@@ -70,7 +72,7 @@ impl ClientSession {
             .validate()
             .map_err(|error| SessionFailure::new("session.invalid_climate_scenario", error))?;
         self.content.climate = Arc::new(climate);
-        self.content.started = Some(Instant::now());
+        self.content.started = Some(self.now);
         self.content.hash = hash;
         if hash == [0; 32] {
             self.content.awaiting_gpu = true;
@@ -121,7 +123,7 @@ impl ClientSession {
         if self
             .content
             .started
-            .is_some_and(|start| start.elapsed() >= Duration::from_secs(300))
+            .is_some_and(|start| self.now.elapsed_since(start) >= Duration::from_secs(300))
         {
             let mut error = SessionFailure::new(
                 "session.content_preparation_timeout",

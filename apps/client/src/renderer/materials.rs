@@ -63,7 +63,10 @@ impl DesktopHost {
                     .saturating_sub(self.renderer.terrain_gpu.bytes)
                     + resources.bytes;
                 self.renderer.terrain_gpu = resources;
-                if let Some(Err(error)) = self.application.finish_material_content() {
+                if let Some(Err(error)) = self
+                    .application
+                    .finish_material_content(crate::host_time::sample())
+                {
                     self.fail_connection(error.to_string());
                 }
             }

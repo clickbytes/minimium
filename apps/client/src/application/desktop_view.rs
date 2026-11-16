@@ -211,7 +211,11 @@ impl ClientApplication {
     pub(crate) fn report_transfer_presentation_ready(
         &mut self,
         report: TransferPresentationReady,
+        now: minimium_client_runtime::ClientTime,
     ) -> bool {
+        if self.validate_time(now).is_err() {
+            return false;
+        }
         let ticket = report.ticket;
         if !self
             .transitions
@@ -230,7 +234,7 @@ impl ClientApplication {
         {
             return false;
         }
-        self.report_transfer_host_ready(ticket).is_ok()
+        self.report_transfer_host_ready(ticket, now).is_ok()
     }
 
     /// Install CPU collision readiness only for the active context and exact terrain version.

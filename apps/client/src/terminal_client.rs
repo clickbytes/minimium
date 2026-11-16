@@ -71,7 +71,8 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
         connection.for_host(crate::bootstrap::HostCapabilities::CpuOnly),
         worlds,
         headless_settings,
-    );
+        crate::host_time::sample(),
+    )?;
     let mut prompt_needed = true;
     let mut last_snapshot: Option<ServerMessage> = None;
     let mut last_environment_status = None;
@@ -84,15 +85,14 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
 
     loop {
         let input = crate::application::ClientStepInput {
-            #[cfg(feature = "desktop")]
-            now: Instant::now(),
+            now: crate::host_time::sample(),
             #[cfg(feature = "desktop")]
             prediction: None,
         };
         #[cfg(feature = "desktop")]
-        let step = application.step(input, |_| Ok(None));
+        let step = application.step(input, |_| Ok(None))?;
         #[cfg(not(feature = "desktop"))]
-        let step = application.step(input);
+        let step = application.step(input)?;
         if let Some(result) = step.admin_result {
             match result {
                 Ok(response) => println!("{}", response.trim()),
@@ -158,14 +158,14 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
         }
         if application.session().is_some() {
             if let Some(ticket) = application.pending_transfer_ticket() {
-                let _ = application.report_transfer_host_ready(ticket);
+                let _ = application.report_transfer_host_ready(ticket, crate::host_time::sample());
             }
         }
         if let Some(mut disconnect) = step.disconnect {
             #[cfg(not(feature = "desktop"))]
             let _ = (disconnect.previous_context, disconnect.previous_instance);
             if let Some(mut session) = disconnect.session.take() {
-                session.close();
+                session.close(crate::host_time::sample())?;
             }
             last_snapshot = None;
         }
@@ -223,6 +223,7 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                         ServerMessage::Snapshot { self_position, .. } => Some(*self_position),
                         _ => None,
                     }),
+                    crate::host_time::sample(),
                 );
                 match result {
                     TextCommandResult::Empty => {}
@@ -316,7 +317,10 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
     }
 
     let shutdown_deadline = Instant::now() + Duration::from_secs(30);
-    let cleanup_result = application.finish_until(shutdown_deadline - Duration::from_secs(2));
+    let cleanup_result = application.finish_until(
+        shutdown_deadline - Duration::from_secs(2),
+        crate::host_time::sample(),
+    );
     drop(application);
     drop(localizer);
     drop(logger);
@@ -341,7 +345,7 @@ pub(super) fn start_remote(
     application: &mut crate::application::ClientApplication,
     address: &str,
 ) -> crate::client_commands::CommandActionResult {
-    match application.start_remote(address.to_owned()) {
+    match application.start_remote(address.to_owned(), crate::host_time::sample()) {
         Ok(()) => crate::client_commands::CommandActionResult {
             outputs: vec![crate::client_commands::CommandOutput::ClientText {
                 message: Text::ConnectingTo(address.to_owned()),
@@ -364,6 +368,7 @@ pub(super) fn start_error_output(error: StartError) -> crate::client_commands::C
         } => Text::DisconnectOrWait,
         StartError::AttemptIdsExhausted => Text::AttemptIdsExhausted,
         StartError::WorkerSpawn(error) => Text::WorkerStartFailed(error.to_string()),
+        StartError::Time(error) => Text::WorkerStartFailed(error.to_string()),
     };
     crate::client_commands::CommandActionResult {
         outputs: vec![crate::client_commands::CommandOutput::ClientText {

@@ -1,7 +1,7 @@
 use super::{
     ClientFlushProgress, ClientFrameToken, ClientQueueError, ClientReadStatus,
-    ClientTransportError, ClientTransportMetrics, ClientTransportPort, MAX_CLIENT_BUFFER_BYTES,
-    MAX_CLIENT_READ_BYTES_PER_POLL,
+    ClientTransportError, ClientTransportMetrics, ClientTransportPort, ClientTransportTimeError,
+    MAX_CLIENT_BUFFER_BYTES, MAX_CLIENT_READ_BYTES_PER_POLL,
 };
 use minimium_protocol::{
     decode_server, encode_client, ClientMessage, ServerMessage, MAX_FRAME_BYTES,
@@ -23,6 +23,7 @@ pub struct TcpClientTransport {
     completed_bytes: u64,
     peer_closed: bool,
     metrics: ClientTransportMetrics,
+    last_flush_at: Option<Instant>,
 }
 
 impl TcpClientTransport {
@@ -39,11 +40,20 @@ impl TcpClientTransport {
             completed_bytes: 0,
             peer_closed: false,
             metrics: ClientTransportMetrics::default(),
+            last_flush_at: None,
         })
     }
 }
 
 impl ClientTransportPort for TcpClientTransport {
+    fn validate_time(&self, now: Instant) -> Result<(), ClientTransportTimeError> {
+        if self.last_flush_at.is_some_and(|previous| now < previous) {
+            return Err(ClientTransportTimeError::Backward);
+        }
+        now.checked_add(std::time::Duration::from_secs(300))
+            .ok_or(ClientTransportTimeError::Overflow)?;
+        Ok(())
+    }
     fn read_available(&mut self) -> Result<ClientReadStatus, ClientTransportError> {
         if self.peer_closed {
             return Ok(ClientReadStatus::PeerClosed);
@@ -124,7 +134,11 @@ impl ClientTransportPort for TcpClientTransport {
     fn flush(
         &mut self,
         tracked: Option<ClientFrameToken>,
+        now: Instant,
     ) -> Result<ClientFlushProgress, ClientTransportError> {
+        self.validate_time(now)
+            .map_err(ClientTransportError::Time)?;
+        self.last_flush_at = Some(now);
         let mut progress = ClientFlushProgress::default();
         while self.send_offset < self.send_buffer.len() {
             let result = match self.stream.as_mut() {
@@ -146,7 +160,7 @@ impl ClientTransportPort for TcpClientTransport {
                     if tracked.is_some_and(|token| {
                         previous_completed < token.get() && self.completed_bytes >= token.get()
                     }) {
-                        progress.tracked_frame_sent_at = Some(Instant::now());
+                        progress.tracked_frame_sent_at = Some(now);
                     }
                 }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,

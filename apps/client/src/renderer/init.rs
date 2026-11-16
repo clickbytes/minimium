@@ -266,7 +266,8 @@ impl DesktopHost {
                 } else {
                     minimium_localization::UiStatus::EnvironmentLocalDemo
                 }),
-            ),
+                crate::host_time::sample(),
+            )?,
             pending_step_disconnect: None,
             sector_cache,
             last_render_position: if gpu_ready {

@@ -10,7 +10,10 @@ impl DesktopHost {
         &mut self,
         address: &str,
     ) -> crate::client_commands::CommandActionResult {
-        match self.application.start_remote(address.to_owned()) {
+        match self
+            .application
+            .start_remote(address.to_owned(), crate::host_time::sample())
+        {
             Ok(()) => {
                 self.connection_attempt_started();
                 crate::client_commands::CommandActionResult {
@@ -44,7 +47,10 @@ impl DesktopHost {
                 };
             }
         }
-        match self.application.start_local(config) {
+        match self
+            .application
+            .start_local(config, crate::host_time::sample())
+        {
             Ok(()) => {
                 self.connection_attempt_started();
                 crate::client_commands::CommandActionResult {
@@ -84,6 +90,7 @@ impl DesktopHost {
             } => Text::DisconnectOrWait,
             StartError::AttemptIdsExhausted => Text::AttemptIdsExhausted,
             StartError::WorkerSpawn(error) => Text::WorkerStartFailed(error.to_string()),
+            StartError::Time(error) => Text::WorkerStartFailed(error.to_string()),
         };
         if self.application.settings.require_earth {
             self.application.status = crate::application::ClientStatus::ClientText(text.clone());
@@ -163,7 +170,9 @@ impl DesktopHost {
     pub(crate) fn finish_on_exit(&mut self, deadline: Instant) -> Result<(), Box<dyn Error>> {
         self.clear_connection();
         let worker_deadline = deadline - Duration::from_secs(2);
-        let server_result = self.application.finish_until(worker_deadline);
+        let server_result = self
+            .application
+            .finish_until(worker_deadline, crate::host_time::sample());
         let mut unfinished = self.sector_cache.shutdown_until(worker_deadline);
         if !self.weather.shutdown_until(worker_deadline) {
             unfinished.push("client-cloud-mesh");
@@ -189,6 +198,11 @@ impl DesktopHost {
     }
 
     pub(super) fn clear_connection(&mut self) {
+        if let Err(error) = self.application.validate_time(crate::host_time::sample()) {
+            self.application
+                .record_diagnostic_failure("client.invalid_time", &error);
+            return;
+        }
         let mut step_disconnect = self.pending_step_disconnect.take();
         self.application.clear_action_input_cooldown();
         self.excavation_debug = Default::default();
@@ -231,7 +245,19 @@ impl DesktopHost {
         }
         let session = step_disconnect
             .and_then(|disconnect| disconnect.session)
-            .or_else(|| self.application.disconnect_session());
+            .or_else(|| {
+                match self
+                    .application
+                    .disconnect_session(crate::host_time::sample())
+                {
+                    Ok(session) => session,
+                    Err(error) => {
+                        self.application
+                            .record_diagnostic_failure("client.invalid_time", &error);
+                        None
+                    }
+                }
+            });
         if let Some(mut session) = session {
             let metrics = session.metrics();
             self.metrics.previous_bytes_sent = self
@@ -242,7 +268,10 @@ impl DesktopHost {
                 .metrics
                 .previous_bytes_received
                 .saturating_add(metrics.bytes_received);
-            session.close();
+            if let Err(error) = session.close(crate::host_time::sample()) {
+                self.application
+                    .record_diagnostic_failure("client.invalid_time", &error);
+            }
         }
         self.renderer.clear_remote_vertices();
         self.application.clear_remote_players();
@@ -364,6 +393,9 @@ impl DesktopHost {
     ) {
         use crate::application::ApplicationMessageError as MessageError;
         match error {
+            MessageError::Time(error) => self
+                .application
+                .record_diagnostic_failure("client.invalid_time", &error),
             MessageError::StaleWorldContext => {}
             MessageError::VisiblePlayerLimitExceeded => self.fail_connection(
                 Text::VisiblePlayerLimitExceeded
@@ -396,12 +428,13 @@ impl DesktopHost {
         )
         .normalize()
         .to_array();
-        match self
-            .application
-            .execute_action(crate::application::ClientAction::UseEquipped {
+        match self.application.execute_action(
+            crate::application::ClientAction::UseEquipped {
                 direction,
                 trigger: crate::application::UseTrigger::Pressed,
-            }) {
+            },
+            crate::host_time::sample(),
+        ) {
             crate::application::LocalActionOutcome::Queued {
                 kind: crate::application::QueuedActionKind::WeaponFire,
                 ..
@@ -447,9 +480,10 @@ impl DesktopHost {
             .and_then(|session| session.replicated_entities())
             .and_then(|replicas| crate::client_commands::nearest_portal_entity(replicas, position));
         let Some(entity) = entity else { return };
-        let _ = self
-            .application
-            .execute_action(crate::application::ClientAction::InteractEntity { entity });
+        let _ = self.application.execute_action(
+            crate::application::ClientAction::InteractEntity { entity },
+            crate::host_time::sample(),
+        );
     }
 }
 

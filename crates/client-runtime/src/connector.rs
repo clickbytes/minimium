@@ -6,6 +6,7 @@
 //! the connector remains busy until that worker exits.
 
 use crate::bootstrap::{self, LocalServerLaunchConfig};
+use crate::{ClientTime, ClientTimeError};
 mod worker;
 use std::{
     io,
@@ -36,16 +37,20 @@ impl AttemptId {
 pub enum StartError {
     /// A session, attempt or cleanup still owns the connection lifecycle.
     /// Session and cleanup rejection need not have an active attempt ID.
-    Busy { active_attempt: Option<AttemptId> },
+    Busy {
+        active_attempt: Option<AttemptId>,
+    },
     /// The connector exhausted its attempt identifier space.
     AttemptIdsExhausted,
     /// The operating system could not create the worker thread.
     WorkerSpawn(io::Error),
+    Time(ClientTimeError),
 }
 
 impl StartError {
     pub const fn code(&self) -> &'static str {
         match self {
+            Self::Time(error) => error.code(),
             Self::Busy { .. } => "client_runtime.connection_busy",
             Self::AttemptIdsExhausted => "client_runtime.attempt_ids_exhausted",
             Self::WorkerSpawn(_) => "client_runtime.worker_spawn_failed",
@@ -56,6 +61,7 @@ impl StartError {
 impl std::fmt::Display for StartError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Time(error) => error.fmt(formatter),
             Self::Busy {
                 active_attempt: Some(active_attempt),
             } => write!(
@@ -77,6 +83,7 @@ impl std::error::Error for StartError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::WorkerSpawn(error) => Some(error),
+            Self::Time(error) => Some(error),
             Self::Busy { .. } | Self::AttemptIdsExhausted => None,
         }
     }
@@ -132,7 +139,8 @@ enum WorkerOperation {
 
 struct ActiveAttempt {
     id: AttemptId,
-    deadline: Instant,
+    resource_deadline: Instant,
+    logical_deadline: ClientTime,
     receiver: Receiver<WorkerResult>,
     worker: Option<JoinHandle<()>>,
     discard: Option<DiscardReason>,
@@ -152,21 +160,40 @@ enum DiscardReason {
 ///
 /// A timed-out or cancelled worker stays active until it actually finishes;
 /// this prevents an uninterruptible resolver call from overlapping a new one.
-#[derive(Default)]
 pub struct Connector {
+    now: ClientTime,
     next_id: u64,
     active: Option<ActiveAttempt>,
 }
 
 impl Connector {
+    pub fn new(now: ClientTime) -> Result<Self, ClientTimeError> {
+        now.validate_after(now)?;
+        Ok(Self {
+            now,
+            next_id: 0,
+            active: None,
+        })
+    }
+
+    pub fn validate_time(&self, now: ClientTime) -> Result<(), ClientTimeError> {
+        now.validate_after(self.now)
+    }
+
+    fn accept_time(&mut self, now: ClientTime) -> Result<(), ClientTimeError> {
+        self.validate_time(now)?;
+        self.now = now;
+        Ok(())
+    }
     /// Starts resolving `address` and connecting to its resolved addresses in
     /// order. `timeout` is one common deadline covering DNS and all attempts.
     pub fn start(
         &mut self,
         address: impl Into<String>,
         timeout: Duration,
+        now: ClientTime,
     ) -> Result<AttemptId, StartError> {
-        self.start_worker(WorkerOperation::Remote(address.into()), timeout)
+        self.start_worker(WorkerOperation::Remote(address.into()), timeout, now)
     }
 
     /// Starts or attaches to the local server away from the UI thread.
@@ -178,15 +205,21 @@ impl Connector {
         &mut self,
         config: LocalServerLaunchConfig,
         timeout: Duration,
+        now: ClientTime,
     ) -> Result<AttemptId, StartError> {
-        self.start_worker(WorkerOperation::Local(config), timeout)
+        self.start_worker(WorkerOperation::Local(config), timeout, now)
     }
 
     fn start_worker(
         &mut self,
         operation: WorkerOperation,
         timeout: Duration,
+        now: ClientTime,
     ) -> Result<AttemptId, StartError> {
+        self.validate_time(now).map_err(StartError::Time)?;
+        let logical_deadline = now.checked_add(timeout).map_err(StartError::Time)?;
+        // A valid operation observes time even when domain admission is busy.
+        self.now = now;
         if let Some(active) = self.active.as_ref() {
             return Err(StartError::Busy {
                 active_attempt: Some(active.id),
@@ -198,8 +231,9 @@ impl Connector {
             .checked_add(1)
             .map(AttemptId)
             .ok_or(StartError::AttemptIdsExhausted)?;
-        let now = Instant::now();
-        let deadline = now.checked_add(timeout).ok_or_else(|| {
+        // OS connect/startup resource budget; logical empty-poll expiry is separate.
+        let resource_now = Instant::now();
+        let deadline = resource_now.checked_add(timeout).ok_or_else(|| {
             StartError::WorkerSpawn(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "connection timeout is too large",
@@ -243,7 +277,8 @@ impl Connector {
         self.next_id = id.get();
         self.active = Some(ActiveAttempt {
             id,
-            deadline,
+            resource_deadline: deadline,
+            logical_deadline,
             receiver,
             worker: Some(worker),
             discard: None,
@@ -260,7 +295,16 @@ impl Connector {
     /// Cancellation is reported once by `poll`; it cannot interrupt a blocking
     /// system DNS resolver, so `start` remains busy until the worker completes.
     /// Returns false if `attempt_id` is not the active, undiscarded attempt.
-    pub fn cancel(&mut self, attempt_id: AttemptId) -> bool {
+    pub fn cancel(
+        &mut self,
+        attempt_id: AttemptId,
+        now: ClientTime,
+    ) -> Result<bool, ClientTimeError> {
+        self.accept_time(now)?;
+        Ok(self.cancel_current(attempt_id))
+    }
+
+    fn cancel_current(&mut self, attempt_id: AttemptId) -> bool {
         match self.active.as_mut() {
             Some(active) if active.id == attempt_id && active.discard.is_none() => {
                 active.discard = Some(DiscardReason::Cancelled);
@@ -308,7 +352,12 @@ impl Connector {
     /// Polls without blocking. Timeout/cancel events are delivered once; while
     /// their worker is still running later calls return `InProgress` with
     /// `discarding_result: true`, then `Idle` once the worker exits.
-    pub fn poll(&mut self) -> PollEvent {
+    pub fn poll(&mut self, now: ClientTime) -> Result<PollEvent, ClientTimeError> {
+        self.accept_time(now)?;
+        Ok(self.poll_current(now))
+    }
+
+    fn poll_current(&mut self, now: ClientTime) -> PollEvent {
         let Some(active) = self.active.as_mut() else {
             return PollEvent::Idle;
         };
@@ -339,7 +388,7 @@ impl Connector {
         match active.receiver.try_recv() {
             Ok(worker_result) => {
                 let id = active.id;
-                let on_time = worker_result.completed_at <= active.deadline;
+                let on_time = worker_result.completed_at <= active.resource_deadline;
                 if !on_time {
                     if active.local {
                         active.discard = Some(DiscardReason::TimedOut);
@@ -370,7 +419,7 @@ impl Connector {
                     },
                 }
             }
-            Err(TryRecvError::Empty) if Instant::now() >= active.deadline => {
+            Err(TryRecvError::Empty) if now >= active.logical_deadline => {
                 active.discard = Some(DiscardReason::TimedOut);
                 active.discard_reported = true;
                 active.abandoned.store(true, Ordering::SeqCst);

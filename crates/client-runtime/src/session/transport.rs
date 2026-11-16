@@ -54,6 +54,7 @@ pub(super) fn queue_error(error: ClientQueueError) -> QueueError {
 
 fn disconnect_reason(error: ClientTransportError) -> DisconnectReason {
     match error {
+        ClientTransportError::Time(error) => DisconnectReason::Time(error.into()),
         ClientTransportError::Io(error) => DisconnectReason::Io(error.into()),
         ClientTransportError::Protocol(ProtocolError::UnsupportedEnvironment) => {
             DisconnectReason::EnvironmentMismatch
@@ -104,7 +105,7 @@ impl ClientSession {
         let Some(transport) = self.transport.as_mut() else {
             return;
         };
-        let result = transport.flush(self.pending_ping_frame);
+        let result = transport.flush(self.pending_ping_frame, self.now.as_instant());
         let metrics = transport.metrics();
         self.metrics.bytes_sent = metrics.bytes_sent;
         self.metrics.bytes_received = metrics.bytes_received;
@@ -112,7 +113,7 @@ impl ClientSession {
             Ok(progress) => {
                 if let Some(sent_at) = progress.tracked_frame_sent_at {
                     self.pending_ping_frame = None;
-                    self.pending_ping_at = Some(sent_at);
+                    self.pending_ping_at = Some(ClientTime::new(sent_at));
                 }
             }
             Err(error) => self.disconnect(disconnect_reason(error), events),

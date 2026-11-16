@@ -6,7 +6,7 @@ use minimium_world::items::{ActionResult, Inventory};
 pub(super) struct ToolClientState {
     next_id: u64,
     pending: Option<(WorldContext, u64)>,
-    last_use: Option<Instant>,
+    last_use: Option<ClientTime>,
 }
 
 impl ClientSession {
@@ -108,7 +108,12 @@ impl ClientSession {
             .is_some_and(|(context, _)| Some(context) == self.world_context)
     }
 
-    pub fn queue_tool_use(&mut self, direction: [f32; 3]) -> Result<bool, QueueError> {
+    pub fn queue_tool_use(
+        &mut self,
+        direction: [f32; 3],
+        now: ClientTime,
+    ) -> Result<bool, QueueError> {
+        self.accept_time(now).map_err(QueueError::Time)?;
         let context = self.world_context.ok_or(QueueError::AwaitingWelcome)?;
         if self.pending_transition.is_some() || !self.excavation_ready() {
             return Ok(false);
@@ -120,7 +125,7 @@ impl ClientSession {
             || self
                 .tools
                 .last_use
-                .is_some_and(|t| t.elapsed() < Duration::from_millis(500))
+                .is_some_and(|t| self.now.elapsed_since(t) < Duration::from_millis(500))
         {
             return Ok(false);
         }
@@ -129,13 +134,16 @@ impl ClientSession {
             .next_id
             .checked_add(1)
             .ok_or(QueueError::InputSequenceExhausted)?;
-        self.queue_world_input(ClientWorldInput::Excavation(ExcavationInput::Use {
-            action_id,
-            direction,
-        }))?;
+        self.queue_world_input(
+            ClientWorldInput::Excavation(ExcavationInput::Use {
+                action_id,
+                direction,
+            }),
+            now,
+        )?;
         self.tools.next_id = action_id;
         self.tools.pending = Some((context, action_id));
-        self.tools.last_use = Some(Instant::now());
+        self.tools.last_use = Some(now);
         Ok(true)
     }
 

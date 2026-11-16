@@ -121,6 +121,7 @@ fn apply(setting: Setting, context: &mut CommandContext<'_>) -> CommandResult {
                     context.action_executor.execute(
                         context.connection,
                         crate::application::ClientAction::SetFlightEnabled(value),
+                        context.now,
                     )
                 {
                     return CommandResult::QueueRejected {
@@ -157,6 +158,7 @@ fn apply(setting: Setting, context: &mut CommandContext<'_>) -> CommandResult {
                     speed: settings.speed,
                     accel: settings.accel,
                 },
+                context.now,
             )
         {
             return CommandResult::QueueRejected {

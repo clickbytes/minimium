@@ -41,10 +41,13 @@ pub(super) fn execute_input(
         .prediction
         .character
         .position;
-    let result =
-        renderer
-            .application
-            .execute_text_command(input, source, direction, Some(player_position));
+    let result = renderer.application.execute_text_command(
+        input,
+        source,
+        direction,
+        Some(player_position),
+        crate::host_time::sample(),
+    );
     let mut output = CommandOutputCollector::default();
     let action = match result {
         client_commands::TextCommandResult::Empty => return (false, output.result),

@@ -1,3 +1,4 @@
+mod shutdown;
 mod time;
 
 use crate::session::{ClientSession, QueueError, SessionEvent, SessionState};
@@ -6,7 +7,9 @@ use crate::{
     bootstrap::{LocalServer, LocalServerLaunchConfig},
     connector::{AttemptId, Connector, PollEvent, StartError},
 };
-use crate::{ContentJobsPort, ContentJobsSession, ContentShutdownStatus};
+use crate::{
+    ClientTime, ClientTimeError, ContentJobsPort, ContentJobsSession, ContentShutdownStatus,
+};
 use minimium_platform::admin_client;
 use minimium_protocol::ClientMessage;
 use std::{
@@ -32,6 +35,7 @@ pub enum ConnectionEvent {
 
 /// Owns the connector, session and any local process independently of a UI.
 pub struct ConnectionController {
+    now: ClientTime,
     presentation: Option<bool>,
     pub movement: minimium_simulation::MovementPolicy,
     pub flight_enabled: bool,
@@ -53,12 +57,14 @@ pub struct ConnectionController {
 }
 
 impl ConnectionController {
-    pub fn new() -> Self {
-        Self {
+    pub fn new(now: ClientTime) -> Result<Self, ClientTimeError> {
+        now.validate_after(now)?;
+        Ok(Self {
+            now,
             presentation: None,
             movement: Default::default(),
             flight_enabled: false,
-            connector: Connector::default(),
+            connector: Connector::new(now)?,
             active: None,
             session: None,
             local_server: None,
@@ -70,7 +76,26 @@ impl ConnectionController {
             content_jobs_shutdown: false,
             diagnostic_logger: None,
             replica_schemas: Vec::new(),
+        })
+    }
+
+    pub fn current_time(&self) -> ClientTime {
+        self.now
+    }
+
+    pub fn validate_time(&self, now: ClientTime) -> Result<(), ClientTimeError> {
+        now.validate_after(self.now)?;
+        self.connector.validate_time(now)?;
+        if let Some(session) = self.session.as_ref() {
+            session.validate_time(now)?;
         }
+        Ok(())
+    }
+
+    fn accept_time(&mut self, now: ClientTime) -> Result<(), ClientTimeError> {
+        self.validate_time(now)?;
+        self.now = now;
+        Ok(())
     }
 
     pub fn set_diagnostic_logger(&mut self, logger: minimium_diagnostics::DomainLogger) {
@@ -155,45 +180,55 @@ impl ConnectionController {
         self.session.as_mut()
     }
 
-    pub fn take_session(&mut self) -> Option<ClientSession> {
+    pub fn take_session(
+        &mut self,
+        now: ClientTime,
+    ) -> Result<Option<ClientSession>, ClientTimeError> {
+        self.accept_time(now)?;
         self.session_owns_server = false;
-        self.session.take()
+        Ok(self.session.take())
     }
 
     /// Sends a server-authoritative time change without blocking the UI loop.
-    pub fn queue(&mut self, message: &ClientMessage) -> Result<(), QueueError> {
+    pub fn queue(&mut self, message: &ClientMessage, now: ClientTime) -> Result<(), QueueError> {
+        self.accept_time(now).map_err(QueueError::Time)?;
         self.session
             .as_mut()
             .ok_or(QueueError::Disconnected)?
-            .queue(message)
+            .queue(message, now)
     }
 
     pub fn queue_world_input(
         &mut self,
         input: minimium_protocol::ClientWorldInput,
+        now: ClientTime,
     ) -> Result<(), QueueError> {
+        self.accept_time(now).map_err(QueueError::Time)?;
         self.session
             .as_mut()
             .ok_or(QueueError::Disconnected)?
-            .queue_world_input(input)
+            .queue_world_input(input, now)
             .map(|_| ())
     }
 
-    pub fn cancel_transition(&mut self) -> bool {
+    pub fn cancel_transition(&mut self, now: ClientTime) -> Result<bool, ClientTimeError> {
+        self.accept_time(now)?;
         self.session
             .as_mut()
-            .is_some_and(ClientSession::cancel_pending_transition)
+            .map_or(Ok(false), |session| session.cancel_pending_transition(now))
     }
 
     /// Reports that the host has prepared presentation for this transfer.
     pub fn report_transfer_host_ready(
         &mut self,
         ticket: crate::session::TransferTicket,
+        now: ClientTime,
     ) -> Result<(), QueueError> {
+        self.accept_time(now).map_err(QueueError::Time)?;
         self.session
             .as_mut()
             .ok_or(QueueError::Disconnected)?
-            .report_transfer_host_ready(ticket)
+            .report_transfer_host_ready(ticket, now)
     }
 
     pub fn host_readiness_requested(&self, ticket: crate::session::TransferTicket) -> bool {
@@ -202,28 +237,42 @@ impl ConnectionController {
             .is_some_and(|session| session.host_readiness_requested(ticket))
     }
 
-    pub fn start_remote(&mut self, address: String) -> Result<(), StartError> {
+    pub fn start_remote(&mut self, address: String, now: ClientTime) -> Result<(), StartError> {
+        self.accept_time(now).map_err(StartError::Time)?;
         if self.busy() {
             return Err(StartError::Busy {
                 active_attempt: self.active,
             });
         }
-        self.active = Some(self.connector.start(address, ATTEMPT_TIMEOUT)?);
+        self.active = Some(self.connector.start(address, ATTEMPT_TIMEOUT, now)?);
         Ok(())
     }
 
-    pub fn start_local(&mut self, mut config: LocalServerLaunchConfig) -> Result<(), StartError> {
+    pub fn start_local(
+        &mut self,
+        mut config: LocalServerLaunchConfig,
+        now: ClientTime,
+    ) -> Result<(), StartError> {
+        self.accept_time(now).map_err(StartError::Time)?;
         if self.busy() {
             return Err(StartError::Busy {
                 active_attempt: self.active,
             });
         }
         config.diagnostic_logger = self.diagnostic_logger.clone();
-        self.active = Some(self.connector.start_local(config, LOCAL_ATTEMPT_TIMEOUT)?);
+        self.active = Some(
+            self.connector
+                .start_local(config, LOCAL_ATTEMPT_TIMEOUT, now)?,
+        );
         Ok(())
     }
 
-    pub fn poll_connector(&mut self) -> ConnectionEvent {
+    pub fn poll_connector(&mut self, now: ClientTime) -> Result<ConnectionEvent, ClientTimeError> {
+        self.accept_time(now)?;
+        Ok(self.poll_connector_current(now))
+    }
+
+    fn poll_connector_current(&mut self, now: ClientTime) -> ConnectionEvent {
         if self.cleanup.as_ref().is_some_and(JoinHandle::is_finished) {
             if let Some(handle) = self.cleanup.take() {
                 match handle.join() {
@@ -243,7 +292,11 @@ impl ConnectionController {
                 }
             }
         }
-        match self.connector.poll() {
+        match self
+            .connector
+            .poll(now)
+            .expect("controller prevalidated connector time")
+        {
             PollEvent::Idle => {
                 self.active = None;
                 ConnectionEvent::Idle
@@ -300,6 +353,7 @@ impl ConnectionController {
                             authentication,
                             self.presentation,
                             content_jobs,
+                            now,
                         )
                         .map_err(io::Error::other)
                     },
@@ -332,10 +386,15 @@ impl ConnectionController {
         }
     }
 
-    pub fn poll_session(&mut self, events: &mut Vec<SessionEvent>) {
+    pub fn poll_session(
+        &mut self,
+        events: &mut Vec<SessionEvent>,
+        now: ClientTime,
+    ) -> Result<(), ClientTimeError> {
+        self.accept_time(now)?;
         let first_new_event = events.len();
         if let Some(session) = self.session.as_mut() {
-            session.poll(events);
+            session.poll(events, now)?;
         }
         for event in &events[first_new_event..] {
             if let SessionEvent::Message(minimium_protocol::ServerMessage::MovementPolicy(policy)) =
@@ -345,59 +404,7 @@ impl ConnectionController {
                 self.flight_enabled = policy.can_fly;
             }
         }
-    }
-
-    pub fn cancel(&mut self) {
-        if let Some(id) = self.active.take() {
-            self.connector.cancel(id);
-        }
-    }
-
-    pub fn finish(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-        self.finish_until(Instant::now() + Duration::from_secs(28))
-    }
-
-    pub fn finish_until(&mut self, deadline: Instant) -> Result<(), Box<dyn std::error::Error>> {
-        self.cancel();
-        let mut unfinished = self.connector.finish_on_exit_until(deadline);
-        if let Some(mut session) = self.session.take() {
-            session.close();
-        }
-        if let Some(jobs) = self.content_jobs.as_ref() {
-            self.content_jobs_shutdown = true;
-            if jobs.shutdown_until(deadline) == ContentShutdownStatus::Pending {
-                unfinished.push("client-content-jobs".to_owned());
-            }
-        }
-        let cleanup_result = self.cleanup.take().map_or(Ok(()), |worker| {
-            wait_for_cleanup(worker, deadline, &mut unfinished)
-        });
-        let server_result = self.local_server.take().map_or(Ok(()), |mut server| {
-            let worker = thread::spawn(move || server.shutdown());
-            wait_for_cleanup(worker, deadline, &mut unfinished)
-        });
-        if let Err(error) = &server_result {
-            if cleanup_result.is_err() {
-                crate::diagnostics::emit(
-                    self.diagnostic_logger.as_ref(),
-                    minimium_diagnostics::Level::Error,
-                    "client_runtime.local_server_shutdown_failed",
-                    [crate::diagnostics::field("reason", error)],
-                );
-            }
-        }
-        cleanup_result?;
-        if !unfinished.is_empty() {
-            return Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                format!(
-                    "client shutdown exceeded deadline: {}",
-                    unfinished.join(",")
-                ),
-            )
-            .into());
-        }
-        server_result.map_err(Into::into)
+        Ok(())
     }
 
     fn retain_local_server(&mut self, new_server: LocalServer) {
@@ -427,52 +434,6 @@ impl ConnectionController {
                 debug_assert!(self.cleanup.is_none());
                 self.cleanup = Some(thread::spawn(move || old.shutdown()));
             }
-        }
-    }
-}
-
-fn wait_for_cleanup<T: Send + 'static>(
-    worker: JoinHandle<io::Result<T>>,
-    deadline: Instant,
-    unfinished: &mut Vec<String>,
-) -> io::Result<T> {
-    let name = worker
-        .thread()
-        .name()
-        .unwrap_or("client-cleanup")
-        .to_owned();
-    let worker = worker;
-    while !worker.is_finished() && Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(5));
-    }
-    if worker.is_finished() {
-        return match worker.join() {
-            Ok(result) => result,
-            Err(_) => Err(io::Error::other("client cleanup worker panicked")),
-        };
-    }
-    unfinished.push(name);
-    drop(worker);
-    Err(io::Error::new(
-        io::ErrorKind::TimedOut,
-        "client cleanup worker exceeded shutdown deadline",
-    ))
-}
-
-impl Drop for ConnectionController {
-    fn drop(&mut self) {
-        // An explicit deadline already governed content cleanup. Drop must not
-        // silently start another wait; explicit finish_until calls remain retryable.
-        if self.content_jobs_shutdown {
-            self.content_jobs = None;
-        }
-        if let Err(error) = self.finish() {
-            crate::diagnostics::emit(
-                self.diagnostic_logger.as_ref(),
-                minimium_diagnostics::Level::Error,
-                "client_runtime.local_server_guard_cleanup_failed",
-                [crate::diagnostics::field("reason", error)],
-            );
         }
     }
 }
