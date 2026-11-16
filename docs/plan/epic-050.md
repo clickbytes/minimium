@@ -161,10 +161,19 @@ the 500-physical-line rule. No empty crates or second command/simulation owner.
 
 ## Deferred Q03 risk handoff
 
-[Q03 #470](https://github.com/clickbytes/minimium/issues/470) remains the runtime
-acceptance owner. Stage 20 adds one consolidated comment linking its report and
-the matrix below; it preserves all earlier E049 and meteor #384 scope. Do not
-create another runtime-acceptance issue or close E049 #421, #470 or #384 here.
+[Q03 #470](https://github.com/clickbytes/minimium/issues/470) is the historical
+runtime-acceptance record. The original E050 description assumed #470, E049 #421
+and meteor #384 remained open. Live GitHub states supersede that assumption:
+#384 closed at `2026-11-16T09:46:34Z`, #470 at `09:46:37Z` and #421 at
+`09:46:50Z`, all with reason `not_planned`, following the user's administrative
+closure instruction. [Q03 closure evidence](https://github.com/clickbytes/minimium/issues/470#issuecomment-6912964095)
+explicitly records that tests, runtime/GPU, benchmarks and meteor acceptance are
+NOT RUN by the agent; these closures are not acceptance or a GO result.
+Do not reopen those issues or create a replacement runtime-acceptance issue.
+Stage 20 can add its consolidated risk/report comment to the existing closed
+#470 without reopening it, preserving earlier E049 and meteor scope as historical
+unexecuted requirements. The matrix below remains a risk inventory, not work
+authorized for execution by the administrative closure or E050 implementation.
 
 | Later scenario | Contributing stages / unproved property |
 | --- | --- |
@@ -179,4 +188,5 @@ create another runtime-acceptance issue or close E049 #421, #470 or #384 here.
 
 E050 closes only after all 21 cards are integrated and verified according to
 their type. Its final claim is architecture/static complete. AR17/18 may remain
-explicitly deferred limitations; runtime acceptance remains unexecuted Q03 work.
+explicitly deferred limitations; runtime acceptance remains NOT RUN in the
+administratively closed Q03 record.
