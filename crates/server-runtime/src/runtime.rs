@@ -8,6 +8,7 @@ mod diagnostics;
 mod effect_receipts;
 mod entity_effects;
 mod environment;
+mod equipment;
 mod excavation;
 mod gameplay_terrain;
 mod impacts;
@@ -106,6 +107,7 @@ struct Scheduler {
 }
 pub struct ServerRuntime {
     now: Instant,
+    equipment: equipment::Equipment,
     excavation: excavation::Excavation,
     impacts: impacts::Impacts,
     pub(crate) server_logger: minimium_diagnostics::DomainLogger,
@@ -223,7 +225,7 @@ impl ServerRuntime {
             entities,
             persistence,
             excavation_journal,
-            excavation_restore,
+            mut excavation_restore,
             impact_journal,
             impact_restore,
             climate,
@@ -237,6 +239,10 @@ impl ServerRuntime {
             saved_clock,
             prepared_geography,
         } = startup;
+        let equipment = equipment::Equipment::from_restored(
+            std::mem::take(&mut excavation_restore.inventories),
+            config.max_players,
+        );
         let mut worlds = worlds
             .map(WorldRegistry::try_from_world_definitions)
             .transpose()
@@ -333,6 +339,7 @@ impl ServerRuntime {
         let autosave_interval = Duration::from_secs(config.autosave_seconds);
         let mut runtime = Self {
             now: time.monotonic,
+            equipment,
             excavation: excavation::Excavation::from_storage(
                 excavation_journal,
                 excavation_restore,

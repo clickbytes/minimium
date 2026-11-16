@@ -6,8 +6,10 @@ impl Publication<'_> {
         publication: coordinator::DurablePublication,
     ) -> io::Result<()> {
         let (prepared, origin) = publication.into_parts();
+        let mutation_id = prepared.mutation.id();
         let result = self.install(prepared, origin);
         if result.is_err() {
+            self.equipment.cancel_plan(mutation_id);
             self.request_shutdown();
         }
         result
@@ -16,6 +18,10 @@ impl Publication<'_> {
     fn install(&mut self, prepared: Prepared, origin: Origin) -> io::Result<()> {
         let started = Instant::now();
         let mutation = &prepared.mutation;
+        let inventory_commit = self
+            .equipment
+            .preflight_commit(mutation)
+            .map_err(|_| io::Error::other("inventory reservation mismatch before publication"))?;
         if !self.impacts.checkpoints_match(mutation.impact_bodies()) {
             self.impact_failure("stale impact checkpoint before excavation publication");
             return Err(io::Error::other(
@@ -107,9 +113,6 @@ impl Publication<'_> {
                 .collision
                 .record(prepared.collision_elapsed);
         }
-        if let Some((profile, inventory)) = mutation.inventory() {
-            self.state.inventories.insert(profile, inventory);
-        }
         for body in mutation.impact_bodies() {
             if let Err(error) = self.impacts.acknowledge_checkpoint(*body) {
                 self.impact_failure(&error.to_string());
@@ -128,6 +131,9 @@ impl Publication<'_> {
                     .world
                     .set_water_read(Some(water.water_read()));
             }
+        }
+        if let Some(commit) = inventory_commit {
+            self.equipment.commit(commit);
         }
         if let Some(action_id) = origin.action_id {
             self.action_result(

@@ -442,7 +442,7 @@ live or checkpointed impact entity. Restored state is bound to world ID, seed
 and radius before startup systems allocate new entities.
 The private `ExcavationCoordinator` owns the single preparation/durable-write
 slot, mutation IDs, journal acknowledgements, failure and shutdown state. Tool,
-impact, inventory and fluid-checkpoint producers use its controlled operations;
+impact, equipment and fluid-checkpoint producers use its controlled operations;
 runtime methods cannot replace its pending state. Its work-submission port uses
 the bounded shared pool and owns impact checkpoint reservation rollback. Its
 publication port receives only the required world/sector/impact services and
@@ -480,8 +480,20 @@ The sample composition supplies its canonical relief policy and 1.5 m material
 profile, while the runtime has no independent soil-depth override. Entity batches clone only affected world stores, while
 capacity checks still include all untouched entities. Impact settings enter via
 `ServerComposition::impact_profile`, without a specialized module hook.
-`runtime/excavation` coordinates tool intents, profile inventories, immutable
-terrain/collision preparation, fluid preflight and coherent checkpoints. The
+The private `runtime::equipment::Equipment` owns the one confirmed profile-keyed
+inventory map, grant/equip validation, actor-keyed desired requests and tool-use
+gates. Profile lookup comes from the existing live connection identity; no
+second actor/profile index is maintained. An accepted inventory candidate is
+reserved by mutation ID and expected profile revision until the coordinator
+matches the exact opaque world-change plan acknowledgement. Only that ACK moves
+the candidate into confirmed state. Rejection or plan mismatch releases the
+matching reservation. Disconnect clears only actor requests and gates; profile
+inventory survives world changes and reconnects. Inventory journal writes stay
+in the existing excavation journal and are not copied into `PlayerStore`.
+
+`runtime/excavation` consumes confirmed equipment for tool admission and
+replication, and coordinates tool intents, immutable terrain/collision
+preparation, fluid preflight and coherent checkpoints. The
 shared worker pool runs preparation and water steps; only the owner installs
 acknowledged changes. New impacts use this result journal for crater, remnant
 and water publication. Bounded contextual chunk/fluid cursors share a structural

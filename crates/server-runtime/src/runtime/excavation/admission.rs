@@ -51,13 +51,9 @@ impl ServerRuntime {
         {
             return Ok(());
         }
-        if let Some((c, gate)) = self.excavation.state.gates.get(&player) {
-            if *c == context {
-                if let Some(result) = gate.completed(action_id) {
-                    self.excavation_result(player, context, result);
-                    return Ok(());
-                }
-            }
+        if let Some(result) = self.equipment.completed_action(player, context, action_id) {
+            self.excavation_result(player, context, result);
+            return Ok(());
         }
         if self.excavation.coordinator.failure().is_some() {
             return Err(ActionRejection::Storage);
@@ -88,7 +84,8 @@ impl ServerRuntime {
         if self.impacts.has_pending_in_world(context.instance()) {
             return Err(ActionRejection::Busy);
         }
-        let inventory = self.player_inventory(player);
+        let profile = self.player_profile(player);
+        let inventory = self.equipment.confirmed_for(profile);
         let inputs = self
             .excavation_inputs(context.instance())
             .ok_or(ActionRejection::Stale)?;
@@ -114,34 +111,16 @@ impl ServerRuntime {
             .volume_base()
             .ok_or(ActionRejection::InvalidIntent)?;
         let hit = scene::query(owner, player, &store, &base, direction, query_reach);
-        let gate = self
-            .excavation
-            .state
-            .gates
-            .entry(player)
-            .or_insert_with(|| {
-                (
-                    context,
-                    minimium_simulation::tools::ToolUseGate::new(
-                        self.excavation.state.config.tools,
-                    )
-                    .unwrap(),
-                )
-            });
-        if gate.0 != context {
-            *gate = (
-                context,
-                minimium_simulation::tools::ToolUseGate::new(self.excavation.state.config.tools)
-                    .unwrap(),
-            );
-        }
-        let action_result = gate.1.prepare(
+        let action_result = self.equipment.prepare_tool_use(
+            player,
+            context,
+            self.excavation.state.config.tools,
+            profile,
             ToolUseIntent {
                 world: context.instance(),
                 action_id,
                 direction: direction.map(f64::from),
             },
-            inventory,
             &scene::FirstHit(hit),
             self.now
                 .saturating_duration_since(self.scheduler.server_started)

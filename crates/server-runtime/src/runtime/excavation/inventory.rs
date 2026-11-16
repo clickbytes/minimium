@@ -7,32 +7,11 @@ impl ServerRuntime {
         context: WorldContext,
         input: ExcavationInput,
     ) {
-        let Some(profile) = self.excavation_profile(player) else {
+        let Some(profile) = self.player_profile(player) else {
             return;
         };
-        let committed = self.player_inventory(player);
-        // Equipment presses can arrive while a terrain or water checkpoint is
-        // writing. Keep one desired state per connected player instead of losing
-        // the press. Include an already submitted grant when applying Equip.
-        let submitted = self.excavation.coordinator.pending_inventory(profile);
-        let old = self
-            .excavation
-            .state
-            .inventory_requests
-            .get(&player)
-            .filter(|(epoch, _)| *epoch == context)
-            .map(|(_, inventory)| *inventory)
-            .or(submitted)
-            .unwrap_or(committed);
-        let mut inventory = old;
-        let changed = match input {
-            ExcavationInput::GrantTools => inventory
-                .ensure_items(self.excavation.state.config.tool_grants)
-                .map(|_| ()),
-            ExcavationInput::Equip { slot } => inventory.equip(slot),
-            _ => return,
-        };
-        if changed.is_err() || self.excavation.coordinator.failure().is_some() {
+        let committed = self.equipment.confirmed(profile);
+        if self.excavation.coordinator.failure().is_some() {
             self.send_excavation(
                 player,
                 context,
@@ -42,32 +21,35 @@ impl ServerRuntime {
             );
             return;
         }
-        if old != inventory {
-            self.excavation
-                .state
-                .inventory_requests
-                .insert(player, (context, inventory));
-        } else if submitted.is_none()
-            && !self
-                .excavation
-                .state
-                .inventory_requests
-                .contains_key(&player)
-        {
+        let outcome = self.equipment.request_change(
+            player,
+            context,
+            profile,
+            input,
+            self.excavation.state.config.tool_grants,
+        );
+        let Ok(response) = outcome else {
+            self.send_excavation(
+                player,
+                context,
+                ExcavationMessage::Inventory {
+                    inventory: committed,
+                },
+            );
+            return;
+        };
+        if let Some(inventory) = response {
             self.send_excavation(player, context, ExcavationMessage::Inventory { inventory });
         }
         self.flush_inventory_request();
     }
 
     pub(super) fn flush_inventory_request(&mut self) {
-        self.excavation
-            .state
-            .inventory_requests
-            .retain(|player, (context, _)| {
-                self.game
-                    .worlds
-                    .world_input_context_is_current(*player, *context)
-            });
+        self.equipment.retain_requests(|player, context| {
+            self.game
+                .worlds
+                .world_input_context_is_current(player, context)
+        });
         if self.excavation.busy()
             || self.excavation.coordinator.failure().is_some()
             || self.excavation.coordinator.shutting_down()
@@ -88,16 +70,14 @@ impl ServerRuntime {
             // checkpoints indefinitely. update_water owns the next journal slot.
             return;
         }
-        let Some((&player, &(context, mut inventory))) =
-            self.excavation.state.inventory_requests.iter().next()
-        else {
+        let Some((player, context, mut inventory)) = self.equipment.next_request() else {
             return;
         };
-        self.excavation.state.inventory_requests.remove(&player);
-        let Some(profile) = self.excavation_profile(player) else {
+        self.equipment.remove_request(player);
+        let Some(profile) = self.player_profile(player) else {
             return;
         };
-        let committed = self.player_inventory(player);
+        let committed = self.equipment.confirmed(profile);
         if inventory.slots == committed.slots && inventory.equipped == committed.equipped {
             return;
         }
@@ -139,7 +119,19 @@ impl ServerRuntime {
             context: Some(context),
             action_id: None,
         };
+        if self.equipment.reserve_plan(&prepared.mutation).is_err() {
+            self.send_excavation(
+                player,
+                context,
+                ExcavationMessage::Inventory {
+                    inventory: committed,
+                },
+            );
+            return;
+        }
+        let mutation_id = prepared.mutation.id();
         if let Err(error) = self.excavation.coordinator.submit(prepared, origin) {
+            self.equipment.cancel_plan(mutation_id);
             self.excavation_storage_rejection(error);
             self.send_excavation(
                 player,

@@ -90,16 +90,6 @@ impl ExcavationCoordinator {
             || self.pending.as_ref().is_some_and(|p| matches(p.origin))
     }
 
-    pub(super) fn pending_inventory(&self, profile: PlayerProfileId) -> Option<Inventory> {
-        self.pending
-            .as_ref()?
-            .prepared
-            .mutation
-            .inventory()
-            .filter(|(owner, _)| *owner == profile)
-            .map(|(_, inventory)| inventory)
-    }
-
     pub(super) fn allocate_id(&mut self) -> Option<u64> {
         self.next_id = self.next_id.checked_add(1)?;
         Some(self.next_id)

@@ -76,13 +76,7 @@ impl ServerRuntime {
                     }
                 }
             }
-            let inventory = self
-                .excavation
-                .state
-                .inventories
-                .get(&identity.principal.profile())
-                .copied()
-                .unwrap_or_default();
+            let inventory = self.equipment.confirmed(identity.principal.profile());
             if cursor.inventory != Some(inventory) {
                 if !crate::connection::queue_message(
                     client,

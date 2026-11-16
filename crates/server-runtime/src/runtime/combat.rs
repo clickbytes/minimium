@@ -9,7 +9,12 @@ impl ServerRuntime {
         player: PlayerId,
         direction: [f32; 3],
     ) -> Option<WorldEvent> {
-        if self.player_inventory(player).tool().is_some() {
+        if self
+            .equipment
+            .confirmed_for(self.player_profile(player))
+            .tool()
+            .is_some()
+        {
             return None;
         }
         let instance = self.game.worlds.instance_for_player(player)?;
