@@ -119,15 +119,19 @@ are selected by the common composition, without a fingerprint-based lookup.
 The former terminal-only world setup and duplicated desktop setup are removed.
 
 Before a session exists, desktop initialization and application scene requests
-bind the local map/manifest to the sample's resolved material and relief policies
-through `world_content::bootstrap_terrain_inputs`. Empty `TerrainInputs` are not
-valid for a generated bootstrap planet. Prediction and scene refresh reuse this
-composition through `ClientApplication::scene_terrain_inputs`; policy errors
-remain typed and prevent publication. Once a session exists, its active content
-is the sole source of scene terrain inputs, including while a transfer prepares.
-Bootstrap does not open Earth geography or manufacture mutable terrain overlays;
-Earth geometry still waits for the session's validated geography. Protocol,
-save, seed/fingerprint and material-package formats are unchanged.
+bind the local map/manifest to a `PreparedTerrainSource` through
+`world_content::bootstrap_terrain_inputs` and pair it with an empty, instance-bound
+`TerrainOverlaySnapshot`. `TerrainInputs` has no default or partial-identity path.
+`ClientApplication::scene_terrain_inputs` returns no source while bootstrap Earth
+geography or context-matched session content is still pending; this leaves scene
+and prediction readiness pending without publishing empty geometry. Once connected,
+the session supplies the active source for the active context and the pending
+source for its matching transfer ticket. Distinct destination content does not
+borrow active-world overlays; when both contexts refer to the same instance,
+manifest and map fingerprint, the runtime intentionally shares that world's state.
+Bootstrap does not open Earth geography; the content
+resolver prepares it and validates its digest before Earth geometry is dispatched.
+Protocol, save, seed/fingerprint and material-package formats are unchanged.
 
 `DesktopHost` and the terminal front end call `ClientApplication::step`; the
 application owns desktop UI state and polls the runtime connection controller.
@@ -235,10 +239,13 @@ unsafe geometry joining. The overlay and console text support English and Polish
 Both frontends install the same `SampleWorldContentResolver`. It validates the
 revision-6 manifest and expected map fingerprint, loads only configured Earth
 geography for Earth manifests, and recreates generated maps from topology and
-the recorded seed. Authored content is accepted only from a known or transferred
-map whose fingerprint matches; missing authored content is an error.
-Generation failures retain their `GenerationError` source and stable code in the
-session failure returned to either frontend.
+the recorded seed. It returns a private `PreparedTerrainSource` inside
+`ResolvedWorldContent`, bound to its `ContentResolutionTicket`, instance,
+manifest, map fingerprint and resolved sample profiles. Authored content is
+accepted only from a known or transferred map whose fingerprint matches; missing
+authored content is an error. Generation failures retain their `GenerationError`
+source, stable code and content ticket in `SessionFailure` returned to either
+frontend.
 
 Desktop and terminal register sample-game component schemas with the runtime
 replica store. Portal commands resolve the nearest portal from the current
@@ -693,9 +700,10 @@ client consumes the same replica without GPU dependencies. Runtime visual/FPS an
 multiplayer acceptance remain part of final verification; static compilation alone
 does not establish their results.
 
-Terrain/collision preparation consumes explicit `TerrainInputs`. Geographic
-sampling remains immutable; resolved material-profile identity and crater/remnant revisions invalidate
-prepared scenes. Excavation geometry, material cross-sections and water surfaces
+Terrain/collision preparation consumes `TerrainInputs` containing a validated
+`PreparedTerrainSource` and separate world-bound overlays. Geographic sampling
+remains immutable; resolved material-profile identity and crater/remnant revisions
+invalidate prepared scenes. Excavation geometry, material cross-sections and water surfaces
 are prepared on workers and published with matching collision and GPU state.
 Water-only updates coalesce behind an active preparation instead of cancelling
 it every solver tick; the last complete water frame remains presentable while

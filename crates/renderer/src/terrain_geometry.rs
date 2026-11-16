@@ -50,9 +50,8 @@ pub fn vertices(
     // Occlusion only consumes distance; material layers come from surface metadata.
     let volume_base = terrain.volume_base();
     let volume_view = terrain
-        .inputs()
-        .volumes
-        .as_ref()
+        .overlays()
+        .volumes()
         .zip(volume_base.as_ref())
         .map(|(store, base)| store.view(base));
     let mut out = Vec::with_capacity(geometry.triangles.len() * 3);

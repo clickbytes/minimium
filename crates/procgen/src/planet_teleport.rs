@@ -6,8 +6,9 @@ use minimium_world::world::{PlanetSectorKey, WorldManifest};
 pub fn planet_collision_position_at_direction(
     manifest: WorldManifest,
     direction: [f32; 3],
+    inputs: impl Into<crate::TerrainInputs>,
 ) -> Option<[i64; 3]> {
-    planet_collision_position_at_direction_with_geography(manifest, direction, None)
+    planet_collision_position_at_direction_with_geography(manifest, direction, inputs)
 }
 
 pub fn planet_collision_position_at_direction_with_geography(
@@ -34,16 +35,13 @@ fn planet_position_at_direction(
     inputs: crate::TerrainInputs,
     safe_spawn: bool,
 ) -> Option<[i64; 3]> {
-    if inputs.volumes.is_some()
-        && !inputs
-            .material_profile
-            .is_some_and(|profile| profile.matches_manifest(manifest))
-    {
+    if inputs.source.manifest() != manifest {
         return None;
     }
+    let volumes = inputs.overlays.volumes();
     let count = planet_sector_count(manifest);
     let key = PlanetSectorKey::from_direction_with_count(direction, count);
-    let terrain = if inputs.volumes.is_some() {
+    let terrain = if volumes.is_some() {
         Some(crate::PlanetTerrain::for_manifest(manifest, inputs.clone()).ok()?)
     } else {
         None
@@ -55,7 +53,7 @@ fn planet_position_at_direction(
     };
     let mut base_sectors = std::collections::BTreeSet::from([key]);
     base_sectors.extend(neighbors.iter().copied());
-    if let Some(store) = inputs.volumes.as_deref() {
+    if let Some(store) = volumes.map(AsRef::as_ref) {
         let integrated_targets = if safe_spawn {
             std::iter::once(key)
                 .chain(neighbors.iter().copied())

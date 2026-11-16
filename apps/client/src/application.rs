@@ -296,15 +296,15 @@ impl ClientApplication {
         let Some(content) = session.resolved_world_content_for_context(ticket.context()) else {
             return false;
         };
-        if content.manifest != preparation.manifest
-            || content.map.fingerprint() != preparation.map_fingerprint
+        if content.manifest() != preparation.manifest
+            || content.map().fingerprint() != preparation.map_fingerprint
         {
             return false;
         }
         let Some(terrain) = session.terrain_inputs_for_context(ticket.context()) else {
             return false;
         };
-        if preparation.manifest.planet().is_some() && terrain.geography.is_none() {
+        if preparation.manifest.planet().is_some() && terrain.source().geography().is_none() {
             return false;
         }
         preparation.manifest.planet().is_none()

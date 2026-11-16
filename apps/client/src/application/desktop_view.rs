@@ -129,11 +129,11 @@ impl TransferPresentationReady {
 }
 
 impl ClientApplication {
-    /// Bootstrap has resolved local policies even before a session exists.
-    /// Once connected, all active/pending content comes exclusively from the session.
+    /// Active and pending content comes from its ticket-bound session bundle.
+    /// Bootstrap Earth remains pending until its geography source is prepared.
     pub(crate) fn scene_terrain_inputs(
         &self,
-    ) -> Result<minimium_procgen::TerrainInputs, minimium_procgen::GenerationError> {
+    ) -> Result<Option<minimium_procgen::TerrainInputs>, minimium_procgen::GenerationError> {
         if let Some(session) = self.connection.session() {
             return Ok(session.terrain_inputs());
         }
@@ -153,7 +153,18 @@ impl ClientApplication {
                 "bootstrap world has no resolved map",
             )
         })?;
-        crate::world_content::bootstrap_terrain_inputs(manifest, map)
+        match crate::world_content::bootstrap_terrain_inputs(instance, manifest, map) {
+            Ok(inputs) => Ok(Some(inputs)),
+            Err(error)
+                if error.kind()
+                    == minimium_procgen::GenerationErrorKind::Sampling(
+                        minimium_procgen::EarthSampleError::PackageUnavailable,
+                    ) =>
+            {
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
     }
 
     pub(crate) fn desktop_render_view(&self) -> DesktopRenderView<'_> {

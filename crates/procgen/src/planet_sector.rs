@@ -44,8 +44,9 @@ pub fn planet_sector_count(manifest: WorldManifest) -> u16 {
 pub fn planet_point_at_direction(
     manifest: WorldManifest,
     direction: [f32; 3],
+    inputs: impl Into<crate::TerrainInputs>,
 ) -> Option<crate::PlanetPoint> {
-    planet_point_at_direction_with_geography(manifest, direction, None)
+    planet_point_at_direction_with_geography(manifest, direction, inputs)
 }
 
 pub fn planet_point_at_direction_with_geography(
@@ -103,8 +104,9 @@ pub fn planet_point_at_direction_with_geography(
 pub fn generate_planet_sector(
     manifest: WorldManifest,
     key: PlanetSectorKey,
+    inputs: impl Into<crate::TerrainInputs>,
 ) -> Result<SectorGeometry, GenerationError> {
-    generate_planet_sector_with_geography(manifest, key, None)
+    generate_planet_sector_with_geography(manifest, key, inputs)
 }
 
 pub fn generate_planet_sector_with_geography(
@@ -174,8 +176,9 @@ pub fn generate_planet_render_patch(
     manifest: WorldManifest,
     key: PlanetSectorKey,
     subdivisions: u32,
+    inputs: impl Into<crate::TerrainInputs>,
 ) -> Result<SectorGeometry, GenerationError> {
-    generate_planet_render_patch_with_geography(manifest, key, subdivisions, None)
+    generate_planet_render_patch_with_geography(manifest, key, subdivisions, inputs)
 }
 
 pub fn generate_planet_render_patch_with_geography(
@@ -246,8 +249,9 @@ pub fn generate_planet_render_block(
     u: u16,
     v: u16,
     span: u16,
+    inputs: impl Into<crate::TerrainInputs>,
 ) -> Result<SectorGeometry, GenerationError> {
-    generate_planet_render_block_with_geography(manifest, face, u, v, span, None)
+    generate_planet_render_block_with_geography(manifest, face, u, v, span, inputs)
 }
 
 pub fn generate_planet_render_block_with_geography(

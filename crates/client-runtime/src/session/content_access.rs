@@ -21,21 +21,21 @@ impl ClientSession {
         active_context.instance() == context.instance()
             && pending.context == context
             && active.context == active_context
-            && active.content.manifest == pending.content.manifest
-            && active.content.map.fingerprint() == pending.content.map.fingerprint()
+            && active.content.manifest() == pending.content.manifest()
+            && active.content.map().fingerprint() == pending.content.map().fingerprint()
     }
 
     pub fn prepared_geography(&self) -> Option<Arc<dyn minimium_procgen::PreparedGeography>> {
         self.active_world_content
             .as_ref()
-            .and_then(|bundle| bundle.content.geography.clone())
+            .and_then(|bundle| bundle.content.geography().cloned())
     }
 
     pub fn resolved_relief_policy(&self) -> Option<minimium_procgen::ResolvedPlanetReliefPolicy> {
         self.active_world_content
             .as_ref()
             .filter(|bundle| Some(bundle.context) == self.world_context)
-            .and_then(|bundle| bundle.content.resolved_relief_policy)
+            .and_then(|bundle| bundle.content.resolved_relief_policy())
     }
 
     pub(crate) fn set_world_content_resolver(
@@ -71,7 +71,7 @@ impl ClientSession {
         self.pending_world_content
             .as_ref()
             .filter(|bundle| bundle.context == context && bundle.transition_id == transition_id)
-            .and_then(|bundle| bundle.content.geography.clone())
+            .and_then(|bundle| bundle.content.geography().cloned())
     }
 
     pub(crate) fn pending_content_for_transition(
@@ -102,7 +102,7 @@ impl ClientSession {
         }
         self.active_world_content
             .as_ref()
-            .filter(|active| active.context == ticket.context && active.content.ticket == ticket)
+            .filter(|active| active.context == ticket.context && active.content.ticket() == ticket)
             .map(|active| active.content.clone())
     }
 

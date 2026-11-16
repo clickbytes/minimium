@@ -20,7 +20,8 @@ pub(super) fn build(
         .iter()
         .filter_map(|(instance, owner)| {
             owner.manifest.planet()?;
-            let terrain = planet(owner.manifest, geography, owner)?;
+            let inputs = worlds.prepared_terrain_inputs(instance, geography).ok()?;
+            let terrain = planet(owner.manifest, inputs)?;
             let volumes = owner.volumes.clone().or_else(|| {
                 TerrainStore::new(
                     instance,
@@ -53,14 +54,7 @@ pub(super) fn safe_planet_spawn(
         return None;
     }
     let direction = origin.map(|value| (value as f64 / length) as f32);
-    let inputs = TerrainInputs {
-        geography: geography.cloned(),
-        material_profile: Some(owner.terrain_material_profile),
-        resolved_relief_policy: owner.resolved_relief_policy,
-        edits: Some(owner.terrain.clone()),
-        remnants: Some(owner.remnants.clone()),
-        volumes: owner.volumes.clone(),
-    };
+    let inputs = worlds.prepared_terrain_inputs(instance, geography).ok()?;
     if minimium_procgen::planet_point_at_direction_with_geography(
         owner.manifest,
         direction,
@@ -73,7 +67,7 @@ pub(super) fn safe_planet_spawn(
     let ground = minimium_procgen::planet_safe_spawn_position_at_direction_with_geography(
         owner.manifest,
         direction,
-        inputs,
+        inputs.clone(),
     )?;
     let ground_radius = ground
         .iter()
@@ -96,42 +90,24 @@ pub(super) fn safe_planet_spawn(
         )
         .map(Arc::new)
     })?;
-    let terrain = PlanetTerrain::for_manifest(
-        owner.manifest,
-        TerrainInputs {
-            geography: geography.cloned(),
-            material_profile: Some(owner.terrain_material_profile),
-            resolved_relief_policy: owner.resolved_relief_policy,
-            edits: Some(owner.terrain.clone()),
-            remnants: Some(owner.remnants.clone()),
-            volumes: Some(volumes.clone()),
-        },
+    let prepared = TerrainInputs::new(
+        inputs.source().clone(),
+        minimium_procgen::TerrainOverlaySnapshot::new(
+            instance,
+            inputs.overlays().edits().cloned(),
+            inputs.overlays().remnants().cloned(),
+            Some(volumes.clone()),
+        ),
     )
     .ok()?;
+    let terrain = PlanetTerrain::for_manifest(owner.manifest, prepared).ok()?;
     let read = CurrentTerrainRead { terrain, volumes };
     let position = minimium_world::world::Position3Mm(feet);
     crate::world_registry::terrain_capsule_clear(&read, position).then_some(position)
 }
 
-fn planet(
-    manifest: WorldManifest,
-    geography: Option<&Arc<dyn PreparedGeography>>,
-    owner: &crate::world_registry::WorldInstance,
-) -> Option<PlanetTerrain> {
-    Some(
-        PlanetTerrain::for_manifest(
-            manifest,
-            TerrainInputs {
-                geography: geography.cloned(),
-                material_profile: Some(owner.terrain_material_profile),
-                resolved_relief_policy: owner.resolved_relief_policy,
-                edits: Some(owner.terrain.clone()),
-                remnants: Some(owner.remnants.clone()),
-                volumes: owner.volumes.clone(),
-            },
-        )
-        .ok()?,
-    )
+fn planet(manifest: WorldManifest, inputs: TerrainInputs) -> Option<PlanetTerrain> {
+    Some(PlanetTerrain::for_manifest(manifest, inputs).ok()?)
 }
 
 impl TerrainRead for CurrentTerrainRead {

@@ -74,6 +74,9 @@ pub use sector_neighborhood::{
     DUNGEON_SECTOR_EDGE,
 };
 pub use terrain_material::{ResolvedTerrainMaterialProfile, TerrainMaterialProfile};
-pub use terrain_overlay::{SectorContentVersion, TerrainInputs};
+pub use terrain_overlay::{
+    PlanetGenerationSource, PreparedTerrainSource, SectorContentVersion, TerrainInputs,
+    TerrainOverlaySnapshot,
+};
 pub use terrain_seam::ExcavationGeometryError;
 pub use traversal::can_traverse_surface;

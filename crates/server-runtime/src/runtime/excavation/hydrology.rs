@@ -17,15 +17,25 @@ impl ServerRuntime {
             if owner.manifest.planet().is_none() {
                 continue;
             }
-            let relief_policy = owner
+            owner
                 .resolved_relief_policy
                 .ok_or_else(|| io::Error::other("water catalog relief policy unavailable"))?;
-            let terrain = scene::planet(
+            let source = minimium_procgen::PreparedTerrainSource::new(
+                world,
                 owner.manifest,
-                minimium_procgen::TerrainInputs::from(self.prepared_geography.clone())
-                    .with_resolved_relief_policy(relief_policy),
+                &owner.map,
+                self.prepared_geography.clone(),
+                owner.terrain_material_profile,
+                owner.resolved_relief_policy,
             )
-            .ok_or_else(|| io::Error::other("water catalog planet unavailable"))?;
+            .map_err(io::Error::other)?;
+            let inputs = minimium_procgen::TerrainInputs::new(
+                source,
+                minimium_procgen::TerrainOverlaySnapshot::empty_for(world),
+            )
+            .map_err(io::Error::other)?;
+            let terrain = scene::planet(owner.manifest, inputs)
+                .ok_or_else(|| io::Error::other("water catalog planet unavailable"))?;
             let catalog = minimium_procgen::WaterCatalog::build(
                 &terrain,
                 minimium_procgen::DEFAULT_WATER_CATALOG_RESOLUTION,
@@ -225,7 +235,10 @@ impl ServerRuntime {
         }
         let mut water = water.clone();
         let revision = water.snapshot().revision();
-        let inputs = self.excavation_inputs(world).unwrap();
+        let Some(inputs) = self.excavation_inputs(world) else {
+            self.water_step_failure(world, minimium_fluids::FluidError::Unavailable);
+            return;
+        };
         let input_revision = inputs.revision();
         let owner = self.game.worlds.get(world).unwrap();
         let manifest = owner.manifest;

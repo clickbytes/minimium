@@ -10,34 +10,28 @@ pub(super) struct ToolClientState {
 }
 
 impl ClientSession {
-    pub fn terrain_inputs(&self) -> minimium_procgen::TerrainInputs {
-        let mut inputs = minimium_procgen::TerrainInputs::from(self.prepared_geography());
-        if let Some(profile) = self
+    pub fn terrain_inputs(&self) -> Option<minimium_procgen::TerrainInputs> {
+        let active = self
             .active_world_content
             .as_ref()
-            .filter(|content| Some(content.context) == self.world_context)
-            .map(|content| content.content.terrain_material_profile)
-        {
-            inputs.material_profile = Some(profile);
-        }
-        if let Some(policy) = self
-            .active_world_content
-            .as_ref()
-            .filter(|content| Some(content.context) == self.world_context)
-            .and_then(|content| content.content.resolved_relief_policy)
-        {
-            inputs.resolved_relief_policy = Some(policy);
-        }
+            .filter(|content| Some(content.context) == self.world_context)?;
+        let instance = active.context.instance();
+        let mut edits = None;
+        let mut remnants = None;
+        let mut volumes = None;
         if self.impacts.context == self.world_context && self.impacts.ready {
-            inputs.remnants = self
+            remnants = self
                 .impacts
                 .remnants_for_craters(self.excavation.craters().as_ref());
         }
         if self.excavation_ready() {
-            inputs.volumes = self.excavation.terrain();
-            inputs.edits = self.excavation.craters();
+            volumes = self.excavation.terrain();
+            edits = self.excavation.craters();
         }
-        inputs
+        let overlays =
+            minimium_procgen::TerrainOverlaySnapshot::new(instance, edits, remnants, volumes);
+        minimium_procgen::TerrainInputs::new(active.content.prepared_terrain().clone(), overlays)
+            .ok()
     }
 
     pub fn terrain_inputs_for_context(
@@ -45,18 +39,15 @@ impl ClientSession {
         context: WorldContext,
     ) -> Option<minimium_procgen::TerrainInputs> {
         if self.shares_active_world_state(context) {
-            return Some(self.terrain_inputs());
+            return self.terrain_inputs();
         }
         let pending = self
             .pending_world_content
             .as_ref()
             .filter(|pending| pending.context == context)?;
-        let mut inputs = minimium_procgen::TerrainInputs::from(pending.content.geography.clone())
-            .with_material_profile(pending.content.terrain_material_profile);
-        if let Some(policy) = pending.content.resolved_relief_policy {
-            inputs = inputs.with_resolved_relief_policy(policy);
-        }
-        Some(inputs)
+        let overlays = minimium_procgen::TerrainOverlaySnapshot::empty_for(context.instance());
+        minimium_procgen::TerrainInputs::new(pending.content.prepared_terrain().clone(), overlays)
+            .ok()
     }
 
     pub fn excavation_ready(&self) -> bool {

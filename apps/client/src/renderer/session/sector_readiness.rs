@@ -140,7 +140,11 @@ impl DesktopHost {
         }
         let view = self.terrain_view();
         let terrain_inputs = match self.application.scene_terrain_inputs() {
-            Ok(inputs) => inputs,
+            Ok(Some(inputs)) => inputs,
+            Ok(None) => {
+                self.invalidate_active_scene();
+                return false;
+            }
             Err(error) => {
                 self.application
                     .record_diagnostic_failure(error.code(), &error.to_string());
@@ -242,7 +246,8 @@ impl DesktopHost {
                 .application
                 .connection_view()
                 .session()
-                .and_then(|session| session.terrain_inputs().edits)
+                .and_then(|session| session.terrain_inputs())
+                .and_then(|inputs| inputs.overlays().edits().cloned())
                 .map_or_else(Default::default, |terrain| {
                     terrain.edits().iter().map(|stamp| stamp.id).collect()
                 });

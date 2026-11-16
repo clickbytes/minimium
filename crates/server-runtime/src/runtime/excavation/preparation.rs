@@ -37,7 +37,14 @@ impl ToolPreparation {
         let mut candidate = (*self.store).clone();
         candidate.commit(edit).map_err(scene::edit_error)?;
         let candidate = Arc::new(candidate);
-        self.inputs.volumes = Some(candidate.clone());
+        let overlays = minimium_procgen::TerrainOverlaySnapshot::new(
+            self.inputs.source().world(),
+            self.inputs.overlays().edits().cloned(),
+            self.inputs.overlays().remnants().cloned(),
+            Some(candidate.clone()),
+        );
+        self.inputs = minimium_procgen::TerrainInputs::new(self.inputs.source().clone(), overlays)
+            .map_err(|_| ActionRejection::InvalidIntent)?;
         let candidate_terrain =
             scene::planet(self.manifest, self.inputs).ok_or(ActionRejection::InvalidIntent)?;
         if let Some(state) = &mut self.water {

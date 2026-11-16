@@ -9,16 +9,22 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 /// Earth geography and mutable overlays remain session-owned and are not invented here.
 #[cfg(feature = "desktop")]
 pub(crate) fn bootstrap_terrain_inputs(
+    instance: WorldInstanceId,
     manifest: WorldManifest,
     map: &WorldMap,
 ) -> Result<minimium_procgen::TerrainInputs, minimium_procgen::GenerationError> {
-    Ok(minimium_procgen::TerrainInputs {
-        material_profile: Some(minimium_game_sample::terrain_material_profile(
-            manifest, map,
-        )?),
-        resolved_relief_policy: minimium_game_sample::resolved_planet_relief_policy(manifest, map)?,
-        ..Default::default()
-    })
+    let source = minimium_procgen::PreparedTerrainSource::new(
+        instance,
+        manifest,
+        map,
+        None,
+        minimium_game_sample::terrain_material_profile(manifest, map)?,
+        minimium_game_sample::resolved_planet_relief_policy(manifest, map)?,
+    )?;
+    minimium_procgen::TerrainInputs::new(
+        source,
+        minimium_procgen::TerrainOverlaySnapshot::empty_for(instance),
+    )
 }
 
 pub(crate) struct SampleWorldContentResolver {
@@ -83,14 +89,16 @@ impl SampleWorldContentResolver {
             *manifest, map,
         )
         .map_err(|error| SessionFailure::caused_by(error.code(), error.to_string(), error))?;
-        Ok(Some(ResolvedWorldContent {
-            ticket: request.ticket,
-            manifest: *manifest,
-            map: map.clone(),
+        ResolvedWorldContent::prepare(
+            request.ticket,
+            *manifest,
+            map.clone(),
             geography,
-            terrain_material_profile: profile,
+            profile,
             resolved_relief_policy,
-        }))
+        )
+        .map(Some)
+        .map_err(|error| SessionFailure::caused_by(error.code(), error.to_string(), error))
     }
 
     fn geography_for(
@@ -158,14 +166,15 @@ impl SampleWorldContentResolver {
             minimium_game_sample::resolved_planet_relief_policy(request.manifest, &map).map_err(
                 |error| SessionFailure::caused_by(error.code(), error.to_string(), error),
             )?;
-        Ok(ResolvedWorldContent {
-            ticket: request.ticket,
-            manifest: request.manifest,
-            map: Arc::new(map),
+        ResolvedWorldContent::prepare(
+            request.ticket,
+            request.manifest,
+            Arc::new(map),
             geography,
-            terrain_material_profile: profile,
+            profile,
             resolved_relief_policy,
-        })
+        )
+        .map_err(|error| SessionFailure::caused_by(error.code(), error.to_string(), error))
     }
 }
 

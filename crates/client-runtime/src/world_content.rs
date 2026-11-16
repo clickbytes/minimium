@@ -24,12 +24,10 @@ pub struct WorldContentRequest {
 }
 
 pub struct ResolvedWorldContent {
-    pub ticket: ContentResolutionTicket,
-    pub manifest: WorldManifest,
-    pub map: Arc<WorldMap>,
-    pub geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
-    pub terrain_material_profile: minimium_procgen::ResolvedTerrainMaterialProfile,
-    pub resolved_relief_policy: Option<minimium_procgen::ResolvedPlanetReliefPolicy>,
+    ticket: ContentResolutionTicket,
+    manifest: WorldManifest,
+    map: Arc<WorldMap>,
+    prepared_terrain: minimium_procgen::PreparedTerrainSource,
 }
 
 pub trait WorldContentResolver: Send + Sync {
@@ -50,8 +48,58 @@ pub struct ContentResolutionTicket {
 }
 
 impl ResolvedWorldContent {
+    pub const fn ticket(&self) -> ContentResolutionTicket {
+        self.ticket
+    }
+    pub const fn manifest(&self) -> WorldManifest {
+        self.manifest
+    }
+    pub fn map(&self) -> &Arc<WorldMap> {
+        &self.map
+    }
+    pub fn geography(&self) -> Option<&Arc<dyn minimium_procgen::PreparedGeography>> {
+        self.prepared_terrain.geography()
+    }
+    pub const fn terrain_material_profile(
+        &self,
+    ) -> minimium_procgen::ResolvedTerrainMaterialProfile {
+        self.prepared_terrain.material_profile()
+    }
+    pub const fn resolved_relief_policy(
+        &self,
+    ) -> Option<minimium_procgen::ResolvedPlanetReliefPolicy> {
+        self.prepared_terrain.relief_policy()
+    }
+    pub fn prepare(
+        ticket: ContentResolutionTicket,
+        manifest: WorldManifest,
+        map: Arc<WorldMap>,
+        geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
+        terrain_material_profile: minimium_procgen::ResolvedTerrainMaterialProfile,
+        resolved_relief_policy: Option<minimium_procgen::ResolvedPlanetReliefPolicy>,
+    ) -> Result<Self, minimium_procgen::GenerationError> {
+        let prepared_terrain = minimium_procgen::PreparedTerrainSource::new(
+            ticket.context.instance(),
+            manifest,
+            &map,
+            geography.clone(),
+            terrain_material_profile,
+            resolved_relief_policy,
+        )?;
+        Ok(Self {
+            ticket,
+            manifest,
+            map,
+            prepared_terrain,
+        })
+    }
+
+    pub fn prepared_terrain(&self) -> &minimium_procgen::PreparedTerrainSource {
+        &self.prepared_terrain
+    }
+
     pub fn matches(&self, ticket: ContentResolutionTicket, manifest: WorldManifest) -> bool {
-        let relief_matches = match self.resolved_relief_policy {
+        let relief_matches = match self.prepared_terrain.relief_policy() {
             Some(policy) => policy.matches(manifest, self.map.fingerprint()),
             None => {
                 manifest.source() != WorldSource::Generated
@@ -60,9 +108,14 @@ impl ResolvedWorldContent {
         };
         self.ticket == ticket
             && self.manifest == manifest
+            && self.prepared_terrain.world() == ticket.context.instance()
+            && self
+                .prepared_terrain
+                .matches_map(ticket.context.instance(), manifest, &self.map)
             && relief_matches
             && self
-                .terrain_material_profile
+                .prepared_terrain
+                .material_profile()
                 .matches(manifest, self.map.fingerprint())
     }
 }

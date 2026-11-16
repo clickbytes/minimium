@@ -140,7 +140,7 @@ active and staged geometry.
 - `AtmosphereUniform`, `AtmosphereGpu`, `atmosphere::{Optics, EARTH}`, `atmosphere_table` and `atmosphere_pipeline` define clear-air optics and its LUT/GPU resources.
 - `EnvironmentPipelines`, `gpu_frame`, `gpu_bindings`, `CelestialHaloGpu`, `MoonGpu`, `MoonSphereGpu`, `MilkyWayGpu` and `StarGpu` provide environment presentation resources and pipelines.
 - `OutputEncoder` owns the linear scene target and final sRGB encode pipeline. Its dimensions are plain pixels, with no window dependency.
-- `planet_visibility::render_patches_for_view` returns visible terrain patches and LOD levels for the client presentation worker, using a `TerrainView`, collision cache and optional prepared geography. The old `TerrainView::legacy` constructor and duplicate patch-generation wrappers have been removed.
+- `planet_visibility::render_patches_for_view` returns visible terrain patches and LOD levels for the client presentation worker, using a `TerrainView`, collision cache and required `TerrainInputs`. Those inputs carry a validated prepared source and separate overlays; renderer code does not assemble optional geography/profile fields. The old `TerrainView::legacy` constructor and duplicate patch-generation wrappers have been removed.
 - `profiles::LightingProfile`, `lighting` and `moon_lighting` provide visual lighting values and calculations. `shader_source` composes WGSL fragments; `shaders::SHADOW_WGSL` exposes the standalone shadow pass.
 
 ## Dependencies
@@ -1104,8 +1104,10 @@ not terrain coverage. Lighting and plume values still require visual acceptance
 and performance measurement in the final verification phase.
 
 Planet preparation consumes explicit `TerrainInputs` and includes local terrain,
-remnant and volume revisions in patch caches. Remnant collection no longer
-advances terrain revision. `MapTriangle.surface` carries the CPU-prepared normal,
+remnant and volume revisions in patch caches. Immutable source identity stays
+separate from mutable overlays; a failed or missing source cannot become default
+geometry. Remnant collection no longer advances terrain revision.
+`MapTriangle.surface` carries the CPU-prepared normal,
 soil/rock coverage and elevation channel through floating-origin conversion;
 fallible patch caching keeps an earlier complete mesh if seam preflight rejects
 the replacement. GPU visual acceptance remains pending.

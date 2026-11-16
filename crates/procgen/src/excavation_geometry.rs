@@ -214,7 +214,7 @@ pub fn integrate_volume_region_with_contours(
     base_geometry: &SectorGeometry,
     contour_source: &[minimium_world::world::MapTriangle],
 ) -> Result<SectorGeometry, ExcavationGeometryError> {
-    let Some(store) = terrain.inputs().volumes.as_deref() else {
+    let Some(store) = terrain.overlays().volumes().map(AsRef::as_ref) else {
         return Ok(base_geometry.clone());
     };
     let Some(base) = terrain.volume_base() else {
@@ -284,7 +284,9 @@ pub fn validate_volume_geometry(
             map,
             manifest,
             key,
-            terrain.inputs().clone(),
+            terrain
+                .prepared_inputs()
+                .ok_or(ExcavationGeometryError::UnavailableSurface)?,
         )?;
         prepared.push((key, geometry));
     }

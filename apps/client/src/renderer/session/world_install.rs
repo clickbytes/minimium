@@ -14,7 +14,7 @@ impl DesktopHost {
             .connection_view()
             .session()
             .and_then(|session| session.resolved_world_content_for_context(context))
-            .map(|content| content.map.clone())
+            .map(|content| content.map().clone())
         else {
             return false;
         };

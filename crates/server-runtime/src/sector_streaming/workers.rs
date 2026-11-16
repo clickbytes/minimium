@@ -272,18 +272,30 @@ impl SectorGenerationPool {
                 emit_worker_error(logger, "sectors.world_missing_for_ticket", ticket);
                 continue;
             };
+            let geography =
+                match worlds.prepared_terrain_inputs(ticket.instance(), geography.as_ref()) {
+                    Ok(geography) => geography,
+                    Err(error) => {
+                        let _ = sectors.fail(ticket);
+                        crate::diagnostics::emit(
+                            logger,
+                            Level::Error,
+                            error.code(),
+                            &[
+                                ("instance", ticket.instance().get().to_string()),
+                                ("sector", format!("{:?}", ticket.key())),
+                                ("ticket", format!("{ticket:?}")),
+                                ("reason", error.to_string()),
+                            ],
+                        );
+                        continue;
+                    }
+                };
             let job = Job {
                 ticket,
                 map: instance.map.clone(),
                 manifest: instance.manifest,
-                geography: minimium_procgen::TerrainInputs {
-                    geography: geography.clone(),
-                    material_profile: Some(instance.terrain_material_profile),
-                    resolved_relief_policy: instance.resolved_relief_policy,
-                    edits: Some(instance.terrain.clone()),
-                    remnants: Some(instance.remnants.clone()),
-                    volumes: instance.volumes.clone(),
-                },
+                geography,
             };
             let mut state = self.shared.0.lock().unwrap();
             if state.stop

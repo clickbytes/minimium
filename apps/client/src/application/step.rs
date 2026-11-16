@@ -297,15 +297,18 @@ impl ClientApplication {
                 .session()
                 .is_none_or(|session| session.impact_ready() && session.excavation_ready());
             let candidate_report = candidate_manifest.map(|manifest| {
+                let terrain_inputs = match self.scene_terrain_inputs() {
+                    Ok(Some(inputs)) => inputs,
+                    Ok(None) => return Ok(None),
+                    Err(error) => return Err(format!("{}: {error}", error.code())),
+                };
                 let request = PredictionSceneRequest {
                     context: self.game.session_context(),
                     instance: self.game.current_instance,
                     manifest,
                     position: candidate_position,
                     water_covers_candidate,
-                    terrain_inputs: self
-                        .scene_terrain_inputs()
-                        .map_err(|error| format!("{}: {error}", error.code()))?,
+                    terrain_inputs,
                     world_catalog: &self.world_catalog,
                     world_manifests: &self.game.world_manifests,
                     session_content_ready,

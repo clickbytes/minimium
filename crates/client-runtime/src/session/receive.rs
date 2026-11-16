@@ -60,7 +60,8 @@ impl ClientSession {
         if self
             .content_for_resolution_ticket(ticket)
             .is_some_and(|content| {
-                content.manifest == manifest && content.map.fingerprint() == expected_fingerprint
+                content.manifest() == manifest
+                    && content.map().fingerprint() == expected_fingerprint
             })
         {
             self.world_content_request = None;
@@ -74,7 +75,8 @@ impl ClientSession {
             return Err(SessionFailure::new(
                 "session.world_content_timeout",
                 "world-content preparation exceeded 300 seconds",
-            ));
+            )
+            .with_content_ticket(ticket));
         }
         if let Some(worker) = self.world_content_worker.as_ref() {
             if self.world_content_worker_ticket == Some(ticket) && !worker.is_finished() {
@@ -89,16 +91,22 @@ impl ClientSession {
         }
         if let Some(worker) = self.world_content_worker.take() {
             let completed_ticket = self.world_content_worker_ticket.take();
-            let result = worker.join().map_err(|_| {
-                SessionFailure::new(
-                    "session.world_content_worker_stopped",
-                    "world-content worker stopped unexpectedly",
-                )
-            })?;
+            let result = worker
+                .join()
+                .map_err(|_| {
+                    SessionFailure::new(
+                        "session.world_content_worker_stopped",
+                        "world-content worker stopped unexpectedly",
+                    )
+                })
+                .map_err(|failure| {
+                    failure.with_content_ticket(completed_ticket.unwrap_or(ticket))
+                })?;
             if completed_ticket != Some(ticket) {
                 return self.start_world_content_resolution(ticket, manifest, expected_fingerprint);
             }
-            let (content, water_catalog) = result?;
+            let (content, water_catalog) =
+                result.map_err(|failure| failure.with_content_ticket(ticket))?;
             self.install_resolved_world_content(
                 content,
                 water_catalog,
@@ -107,7 +115,8 @@ impl ClientSession {
                 transition_id,
                 manifest,
                 expected_fingerprint,
-            )?;
+            )
+            .map_err(|failure| failure.with_content_ticket(ticket))?;
             return Ok(WorldContentProgress::Ready);
         }
         self.start_world_content_resolution(ticket, manifest, expected_fingerprint)
@@ -124,6 +133,7 @@ impl ClientSession {
                 "session.world_resolver_missing",
                 "no application world-content resolver is installed",
             )
+            .with_content_ticket(ticket)
         })?;
         let request = WorldContentRequest {
             ticket,
@@ -137,19 +147,28 @@ impl ClientSession {
                 .name("world-content-prepare".into())
                 .spawn(move || {
                     let content = resolver.resolve(request, cancellation)?;
-                    let catalog = prepare_water_catalog(
-                        manifest,
-                        content.geography.clone(),
-                        content.resolved_relief_policy,
+                    let terrain_inputs = minimium_procgen::TerrainInputs::new(
+                        content.prepared_terrain().clone(),
+                        minimium_procgen::TerrainOverlaySnapshot::empty_for(
+                            ticket.context.instance(),
+                        ),
                     )
                     .map_err(|error| {
                         SessionFailure::caused_by(
                             error.code(),
-                            "world water catalog preparation failed",
+                            "world terrain source does not match its content ticket",
                             error,
                         )
-                    })?
-                    .map(Arc::new);
+                    })?;
+                    let catalog = prepare_water_catalog(manifest, terrain_inputs)
+                        .map_err(|error| {
+                            SessionFailure::caused_by(
+                                error.code(),
+                                "world water catalog preparation failed",
+                                error,
+                            )
+                        })?
+                        .map(Arc::new);
                     Ok((content, catalog))
                 })
                 .map_err(|error| {
@@ -158,6 +177,7 @@ impl ClientSession {
                         "could not start world-content worker",
                         error,
                     )
+                    .with_content_ticket(ticket)
                 })?,
         );
         self.world_content_worker_ticket = Some(ticket);
@@ -181,14 +201,14 @@ impl ClientSession {
                 "world-content resolver returned a stale or different manifest",
             ));
         }
-        if content.map.fingerprint() != expected_fingerprint {
+        if content.map().fingerprint() != expected_fingerprint {
             return Err(SessionFailure::new(
                 "session.world_fingerprint_mismatch",
                 "resolved world map does not match the server fingerprint",
             ));
         }
         if !content
-            .terrain_material_profile
+            .terrain_material_profile()
             .matches(manifest, expected_fingerprint)
         {
             return Err(SessionFailure::new(
@@ -206,10 +226,10 @@ impl ClientSession {
                     .map(|bundle| &bundle.content),
             )
             .any(|prior| {
-                prior.manifest == manifest
-                    && prior.map.fingerprint() == expected_fingerprint
-                    && (prior.terrain_material_profile != content.terrain_material_profile
-                        || prior.resolved_relief_policy != content.resolved_relief_policy)
+                prior.manifest() == manifest
+                    && prior.map().fingerprint() == expected_fingerprint
+                    && (prior.terrain_material_profile() != content.terrain_material_profile()
+                        || prior.resolved_relief_policy() != content.resolved_relief_policy())
             });
         if profile_conflicts {
             return Err(SessionFailure::new(
@@ -218,7 +238,7 @@ impl ClientSession {
             ));
         }
         if let Some(planet) = manifest.planet().filter(|planet| planet.mode == 1) {
-            let geography = content.geography.as_ref().ok_or_else(|| {
+            let geography = content.geography().ok_or_else(|| {
                 SessionFailure::new(
                     "session.earth_geography_missing",
                     "Earth world resolver returned no prepared geography",
@@ -452,15 +472,10 @@ impl ClientSession {
 
 fn prepare_water_catalog(
     manifest: minimium_world::world::WorldManifest,
-    geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
-    resolved_relief_policy: Option<minimium_procgen::ResolvedPlanetReliefPolicy>,
+    inputs: minimium_procgen::TerrainInputs,
 ) -> Result<Option<minimium_procgen::WaterCatalog>, minimium_procgen::GenerationError> {
     if manifest.topology() != minimium_world::world::WorldTopology::Planet {
         return Ok(None);
-    }
-    let mut inputs = minimium_procgen::TerrainInputs::from(geography);
-    if let Some(policy) = resolved_relief_policy {
-        inputs = inputs.with_resolved_relief_policy(policy);
     }
     let terrain = minimium_procgen::PlanetTerrain::for_manifest(manifest, inputs)?;
     minimium_procgen::WaterCatalog::build(

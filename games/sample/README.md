@@ -19,10 +19,18 @@ soil-depth setting.
 alongside its existing component and system registrations. It does not depend
 on server-runtime or register a sample-only production command.
 
-Planet scenario composition supplies the definition and prepared geography to
-the validated `PlanetTerrain` constructor together. Landmark and overview
-sampling errors propagate as `GenerationError` before a world is published;
-successful seed, rounding, manifest and fingerprint behavior is unchanged.
+Planet scenario composition supplies an explicit `PlanetGenerationSource` recipe
+with the definition and prepared geography while the map is being generated.
+This pre-map recipe has no final map fingerprint and is not accepted by runtime
+geometry consumers. After materializing the map, content resolution binds the
+canonical material profile and resolved relief policy into an immutable
+`PreparedTerrainSource` for that manifest and exact map fingerprint. Earth
+requires prepared geography with the manifest's package digest; incomplete Earth
+preparation returns its typed sampling error. Authored dungeon content uses the
+same resolved source contract without planet settings or fabricated geography.
+Landmark and overview sampling errors propagate as `GenerationError` before a
+world is published; successful seed, rounding, manifest and fingerprint behavior
+is unchanged.
 
 The sample owns the seeded planet route, spawn clearance and entrance marker,
 and selects the +Y relief ramp for its procedural planet recipe. The immutable

@@ -32,6 +32,7 @@ pub struct SessionFailure {
     code: &'static str,
     message: String,
     source: Option<Arc<dyn Error + Send + Sync>>,
+    content_ticket: Option<ContentResolutionTicket>,
 }
 
 impl SessionFailure {
@@ -40,6 +41,7 @@ impl SessionFailure {
             code,
             message: message.into(),
             source: None,
+            content_ticket: None,
         }
     }
 
@@ -51,12 +53,22 @@ impl SessionFailure {
             code,
             message: message.into(),
             source: Some(Arc::new(source)),
+            content_ticket: None,
         }
     }
 
     pub fn from_asset_error(error: minimium_asset_io::AssetIoError) -> Self {
         let code = error.code();
         Self::caused_by(code, error.to_string(), error)
+    }
+
+    pub fn with_content_ticket(mut self, ticket: ContentResolutionTicket) -> Self {
+        self.content_ticket = Some(ticket);
+        self
+    }
+
+    pub const fn content_ticket(&self) -> Option<ContentResolutionTicket> {
+        self.content_ticket
     }
 
     pub fn code(&self) -> &'static str {

@@ -377,19 +377,15 @@ impl ServerRuntime {
             return None;
         }
         let instance = self.game.worlds.instance_for_player(id)?;
-        let owner = self.game.worlds.get(instance)?;
         let manifest = self.game.worlds.manifest_for_player(id)?;
         if manifest.planet()?.mode != 1 {
             return None;
         }
-        let geography = minimium_procgen::TerrainInputs {
-            geography: self.prepared_geography.clone(),
-            material_profile: Some(owner.terrain_material_profile),
-            resolved_relief_policy: owner.resolved_relief_policy,
-            edits: Some(owner.terrain.clone()),
-            remnants: Some(owner.remnants.clone()),
-            volumes: owner.volumes.clone(),
-        };
+        let geography = self
+            .game
+            .worlds
+            .prepared_terrain_inputs(instance, self.prepared_geography.as_ref())
+            .ok()?;
         let point = minimium_procgen::planet_point_at_direction_with_geography(
             manifest,
             direction,

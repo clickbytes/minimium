@@ -175,7 +175,7 @@ impl ClientSectorCache {
             .filter(|_| owner.instance() == instance)
             .map(|(map, _)| map)
             .or_else(|| maps.get(&instance));
-        if !ClientSectorCache::content_profiles_match(&geography, manifest, source_map) {
+        if !ClientSectorCache::content_profiles_match(&geography, instance, manifest, source_map) {
             return Err(SectorWorkerError::Geometry(
                 minimium_procgen::ExcavationGeometryError::UnavailableSurface,
             ));
@@ -188,11 +188,6 @@ impl ClientSectorCache {
             (maps.get(&instance), manifests.get(&instance).copied())
         {
             self.cache_world_source(instance, map, source_manifest);
-        }
-        // Earth jobs must wait for the session's validated geography, including
-        // bootstrap frames before Welcome. Never dispatch a job that would panic.
-        if manifest.planet().is_some_and(|p| p.mode == 1) && geography.geography.is_none() {
-            return Ok(None);
         }
         let keys = minimium_procgen::sector_neighborhood_for(manifest, position);
         let same_interest = self.interest_matches(owner, &keys, manifest);
@@ -355,8 +350,8 @@ impl ClientSectorCache {
         };
         let mut prepared = None;
         let terrain_revision = geography.revision();
-        let material_profile = geography.material_profile;
-        let resolved_relief_policy = geography.resolved_relief_policy;
+        let material_profile = Some(geography.source().material_profile());
+        let resolved_relief_policy = geography.source().relief_policy();
         let render_sectors = if manifest.topology() == minimium_world::world::WorldTopology::Planet
         {
             if let Some(result) = self.worker.poll(

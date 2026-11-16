@@ -9,7 +9,7 @@ pub struct PlanetVolumeBase<'a> {
 
 impl PlanetTerrain {
     pub fn volume_base(&self) -> Option<PlanetVolumeBase<'_>> {
-        let profile = self.inputs().material_profile?;
+        let profile = self.material_profile()?;
         if self.material_manifest != Some(profile.manifest()) {
             return None;
         }
