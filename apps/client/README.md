@@ -505,13 +505,21 @@ descriptions. Invalid command arguments display the expected usage. The game HUD
 is hidden while the console is open.
 
 For local desktop diagnosis, `--dev --dev-stdin` (or `start-earth.ps1 -DevStdin`)
-reads bounded commands from standard input after the scene is ready and prints
-their console output to standard output. It is unavailable with `--connect` or
-the terminal client. `dev goto LATITUDE LONGITUDE` requests the existing
-server-authorized Earth map teleport; the next input waits for its result.
+reads bounded commands from standard input whenever the desktop host exists,
+including while a world or its presentation is loading, and prints results to
+standard output. The receiver handles at most one line per host-loop iteration;
+it does not edit console input/history. Operations that need the current scene
+return an immediate reason while it is unavailable and are never replayed after
+a transfer. Help, host diagnostics and quit remain available during loading.
+It is unavailable with `--connect` or the terminal client. `dev goto LATITUDE
+LONGITUDE` requires a connected, CPU-ready Earth world and matching ready scene,
+then requests the existing server-authorized map teleport. `map_telepo` opens the
+Earth overview under the same readiness gate; during loading, developer stdin
+prints the typed unavailable reason instead of arming it.
 `dev look YAW_DEG PITCH_DEG` sets only the local diagnostic camera direction.
 `dev clouds` lists up to eight mature, above-horizon cloud targets from the
-published weather snapshot, ranked by optical depth times angular extent. Each
+published current-world weather snapshot, ranked by optical depth times angular extent. A
+snapshot from another context or manifest is reported as unavailable. Each
 line includes a `dev look` direction toward the cloud's bounding-box center.
 These are aiming hints for manual occlusion checks, not measured line-of-sight
 opacity: the voxel mesh may contain gaps. The command does not change weather.
@@ -548,6 +556,11 @@ holds the selected event at a fixed age for matched sky/light/shadow captures.
 dev bolid replay returns it to advancing time. The override is keyed by full
 world context and event ID, cleared on scene reset, and never sent to the server.
 Normal event expiry and the eight-event eviction bound still apply.
+
+Developer stdin uses the shared typed command executor, with operation-level
+capability checks in the desktop dispatcher. Renderer diagnostics can report
+while loading; scene and current-world operations return a typed unavailable
+reason if the active world, CPU readiness or matching presentation is pending.
 
 During a bolid point-shadow replay, 	errain debug shadow shows shadow
 visibility in grayscale and marks geometrically back-facing terrain facets
@@ -697,7 +710,9 @@ no draw-count-to-performance inference is made. See docs/performance.md.
 `spawn_random_bolid 20`; default N=1, allowed 1..64. The desktop pending request
 retains the count until the current sky view is published; terminal/admin paths
 use the same count validation. See docs/commands.md for cadence, framing and
-cancellation limits. This is separate from local E047 presets.
+cancellation limits. Developer stdin stages the request only with a connected
+active world and a matching visible presentation; unavailable lines are not
+retained. This is separate from local E047 presets.
 
 ## Host clock domains
 

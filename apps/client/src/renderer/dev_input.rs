@@ -33,8 +33,10 @@ pub(super) fn format_output(renderer: &DesktopHost, result: CommandActionResult)
                     println!("{line}");
                 }
             }
-            CommandOutput::Presentation(PresentationResult::Unavailable(_))
-            | CommandOutput::Clear => {}
+            CommandOutput::Presentation(PresentationResult::Unavailable(unavailable)) => {
+                println!("dev: {}", unavailable.message());
+            }
+            CommandOutput::Clear => {}
         }
     }
 }
@@ -223,7 +225,12 @@ fn replay_bolid(
 }
 
 fn bolid_status(renderer: &DesktopHost, lines: &mut Vec<String>) {
-    for (_, event, _, model) in &renderer.bolids {
+    let context = renderer.render_environment_frame.context;
+    for (_, event, _, model) in renderer
+        .bolids
+        .iter()
+        .filter(|(event_context, _, _, _)| Some(*event_context) == context)
+    {
         if let Some(model) = model {
             lines.push(bolid_path::format(event));
             lines.push(format!(
@@ -253,10 +260,6 @@ fn bolid_status(renderer: &DesktopHost, lines: &mut Vec<String>) {
 }
 
 fn goto(renderer: &mut DesktopHost, latitude: f32, longitude: f32, lines: &mut Vec<String>) {
-    if !renderer.is_earth_world() || renderer.application.map_teleport_pending() {
-        lines.push("dev: Earth is unavailable or a move is pending".to_owned());
-        return;
-    }
     let latitude = latitude.to_radians();
     let longitude = longitude.to_radians();
     let direction = [

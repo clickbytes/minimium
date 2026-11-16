@@ -191,6 +191,26 @@ The desktop client requests a 1920×1080 physical-pixel window by default; the w
 
 The desktop console accepts `fov` to display the current vertical field of view and `fov DEGREES` to set it from 30 to 110 degrees (default: 70). `show_celestial_names true|false` toggles on-screen labels for the Sun, Moon, visible catalog bodies, and up to 32 bright stars (default: false). The star display uses a fixed 1000-star HYG catalog. Both settings are local to the current client session.
 
+### Developer stdin
+
+With `--dev --dev-stdin`, the desktop host reads bounded stdin commands as soon
+as the host exists, including while the world or presentation is loading. It
+uses the same typed parser/executor as the console and text client, but prints
+its own output and never edits console text, history or IME preedit. The
+host-loop receiver accepts at most one queued line per iteration. Help, quit,
+host diagnostics and operations that need no world remain usable while loading.
+Scene-bound operations return an immediate typed unavailable reason if their
+active-world, CPU-readiness or matching-presentation requirement is not met;
+they are not queued for automatic execution after a transfer. The stdin worker
+accepts at most 512 bytes per line and uses a 32-line bounded channel; longer
+lines are logged and discarded. `--connect` and the terminal client do not
+enable developer stdin.
+`map_telepo` opens the Earth overview only for a connected, CPU-ready Earth
+world with a matching scene; otherwise developer stdin prints its typed
+unavailable reason without arming the map action.
+`spawn_random_bolid [N]` also requires the active matching scene before it
+stages the existing gaze/admin request; unavailable input is not retained.
+
 `weather status` reports the local AnnualMean conditions, region, active cloud layers, wind, family counts and altitude bounds, effective voxel resolution, cache usage, simplification, morph lag, memory and transparency mode.
 
 `weather clouds debug off|regions|layers|wind|kinds|detail` controls the graphical client's regional grid, source-floor colours, eastward wind arrows, family colours and voxel detail display.

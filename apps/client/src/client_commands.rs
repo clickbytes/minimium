@@ -34,8 +34,13 @@ pub(crate) use minimium_commands::{
     CommandArgumentSpec as ArgumentSpec, CommandArgumentType as ArgumentType,
 };
 #[cfg(feature = "desktop")]
+pub(crate) use presentation::PresentationRequirement;
+#[cfg(feature = "desktop")]
 pub(crate) use presentation::{BolidPath, DeveloperOperation};
-pub(crate) use presentation::{PresentationCapability, PresentationOperation, PresentationResult};
+pub(crate) use presentation::{
+    PresentationCapability, PresentationOperation, PresentationResult, PresentationUnavailable,
+    PresentationUnavailableReason,
+};
 pub(crate) use properties::local_setting_specs;
 #[cfg(feature = "desktop")]
 pub(crate) use properties::property_specs;

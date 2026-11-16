@@ -257,13 +257,11 @@ impl ApplicationHandler for App {
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         if let (Some(renderer), Some(input)) = (&mut self.host, &self.dev_input) {
-            if renderer.renderer.scene_visible && !renderer.application.map_teleport_pending() {
-                if let Ok(line) = input.try_recv() {
-                    let (exit, result) = super::dev_input::execute(renderer, &line);
-                    super::dev_input::format_output(renderer, result);
-                    if exit {
-                        event_loop.exit();
-                    }
+            if let Ok(line) = input.try_recv() {
+                let (exit, result) = super::dev_input::execute(renderer, &line);
+                super::dev_input::format_output(renderer, result);
+                if exit {
+                    event_loop.exit();
                 }
             }
         }

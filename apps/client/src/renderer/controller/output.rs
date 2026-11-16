@@ -67,15 +67,11 @@ pub(in crate::renderer) fn format_console_output(
                         renderer.application.ui.console.push_line(line);
                     }
                 }
-                client_commands::PresentationResult::Unavailable(_) => {
-                    renderer.application.ui.console.push_ui_message(
-                        minimium_localization::UiMessage::Notice(
-                            minimium_localization::UiNotice::WeatherRequiresDesktop,
-                        ),
-                        &renderer.localizer,
-                        renderer.application.settings.locale,
-                    )
-                }
+                client_commands::PresentationResult::Unavailable(unavailable) => renderer
+                    .application
+                    .ui
+                    .console
+                    .push_line(unavailable.message()),
             },
             CommandOutput::Clear => renderer.application.ui.console.clear_lines(),
         }
