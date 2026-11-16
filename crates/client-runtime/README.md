@@ -11,13 +11,35 @@ and the same simulation collision query used by the server; they cannot approve 
 ## Public API
 
 `ClientSession::new` and `with_presentation` take a boxed
-`minimium_transport::client::ClientTransportPort`; they configure no socket and
+`minimium_transport::client::ClientTransportPort` and a `ContentJobsSession`; they configure no socket and
 return typed queue failure if the initial Presentation/Authenticate admission
 fails. `ConnectionController` wraps the connector's connected stream in the
 single `TcpClientTransport` adapter for both desktop and terminal. Logical
 authentication, context/replica/transfer checks and permission-dependent actions
-remain in the session. Content workers/cache and logical clock ownership are
-unchanged by this transport boundary.
+remain in the session. Logical clocks retain their existing ownership.
+
+`ContentJobsPort` accepts typed world and material requests, returns an accepted
+`ContentJobHandle` or Busy/rejection, and supports targeted completion polling,
+cancellation and deadline-bounded host shutdown. Acceptance does not mean that
+content is ready. The default application adapter has one world slot and one
+material slot, including unread completions and cancelled work that has not yet
+exited. Alternate implementations must declare and enforce finite capacities.
+An accepted handle contains its ticket and a fresh atomic cancellation capability;
+recording that intent is nonblocking even when adapter cleanup is contended.
+Requested cancellation is distinct from confirmed work termination.
+
+The host installs one service with `ConnectionController::set_content_jobs`
+before the first connection attempt. `ContentJobsSession` binds it to a nonzero
+session identity consumed by one session. IDs must never be reused during that
+service's lifetime. The default controller uses checked monotonic attempt IDs.
+The session owns no worker handle, cache path or cache budget and never joins
+workers. The `injected_content_jobs` example demonstrates a real session request,
+separate host preparation and ticketed completion using public prepared data.
+
+`PreparedWorldContent` has private fields and prepares a base-only water catalog
+from the exact resolved source before a host returns completion. Session-side
+ticket/manifest/fingerprint and active/pending validation still gates publication.
+Material completions require the offered manifest hash and requested variant.
 
 The adapter keeps bounded wire bytes, codecs, partial I/O and typed peek/consume.
 Session dispatch can retain a deferred world message and inspect the next typed
@@ -36,8 +58,8 @@ CPU readiness can be reported. Construction or sampling failure becomes a typed
 bundle is published from that failed resolver result. Nonplanet content has no
 planetary catalog. Transfer ticket/context validation still rejects stale results.
 
-Presentation clients negotiate `ContentOffer` before `Welcome` under protocol v20.
-Content preparation has its own 300-second deadline. A bounded worker fetches the
+Presentation clients negotiate `ContentOffer` before `Welcome` under protocol v21.
+Content preparation has its own session-owned 300-second deadline. A bounded host worker fetches the
 required package over a separate HTTP endpoint at the game peer's IP and caches
 verified hash blobs. The host takes the complete package, installs GPU resources,
 then calls `finish_content`. A zero material hash selects the offline base set;
@@ -45,7 +67,7 @@ required custom sets never silently fall back. Failures disconnect with a retry
 message; `connect` retries and reuses verified blobs. The offered climate scenario
 is immutable for the session. Text clients declare no presentation and skip assets.
 
-`ClientSession` is created with a host-supplied bounded ClientTransportPort and identity. `ConnectionController` coordinates session, remote/local connection attempts and process cleanup; `Connector` exposes typed attempt events. The application supplies a `WorldContentResolver` which receives a session/context/transition/request ticket, manifest, expected map fingerprint and cancellation token. It returns `ResolvedWorldContent::prepare(...)`, which validates a private `PreparedTerrainSource` bound to that ticket's world instance, manifest and exact map fingerprint, including the resolved material/relief policies and matching Earth geography. Generated planets require the relief binding; missing or mismatched identities reject the result before publication. Resolution runs on one worker; `poll` publishes the complete result only after ticket, context, manifest, fingerprint and source binding checks. `ResolvedWorldContent` exposes read-only getters and the prepared source; callers cannot replace its manifest, map, geography or profiles after preparation.
+`ClientSession` is created with a host-supplied bounded ClientTransportPort and identity. `ConnectionController` coordinates session, remote/local connection attempts and process cleanup; `Connector` exposes typed attempt events. The host content adapter supplies a `WorldContentResolver` which receives a session/context/transition/request ticket, manifest, expected map fingerprint and cancellation token. It returns `ResolvedWorldContent::prepare(...)`, which validates a private `PreparedTerrainSource` bound to that ticket's world instance, manifest and exact map fingerprint, including the resolved material/relief policies and matching Earth geography. Generated planets require the relief binding; missing or mismatched identities reject the result before publication. Resolution runs on one host-owned worker; `poll` publishes the complete result only after ticket, context, manifest, fingerprint and source binding checks. `ResolvedWorldContent` exposes read-only getters and the prepared source; callers cannot replace its manifest, map, geography or profiles after preparation.
 
 `ClientSession::terrain_inputs()` returns `Option<TerrainInputs>` only when active content matches the current context. `terrain_inputs_for_context(context)` selects the exact active or pending bundle for that context. Each `TerrainInputs` requires a prepared source and a separate `TerrainOverlaySnapshot`; no default or geography-only input can enter terrain workers. Active edits, remnants and volumes are included only when their owner state is ready; pending target preparation starts with overlays bound to the target instance and does not borrow source-world overlays. `SectorContentVersion` keeps the existing independent monotone revisions. `prepared_geography()` exposes only the active world's immutable geography; `pending_geography(context, transition)` is an explicit destination-preparation read.
 
@@ -58,7 +80,7 @@ ticket is superseded. While resolution runs, the decoder retains only the newest
 transition request. The 300-second deadline covers active and waiting work;
 GEBCO and optional WorldCover hashes are checked in 8 MiB chunks.
 
-`SessionFailure` retains its typed source and can carry the `ContentResolutionTicket` that failed, including resolver, water-catalog, worker, timeout and install failures. Ticket metadata survives clearing the worker state and does not replace the stable failure code or cause.
+`SessionFailure` retains its typed source and can carry the `ContentResolutionTicket` that failed, including resolver, water-catalog, worker, timeout and install failures. Material failures similarly retain MaterialContentTicket; retry formatting preserves their typed cause. Ticket metadata survives clearing the worker state and does not replace the stable failure code or cause.
 
 `ClientPrediction` accumulates elapsed time, reconciles authoritative local snapshots and returns one shared-integrator step with rollback state; the host supplies collision snapshots. `SnapshotReconciler` applies bounded remote-player snapshots and interpolates positions into a reusable host buffer. `ClientView` is an immutable, GPU-independent snapshot of active world, local character/position, health, remote positions and sector readiness for the presentation adapter. The host calls `poll` and consumes typed `SessionEvent` values; `queue` returns typed backpressure and state errors.
 
@@ -69,10 +91,10 @@ Consumes core identity, environment clock values, protocol, world contracts, pro
 ## Data flow
 
 Welcome and transfer messages use one manifest check before requesting content:
-generated worlds require exact revision 5 and the topology digest, while
+generated worlds require exact revision 6 and the topology digest, while
 authored worlds require the `AUTH` digest of the offered map fingerprint.
 
-The connector performs DNS, socket and local process startup away from the UI lane. The host polls `ConnectionController`; the session decodes bounded frames, asks the application resolver for exact world content and emits typed events and synchronization estimates to presentation adapters. Runtime owns the transfer ticket, duplicate-prepare identity, cancellation race and `TransitionReady` queue retry. The terminal reports readiness after resolved CPU content is available; desktop also reports it after its target scene has been published. `queue_world_input` binds the current context and assigns movement sequence/tick values from server snapshots, committing counters only after the frame enters the bounded send buffer. The host supplies each fixed-step collision snapshot to `ClientPrediction`, which shares the server's simulation integrator and records each transmitted predicted step with its policy and collision revisions. `SnapshotReconciler` owns authoritative time ordering and remote-player interpolation; the host turns output positions into presentation geometry. Prepared geography remains immutable and is held inside the ticket-bound source shared by `Arc` with generation and presentation workers.
+The connector performs DNS, socket and local process startup away from the UI lane. The host polls `ConnectionController`; the session consumes typed messages, asks the injected content service for exact world content and emits typed events and synchronization estimates to presentation adapters. Runtime owns the transfer ticket, duplicate-prepare identity, cancellation race and `TransitionReady` queue retry. The terminal reports readiness after resolved CPU content is available; desktop also reports it after its target scene has been published. `queue_world_input` binds the current context and assigns movement sequence/tick values from server snapshots, committing counters only after the frame enters the bounded send buffer. The host supplies each fixed-step collision snapshot to `ClientPrediction`, which shares the server's simulation integrator and records each transmitted predicted step with its policy and collision revisions. `SnapshotReconciler` owns authoritative time ordering and remote-player interpolation; the host turns output positions into presentation geometry. Prepared geography remains immutable and is held inside the ticket-bound source shared by `Arc` with generation and presentation workers.
 
 ## Ownership and execution
 
@@ -97,6 +119,10 @@ deadline; desktop and terminal use the same 30-second endpoint cleanup and
 diagnostics deadline, with the last two seconds reserved for the log writer.
 Forced owned-child cleanup uses a bounded post-kill poll instead of an
 unbounded `Child::wait`.
+It closes the session, requests content cancellation and asks the host service
+to drain only until that same deadline. Pending means work still owns resources;
+it does not claim interrupted I/O. Explicit later calls may retry that drain.
+Drop does not add another content wait after an explicit shutdown attempt.
 
 ## Invariants and errors
 
@@ -162,7 +188,7 @@ inputs are passed to the owned child. Client map and authored definition paths
 are still checked against that preview, and attaching to an existing server
 rejects unapplied explicit settings.
 
-Material downloads use the host-provided cache directory and configured
+The application content adapter owns the cache directory and configured
 `--cache-limit-bytes` budget (8 GiB by default). Package leases remain active
 through presentation handoff so cache eviction cannot remove in-use content.
 The host also supplies bounded provider credentials; this runtime has no

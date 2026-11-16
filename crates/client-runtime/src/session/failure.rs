@@ -1,4 +1,5 @@
 use crate::ContentResolutionTicket;
+use crate::MaterialContentTicket;
 use std::{error::Error, fmt, sync::Arc};
 
 #[derive(Clone, Debug)]
@@ -7,6 +8,7 @@ pub struct SessionFailure {
     message: String,
     source: Option<Arc<dyn Error + Send + Sync>>,
     content_ticket: Option<ContentResolutionTicket>,
+    material_ticket: Option<MaterialContentTicket>,
 }
 
 impl SessionFailure {
@@ -16,6 +18,7 @@ impl SessionFailure {
             message: message.into(),
             source: None,
             content_ticket: None,
+            material_ticket: None,
         }
     }
 
@@ -28,6 +31,7 @@ impl SessionFailure {
             message: message.into(),
             source: Some(Arc::new(source)),
             content_ticket: None,
+            material_ticket: None,
         }
     }
 
@@ -43,6 +47,20 @@ impl SessionFailure {
 
     pub const fn content_ticket(&self) -> Option<ContentResolutionTicket> {
         self.content_ticket
+    }
+
+    pub fn with_material_ticket(mut self, ticket: MaterialContentTicket) -> Self {
+        self.material_ticket = Some(ticket);
+        self
+    }
+
+    pub const fn material_ticket(&self) -> Option<MaterialContentTicket> {
+        self.material_ticket
+    }
+
+    pub(crate) fn with_retry_hint(mut self) -> Self {
+        self.message.push_str("; reconnect to retry");
+        self
     }
 
     pub fn code(&self) -> &'static str {

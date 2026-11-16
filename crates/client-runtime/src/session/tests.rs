@@ -1,4 +1,6 @@
 use super::*;
+#[path = "../../examples/support/local_content_jobs.rs"]
+mod local_content_jobs;
 #[path = "../../examples/support/local_transport.rs"]
 mod local_transport;
 use minimium_protocol::ClientWorldInput;
@@ -28,13 +30,15 @@ fn connected_session(context: WorldContext) -> ClientSession {
         server_tick: 1,
         next_input_seq: 1,
         next_target_tick: 3,
-        session_id: 0,
-        world_content_resolver: None,
-        world_content_worker: None,
-        world_content_worker_ticket: None,
+        content_jobs: crate::ContentJobsSession::new(
+            std::num::NonZeroU64::new(1).unwrap(),
+            Arc::new(local_content_jobs::LocalContentJobs::default()),
+        ),
+        world_content_job: None,
+        world_content_result: None,
         world_content_request: None,
         next_world_content_request_id: 1,
-        world_content_cancel: crate::ContentCancellation::default(),
+        next_material_content_request_id: 1,
         world_content_started: None,
         deferred_world_message: None,
         active_world_content: None,
@@ -57,8 +61,6 @@ fn connected_session(context: WorldContext) -> ClientSession {
         pending_ping_at: None,
         pending_ping_frame: None,
         metrics: SessionMetrics::default(),
-        content_cache_dir: None,
-        content_cache_limit_bytes: minimium_asset_io::DEFAULT_CACHE_LIMIT_BYTES,
     }
 }
 

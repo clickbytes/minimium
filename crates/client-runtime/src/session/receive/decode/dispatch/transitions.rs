@@ -196,7 +196,7 @@ pub(super) fn handle_transition_cancelled(
     session.clear_transfer_lifecycle();
     session.cancel_pending_environment(transition_id);
     session.pending_world_content = None;
-    session.world_content_cancel.cancel();
+    session.cancel_world_content_job();
     session.world_content_request = None;
     session.world_content_started = None;
     DispatchResult::Emit

@@ -1,18 +1,26 @@
 //! Compile-only external consumer of a real session with host-owned transport.
+#[path = "support/local_content_jobs.rs"]
+mod local_content_jobs;
 #[path = "support/local_transport.rs"]
 mod local_transport;
 
 use local_transport::LocalTransport;
 use minimium_client_runtime::{
-    ClientAuthentication, ClientSession, DisconnectReason, QueueError, SessionEvent, SessionState,
+    ClientAuthentication, ClientSession, ContentJobsSession, DisconnectReason, QueueError,
+    SessionEvent, SessionState,
 };
 use minimium_protocol::{ClientMessage, ServerMessage};
+use std::{num::NonZeroU64, sync::Arc};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let transport = LocalTransport::default();
     let peer = transport.peer();
     let authentication = ClientAuthentication::new("local", b"bounded credential".to_vec())?;
-    let mut session = ClientSession::new(Box::new(transport), authentication)?;
+    let jobs = ContentJobsSession::new(
+        NonZeroU64::new(1).unwrap(),
+        Arc::new(local_content_jobs::LocalContentJobs::default()),
+    );
+    let mut session = ClientSession::new(Box::new(transport), authentication, jobs)?;
 
     // Session policy remains authoritative over the injected port.
     match session.queue(&ClientMessage::Ping) {

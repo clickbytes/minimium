@@ -38,15 +38,6 @@ impl ClientSession {
             .and_then(|bundle| bundle.content.resolved_relief_policy())
     }
 
-    pub(crate) fn set_world_content_resolver(
-        &mut self,
-        session_id: u64,
-        resolver: Option<Arc<dyn WorldContentResolver>>,
-    ) {
-        self.session_id = session_id;
-        self.world_content_resolver = resolver;
-    }
-
     pub fn resolved_world_content_for_context(
         &self,
         context: WorldContext,
