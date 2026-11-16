@@ -401,8 +401,8 @@ impl SectorWorker {
     ) -> Result<Option<Arc<PreparedScene>>, SectorWorkerError> {
         let key = Key {
             terrain_revision: geography.revision(),
-            material_profile: geography.material_profile,
-            resolved_relief_policy: geography.resolved_relief_policy,
+            material_profile: Some(geography.source().material_profile()),
+            resolved_relief_policy: geography.source().relief_policy(),
             world,
             manifest,
             view,

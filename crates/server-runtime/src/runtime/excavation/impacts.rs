@@ -115,9 +115,17 @@ impl ServerRuntime {
                 let old_base = old_planet
                     .volume_base()
                     .ok_or(ActionRejection::InvalidIntent)?;
-                let mut candidate_inputs = inputs;
-                candidate_inputs.edits = Some(craters.clone());
-                candidate_inputs.remnants = Some(remnants);
+                let candidate_overlays = minimium_procgen::TerrainOverlaySnapshot::new(
+                    body.world,
+                    Some(craters.clone()),
+                    Some(remnants),
+                    inputs.overlays().volumes().cloned(),
+                );
+                let mut candidate_inputs = minimium_procgen::TerrainInputs::new(
+                    inputs.source().clone(),
+                    candidate_overlays,
+                )
+                .map_err(|_| ActionRejection::Stale)?;
                 let new_planet = scene::planet(manifest, candidate_inputs.clone())
                     .ok_or(ActionRejection::Stale)?;
                 let new_base = new_planet
@@ -175,7 +183,17 @@ impl ServerRuntime {
                             .map_err(|_| ActionRejection::Capacity)?;
                     }
                 }
-                candidate_inputs.volumes = Some(candidate.clone());
+                let candidate_overlays = minimium_procgen::TerrainOverlaySnapshot::new(
+                    body.world,
+                    candidate_inputs.overlays().edits().cloned(),
+                    candidate_inputs.overlays().remnants().cloned(),
+                    Some(candidate.clone()),
+                );
+                candidate_inputs = minimium_procgen::TerrainInputs::new(
+                    candidate_inputs.source().clone(),
+                    candidate_overlays,
+                )
+                .map_err(|_| ActionRejection::Stale)?;
                 let candidate_planet =
                     scene::planet(manifest, candidate_inputs).ok_or(ActionRejection::Stale)?;
                 let mut affected: Vec<_> =

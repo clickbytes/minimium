@@ -54,7 +54,10 @@ pub struct PlanetTerrain {
     generation: GenerationSpec,
     surface: PlanetSurfaceSpec,
     definition: Option<PlanetDefinition>,
-    inputs: crate::TerrainInputs,
+    geography: Option<std::sync::Arc<dyn crate::PreparedGeography>>,
+    overlays: crate::TerrainOverlaySnapshot,
+    material_profile: Option<crate::ResolvedTerrainMaterialProfile>,
+    prepared_source: Option<crate::PreparedTerrainSource>,
     pub(crate) material_manifest: Option<minimium_world::world::WorldManifest>,
     pub(crate) surface_recipe: crate::surface_habitat::SurfaceRecipe,
     relief_policy: crate::PlanetReliefSamplingPolicy,
@@ -65,45 +68,26 @@ impl PlanetTerrain {
         generation: GenerationSpec,
         surface: PlanetSurfaceSpec,
         definition: Option<PlanetDefinition>,
-        inputs: crate::TerrainInputs,
+        source: crate::PlanetGenerationSource,
     ) -> Result<Self, GenerationError> {
-        let policy = inputs
-            .resolved_relief_policy
-            .map(crate::ResolvedPlanetReliefPolicy::policy)
-            .or_else(|| {
-                definition
-                    .filter(|definition| definition.mode == 1)
-                    .map(|_| crate::PlanetReliefSamplingPolicy::identity())
-            })
-            .or_else(|| {
-                definition
-                    .is_none()
-                    .then(crate::PlanetReliefSamplingPolicy::identity)
-            })
-            .ok_or_else(|| {
-                GenerationError::invalid_manifest(
-                    "procedural planet requires a resolved relief sampling policy",
-                )
-            })?;
-        Self::new_with_relief_policy(generation, surface, definition, inputs, policy)
+        let policy = if definition.is_some_and(|planet| planet.mode != 1) {
+            return Err(GenerationError::invalid_manifest(
+                "procedural planet requires an explicit relief sampling policy",
+            ));
+        } else {
+            crate::PlanetReliefSamplingPolicy::identity()
+        };
+        Self::new_with_relief_policy(generation, surface, definition, source, policy)
     }
 
-    /// Constructs terrain with a scenario-selected recipe before its map exists.
+    /// Constructs generation terrain from an explicit source before the map exists.
     pub fn new_with_relief_policy(
         generation: GenerationSpec,
         surface: PlanetSurfaceSpec,
         definition: Option<PlanetDefinition>,
-        inputs: crate::TerrainInputs,
+        source: crate::PlanetGenerationSource,
         relief_policy: crate::PlanetReliefSamplingPolicy,
     ) -> Result<Self, GenerationError> {
-        if inputs
-            .resolved_relief_policy
-            .is_some_and(|resolved| resolved.policy() != relief_policy)
-        {
-            return Err(GenerationError::invalid_manifest(
-                "terrain relief policy conflicts with resolved content",
-            ));
-        }
         if u64::from(generation.position_quantum_mm()) > surface.radius_mm() / 1024 {
             return Err(GenerationError::invalid_manifest(
                 "planet generation quantum does not fit the surface",
@@ -119,7 +103,7 @@ impl PlanetTerrain {
                 ));
             }
             if definition.mode == 1 {
-                let geography = inputs.geography.as_ref().ok_or_else(|| {
+                let geography = source.geography().ok_or_else(|| {
                     GenerationError::sampling(crate::EarthSampleError::PackageUnavailable)
                 })?;
                 if geography.package_digest() != definition.package_digest {
@@ -133,7 +117,10 @@ impl PlanetTerrain {
             generation,
             surface,
             definition,
-            inputs,
+            geography: source.geography().cloned(),
+            overlays: crate::TerrainOverlaySnapshot::default(),
+            material_profile: None,
+            prepared_source: None,
             material_manifest: None,
             surface_recipe: Default::default(),
             relief_policy,
@@ -146,37 +133,27 @@ impl PlanetTerrain {
         manifest: minimium_world::world::WorldManifest,
         inputs: crate::TerrainInputs,
     ) -> Result<Self, GenerationError> {
-        if inputs
-            .material_profile
-            .is_some_and(|profile| !profile.matches_manifest(manifest))
-        {
+        if inputs.source.manifest() != manifest {
             return Err(GenerationError::invalid_manifest(
-                "terrain material profile does not match the world manifest",
+                "prepared terrain source does not match the world manifest",
             ));
         }
-        let relief_policy = match inputs.resolved_relief_policy {
-            Some(policy) if !policy.matches_manifest(manifest) => {
-                return Err(GenerationError::invalid_manifest(
-                    "terrain relief policy does not match the world manifest",
-                ));
-            }
-            Some(policy) => policy.policy(),
-            None if manifest.source() == minimium_world::world::WorldSource::Generated
-                && manifest.topology() == minimium_world::world::WorldTopology::Planet =>
-            {
-                return Err(GenerationError::invalid_manifest(
-                    "generated planet has no resolved relief sampling policy",
-                ));
-            }
-            None => crate::PlanetReliefSamplingPolicy::identity(),
-        };
+        let source = inputs.source.clone();
+        let overlays = inputs.overlays.clone();
+        let relief_policy = source
+            .relief_policy()
+            .map(crate::ResolvedPlanetReliefPolicy::policy)
+            .unwrap_or_else(crate::PlanetReliefSamplingPolicy::identity);
         let mut terrain = Self::new_with_relief_policy(
             manifest.generation(),
             crate::planet_surface_for(manifest),
             manifest.planet(),
-            inputs,
+            crate::PlanetGenerationSource::from_prepared(&source),
             relief_policy,
         )?;
+        terrain.overlays = overlays;
+        terrain.material_profile = Some(source.material_profile());
+        terrain.prepared_source = Some(source);
         terrain.material_manifest = Some(manifest);
         Ok(terrain)
     }
@@ -192,8 +169,16 @@ impl PlanetTerrain {
         Some(self)
     }
 
-    pub fn inputs(&self) -> &crate::TerrainInputs {
-        &self.inputs
+    pub fn overlays(&self) -> &crate::TerrainOverlaySnapshot {
+        &self.overlays
+    }
+
+    pub fn prepared_inputs(&self) -> Option<crate::TerrainInputs> {
+        crate::TerrainInputs::new(self.prepared_source.clone()?, self.overlays.clone()).ok()
+    }
+
+    pub const fn material_profile(&self) -> Option<crate::ResolvedTerrainMaterialProfile> {
+        self.material_profile
     }
 
     pub const fn radius_mm(&self) -> u64 {
@@ -211,12 +196,12 @@ impl PlanetTerrain {
     }
 
     pub fn terrain_edits(&self) -> Option<&minimium_terrain::TerrainSnapshot> {
-        self.inputs.edits.as_deref()
+        self.overlays.edits().map(AsRef::as_ref)
     }
 
     pub(crate) fn land_cover(&self, direction: [f64; 3]) -> Option<[f32; 6]> {
         if self.is_earth() {
-            self.inputs.geography.as_ref()?.land_cover(direction)
+            self.geography.as_ref()?.land_cover(direction)
         } else {
             None
         }
@@ -262,7 +247,6 @@ impl PlanetTerrain {
         {
             let direction = cube_sample.coordinates().map(f64::from);
             let elevation_m = self
-                .inputs
                 .geography
                 .as_ref()
                 .map(|geography| geography.elevation_m(direction))
@@ -361,7 +345,6 @@ impl PlanetTerrain {
         angle: f64,
     ) -> Result<f64, GenerationError> {
         let bound = self
-            .inputs
             .geography
             .as_ref()
             .map_or(
@@ -383,7 +366,6 @@ impl PlanetTerrain {
             return Ok(None);
         };
         let raw = self
-            .inputs
             .geography
             .as_ref()
             .ok_or_else(|| GenerationError::sampling(crate::EarthSampleError::PackageUnavailable))?

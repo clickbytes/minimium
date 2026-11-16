@@ -19,8 +19,8 @@ impl ClientApplication {
             .connection
             .session()?
             .resolved_world_content_for_context(context)?;
-        (content.manifest == manifest && content.map.fingerprint() == fingerprint)
-            .then(|| content.map.clone())
+        (content.manifest() == manifest && content.map().fingerprint() == fingerprint)
+            .then(|| content.map().clone())
     }
 
     pub(crate) fn execute_action(&mut self, action: ClientAction) -> LocalActionOutcome {

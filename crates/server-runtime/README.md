@@ -152,8 +152,9 @@ The gameplay context's targeted component lookup borrows a blob from the
 world-scoped entity store, so repeated interaction events do not enumerate the
 whole world on the owner lane.
 Gameplay systems can also borrow `TerrainRead` for a planetary world. The runtime
-builds it from the current manifest, prepared geography, crater snapshot and
-committed volume store; the legacy crater snapshot accessor remains available.
+builds it from a `PreparedTerrainSource` bound to the registered world instance,
+manifest and map fingerprint, plus the current world-owned crater, remnant and
+committed volume overlays; the legacy crater snapshot accessor remains available.
 Nonplanet worlds and failed terrain preparation return no read port.
 Validated planet construction rejects missing or mismatched Earth geography;
 optional spatial-query ports report unavailable on sampling failure. Water
@@ -466,12 +467,15 @@ sectors retain their indexes. The status command reports active/pending bodies, 
 count and storage health. Ordinary impact I/O failure stops new impacts but preserves
 replication of the last committed world. The original automatic scheduler remains transient.
 
-Current terrain preparation uses `TerrainInputs` with separate geography,
-resolved material profile, resolved relief policy, crater and remnant snapshots.
-`WorldDefinition` supplies the relief policy selected by content composition;
-the registry binds and checks it against the exact manifest and map fingerprint
-before publication. Generated planets reject missing policy, and duplicate
-content identities cannot select conflicting material or relief profiles.
+Current terrain preparation uses `TerrainInputs`, which combines a validated
+`PreparedTerrainSource` with a separate instance-bound `TerrainOverlaySnapshot`.
+The source binds geography, material profile and resolved relief policy to the
+registered instance, exact manifest and map fingerprint; the registry rejects
+volume overlays from another instance. `WorldDefinition` supplies the relief
+policy selected by content composition. Generated planets reject missing policy,
+and duplicate content identities cannot select conflicting material or relief
+profiles. Water catalogs use the prepared source with empty overlays so saved
+craters, remnants or excavations do not alter the base water catalog.
 The sample composition supplies its canonical relief policy and 1.5 m material
 profile, while the runtime has no independent soil-depth override. Entity batches clone only affected world stores, while
 capacity checks still include all untouched entities. Impact settings enter via

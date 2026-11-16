@@ -3,6 +3,42 @@ use crate::storage::{WorldSaveEntry, WorldSaveInput};
 use std::io;
 
 impl WorldRegistry {
+    pub(crate) fn prepared_terrain_source(
+        &self,
+        instance: WorldInstanceId,
+        geography: Option<&Arc<dyn minimium_procgen::PreparedGeography>>,
+    ) -> Result<minimium_procgen::PreparedTerrainSource, minimium_procgen::GenerationError> {
+        let owner = self.get(instance).ok_or_else(|| {
+            minimium_procgen::GenerationError::invalid_manifest("terrain world instance is missing")
+        })?;
+        minimium_procgen::PreparedTerrainSource::new(
+            instance,
+            owner.manifest,
+            &owner.map,
+            geography.cloned(),
+            owner.terrain_material_profile,
+            owner.resolved_relief_policy,
+        )
+    }
+
+    pub(crate) fn prepared_terrain_inputs(
+        &self,
+        instance: WorldInstanceId,
+        geography: Option<&Arc<dyn minimium_procgen::PreparedGeography>>,
+    ) -> Result<minimium_procgen::TerrainInputs, minimium_procgen::GenerationError> {
+        let owner = self.get(instance).ok_or_else(|| {
+            minimium_procgen::GenerationError::invalid_manifest("terrain world instance is missing")
+        })?;
+        let source = self.prepared_terrain_source(instance, geography)?;
+        let overlays = minimium_procgen::TerrainOverlaySnapshot::new(
+            instance,
+            Some(owner.terrain.clone()),
+            Some(owner.remnants.clone()),
+            owner.volumes.clone(),
+        );
+        minimium_procgen::TerrainInputs::new(source, overlays)
+    }
+
     pub(crate) fn component(
         &self,
         instance: WorldInstanceId,

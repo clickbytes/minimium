@@ -19,8 +19,8 @@ pub fn render_patches_for_view(
     cache.set_context(
         world,
         manifest,
-        geography.material_profile,
-        geography.resolved_relief_policy,
+        Some(geography.source().material_profile()),
+        geography.source().relief_policy(),
     );
     let position = view.position;
     if manifest.planet().is_some() {
@@ -110,7 +110,7 @@ pub fn render_patches_for_view(
                 },
             )?
         } else {
-            let revision = terrain.inputs().sector_version(sector, 1, count);
+            let revision = terrain.overlays().sector_version(sector, 1, count);
             cache.get_revision_result(sector, region.lod, revision, || {
                 minimium_procgen::generate_planet_render_patch_with_geography(
                     manifest,
@@ -332,7 +332,7 @@ fn dense_render_patches(
                 Ok::<_, minimium_procgen::ExcavationGeometryError>(geometry)
             })?
         } else {
-            let revision = terrain.inputs().sector_version(key, region.span, count);
+            let revision = terrain.overlays().sector_version(key, region.span, count);
             cache.get_revision_result(key, region.lod, revision, || {
                 minimium_procgen::generate_planet_render_block_with_geography(
                     manifest,

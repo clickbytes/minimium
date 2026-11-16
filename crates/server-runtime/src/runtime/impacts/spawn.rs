@@ -83,14 +83,11 @@ impl ServerRuntime {
             up[2] * east[0] - up[0] * east[2],
             up[0] * east[1] - up[1] * east[0],
         ];
-        let geography = minimium_procgen::TerrainInputs {
-            geography: self.prepared_geography.clone(),
-            material_profile: Some(owner.terrain_material_profile),
-            resolved_relief_policy: owner.resolved_relief_policy,
-            edits: Some(owner.terrain.clone()),
-            remnants: Some(owner.remnants.clone()),
-            volumes: owner.volumes.clone(),
-        };
+        let geography = self
+            .game
+            .worlds
+            .prepared_terrain_inputs(world, self.prepared_geography.as_ref())
+            .map_err(io::Error::other)?;
         let heading = self
             .sky_views
             .get(&player.id)

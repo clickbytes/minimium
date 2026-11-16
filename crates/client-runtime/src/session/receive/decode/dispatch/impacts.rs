@@ -29,8 +29,8 @@ pub(super) fn dispatch(
             let mismatched = session
                 .resolved_world_content_for_context(*context)
                 .is_some_and(|content| {
-                    content.manifest.generation().seed().get() != body.world_seed
-                        || content.manifest.planet().is_none_or(|p| {
+                    content.manifest().generation().seed().get() != body.world_seed
+                        || content.manifest().planet().is_none_or(|p| {
                             (p.radius_mm as f64 / 1000.0 - body.planet_radius_m).abs() > 0.001
                         })
                 });

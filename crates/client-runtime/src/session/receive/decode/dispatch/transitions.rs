@@ -49,7 +49,7 @@ pub(super) fn handle_transition_prepare(
     }
     let expected_fingerprint = session
         .pending_content_for_transition(transition_id, target_context)
-        .map_or(0, |content| content.map.fingerprint());
+        .map_or(0, |content| content.map().fingerprint());
     if map_fingerprint != expected_fingerprint {
         session.disconnect(
             DisconnectReason::MapMismatch {
@@ -131,7 +131,7 @@ pub(super) fn handle_transition_committed(
     }
     let expected_fingerprint = session
         .pending_content_for_transition(transition_id, context)
-        .map_or(0, |content| content.map.fingerprint());
+        .map_or(0, |content| content.map().fingerprint());
     if map_fingerprint != expected_fingerprint {
         session.disconnect(
             DisconnectReason::MapMismatch {

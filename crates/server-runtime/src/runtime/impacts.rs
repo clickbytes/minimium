@@ -173,13 +173,12 @@ impl ServerRuntime {
             let Some(owner) = self.game.worlds.get(body.world) else {
                 continue;
             };
-            let geography = minimium_procgen::TerrainInputs {
-                geography: self.prepared_geography.clone(),
-                material_profile: Some(owner.terrain_material_profile),
-                resolved_relief_policy: owner.resolved_relief_policy,
-                edits: Some(owner.terrain.clone()),
-                remnants: Some(owner.remnants.clone()),
-                volumes: owner.volumes.clone(),
+            let Ok(geography) = self
+                .game
+                .worlds
+                .prepared_terrain_inputs(body.world, self.prepared_geography.as_ref())
+            else {
+                continue;
             };
             let environment = Surface {
                 can_fragment: self.active_body_count() < minimium_world::impact::MAX_ACTIVE_BODIES
@@ -403,7 +402,7 @@ impl minimium_simulation::impact::BodyEnvironment for Surface {
                 .ok()?;
         // Soil depth affects material identity only; this query reads distance.
         let base = terrain.volume_base()?;
-        if let Some(store) = &self.geography.volumes {
+        if let Some(store) = self.geography.overlays().volumes() {
             store
                 .view(&base)
                 .interpolated(position)

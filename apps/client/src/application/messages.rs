@@ -209,13 +209,13 @@ impl ClientApplication {
             .session()
             .and_then(|session| session.resolved_world_content_for_context(context))
             .ok_or(ApplicationMessageError::MissingWorldContent)?;
-        if content.manifest != manifest || content.map.fingerprint() != map_fingerprint {
+        if content.manifest() != manifest || content.map().fingerprint() != map_fingerprint {
             return Err(ApplicationMessageError::WorldContentMismatch);
         }
         let previous_context = self.game.session_context();
         let previous_instance = self.game.current_instance;
         self.world_catalog
-            .insert(context.instance(), (*content.map).clone());
+            .insert(context.instance(), (**content.map()).clone());
         self.game
             .world_manifests
             .insert(context.instance(), manifest);

@@ -195,8 +195,8 @@ impl DesktopHost {
                 .game_view()
                 .world_manifests
                 .get(&self.application.game_view().current_instance)?;
-            let inputs = session.terrain_inputs();
-            let store = inputs.volumes.clone()?;
+            let inputs = session.terrain_inputs()?;
+            let store = inputs.overlays().volumes()?.clone();
             let terrain = minimium_procgen::PlanetTerrain::for_manifest(manifest, inputs).ok()?;
             let base = terrain.volume_base()?;
             let behind = std::array::from_fn(|i| hit.position_m[i] - hit.normal[i] * 0.01);

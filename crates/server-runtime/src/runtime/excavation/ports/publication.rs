@@ -46,15 +46,24 @@ impl Publication<'_> {
             for body in &mutation.impact_bodies {
                 impacts::projection::publish(self.worlds, self.components, *body, true)?;
             }
-            let mut after = before.clone();
-            after.volumes = Some(terrain.clone());
-            after.remnants = self
+            let remnants = self
                 .worlds
                 .get(mutation.world)
                 .map(|owner| owner.remnants.clone());
-            if let Some(craters) = &prepared.craters {
-                after.edits = Some(craters.clone());
-            }
+            let edits = prepared
+                .craters
+                .as_ref()
+                .cloned()
+                .or_else(|| before.overlays().edits().cloned());
+            let after_overlays = minimium_procgen::TerrainOverlaySnapshot::new(
+                mutation.world,
+                edits,
+                remnants,
+                Some(terrain.clone()),
+            );
+            let after =
+                minimium_procgen::TerrainInputs::new(before.source().clone(), after_overlays)
+                    .map_err(io::Error::other)?;
             self.sectors.invalidate_where(mutation.world, |key| {
                 !prepared.sectors.contains_key(&key) && before.revision() != after.revision()
             });

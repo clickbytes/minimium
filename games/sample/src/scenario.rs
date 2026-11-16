@@ -124,11 +124,13 @@ pub fn materialize_manifest_map(
             let relief_policy = planet_relief_sampling_policy(manifest)?.ok_or_else(|| {
                 GenerationError::invalid_manifest("generated planet has no relief policy")
             })?;
+            let source =
+                minimium_procgen::PlanetGenerationSource::new(Some(definition), geography)?;
             let terrain = PlanetTerrain::new_with_relief_policy(
                 manifest.generation(),
                 surface,
                 Some(definition),
-                geography.into(),
+                source,
                 relief_policy,
             )?;
             let landmarks = sample_planet_landmarks(&terrain)?;
@@ -200,11 +202,12 @@ fn generate_worlds_with(
     );
     let relief_policy = planet_relief_sampling_policy(planet_manifest)?
         .ok_or_else(|| GenerationError::invalid_manifest("sample planet has no relief policy"))?;
+    let source = minimium_procgen::PlanetGenerationSource::new(planet_definition, geography)?;
     let terrain = PlanetTerrain::new_with_relief_policy(
         planet_generation,
         planet_surface,
         planet_definition,
-        geography.into(),
+        source,
         relief_policy,
     )?;
     let landmarks = sample_planet_landmarks(&terrain)?;

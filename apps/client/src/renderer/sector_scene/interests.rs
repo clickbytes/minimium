@@ -43,12 +43,14 @@ impl ClientSectorCache {
         terrain: &minimium_procgen::TerrainInputs,
     ) {
         let old = self.terrain_inputs.get(&instance);
-        let changed_geometry_source =
-            old.is_some_and(|previous| previous.geography.is_some() != terrain.geography.is_some());
-        let changed_material_profile =
-            old.is_some_and(|previous| previous.material_profile != terrain.material_profile);
+        let changed_geometry_source = old.is_some_and(|previous| {
+            previous.source().geography().is_some() != terrain.source().geography().is_some()
+        });
+        let changed_material_profile = old.is_some_and(|previous| {
+            previous.source().material_profile() != terrain.source().material_profile()
+        });
         let changed_relief_policy = old.is_some_and(|previous| {
-            previous.resolved_relief_policy != terrain.resolved_relief_policy
+            previous.source().relief_policy() != terrain.source().relief_policy()
         });
         let changed = old.is_none_or(|previous| {
             previous.revision() != terrain.revision()
@@ -76,20 +78,13 @@ impl ClientSectorCache {
 
     pub(super) fn content_profiles_match(
         inputs: &minimium_procgen::TerrainInputs,
+        instance: WorldInstanceId,
         manifest: WorldManifest,
         map: Option<&WorldMap>,
     ) -> bool {
-        inputs.material_profile.is_none_or(|profile| {
-            profile.matches_manifest(manifest)
-                && map.is_some_and(|map| profile.matches(manifest, map.fingerprint()))
-        }) && (inputs.volumes.is_none() || inputs.material_profile.is_some())
-            && inputs.resolved_relief_policy.is_none_or(|policy| {
-                policy.matches_manifest(manifest)
-                    && map.is_some_and(|map| policy.matches(manifest, map.fingerprint()))
-            })
-            && (manifest.source() != minimium_world::world::WorldSource::Generated
-                || manifest.topology() != minimium_world::world::WorldTopology::Planet
-                || inputs.resolved_relief_policy.is_some())
+        inputs.source().world() == instance
+            && inputs.overlays().world() == Some(instance)
+            && map.is_some_and(|map| inputs.source().matches_map(instance, manifest, map))
     }
 
     pub(super) fn interest_matches(

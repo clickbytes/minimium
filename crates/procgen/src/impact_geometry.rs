@@ -7,7 +7,7 @@ pub(crate) fn remnants(
     triangles: &[MapTriangle],
 ) -> Result<Vec<MapTriangle>, crate::GenerationError> {
     let mut objects = Vec::new();
-    let Some(edits) = terrain.inputs().remnants.as_deref() else {
+    let Some(edits) = terrain.overlays().remnants().map(AsRef::as_ref) else {
         return Ok(objects);
     };
     if triangles.is_empty() {

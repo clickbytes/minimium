@@ -32,7 +32,7 @@ Without WorldCover, presentation fractions distinguish arid latitude belts,
 temperate ground and alpine rock using physical source elevation. They no longer
 assign the same grass-dominated mixture to all low-elevation land.
 
-See the re-exports in `src/lib.rs`, including sector materialization, planet sampling, dungeon generation, generator contract validation and addressable randomness. `PreparedGeography` is the host port for immutable geographic samples. `PlanetTerrain::new` validates generation, surface, optional planet definition and `TerrainInputs`; `PlanetTerrain::for_manifest` additionally binds material and volume queries to the exact immutable manifest. Earth requires geography with the declared package digest. No builder can replace that definition or its inputs after construction. Sample world composition belongs to `minimium-game-sample`.
+See the re-exports in `src/lib.rs`, including sector materialization, planet sampling, dungeon generation, generator contract validation and addressable randomness. `PreparedGeography` is the host port for immutable geographic samples. `PreparedTerrainSource` privately binds one world instance, manifest and exact map fingerprint to its validated material profile, optional relief policy and prepared geography. Its constructor checks material/relief bindings and requires matching prepared geography for Earth. It has no `Default` or setters. `TerrainInputs` combines that source with a separate `TerrainOverlaySnapshot`; both are required by manifest terrain and sector consumers. The overlay snapshot is instance-bound and preserves the independent edit, remnant and volume revisions. `PlanetGenerationSource` is a separate explicit recipe for pre-map generation, where a final map fingerprint cannot yet exist; it is not accepted by runtime geometry consumers. Sample world composition belongs to `minimium-game-sample`.
 
 Generated-planet relief sampling uses a neutral `PlanetReliefSamplingPolicy` supplied by the composing game and a `ResolvedPlanetReliefPolicy` bound to the manifest and map fingerprint. Procedural generated planets require this binding in `for_manifest`; Earth uses identity policy and retains its world-owned `PeakRelief` curve. Procgen evaluates the recipe but owns no scenario face, route, spawn, marker or fallback policy. These content bindings are runtime composition values and add no manifest, save or generator-digest fields.
 
@@ -45,11 +45,11 @@ Depends on `minimium-core` and `minimium-world` plus serialization, hashing and 
 
 ## Data flow
 
-World and sector inputs produce generated maps, sector geometry and sampled terrain. Hosts open geography through `minimium-asset-io` and pass the resulting immutable object through generation and sampling calls. Missing Earth geography is reported at observer boundaries and rejected before Earth generation.
+World and sector inputs produce generated maps, sector geometry and sampled terrain. Hosts open geography through `minimium-asset-io`, prepare a `PreparedTerrainSource` after map/profile/policy resolution, then pair it with overlays for workers. Pre-map generation uses `PlanetGenerationSource`. Missing or mismatched Earth geography returns a typed sampling error; client transition work keeps that error attached to its content-resolution ticket.
 
 ## Ownership and execution
 
-Generation functions are called by client/server owners or their scheduled work. Hosts own prepared geography and attach it to terrain before Earth sampling. Results are installed by the caller after validating their ticket/context.
+Generation functions are called by client/server owners or their scheduled work. Hosts own prepared geography and attach it through the validated source before Earth sampling. Workers receive immutable source/overlay snapshots; caller-owned context/ticket checks still gate result installation and publication.
 
 ## Invariants and errors
 
@@ -108,13 +108,13 @@ materialized map before publishing or installing that content.
 
 ## Committed terrain overlays
 
-`TerrainInputs` explicitly carries geography, an optional resolved material
-profile, terrain edits, remnant objects and an optional immutable volume store.
-Material profiles use integer millimetres and bind to an exact manifest and map
-fingerprint at content resolution. `volume_base` and volume materialization fail
-when that binding is absent or mismatched; geography-only inputs never invent a
-default profile. The binding lives in runtime composition/session state and adds
-no world-manifest, protocol or save fields. `SectorContentVersion` carries separate
+`PreparedTerrainSource` carries geography and resolved material/relief policy
+bound to one instance, manifest and map fingerprint. `TerrainInputs` cannot be
+default-constructed and combines it with `TerrainOverlaySnapshot`, whose world
+instance is checked against the source (and whose volume store has its own world
+identity checked). `volume_base` and volume materialization can therefore only
+consume a resolved profile. The binding lives in runtime composition/session
+state and adds no world-manifest, protocol or save fields. `SectorContentVersion` carries separate
 monotone revisions for edits, remnants and volume mutations. Sector cache
 invalidation uses this complete global version, so an unrelated source mutation
 may rebuild more sectors but simultaneous changes cannot cancel each other.

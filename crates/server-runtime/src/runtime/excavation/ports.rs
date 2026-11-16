@@ -12,15 +12,9 @@ pub(super) fn terrain_inputs(
     geography: &Option<Arc<dyn minimium_procgen::PreparedGeography>>,
     world: WorldInstanceId,
 ) -> Option<minimium_procgen::TerrainInputs> {
-    let owner = worlds.get(world)?;
-    Some(minimium_procgen::TerrainInputs {
-        geography: geography.clone(),
-        material_profile: Some(owner.terrain_material_profile),
-        resolved_relief_policy: owner.resolved_relief_policy,
-        edits: Some(owner.terrain.clone()),
-        remnants: Some(owner.remnants.clone()),
-        volumes: owner.volumes.clone(),
-    })
+    worlds
+        .prepared_terrain_inputs(world, geography.as_ref())
+        .ok()
 }
 
 pub(super) struct WorkSubmission<'a> {

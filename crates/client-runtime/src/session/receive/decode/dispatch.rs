@@ -278,7 +278,7 @@ fn handle_welcome(
     }
     let expected_fingerprint = session
         .resolved_world_content_for_context(context)
-        .map_or(0, |content| content.map.fingerprint());
+        .map_or(0, |content| content.map().fingerprint());
     if map_fingerprint != expected_fingerprint {
         session.disconnect(
             DisconnectReason::MapMismatch {

@@ -65,8 +65,9 @@ pub fn materialize_world_sector(
     map: &WorldMap,
     manifest: minimium_world::world::WorldManifest,
     key: SectorKey,
+    inputs: impl Into<crate::TerrainInputs>,
 ) -> Result<SectorGeometry, crate::ExcavationGeometryError> {
-    materialize_world_sector_with_geography(map, manifest, key, None)
+    materialize_world_sector_with_geography(map, manifest, key, inputs)
 }
 
 pub fn materialize_world_sector_with_geography(
@@ -76,10 +77,9 @@ pub fn materialize_world_sector_with_geography(
     geography: impl Into<crate::TerrainInputs>,
 ) -> Result<SectorGeometry, crate::ExcavationGeometryError> {
     let inputs: crate::TerrainInputs = geography.into();
-    if inputs.volumes.is_some()
-        && !inputs
-            .material_profile
-            .is_some_and(|profile| profile.matches(manifest, map.fingerprint()))
+    if !inputs
+        .source
+        .matches_map(inputs.source.world(), manifest, map)
     {
         return Err(crate::ExcavationGeometryError::UnavailableSurface);
     }
@@ -94,7 +94,7 @@ pub fn materialize_world_sector_with_geography(
             crate::generate_planet_sector_with_geography(manifest, planet, inputs.clone())?;
         geometry.triangles.extend(generated.triangles);
         geometry.object_triangles.extend(generated.object_triangles);
-        if let Some(store) = inputs.volumes.as_deref() {
+        if let Some(store) = inputs.overlays.volumes().map(AsRef::as_ref) {
             let terrain = crate::PlanetTerrain::for_manifest(manifest, inputs.clone())?;
             let count = crate::planet_sector_count(manifest);
             let (u, v) = planet.coordinates();

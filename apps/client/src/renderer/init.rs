@@ -45,23 +45,36 @@ impl DesktopHost {
             .get(&current_instance)
             .copied()
             .ok_or("initial world has no generation manifest")?;
-        let terrain_inputs =
-            crate::world_content::bootstrap_terrain_inputs(current_manifest, &map)?;
         let mut sector_cache = sector_scene::ClientSectorCache::new()?;
-        let initial_scene = sector_cache.ensure_scene(
-            sector_scene::SceneInterestOwner::Bootstrap(current_instance),
+        let initial_scene = match crate::world_content::bootstrap_terrain_inputs(
             current_instance,
             current_manifest,
-            map.spawn(),
-            minimium_renderer::terrain_view::TerrainView::new(map.spawn(), 1.287, 1_000),
-            [0.0; 3],
-            0,
-            &world_catalog,
-            &world_manifests,
-            None,
-            terrain_inputs,
-            None,
-        )?;
+            &map,
+        ) {
+            Ok(terrain_inputs) => sector_cache.ensure_scene(
+                sector_scene::SceneInterestOwner::Bootstrap(current_instance),
+                current_instance,
+                current_manifest,
+                map.spawn(),
+                minimium_renderer::terrain_view::TerrainView::new(map.spawn(), 1.287, 1_000),
+                [0.0; 3],
+                0,
+                &world_catalog,
+                &world_manifests,
+                None,
+                terrain_inputs,
+                None,
+            )?,
+            Err(error)
+                if error.kind()
+                    == minimium_procgen::GenerationErrorKind::Sampling(
+                        minimium_procgen::EarthSampleError::PackageUnavailable,
+                    ) =>
+            {
+                None
+            }
+            Err(error) => return Err(Box::new(error)),
+        };
         let vertices: Vec<_> = initial_scene
             .as_ref()
             .into_iter()

@@ -59,17 +59,13 @@ impl ServerRuntime {
             return None;
         }
         let direction = position.map(|v| (v / length) as f32);
+        let inputs = self
+            .game
+            .worlds
+            .prepared_terrain_inputs(instance, self.prepared_geography.as_ref())
+            .ok()?;
         let ground = minimium_procgen::planet_collision_position_at_direction_with_geography(
-            manifest,
-            direction,
-            minimium_procgen::TerrainInputs {
-                geography: self.prepared_geography.clone(),
-                material_profile: Some(self.game.worlds.get(instance)?.terrain_material_profile),
-                resolved_relief_policy: self.game.worlds.get(instance)?.resolved_relief_policy,
-                edits: Some(self.game.worlds.get(instance)?.terrain.clone()),
-                remnants: Some(self.game.worlds.get(instance)?.remnants.clone()),
-                volumes: self.game.worlds.get(instance)?.volumes.clone(),
-            },
+            manifest, direction, inputs,
         )?;
         let radius = ground
             .iter()
