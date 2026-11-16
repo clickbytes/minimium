@@ -17,6 +17,7 @@ mod snapshots;
 pub mod view;
 mod water_replica;
 mod world_content;
+pub mod world_readiness;
 
 pub use authentication::{ClientAuthentication, ClientAuthenticationError};
 pub use bootstrap::LocalServerLaunchConfig;

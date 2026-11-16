@@ -1,4 +1,7 @@
-use super::{sector_scene::ClientSectorScene, DesktopHost, Renderer};
+use super::{
+    sector_scene::{ClientSectorScene, SceneInterestPresentation},
+    DesktopHost, Renderer,
+};
 use minimium_renderer::geometry::Vertex;
 
 impl Renderer {
@@ -8,7 +11,8 @@ impl Renderer {
         scene: &ClientSectorScene,
     ) -> bool {
         self.shadow_publish_ready = false;
-        if scene.origin != self.render_origin
+        if instance != scene.cpu.instance()
+            || scene.origin != self.render_origin
             || scene.origin_generation != self.world_geometry.origin_generation()
         {
             self.release_scene_stage(instance, scene.owner);
@@ -73,7 +77,10 @@ impl Renderer {
     ) -> bool {
         self.shadow_publish_ready = false;
         let stage = scene.owner.geometry_stage();
-        if scene.origin_generation != self.world_geometry.origin_generation() {
+        if instance != scene.cpu.instance()
+            || fingerprint != scene.cpu.map_fingerprint()
+            || scene.origin_generation != self.world_geometry.origin_generation()
+        {
             self.release_scene_stage(instance, scene.owner);
             return false;
         }

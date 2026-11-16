@@ -1,5 +1,5 @@
-//! Bounded sector materialization. SectorManager installation stays on the UI lane.
-use super::sector_scene::{SceneInterestOwner, SectorWorkerError};
+//! Bounded CPU workers; SectorManager installation stays on the calling owner lane.
+use super::{WorldReadinessError as SectorWorkerError, WorldReadinessOwner as SceneInterestOwner};
 use minimium_procgen::SectorGeometry;
 use minimium_sectors::SectorTicket;
 use minimium_world::world::{WorldManifest, WorldMap};
@@ -96,9 +96,9 @@ impl SceneCollisionWorker {
                             .find(|(old, _)| Arc::ptr_eq(old, geometry))
                             .map(|(_, index)| index.clone())
                             .unwrap_or_else(|| {
-                                Arc::new(super::sector_scene::collision_from_sectors(
-                                    std::iter::once(geometry.as_ref()),
-                                ))
+                                Arc::new(super::collision::collision_from_sectors(std::iter::once(
+                                    geometry.as_ref(),
+                                )))
                             });
                         (geometry.clone(), index)
                     })

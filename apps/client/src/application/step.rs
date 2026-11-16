@@ -5,6 +5,8 @@ use minimium_client_runtime::{ClientTime, ClientTimeError, ConnectionEvent};
 use minimium_protocol::ServerMessage;
 #[cfg(feature = "desktop")]
 use std::time::Duration;
+#[cfg(feature = "desktop")]
+mod readiness;
 
 #[cfg(feature = "desktop")]
 #[derive(Clone, Copy, Debug, Default)]
@@ -24,22 +26,26 @@ pub(crate) struct ClientStepInput {
 }
 
 #[cfg(feature = "desktop")]
+#[derive(Clone)]
 pub(crate) struct PredictionSceneRequest<'a> {
     pub(crate) context: Option<minimium_protocol::WorldContext>,
     pub(crate) instance: minimium_world::world::WorldInstanceId,
     pub(crate) manifest: minimium_world::world::WorldManifest,
+    pub(crate) previous_position: [f32; 3],
     pub(crate) position: [f32; 3],
-    pub(crate) water_covers_candidate: bool,
     pub(crate) terrain_inputs: minimium_procgen::TerrainInputs,
     pub(crate) world_catalog: &'a std::collections::HashMap<
         minimium_world::world::WorldInstanceId,
         minimium_world::world::WorldMap,
     >,
-    pub(crate) world_manifests: &'a std::collections::HashMap<
-        minimium_world::world::WorldInstanceId,
-        minimium_world::world::WorldManifest,
-    >,
-    pub(crate) session_content_ready: bool,
+}
+
+#[cfg(feature = "desktop")]
+#[derive(Clone)]
+pub(crate) struct PredictionPresentationRequest {
+    pub(crate) manifest: minimium_world::world::WorldManifest,
+    pub(crate) position: [f32; 3],
+    pub(crate) terrain_inputs: minimium_procgen::TerrainInputs,
 }
 
 pub(crate) struct AppliedSessionEvent {
@@ -82,9 +88,13 @@ impl ClientApplication {
         #[cfg(feature = "desktop")] mut candidate_readiness: impl FnMut(
             PredictionSceneRequest<'_>,
         ) -> Result<
-            Option<super::ActiveSceneReady>,
+            Option<minimium_client_runtime::world_readiness::CollisionSnapshot>,
             String,
         >,
+        #[cfg(feature = "desktop")] mut presentation_ready: impl FnMut(
+            &minimium_client_runtime::world_readiness::CollisionSnapshot,
+            PredictionPresentationRequest,
+        ) -> Result<bool, String>,
     ) -> Result<ClientStepOutput, ClientTimeError> {
         self.accept_time(input.now)?;
         #[cfg(feature = "desktop")]
@@ -94,7 +104,13 @@ impl ClientApplication {
             input
                 .prediction
                 .map_or((None, false, false, None::<String>), |prediction| {
-                    self.step_prediction(elapsed, prediction, &mut candidate_readiness, input.now)
+                    self.step_prediction(
+                        elapsed,
+                        prediction,
+                        &mut candidate_readiness,
+                        &mut presentation_ready,
+                        input.now,
+                    )
                 });
         #[cfg(not(feature = "desktop"))]
         let (movement_queue_error, jump_consumed): (
@@ -207,7 +223,14 @@ impl ClientApplication {
         input: PredictionInput,
         candidate_readiness: &mut impl FnMut(
             PredictionSceneRequest<'_>,
-        ) -> Result<Option<super::ActiveSceneReady>, String>,
+        ) -> Result<
+            Option<minimium_client_runtime::world_readiness::CollisionSnapshot>,
+            String,
+        >,
+        presentation_ready: &mut impl FnMut(
+            &minimium_client_runtime::world_readiness::CollisionSnapshot,
+            PredictionPresentationRequest,
+        ) -> Result<bool, String>,
         now: ClientTime,
     ) -> (
         Option<crate::session::QueueError>,
@@ -222,7 +245,6 @@ impl ClientApplication {
             .and_then(|session| session.water_read());
         self.game.gameplay.prediction.set_water_read(water_read);
         self.game.accumulate_prediction_time(delta_seconds);
-
         let console_open = self.console_open();
         let overview_open = self.overview_open_for_step();
         let movement_policy = self.connection.movement;
@@ -252,6 +274,31 @@ impl ClientApplication {
             .world_manifests
             .get(&self.game.current_instance)
             .copied();
+        let current_position = self.game.gameplay.prediction.character.position;
+        let current_ready = match readiness::scene_ready(
+            self,
+            current_position,
+            current_position,
+            can_fly,
+            candidate_readiness,
+            presentation_ready,
+        ) {
+            Ok(ready) => ready,
+            Err(error) => {
+                candidate_scene_error = Some(error);
+                false
+            }
+        };
+        if !current_ready {
+            candidate_scene_pending = true;
+            queue_error = readiness::skip_unready_steps(self, movement_policy, now);
+            return (
+                queue_error,
+                jump_consumed,
+                candidate_scene_pending,
+                candidate_scene_error,
+            );
+        }
         let geography = self
             .connection
             .session()
@@ -269,69 +316,21 @@ impl ClientApplication {
             jump_consumed = input.jump_pending;
             let mut movement = predicted.input;
             let candidate_position = self.game.gameplay.prediction.character.position;
-            let candidate_manifest = self
-                .game
-                .world_manifests
-                .get(&self.game.current_instance)
-                .copied();
-            let water_covers_candidate = candidate_manifest.is_none_or(|manifest| {
-                manifest.planet().is_none_or(|_| {
-                    let feet = self
-                        .game
-                        .gameplay
-                        .prediction
-                        .position_mm
-                        .map_or(candidate_position.map(f64::from), |position| {
-                            position.0.map(|value| value as f64 / 1000.0)
-                        });
-                    let up = minimium_world::world::character_frame(
-                        self.game.gameplay.prediction.character.gravity,
-                        candidate_position,
-                    )
-                    .0
-                    .map(f64::from);
-                    self.connection
-                        .session()
-                        .is_some_and(|session| session.water_region_covers_capsule(feet, up, 1.7))
-                })
-            });
-            let session_content_ready = self
-                .connection
-                .session()
-                .is_none_or(|session| session.impact_ready() && session.excavation_ready());
-            let candidate_report = candidate_manifest.map(|manifest| {
-                let terrain_inputs = match self.scene_terrain_inputs() {
-                    Ok(Some(inputs)) => inputs,
-                    Ok(None) => return Ok(None),
-                    Err(error) => return Err(format!("{}: {error}", error.code())),
-                };
-                let request = PredictionSceneRequest {
-                    context: self.game.session_context(),
-                    instance: self.game.current_instance,
-                    manifest,
-                    position: candidate_position,
-                    water_covers_candidate,
-                    terrain_inputs,
-                    world_catalog: &self.world_catalog,
-                    world_manifests: &self.game.world_manifests,
-                    session_content_ready,
-                };
-                candidate_readiness(request)
-            });
-            let candidate_ready = candidate_report.is_some_and(|result| match result {
-                Ok(Some(report)) => {
-                    report.candidate_position() == Some(candidate_position)
-                        && water_covers_candidate
-                        && session_content_ready
-                        && self.report_active_scene_ready(report)
-                }
-                Ok(None) => false,
+            let candidate_ready = match readiness::scene_ready(
+                self,
+                predicted.previous_state.position,
+                candidate_position,
+                can_fly,
+                candidate_readiness,
+                presentation_ready,
+            ) {
+                Ok(ready) => ready,
                 Err(error) => {
                     candidate_scene_error = Some(error);
                     false
                 }
-            });
-            if !candidate_ready && !can_fly {
+            };
+            if !candidate_ready {
                 candidate_scene_pending = true;
                 self.game.gameplay.prediction.character = predicted.previous_state;
                 self.game.gameplay.prediction.position_mm = predicted.previous_mm;

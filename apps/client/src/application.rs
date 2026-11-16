@@ -11,9 +11,10 @@ mod time;
 mod transitions;
 #[cfg(feature = "desktop")]
 mod ui;
+mod world_readiness;
 
 #[cfg(feature = "desktop")]
-pub(crate) use desktop_view::{ActiveSceneReady, TransferPresentationReady};
+pub(crate) use desktop_view::TransferPresentationReady;
 pub(crate) use game::ClientGameState;
 #[cfg(feature = "desktop")]
 pub(crate) use game::GameplayState;
@@ -24,6 +25,8 @@ pub(crate) use messages::WorldContextChange;
 pub(crate) use settings::ClientSettings;
 pub(crate) use settings::{SettingsStore, StartupSettings};
 pub(crate) use step::ClientStepInput;
+#[cfg(feature = "desktop")]
+pub(crate) use step::PredictionPresentationRequest;
 #[cfg(feature = "desktop")]
 pub(crate) use step::PredictionSceneRequest;
 #[cfg(feature = "desktop")]
@@ -285,32 +288,6 @@ impl ClientApplication {
         self.connection.record_diagnostic_failure(code, error);
     }
 
-    pub(crate) fn report_transfer_host_ready(
-        &mut self,
-        ticket: minimium_client_runtime::TransferTicket,
-        now: ClientTime,
-    ) -> Result<(), crate::session::QueueError> {
-        self.accept_time(now)
-            .map_err(crate::session::QueueError::Time)?;
-        if !self.transfer_cpu_content_ready(ticket) {
-            return Err(crate::session::QueueError::StaleWorldContext);
-        }
-        if self
-            .connection
-            .session()
-            .is_some_and(|session| session.host_readiness_requested(ticket))
-        {
-            return Ok(());
-        }
-        self.connection.report_transfer_host_ready(ticket, now)
-    }
-
-    pub(crate) fn pending_transfer_ticket(
-        &self,
-    ) -> Option<minimium_client_runtime::TransferTicket> {
-        self.pending_transfer.map(|preparation| preparation.ticket)
-    }
-
     pub(crate) fn transfer_cpu_content_ready(
         &self,
         ticket: minimium_client_runtime::TransferTicket,
@@ -335,7 +312,12 @@ impl ClientApplication {
         let Some(terrain) = session.terrain_inputs_for_context(ticket.context()) else {
             return false;
         };
-        if preparation.manifest.planet().is_some() && terrain.source().geography().is_none() {
+        if preparation
+            .manifest
+            .planet()
+            .is_some_and(|planet| planet.mode == 1)
+            && terrain.source().geography().is_none()
+        {
             return false;
         }
         preparation.manifest.planet().is_none()

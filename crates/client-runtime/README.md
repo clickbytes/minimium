@@ -1,5 +1,44 @@
 # minimium-client-runtime
 
+## CPU world and collision readiness
+
+`world_readiness::WorldReadiness` owns the client sector manager, immutable
+source/overlay inputs, pinned bootstrap/active/pending interests and the existing
+bounded materialization/collision workers. `ensure_collision` takes a typed owner,
+manifest, world position, exact map and `TerrainInputs`; it needs no renderer,
+FOV, viewport, render origin or GPU. Pending work returns `Ok(None)`.
+`ensure_collision_for_step` requests the union of the unchanged neighborhoods at
+the current and speculative positions. A narrower request reuses a still-valid
+superset interest, so retrying the current position does not cancel target work.
+Long-lived hosts call `retain_interests` to release obsolete memberships/transfers.
+
+Only this owner constructs `CollisionSnapshot`. Its private identity binds the
+world/membership or pending transfer, manifest, map fingerprint, material/relief
+and geography source, independent terrain revisions, collision revision and
+installed sector coverage. `matches`, `matches_terrain` and `covers_position`
+validate consumers. Coverage certifies the existing fixed-step neighborhood,
+not an arbitrary capsule or unbounded sweep; hosts still validate their water
+coverage and speculative destination before committing movement.
+
+The existing limits remain 512 cached/queued sectors, 32 materialization slots
+and up to 32 installations per poll, plus three scene collision interests. The
+public owner also bounds retained world sources to 512 and active interests to
+three. Release cancels ticket publication and aggregation; physical generation
+already running may finish, but its stale ticket cannot install. Promotion accepts
+only the matching pending membership or matching bootstrap world; it cannot
+relabel another world's collision. Collision revisions use checked allocation.
+`shutdown_until` uses an absolute physical resource deadline, not logical time.
+
+The presentation adapter consumes the snapshot's same immutable sector payloads.
+Presentation readiness is a separate host report bound to this CPU identity.
+Desktop retains its visible-terrain gate; a CPU host can prepare collision and
+complete transfer readiness without rendering. `collision_ready` is a real public
+CPU provider and prediction consumer, compiled without running it.
+`ClientPrediction::skip_unready_step` consumes a due input interval without
+integrating unproved geometry. The default host uses it to keep neutral movement
+at the existing fixed-step cadence while waiting for CPU/presentation readiness;
+it does not create an input sequence, mutate the character or accumulate debt.
+
 ## Purpose / Non-goals
 
 Owns the nonblocking protocol session, connection controller, connector, local-server child guard, fixed-step local movement prediction, authoritative snapshot reconciliation, remote-player interpolation, world transition handshake, synchronized world-clock estimate and client-runtime diagnostic events. It receives a fixed-domain logger through its application-facing controller/configuration APIs; the telemetry file sink stays outside the runtime. It owns no window, GPU, console rendering, localized environment status formatting or process event loop.

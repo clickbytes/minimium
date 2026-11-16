@@ -11,6 +11,7 @@ minimium-core = { path = "../core" }
 minimium-platform = { path = "../platform" }
 minimium-diagnostics = { path = "../diagnostics" }
 minimium-simulation = { path = "../simulation" }
+minimium-sectors = { path = "../sectors" }
 minimium-environment = { path = "../environment" }
 minimium-protocol = { path = "../protocol" }
 minimium-transport = { path = "../transport" }
