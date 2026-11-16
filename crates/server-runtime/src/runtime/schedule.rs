@@ -1,4 +1,5 @@
 use super::gameplay_terrain::{self, CurrentTerrainRead};
+use crate::commands::RuntimeCommandReadView;
 use crate::modules::{
     BuiltinOperation, GameplaySystem, GameplaySystemContext, SchedulePlan, Stage, WorldLifecycle,
 };
@@ -6,6 +7,9 @@ use crate::modules::{
     EffectBufferError, GameplayEvent, WorldEffect, WorldEffectBatch, WorldEffectBuffer,
 };
 use crate::world_registry::WorldRegistry;
+use minimium_gameplay::{
+    CommandViewError, CommandViewPage, CommandViewRequest, CommandWorldView, ModuleCommandReadView,
+};
 use minimium_procgen::PreparedGeography;
 use minimium_world::world::WorldInstanceId;
 use std::sync::Arc;
@@ -25,6 +29,7 @@ pub(crate) struct ScheduleDiagnostics {
 pub struct ModuleSystemContext<'a> {
     stage: Stage,
     worlds: &'a WorldRegistry,
+    world_reader: &'a dyn ModuleCommandReadView,
     terrain_reads: &'a std::collections::HashMap<WorldInstanceId, CurrentTerrainRead>,
     diagnostics: &'a mut ScheduleDiagnostics,
     effects: &'a mut WorldEffectBuffer,
@@ -49,6 +54,12 @@ impl ModuleSystemContext<'_> {
     }
     pub fn world_count(&self) -> usize {
         self.worlds.iter().count()
+    }
+    pub fn worlds(
+        &self,
+        request: &CommandViewRequest,
+    ) -> Result<CommandViewPage<CommandWorldView>, CommandViewError> {
+        self.world_reader.worlds(request)
     }
     pub fn world_initialized(
         &self,
@@ -133,6 +144,12 @@ impl GameplaySystemContext for ModuleSystemContext<'_> {
     }
     fn world_count(&self) -> usize {
         self.world_count()
+    }
+    fn worlds(
+        &self,
+        request: &CommandViewRequest,
+    ) -> Result<CommandViewPage<CommandWorldView>, CommandViewError> {
+        ModuleSystemContext::worlds(self, request)
     }
     fn world_initialized(&self, instance: minimium_world::world::WorldInstanceId) -> Option<bool> {
         self.world_initialized(instance)
@@ -220,9 +237,11 @@ impl ServerSchedule {
         }
         let mut effects = WorldEffectBuffer::default();
         let terrain_reads = gameplay_terrain::build(worlds, geography);
+        let world_reader = RuntimeCommandReadView::new(worlds);
         let mut context = ModuleSystemContext {
             stage,
             worlds,
+            world_reader: &world_reader,
             terrain_reads: &terrain_reads,
             diagnostics: &mut self.diagnostics,
             effects: &mut effects,
