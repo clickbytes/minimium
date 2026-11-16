@@ -6,12 +6,33 @@ Owns neutral descriptors and validated registration for modules, commands, syste
 
 ## Public API
 
-`ModuleRegistry`, `EngineModule`, `ModuleRegistrar`, and the command, system and module descriptors define static extension contracts. Game modules register commands with the neutral `ModuleCommandHandler` and return `ModuleCommandResult`; `ModuleCommandText` bounds UTF-8 text to 8 KiB with the existing ` [truncated]` marker, while `ModuleCommandErrorCode` validates stable codes. A host adapts the neutral handler into its own registry during transactional installation. Systems use `GameplaySystemContext`, a host-neutral trait, so game packages can implement systems without depending on a server runtime. They declare `before`/`after` constraints and run in stable topological order with system ID as a deterministic tie-break; missing, duplicate and cyclic dependencies return typed registration errors. The bounded `WorldEffectBuffer` carries entity/component changes and transfer requests; it accepts at most 256 operations and 1 MiB of component payload per stage. Its batch has private bounded contents and a saturating count of pushes rejected by the buffer. `EffectBatchOutcome` returns one ordered result for each retained effect plus that aggregate count. The system context exposes the current simulation tick, stage, optional startup world and New/Restored lifecycle, read-only world/component and initial-entity data, and gameplay events, without process or I/O handles.
+`ModuleRegistry`, `EngineModule`, `ModuleRegistrar`, and the command, system and module descriptors define static extension contracts. Game modules register commands with the neutral `ModuleCommandHandler` and return `ModuleCommandResult`; `ModuleCommandText` bounds UTF-8 text to 8 KiB with the existing ` [truncated]` marker, while `ModuleCommandErrorCode` validates stable codes. A host adapts the neutral handler into its own registry during transactional installation. Systems use `GameplaySystemContext`, a host-neutral trait, so game packages can implement systems without depending on a server runtime. They declare `before`/`after` constraints and run in stable topological order with system ID as a deterministic tie-break; missing, duplicate and cyclic dependencies return typed registration errors. The bounded `WorldEffectBuffer` carries entity/component changes and transfer requests; it accepts at most 256 operations and 1 MiB of component payload per stage. Each accepted `emit` returns a producer-scoped `EffectToken` containing stable module/system or module/command identity and a nonwrapping local sequence. `EffectBatchOutcome::receipts` pairs each token with its ordered typed result. Spawn results contain their `WorldInstanceId` and `EntityId` only after the entire entity subgroup passes staging, snapshot reservation and publication. The batch also retains its saturating aggregate count of buffer-rejected pushes. The system context exposes the current simulation tick, stage, optional startup world and New/Restored lifecycle, read-only world/component and initial-entity data, prior receipts and gameplay events, without process or I/O handles.
 
 Startup runs once for each prepared world instance. Startup effects are validated and committed for that world before the runtime marks its initial content as initialized. A restored world receives `WorldLifecycle::Restored`; a world with no saved initialization marker receives `WorldLifecycle::New`.
 
 The context offers a borrowed component lookup by world, entity and type for
 interaction handlers, avoiding a full component scan per event.
+
+System receipts arrive at the next invocation of the same registered system.
+`GameplaySystemContext::take_effect_receipts` consumes only that producer's
+results; leftovers expire when the invocation returns and increment the
+runtime's cumulative `expired_effect_receipt_count`. Ordinary inboxes are
+bounded to 256 receipts per producer and 4096 total. The runtime reserves
+receipt capacity before accepting an effect, so full inboxes return typed
+backpressure before commit; the host can inspect cumulative refusals through
+`ServerRuntime::backpressured_effect_count`. Backpressure does not mark the
+shared stage buffer overflowed or reject effects accepted from other producers.
+Startup does not rerun to deliver feedback. Startup
+receipts use a host-owned inbox capped at 4096 pending plus reserved receipts;
+hosts drain one producer with
+`ServerRuntime::take_startup_effect_receipts(module, system, world)`. Shutdown
+returns any remaining receipts in `ShutdownOutcome::effect_receipts`. If
+initialization fails after per-world startup commits, the constructor error
+contains a downcastable `StartupEffectFailure` with all accumulated receipts and
+the rejected-push count. Command
+receipts remain ordered and return directly to the caller, without a duplicate
+system inbox. Receipts are volatile execution feedback, not a durable journal;
+they make no exactly-once promise across process restarts.
 
 Systems can discover worlds through `GameplaySystemContext::worlds` using the
 same `CommandViewRequest`, `CommandViewPage<CommandWorldView>` and

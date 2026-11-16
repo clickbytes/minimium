@@ -6,6 +6,57 @@ use crate::modules::{
 use std::io;
 
 impl ServerRuntime {
+    pub(super) fn report_effect_feedback_diagnostics(
+        &self,
+        before: super::schedule::ScheduleDiagnostics,
+    ) {
+        let after = self.schedule.diagnostics();
+        let expired = after
+            .expired_effect_receipts
+            .saturating_sub(before.expired_effect_receipts);
+        let backpressured = after
+            .effect_backpressure_rejections
+            .saturating_sub(before.effect_backpressure_rejections);
+        if expired > 0 {
+            emit_system_effect_diagnostic(
+                &self.world_logger,
+                "effect_receipt:expired",
+                &format!(
+                    "{expired} unread system receipts expired after their delivery invocation"
+                ),
+            );
+        }
+        if backpressured > 0 {
+            emit_system_effect_diagnostic(
+                &self.world_logger,
+                "effect_receipt:backpressure",
+                &format!("{backpressured} effects refused before acceptance because receipt capacity was full"),
+            );
+        }
+    }
+
+    /// Drains one Startup system's bounded commit receipts for a world.
+    /// Startup is not rerun to deliver these receipts.
+    pub fn take_startup_effect_receipts(
+        &mut self,
+        module_id: &'static str,
+        system_id: &'static str,
+        world: minimium_world::world::WorldInstanceId,
+    ) -> Vec<crate::EffectReceipt> {
+        self.schedule
+            .take_startup_effect_receipts(module_id, system_id, world)
+    }
+
+    /// Number of ordinary-system receipts expired unread after their next invocation.
+    pub fn expired_effect_receipt_count(&self) -> u64 {
+        self.schedule.diagnostics().expired_effect_receipts
+    }
+
+    /// Total producer effects refused before acceptance because receipt inboxes were full.
+    pub fn backpressured_effect_count(&self) -> u64 {
+        self.schedule.diagnostics().effect_backpressure_rejections
+    }
+
     pub(super) fn commit_effect_batch(
         &mut self,
         batch: WorldEffectBatch,
@@ -33,28 +84,40 @@ impl ServerRuntime {
                     &self.component_registry,
                     &protected_entities,
                 );
-                let rejection = match result {
-                    Ok(staged) => match self
-                        .operations
-                        .player_store
-                        .snapshot_budget_mut()
-                        .prepare_entity_changes(staged.changes())
-                    {
-                        Ok(reservation) => {
-                            staged.commit(reservation);
-                            None
+                let (rejection, spawned) = match result {
+                    Ok(staged) => {
+                        let spawned = staged.spawned_entities().to_vec();
+                        match self
+                            .operations
+                            .player_store
+                            .snapshot_budget_mut()
+                            .prepare_entity_changes(staged.changes())
+                        {
+                            Ok(reservation) => {
+                                staged.commit(reservation);
+                                (None, spawned)
+                            }
+                            Err(_) => (Some(EntityEffectRejection::StorageBudget), Vec::new()),
                         }
-                        Err(_) => Some(EntityEffectRejection::StorageBudget),
-                    },
-                    Err(crate::world_registry::RegistryError::SnapshotBudgetExceeded) => {
-                        Some(EntityEffectRejection::StorageBudget)
                     }
-                    Err(_) => Some(EntityEffectRejection::Validation),
+                    Err(crate::world_registry::RegistryError::SnapshotBudgetExceeded) => {
+                        (Some(EntityEffectRejection::StorageBudget), Vec::new())
+                    }
+                    Err(_) => (Some(EntityEffectRejection::Validation), Vec::new()),
                 };
+                let mut spawned = spawned.into_iter();
                 for index in entity_indices {
                     results[index] = match rejection {
                         Some(reason) => WorldEffectOutcome::EntityRejected(reason),
-                        None => WorldEffectOutcome::EntityApplied,
+                        None => match effects[index] {
+                            WorldEffect::SpawnEntity { .. } => {
+                                let (world, entity) = spawned
+                                    .next()
+                                    .expect("staged spawn receipt follows input order");
+                                WorldEffectOutcome::EntitySpawned { world, entity }
+                            }
+                            _ => WorldEffectOutcome::EntityApplied,
+                        },
                     };
                 }
             }

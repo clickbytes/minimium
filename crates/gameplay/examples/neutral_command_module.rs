@@ -66,7 +66,10 @@ fn inspect_and_remove(
         world: world.id,
         entity,
     }) {
-        Ok(()) => ModuleCommandResult::success("Entity removal was requested."),
+        Ok(token) => ModuleCommandResult::success(&format!(
+            "Entity removal was accepted with producer sequence {}.",
+            token.sequence()
+        )),
         Err(_) => {
             let code = ModuleCommandErrorCode::new("example.effect_buffer_refused")
                 .expect("static error code is valid");

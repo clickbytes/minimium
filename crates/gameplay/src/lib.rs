@@ -16,9 +16,11 @@ pub use commands::{
 };
 pub use effects::{
     ComponentValue, ComponentView, EffectBatchOutcome, EffectBufferError, EffectOutcomeError,
-    EntityEffectRejection, GameplayEvent, InitialComponentView, InitialEntityView, TransferOutcome,
-    TransferRejection, WorldEffect, WorldEffectBatch, WorldEffectBuffer, WorldEffectOutcome,
-    WorldLifecycle, MAX_WORLD_EFFECTS_PER_STAGE, MAX_WORLD_EFFECT_BYTES_PER_STAGE,
+    EffectProducerId, EffectReceipt, EffectToken, EntityEffectRejection, GameplayEvent,
+    InitialComponentView, InitialEntityView, TransferOutcome, TransferRejection, WorldEffect,
+    WorldEffectBatch, WorldEffectBuffer, WorldEffectOutcome, WorldLifecycle,
+    MAX_EFFECT_RECEIPTS_PER_PRODUCER, MAX_WORLD_EFFECTS_PER_STAGE,
+    MAX_WORLD_EFFECT_BYTES_PER_STAGE,
 };
 pub use read_views::{
     CommandComponentRow, CommandEntityKind, CommandEntityRow, CommandPlayerView, CommandViewCursor,

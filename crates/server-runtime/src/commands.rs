@@ -85,9 +85,9 @@ pub(crate) fn execute_module_command(
     worlds: &crate::world_registry::WorldRegistry,
     effects: &mut WorldEffectBuffer,
     registry: &ModuleRegistry<ModuleHandler, SystemFn>,
+    sequences: &mut std::collections::BTreeMap<crate::modules::EffectProducerId, Option<u64>>,
 ) -> CommandReply {
     let view = world::RuntimeCommandReadView::new(worlds);
-    let mut context = ModuleCommandContext::new(&view, effects);
     let resolved = match identity {
         Some(identity) => {
             resolve_module_identity(identity, registry).map(|command| (command, argv))
@@ -95,7 +95,15 @@ pub(crate) fn execute_module_command(
         None => resolve_module_argv(argv, registry),
     };
     match resolved {
-        Some((command, args)) => execute_registered(command, args, &mut context),
+        Some((command, args)) => {
+            let producer = crate::modules::EffectProducerId::Command {
+                module: command.module,
+                command: command.definition.name,
+            };
+            let sequence = sequences.entry(producer).or_insert(Some(0));
+            let mut context = ModuleCommandContext::new(&view, effects, producer, sequence);
+            execute_registered(command, args, &mut context)
+        }
         None => CommandReply::error("server.command.unknown", "unknown command; use `help`"),
     }
 }

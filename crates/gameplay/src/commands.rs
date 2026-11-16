@@ -104,6 +104,7 @@ impl ModuleCommandResult {
 
 pub type ModuleCommandHandler = fn(&mut ModuleCommandContext<'_>, &[&str]) -> ModuleCommandResult;
 
+use crate::effects::{EffectProducerId, EffectToken};
 use crate::read_views::{
     CommandEntityRow, CommandPlayerView, CommandViewCursor, CommandViewError, CommandViewPage,
     CommandViewRequest, CommandWorldView, ModuleCommandReadView,
@@ -113,11 +114,23 @@ use crate::read_views::{
 pub struct ModuleCommandContext<'a> {
     view: &'a dyn ModuleCommandReadView,
     effects: &'a mut WorldEffectBuffer,
+    producer: EffectProducerId,
+    next_sequence: &'a mut Option<u64>,
 }
 
 impl<'a> ModuleCommandContext<'a> {
-    pub fn new(view: &'a dyn ModuleCommandReadView, effects: &'a mut WorldEffectBuffer) -> Self {
-        Self { view, effects }
+    pub fn new(
+        view: &'a dyn ModuleCommandReadView,
+        effects: &'a mut WorldEffectBuffer,
+        producer: EffectProducerId,
+        next_sequence: &'a mut Option<u64>,
+    ) -> Self {
+        Self {
+            view,
+            effects,
+            producer,
+            next_sequence,
+        }
     }
 
     pub fn world_count(&self) -> usize {
@@ -170,7 +183,13 @@ impl<'a> ModuleCommandContext<'a> {
         self.view.components(world, entity, request)
     }
 
-    pub fn emit(&mut self, effect: WorldEffect) -> Result<(), EffectBufferError> {
-        self.effects.push(effect)
+    pub fn emit(&mut self, effect: WorldEffect) -> Result<EffectToken, EffectBufferError> {
+        let sequence = self
+            .next_sequence
+            .ok_or(EffectBufferError::IdentifierSpaceExhausted)?;
+        let token = EffectToken::new(self.producer, sequence);
+        self.effects.push_tagged(effect, token)?;
+        *self.next_sequence = sequence.checked_add(1);
+        Ok(token)
     }
 }

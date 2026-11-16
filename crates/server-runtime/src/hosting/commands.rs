@@ -278,5 +278,7 @@ pub struct StepOutcome {
 }
 pub struct ShutdownOutcome {
     pub commands: Vec<CommandExecution>,
+    /// Receipts not drained by their producer before shutdown.
+    pub effect_receipts: Vec<minimium_gameplay::EffectReceipt>,
     pub result: std::io::Result<()>,
 }

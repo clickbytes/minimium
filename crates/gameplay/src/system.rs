@@ -1,6 +1,7 @@
 use crate::{
     CommandViewError, CommandViewPage, CommandViewRequest, CommandWorldView, ComponentView,
-    EffectBufferError, GameplayEvent, InitialEntityView, Stage, WorldEffect, WorldLifecycle,
+    EffectBufferError, EffectReceipt, GameplayEvent, InitialEntityView, Stage, WorldEffect,
+    WorldLifecycle,
 };
 use minimium_world::entity::{ComponentTypeId, EntityId};
 use minimium_world::world::WorldInstanceId;
@@ -27,6 +28,9 @@ pub trait GameplaySystemContext {
     ) -> Option<ComponentView<'_>>;
     fn initial_entities(&self, instance: WorldInstanceId) -> Vec<InitialEntityView<'_>>;
     fn events(&self) -> &[GameplayEvent];
+    /// Reads and consumes this producer's prior invocation receipts. Anything not consumed
+    /// before this call returns expires and is counted in runtime diagnostics.
+    fn take_effect_receipts(&mut self) -> Vec<EffectReceipt>;
     /// Immutable committed surface changes; modules cannot mutate generation or storage.
     fn terrain(&self, _instance: WorldInstanceId) -> Option<&minimium_terrain::TerrainSnapshot> {
         None
@@ -39,7 +43,7 @@ pub trait GameplaySystemContext {
         None
     }
     fn record_startup_run(&mut self, world_count: usize);
-    fn emit(&mut self, effect: WorldEffect) -> Result<(), EffectBufferError>;
+    fn emit(&mut self, effect: WorldEffect) -> Result<crate::EffectToken, EffectBufferError>;
 }
 
 pub type GameplaySystem = for<'a> fn(&mut dyn GameplaySystemContext);

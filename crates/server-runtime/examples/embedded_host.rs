@@ -1,5 +1,7 @@
 //! A host that drives the real owner without sockets, files, a process loop or GPU.
 //! Compile with `cargo check -p minimium-server-runtime --example embedded_host`.
+#[path = "../../gameplay/examples/support/effect_feedback_module.rs"]
+mod effect_feedback_module;
 #[path = "support/embedded_services.rs"]
 mod services;
 use minimium_server_runtime::{composition::*, *};
@@ -31,7 +33,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     let profile = minimium_procgen::TerrainMaterialProfile::new(500).unwrap();
     let worlds = vec![(instance, map.clone(), manifest)];
-    let modules = RuntimeModules::new(&[])?;
+    let feedback_module: Arc<ServerGameplayModule> =
+        Arc::new(effect_feedback_module::EffectFeedbackModule);
+    let module_list = [feedback_module];
+    let modules = RuntimeModules::new(&module_list)?;
     let storage = MemoryStorageBackend::new(MemoryStorageLimits {
         snapshot_bytes: 1024 * 1024,
         ..MemoryStorageLimits::default()
@@ -108,7 +113,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let execution = RuntimeExecution::new(1, 1)?;
     let mut time = RuntimeTime::system_now();
-    let mut runtime = ServerRuntime::new(
+    let mut runtime = match ServerRuntime::new(
         RuntimeSettings {
             max_players: 8,
             autosave_seconds: 0,
@@ -119,7 +124,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         composition,
         execution,
         time,
-    )?;
+    ) {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            if let Some(failure) = error
+                .get_ref()
+                .and_then(|source| source.downcast_ref::<StartupEffectFailure>())
+            {
+                for receipt in failure.receipts() {
+                    eprintln!(
+                        "startup failure receipt {:?}: {:?}",
+                        receipt.token, receipt.outcome
+                    );
+                }
+            }
+            return Err(Box::new(error));
+        }
+    };
+    for receipt in runtime.take_startup_effect_receipts(
+        "effect-feedback-example",
+        "effect-feedback-startup",
+        instance,
+    ) {
+        println!("startup receipt {:?}: {:?}", receipt.token, receipt.outcome);
+    }
     let submission = runtime.submit(RuntimeCommand::save_world())?;
     for _ in 0..2 {
         time.monotonic += Duration::from_millis(50);
@@ -144,7 +172,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let shutdown = runtime.shutdown(time, std::time::Instant::now() + Duration::from_secs(2));
     shutdown.result?;
     // Ports have been released; the same bounded memory backend can be reopened.
-    let modules = RuntimeModules::new(&[])?;
+    let modules = RuntimeModules::new(&module_list)?;
     let restored = storage.load(&worlds, modules.components())?;
     println!("reopened snapshot version {:?}", restored.source_version);
     Ok(())
