@@ -14,3 +14,4 @@ minimium-telemetry = { path = "../telemetry" }
 minimium-world = { path = "../world" }
 minimium-terrain = { path = "../terrain" }
 minimium-fluids = { path = "../fluids" }
+minimium-gameplay = { path = "../gameplay" }

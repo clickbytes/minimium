@@ -12,16 +12,21 @@ impl ExcavationCoordinator {
                 }
             }
         }
-        while let Some(result) = self.journal.poll_durable() {
+        while let Some(result) = self.journal.poll_acknowledged() {
             let Some(pending) = self.pending.take() else {
                 self.fail("unexpected durable excavation acknowledgement".into());
                 break;
             };
             match result {
-                Ok(mutation) if mutation.id == pending.prepared.mutation.id => {
-                    if mutation.impact_bodies != pending.prepared.mutation.impact_bodies
-                        || !port.checkpoints_match(&pending.prepared.mutation.impact_bodies)
-                    {
+                Ok(ack)
+                    if ack.plan.same_plan(&pending.prepared.mutation)
+                        && matches!(
+                            ack.commitment,
+                            minimium_gameplay::WorldChangeCommitment::Durable
+                                | minimium_gameplay::WorldChangeCommitment::Volatile
+                        ) =>
+                {
+                    if !port.checkpoints_match(pending.prepared.mutation.impact_bodies()) {
                         self.fail("stale or mismatched impact checkpoint acknowledgement".into());
                         port.impact_failure(
                             "stale or mismatched excavation impact acknowledgement",
@@ -42,9 +47,9 @@ impl ExcavationCoordinator {
                         Err(error) => {
                             let detail = error.to_string();
                             let reason = self.storage_rejection(error);
-                            if !pending.prepared.mutation.impact_bodies.is_empty() {
+                            if !pending.prepared.mutation.impact_bodies().is_empty() {
                                 port.clear_pending_impacts(
-                                    &pending.prepared.mutation.impact_bodies,
+                                    pending.prepared.mutation.impact_bodies(),
                                 );
                                 port.impact_failure(&format!(
                                     "impact mutation was rejected by durable storage: {detail}"
@@ -54,7 +59,7 @@ impl ExcavationCoordinator {
                         }
                         Ok(_) => {
                             self.fail("excavation acknowledgement identity mismatch".into());
-                            if !pending.prepared.mutation.impact_bodies.is_empty() {
+                            if !pending.prepared.mutation.impact_bodies().is_empty() {
                                 port.impact_failure(
                                     "impact mutation acknowledgement identity mismatch",
                                 );

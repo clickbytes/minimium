@@ -7,7 +7,7 @@ Owns snapshot serialization and validation, player persistence records, bounded 
 ## Public API
 
 `MemoryStorageBackend::new(MemoryStorageLimits)` implements the same snapshot,
-excavation and impact ports without files or worker threads. Clones retain one
+world-change and impact ports without files or worker threads. Clones retain one
 volatile committed image; a single lease covers all opened services. Loading or
 opening a second service group while the first is alive returns Busy. Drop all
 ports before reopening. Snapshot capture/encoding/loading use the existing codec
@@ -29,11 +29,13 @@ entity-change storage reservations before publishing its constructed owner.
 
 ## Dependencies
 
-Consumes core identity, world and simulation values, environment clock state, the bounded diagnostics contract, telemetry and platform file operations. The player-name byte limit belongs to core identity; storage does not depend on network protocol or telemetry file sinks.
+Consumes core identity, world and simulation values, gameplay-owned world-change plans, environment clock state, the bounded diagnostics contract, telemetry and platform file operations. The player-name byte limit belongs to core identity; storage does not depend on network protocol or telemetry file sinks.
 
 ## Data flow
 
-The owning server lane builds a snapshot input from world state. `PlayerStore` updates its profile shards and captures immutable `SaveSnapshot` values; `PersistencePort` accepts or rejects bounded enqueue and later exposes typed completion/status. The file backend parses the header, then validates clock, world, sector, entity, component, initialization and player records in order, or serializes the same records to a temporary file before atomic replacement. The excavation and impact journal ports distinguish accepted submissions from exact durable acknowledgements and preserve existing replay/compaction rules.
+The owning server lane builds a snapshot input from world state. `PlayerStore` updates its profile shards and captures immutable `SaveSnapshot` values; `PersistencePort` accepts or rejects bounded enqueue and later exposes typed completion/status. The file backend parses the header, then validates clock, world, sector, entity, component, initialization and player records in order, or serializes the same records to a temporary file before atomic replacement. The world-change port consumes gameplay-owned plans and separates typed validation, queue acceptance and exact-envelope acknowledgement. File codec DTOs and encoding stay private to storage; restore returns neutral materialized state. Impact journal behavior remains unchanged.
+
+World-change failures carry `IdentityConflict`, `RevisionConflict`, `LimitExceeded`, `InvalidPlan`, `Busy`, `Unavailable` or `Failure`; technical I/O errors remain available as the failure source. `poll_acknowledged` reports a typed commitment: `Durable` for the file backend and `Volatile` for memory.
 
 The current snapshot limit is 128 MiB and 16,384 saved world instances. The encoder first runs against a counting writer, then streams the same encoding to a temporary file through a size-limited writer before atomic replacement. Each world has an explicit entity counter and content-initialization marker; entities and components use independent records, with component bytes hex-encoded and limited to 2048 bytes after decoding. Loading validates duplicate IDs, world references, exact registered component schemas, component counts and the 4 MiB aggregate component-payload limit before publishing a `LoadedState`. `SnapshotBudget` reserves each profile's maximum legal encoded record before a new profile is inserted and rebuilds those reservations while loading; profile reservations are capped at 64 MiB. Its fixed metadata reserve is derived from a 1024-byte per-world cap (checked by counting the actual manifest/counter/initialization encoders) across 16,384 worlds, plus 64 KiB for the primary header and clock. Sector, entity and component record sizes are measured with their format encoders and reserved by stable world/record key. Component raw-payload reservations are tracked alongside encoded record reservations and released on removal. Ordered `WorldEntityChange` batches are measured by the entity/component record encoders and prepared against a cloned budget; the prepared reservation holds an exclusive budget borrow until commit or drop, preventing an intervening budget change from making it stale. The global budget cannot exceed 128 MiB. Multi-record reservations stage against a cloned budget and commit only if every reservation fits.
 
@@ -54,7 +56,7 @@ The snapshot adapter maps core `ProfileIdParseError` to `InvalidData` (public
 `world.snapshot` path. Profile-ID alphabet, length and snapshot encoding are
 unchanged; a rejected player record never publishes the staged loaded store.
 
-The excavation journal is stored in `excavation.v1` beside `world.snapshot`; back
+The file excavation journal is stored in `excavation.v1` beside `world.snapshot`; back
 up and restore both files with the complete world directory. It fsyncs a result
 record before acknowledging it. Checkpoint compaction runs after that durable
 commit; a compaction error does not revoke the already durable result, but the

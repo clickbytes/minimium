@@ -111,17 +111,20 @@ impl ServerRuntime {
         let Some(owner) = self.game.worlds.get(context.instance()) else {
             return;
         };
-        let mutation = WorldMutation {
+        let mutation = match WorldChangePlan::new(
             id,
-            world: context.instance(),
-            world_seed: owner.manifest.generation().seed().get(),
-            expected_chunk_revisions: Vec::new(),
-            resulting_chunks: Vec::new(),
-            inventory: Some((profile, inventory)),
-            fluids: None,
-            impact_bodies: Vec::new(),
-            craters: Vec::new(),
-            water_catalog_digest: None,
+            context.instance(),
+            owner.manifest.generation().seed().get(),
+            Vec::new(),
+            Vec::new(),
+            Some((profile, inventory)),
+            None,
+            Vec::new(),
+            Vec::new(),
+            None,
+        ) {
+            Ok(plan) => plan,
+            Err(_) => return,
         };
         let prepared = Prepared {
             mutation,

@@ -131,22 +131,13 @@ impl ServerRuntime {
                 let new_base = new_planet
                     .volume_base()
                     .ok_or(ActionRejection::InvalidIntent)?;
-                let mut mutation = WorldMutation {
-                    id,
-                    world: body.world,
-                    world_seed: body.world_seed,
-                    expected_chunk_revisions: Vec::new(),
-                    resulting_chunks: Vec::new(),
-                    inventory: None,
-                    fluids: None,
-                    impact_bodies: vec![body],
-                    craters: vec![stamp],
-                    water_catalog_digest: digest,
-                };
+                let mut expected_chunk_revisions = Vec::new();
+                let mut resulting_chunks = Vec::new();
+                let mut fluids = None;
                 let candidate = match store.prepare_crater(&old_base, &new_base, stamp, id) {
                     Ok(edit) => {
-                        mutation.expected_chunk_revisions = edit.expected().to_vec();
-                        mutation.resulting_chunks = edit.chunks().to_vec();
+                        expected_chunk_revisions = edit.expected().to_vec();
+                        resulting_chunks = edit.chunks().to_vec();
                         let mut candidate = (*store).clone();
                         candidate.commit(edit).map_err(scene::edit_error)?;
                         candidate
@@ -175,7 +166,7 @@ impl ServerRuntime {
                             budget,
                         )
                         .map_err(|_| ActionRejection::Capacity)?;
-                    mutation.fluids = Some(prepared.snapshot().clone());
+                    fluids = Some(prepared.snapshot().clone());
                     water.publish_terrain_edit(prepared);
                     if water.snapshot().cells().is_empty() {
                         water
@@ -196,8 +187,7 @@ impl ServerRuntime {
                 .map_err(|_| ActionRejection::Stale)?;
                 let candidate_planet =
                     scene::planet(manifest, candidate_inputs).ok_or(ActionRejection::Stale)?;
-                let mut affected: Vec<_> =
-                    mutation.resulting_chunks.iter().map(|c| c.key()).collect();
+                let mut affected: Vec<_> = resulting_chunks.iter().map(|c| c.key()).collect();
                 for corner in 0..8 {
                     let position = std::array::from_fn(|i| {
                         stamp.center[i]
@@ -228,6 +218,19 @@ impl ServerRuntime {
                 .into_iter()
                 .map(|(key, geometry)| (key, Arc::new(SectorPayload::new(geometry))))
                 .collect();
+                let mutation = WorldChangePlan::new(
+                    id,
+                    body.world,
+                    body.world_seed,
+                    expected_chunk_revisions,
+                    resulting_chunks,
+                    None,
+                    fluids,
+                    vec![body],
+                    vec![stamp],
+                    digest,
+                )
+                .map_err(|_| ActionRejection::Capacity)?;
                 Ok(Prepared {
                     mutation,
                     terrain: Some(candidate),

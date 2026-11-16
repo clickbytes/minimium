@@ -1,7 +1,8 @@
 use super::*;
+use minimium_gameplay::{WorldChangeAck, WorldChangeCommitment, WorldChangeFailure};
 
 enum Request {
-    Commit(WorldMutation),
+    Commit(WorldChangePlan),
     Stop,
 }
 
@@ -9,32 +10,32 @@ pub struct ExcavationJournal {
     path: std::path::PathBuf,
     lock: Option<File>,
     requests: mpsc::SyncSender<Request>,
-    completions: mpsc::Receiver<io::Result<WorldMutation>>,
+    completions: mpsc::Receiver<Result<WorldChangePlan, PersistenceError>>,
     worker: Option<thread::JoinHandle<()>>,
     restore: Arc<Mutex<ExcavationRestore>>,
     config: JournalConfig,
 }
 
 /// Durable mutation journal port. `submit` only confirms bounded queue acceptance;
-/// publication requires the exact `WorldMutation` returned by `poll_durable`.
+/// publication requires the exact immutable plan returned by `poll_acknowledged`.
 pub trait ExcavationJournalPort: Send {
-    fn submit(&self, mutation: WorldMutation) -> io::Result<()>;
-    fn validate(&self, mutation: &WorldMutation) -> io::Result<()>;
-    fn poll_durable(&self) -> Option<io::Result<WorldMutation>>;
+    fn submit(&self, plan: WorldChangePlan) -> Result<(), PersistenceError>;
+    fn validate(&self, plan: &WorldChangePlan) -> Result<(), PersistenceError>;
+    fn poll_acknowledged(&self) -> Option<Result<WorldChangeAck, PersistenceError>>;
     fn counters(&self) -> (u64, u64);
     fn journal_bytes(&self) -> io::Result<u64>;
     fn shutdown_until(&mut self, deadline: Instant) -> io::Result<()>;
 }
 
 impl ExcavationJournalPort for ExcavationJournal {
-    fn submit(&self, mutation: WorldMutation) -> io::Result<()> {
-        ExcavationJournal::submit(self, mutation)
+    fn submit(&self, plan: WorldChangePlan) -> Result<(), PersistenceError> {
+        ExcavationJournal::submit(self, plan)
     }
-    fn validate(&self, mutation: &WorldMutation) -> io::Result<()> {
-        ExcavationJournal::validate(self, mutation)
+    fn validate(&self, plan: &WorldChangePlan) -> Result<(), PersistenceError> {
+        ExcavationJournal::validate(self, plan)
     }
-    fn poll_durable(&self) -> Option<io::Result<WorldMutation>> {
-        ExcavationJournal::poll_durable(self)
+    fn poll_acknowledged(&self) -> Option<Result<WorldChangeAck, PersistenceError>> {
+        ExcavationJournal::poll_acknowledged(self)
     }
     fn counters(&self) -> (u64, u64) {
         ExcavationJournal::counters(self)
@@ -47,19 +48,58 @@ impl ExcavationJournalPort for ExcavationJournal {
     }
 }
 
+#[derive(Debug)]
+pub struct PersistenceError {
+    pub kind: WorldChangeFailure,
+    source: Option<io::Error>,
+}
+
+impl PersistenceError {
+    pub fn new(kind: WorldChangeFailure) -> Self {
+        Self { kind, source: None }
+    }
+    pub fn with_source(kind: WorldChangeFailure, source: io::Error) -> Self {
+        Self {
+            kind,
+            source: Some(source),
+        }
+    }
+    pub fn source_error(&self) -> Option<&io::Error> {
+        self.source.as_ref()
+    }
+}
+impl std::fmt::Display for PersistenceError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.source {
+            Some(source) => write!(f, "world change persistence {:?}: {source}", self.kind),
+            None => write!(f, "world change persistence {:?}", self.kind),
+        }
+    }
+}
+impl std::error::Error for PersistenceError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.source.as_ref().map(|e| e as _)
+    }
+}
+impl From<io::Error> for PersistenceError {
+    fn from(source: io::Error) -> Self {
+        Self::with_source(WorldChangeFailure::Failure, source)
+    }
+}
+
 impl ExcavationJournal {
     pub fn preflight(path: &Path) -> io::Result<()> {
         preflight_header(path)
     }
 
-    pub fn open(path: &Path) -> io::Result<(Self, ExcavationRestore)> {
+    pub fn open(path: &Path) -> io::Result<(Self, WorldChangeState)> {
         Self::open_with_config(path, JournalConfig::default())
     }
 
     pub fn open_with_config(
         path: &Path,
         config: JournalConfig,
-    ) -> io::Result<(Self, ExcavationRestore)> {
+    ) -> io::Result<(Self, WorldChangeState)> {
         if !config.valid() {
             return Err(invalid("invalid excavation journal budget"));
         }
@@ -92,9 +132,12 @@ impl ExcavationJournal {
                         break;
                     };
                     let result = commit(&worker_path, &mut file, &mut state, mutation, config);
-                    let fatal = result
-                        .as_ref()
-                        .is_err_and(|error| error.kind() != io::ErrorKind::InvalidInput);
+                    let fatal = result.as_ref().is_err_and(|error| {
+                        matches!(
+                            error.kind,
+                            WorldChangeFailure::Failure | WorldChangeFailure::Unavailable
+                        )
+                    });
                     if sender.send(result).is_err() || fatal {
                         break;
                     }
@@ -115,52 +158,55 @@ impl ExcavationJournal {
     }
 
     /// Queue capacity is eight transactions; each encoded transaction is capped at 32 MiB.
-    pub fn submit(&self, mutation: WorldMutation) -> io::Result<()> {
-        self.validate(&mutation)?;
+    pub fn submit(&self, plan: WorldChangePlan) -> Result<(), PersistenceError> {
+        self.validate(&plan)?;
         self.requests
-            .try_send(Request::Commit(mutation))
+            .try_send(Request::Commit(plan))
             .map_err(|error| match error {
-                mpsc::TrySendError::Full(_) => io::Error::new(
-                    io::ErrorKind::WouldBlock,
-                    "excavation journal queue is full",
-                ),
+                mpsc::TrySendError::Full(_) => PersistenceError::new(WorldChangeFailure::Busy),
                 mpsc::TrySendError::Disconnected(_) => {
-                    io::Error::new(io::ErrorKind::BrokenPipe, "excavation journal stopped")
+                    PersistenceError::new(WorldChangeFailure::Unavailable)
                 }
             })
     }
 
     /// Checks capacity and optimistic revisions without writing or queueing the mutation.
-    pub fn validate(&self, mutation: &WorldMutation) -> io::Result<()> {
+    pub fn validate(&self, plan: &WorldChangePlan) -> Result<(), PersistenceError> {
         let state = self
             .restore
             .lock()
-            .map_err(|_| io::Error::other("excavation state poisoned"))?;
-        validate_mutation(mutation, &state).map_err(|error| invalid_request(&error.to_string()))?;
-        let size = encode_mutation(mutation)?.len();
+            .map_err(|_| PersistenceError::new(WorldChangeFailure::Failure))?;
+        let mutation = stored_mutation(plan);
+        validate_mutation(&mutation, &state).map_err(|error| {
+            PersistenceError::with_source(
+                error.kind,
+                io::Error::new(io::ErrorKind::InvalidData, error.detail),
+            )
+        })?;
+        let size = encode_mutation(&mutation)
+            .map_err(|e| PersistenceError::with_source(WorldChangeFailure::Failure, e))?
+            .len();
         if size > self.config.transaction_budget {
-            return Err(invalid_request(
-                "excavation transaction exceeds configured budget",
-            ));
+            return Err(PersistenceError::new(WorldChangeFailure::LimitExceeded));
         }
-        let checkpoint = checkpoint_size(&state, mutation)
-            .map_err(|error| invalid_request(&error.to_string()))?;
+        let checkpoint = checkpoint_size(&state, &mutation).map_err(PersistenceError::new)?;
         if checkpoint as u64 > self.config.byte_budget {
-            return Err(invalid_request(
-                "restored state exceeds configured byte budget",
-            ));
+            return Err(PersistenceError::new(WorldChangeFailure::LimitExceeded));
         }
         Ok(())
     }
 
-    pub fn poll_durable(&self) -> Option<io::Result<WorldMutation>> {
+    pub fn poll_acknowledged(&self) -> Option<Result<WorldChangeAck, PersistenceError>> {
         let result = self.completions.try_recv().ok()?;
-        if let Ok(mutation) = &result {
+        if let Ok(plan) = &result {
             if let Ok(mut state) = self.restore.lock() {
-                apply(&mut state, mutation);
+                apply(&mut state, &stored_mutation(plan));
             }
         }
-        Some(result)
+        Some(result.map(|plan| WorldChangeAck {
+            plan,
+            commitment: WorldChangeCommitment::Durable,
+        }))
     }
 
     pub fn counters(&self) -> (u64, u64) {
@@ -184,7 +230,7 @@ impl ExcavationJournal {
                     Err(mpsc::TrySendError::Full(_)) => false,
                 };
             }
-            while let Some(result) = self.poll_durable() {
+            while let Some(result) = self.poll_acknowledged() {
                 if let Err(error) = result {
                     failure = Some(error);
                 }
@@ -203,13 +249,13 @@ impl ExcavationJournal {
             }
             None => {}
         }
-        while let Some(result) = self.poll_durable() {
+        while let Some(result) = self.poll_acknowledged() {
             if let Err(error) = result {
                 failure = Some(error);
             }
         }
         if let Some(error) = failure {
-            return Err(error);
+            return Err(io::Error::other(error));
         }
         drop(self.lock.take());
         Ok(())

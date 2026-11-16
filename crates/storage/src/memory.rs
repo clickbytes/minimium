@@ -1,6 +1,7 @@
 //! Bounded, host-owned volatile persistence. Acknowledgements mean committed to
 //! this backend's memory; they do not promise survival of process termination.
 use crate::{excavation::*, impact_journal::MemoryImpacts, *};
+use minimium_gameplay::WorldChangeState;
 use minimium_world::{entity::ComponentRegistry, impact::BodyState, world::*};
 use std::{
     collections::BTreeMap,
@@ -27,7 +28,7 @@ impl Default for MemoryStorageLimits {
 #[derive(Default)]
 pub(crate) struct State {
     snapshot: Option<Vec<u8>>,
-    pub(crate) excavation: ExcavationRestore,
+    pub(crate) excavation: WorldChangeState,
     pub(crate) impacts: BTreeMap<(WorldInstanceId, u64), BodyState>,
     opened: bool,
 }

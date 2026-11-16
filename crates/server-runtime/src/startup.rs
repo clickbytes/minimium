@@ -102,7 +102,7 @@ pub struct PreparedRuntime {
     pub entities: Vec<minimium_storage::PersistedEntity>,
     pub persistence: Box<dyn PersistencePort>,
     pub excavation_journal: Box<dyn minimium_storage::excavation::ExcavationJournalPort>,
-    pub excavation_restore: minimium_storage::excavation::ExcavationRestore,
+    pub excavation_restore: minimium_gameplay::WorldChangeState,
     pub impact_journal: Box<dyn minimium_storage::ImpactJournalPort>,
     pub impact_restore: Vec<minimium_world::impact::BodyState>,
     pub climate: ClimateScenario,

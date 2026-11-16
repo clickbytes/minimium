@@ -1,10 +1,11 @@
 //! Host-selected persistence bootstrap and durable service ports.
 use crate::{
-    excavation::{ExcavationJournal, ExcavationJournalPort, ExcavationRestore, JOURNAL_FILE_NAME},
+    excavation::{ExcavationJournal, ExcavationJournalPort, JOURNAL_FILE_NAME},
     impact_journal::{ImpactJournal, ImpactJournalPort},
     LoadedState, PersistencePort, PersistenceWorker, PlayerStore, StorageError,
 };
 use minimium_diagnostics::DomainLogger;
+use minimium_gameplay::WorldChangeState;
 use minimium_world::{
     entity::ComponentRegistry,
     impact::BodyState,
@@ -20,7 +21,7 @@ use std::{
 pub struct StorageServices {
     pub persistence: Box<dyn PersistencePort>,
     pub excavation: Box<dyn ExcavationJournalPort>,
-    pub excavation_restore: ExcavationRestore,
+    pub excavation_restore: WorldChangeState,
     pub impacts: Box<dyn ImpactJournalPort>,
     pub impact_restore: Vec<BodyState>,
 }
