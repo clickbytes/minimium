@@ -1,5 +1,6 @@
 use super::*;
 use crate::{commands, replication, simulation};
+mod command_execution;
 mod properties;
 mod status;
 use minimium_telemetry::allocations::{self, Phase};
@@ -91,8 +92,12 @@ impl ServerRuntime {
                 commands::ClientTrafficSnapshot::default()
             };
             let reply = match &command {
-                crate::server_command::ServerCommand::Registered(line) => {
-                    self.execute_module_command(line)
+                crate::server_command::ServerCommand::Registered {
+                    identity,
+                    arguments,
+                } => self.execute_module_command(Some(identity), &arguments),
+                crate::server_command::ServerCommand::UnresolvedModule(argv) => {
+                    self.execute_module_command(None, &argv)
                 }
                 crate::server_command::ServerCommand::SpawnRandomMeteorid => {
                     self.spawn_meteorid(true)
@@ -199,34 +204,6 @@ impl ServerRuntime {
             }
         }
         drop(command_phase);
-    }
-
-    fn execute_module_command(&mut self, line: &str) -> commands::CommandReply {
-        let mut effects = crate::modules::WorldEffectBuffer::default();
-        let mut reply = commands::execute_module_command(
-            line,
-            &self.game.worlds,
-            &mut effects,
-            &self.module_registry,
-        );
-        if reply.handler_succeeded() {
-            let batch = effects.into_batch();
-            if !batch.effects().is_empty() || batch.rejected_pushes() > 0 {
-                match self.commit_effect_batch(batch) {
-                    Ok(outcome) => {
-                        self.report_effect_batch_outcome("command", &outcome);
-                        reply.set_effect_outcome(outcome);
-                    }
-                    Err(error) => {
-                        reply = commands::CommandReply::error(
-                            "server.command.effect_commit_failed",
-                            &format!("could not commit command effects: {error}"),
-                        );
-                    }
-                }
-            }
-        }
-        reply
     }
 
     fn apply_world_inputs(&mut self) {

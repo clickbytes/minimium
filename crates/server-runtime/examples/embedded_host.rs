@@ -120,7 +120,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         execution,
         time,
     )?;
-    let submission = runtime.submit(RuntimeCommand::parse("world save")?)?;
+    let submission = runtime.submit(RuntimeCommand::save_world())?;
     for _ in 0..2 {
         time.monotonic += Duration::from_millis(50);
         let outcome = runtime.step(time)?;

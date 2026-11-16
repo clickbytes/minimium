@@ -14,9 +14,19 @@ construction (1..64 lanes, 1..16 sector workers). The reusable constructor start
 no threads, TCP listeners, processes, files or console readers. The host supplies
 authentication, fixed-domain loggers, session nonce and opened S12 services.
 
-`submit(RuntimeCommand)` accepts a parsed administration intent of at most 512
-bytes into the shared 64-command queue and returns a monotone `SubmissionId` or
-typed `SubmitError`. Acceptance is not execution. `step(RuntimeTime)` returns
+`RuntimeCommand` has validated, format-free constructors for help, status,
+players, metrics, save, stop, bounded bolid/meteor operations, typed clock
+changes, supported property reads/writes/resets/list/help, and registered module
+commands with a stable registered name or alias plus bounded argument vector.
+`RuntimeCommand::parse` remains the text adapter and produces the same private
+intent representation. Module text is lexed once into argv; the runtime resolves
+the longest registered canonical name or alias from those tokens and dispatches
+the remaining argument slice. A typed module command keeps its identity separate
+from its arguments and does not invoke the text lexer.
+
+`submit(RuntimeCommand)` accepts an administration intent of at most 512 bytes
+into the shared 64-command queue and returns a monotone `SubmissionId` or typed
+`SubmitError`. Acceptance is not execution. `step(RuntimeTime)` returns
 bounded command execution results, tick/stop state and the next recommended wake
 instant; it never sleeps. One step executes at most one due fixed tick and eight
 commands, preserving the existing missed-tick rule. Console/admin input uses the
@@ -38,6 +48,10 @@ existing persistence queue accepted work; `StatusReport::persistence()` reports
 the owner's current pending/last-save state. The formatter and terminal/admin
 adapters consume the same view. `examples/typed_replies.rs` demonstrates an
 external crate consumer using the ordinary embedded composition and `step`.
+`examples/typed_host_commands.rs` demonstrates typed save, status, setting and
+clock operations, a module command with explicit identity and argv, submit
+rejections, and public reply data. The existing `embedded_host` example also
+submits its save operation through the typed constructor.
 
 `RuntimeTime` carries a monotonic instant and either validated UTC or a typed UTC
 failure. `RuntimeTime::system_now` is an explicit process adapter. Owner deadlines,

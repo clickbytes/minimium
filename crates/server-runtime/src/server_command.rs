@@ -197,9 +197,13 @@ fn parse_server_spec(arguments: &[&str]) -> Result<ServerCommand, CommandError> 
         ));
     };
     if command.starts_with("time") {
-        let joined = format!("{command} {tail}");
-        let words = joined.split_whitespace().skip(1).collect::<Vec<_>>();
-        return TimeCommand::parse(&words)
+        let time_arguments = command
+            .split_whitespace()
+            .skip(1)
+            .chain(tail.split_whitespace())
+            .collect::<Vec<_>>();
+        return TimeCommand::parse(&time_arguments)
+            .and_then(|command| validate_time_command(command).map_err(str::to_owned))
             .map(ServerCommand::Time)
             .map_err(|reason| {
                 parse_error(
@@ -219,17 +223,7 @@ fn parse_server_spec(arguments: &[&str]) -> Result<ServerCommand, CommandError> 
         } else {
             tail.parse::<u16>().ok()
         };
-        return count
-            .filter(|n| (1..=64).contains(n))
-            .map(ServerCommand::SpawnRandomBolid)
-            .ok_or_else(|| {
-                parse_error(
-                    CommandErrorCode::InvalidValue,
-                    "count",
-                    "expected an integer from 1 to 64",
-                    "spawn_random_bolid [N: 1..64]",
-                )
-            });
+        return validate_bolid_count(count).map(ServerCommand::SpawnRandomBolid);
     }
     if !tail.is_empty() {
         return Err(parse_error(
@@ -268,7 +262,11 @@ pub enum ServerCommand {
     Time(TimeCommand),
     Property(ServerPropertyCommand),
     /// A validated administrative line owned by its registering server module.
-    Registered(String),
+    Registered {
+        identity: String,
+        arguments: Vec<String>,
+    },
+    UnresolvedModule(Vec<String>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -337,6 +335,50 @@ pub(crate) fn server_command_exists(target: &str) -> bool {
         .any(|spec| spec.name == target || spec.alias == Some(target))
 }
 
+pub(crate) fn validate_property_request(
+    request: PropertyRequest,
+) -> Result<ServerCommand, CommandError> {
+    property_parsing::validate_property_request(request)
+}
+
+pub(crate) fn set_autosave_interval(seconds: u64) -> Result<ServerCommand, CommandError> {
+    property_parsing::set_autosave_interval(seconds)
+}
+
+pub(crate) fn set_bolid_interval(
+    interval: Option<(u64, u64)>,
+) -> Result<ServerCommand, CommandError> {
+    property_parsing::set_bolid_interval(interval)
+}
+
+pub(crate) fn validate_bolid_count(count: Option<u16>) -> Result<u16, CommandError> {
+    count
+        .filter(|count| (1..=64).contains(count))
+        .ok_or_else(|| {
+            parse_error(
+                CommandErrorCode::InvalidValue,
+                "count",
+                "expected an integer from 1 to 64",
+                "spawn_random_bolid [N: 1..64]",
+            )
+        })
+}
+
+pub(crate) fn validate_time_command(command: TimeCommand) -> Result<TimeCommand, &'static str> {
+    match command {
+        TimeCommand::Scale(rate) if rate.get() != 0 && rate.get() < 100_000 => Err(
+            "rate must be 0 (pause) or between 0.1 and 1000000 with at most 6 fractional digits",
+        ),
+        TimeCommand::Set(instant)
+            if instant.get() < minimium_environment::time::MIN_WORLD_TIME_MS
+                || instant.get() >= minimium_environment::time::MAX_WORLD_TIME_MS_EXCLUSIVE =>
+        {
+            Err("UTC date is outside the supported world-time range")
+        }
+        _ => Ok(command),
+    }
+}
+
 impl ServerCommand {
     pub fn parse(line: &str) -> Result<Self, CommandError> {
         let owned_words = lex_command_line(line)?;
@@ -354,7 +396,7 @@ impl ServerCommand {
         {
             return parse_property(line.trim());
         }
-        match server_registry().parse_line(line)? {
+        match server_registry().parse_outcome(line, &words) {
             CommandOutcome::Matched {
                 result: Ok(command),
                 ..
@@ -374,7 +416,7 @@ impl ServerCommand {
             CommandOutcome::Unknown => {}
         }
         if line.len() <= 512 && line.chars().all(|c| !c.is_control()) {
-            Ok(Self::Registered(line.trim().to_owned()))
+            Ok(Self::UnresolvedModule(owned_words))
         } else {
             Err(parse_error(
                 CommandErrorCode::InvalidArguments,
