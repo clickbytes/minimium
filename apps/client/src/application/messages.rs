@@ -3,6 +3,7 @@ use minimium_protocol::ServerMessage;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ApplicationMessageError {
+    Time(minimium_client_runtime::ClientTimeError),
     MissingWorldContent,
     WorldContentMismatch,
     StaleWorldContext,
@@ -36,7 +37,10 @@ impl ClientApplication {
     pub(crate) fn apply_game_message(
         &mut self,
         message: &ServerMessage,
+        now: minimium_client_runtime::ClientTime,
     ) -> Result<(), ApplicationMessageError> {
+        self.accept_time(now)
+            .map_err(ApplicationMessageError::Time)?;
         match message {
             ServerMessage::Welcome { .. } | ServerMessage::TransitionCommitted { .. } => {
                 self.apply_world_message(message).map(|_| ())
@@ -97,22 +101,28 @@ impl ClientApplication {
                     .world_manifests
                     .get(&self.game.current_instance)
                     .copied();
-                if !self.game.gameplay.apply_snapshot(
-                    *server_time_ms,
-                    *full_snapshot,
-                    *server_tick,
-                    *resolved_input_seq,
-                    *self_position,
-                    *self_position_mm,
-                    *self_velocity,
-                    *self_grounded,
-                    *self_movement,
-                    self.connection.movement,
-                    manifest,
-                    geography,
-                    players,
-                    removed_players,
-                ) {
+                if !self
+                    .game
+                    .gameplay
+                    .apply_snapshot(
+                        *server_time_ms,
+                        *full_snapshot,
+                        *server_tick,
+                        *resolved_input_seq,
+                        *self_position,
+                        *self_position_mm,
+                        *self_velocity,
+                        *self_grounded,
+                        *self_movement,
+                        self.connection.movement,
+                        manifest,
+                        geography,
+                        players,
+                        removed_players,
+                        now,
+                    )
+                    .map_err(ApplicationMessageError::Time)?
+                {
                     return Err(ApplicationMessageError::VisiblePlayerLimitExceeded);
                 }
                 Ok(())

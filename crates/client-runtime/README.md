@@ -16,7 +16,8 @@ return typed queue failure if the initial Presentation/Authenticate admission
 fails. `ConnectionController` wraps the connector's connected stream in the
 single `TcpClientTransport` adapter for both desktop and terminal. Logical
 authentication, context/replica/transfer checks and permission-dependent actions
-remain in the session. Logical clocks retain their existing ownership.
+remain in the session. Constructors also require a host-supplied `ClientTime`;
+they never sample a clock themselves.
 
 `ContentJobsPort` accepts typed world and material requests, returns an accepted
 `ContentJobHandle` or Busy/rejection, and supports targeted completion polling,
@@ -45,7 +46,7 @@ The adapter keeps bounded wire bytes, codecs, partial I/O and typed peek/consume
 Session dispatch can retain a deferred world message and inspect the next typed
 message without consuming unrelated input, preserving cancellation behavior.
 The session tracks Ping's stable frame token; its timeout/RTT starts at the
-adapter's actual completed-write instant. Time-probe t1 keeps its existing
+host sample supplied to the flush that actually completes the frame. Time-probe t1 keeps its existing
 enqueue-time semantics. `SessionIoFailure` retains a cloneable concrete I/O
 cause, its kind and stable diagnostic code on `DisconnectReason::Io`.
 `close` discards the transport and pending output immediately, as before.
@@ -126,6 +127,33 @@ Drop does not add another content wait after an explicit shutdown attempt.
 
 ## Invariants and errors
 
+`ClientTime::new(Instant)` wraps a monotonic sample supplied by the host. Every
+logical constructor, poll, queue/action, readiness, cancellation and shutdown
+entry accepts that sample explicitly. Equal samples are valid. Pure
+`validate_time` checks reject backward samples and unrepresentable deadlines or
+relative milliseconds with `ClientTimeError::{Backward, Overflow}` before
+consuming completions, writing transport bytes or changing lifecycle, counters,
+queues and cooldown state. The session also validates its injected transport
+before admitting its initial handshake. Hosts composing multiple mutable owners
+must preflight all of them before any mutation, then pass the same sample into
+the operation. Invalid samples leave those logical owners unchanged.
+
+| Clock sites | Domain and preserved policy |
+| --- | --- |
+| Session state/Welcome, heartbeat/Ping, world/material preparation, transfer retry and tool use | Supplied `ClientTime`; existing 5s Welcome, 10s heartbeat cadence, 20s heartbeat timeout, 300s preparation and 500ms tool cooldown remain unchanged. Ping starts only when its tracked frame is completely written; queue acceptance commits tool timestamps/counters. |
+| Session clock epoch/reset, probe enqueue/receive, stale age and estimates | Supplied sample converted with checked relative milliseconds. Probe cadence, estimator smoothing/clamps and UTC/world-time arithmetic remain unchanged. Read-only clock getters report the last admitted sample; they do not read the host clock. |
+| Controller/connector starts, polls, cancellation and retry | Supplied sample is validated before lifecycle effects. Empty connector polls compare the logical attempt deadline against this sample. |
+| Connector worker DNS/socket/process startup and completion | Physical `Instant` budgets bound actual OS work. An already available result completed within that resource budget still wins a late logical poll, preserving prior behavior. Worker availability remains an external resource fact. |
+| Snapshot receipt/interpolation | Supplied sample, checked host elapsed conversion; server timestamp ordering and saturating interpolation arithmetic remain unchanged. |
+| Prediction and input tick IDs | Fixed simulation steps and server tick/sequence values; independent of monotonic lifecycle samples and environment `time_scale`. |
+| Bootstrap, worker/child drain and controller cleanup | Physical OS/resource deadlines, including the existing 28s default controller cleanup budget. Drop uses the last admitted session sample for logical teardown and reads physical time only to bound resource drain. |
+| Environment/astronomy | Authoritative UTC/world clock samples; never substituted for lifecycle time. |
+
+The compile-only `host_clock` example drives the real injected session/transport
+and content adapters with controlled equal, advancing and backward samples and
+handles checked-add overflow through the public API. Desktop and terminal hosts
+sample `Instant::now()` at each logical entry; they own sampling cadence.
+
 Preserve bounded read/write work, frame limits, heartbeat behavior, world fingerprint checks and transition ordering. Queue, protocol, timeout, map, package, content-preparation and controller failures use typed errors. Session and controller failures have stable codes, and adapter causes remain available through `Error::source` until presentation formats them.
 
 ## Commands
@@ -202,7 +230,7 @@ the client connects or reports failure.
 
 The session accepts Bolid only for its active world context and discards it during transfer; server monotonic time is estimated from the existing probe clock.
 
-`ConnectionController::request_random_bolid(count)` validates 1..64 and forwards
+`ConnectionController::request_random_bolid(count, now)` validates 1..64 and forwards
 the bounded count through the existing owned-server admin command channel. It
 does not send N separate requests or change the game protocol.
 

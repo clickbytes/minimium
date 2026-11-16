@@ -6,6 +6,11 @@ pub(super) use character::{camera_direction, camera_direction_from_geometry};
 
 impl DesktopHost {
     pub(super) fn step(&mut self, now: Instant) {
+        if let Err(error) = self.application.validate_time(crate::host_time::sample()) {
+            self.application
+                .record_diagnostic_failure("client.invalid_time", &error);
+            return;
+        }
         if self.application.overview().is_open()
             && self.application.overview().instance()
                 != Some(self.application.game_view().current_instance)
@@ -46,7 +51,7 @@ impl DesktopHost {
         let renderer = &mut self.renderer;
         let output = application.step(
             crate::application::ClientStepInput {
-                now,
+                now: crate::host_time::sample(),
                 prediction: Some(crate::application::PredictionInput {
                     direction,
                     vertical,
@@ -64,6 +69,14 @@ impl DesktopHost {
                 )
             },
         );
+        let output = match output {
+            Ok(output) => output,
+            Err(error) => {
+                self.application
+                    .record_diagnostic_failure("client.invalid_time", &error);
+                return;
+            }
+        };
         if let Some(error) = output.candidate_scene_error.as_ref() {
             self.application
                 .record_diagnostic_failure("client_runtime.candidate_scene_failed", error);
@@ -102,7 +115,7 @@ impl DesktopHost {
         self.update_environment_frame();
         self.send_sky_view(now);
         self.flush_pending_bolid(now);
-        self.update_remote_player_rendering(now);
+        self.update_remote_player_rendering();
     }
 
     pub(super) fn update(&mut self) -> environment::PreparedEnvironmentFrame {

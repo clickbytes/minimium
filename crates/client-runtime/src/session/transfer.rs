@@ -95,7 +95,7 @@ impl ClientSession {
             return;
         }
         if self
-            .queue(&ClientMessage::TransitionReady {
+            .queue_current(&ClientMessage::TransitionReady {
                 transition_id: transition.0,
                 target_context: transition.1,
             })

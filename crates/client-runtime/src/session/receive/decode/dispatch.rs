@@ -307,7 +307,7 @@ fn handle_welcome(
     session.next_target_tick = session.server_tick.saturating_add(2).max(1);
     session.clear_transfer_lifecycle();
     session.state = SessionState::Connected;
-    session.state_since = Instant::now();
+    session.state_since = session.now;
     session.last_heartbeat_at = session.state_since;
     DispatchResult::Emit
 }

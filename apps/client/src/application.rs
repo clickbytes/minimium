@@ -6,6 +6,7 @@ mod game;
 mod messages;
 mod settings;
 mod step;
+mod time;
 #[cfg(feature = "desktop")]
 mod transitions;
 #[cfg(feature = "desktop")]
@@ -38,12 +39,13 @@ pub(crate) use ui::ClientStatus;
 #[cfg(feature = "desktop")]
 pub(crate) use ui::UiModel;
 
-use minimium_client_runtime::ConnectionController;
+use minimium_client_runtime::{ClientTime, ClientTimeError, ConnectionController};
 use minimium_world::world::{WorldInstanceId, WorldMap};
 use std::collections::HashMap;
 
 /// Shared client state owner; presentation resources belong to the host renderer.
 pub(crate) struct ClientApplication {
+    last_operation_at: ClientTime,
     #[cfg(feature = "desktop")]
     pub(crate) ui: UiModel,
     game: ClientGameState,
@@ -58,7 +60,7 @@ pub(crate) struct ClientApplication {
     pub(crate) input: crate::input::InputMapper,
     world_catalog: HashMap<WorldInstanceId, WorldMap>,
     #[cfg(feature = "desktop")]
-    last_step_at: Option<std::time::Instant>,
+    last_step_at: Option<ClientTime>,
     #[cfg(feature = "desktop")]
     transitions: WorldTransitionController,
     #[cfg(feature = "desktop")]
@@ -132,12 +134,16 @@ impl ClientApplication {
         transitions: WorldTransitionController,
         overview: MapOverviewModel,
         status: ClientStatus,
-    ) -> Self {
-        Self {
+        now: ClientTime,
+    ) -> Result<Self, ClientTimeError> {
+        connection.validate_time(now)?;
+        game.gameplay.reconciliation.validate_time(now)?;
+        Ok(Self {
+            last_operation_at: now,
             ui,
             game,
             connection,
-            action_executor: ClientActionExecutor::default(),
+            action_executor: ClientActionExecutor::new(now),
             pending_transfer: None,
             #[cfg(feature = "desktop")]
             tool_profile: minimium_game_sample::DEFAULT_TOOL_PROFILE,
@@ -149,14 +155,16 @@ impl ClientApplication {
             transitions,
             overview,
             status,
-        }
+        })
     }
 
     pub(crate) fn new_headless(
         connection: ConnectionController,
         worlds: crate::bootstrap::InitialWorlds,
         settings: HeadlessApplicationSettings,
-    ) -> Self {
+        now: ClientTime,
+    ) -> Result<Self, ClientTimeError> {
+        connection.validate_time(now)?;
         let game = ClientGameState::for_initial_world(
             worlds.instance,
             worlds.map.spawn(),
@@ -180,12 +188,13 @@ impl ClientApplication {
             crate::input::InputMapper::default(),
             ClientStatus::ClientText(crate::messages::ClientText::TerminalIntro),
         );
-        Self {
+        Ok(Self {
+            last_operation_at: now,
             #[cfg(feature = "desktop")]
             ui: desktop.0,
             game,
             connection,
-            action_executor: ClientActionExecutor::default(),
+            action_executor: ClientActionExecutor::new(now),
             pending_transfer: None,
             #[cfg(feature = "desktop")]
             tool_profile: minimium_game_sample::DEFAULT_TOOL_PROFILE,
@@ -202,39 +211,58 @@ impl ClientApplication {
             overview: MapOverviewModel::new(2.8),
             #[cfg(feature = "desktop")]
             status: desktop.3,
-        }
+        })
     }
 
     pub(crate) fn start_remote(
         &mut self,
         address: String,
+        now: ClientTime,
     ) -> Result<(), minimium_client_runtime::connector::StartError> {
-        self.connection.start_remote(address)
+        self.accept_time(now)
+            .map_err(minimium_client_runtime::connector::StartError::Time)?;
+        self.connection.start_remote(address, now)
     }
 
     pub(crate) fn start_local(
         &mut self,
         config: minimium_client_runtime::LocalServerLaunchConfig,
+        now: ClientTime,
     ) -> Result<(), minimium_client_runtime::connector::StartError> {
-        self.connection.start_local(config)
+        self.accept_time(now)
+            .map_err(minimium_client_runtime::connector::StartError::Time)?;
+        self.connection.start_local(config, now)
     }
 
-    pub(crate) fn cancel_connection_attempt(&mut self) {
-        self.connection.cancel();
+    pub(crate) fn cancel_connection_attempt(
+        &mut self,
+        now: ClientTime,
+    ) -> Result<(), ClientTimeError> {
+        self.accept_time(now)?;
+        self.connection.cancel(now)
     }
 
-    fn poll_connector(&mut self) -> minimium_client_runtime::ConnectionEvent {
-        self.connection.poll_connector()
+    fn poll_connector(
+        &mut self,
+        now: ClientTime,
+    ) -> Result<minimium_client_runtime::ConnectionEvent, ClientTimeError> {
+        self.connection.poll_connector(now)
     }
 
     fn poll_admin_result(
         &mut self,
-    ) -> Option<Result<String, minimium_client_runtime::ControllerError>> {
-        self.connection.poll_admin_result()
+        now: ClientTime,
+    ) -> Result<Option<Result<String, minimium_client_runtime::ControllerError>>, ClientTimeError>
+    {
+        self.connection.poll_admin_result(now)
     }
 
-    fn poll_session(&mut self, events: &mut Vec<crate::session::SessionEvent>) {
-        self.connection.poll_session(events);
+    fn poll_session(
+        &mut self,
+        events: &mut Vec<crate::session::SessionEvent>,
+        now: ClientTime,
+    ) -> Result<(), ClientTimeError> {
+        self.connection.poll_session(events, now)
     }
 
     pub(crate) fn session(&self) -> Option<&crate::session::ClientSession> {
@@ -260,7 +288,10 @@ impl ClientApplication {
     pub(crate) fn report_transfer_host_ready(
         &mut self,
         ticket: minimium_client_runtime::TransferTicket,
+        now: ClientTime,
     ) -> Result<(), crate::session::QueueError> {
+        self.accept_time(now)
+            .map_err(crate::session::QueueError::Time)?;
         if !self.transfer_cpu_content_ready(ticket) {
             return Err(crate::session::QueueError::StaleWorldContext);
         }
@@ -271,7 +302,7 @@ impl ClientApplication {
         {
             return Ok(());
         }
-        self.connection.report_transfer_host_ready(ticket)
+        self.connection.report_transfer_host_ready(ticket, now)
     }
 
     pub(crate) fn pending_transfer_ticket(
@@ -316,50 +347,64 @@ impl ClientApplication {
     pub(crate) fn finish_until(
         &mut self,
         deadline: std::time::Instant,
+        now: ClientTime,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.connection.finish_until(deadline)
+        self.accept_time(now)?;
+        self.connection.finish_until(deadline, now)
     }
 
     pub(crate) fn request_set_time(
         &mut self,
         minute: u16,
         longitude: f64,
+        now: ClientTime,
     ) -> Result<(), minimium_client_runtime::ControllerError> {
-        self.connection.request_set_time(minute, longitude)
+        self.accept_controller_time(now)?;
+        self.connection.request_set_time(minute, longitude, now)
     }
 
     pub(crate) fn request_time_scale(
         &mut self,
         value: String,
+        now: ClientTime,
     ) -> Result<(), minimium_client_runtime::ControllerError> {
-        self.connection.request_time_scale(value)
+        self.accept_controller_time(now)?;
+        self.connection.request_time_scale(value, now)
     }
 
     pub(crate) fn request_time_mode(
         &mut self,
         mode: &str,
+        now: ClientTime,
     ) -> Result<(), minimium_client_runtime::ControllerError> {
-        self.connection.request_time_mode(mode)
+        self.accept_controller_time(now)?;
+        self.connection.request_time_mode(mode, now)
     }
 
     pub(crate) fn request_time_offline_policy(
         &mut self,
         policy: &str,
+        now: ClientTime,
     ) -> Result<(), minimium_client_runtime::ControllerError> {
-        self.connection.request_time_offline_policy(policy)
+        self.accept_controller_time(now)?;
+        self.connection.request_time_offline_policy(policy, now)
     }
 
     pub(crate) fn request_random_bolid(
         &mut self,
         count: u16,
+        now: ClientTime,
     ) -> Result<(), minimium_client_runtime::ControllerError> {
-        self.connection.request_random_bolid(count)
+        self.accept_controller_time(now)?;
+        self.connection.request_random_bolid(count, now)
     }
 
     pub(crate) fn request_random_meteorid(
         &mut self,
+        now: ClientTime,
     ) -> Result<(), minimium_client_runtime::ControllerError> {
-        self.connection.request_random_meteorid()
+        self.accept_controller_time(now)?;
+        self.connection.request_random_meteorid(now)
     }
 
     pub(crate) fn execute_text_command(
@@ -368,8 +413,16 @@ impl ClientApplication {
         source: crate::client_commands::CommandSource,
         fire_direction: [f32; 3],
         player_position: Option<[f32; 3]>,
+        now: ClientTime,
     ) -> crate::client_commands::TextCommandResult {
+        if let Err(error) = self.accept_time(now) {
+            return crate::client_commands::TextCommandResult::QueueRejected {
+                kind: QueuedActionKind::Other,
+                error: crate::session::QueueError::Time(error),
+            };
+        }
         let mut context = crate::client_commands::CommandContext {
+            now,
             connection: &mut self.connection,
             action_executor: &mut self.action_executor,
             fire_direction,
@@ -378,7 +431,12 @@ impl ClientApplication {
         crate::client_commands::execute_text(input, source, &mut context)
     }
 
-    pub(crate) fn disconnect_session(&mut self) -> Option<crate::session::ClientSession> {
+    pub(crate) fn disconnect_session(
+        &mut self,
+        now: ClientTime,
+    ) -> Result<Option<crate::session::ClientSession>, ClientTimeError> {
+        self.accept_time(now)?;
+        let session = self.connection.take_session(now)?;
         self.game.set_session_context(None);
         self.pending_transfer = None;
         self.game.gameplay.clear_remote_players();
@@ -391,7 +449,7 @@ impl ClientApplication {
         self.action_executor.clear_input_cooldown();
         #[cfg(feature = "desktop")]
         self.transitions.reset();
-        self.connection.take_session()
+        Ok(session)
     }
 }
 mod actions;

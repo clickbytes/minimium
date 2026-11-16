@@ -21,8 +21,12 @@ unbounded decoded queues.
 
 `ClientFrameToken` identifies one accepted frame for the transport lifetime.
 The TCP adapter uses checked cumulative accepted-byte ends, independent of buffer
-compaction; tokens never wrap or repeat. `flush(Some(token))` reports the exact
-monotonic `Instant` at which a successful write completed that tracked frame.
+compaction; tokens never wrap or repeat. `flush(Some(token), now)` accepts a
+host-provided monotonic `Instant` and reports that sample only when a successful
+write completes the tracked frame. It does not read a hidden clock. The pure
+`validate_time(now)` guard and flush reject backward samples before socket I/O,
+buffer accounting or token removal; equality is valid. This neutral standard
+library argument keeps logical runtime clock types out of the transport crate.
 An accepted queue entry and a server response are separate outcomes. The client
 runtime uses this completion for Ping RTT/timeout; other session policy stays out
 of the adapter. Alternate ports implement the same ownership and boundedness.

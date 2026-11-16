@@ -92,7 +92,14 @@ fn apply_action(
                 renderer.application.input.clear_held();
                 renderer.toggle_overview();
             } else {
-                renderer.application.cancel_transition_request();
+                if let Err(error) = renderer
+                    .application
+                    .cancel_transition_request(crate::host_time::sample())
+                {
+                    renderer
+                        .application
+                        .record_diagnostic_failure("client.invalid_time", &error);
+                }
                 release_cursor(renderer, window, false, false, true);
             }
         }

@@ -673,6 +673,31 @@ retains the count until the current sky view is published; terminal/admin paths
 use the same count validation. See docs/commands.md for cadence, framing and
 cancellation limits. This is separate from local E047 presets.
 
+## Host clock domains
+
+The host samples the OS monotonic clock in `host_time` and passes `ClientTime`
+to application construction, each step, and each action between steps. The
+application validates its sample, action executor, connection/session and snapshot
+reconciler before changing logical state. Backward samples and deadline/range
+overflow return typed errors; equal samples are accepted. Input cooldowns still
+commit only after queue acceptance (300 ms weapon gate; runtime-owned tool gate).
+Desktop callbacks sample again for each logical operation, so an action before a
+step never causes the step to reuse an older cadence timestamp. Terminal and
+desktop share this contract, including content and transfer readiness.
+
+| Clock domain | Owner and purpose |
+| --- | --- |
+| Explicit host `ClientTime` | Application step, prediction elapsed input, actions, session/controller lifecycle, content acknowledgements and snapshot interpolation |
+| Fixed simulation step | Prediction accumulator and physics; elapsed input remains capped at the existing simulation step |
+| UTC/world clock and time scale | Environment/astronomy samples and authoritative time commands; these never supply client lifecycle time |
+| Offline demo UTC (`environment/demo.rs`) | Host-only `LocalDemoEnvironment` anchors UTC once with `SystemTime::now()` and advances it with `Instant::elapsed()` for `EnvironmentFrameInput`; it supplies no session, timeout or cooldown decisions and is not a network-clock fallback |
+| OS resource/presentation time | Window redraw cadence, worker/shutdown drain bounds, frame/GPU/performance measurements, console blink/chat/status refresh, diagnostic filenames and visual effects |
+
+Resource and presentation clocks do not drive session timeouts or input cooldowns.
+The environment demo retains this independent UTC producer and its existing algorithm.
+Compile checks cover both default desktop and `--no-default-features` hosts;
+runtime and visual acceptance remain deferred.
+
 ## Server bolid preparation
 
 spawn_random_bolid [N] keeps the server-timed v19 event and its eight retained

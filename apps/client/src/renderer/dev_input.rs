@@ -264,10 +264,10 @@ fn goto(renderer: &mut DesktopHost, latitude: f32, longitude: f32, lines: &mut V
         latitude.sin(),
         latitude.cos() * longitude.sin(),
     ];
-    match renderer
-        .application
-        .execute_action(crate::application::ClientAction::MapTeleport { direction })
-    {
+    match renderer.application.execute_action(
+        crate::application::ClientAction::MapTeleport { direction },
+        crate::host_time::sample(),
+    ) {
         crate::application::LocalActionOutcome::Queued { .. } => {
             renderer.application.arm_map_teleport();
             renderer.application.request_map_teleport();

@@ -1,7 +1,8 @@
 //! Bounded network snapshot reconciliation and remote-player interpolation.
+use crate::{ClientTime, ClientTimeError};
 use minimium_core::ids::PlayerId;
 use minimium_protocol::{RemotePlayerIds, RemotePlayers, MAX_VISIBLE_PLAYERS};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 const TELEPORT_THRESHOLD_MM: f64 = 100_000.0;
 
@@ -20,23 +21,43 @@ pub struct RemotePlayerTrack {
 pub struct SnapshotReconciler {
     tracks: [Option<RemotePlayerTrack>; MAX_VISIBLE_PLAYERS],
     last_server_time_ms: Option<u64>,
-    last_received_at: Option<Instant>,
+    last_received_at: Option<ClientTime>,
+    last_operation_at: Option<ClientTime>,
     geometry_dirty: bool,
 }
 
 impl SnapshotReconciler {
+    pub fn validate_time(&self, now: ClientTime) -> Result<(), ClientTimeError> {
+        now.validate_after(self.last_operation_at.unwrap_or(now))?;
+        self.estimated_server_time_ms(now)?;
+        Ok(())
+    }
+
+    fn estimated_server_time_ms(&self, now: ClientTime) -> Result<u64, ClientTimeError> {
+        match (self.last_server_time_ms, self.last_received_at) {
+            (Some(server), Some(received)) => {
+                let elapsed = u64::try_from(now.checked_duration_since(received)?.as_millis())
+                    .map_err(|_| ClientTimeError::Overflow)?;
+                Ok(server.saturating_add(elapsed))
+            }
+            _ => Ok(0),
+        }
+    }
     pub fn apply_remote_snapshot(
         &mut self,
         server_time_ms: u64,
         full_snapshot: bool,
         players: &RemotePlayers,
         removed_players: &RemotePlayerIds,
-    ) -> bool {
+        now: ClientTime,
+    ) -> Result<bool, ClientTimeError> {
+        self.validate_time(now)?;
+        self.last_operation_at = Some(now);
         let server_time_ms = self
             .last_server_time_ms
             .map_or(server_time_ms, |previous| previous.max(server_time_ms));
         self.last_server_time_ms = Some(server_time_ms);
-        self.last_received_at = Some(Instant::now());
+        self.last_received_at = Some(now);
         if full_snapshot {
             self.tracks = [None; MAX_VISIBLE_PLAYERS];
         }
@@ -56,7 +77,7 @@ impl SnapshotReconciler {
                 .position(|slot| slot.is_some_and(|track| track.id == player.id));
             let slot = existing_slot.or_else(|| self.tracks.iter().position(Option::is_none));
             let Some(slot) = slot else {
-                return false;
+                return Ok(false);
             };
             let existing = self.tracks[slot];
             let mut previous_position_mm = existing
@@ -88,7 +109,7 @@ impl SnapshotReconciler {
             });
         }
         self.geometry_dirty = true;
-        true
+        Ok(true)
     }
 
     pub fn clear(&mut self) {
@@ -109,19 +130,14 @@ impl SnapshotReconciler {
     /// Updates and writes displayed world-space millimetre positions into a reusable host buffer.
     pub fn interpolate_positions(
         &mut self,
-        now: Instant,
+        now: ClientTime,
         delay: Duration,
         output: &mut Vec<[i64; 3]>,
-    ) -> bool {
+    ) -> Result<bool, ClientTimeError> {
+        self.validate_time(now)?;
+        let estimated_server_time_ms = self.estimated_server_time_ms(now)?;
+        self.last_operation_at = Some(now);
         output.clear();
-        let estimated_server_time_ms = match (self.last_server_time_ms, self.last_received_at) {
-            (Some(server_time_ms), Some(received_at)) => {
-                let elapsed = u64::try_from(now.saturating_duration_since(received_at).as_millis())
-                    .unwrap_or(u64::MAX);
-                server_time_ms.saturating_add(elapsed)
-            }
-            _ => 0,
-        };
         let render_time_ms = estimated_server_time_ms
             .saturating_sub(u64::try_from(delay.as_millis()).unwrap_or(u64::MAX));
         let mut moved = false;
@@ -149,6 +165,6 @@ impl SnapshotReconciler {
             output.push(track.displayed_position_mm);
         }
         let dirty = std::mem::take(&mut self.geometry_dirty);
-        moved || dirty
+        Ok(moved || dirty)
     }
 }

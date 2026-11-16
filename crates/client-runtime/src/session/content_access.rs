@@ -97,7 +97,12 @@ impl ClientSession {
             .map(|active| active.content.clone())
     }
 
-    pub fn cancel_pending_transition(&mut self) -> bool {
+    pub fn cancel_pending_transition(&mut self, now: ClientTime) -> Result<bool, ClientTimeError> {
+        self.accept_time(now)?;
+        Ok(self.cancel_pending_transition_current())
+    }
+
+    fn cancel_pending_transition_current(&mut self) -> bool {
         let Some((transition_id, _)) = self.pending_transition else {
             return false;
         };
@@ -105,7 +110,7 @@ impl ClientSession {
             return true;
         }
         if self
-            .queue(&ClientMessage::CancelTransition(transition_id))
+            .queue_current(&ClientMessage::CancelTransition(transition_id))
             .is_err()
         {
             return false;
@@ -115,7 +120,12 @@ impl ClientSession {
     }
 
     /// Records host readiness; the session queues the protocol message on poll.
-    pub fn report_transfer_host_ready(&mut self, ticket: TransferTicket) -> Result<(), QueueError> {
+    pub fn report_transfer_host_ready(
+        &mut self,
+        ticket: TransferTicket,
+        now: ClientTime,
+    ) -> Result<(), QueueError> {
+        self.accept_time(now).map_err(QueueError::Time)?;
         let transition = (ticket.transition_id(), ticket.context());
         if self.pending_transition != Some(transition)
             || self.cancel_requested_transition == Some(ticket.transition_id())

@@ -1,14 +1,24 @@
 use super::*;
 
 impl ConnectionController {
-    pub fn request_time_scale(&mut self, value: String) -> Result<(), ControllerError> {
+    pub fn request_time_scale(
+        &mut self,
+        value: String,
+        now: ClientTime,
+    ) -> Result<(), ControllerError> {
+        self.accept_time(now).map_err(ControllerError::from_time)?;
         minimium_environment::parse_scale_ppm(&value).map_err(|message| {
             ControllerError::new("client_runtime.invalid_time_scale", message)
         })?;
         self.request_admin_command(format!("time scale {value}"))
     }
 
-    pub fn request_time_mode(&mut self, mode: &str) -> Result<(), ControllerError> {
+    pub fn request_time_mode(
+        &mut self,
+        mode: &str,
+        now: ClientTime,
+    ) -> Result<(), ControllerError> {
+        self.accept_time(now).map_err(ControllerError::from_time)?;
         if !matches!(mode, "real_time" | "time_scale") {
             return Err(ControllerError::new(
                 "client_runtime.invalid_time_mode",
@@ -18,7 +28,12 @@ impl ConnectionController {
         self.request_admin_command(format!("time mode {mode}"))
     }
 
-    pub fn request_time_offline_policy(&mut self, policy: &str) -> Result<(), ControllerError> {
+    pub fn request_time_offline_policy(
+        &mut self,
+        policy: &str,
+        now: ClientTime,
+    ) -> Result<(), ControllerError> {
+        self.accept_time(now).map_err(ControllerError::from_time)?;
         if !matches!(policy, "pause" | "advance") {
             return Err(ControllerError::new(
                 "client_runtime.invalid_offline_policy",
@@ -32,7 +47,9 @@ impl ConnectionController {
         &mut self,
         minute: u16,
         longitude_rad: f64,
+        now: ClientTime,
     ) -> Result<(), ControllerError> {
+        self.accept_time(now).map_err(ControllerError::from_time)?;
         let current = self
             .session
             .as_ref()
@@ -54,7 +71,12 @@ impl ConnectionController {
         self.request_admin_command(format!("time set {date}"))
     }
 
-    pub fn request_random_bolid(&mut self, count: u16) -> Result<(), ControllerError> {
+    pub fn request_random_bolid(
+        &mut self,
+        count: u16,
+        now: ClientTime,
+    ) -> Result<(), ControllerError> {
+        self.accept_time(now).map_err(ControllerError::from_time)?;
         if !(1..=64).contains(&count) {
             return Err(ControllerError::new(
                 "client_runtime.invalid_bolid_count",
@@ -64,7 +86,8 @@ impl ConnectionController {
         self.request_admin_command(format!("spawn_random_bolid {count}"))
     }
 
-    pub fn request_random_meteorid(&mut self) -> Result<(), ControllerError> {
+    pub fn request_random_meteorid(&mut self, now: ClientTime) -> Result<(), ControllerError> {
+        self.accept_time(now).map_err(ControllerError::from_time)?;
         self.request_admin_command("spawn_random_meteorid".into())
     }
 
@@ -121,7 +144,15 @@ impl ConnectionController {
         Ok(())
     }
 
-    pub fn poll_admin_result(&mut self) -> Option<Result<String, ControllerError>> {
+    pub fn poll_admin_result(
+        &mut self,
+        now: ClientTime,
+    ) -> Result<Option<Result<String, ControllerError>>, ClientTimeError> {
+        self.accept_time(now)?;
+        Ok(self.poll_admin_result_current())
+    }
+
+    fn poll_admin_result_current(&mut self) -> Option<Result<String, ControllerError>> {
         if !self
             .admin_request
             .as_ref()

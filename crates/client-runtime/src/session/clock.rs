@@ -1,5 +1,6 @@
 use super::{ClientSession, QueueError, SessionState};
 use crate::environment::{EnvironmentFrameInput, SynchronizationQuality};
+use crate::{ClientTime, ClientTimeError};
 use diagnostics::clock_diagnostics;
 use estimate::{
     estimate_key, estimate_welcome_time, estimate_world_time, rounded_time, EstimateKey,
@@ -8,11 +9,12 @@ use estimate::{
 use minimium_environment::{time::ClockSample, EnvironmentDescriptor};
 use minimium_protocol::ClientMessage;
 use smoothing::SmoothInput;
-use std::{collections::VecDeque, time::Instant};
+use std::collections::VecDeque;
 
 mod diagnostics;
 mod estimate;
 mod smoothing;
+mod time_input;
 
 impl ClientSession {
     pub(super) fn queue_due_time_probe(&mut self, now_ms: u64) {
@@ -24,7 +26,7 @@ impl ClientSession {
         };
         // Capture t1 immediately before the probe is encoded and queued.
         let sent_at_ms = self.clock.local_monotonic_ms();
-        let result = self.queue(&ClientMessage::TimeProbe {
+        let result = self.queue_current(&ClientMessage::TimeProbe {
             seq: sequence,
             client_send_monotonic_ms: sent_at_ms,
         });
@@ -52,7 +54,8 @@ struct InflightProbe {
 
 pub(super) struct ClientClock {
     diagnostic_logger: Option<minimium_diagnostics::DomainLogger>,
-    epoch: Instant,
+    epoch: ClientTime,
+    now_ms: u64,
     session_nonce: Option<minimium_environment::time::SessionNonce>,
     probe_baseline_at_ms: Option<u64>,
     sample_received_at_ms: Option<u64>,
@@ -82,12 +85,13 @@ impl ClientClock {
         u64::try_from(i128::from(self.local_monotonic_ms()).checked_add(offset)?).ok()
     }
     pub(super) fn new(
-        epoch: Instant,
+        epoch: ClientTime,
         diagnostic_logger: Option<minimium_diagnostics::DomainLogger>,
     ) -> Self {
         Self {
             diagnostic_logger,
             epoch,
+            now_ms: 0,
             session_nonce: None,
             probe_baseline_at_ms: None,
             sample_received_at_ms: None,
@@ -134,15 +138,12 @@ impl ClientClock {
         self.frame
     }
 
-    pub(super) fn local_monotonic_ms(&self) -> u64 {
-        u64::try_from(self.epoch.elapsed().as_millis()).unwrap_or(u64::MAX)
-    }
-
     pub(super) fn begin_session(&mut self, sample: ClockSample) {
         let epoch = self.epoch;
         let diagnostic_logger = self.diagnostic_logger.clone();
+        let now_ms = self.now_ms;
         *self = Self::new(epoch, diagnostic_logger);
-        let now_ms = self.local_monotonic_ms();
+        self.now_ms = now_ms;
         self.session_nonce = Some(sample.session_nonce());
         self.probe_baseline_at_ms = Some(now_ms);
         self.sample_received_at_ms = Some(now_ms);
@@ -283,11 +284,6 @@ impl ClientClock {
         while self.offsets.len() > MAX_OFFSET_SAMPLES {
             self.offsets.pop_front();
         }
-    }
-
-    pub(super) fn reset(&mut self) {
-        let diagnostic_logger = self.diagnostic_logger.clone();
-        *self = Self::new(Instant::now(), diagnostic_logger);
     }
 
     pub(super) fn update_frame(

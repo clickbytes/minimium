@@ -105,55 +105,60 @@ impl ClientSession {
     /// timers. Appends events to caller-owned storage and returns the current
     /// state. Fatal conditions append one Disconnected event and clear all
     /// buffers and connection state.
-    pub fn poll(&mut self, events: &mut Vec<SessionEvent>) -> SessionState {
+    pub fn poll(
+        &mut self,
+        events: &mut Vec<SessionEvent>,
+        now: ClientTime,
+    ) -> Result<SessionState, ClientTimeError> {
+        self.accept_time(now)?;
         self.pump_world_content_job();
         if let Err(error) = self.poll_content() {
             self.log_failure(&error);
             self.disconnect(DisconnectReason::Materials(error.with_retry_hint()), events);
-            return self.state;
+            return Ok(self.state);
         }
-        let now = Instant::now();
+        let now = self.now;
         self.clock.observe_poll(self.clock.local_monotonic_ms());
         if self.state == SessionState::AwaitingWelcome
             && self.content.started.is_none()
             && self.world_content_started.is_none()
-            && now.saturating_duration_since(self.state_since) >= WELCOME_TIMEOUT
+            && now.elapsed_since(self.state_since) >= WELCOME_TIMEOUT
         {
             self.disconnect(DisconnectReason::WelcomeTimeout, events);
-            return self.state;
+            return Ok(self.state);
         }
         if self.state == SessionState::Connected
             && self
                 .pending_ping_at
-                .is_some_and(|sent| now.saturating_duration_since(sent) >= HEARTBEAT_TIMEOUT)
+                .is_some_and(|sent| now.elapsed_since(sent) >= HEARTBEAT_TIMEOUT)
         {
             self.disconnect(DisconnectReason::HeartbeatTimeout, events);
-            return self.state;
+            return Ok(self.state);
         }
 
         self.pump_transition_readiness();
         self.flush_send(events);
         if self.state == SessionState::Disconnected {
-            return self.state;
+            return Ok(self.state);
         }
 
         self.read_available(events);
         if self.state == SessionState::Disconnected {
-            return self.state;
+            return Ok(self.state);
         }
         self.decode_available(events);
         if self.state == SessionState::Disconnected {
-            return self.state;
+            return Ok(self.state);
         }
 
-        let now = Instant::now();
+        let now = self.now;
         let now_ms = self.clock.local_monotonic_ms();
         self.queue_due_time_probe(now_ms);
         if self.state == SessionState::Connected
             && self.pending_ping_at.is_none()
             && self.pending_ping_frame.is_none()
-            && now.saturating_duration_since(self.last_heartbeat_at) >= HEARTBEAT_INTERVAL
-            && self.queue(&ClientMessage::Ping).is_ok()
+            && now.elapsed_since(self.last_heartbeat_at) >= HEARTBEAT_INTERVAL
+            && self.queue_current(&ClientMessage::Ping).is_ok()
         {
             self.last_heartbeat_at = now;
         }
@@ -169,12 +174,12 @@ impl ClientSession {
         } else {
             self.clock.update_frame(None, None, None, now_ms);
         }
-        self.state
+        Ok(self.state)
     }
 
     pub(super) fn disconnect(&mut self, reason: DisconnectReason, events: &mut Vec<SessionEvent>) {
         self.clear_replicas();
-        self.close();
+        self.close_resources();
         events.push(SessionEvent::Disconnected(reason));
     }
 }

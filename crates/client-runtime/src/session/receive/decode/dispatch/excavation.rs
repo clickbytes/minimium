@@ -33,7 +33,7 @@ pub(super) fn dispatch(
             let input = ClientWorldInput::Excavation(ExcavationInput::Resync {
                 coordinates: [0, 0, 0],
             });
-            let _ = session.queue_world_input(input);
+            let _ = session.queue_world_input(input, session.now);
             return DispatchResult::Skip;
         }
         if let Some(logger) = &session.diagnostic_logger {

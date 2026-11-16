@@ -124,6 +124,7 @@ pub enum ClientText {
 /// Display-safe categories for session queue failures.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum QueueProblem {
+    Time(minimium_client_runtime::ClientTimeError),
     Disconnected,
     AwaitingWelcome,
     AuthenticationReserved,
@@ -136,6 +137,7 @@ pub enum QueueProblem {
 impl From<QueueError> for QueueProblem {
     fn from(error: QueueError) -> Self {
         match error {
+            QueueError::Time(error) => Self::Time(error),
             QueueError::Disconnected => Self::Disconnected,
             QueueError::AwaitingWelcome => Self::AwaitingWelcome,
             QueueError::AuthenticateReserved => Self::AuthenticationReserved,
@@ -431,6 +433,9 @@ fn localize_queue(
 ) -> String {
     use minimium_localization::QueueCause as Cause;
     let cause = match problem {
+        QueueProblem::Time(error) => {
+            return localizer.format(locale, &UiMessage::ClientError(error.to_string()));
+        }
         QueueProblem::Disconnected => Cause::Disconnected,
         QueueProblem::AwaitingWelcome => Cause::AwaitingWelcome,
         QueueProblem::AuthenticationReserved => Cause::Authentication,

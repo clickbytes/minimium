@@ -26,7 +26,10 @@ impl DesktopHost {
                 .is_some_and(|at| now.saturating_duration_since(at) >= Duration::from_millis(200))
         {
             self.pending_bolid_request = None;
-            match self.application.request_random_bolid(count) {
+            match self
+                .application
+                .request_random_bolid(count, crate::host_time::sample())
+            {
                 Ok(()) => self.bolid_notice(minimium_localization::UiNotice::BolidRequestSent),
                 Err(error) => self
                     .application
@@ -67,7 +70,11 @@ impl DesktopHost {
         .normalize()
         .to_array();
         let night = sky.sun.apparent_altitude_rad < (-6.0_f64).to_radians();
-        if self.application.report_sky_view(context, direction, night) {
+        if self
+            .application
+            .report_sky_view(context, direction, night, crate::host_time::sample())
+            .unwrap_or(false)
+        {
             self.last_sky_view_at = Some(now);
         }
     }

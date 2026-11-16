@@ -131,7 +131,7 @@ impl ClientSession {
                 assembly.state.context = Some(*context);
                 assembly.state.revision = *target_revision;
                 self.replicas = assembly.state;
-                self.queue(&ClientMessage::ReplicationAck {
+                self.queue_current(&ClientMessage::ReplicationAck {
                     context: *context,
                     sync_id: *sync_id,
                     revision: *target_revision,

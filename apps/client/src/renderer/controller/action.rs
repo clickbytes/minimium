@@ -45,7 +45,15 @@ pub(super) fn execute(
             }
         }
         FrontendAction::Disconnect => {
-            renderer.application.cancel_connection_attempt();
+            if let Err(error) = renderer
+                .application
+                .cancel_connection_attempt(crate::host_time::sample())
+            {
+                renderer
+                    .application
+                    .record_diagnostic_failure("client.invalid_time", &error);
+                return (false, output.result);
+            }
             renderer.clear_connection();
             output.push_client_text(Text::Disconnected, false);
         }
@@ -139,9 +147,11 @@ pub(super) fn execute(
                     "local solar time requires an Earth observer away from the poles",
                 ))
             } else {
-                renderer
-                    .application
-                    .request_set_time(minute, if local { z.atan2(x) } else { 0.0 })
+                renderer.application.request_set_time(
+                    minute,
+                    if local { z.atan2(x) } else { 0.0 },
+                    crate::host_time::sample(),
+                )
             };
             match result {
                 Ok(()) => renderer
@@ -169,7 +179,10 @@ pub(super) fn execute(
             .ui
             .console
             .push_line(renderer.environment_frame.time_status_line()),
-        FrontendAction::TimeScale(value) => match renderer.application.request_time_scale(value) {
+        FrontendAction::TimeScale(value) => match renderer
+            .application
+            .request_time_scale(value, crate::host_time::sample())
+        {
             Ok(()) => renderer
                 .application
                 .ui
@@ -197,13 +210,19 @@ pub(super) fn execute(
             renderer.bolid_notice(minimium_localization::UiNotice::BolidRequestQueued);
         }
         FrontendAction::SpawnRandomMeteorid => {
-            let text = match renderer.application.request_random_meteorid() {
+            let text = match renderer
+                .application
+                .request_random_meteorid(crate::host_time::sample())
+            {
                 Ok(()) => "Meteorite request sent".to_owned(),
                 Err(error) => format!("spawn_random_meteorid: {error}"),
             };
             output.push_line(text);
         }
-        FrontendAction::TimeMode(mode) => match renderer.application.request_time_mode(&mode) {
+        FrontendAction::TimeMode(mode) => match renderer
+            .application
+            .request_time_mode(&mode, crate::host_time::sample())
+        {
             Ok(()) => renderer
                 .application
                 .ui
@@ -224,7 +243,10 @@ pub(super) fn execute(
             }
         },
         FrontendAction::TimeOfflinePolicy(policy) => {
-            match renderer.application.request_time_offline_policy(&policy) {
+            match renderer
+                .application
+                .request_time_offline_policy(&policy, crate::host_time::sample())
+            {
                 Ok(()) => renderer
                     .application
                     .ui

@@ -28,13 +28,14 @@ use minimium_world::world::{
 use std::{num::NonZeroU64, sync::Arc};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let now = minimium_client_runtime::ClientTime::new(std::time::Instant::now());
     let jobs = Arc::new(LocalContentJobs::default());
     let content_peer = jobs.peer();
     let transport = LocalTransport::default();
     let peer = transport.peer();
     let authentication = ClientAuthentication::new("local", b"bounded credential".to_vec())?;
     let service = ContentJobsSession::new(NonZeroU64::new(1).unwrap(), jobs.clone());
-    let mut session = ClientSession::new(Box::new(transport), authentication, service)?;
+    let mut session = ClientSession::new(Box::new(transport), authentication, service, now)?;
 
     let map = Arc::new(WorldMap::from_parts(
         [0.0, 3.0, 0.0],
@@ -90,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         environment,
     })?;
     let mut events = Vec::new();
-    if session.poll(&mut events) != SessionState::AwaitingWelcome {
+    if session.poll(&mut events, now)? != SessionState::AwaitingWelcome {
         return Err("session published content before host preparation".into());
     }
 
@@ -119,7 +120,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let prepared = PreparedWorldContent::prepare(content)?;
     content_peer.complete(ticket, ContentJobResult::World(Ok(prepared)))?;
 
-    if session.poll(&mut events) != SessionState::Connected
+    if session.poll(&mut events, now)? != SessionState::Connected
         || session.active_world_context() != Some(context)
     {
         return Err("session did not validate and install completed content".into());
@@ -130,7 +131,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if installed.ticket() != request.ticket {
         return Err("installed content lost its completion ticket".into());
     }
-    session.close();
+    session.close(now)?;
     let _ = jobs.shutdown_until(std::time::Instant::now());
     Ok(())
 }
