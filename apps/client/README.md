@@ -135,8 +135,9 @@ Protocol, save, seed/fingerprint and material-package formats are unchanged.
 
 `DesktopHost` and the terminal front end call `ClientApplication::step`; the
 application owns desktop UI state and polls the runtime connection controller.
-The runtime owns its socket, bounded protocol state and local-server guard,
-while background connector work reports typed results.
+The runtime owns bounded logical protocol state and the local-server guard.
+Its connection controller supplies the shared TCP adapter from
+`minimium-transport`; background connector work reports typed results.
 
 The desktop host gates steps on a monotonic 16 ms deadline in `about_to_wait`,
 including after input events, so missed deadlines do not accelerate the cadence.

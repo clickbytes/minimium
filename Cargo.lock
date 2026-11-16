@@ -1229,6 +1229,7 @@ dependencies = [
  "minimium-protocol",
  "minimium-simulation",
  "minimium-terrain",
+ "minimium-transport",
  "minimium-world",
  "serde",
  "serde_json",

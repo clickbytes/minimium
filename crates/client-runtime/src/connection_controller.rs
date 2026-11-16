@@ -281,7 +281,17 @@ impl ConnectionController {
                         "client authentication was not configured",
                     ));
                 };
-                match ClientSession::with_presentation(stream, authentication, self.presentation) {
+                let session = minimium_transport::client::TcpClientTransport::new(stream).and_then(
+                    |transport| {
+                        ClientSession::with_presentation(
+                            Box::new(transport),
+                            authentication,
+                            self.presentation,
+                        )
+                        .map_err(io::Error::other)
+                    },
+                );
+                match session {
                     Ok(mut session) => {
                         session.set_content_cache_dir(self.content_cache_dir.clone());
                         session.set_content_cache_limit(self.content_cache_limit_bytes);

@@ -10,6 +10,26 @@ and the same simulation collision query used by the server; they cannot approve 
 
 ## Public API
 
+`ClientSession::new` and `with_presentation` take a boxed
+`minimium_transport::client::ClientTransportPort`; they configure no socket and
+return typed queue failure if the initial Presentation/Authenticate admission
+fails. `ConnectionController` wraps the connector's connected stream in the
+single `TcpClientTransport` adapter for both desktop and terminal. Logical
+authentication, context/replica/transfer checks and permission-dependent actions
+remain in the session. Content workers/cache and logical clock ownership are
+unchanged by this transport boundary.
+
+The adapter keeps bounded wire bytes, codecs, partial I/O and typed peek/consume.
+Session dispatch can retain a deferred world message and inspect the next typed
+message without consuming unrelated input, preserving cancellation behavior.
+The session tracks Ping's stable frame token; its timeout/RTT starts at the
+adapter's actual completed-write instant. Time-probe t1 keeps its existing
+enqueue-time semantics. `SessionIoFailure` retains a cloneable concrete I/O
+cause, its kind and stable diagnostic code on `DisconnectReason::Io`.
+`close` discards the transport and pending output immediately, as before.
+The compile-only `injected_transport` example supplies a bounded bidirectional
+local port to a real session; no network, GPU or application execution is needed.
+
 Resolved planetary content includes a successfully sampled water catalog before
 CPU readiness can be reported. Construction or sampling failure becomes a typed
 `SessionFailure` retaining `GenerationError` as its source; no pending content
@@ -25,7 +45,7 @@ required custom sets never silently fall back. Failures disconnect with a retry
 message; `connect` retries and reuses verified blobs. The offered climate scenario
 is immutable for the session. Text clients declare no presentation and skip assets.
 
-`ClientSession` is created with a connected stream and identity. `ConnectionController` coordinates session, remote/local connection attempts and process cleanup; `Connector` exposes typed attempt events. The application supplies a `WorldContentResolver` which receives a session/context/transition/request ticket, manifest, expected map fingerprint and cancellation token. It returns `ResolvedWorldContent::prepare(...)`, which validates a private `PreparedTerrainSource` bound to that ticket's world instance, manifest and exact map fingerprint, including the resolved material/relief policies and matching Earth geography. Generated planets require the relief binding; missing or mismatched identities reject the result before publication. Resolution runs on one worker; `poll` publishes the complete result only after ticket, context, manifest, fingerprint and source binding checks. `ResolvedWorldContent` exposes read-only getters and the prepared source; callers cannot replace its manifest, map, geography or profiles after preparation.
+`ClientSession` is created with a host-supplied bounded ClientTransportPort and identity. `ConnectionController` coordinates session, remote/local connection attempts and process cleanup; `Connector` exposes typed attempt events. The application supplies a `WorldContentResolver` which receives a session/context/transition/request ticket, manifest, expected map fingerprint and cancellation token. It returns `ResolvedWorldContent::prepare(...)`, which validates a private `PreparedTerrainSource` bound to that ticket's world instance, manifest and exact map fingerprint, including the resolved material/relief policies and matching Earth geography. Generated planets require the relief binding; missing or mismatched identities reject the result before publication. Resolution runs on one worker; `poll` publishes the complete result only after ticket, context, manifest, fingerprint and source binding checks. `ResolvedWorldContent` exposes read-only getters and the prepared source; callers cannot replace its manifest, map, geography or profiles after preparation.
 
 `ClientSession::terrain_inputs()` returns `Option<TerrainInputs>` only when active content matches the current context. `terrain_inputs_for_context(context)` selects the exact active or pending bundle for that context. Each `TerrainInputs` requires a prepared source and a separate `TerrainOverlaySnapshot`; no default or geography-only input can enter terrain workers. Active edits, remnants and volumes are included only when their owner state is ready; pending target preparation starts with overlays bound to the target instance and does not borrow source-world overlays. `SectorContentVersion` keeps the existing independent monotone revisions. `prepared_geography()` exposes only the active world's immutable geography; `pending_geography(context, transition)` is an explicit destination-preparation read.
 
@@ -56,7 +76,7 @@ The connector performs DNS, socket and local process startup away from the UI la
 
 ## Ownership and execution
 
-The caller owns and polls the controller on its event-loop lane. A session owns its socket and bounded wire buffers; the controller owns the connector and optional local-server guard. The runtime owns local prediction and snapshot/interpolation state, while the host owns collision snapshots and rendered geometry. Prepared geography is immutable and shared by `Arc` with generation and presentation workers.
+The caller owns and polls the controller on its event-loop lane. A session owns logical protocol state and its injected message port; minimium-transport owns the default TCP adapter, framing and bounded wire buffers; the controller owns the connector and optional local-server guard. The runtime owns local prediction and snapshot/interpolation state, while the host owns collision snapshots and rendered geometry. Prepared geography is immutable and shared by `Arc` with generation and presentation workers.
 
 `ConnectionController::start_remote` and `start_local` reject an existing session,
 attempt or pending cleanup before calling the connector or changing owned state.

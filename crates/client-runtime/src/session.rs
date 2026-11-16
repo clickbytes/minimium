@@ -1,7 +1,7 @@
 //! Shared, nonblocking client-side protocol session for interactive clients.
 //!
-//! [`ClientSession`] owns the socket and bounded wire buffers, but deliberately
-//! does not own a thread, event loop, or process. Call [`ClientSession::poll`]
+//! [`ClientSession`] owns logical protocol state and an injected message transport,
+//! but does not own an event loop or process. Call [`ClientSession::poll`]
 //! from the host's loop and pass a reusable event vector to avoid allocating an
 //! event collection on each frame. Events are appended; clear the vector before
 //! polling if it should contain only the latest poll's events.
@@ -10,97 +10,19 @@ use crate::world_content::{
     ContentResolutionTicket, ResolvedWorldContent, WorldContentRequest, WorldContentResolver,
 };
 use minimium_environment::{time::ClockSample, EnvironmentDescriptor};
-use minimium_protocol::{
-    decode_server, encode_client, ClientMessage, ProtocolError, ServerMessage, WorldContext,
-    MAX_FRAME_BYTES,
-};
+use minimium_protocol::{ClientMessage, ProtocolError, ServerMessage, WorldContext};
+use minimium_transport::client::{ClientFrameToken, ClientQueueError, ClientTransportPort};
 use minimium_world::entity::{ComponentTypeId, SchemaVersion};
 use minimium_world::world::TransitionId;
 use std::{
     collections::HashMap,
-    error::Error,
-    fmt,
-    io::{self, Read, Write},
-    net::TcpStream,
     sync::Arc,
     thread::JoinHandle,
     time::{Duration, Instant},
 };
 
-#[derive(Clone, Debug)]
-pub struct SessionFailure {
-    code: &'static str,
-    message: String,
-    source: Option<Arc<dyn Error + Send + Sync>>,
-    content_ticket: Option<ContentResolutionTicket>,
-}
-
-impl SessionFailure {
-    pub fn new(code: &'static str, message: impl Into<String>) -> Self {
-        Self {
-            code,
-            message: message.into(),
-            source: None,
-            content_ticket: None,
-        }
-    }
-
-    pub fn caused_by<E>(code: &'static str, message: impl Into<String>, source: E) -> Self
-    where
-        E: Error + Send + Sync + 'static,
-    {
-        Self {
-            code,
-            message: message.into(),
-            source: Some(Arc::new(source)),
-            content_ticket: None,
-        }
-    }
-
-    pub fn from_asset_error(error: minimium_asset_io::AssetIoError) -> Self {
-        let code = error.code();
-        Self::caused_by(code, error.to_string(), error)
-    }
-
-    pub fn with_content_ticket(mut self, ticket: ContentResolutionTicket) -> Self {
-        self.content_ticket = Some(ticket);
-        self
-    }
-
-    pub const fn content_ticket(&self) -> Option<ContentResolutionTicket> {
-        self.content_ticket
-    }
-
-    pub fn code(&self) -> &'static str {
-        self.code
-    }
-
-    pub fn message(&self) -> &str {
-        &self.message
-    }
-}
-
-impl fmt::Display for SessionFailure {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.message)
-    }
-}
-
-impl Error for SessionFailure {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        self.source
-            .as_deref()
-            .map(|source| source as &(dyn Error + 'static))
-    }
-}
-
-impl PartialEq for SessionFailure {
-    fn eq(&self, other: &Self) -> bool {
-        self.code == other.code && self.message == other.message
-    }
-}
-
-impl Eq for SessionFailure {}
+mod failure;
+pub use failure::SessionFailure;
 
 mod clock;
 mod content;
@@ -111,11 +33,14 @@ mod impacts;
 mod receive;
 mod replication;
 mod transfer;
+mod transport;
+pub use transport::SessionIoFailure;
 
 /// Maximum retained receive or pending send data.
-pub const MAX_SESSION_BUFFER_BYTES: usize = 64 * 1024;
+pub const MAX_SESSION_BUFFER_BYTES: usize = minimium_transport::client::MAX_CLIENT_BUFFER_BYTES;
 /// Maximum amount read in a single poll, keeping UI loops responsive.
-pub const MAX_SESSION_READ_BYTES_PER_POLL: usize = 16 * 1024;
+pub const MAX_SESSION_READ_BYTES_PER_POLL: usize =
+    minimium_transport::client::MAX_CLIENT_READ_BYTES_PER_POLL;
 pub const WELCOME_TIMEOUT: Duration = Duration::from_secs(5);
 pub const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(10);
 pub const HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(20);
@@ -144,7 +69,7 @@ pub enum DisconnectReason {
     EarthPackage(SessionFailure),
     Materials(SessionFailure),
     EnvironmentMismatch,
-    Io(io::ErrorKind),
+    Io(SessionIoFailure),
     BufferLimit,
     Replication(crate::ReplicaError),
 }
@@ -199,17 +124,18 @@ pub enum QueueError {
     StaleWorldContext,
     BufferFull,
     InputSequenceExhausted,
+    TransportIdentifierExhausted,
     Protocol(ProtocolError),
 }
 
-/// A single nonblocking TCP protocol session.
+/// Logical session over a host-supplied bounded nonblocking message transport.
 pub struct ClientSession {
     pub(crate) impacts: crate::impacts::ImpactReplica,
     pub(crate) excavation: crate::excavation::ExcavationReplica,
     tools: excavation::ToolClientState,
     diagnostic_logger: Option<minimium_diagnostics::DomainLogger>,
     content: content::ContentPreparation,
-    stream: Option<TcpStream>,
+    transport: Option<Box<dyn ClientTransportPort>>,
     state: SessionState,
     world_context: Option<WorldContext>,
     server_tick: u64,
@@ -247,10 +173,7 @@ pub struct ClientSession {
     state_since: Instant,
     last_heartbeat_at: Instant,
     pending_ping_at: Option<Instant>,
-    pending_ping_end: Option<usize>,
-    receive_buffer: Vec<u8>,
-    send_buffer: Vec<u8>,
-    send_offset: usize,
+    pending_ping_frame: Option<ClientFrameToken>,
     metrics: SessionMetrics,
     content_cache_dir: Option<std::path::PathBuf>,
     content_cache_limit_bytes: u64,
@@ -282,29 +205,27 @@ impl ClientSession {
         }
     }
 
-    /// Starts a fresh session, sets the supplied stream nonblocking, and queues
-    /// the authentication handshake. The first poll writes it.
+    /// Starts a fresh session with an already configured transport and queues
+    /// its handshake. Queue acceptance is distinct from writing or admission.
     pub fn new(
-        stream: TcpStream,
+        transport: Box<dyn ClientTransportPort>,
         authentication: crate::authentication::ClientAuthentication,
-    ) -> io::Result<Self> {
-        Self::with_presentation(stream, authentication, None)
+    ) -> Result<Self, ClientQueueError> {
+        Self::with_presentation(transport, authentication, None)
     }
 
     pub fn with_presentation(
-        stream: TcpStream,
+        transport: Box<dyn ClientTransportPort>,
         authentication: crate::authentication::ClientAuthentication,
         capability: Option<bool>,
-    ) -> io::Result<Self> {
-        stream.set_nonblocking(true)?;
-        stream.set_nodelay(true)?;
+    ) -> Result<Self, ClientQueueError> {
         let now = Instant::now();
         let mut content = content::ContentPreparation::default();
         content.capability = capability;
         let mut session = Self {
             diagnostic_logger: None,
             content,
-            stream: Some(stream),
+            transport: Some(transport),
             state: SessionState::AwaitingWelcome,
             world_context: None,
             server_tick: 0,
@@ -340,23 +261,23 @@ impl ClientSession {
             state_since: now,
             last_heartbeat_at: now,
             pending_ping_at: None,
-            pending_ping_end: None,
-            receive_buffer: Vec::with_capacity(MAX_SESSION_BUFFER_BYTES),
-            send_buffer: Vec::with_capacity(MAX_SESSION_BUFFER_BYTES),
-            send_offset: 0,
+            pending_ping_frame: None,
             metrics: SessionMetrics::default(),
             content_cache_dir: None,
             content_cache_limit_bytes: minimium_asset_io::DEFAULT_CACHE_LIMIT_BYTES,
         };
-        session
-            .append_encoded(&ClientMessage::Presentation(capability))
-            .expect("presentation frame is bounded");
-        session
-            .append_encoded(&ClientMessage::Authenticate {
-                provider_id: authentication.provider_id().to_owned(),
-                credentials: authentication.credentials().to_vec(),
-            })
-            .expect("developer authentication frame is within protocol limits");
+        let handshake = session
+            .queue_transport(&ClientMessage::Presentation(capability))
+            .and_then(|_| {
+                session.queue_transport(&ClientMessage::Authenticate {
+                    provider_id: authentication.provider_id().to_owned(),
+                    credentials: authentication.credentials().to_vec(),
+                })
+            });
+        if let Err(error) = handshake {
+            session.close();
+            return Err(error);
+        }
         Ok(session)
     }
 
@@ -400,13 +321,15 @@ impl ClientSession {
         self.clock.frame()
     }
 
-    /// Close the current socket and discard all buffered data.
+    /// Close the current transport and discard all buffered data.
     pub fn close(&mut self) {
         self.content = Default::default();
-        self.stream = None;
+        if let Some(mut transport) = self.transport.take() {
+            transport.close();
+        }
         self.state = SessionState::Disconnected;
         self.pending_ping_at = None;
-        self.pending_ping_end = None;
+        self.pending_ping_frame = None;
         self.world_context = None;
         self.active_world_content = None;
         self.pending_world_content = None;
@@ -424,9 +347,6 @@ impl ClientSession {
         self.environment_descriptor = None;
         self.pending_environment = None;
         self.clock.reset();
-        self.receive_buffer.clear();
-        self.send_buffer.clear();
-        self.send_offset = 0;
     }
 
     /// Queues an application message. Authentication is reserved for construction;
@@ -448,14 +368,14 @@ impl ClientSession {
                 return Err(QueueError::StaleWorldContext);
             }
         }
-        let frame = encode_client(message).map_err(QueueError::Protocol)?;
-        self.append_frame(&frame)
-            .map_err(|()| QueueError::BufferFull)?;
+        let frame = self
+            .queue_transport(message)
+            .map_err(transport::queue_error)?;
         if matches!(message, ClientMessage::Ping)
             && self.pending_ping_at.is_none()
-            && self.pending_ping_end.is_none()
+            && self.pending_ping_frame.is_none()
         {
-            self.pending_ping_end = Some(self.send_buffer.len());
+            self.pending_ping_frame = Some(frame);
         }
         Ok(())
     }
@@ -487,6 +407,14 @@ impl ClientSession {
             self.next_target_tick = next_target_tick;
         }
         Ok(queued_sample)
+    }
+}
+
+impl Drop for ClientSession {
+    fn drop(&mut self) {
+        if let Some(transport) = self.transport.as_mut() {
+            transport.close();
+        }
     }
 }
 

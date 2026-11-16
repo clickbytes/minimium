@@ -345,7 +345,7 @@ impl ClientSession {
         self.queue_due_time_probe(now_ms);
         if self.state == SessionState::Connected
             && self.pending_ping_at.is_none()
-            && self.pending_ping_end.is_none()
+            && self.pending_ping_frame.is_none()
             && now.saturating_duration_since(self.last_heartbeat_at) >= HEARTBEAT_INTERVAL
             && self.queue(&ClientMessage::Ping).is_ok()
         {
@@ -364,103 +364,6 @@ impl ClientSession {
             self.clock.update_frame(None, None, None, now_ms);
         }
         self.state
-    }
-
-    pub(super) fn append_encoded(&mut self, message: &ClientMessage) -> Result<(), ProtocolError> {
-        let frame = encode_client(message)?;
-        self.append_frame(&frame)
-            .map_err(|()| ProtocolError::PayloadTooLarge)
-    }
-
-    pub(super) fn append_frame(&mut self, frame: &[u8]) -> Result<(), ()> {
-        if self.send_offset > 0 {
-            if let Some(end) = &mut self.pending_ping_end {
-                *end = end.saturating_sub(self.send_offset);
-            }
-            self.send_buffer.drain(..self.send_offset);
-            self.send_offset = 0;
-        }
-        if self.send_buffer.len().saturating_add(frame.len()) > MAX_SESSION_BUFFER_BYTES {
-            return Err(());
-        }
-        self.send_buffer.extend_from_slice(frame);
-        Ok(())
-    }
-
-    fn flush_send(&mut self, events: &mut Vec<SessionEvent>) {
-        while self.send_offset < self.send_buffer.len() {
-            let result = match self.stream.as_mut() {
-                Some(stream) => stream.write(&self.send_buffer[self.send_offset..]),
-                None => return,
-            };
-            match result {
-                Ok(0) => {
-                    self.disconnect(DisconnectReason::Io(io::ErrorKind::WriteZero), events);
-                    return;
-                }
-                Ok(count) => {
-                    self.send_offset += count;
-                    self.metrics.bytes_sent = self.metrics.bytes_sent.saturating_add(count as u64);
-                    if self
-                        .pending_ping_end
-                        .is_some_and(|end| self.send_offset >= end)
-                    {
-                        self.pending_ping_end = None;
-                        self.pending_ping_at = Some(Instant::now());
-                    }
-                }
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                Err(error) => {
-                    self.disconnect(DisconnectReason::Io(error.kind()), events);
-                    return;
-                }
-            }
-        }
-        if self.send_offset == self.send_buffer.len() {
-            self.send_buffer.clear();
-            self.send_offset = 0;
-        }
-    }
-
-    fn read_available(&mut self, events: &mut Vec<SessionEvent>) {
-        let mut chunk = [0u8; 4096];
-        let mut total_read = 0;
-        loop {
-            let available = (MAX_SESSION_READ_BYTES_PER_POLL - total_read).min(chunk.len());
-            if available == 0 {
-                break;
-            }
-            let result = match self.stream.as_mut() {
-                Some(stream) => stream.read(&mut chunk[..available]),
-                None => return,
-            };
-            match result {
-                Ok(0) => {
-                    self.decode_available(events);
-                    if self.state != SessionState::Disconnected {
-                        self.disconnect(DisconnectReason::PeerClosed, events);
-                    }
-                    return;
-                }
-                Ok(count) => {
-                    total_read += count;
-                    self.metrics.bytes_received =
-                        self.metrics.bytes_received.saturating_add(count as u64);
-                    if self.receive_buffer.len().saturating_add(count) > MAX_SESSION_BUFFER_BYTES {
-                        self.disconnect(DisconnectReason::BufferLimit, events);
-                        return;
-                    }
-                    self.receive_buffer.extend_from_slice(&chunk[..count]);
-                }
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                Err(error) => {
-                    self.disconnect(DisconnectReason::Io(error.kind()), events);
-                    return;
-                }
-            }
-        }
     }
 
     pub(super) fn disconnect(&mut self, reason: DisconnectReason, events: &mut Vec<SessionEvent>) {
