@@ -7,7 +7,7 @@ mod hydrology;
 mod impacts;
 mod inventory;
 mod metrics;
-pub(crate) use metrics::ExcavationStatus;
+pub use metrics::ExcavationStatus;
 mod preparation;
 mod publication;
 mod replication;

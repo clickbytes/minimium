@@ -1,4 +1,10 @@
 mod owner_context;
+mod reply_data;
+pub use reply_data::{
+    ClientTrafficRow, CommandHelp, EntityComponentRow, EntityKindView, EntityRow, PlayerRow,
+    PropertyReport, RuntimeStatusSnapshot, StatusReport, WorldInspect, WorldRow,
+};
+pub(crate) use reply_data::{ClientTrafficSnapshot, EntityKind, PropertyReportOutcome};
 mod time;
 mod world;
 
@@ -171,102 +177,6 @@ pub(crate) enum CommandPayload {
 struct CommandFailure {
     pub code: &'static str,
     pub detail: BoundedText,
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct CommandHelp {
-    pub usage: &'static str,
-    pub arguments: &'static [minimium_commands::CommandArgumentSpec],
-}
-#[derive(Clone, Debug)]
-pub(crate) struct PlayerRow {
-    pub id: minimium_core::ids::PlayerId,
-    pub name: String,
-    pub world: minimium_world::world::WorldInstanceId,
-    pub position: [f32; 3],
-}
-#[derive(Clone, Debug)]
-pub(crate) struct WorldRow {
-    pub id: minimium_world::world::WorldInstanceId,
-    pub players: usize,
-    pub topology: minimium_world::world::WorldTopology,
-    pub generation: minimium_world::world::GenerationRevision,
-}
-#[derive(Clone, Debug)]
-pub(crate) struct WorldInspect {
-    pub id: minimium_world::world::WorldInstanceId,
-    pub players: usize,
-    pub manifest: minimium_world::world::WorldManifest,
-}
-#[derive(Clone, Debug)]
-pub(crate) struct EntityRow {
-    pub world: minimium_world::world::WorldInstanceId,
-    pub kind: EntityKind,
-}
-#[derive(Clone, Debug)]
-pub(crate) struct EntityComponentRow {
-    pub kind: minimium_world::entity::ComponentTypeId,
-    pub schema: minimium_world::entity::SchemaVersion,
-    pub bytes: usize,
-}
-#[derive(Clone, Debug)]
-pub(crate) enum EntityKind {
-    Entity(u64),
-    Player(minimium_core::ids::PlayerId, String),
-}
-#[derive(Clone, Debug)]
-pub(crate) struct PropertyReport {
-    pub key: String,
-    pub value: minimium_commands::PropertyValue<String>,
-}
-pub(crate) enum PropertyReportOutcome {
-    Value(PropertyReport),
-    Unknown(String),
-    Unavailable { key: String, reason: String },
-}
-#[derive(Clone, Debug)]
-pub(crate) struct ClientTrafficRow {
-    pub id: minimium_core::ids::PlayerId,
-    pub bytes_in: u64,
-    pub bytes_out: u64,
-    pub decoded_frames: u64,
-    pub queued_frames: u64,
-    pub encoding_us: u64,
-    pub connected_ms: u128,
-}
-#[derive(Clone, Debug, Default)]
-pub(crate) struct ClientTrafficSnapshot {
-    pub rows: Vec<ClientTrafficRow>,
-    pub truncated: bool,
-}
-#[derive(Clone, Debug)]
-pub(crate) struct StatusReport {
-    pub players: usize,
-    pub lanes: usize,
-    pub ticks: u64,
-    pub clock_probe_requests: u64,
-    pub clock_probe_accepted: u64,
-    pub clock_probe_rejected: u64,
-    pub environment_sync_messages: u64,
-    pub scheduled_world_instances: usize,
-    pub startup_system_runs: usize,
-    pub persistence: minimium_storage::PersistenceStatus,
-    pub runtime: Option<RuntimeStatusSnapshot>,
-}
-#[derive(Clone, Debug)]
-pub(crate) struct RuntimeStatusSnapshot {
-    pub game_address: String,
-    pub max_players: usize,
-    pub tick_ms: u128,
-    pub snapshot_ms: u128,
-    pub autosave_seconds: u64,
-    pub protocol_version: u32,
-    pub save_version: u32,
-    pub map_fingerprint: u64,
-    pub environment_profiles: Vec<(u128, u64, minimium_environment::EnvironmentProfile)>,
-    pub environment_profiles_truncated: bool,
-    pub impact: crate::runtime::ImpactStatus,
-    pub excavation: crate::runtime::ExcavationStatus,
 }
 
 impl CommandReply {

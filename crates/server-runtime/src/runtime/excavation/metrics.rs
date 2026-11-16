@@ -2,18 +2,53 @@ use super::*;
 use minimium_telemetry::duration::DurationStats;
 
 #[derive(Clone, Debug)]
-pub(crate) struct ExcavationStatus {
-    pub chunks: usize,
-    pub pending: usize,
-    pub bytes: u64,
-    pub ready: bool,
-    pub fluid_cells: usize,
-    pub fluid_jobs: usize,
-    pub terrain_payload_bytes: usize,
-    pub fluid_payload_bytes: usize,
-    pub fluid_reserved: usize,
-    pub failed_worlds: usize,
-    pub percentiles: Vec<(&'static str, Option<u64>, Option<u64>)>,
+pub struct ExcavationStatus {
+    pub(crate) chunks: usize,
+    pub(crate) pending: usize,
+    pub(crate) bytes: u64,
+    pub(crate) ready: bool,
+    pub(crate) fluid_cells: usize,
+    pub(crate) fluid_jobs: usize,
+    pub(crate) terrain_payload_bytes: usize,
+    pub(crate) fluid_payload_bytes: usize,
+    pub(crate) fluid_reserved: usize,
+    pub(crate) failed_worlds: usize,
+    pub(crate) percentiles: Vec<(&'static str, Option<u64>, Option<u64>)>,
+}
+impl ExcavationStatus {
+    pub fn chunks(&self) -> usize {
+        self.chunks
+    }
+    pub fn pending(&self) -> usize {
+        self.pending
+    }
+    pub fn bytes(&self) -> u64 {
+        self.bytes
+    }
+    pub fn ready(&self) -> bool {
+        self.ready
+    }
+    pub fn fluid_cells(&self) -> usize {
+        self.fluid_cells
+    }
+    pub fn fluid_jobs(&self) -> usize {
+        self.fluid_jobs
+    }
+    pub fn terrain_payload_bytes(&self) -> usize {
+        self.terrain_payload_bytes
+    }
+    pub fn fluid_payload_bytes(&self) -> usize {
+        self.fluid_payload_bytes
+    }
+    pub fn fluid_reserved(&self) -> usize {
+        self.fluid_reserved
+    }
+    pub fn failed_worlds(&self) -> usize {
+        self.failed_worlds
+    }
+    pub fn percentiles(&self) -> &[(&'static str, Option<u64>, Option<u64>)] {
+        &self.percentiles
+    }
 }
 
 #[derive(Default)]
