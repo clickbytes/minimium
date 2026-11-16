@@ -54,6 +54,7 @@ impl<'a> WorkSubmission<'a> {
 
 pub(super) struct Publication<'a> {
     state: &'a mut ExcavationState,
+    equipment: &'a mut crate::runtime::equipment::Equipment,
     worlds: &'a mut WorldRegistry,
     sectors: &'a mut minimium_sectors::SectorManager<SectorPayload>,
     impacts: &'a mut Impacts,
@@ -66,6 +67,7 @@ pub(super) struct Publication<'a> {
 impl<'a> Publication<'a> {
     pub(super) fn new(
         state: &'a mut ExcavationState,
+        equipment: &'a mut crate::runtime::equipment::Equipment,
         worlds: &'a mut WorldRegistry,
         sectors: &'a mut minimium_sectors::SectorManager<SectorPayload>,
         impacts: &'a mut Impacts,
@@ -76,6 +78,7 @@ impl<'a> Publication<'a> {
     ) -> Self {
         Self {
             state,
+            equipment,
             worlds,
             sectors,
             impacts,
@@ -130,7 +133,21 @@ impl<'a> Publication<'a> {
         self.state.metrics.persistence.record(elapsed);
     }
 
+    pub(super) fn reserve_inventory(
+        &mut self,
+        plan: &WorldChangePlan,
+    ) -> Result<(), ActionRejection> {
+        self.equipment.reserve_plan(plan)
+    }
+
+    pub(super) fn cancel_inventory(&mut self, mutation_id: u64) {
+        self.equipment.cancel_plan(mutation_id);
+    }
+
     fn action_result(&mut self, origin: Origin, result: ActionResult) {
+        if let (Some(player), Some(context)) = (origin.player, origin.context) {
+            self.equipment.finish_action(player, context, result);
+        }
         self.state.record_result(self.worlds, origin, result);
     }
 

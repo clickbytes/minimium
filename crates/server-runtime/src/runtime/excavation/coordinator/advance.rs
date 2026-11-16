@@ -28,6 +28,7 @@ impl ExcavationCoordinator {
                 {
                     if !port.checkpoints_match(pending.prepared.mutation.impact_bodies()) {
                         self.fail("stale or mismatched impact checkpoint acknowledgement".into());
+                        port.cancel_inventory(pending.prepared.mutation.id());
                         port.impact_failure(
                             "stale or mismatched excavation impact acknowledgement",
                         );
@@ -43,6 +44,7 @@ impl ExcavationCoordinator {
                     }
                 }
                 result => {
+                    port.cancel_inventory(pending.prepared.mutation.id());
                     let reason = match result {
                         Err(error) => {
                             let detail = error.to_string();
@@ -89,10 +91,16 @@ impl ExcavationCoordinator {
             Err(PreparationError::Rejected(reason)) => Err(reason),
             Ok(prepared) => Ok(prepared),
         };
+        let mut reserved_id = None;
         let result = result.and_then(|prepared| {
             if !port.is_current(&preparation.request) {
                 return Err(ActionRejection::Stale);
             }
+            port.reserve_inventory(&prepared.mutation)?;
+            reserved_id = prepared
+                .mutation
+                .inventory()
+                .map(|_| prepared.mutation.id());
             self.journal
                 .validate(&prepared.mutation)
                 .map_err(|error| self.storage_rejection(error))?;
@@ -100,6 +108,9 @@ impl ExcavationCoordinator {
                 .map_err(|error| self.storage_rejection(error))
         });
         if let Err(reason) = result {
+            if let Some(mutation_id) = reserved_id {
+                port.cancel_inventory(mutation_id);
+            }
             port.reject(preparation.request, reason);
         }
     }

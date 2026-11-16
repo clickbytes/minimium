@@ -33,10 +33,7 @@ struct ExcavationState {
     config: crate::composition::ExcavationConfig,
     async_work_policy: crate::AsyncWorkPolicy,
     restored: WorldChangeState,
-    inventories: HashMap<PlayerProfileId, Inventory>,
-    inventory_requests: HashMap<PlayerId, (WorldContext, Inventory)>,
     action_results: HashMap<PlayerId, (WorldContext, ActionResult)>,
-    gates: HashMap<PlayerId, (WorldContext, minimium_simulation::tools::ToolUseGate)>,
     clients: HashMap<PlayerId, streaming::Cursor>,
     metrics: metrics::ExcavationMetrics,
     waters: HashMap<WorldInstanceId, water::WaterWorld>,
@@ -92,10 +89,7 @@ impl Excavation {
             state: ExcavationState {
                 config,
                 async_work_policy,
-                inventories: restored.inventories.iter().map(|(p, i)| (*p, *i)).collect(),
                 restored,
-                gates: HashMap::new(),
-                inventory_requests: HashMap::new(),
                 action_results: HashMap::new(),
                 clients: HashMap::new(),
                 metrics: Default::default(),
@@ -130,21 +124,6 @@ impl ServerRuntime {
         self.excavation.coordinator.reserves(world)
     }
 
-    pub(super) fn player_inventory(&self, player: PlayerId) -> Inventory {
-        self.excavation_profile(player)
-            .and_then(|p| self.excavation.state.inventories.get(&p).copied())
-            .unwrap_or_default()
-    }
-
-    fn excavation_profile(&self, player: PlayerId) -> Option<PlayerProfileId> {
-        self.connections.clients.iter().find_map(|client| {
-            client
-                .identity()
-                .filter(|id| id.player == player)
-                .map(|id| id.principal.profile())
-        })
-    }
-
     fn excavation_inputs(&self, world: WorldInstanceId) -> Option<minimium_procgen::TerrainInputs> {
         ports::terrain_inputs(&self.game.worlds, &self.prepared_geography, world)
     }
@@ -155,6 +134,7 @@ impl ServerRuntime {
         context: WorldContext,
         result: ActionResult,
     ) {
+        self.equipment.finish_action(player, context, result);
         self.excavation.state.record_result(
             &self.game.worlds,
             Origin {
@@ -195,11 +175,6 @@ impl ExcavationState {
         let (Some(player), Some(context)) = (origin.player, origin.context) else {
             return;
         };
-        if let Some((current, gate)) = self.gates.get_mut(&player) {
-            if *current == context {
-                gate.finish(result);
-            }
-        }
         if worlds.context_for_player(player) == Some(context) {
             self.action_results.insert(player, (context, result));
         }

@@ -305,6 +305,7 @@ impl ServerRuntime {
             }
             if let Some(identity) = client.identity() {
                 let player_id = identity.player;
+                self.equipment.remove_actor(player_id);
                 self.game.player_movement_policies.remove(&player_id);
                 let profile_id = identity.principal.profile();
                 self.connections.client_indices_by_player.remove(&player_id);

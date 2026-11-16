@@ -38,6 +38,7 @@ impl ServerRuntime {
             .coordinator
             .advance(&mut ports::Publication::new(
                 &mut self.excavation.state,
+                &mut self.equipment,
                 &mut self.game.worlds,
                 &mut self.game.sectors,
                 &mut self.impacts,
@@ -59,10 +60,8 @@ impl ServerRuntime {
             .state
             .clients
             .retain(|player, _| active.contains(player));
-        self.excavation
-            .state
-            .gates
-            .retain(|player, _| active.contains(player));
+        self.equipment
+            .retain_actors(|player| active.contains(&player));
         self.excavation
             .state
             .action_results
