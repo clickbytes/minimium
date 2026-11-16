@@ -162,3 +162,7 @@ viewmodel vertices and linear RGB colors. `tool_model_index()` binds confirmed
 inventory kinds to this ordered catalog. The client adapts these CPU values to
 the renderer's neutral bounded model input; no sample code depends on renderer
 or GPU packages.
+The two-entry grant, action profile and model list intentionally match the
+current fixed `ToolKind`/two-slot contract. AR18 is a deferred limitation, not
+an implemented catalog; see the [item catalog decision](../../docs/plan/epic-050/item-catalog-decision.md)
+for compatibility constraints and the product-evidence trigger to revisit it.
