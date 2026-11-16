@@ -145,6 +145,7 @@ fn initialize_sample_entities(context: &mut dyn GameplaySystemContext) {
         })
         .collect::<Vec<_>>();
     for (sector, components) in entities {
+        // Startup feedback is host-owned; a host may drain these bounded receipts after initialization.
         let _ = context.emit(WorldEffect::SpawnEntity {
             world,
             sector,
@@ -192,6 +193,7 @@ fn portal_interaction_system(context: &mut dyn GameplaySystemContext) {
         if distance_squared > 9.0 {
             continue;
         }
+        // This system intentionally ignores transfer receipts; any unread result expires on its next invocation.
         let _ = context.emit(WorldEffect::RequestTransfer {
             player,
             source_world: world,

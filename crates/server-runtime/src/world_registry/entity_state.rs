@@ -9,12 +9,19 @@ pub(crate) struct StagedEntityBatch<'a> {
     worlds: &'a mut WorldRegistry,
     stores: BTreeMap<WorldInstanceId, EntityStore>,
     changes: Vec<WorldEntityChange>,
+    spawned_entities: Vec<(WorldInstanceId, minimium_world::entity::EntityId)>,
     next_membership_revision: Option<u128>,
 }
 
 impl StagedEntityBatch<'_> {
     pub(crate) fn changes(&self) -> &[WorldEntityChange] {
         &self.changes
+    }
+
+    pub(crate) fn spawned_entities(
+        &self,
+    ) -> &[(WorldInstanceId, minimium_world::entity::EntityId)] {
+        &self.spawned_entities
     }
 
     pub(crate) fn commit(self, reservation: minimium_storage::PreparedEntityReservation<'_>) {
@@ -51,6 +58,7 @@ impl WorldRegistry {
     ) -> Result<StagedEntityBatch<'a>, RegistryError> {
         let mut stores = BTreeMap::new();
         let mut changes = Vec::new();
+        let mut spawned_entities = Vec::new();
         for effect in effects {
             let instance = match effect {
                 crate::modules::WorldEffect::SpawnEntity { world, .. }
@@ -112,6 +120,7 @@ impl WorldRegistry {
                         .get_mut(world)
                         .ok_or(RegistryError::UnknownInstance)?;
                     let entity = store.spawn().map_err(RegistryError::Component)?;
+                    spawned_entities.push((*world, entity));
                     changes.push(WorldEntityChange {
                         world: *world,
                         mutation: ComponentMutation::Spawn(entity),
@@ -225,6 +234,7 @@ impl WorldRegistry {
             worlds: self,
             stores,
             changes,
+            spawned_entities,
             next_membership_revision,
         })
     }

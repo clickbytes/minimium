@@ -1,5 +1,33 @@
 # minimium-server-runtime
 
+## Registered effect receipts
+
+The runtime binds each ordinary system writer to its registered module and
+system IDs, and each command writer to its registered module and command IDs.
+The returned token sequence persists for the producer lifetime and stops at
+identifier exhaustion instead of wrapping. One shared 256-effect / 1 MiB
+stage buffer remains the commit unit. Entity staging stays atomic; a successful
+spawn receipt contains its assigned world and entity IDs only after storage
+reservation and publication. Transfer outcomes remain independent.
+
+Ordinary system receipts are available only on that system's next invocation.
+The inbox cap is 256 per producer and 4096 total pending plus reserved. Capacity
+is reserved before accepting an effect; receipt backpressure refuses only that
+effect and does not trigger shared-stage overflow rejection. The cumulative
+refusal count is exposed by `backpressured_effect_count`. Unconsumed results expire when that
+next invocation returns; `ServerRuntime::expired_effect_receipt_count` exposes
+the cumulative diagnostic total. Startup executes once per world and stores
+receipts in a separate host inbox with a 4096 total pending plus reserved cap.
+Hosts drain it using `take_startup_effect_receipts(module, system, world)`.
+Command receipts remain part of the direct ordered command result. Shutdown
+returns any unread system or startup receipts in `ShutdownOutcome` instead of
+dropping them silently. If initialization fails after earlier per-world commits,
+the constructor's `io::Error` source is a downcastable `StartupEffectFailure`
+containing accumulated receipts and rejected-push count. A startup commit
+failure prevents runtime construction; it is not reported as successful
+initialization. Receipts are process-local
+feedback, with no persistence, protocol or exactly-once-across-restart claim.
+
 ## Purpose / Non-goals
 
 Owns the authoritative server lifecycle, world registry, tick, typed transport-event coordination, admission and persistence composition. It consumes fixed-domain server, transport, storage, environment, protocol, world and sector diagnostics loggers supplied by the host application. The host supplies a `TransportPort` and typed `GameOutputPort`; runtime owns no listener, socket, byte buffer or codec. Public path-free `PreparedRuntime` and `RuntimeSettings` carry loaded state and opened services into the single runtime constructor. `StorageBackend` and `ProcessLifecyclePort` keep file bootstrap and endpoint/status effects in explicit adapters; the file process path prepares them under the data lock before construction. Persistence enqueue acceptance remains separate from durable snapshot and journal acknowledgements. It enforces server-granted principal permissions at mutating input admission. Movement inputs carry intent only; a per-player server-owned policy supplies speed, acceleration and flight to the shared integrator. Privileged policy changes require the matching permission and are returned only to the requesting player. It is headless and has no GPU or window role.

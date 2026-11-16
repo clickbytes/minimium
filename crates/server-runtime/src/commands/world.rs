@@ -343,6 +343,14 @@ fn entity_despawn(context: &mut ModuleCommandContext<'_>, args: &[&str]) -> Comm
                 "server.command.effect_payload_limit",
                 "command effect payload limit exceeded",
             ),
+            crate::modules::EffectBufferError::ReceiptBackpressure => (
+                "server.command.effect_receipt_backpressure",
+                "command effect receipt capacity exhausted",
+            ),
+            crate::modules::EffectBufferError::IdentifierSpaceExhausted => (
+                "server.command.effect_identifier_exhausted",
+                "command effect identifier space exhausted",
+            ),
         };
         return CommandReply::error(code, detail);
     }

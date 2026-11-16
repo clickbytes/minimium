@@ -51,6 +51,17 @@ impl ServerRuntime {
         self.shutdown_request.request();
         self.cancel_commands();
         let commands = std::mem::take(&mut self.operations.host_outcomes);
+        let effect_receipts = self.schedule.drain_pending_effect_receipts();
+        if !effect_receipts.is_empty() {
+            super::diagnostics::emit_system_effect_diagnostic(
+                &self.world_logger,
+                "effect_receipt:shutdown",
+                &format!(
+                    "{} unread producer receipts returned by shutdown",
+                    effect_receipts.len()
+                ),
+            );
+        }
         self.operations.transport.stop_admission();
         if let Err(error) = self.shutdown_excavation(persistence_deadline) {
             runtime_error = Some(error);
@@ -79,6 +90,10 @@ impl ServerRuntime {
             logger: &self.server_logger,
             runtime_error,
         });
-        crate::ShutdownOutcome { commands, result }
+        crate::ShutdownOutcome {
+            commands,
+            effect_receipts,
+            result,
+        }
     }
 }

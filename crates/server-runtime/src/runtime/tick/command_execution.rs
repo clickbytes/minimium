@@ -13,6 +13,7 @@ impl ServerRuntime {
             &self.game.worlds,
             &mut effects,
             &self.module_registry,
+            self.schedule.command_sequences_mut(),
         );
         if reply.handler_succeeded() {
             let batch = effects.into_batch();
@@ -28,6 +29,23 @@ impl ServerRuntime {
                             &format!("could not commit command effects: {error}"),
                         );
                     }
+                }
+            }
+        } else {
+            let batch = effects.into_batch();
+            if !batch.effects().is_empty() || batch.rejected_pushes() > 0 {
+                let rejected =
+                    vec![crate::modules::WorldEffectOutcome::StageRejected; batch.effects().len()];
+                match batch.into_outcome(rejected) {
+                    Ok(outcome) => {
+                        self.report_effect_batch_outcome("command:handler_error", &outcome);
+                        reply.set_effect_outcome(outcome);
+                    }
+                    Err(error) => super::super::diagnostics::emit_system_effect_diagnostic(
+                        &self.world_logger,
+                        "command:handler_error:receipt_invariant",
+                        &format!("could not retain rejected effect receipts: {error:?}"),
+                    ),
                 }
             }
         }

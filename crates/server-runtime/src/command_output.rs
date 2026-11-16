@@ -300,43 +300,52 @@ pub(crate) fn render_reply_view(view: &CommandReplyView<'_>) -> BoundedText {
         .as_ref()
         .map(render)
         .unwrap_or_else(|| BoundedText::new(view.detail.unwrap_or("command failed")));
-    if let Some(outcome) = view.effects {
-        if !out.as_str().is_empty() {
-            out.push_str("; ");
-        }
-        out.push_str("effects=");
-        for (index, result) in outcome.results().iter().enumerate() {
-            if index > 0 {
-                out.push_str(",");
+    if view.payload.is_some() {
+        if let Some(outcome) = view.effects {
+            if !out.as_str().is_empty() {
+                out.push_str("; ");
             }
-            let _ = write!(out, "{index}:");
-            match result {
-                crate::modules::WorldEffectOutcome::EntityApplied => out.push_str("entity_applied"),
-                crate::modules::WorldEffectOutcome::EntityRejected(reason) => {
-                    let _ = write!(out, "entity_rejected_{}", entity_rejection_label(*reason));
+            out.push_str("effects=");
+            for (index, result) in outcome.results().iter().enumerate() {
+                if index > 0 {
+                    out.push_str(",");
                 }
-                crate::modules::WorldEffectOutcome::Transfer(
-                    crate::modules::TransferOutcome::Started,
-                ) => {
-                    out.push_str("transfer_started_prepare_queued_readiness_pending_not_committed")
+                let _ = write!(out, "{index}:");
+                match result {
+                    crate::modules::WorldEffectOutcome::EntityApplied => {
+                        out.push_str("entity_applied")
+                    }
+                    crate::modules::WorldEffectOutcome::EntitySpawned { .. } => {
+                        out.push_str("entity_applied")
+                    }
+                    crate::modules::WorldEffectOutcome::EntityRejected(reason) => {
+                        let _ = write!(out, "entity_rejected_{}", entity_rejection_label(*reason));
+                    }
+                    crate::modules::WorldEffectOutcome::Transfer(
+                        crate::modules::TransferOutcome::Started,
+                    ) => out.push_str(
+                        "transfer_started_prepare_queued_readiness_pending_not_committed",
+                    ),
+                    crate::modules::WorldEffectOutcome::Transfer(
+                        crate::modules::TransferOutcome::Rejected(reason),
+                    ) => {
+                        let _ = write!(
+                            out,
+                            "transfer_rejected_{}",
+                            transfer_rejection_label(*reason)
+                        );
+                    }
+                    crate::modules::WorldEffectOutcome::StageRejected => {
+                        out.push_str("stage_rejected")
+                    }
                 }
-                crate::modules::WorldEffectOutcome::Transfer(
-                    crate::modules::TransferOutcome::Rejected(reason),
-                ) => {
-                    let _ = write!(
-                        out,
-                        "transfer_rejected_{}",
-                        transfer_rejection_label(*reason)
-                    );
-                }
-                crate::modules::WorldEffectOutcome::StageRejected => out.push_str("stage_rejected"),
             }
-        }
-        if outcome.rejected_pushes() > 0 {
-            let _ = write!(out, ",rejected_pushes={}", outcome.rejected_pushes());
-        }
-        if outcome.has_rejections() {
-            out.push_str(" [not all effects applied]");
+            if outcome.rejected_pushes() > 0 {
+                let _ = write!(out, ",rejected_pushes={}", outcome.rejected_pushes());
+            }
+            if outcome.has_rejections() {
+                out.push_str(" [not all effects applied]");
+            }
         }
     }
     out

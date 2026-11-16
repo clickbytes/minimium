@@ -51,6 +51,7 @@ pub use hosting::{
 };
 pub use metrics::{MetricField, MetricValue, RuntimeMetricsSnapshot};
 pub use runtime::ServerRuntime;
+pub use runtime::StartupEffectFailure;
 pub use runtime::{ExcavationStatus, ImpactStatus};
 pub use startup::PreparedRuntime;
 
@@ -58,7 +59,8 @@ pub use commands::CommandReply as ModuleCommandReply;
 pub use minimium_gameplay::{
     CommandComponentRow, CommandEntityKind, CommandEntityRow, CommandPlayerView, CommandViewCursor,
     CommandViewError, CommandViewKind, CommandViewPage, CommandViewRequest, CommandViewScope,
-    CommandWorldView, MAX_COMMAND_VIEW_BYTES, MAX_COMMAND_VIEW_ROWS,
+    CommandWorldView, EffectBatchOutcome, EffectProducerId, EffectReceipt, EffectToken,
+    WorldEffectOutcome, MAX_COMMAND_VIEW_BYTES, MAX_COMMAND_VIEW_ROWS,
 };
 pub use minimium_gameplay::{EngineModule, ModuleCommandContext, ModuleCommandHandler};
 pub use runtime::schedule::{ModuleSystem, ModuleSystemContext};
