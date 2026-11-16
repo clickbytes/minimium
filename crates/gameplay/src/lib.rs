@@ -29,7 +29,11 @@ pub use read_views::{
     CommandViewRequest, CommandViewScope, CommandWorldView, ModuleCommandReadView,
     MAX_COMMAND_VIEW_BYTES, MAX_COMMAND_VIEW_ROWS,
 };
-pub use schedule::{BuiltinOperation, SchedulePlan};
+pub use schedule::{
+    stage_anchor_id, ScheduleDefinition, ScheduleError, ScheduleNode, ScheduleNodeKind,
+    SchedulePlan, ScheduleStep, ENVIRONMENT_SCHEDULE_ANCHOR, FIXED_UPDATE_SCHEDULE_ANCHOR,
+    POST_SIMULATION_SCHEDULE_ANCHOR, SIMULATION_SCHEDULE_ANCHOR, STARTUP_SCHEDULE_ANCHOR,
+};
 pub use system::{GameplaySystem, GameplaySystemContext};
 pub use world_changes::{
     RestoredWorldChanges, WorldChangeAck, WorldChangeCommitment, WorldChangeFailure,
@@ -210,9 +214,7 @@ impl<H, S> ModuleRegistrar<'_, H, S> {
 
     pub fn system(&mut self, definition: SystemDefinition<S>) -> Result<(), ModuleError> {
         if !valid_path(definition.id)
-            || BuiltinOperation::ALL
-                .iter()
-                .any(|op| op.id() == definition.id)
+            || schedule::is_reserved_anchor(definition.id)
             || self
                 .existing_systems
                 .iter()

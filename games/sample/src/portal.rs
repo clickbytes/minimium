@@ -1,7 +1,7 @@
 use minimium_gameplay::{
-    BuiltinOperation, ComponentValue, EngineModule, GameplayEvent, GameplaySystem,
-    GameplaySystemContext, ModuleCommandHandler, ModuleDescriptor, ModuleError, ModuleRegistrar,
-    Stage, SystemDefinition, WorldEffect, WorldLifecycle,
+    ComponentValue, EngineModule, GameplayEvent, GameplaySystem, GameplaySystemContext,
+    ModuleCommandHandler, ModuleDescriptor, ModuleError, ModuleRegistrar, Stage, SystemDefinition,
+    WorldEffect, WorldLifecycle, POST_SIMULATION_SCHEDULE_ANCHOR, SIMULATION_SCHEDULE_ANCHOR,
 };
 use minimium_world::entity::{
     ComponentDescriptor, ComponentError, ComponentMutationPolicy, ComponentTypeId,
@@ -116,8 +116,8 @@ impl EngineModule<ModuleCommandHandler, GameplaySystem> for SampleGameplayModule
         registrar.system(SystemDefinition {
             id: "portal-interaction",
             stage: Stage::PostSimulation,
-            before: const { &[BuiltinOperation::PostSimulationEffects.id()] },
-            after: const { &[BuiltinOperation::Simulation.id()] },
+            before: const { &[POST_SIMULATION_SCHEDULE_ANCHOR] },
+            after: const { &[SIMULATION_SCHEDULE_ANCHOR] },
             handler: portal_interaction_system,
         })
     }

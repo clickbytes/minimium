@@ -12,7 +12,9 @@ pub(crate) use owner_context::OwnerCommandContext;
 pub(crate) use world::RuntimeCommandReadView;
 
 use crate::modules::{CommandScope, ModuleCommandContext, ModuleRegistry, WorldEffectBuffer};
-use crate::runtime::schedule::{ScheduleDiagnostics, ServerSchedule, SystemFn};
+use crate::runtime::schedule::{
+    production_schedule, ScheduleDiagnostics, ServerSchedule, SystemFn,
+};
 use minimium_gameplay::ModuleCommandReadView;
 pub(crate) use minimium_gameplay::ModuleCommandText as BoundedText;
 use std::sync::Arc;
@@ -39,8 +41,13 @@ pub(crate) fn initialize_modules(
 
 pub(crate) fn build_schedule(
     registry: &ModuleRegistry<ModuleHandler, SystemFn>,
-) -> Result<ServerSchedule, crate::modules::ModuleError> {
-    Ok(ServerSchedule::from_plan(&registry.ordered_schedule()?))
+    definition: &minimium_gameplay::ScheduleDefinition,
+) -> Result<ServerSchedule, crate::modules::ScheduleError> {
+    ServerSchedule::from_plan(&registry.ordered_schedule(definition)?)
+}
+
+pub(crate) fn production_schedule_definition() -> minimium_gameplay::ScheduleDefinition {
+    production_schedule()
 }
 
 pub(crate) fn component_registry(
