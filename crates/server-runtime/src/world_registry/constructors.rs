@@ -49,6 +49,7 @@ impl WorldRegistry {
                 initial_entities: Vec::new(),
             },
         );
+        let world_membership_revision = instances.len() as u128;
         Self {
             instances,
             memberships: HashMap::new(),
@@ -58,6 +59,10 @@ impl WorldRegistry {
             next_transition: 1,
             sector_states: BTreeMap::new(),
             persisted_totals: super::sector_state::PersistedTotals::default(),
+            player_membership_revision: 0,
+            read_identity: std::sync::Arc::new(()),
+            world_membership_revision,
+            entity_membership_revision: 0,
         }
     }
 
@@ -90,6 +95,10 @@ impl WorldRegistry {
         if self.instances.len() >= minimium_storage::MAX_SNAPSHOT_WORLDS {
             return Err(RegistryError::WorldLimitExceeded);
         }
+        let next_membership_revision = self
+            .world_membership_revision
+            .checked_add(1)
+            .ok_or(RegistryError::MembershipRevisionExhausted)?;
         let mut world = World::default();
         world.load_map_streamed(&map);
         world.set_gravity(
@@ -127,6 +136,7 @@ impl WorldRegistry {
                 initial_entities: Vec::new(),
             },
         );
+        self.world_membership_revision = next_membership_revision;
         Ok(())
     }
 
@@ -211,6 +221,10 @@ impl WorldRegistry {
             next_transition: 1,
             sector_states: BTreeMap::new(),
             persisted_totals: super::sector_state::PersistedTotals::default(),
+            player_membership_revision: 0,
+            read_identity: std::sync::Arc::new(()),
+            world_membership_revision: 1,
+            entity_membership_revision: 0,
         }
     }
 

@@ -30,6 +30,7 @@ pub enum CommandPayloadView<'a> {
     Players {
         rows: &'a [crate::commands::PlayerRow],
         truncated: bool,
+        next_cursor: Option<&'a str>,
     },
     Metrics {
         snapshot: &'a crate::metrics::RuntimeMetricsSnapshot,
@@ -58,17 +59,20 @@ pub enum CommandPayloadView<'a> {
     WorldList {
         rows: &'a [crate::commands::WorldRow],
         truncated: bool,
+        next_cursor: Option<&'a str>,
     },
     WorldInspect(&'a crate::commands::WorldInspect),
     EntityList {
         rows: &'a [crate::commands::EntityRow],
         truncated: bool,
+        next_cursor: Option<&'a str>,
     },
     EntityInspect {
         world: minimium_world::world::WorldInstanceId,
         entity: minimium_world::entity::EntityId,
         rows: &'a [crate::commands::EntityComponentRow],
         truncated: bool,
+        next_cursor: Option<&'a str>,
     },
     EntityDespawn {
         world: minimium_world::world::WorldInstanceId,
@@ -103,9 +107,14 @@ impl CommandReply {
                 truncated: *truncated,
             },
             CommandPayload::Status(value) => CommandPayloadView::Status(value),
-            CommandPayload::Players { rows, truncated } => CommandPayloadView::Players {
+            CommandPayload::Players {
+                rows,
+                truncated,
+                next_cursor,
+            } => CommandPayloadView::Players {
                 rows,
                 truncated: *truncated,
+                next_cursor: next_cursor.as_deref(),
             },
             CommandPayload::Metrics {
                 snapshot,
@@ -140,25 +149,37 @@ impl CommandReply {
                 rows,
                 truncated: *truncated,
             },
-            CommandPayload::WorldList { rows, truncated } => CommandPayloadView::WorldList {
+            CommandPayload::WorldList {
+                rows,
+                truncated,
+                next_cursor,
+            } => CommandPayloadView::WorldList {
                 rows,
                 truncated: *truncated,
+                next_cursor: next_cursor.as_deref(),
             },
             CommandPayload::WorldInspect(value) => CommandPayloadView::WorldInspect(value),
-            CommandPayload::EntityList { rows, truncated } => CommandPayloadView::EntityList {
+            CommandPayload::EntityList {
+                rows,
+                truncated,
+                next_cursor,
+            } => CommandPayloadView::EntityList {
                 rows,
                 truncated: *truncated,
+                next_cursor: next_cursor.as_deref(),
             },
             CommandPayload::EntityInspect {
                 world,
                 entity,
                 rows,
                 truncated,
+                next_cursor,
             } => CommandPayloadView::EntityInspect {
                 world: *world,
                 entity: *entity,
                 rows,
                 truncated: *truncated,
+                next_cursor: next_cursor.as_deref(),
             },
             CommandPayload::EntityDespawn { world, entity } => CommandPayloadView::EntityDespawn {
                 world: *world,

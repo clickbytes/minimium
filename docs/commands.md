@@ -87,7 +87,10 @@ The same commands are available through the server terminal (unless `--headless`
 | --- | --- |
 | `help` | Print the command list. |
 | `status` | Report running state, active players, configured lanes, ticks, accepted/rejected clock probes, environment-sync messages, save state, player cap, map fingerprint, tick/snapshot intervals, autosave interval, protocol version, and save version. |
-| `players list` | List connected player IDs, names, and positions, or report no players. |
+| `players list [CURSOR]` | List a bounded page of connected players. Pass the returned cursor to continue; positions are live values on each page. |
+| `world list [CURSOR]` | List a bounded page of worlds. Pass the returned cursor to continue. |
+| `entity list [CURSOR]` | List a bounded page of entities and players in stable world/kind/ID order. Pass the returned cursor to continue. |
+| `entity inspect WORLD ENTITY [CURSOR]` | List a bounded page of the entity components; pass the returned cursor to continue. |
 | `metrics show` | Print runtime, network, queue, collision, memory, process, and optional allocation metrics. Field names are documented in [performance policy](performance.md). |
 | `world save` | Capture players, entities, sectors and the clock together, then queue one v11 snapshot on the persistence worker. A successful reply means queued, not completed; use `status` to inspect `save_pending` and `save_last`. A second save is rejected while one is pending. |
 | `stop` | Request controlled shutdown. The server saves a final snapshot, reports the final result, and releases the data-directory lock. |

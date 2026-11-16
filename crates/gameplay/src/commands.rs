@@ -1,12 +1,5 @@
 use crate::{ComponentView, EffectBufferError, WorldEffect, WorldEffectBuffer};
-use minimium_core::ids::PlayerId;
-use minimium_world::{
-    entity::EntityId,
-    world::{GenerationRevision, WorldInstanceId, WorldManifest, WorldTopology},
-};
-
-const MAX_MODULE_COMMAND_VIEW_ROWS: usize = 256;
-const MAX_MODULE_COMMAND_VIEW_BYTES: usize = 1024 * 1024;
+use minimium_world::{entity::EntityId, world::WorldInstanceId};
 
 /// Bounded UTF-8 command text shared by neutral modules and the host formatter.
 #[derive(Clone, Debug, Default)]
@@ -111,59 +104,10 @@ impl ModuleCommandResult {
 
 pub type ModuleCommandHandler = fn(&mut ModuleCommandContext<'_>, &[&str]) -> ModuleCommandResult;
 
-#[derive(Clone, Debug)]
-pub struct CommandViewPage<T> {
-    pub rows: Vec<T>,
-    pub truncated: bool,
-}
-
-impl<T> CommandViewPage<T> {
-    pub fn new(rows: Vec<T>, truncated: bool) -> Self {
-        Self { rows, truncated }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CommandViewError {
-    UnknownWorld,
-    UnknownEntity,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct CommandWorldView {
-    pub id: WorldInstanceId,
-    pub players: usize,
-    pub topology: WorldTopology,
-    pub generation: GenerationRevision,
-    pub manifest: WorldManifest,
-}
-
-#[derive(Clone, Debug)]
-pub struct CommandPlayerView {
-    pub id: PlayerId,
-    pub name: String,
-    pub world: WorldInstanceId,
-    pub position: [f32; 3],
-}
-
-pub trait ModuleCommandReadView {
-    fn world_count(&self) -> usize;
-    fn worlds(&self, max_rows: usize) -> CommandViewPage<CommandWorldView>;
-    fn world(&self, id: WorldInstanceId) -> Result<CommandWorldView, CommandViewError>;
-    fn entities(
-        &self,
-        world: WorldInstanceId,
-        max_rows: usize,
-    ) -> Result<CommandViewPage<EntityId>, CommandViewError>;
-    fn players(&self, max_rows: usize, max_bytes: usize) -> CommandViewPage<CommandPlayerView>;
-    fn components(
-        &self,
-        world: WorldInstanceId,
-        entity: EntityId,
-        max_rows: usize,
-        max_bytes: usize,
-    ) -> Result<CommandViewPage<ComponentView<'_>>, CommandViewError>;
-}
+use crate::read_views::{
+    CommandEntityRow, CommandPlayerView, CommandViewCursor, CommandViewError, CommandViewPage,
+    CommandViewRequest, CommandWorldView, ModuleCommandReadView,
+};
 
 /// A host supplies only read views and a bounded effect sink to a command handler.
 pub struct ModuleCommandContext<'a> {
@@ -180,8 +124,15 @@ impl<'a> ModuleCommandContext<'a> {
         self.view.world_count()
     }
 
-    pub fn worlds(&self) -> CommandViewPage<CommandWorldView> {
-        self.view.worlds(MAX_MODULE_COMMAND_VIEW_ROWS)
+    pub fn cursor(&self, token: &str) -> Result<CommandViewCursor, CommandViewError> {
+        self.view.parse_cursor(token)
+    }
+
+    pub fn worlds(
+        &self,
+        request: &CommandViewRequest,
+    ) -> Result<CommandViewPage<CommandWorldView>, CommandViewError> {
+        self.view.worlds(request)
     }
 
     pub fn world(&self, id: WorldInstanceId) -> Result<CommandWorldView, CommandViewError> {
@@ -191,26 +142,32 @@ impl<'a> ModuleCommandContext<'a> {
     pub fn entities(
         &self,
         world: WorldInstanceId,
+        request: &CommandViewRequest,
     ) -> Result<CommandViewPage<EntityId>, CommandViewError> {
-        self.view.entities(world, MAX_MODULE_COMMAND_VIEW_ROWS)
+        self.view.entities(world, request)
     }
 
-    pub fn players(&self) -> CommandViewPage<CommandPlayerView> {
-        self.view
-            .players(MAX_MODULE_COMMAND_VIEW_ROWS, MAX_MODULE_COMMAND_VIEW_BYTES)
+    pub fn players(
+        &self,
+        request: &CommandViewRequest,
+    ) -> Result<CommandViewPage<CommandPlayerView>, CommandViewError> {
+        self.view.players(request)
+    }
+
+    pub fn entity_rows(
+        &self,
+        request: &CommandViewRequest,
+    ) -> Result<CommandViewPage<CommandEntityRow>, CommandViewError> {
+        self.view.entity_rows(request)
     }
 
     pub fn components(
         &self,
         world: WorldInstanceId,
         entity: EntityId,
+        request: &CommandViewRequest,
     ) -> Result<CommandViewPage<ComponentView<'_>>, CommandViewError> {
-        self.view.components(
-            world,
-            entity,
-            MAX_MODULE_COMMAND_VIEW_ROWS,
-            MAX_MODULE_COMMAND_VIEW_BYTES,
-        )
+        self.view.components(world, entity, request)
     }
 
     pub fn emit(&mut self, effect: WorldEffect) -> Result<(), EffectBufferError> {

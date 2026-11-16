@@ -63,7 +63,11 @@ pub(crate) fn render(payload: &CommandPayloadView<'_>) -> BoundedText {
         CommandPayloadView::Players {
             rows: players,
             truncated,
+            next_cursor,
         } => {
+            if let Some(cursor) = next_cursor {
+                let _ = write!(out, "next={cursor}; ");
+            }
             if players.is_empty() {
                 out.push_str("no players");
             }
@@ -83,10 +87,19 @@ pub(crate) fn render(payload: &CommandPayloadView<'_>) -> BoundedText {
                 );
             }
             if *truncated {
-                out.push_str("; [truncated]");
+                if next_cursor.is_none() {
+                    out.push_str("; [truncated]");
+                }
             }
         }
-        CommandPayloadView::WorldList { rows, truncated } => {
+        CommandPayloadView::WorldList {
+            rows,
+            truncated,
+            next_cursor,
+        } => {
+            if let Some(cursor) = next_cursor {
+                let _ = write!(out, "next={cursor}; ");
+            }
             for (i, row) in rows.iter().enumerate() {
                 if i != 0 {
                     out.push_str("; ");
@@ -98,7 +111,9 @@ pub(crate) fn render(payload: &CommandPayloadView<'_>) -> BoundedText {
                 );
             }
             if *truncated {
-                out.push_str("; [truncated]");
+                if next_cursor.is_none() {
+                    out.push_str("; [truncated]");
+                }
             }
         }
         CommandPayloadView::WorldInspect(row) => {
@@ -108,7 +123,14 @@ pub(crate) fn render(payload: &CommandPayloadView<'_>) -> BoundedText {
                 row.id, row.players, row.manifest
             );
         }
-        CommandPayloadView::EntityList { rows, truncated } => {
+        CommandPayloadView::EntityList {
+            rows,
+            truncated,
+            next_cursor,
+        } => {
+            if let Some(cursor) = next_cursor {
+                let _ = write!(out, "next={cursor}; ");
+            }
             if rows.is_empty() {
                 out.push_str("no runtime entities or players");
             }
@@ -126,7 +148,9 @@ pub(crate) fn render(payload: &CommandPayloadView<'_>) -> BoundedText {
                 }
             }
             if *truncated {
-                out.push_str("; [truncated]");
+                if next_cursor.is_none() {
+                    out.push_str("; [truncated]");
+                }
             }
         }
         CommandPayloadView::EntityInspect {
@@ -134,7 +158,11 @@ pub(crate) fn render(payload: &CommandPayloadView<'_>) -> BoundedText {
             entity,
             rows,
             truncated,
+            next_cursor,
         } => {
+            if let Some(cursor) = next_cursor {
+                let _ = write!(out, "next={cursor}; ");
+            }
             let _ = write!(out, "world={world} entity={}", entity.get());
             if rows.is_empty() {
                 out.push_str(" components=none");

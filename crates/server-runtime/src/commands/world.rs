@@ -6,8 +6,8 @@ use crate::modules::{
 };
 use crate::world_registry::WorldRegistry;
 use minimium_gameplay::{
-    CommandPlayerView, CommandViewError, CommandViewPage, CommandWorldView, ComponentView,
-    ModuleCommandContext, ModuleCommandReadView,
+    CommandPlayerView, CommandViewCursorIssuer, CommandViewError, CommandViewKind, CommandViewPage,
+    CommandViewRequest, CommandViewScope, CommandWorldView, ComponentView, ModuleCommandContext,
 };
 use minimium_world::{entity::EntityId, world::WorldInstanceId};
 
@@ -22,6 +22,18 @@ const WORLD_INSPECT_ARGUMENTS: &[minimium_commands::CommandArgumentSpec] =
         None,
         "world instance identifier",
     )];
+const WORLD_LIST_ARGUMENTS: &[minimium_commands::CommandArgumentSpec] =
+    &[minimium_commands::CommandArgumentSpec::new(
+        "cursor",
+        minimium_commands::CommandArgumentType::Text,
+        true,
+        false,
+        None,
+        None,
+        None,
+        "opaque continuation cursor",
+    )];
+const ENTITY_LIST_ARGUMENTS: &[minimium_commands::CommandArgumentSpec] = WORLD_LIST_ARGUMENTS;
 const ENTITY_ARGUMENTS: &[minimium_commands::CommandArgumentSpec] = &[
     minimium_commands::CommandArgumentSpec::new(
         "world",
@@ -42,6 +54,20 @@ const ENTITY_ARGUMENTS: &[minimium_commands::CommandArgumentSpec] = &[
         Some("positive decimal integer"),
         None,
         "entity identifier",
+    ),
+];
+const ENTITY_INSPECT_ARGUMENTS: &[minimium_commands::CommandArgumentSpec] = &[
+    ENTITY_ARGUMENTS[0],
+    ENTITY_ARGUMENTS[1],
+    minimium_commands::CommandArgumentSpec::new(
+        "cursor",
+        minimium_commands::CommandArgumentType::Text,
+        true,
+        false,
+        None,
+        None,
+        None,
+        "opaque continuation cursor",
     ),
 ];
 use crate::runtime::schedule::SystemFn;
@@ -65,8 +91,8 @@ impl EngineModule<ModuleHandler, SystemFn> for WorldCommands {
         registry.command(CommandDefinition {
             name: "world list",
             aliases: &[],
-            usage: "world list",
-            arguments: &[],
+            usage: "world list [CURSOR]",
+            arguments: WORLD_LIST_ARGUMENTS,
             scope: CommandScope::ServerAdmin,
             handler: ModuleHandler::Builtin(world_list),
         })?;
@@ -81,16 +107,16 @@ impl EngineModule<ModuleHandler, SystemFn> for WorldCommands {
         registry.command(CommandDefinition {
             name: "entity list",
             aliases: &[],
-            usage: "entity list",
-            arguments: &[],
+            usage: "entity list [CURSOR]",
+            arguments: ENTITY_LIST_ARGUMENTS,
             scope: CommandScope::ServerAdmin,
             handler: ModuleHandler::Builtin(entity_list),
         })?;
         registry.command(CommandDefinition {
             name: "entity inspect",
             aliases: &[],
-            usage: "entity inspect WORLD ENTITY",
-            arguments: ENTITY_ARGUMENTS,
+            usage: "entity inspect WORLD ENTITY [CURSOR]",
+            arguments: ENTITY_INSPECT_ARGUMENTS,
             scope: CommandScope::ServerAdmin,
             handler: ModuleHandler::Builtin(entity_inspect),
         })?;
@@ -122,11 +148,32 @@ fn invalid(usage: &'static str) -> CommandReply {
     CommandReply::error("server.command.invalid_arguments", usage)
 }
 
+fn first_read_request() -> CommandViewRequest {
+    CommandViewRequest::new(
+        minimium_gameplay::MAX_COMMAND_VIEW_ROWS,
+        minimium_gameplay::MAX_COMMAND_VIEW_BYTES,
+    )
+    .expect("built-in command page limits are valid")
+}
+
 fn world_list(context: &mut ModuleCommandContext<'_>, args: &[&str]) -> CommandReply {
-    if !args.is_empty() {
-        return invalid("usage: world list");
+    let mut request = first_read_request();
+    match args {
+        [] => {}
+        [token] => match context.cursor(token) {
+            Ok(cursor) => request = request.after(cursor),
+            Err(_) => return invalid("world list cursor is invalid or stale"),
+        },
+        _ => return invalid("usage: world list [CURSOR]"),
     }
-    let page = context.worlds();
+    let page = match context.worlds(&request) {
+        Ok(page) => page,
+        Err(_) => {
+            return CommandReply::error("server.command.read_failed", "world page unavailable")
+        }
+    };
+    let truncated = page.truncated();
+    let next_cursor = page.next.as_ref().map(|cursor| cursor.token());
     let rows = page
         .rows
         .into_iter()
@@ -139,7 +186,8 @@ fn world_list(context: &mut ModuleCommandContext<'_>, args: &[&str]) -> CommandR
         .collect::<Vec<_>>();
     CommandReply::success(CommandPayload::WorldList {
         rows,
-        truncated: page.truncated,
+        truncated,
+        next_cursor,
     })
 }
 
@@ -157,6 +205,7 @@ fn world_inspect(context: &mut ModuleCommandContext<'_>, args: &[&str]) -> Comma
         Ok(world) => world,
         Err(CommandViewError::UnknownWorld) => return invalid("world instance not found"),
         Err(CommandViewError::UnknownEntity) => unreachable!("world lookup cannot miss an entity"),
+        Err(_) => return CommandReply::error("server.command.read_failed", "world lookup failed"),
     };
     CommandReply::success(CommandPayload::WorldInspect(super::WorldInspect {
         id,
@@ -166,51 +215,44 @@ fn world_inspect(context: &mut ModuleCommandContext<'_>, args: &[&str]) -> Comma
 }
 
 fn entity_list(context: &mut ModuleCommandContext<'_>, args: &[&str]) -> CommandReply {
-    if !args.is_empty() {
-        return invalid("usage: entity list");
+    let mut request = first_read_request();
+    match args {
+        [] => {}
+        [token] => match context.cursor(token) {
+            Ok(cursor) => request = request.after(cursor),
+            Err(_) => return invalid("entity list cursor is invalid or stale"),
+        },
+        _ => return invalid("usage: entity list [CURSOR]"),
     }
-    let worlds = context.worlds();
-    let total_worlds = context.world_count();
-    let mut rows = Vec::new();
-    let mut truncated = worlds.truncated;
-    for (world_index, world) in worlds.rows.into_iter().enumerate() {
-        let page = match context.entities(world.id) {
-            Ok(page) => page,
-            Err(CommandViewError::UnknownWorld) => return invalid("world instance not found"),
-            Err(CommandViewError::UnknownEntity) => unreachable!("entity page has no entity ID"),
-        };
-        let page_truncated = page.truncated;
-        for entity in page.rows {
-            if rows.len() == 256 {
-                truncated = true;
-                break;
-            }
-            rows.push(super::EntityRow {
-                world: world.id,
-                kind: super::EntityKind::Entity(entity.get()),
-            });
+    let page = match context.entity_rows(&request) {
+        Ok(page) => page,
+        Err(CommandViewError::UnknownWorld) => return invalid("world instance not found"),
+        Err(_) => {
+            return CommandReply::error("server.command.read_failed", "entity page unavailable")
         }
-        if rows.len() == 256 {
-            truncated |= page_truncated || world_index + 1 < total_worlds;
-            break;
-        }
-        truncated |= page_truncated;
-    }
-    let players = context.players();
-    truncated |= players.truncated;
-    for player in players.rows {
-        if rows.len() == 256 {
-            truncated = true;
-            break;
-        }
-        if rows.len() < 256 {
-            rows.push(super::EntityRow {
-                world: player.world,
-                kind: super::EntityKind::Player(player.id, player.name),
-            });
-        }
-    }
-    CommandReply::success(CommandPayload::EntityList { rows, truncated })
+    };
+    let next_cursor = page.next.as_ref().map(|cursor| cursor.token());
+    let rows = page
+        .rows
+        .into_iter()
+        .map(|row| super::EntityRow {
+            world: row.world,
+            kind: match row.kind {
+                minimium_gameplay::CommandEntityKind::Entity(entity) => {
+                    super::EntityKind::Entity(entity.get())
+                }
+                minimium_gameplay::CommandEntityKind::Player(id, name) => {
+                    super::EntityKind::Player(id, name)
+                }
+            },
+        })
+        .collect();
+    let truncated = next_cursor.is_some();
+    CommandReply::success(CommandPayload::EntityList {
+        rows,
+        truncated,
+        next_cursor,
+    })
 }
 
 fn entity_arguments(
@@ -234,15 +276,33 @@ fn entity_arguments(
 }
 
 fn entity_inspect(context: &mut ModuleCommandContext<'_>, args: &[&str]) -> CommandReply {
-    let (world, entity) = match entity_arguments(args, "usage: entity inspect WORLD ENTITY") {
+    let (world, entity) = match entity_arguments(
+        &args[..args.len().min(2)],
+        "usage: entity inspect WORLD ENTITY [CURSOR]",
+    ) {
         Ok(ids) => ids,
         Err(reply) => return reply,
     };
-    let components = match context.components(world, entity) {
+    if args.len() > 3 {
+        return invalid("usage: entity inspect WORLD ENTITY [CURSOR]");
+    }
+    let mut request = first_read_request();
+    if let Some(token) = args.get(2) {
+        match context.cursor(token) {
+            Ok(cursor) => request = request.after(cursor),
+            Err(_) => return invalid("entity component cursor is invalid or stale"),
+        }
+    }
+    let components = match context.components(world, entity, &request) {
         Ok(page) => page,
         Err(CommandViewError::UnknownWorld) => return invalid("world instance not found"),
         Err(CommandViewError::UnknownEntity) => return invalid("entity not found in world"),
+        Err(_) => {
+            return CommandReply::error("server.command.read_failed", "component page unavailable")
+        }
     };
+    let truncated = components.truncated();
+    let next_cursor = components.next.as_ref().map(|cursor| cursor.token());
     let rows = components
         .rows
         .into_iter()
@@ -256,7 +316,8 @@ fn entity_inspect(context: &mut ModuleCommandContext<'_>, args: &[&str]) -> Comm
         world,
         entity,
         rows,
-        truncated: components.truncated,
+        truncated,
+        next_cursor,
     })
 }
 
@@ -265,10 +326,11 @@ fn entity_despawn(context: &mut ModuleCommandContext<'_>, args: &[&str]) -> Comm
         Ok(ids) => ids,
         Err(reply) => return reply,
     };
-    if let Err(error) = context.components(world, entity) {
+    if let Err(error) = context.components(world, entity, &first_read_request()) {
         return match error {
             CommandViewError::UnknownWorld => invalid("world instance not found"),
             CommandViewError::UnknownEntity => invalid("entity not found in world"),
+            _ => CommandReply::error("server.command.read_failed", "component page unavailable"),
         };
     }
     if let Err(error) = context.emit(crate::modules::WorldEffect::DespawnEntity { world, entity }) {
@@ -287,124 +349,5 @@ fn entity_despawn(context: &mut ModuleCommandContext<'_>, args: &[&str]) -> Comm
     CommandReply::success(CommandPayload::EntityDespawn { world, entity })
 }
 
-pub(crate) struct RuntimeCommandReadView<'a> {
-    worlds: &'a WorldRegistry,
-}
-
-impl<'a> RuntimeCommandReadView<'a> {
-    pub(crate) fn new(worlds: &'a WorldRegistry) -> Self {
-        Self { worlds }
-    }
-
-    fn world_view(&self, id: WorldInstanceId) -> Option<CommandWorldView> {
-        let instance = self.worlds.get(id)?;
-        Some(CommandWorldView {
-            id,
-            players: instance.world.player_count(),
-            topology: instance.manifest.topology(),
-            generation: instance.manifest.generation().revision(),
-            manifest: instance.manifest,
-        })
-    }
-}
-
-impl ModuleCommandReadView for RuntimeCommandReadView<'_> {
-    fn world_count(&self) -> usize {
-        self.worlds.iter().count()
-    }
-
-    fn worlds(&self, max_rows: usize) -> CommandViewPage<CommandWorldView> {
-        let mut rows = self
-            .worlds
-            .iter()
-            .take(max_rows)
-            .filter_map(|(id, _)| self.world_view(id))
-            .collect::<Vec<_>>();
-        let truncated = self.world_count() > rows.len();
-        rows.shrink_to_fit();
-        CommandViewPage::new(rows, truncated)
-    }
-
-    fn world(&self, id: WorldInstanceId) -> Result<CommandWorldView, CommandViewError> {
-        self.world_view(id).ok_or(CommandViewError::UnknownWorld)
-    }
-
-    fn entities(
-        &self,
-        world: WorldInstanceId,
-        max_rows: usize,
-    ) -> Result<CommandViewPage<EntityId>, CommandViewError> {
-        let instance = self
-            .worlds
-            .get(world)
-            .ok_or(CommandViewError::UnknownWorld)?;
-        let mut entities = instance.entities.iter();
-        let rows = entities.by_ref().take(max_rows).collect::<Vec<_>>();
-        let truncated = entities.next().is_some();
-        Ok(CommandViewPage::new(rows, truncated))
-    }
-
-    fn players(&self, max_rows: usize, max_bytes: usize) -> CommandViewPage<CommandPlayerView> {
-        // Active players are globally capped by `config::MAX_PLAYERS` (512).
-        let mut players = self.worlds.player_snapshots().into_iter();
-        let mut rows = Vec::new();
-        let mut bytes = 0usize;
-        let mut truncated = false;
-        for (world, player) in players.by_ref() {
-            let row_bytes = std::mem::size_of::<CommandPlayerView>() + player.name.len();
-            if rows.len() >= max_rows || bytes.saturating_add(row_bytes) > max_bytes {
-                truncated = true;
-                break;
-            }
-            bytes += row_bytes;
-            rows.push(CommandPlayerView {
-                id: player.id,
-                name: player.name.to_string(),
-                world,
-                position: player.position,
-            });
-        }
-        truncated |= players.next().is_some();
-        CommandViewPage::new(rows, truncated)
-    }
-
-    fn components(
-        &self,
-        world: WorldInstanceId,
-        entity: EntityId,
-        max_rows: usize,
-        max_bytes: usize,
-    ) -> Result<CommandViewPage<ComponentView<'_>>, CommandViewError> {
-        let instance = self
-            .worlds
-            .get(world)
-            .ok_or(CommandViewError::UnknownWorld)?;
-        if !instance.entities.contains(entity) {
-            return Err(CommandViewError::UnknownEntity);
-        }
-        let mut components = self
-            .worlds
-            .component_views(world)
-            .ok_or(CommandViewError::UnknownWorld)?
-            .filter(|(owner, _, _, _)| *owner == entity);
-        let mut rows = Vec::new();
-        let mut bytes = 0usize;
-        let mut truncated = false;
-        for (owner, kind, schema, payload) in components.by_ref() {
-            let row_bytes = std::mem::size_of::<ComponentView<'_>>() + payload.len();
-            if rows.len() >= max_rows || bytes.saturating_add(row_bytes) > max_bytes {
-                truncated = true;
-                break;
-            }
-            bytes += row_bytes;
-            rows.push(ComponentView {
-                entity: owner,
-                kind,
-                schema,
-                bytes: payload,
-            });
-        }
-        truncated |= components.next().is_some();
-        Ok(CommandViewPage::new(rows, truncated))
-    }
-}
+mod read_view;
+pub(crate) use read_view::RuntimeCommandReadView;

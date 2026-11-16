@@ -260,7 +260,11 @@ fn inspect_reply(reply: CommandReplyView<'_>) {
                 }
             }
         }
-        CommandPayloadView::Players { rows, truncated } => {
+        CommandPayloadView::Players {
+            rows,
+            truncated,
+            next_cursor,
+        } => {
             for row in rows {
                 println!(
                     "player {} {} world={} at {:?}",
@@ -270,7 +274,7 @@ fn inspect_reply(reply: CommandReplyView<'_>) {
                     row.position()
                 );
             }
-            println!("players truncated={truncated}");
+            println!("players truncated={truncated} next={next_cursor:?}");
         }
         CommandPayloadView::Metrics {
             snapshot,
@@ -384,7 +388,11 @@ fn inspect_reply(reply: CommandReplyView<'_>) {
             }
             println!("property prefix={prefix:?} truncated={truncated}");
         }
-        CommandPayloadView::WorldList { rows, truncated } => {
+        CommandPayloadView::WorldList {
+            rows,
+            truncated,
+            next_cursor,
+        } => {
             for row in rows {
                 println!(
                     "world {} players={} topology={:?} generation={:?}",
@@ -394,7 +402,7 @@ fn inspect_reply(reply: CommandReplyView<'_>) {
                     row.generation()
                 );
             }
-            println!("world list truncated={truncated}");
+            println!("world list truncated={truncated} next={next_cursor:?}");
         }
         CommandPayloadView::WorldInspect(world) => {
             println!(
@@ -404,7 +412,11 @@ fn inspect_reply(reply: CommandReplyView<'_>) {
                 world.manifest()
             );
         }
-        CommandPayloadView::EntityList { rows, truncated } => {
+        CommandPayloadView::EntityList {
+            rows,
+            truncated,
+            next_cursor,
+        } => {
             for row in rows {
                 match row.kind() {
                     EntityKindView::Entity(id) => {
@@ -415,13 +427,14 @@ fn inspect_reply(reply: CommandReplyView<'_>) {
                     }
                 }
             }
-            println!("entity list truncated={truncated}");
+            println!("entity list truncated={truncated} next={next_cursor:?}");
         }
         CommandPayloadView::EntityInspect {
             world,
             entity,
             rows,
             truncated,
+            next_cursor,
         } => {
             println!("entity world={world} id={}", entity.get());
             for row in rows {
@@ -432,7 +445,7 @@ fn inspect_reply(reply: CommandReplyView<'_>) {
                     row.bytes()
                 );
             }
-            println!("entity components truncated={truncated}");
+            println!("entity components truncated={truncated} next={next_cursor:?}");
         }
         CommandPayloadView::EntityDespawn { world, entity } => {
             println!("despawn requested world={world} entity={}", entity.get());

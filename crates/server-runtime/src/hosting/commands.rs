@@ -1,6 +1,8 @@
 use crate::server_command::ServerCommand;
 use minimium_environment::TimeCommand;
-use minimium_gameplay::{CommandPlayerView, CommandViewError, CommandViewPage, CommandWorldView};
+use minimium_gameplay::{
+    CommandPlayerView, CommandViewError, CommandViewPage, CommandViewRequest, CommandWorldView,
+};
 use minimium_world::world::WorldInstanceId;
 
 /// Validated, bounded server-administration intent. Hosts holding the runtime
@@ -18,7 +20,22 @@ impl RuntimeCommand {
     }
 
     pub fn players() -> Self {
-        Self(ServerCommand::Players)
+        Self(ServerCommand::Players(None))
+    }
+
+    pub fn players_after(
+        cursor: impl Into<String>,
+    ) -> Result<Self, minimium_commands::CommandError> {
+        let cursor = cursor.into();
+        if cursor.is_empty() || cursor.len() > 256 || cursor.chars().any(char::is_control) {
+            return Err(command_error(
+                minimium_commands::CommandErrorCode::InvalidArguments,
+                "players list",
+                "cursor is outside its bounds",
+                "players list [CURSOR]",
+            ));
+        }
+        Ok(Self(ServerCommand::Players(Some(cursor))))
     }
 
     pub fn metrics() -> Self {
@@ -216,18 +233,32 @@ pub struct CommandExecution {
     pub reply: crate::ModuleCommandReply,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum RuntimeQuery {
     Status,
     Worlds,
+    WorldsPage(CommandViewRequest),
     World(WorldInstanceId),
     Players,
+    PlayersPage(CommandViewRequest),
+    Entities(WorldInstanceId, CommandViewRequest),
+    EntityRows(CommandViewRequest),
+    Components(
+        WorldInstanceId,
+        minimium_world::entity::EntityId,
+        CommandViewRequest,
+    ),
 }
 pub enum RuntimeQueryResult {
     Status(RuntimeStatus),
     Worlds(CommandViewPage<CommandWorldView>),
+    WorldsPage(Result<CommandViewPage<CommandWorldView>, CommandViewError>),
     World(Result<CommandWorldView, CommandViewError>),
     Players(CommandViewPage<CommandPlayerView>),
+    PlayersPage(Result<CommandViewPage<CommandPlayerView>, CommandViewError>),
+    Entities(Result<CommandViewPage<minimium_world::entity::EntityId>, CommandViewError>),
+    EntityRows(Result<CommandViewPage<minimium_gameplay::CommandEntityRow>, CommandViewError>),
+    Components(Result<CommandViewPage<minimium_gameplay::CommandComponentRow>, CommandViewError>),
 }
 #[derive(Clone, Debug)]
 pub struct RuntimeStatus {

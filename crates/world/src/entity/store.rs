@@ -20,6 +20,8 @@ impl ComponentBlob {
 #[derive(Clone, Debug, Default)]
 pub struct EntityStore {
     next_id: u64,
+    membership_revision: u64,
+    component_membership_revision: u64,
     entities: BTreeMap<EntityId, BTreeMap<ComponentTypeId, ComponentBlob>>,
     changes: ChangeLog,
 }
@@ -35,8 +37,10 @@ impl EntityStore {
             .ok_or(ComponentError::ExhaustedIds)?;
         let id = EntityId::new(next).ok_or(ComponentError::ExhaustedIds)?;
         self.next_revision()?;
+        let membership_revision = self.next_membership_revision()?;
         self.next_id = next;
         self.entities.insert(id, BTreeMap::new());
+        self.membership_revision = membership_revision;
         self.record(ComponentMutation::Spawn(id));
         Ok(id)
     }
@@ -49,8 +53,10 @@ impl EntityStore {
         if self.entities.contains_key(&id) {
             return Err(ComponentError::DuplicateEntity);
         }
+        let membership_revision = self.next_membership_revision()?;
         self.next_id = self.next_id.max(id.get());
         self.entities.insert(id, BTreeMap::new());
+        self.membership_revision = membership_revision;
         Ok(())
     }
 
@@ -77,7 +83,9 @@ impl EntityStore {
     pub fn despawn(&mut self, id: EntityId) -> Result<bool, ComponentError> {
         if self.entities.contains_key(&id) {
             self.next_revision()?;
+            let membership_revision = self.next_membership_revision()?;
             self.entities.remove(&id);
+            self.membership_revision = membership_revision;
             self.record(ComponentMutation::Despawn(id));
             return Ok(true);
         }
@@ -121,6 +129,18 @@ impl EntityStore {
         self.changes.revision()
     }
 
+    /// Advances only when entity membership changes, unlike `revision`, which
+    /// also tracks component updates for replication.
+    pub const fn membership_revision(&self) -> u64 {
+        self.membership_revision
+    }
+
+    /// Advances when component membership changes, but not when an existing
+    /// component's value is updated.
+    pub const fn component_membership_revision(&self) -> u64 {
+        self.component_membership_revision
+    }
+
     /// The first revision still represented by the bounded replication journal.
     pub const fn oldest_change_revision(&self) -> u64 {
         self.changes.oldest_revision()
@@ -141,26 +161,39 @@ impl EntityStore {
     ) -> Result<(), ComponentError> {
         let blob = registry.upgrade(kind, schema, bytes)?;
         let created_entity = !self.contains(entity);
-        if created_entity {
-            self.restore(entity)?;
+        if created_entity && self.entities.len() >= MAX_PERSISTENT_ENTITIES {
+            return Err(ComponentError::CapacityExceeded);
         }
-        let too_many_components = self
+        let had_component = self
             .entities
             .get(&entity)
-            .map(|components| {
-                !components.contains_key(&kind) && components.len() >= MAX_COMPONENTS_PER_ENTITY
-            })
-            .ok_or(ComponentError::UnknownEntity)?;
-        if too_many_components {
-            if created_entity {
-                self.entities.remove(&entity);
-            }
+            .is_some_and(|components| components.contains_key(&kind));
+        if self.entities.get(&entity).is_some_and(|components| {
+            !had_component && components.len() >= MAX_COMPONENTS_PER_ENTITY
+        }) {
             return Err(ComponentError::CapacityExceeded);
+        }
+        let next_entity_revision = created_entity
+            .then(|| self.next_membership_revision())
+            .transpose()?;
+        let next_component_revision = if had_component {
+            None
+        } else {
+            Some(self.next_component_membership_revision()?)
+        };
+        if created_entity {
+            self.next_id = self.next_id.max(entity.get());
+            self.entities.insert(entity, BTreeMap::new());
+            self.membership_revision =
+                next_entity_revision.expect("new entity has a checked revision");
         }
         self.entities
             .get_mut(&entity)
             .ok_or(ComponentError::UnknownEntity)?
             .insert(kind, blob);
+        if let Some(revision) = next_component_revision {
+            self.component_membership_revision = revision;
+        }
         Ok(())
     }
 
@@ -181,11 +214,17 @@ impl EntityStore {
             return Err(ComponentError::CapacityExceeded);
         }
         self.next_revision()?;
+        let next_component_revision = (!components.contains_key(&kind))
+            .then(|| self.next_component_membership_revision())
+            .transpose()?;
         self.entities
             .get_mut(&entity)
             .ok_or(ComponentError::UnknownEntity)?
             .insert(kind, blob.clone());
         self.record(ComponentMutation::Upsert(entity, kind, blob));
+        if let Some(revision) = next_component_revision {
+            self.component_membership_revision = revision;
+        }
         Ok(())
     }
 
@@ -202,11 +241,13 @@ impl EntityStore {
             return Ok(false);
         }
         self.next_revision()?;
+        let next_component_revision = self.next_component_membership_revision()?;
         self.entities
             .get_mut(&entity)
             .ok_or(ComponentError::UnknownEntity)?
             .remove(&kind);
         self.record(ComponentMutation::RemoveComponent(entity, kind));
+        self.component_membership_revision = next_component_revision;
         Ok(true)
     }
 
@@ -216,6 +257,18 @@ impl EntityStore {
 
     fn next_revision(&self) -> Result<u64, ComponentError> {
         self.changes.next_revision()
+    }
+
+    fn next_membership_revision(&self) -> Result<u64, ComponentError> {
+        self.membership_revision
+            .checked_add(1)
+            .ok_or(ComponentError::RevisionExhausted)
+    }
+
+    fn next_component_membership_revision(&self) -> Result<u64, ComponentError> {
+        self.component_membership_revision
+            .checked_add(1)
+            .ok_or(ComponentError::RevisionExhausted)
     }
 
     fn record(&mut self, mutation: ComponentMutation) {

@@ -32,8 +32,16 @@ instant; it never sleeps. One step executes at most one due fixed tick and eight
 commands, preserving the existing missed-tick rule. Console/admin input uses the
 same queue/executor. Host possession grants administration authority; gameplay
 principals still enter through the supplied typed transport port and existing
-admission/action validation. `query` is immutable and returns status or world/player
-pages capped at 256 rows and 1 MiB dynamic data. `shutdown(time, deadline)` closes
+admission/action validation. `query` is immutable and returns status or bounded
+world, player, entity and component pages. Page requests accept 1..=256 rows and
+at most 1 MiB of dynamic data; each result returns `next: Option<CommandViewCursor>`.
+Cursors use deterministic keyset order and bind the live runtime, query, scope
+and membership revisions. Mixed entity-list cursors also bind registry-wide entity,
+player and world membership revisions. Membership changes make continuation stale;
+player positions and existing component values are read live. Errors are typed
+(`InvalidLimit`, `StaleCursor`, `UnknownWorld`, `UnknownEntity`, `RecordTooLarge`).
+A row larger than the byte cap fails explicitly. `None` marks the end; every
+truncated page carries a usable cursor. `shutdown(time, deadline)` closes
 admission, reports cancelled submissions and drains the same services with an
 explicit result; pending acceptance never becomes a fabricated success.
 
@@ -41,7 +49,9 @@ explicit result; pending acceptance never becomes a fabricated success.
 `CommandPayloadView` plus `ReplyState`, `should_stop`, error details and the
 typed effect outcome. Rejected commands, executed commands and mixed applied/
 rejected effects remain distinct; stop is independent and may accompany either
-result. Views borrow the bounded rows and preserve their truncation markers.
+result. Views borrow bounded rows and preserve continuation cursors. `world list`,
+`players list`, `entity list` and `entity inspect` accept the returned cursor as
+an optional argument.
 Report fields are read through accessors, so hosts cannot mutate runtime state
 or manufacture an unbounded execution result. `SaveQueued` means only that the
 existing persistence queue accepted work; `StatusReport::persistence()` reports
@@ -50,8 +60,10 @@ adapters consume the same view. `examples/typed_replies.rs` demonstrates an
 external crate consumer using the ordinary embedded composition and `step`.
 `examples/typed_host_commands.rs` demonstrates typed save, status, setting and
 clock operations, a module command with explicit identity and argv, submit
-rejections, and public reply data. The existing `embedded_host` example also
-submits its save operation through the typed constructor.
+rejections, and public reply data. `examples/paged_reads.rs` demonstrates public
+first-page/continuation queries and typed stale, invalid-limit, unknown-world and
+oversized-row errors. The existing `embedded_host` example also submits its save
+operation through the typed constructor.
 
 `RuntimeTime` carries a monotonic instant and either validated UTC or a typed UTC
 failure. `RuntimeTime::system_now` is an explicit process adapter. Owner deadlines,

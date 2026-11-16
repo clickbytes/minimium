@@ -9,6 +9,7 @@ pub(crate) struct StagedEntityBatch<'a> {
     worlds: &'a mut WorldRegistry,
     stores: BTreeMap<WorldInstanceId, EntityStore>,
     changes: Vec<WorldEntityChange>,
+    next_membership_revision: Option<u128>,
 }
 
 impl StagedEntityBatch<'_> {
@@ -18,12 +19,16 @@ impl StagedEntityBatch<'_> {
 
     pub(crate) fn commit(self, reservation: minimium_storage::PreparedEntityReservation<'_>) {
         reservation.commit();
+        let next_membership_revision = self.next_membership_revision;
         for (instance, store) in self.stores {
             self.worlds
                 .instances
                 .get_mut(&instance)
                 .expect("staged world remains registered while entity batch holds its borrow")
                 .entities = store;
+        }
+        if let Some(revision) = next_membership_revision {
+            self.worlds.entity_membership_revision = revision;
         }
     }
 }
@@ -203,10 +208,24 @@ impl WorldRegistry {
                 crate::modules::WorldEffect::RequestTransfer { .. } => {}
             }
         }
+        let membership_changed = stores.iter().any(|(instance, store)| {
+            self.instances.get(instance).is_some_and(|owner| {
+                owner.entities.membership_revision() != store.membership_revision()
+            })
+        });
+        let next_membership_revision = if membership_changed {
+            Some(
+                self.next_entity_membership_revision()
+                    .ok_or(RegistryError::MembershipRevisionExhausted)?,
+            )
+        } else {
+            None
+        };
         Ok(StagedEntityBatch {
             worlds: self,
             stores,
             changes,
+            next_membership_revision,
         })
     }
 
@@ -257,6 +276,19 @@ impl WorldRegistry {
                 return Err(RegistryError::UnknownInstance);
             }
         }
+        let membership_changed = staged.iter().any(|(instance, store)| {
+            self.instances.get(instance).is_some_and(|owner| {
+                owner.entities.membership_revision() != store.membership_revision()
+            })
+        });
+        let next_membership_revision = if membership_changed {
+            Some(
+                self.next_entity_membership_revision()
+                    .ok_or(RegistryError::MembershipRevisionExhausted)?,
+            )
+        } else {
+            None
+        };
         for (instance, value) in initialized {
             self.instances
                 .get_mut(instance)
@@ -268,6 +300,9 @@ impl WorldRegistry {
                 .get_mut(&instance)
                 .expect("staged world remains registered")
                 .entities = store;
+        }
+        if let Some(revision) = next_membership_revision {
+            self.entity_membership_revision = revision;
         }
         Ok(())
     }

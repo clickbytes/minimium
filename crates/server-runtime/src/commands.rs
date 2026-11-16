@@ -13,6 +13,7 @@ pub(crate) use world::RuntimeCommandReadView;
 
 use crate::modules::{CommandScope, ModuleCommandContext, ModuleRegistry, WorldEffectBuffer};
 use crate::runtime::schedule::{ScheduleDiagnostics, ServerSchedule, SystemFn};
+use minimium_gameplay::ModuleCommandReadView;
 pub(crate) use minimium_gameplay::ModuleCommandText as BoundedText;
 use std::sync::Arc;
 
@@ -162,6 +163,7 @@ pub(crate) enum CommandPayload {
     Players {
         rows: Vec<PlayerRow>,
         truncated: bool,
+        next_cursor: Option<String>,
     },
     Metrics {
         snapshot: crate::metrics::RuntimeMetricsSnapshot,
@@ -190,17 +192,20 @@ pub(crate) enum CommandPayload {
     WorldList {
         rows: Vec<WorldRow>,
         truncated: bool,
+        next_cursor: Option<String>,
     },
     WorldInspect(WorldInspect),
     EntityList {
         rows: Vec<EntityRow>,
         truncated: bool,
+        next_cursor: Option<String>,
     },
     EntityInspect {
         world: minimium_world::world::WorldInstanceId,
         entity: minimium_world::entity::EntityId,
         rows: Vec<EntityComponentRow>,
         truncated: bool,
+        next_cursor: Option<String>,
     },
     EntityDespawn {
         world: minimium_world::world::WorldInstanceId,
@@ -356,22 +361,47 @@ pub fn execute(
             persistence: persistence.status(),
             runtime: runtime_status,
         })),
-        ServerCommand::Players => {
-            let players = worlds.player_snapshots();
-            let truncated = players.len() > 512;
-            CommandReply::success(CommandPayload::Players {
-                rows: players
-                    .into_iter()
-                    .take(512)
-                    .map(|(world, player)| PlayerRow {
-                        id: player.id,
-                        name: player.name.to_string(),
-                        world,
-                        position: player.position,
+        ServerCommand::Players(cursor) => {
+            let view = RuntimeCommandReadView::new(worlds);
+            let mut request = minimium_gameplay::CommandViewRequest::new(
+                minimium_gameplay::MAX_COMMAND_VIEW_ROWS,
+                minimium_gameplay::MAX_COMMAND_VIEW_BYTES,
+            )
+            .expect("built-in player page limits are valid");
+            if let Some(token) = cursor {
+                match view.parse_cursor(&token) {
+                    Ok(cursor) => request = request.after(cursor),
+                    Err(_) => {
+                        return CommandReply::error(
+                            "server.command.invalid_arguments",
+                            "players cursor is invalid or stale",
+                        )
+                    }
+                }
+            }
+            match view.players(&request) {
+                Ok(page) => {
+                    let truncated = page.truncated();
+                    let next_cursor = page.next.as_ref().map(|cursor| cursor.token());
+                    CommandReply::success(CommandPayload::Players {
+                        rows: page
+                            .rows
+                            .into_iter()
+                            .map(|player| PlayerRow {
+                                id: player.id,
+                                name: player.name,
+                                world: player.world,
+                                position: player.position,
+                            })
+                            .collect(),
+                        truncated,
+                        next_cursor,
                     })
-                    .collect(),
-                truncated,
-            })
+                }
+                Err(_) => {
+                    CommandReply::error("server.command.read_failed", "player page unavailable")
+                }
+            }
         }
         ServerCommand::Metrics => CommandReply::success(CommandPayload::Metrics {
             snapshot: metrics.snapshot(worlds.total_players()),

@@ -13,6 +13,15 @@ Startup runs once for each prepared world instance. Startup effects are validate
 The context offers a borrowed component lookup by world, entity and type for
 interaction handlers, avoiding a full component scan per event.
 
+Read-only module commands share `CommandViewRequest`, `CommandViewPage` and an
+opaque `CommandViewCursor` for worlds, players, per-world entities, components
+and the mixed entity/player listing. Requests accept 1..=256 rows and at most
+1 MiB of dynamic data. Pages return a typed next cursor or `None`; invalid
+limits, stale/mismatched cursors, unknown owners and a single row larger than
+the byte cap are typed errors. Cursors are tied to the live reader, query,
+scope and membership revisions. Membership stays consistent between pages;
+mutable values such as player position are read live on each request.
+
 ## Dependencies
 
 Depends on generic command metadata and world component descriptors. It does not depend on `minimium-server-runtime`, `minimium-storage`, transport, or GPU packages.

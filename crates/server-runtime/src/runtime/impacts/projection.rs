@@ -59,8 +59,23 @@ pub(in crate::runtime) fn publish(
     restoring: bool,
 ) -> io::Result<bool> {
     let (entities, remnants, changed) = prepare(worlds, components, body, restoring)?;
+    let entity_membership_changed = worlds.get(body.world).is_some_and(|owner| {
+        owner.entities.membership_revision() != entities.membership_revision()
+    });
+    let next_membership_revision = if entity_membership_changed {
+        Some(
+            worlds
+                .next_entity_membership_revision()
+                .ok_or_else(|| io::Error::other("entity membership revision exhausted"))?,
+        )
+    } else {
+        None
+    };
     let owner = worlds.get_mut(body.world).unwrap();
     owner.entities = entities;
     owner.remnants = remnants;
+    if let Some(revision) = next_membership_revision {
+        worlds.entity_membership_revision = revision;
+    }
     Ok(changed)
 }
