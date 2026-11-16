@@ -1,25 +1,26 @@
-use crate::commands::{BoundedText, CommandPayload, CommandReply, PropertyReport, StatusReport};
+use crate::commands::{BoundedText, CommandReply, PropertyReport, StatusReport};
+use crate::hosting::replies::{CommandPayloadView, CommandReplyView};
 use std::fmt::Write as _;
 
-pub(crate) fn render(payload: &CommandPayload) -> BoundedText {
+pub(crate) fn render(payload: &CommandPayloadView<'_>) -> BoundedText {
     let mut out = BoundedText::default();
     match payload {
-        CommandPayload::ModuleText(text) => out.push_str(text.as_str()),
-        CommandPayload::SaveQueued => {
+        CommandPayloadView::ModuleText { text, .. } => out.push_str(text),
+        CommandPayloadView::SaveQueued => {
             out.push_str("world save queued; use status to check completion")
         }
-        CommandPayload::Stopping => out.push_str("stopping"),
-        CommandPayload::Property(report) => property(&mut out, report),
-        CommandPayload::UnknownProperty(key) => {
+        CommandPayloadView::Stopping => out.push_str("stopping"),
+        CommandPayloadView::Property(report) => property(&mut out, report),
+        CommandPayloadView::UnknownProperty(key) => {
             let _ = write!(out, "unknown server property `{key}`");
         }
-        CommandPayload::UnavailableProperty { key, reason } => {
+        CommandPayloadView::UnavailableProperty { key, reason } => {
             let _ = write!(out, "{key} requested=unavailable effective=unavailable default=n/a source=unavailable reason={reason}");
         }
-        CommandPayload::PropertyHelp(spec) => {
+        CommandPayloadView::PropertyHelp(spec) => {
             let _ = write!(out, "{}: {:?}; default {}; constraints {}; owner {}; permission {:?}; lifecycle {:?}; persistent {}; resettable {}\n{}", spec.key, spec.value_type, spec.default.unwrap_or("n/a"), spec.constraints.unwrap_or("none"), spec.owner, spec.permission, spec.lifecycle, spec.persistent, spec.resettable, spec.description);
         }
-        CommandPayload::PropertyCommandsHelp { builtins } => {
+        CommandPayloadView::PropertyCommandsHelp { builtins } => {
             for (i, line) in builtins.iter().enumerate() {
                 if i != 0 {
                     out.push_str(" | ");
@@ -28,10 +29,10 @@ pub(crate) fn render(payload: &CommandPayload) -> BoundedText {
             }
             out.push_str("\nget KEY | set KEY VALUE | reset KEY | list [PREFIX]");
         }
-        CommandPayload::SingleCommandHelp(help) => {
+        CommandPayloadView::SingleCommandHelp(help) => {
             let _ = minimium_commands::write_command_help(&mut out, help.usage, help.arguments);
         }
-        CommandPayload::PropertyList {
+        CommandPayloadView::PropertyList {
             prefix,
             rows,
             truncated,
@@ -58,8 +59,8 @@ pub(crate) fn render(payload: &CommandPayload) -> BoundedText {
                 out.push_str("\n[truncated]");
             }
         }
-        CommandPayload::Status(status) => status_output(&mut out, status),
-        CommandPayload::Players {
+        CommandPayloadView::Status(status) => status_output(&mut out, status),
+        CommandPayloadView::Players {
             rows: players,
             truncated,
         } => {
@@ -85,7 +86,7 @@ pub(crate) fn render(payload: &CommandPayload) -> BoundedText {
                 out.push_str("; [truncated]");
             }
         }
-        CommandPayload::WorldList { rows, truncated } => {
+        CommandPayloadView::WorldList { rows, truncated } => {
             for (i, row) in rows.iter().enumerate() {
                 if i != 0 {
                     out.push_str("; ");
@@ -100,14 +101,14 @@ pub(crate) fn render(payload: &CommandPayload) -> BoundedText {
                 out.push_str("; [truncated]");
             }
         }
-        CommandPayload::WorldInspect(row) => {
+        CommandPayloadView::WorldInspect(row) => {
             let _ = write!(
                 out,
                 "{}: players={} manifest={:?}",
                 row.id, row.players, row.manifest
             );
         }
-        CommandPayload::EntityList { rows, truncated } => {
+        CommandPayloadView::EntityList { rows, truncated } => {
             if rows.is_empty() {
                 out.push_str("no runtime entities or players");
             }
@@ -128,7 +129,7 @@ pub(crate) fn render(payload: &CommandPayload) -> BoundedText {
                 out.push_str("; [truncated]");
             }
         }
-        CommandPayload::EntityInspect {
+        CommandPayloadView::EntityInspect {
             world,
             entity,
             rows,
@@ -138,7 +139,7 @@ pub(crate) fn render(payload: &CommandPayload) -> BoundedText {
             if rows.is_empty() {
                 out.push_str(" components=none");
             }
-            for row in rows {
+            for row in rows.iter() {
                 let _ = write!(
                     out,
                     " component={}:schema={}:bytes={}",
@@ -151,14 +152,14 @@ pub(crate) fn render(payload: &CommandPayload) -> BoundedText {
                 out.push_str(" [truncated]");
             }
         }
-        CommandPayload::EntityDespawn { world, entity } => {
+        CommandPayloadView::EntityDespawn { world, entity } => {
             let _ = write!(
                 out,
                 "world={world} entity={} despawn requested",
                 entity.get()
             );
         }
-        CommandPayload::Bolid {
+        CommandPayloadView::Bolid {
             id,
             kind,
             recipients,
@@ -173,13 +174,13 @@ pub(crate) fn render(payload: &CommandPayload) -> BoundedText {
                 );
             }
         }
-        CommandPayload::ImpactSpawn { id } => {
+        CommandPayloadView::ImpactSpawn { id } => {
             let _ = write!(
                 out,
                 "meteorid {id} accepted; authoritative flight and permanent terrain impact queued"
             );
         }
-        CommandPayload::Help {
+        CommandPayloadView::Help {
             builtins,
             modules,
             truncated,
@@ -190,7 +191,7 @@ pub(crate) fn render(payload: &CommandPayload) -> BoundedText {
                 }
                 out.push_str(row);
             }
-            for row in modules {
+            for row in modules.iter() {
                 if !out.as_str().is_empty() {
                     out.push_str(" | ");
                 }
@@ -200,7 +201,7 @@ pub(crate) fn render(payload: &CommandPayload) -> BoundedText {
                 out.push_str(" | [truncated]");
             }
         }
-        CommandPayload::Metrics {
+        CommandPayloadView::Metrics {
             snapshot,
             clients,
             clients_truncated,
@@ -223,7 +224,7 @@ pub(crate) fn render(payload: &CommandPayload) -> BoundedText {
                 );
             }
             out.push_str(" client_traffic=id:bytes_in:bytes_out:decoded_frames:queued_frames:encoding_us:connected_ms");
-            for row in clients {
+            for row in clients.iter() {
                 let _ = write!(
                     out,
                     " {}:{}:{}:{}:{}:{}:{}",
@@ -240,7 +241,7 @@ pub(crate) fn render(payload: &CommandPayload) -> BoundedText {
                 out.push_str(" [truncated]");
             }
         }
-        CommandPayload::Time(snapshot) => {
+        CommandPayloadView::Time(snapshot) => {
             let nonce: String = snapshot
                 .session_nonce
                 .iter()
@@ -261,11 +262,17 @@ pub(crate) fn render(payload: &CommandPayload) -> BoundedText {
 }
 
 pub(crate) fn render_reply(reply: &CommandReply) -> BoundedText {
-    let mut out = reply
-        .payload()
+    let view = reply.view();
+    render_reply_view(&view)
+}
+
+pub(crate) fn render_reply_view(view: &CommandReplyView<'_>) -> BoundedText {
+    let mut out = view
+        .payload
+        .as_ref()
         .map(render)
-        .unwrap_or_else(|| BoundedText::new(reply.detail().unwrap_or("command failed")));
-    if let Some(outcome) = reply.effect_outcome() {
+        .unwrap_or_else(|| BoundedText::new(view.detail.unwrap_or("command failed")));
+    if let Some(outcome) = view.effects {
         if !out.as_str().is_empty() {
             out.push_str("; ");
         }

@@ -25,7 +25,7 @@ pub(super) struct Impacts {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct ImpactStatus {
+pub struct ImpactStatus {
     pub active: usize,
     pub craters: usize,
     pub pending: usize,

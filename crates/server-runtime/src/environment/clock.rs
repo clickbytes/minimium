@@ -10,7 +10,7 @@ use minimium_environment::time::{
 const SYSTEM_CLOCK_CHECK_MS: i128 = 250;
 
 #[derive(Clone, Debug)]
-pub(crate) struct ClockPropertySnapshot {
+pub struct ClockPropertySnapshot {
     pub(crate) clock_id: u64,
     pub(crate) session_nonce: [u8; minimium_environment::time::SESSION_NONCE_BYTES],
     pub(crate) mode: &'static str,
@@ -21,6 +21,38 @@ pub(crate) struct ClockPropertySnapshot {
     pub(crate) fault: &'static str,
     pub(crate) correction_ms: Option<i128>,
     pub(crate) dirty_revision: Option<u64>,
+}
+impl ClockPropertySnapshot {
+    pub fn clock_id(&self) -> u64 {
+        self.clock_id
+    }
+    pub fn session_nonce(&self) -> &[u8; minimium_environment::time::SESSION_NONCE_BYTES] {
+        &self.session_nonce
+    }
+    pub fn mode(&self) -> &'static str {
+        self.mode
+    }
+    pub fn rate_ppm(&self) -> u64 {
+        self.rate_ppm
+    }
+    pub fn offline_policy(&self) -> &'static str {
+        self.offline_policy
+    }
+    pub fn utc_ms(&self) -> i64 {
+        self.utc_ms
+    }
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+    pub fn fault(&self) -> &'static str {
+        self.fault
+    }
+    pub fn correction_ms(&self) -> Option<i128> {
+        self.correction_ms
+    }
+    pub fn dirty_revision(&self) -> Option<u64> {
+        self.dirty_revision
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

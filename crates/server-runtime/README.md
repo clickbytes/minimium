@@ -27,6 +27,18 @@ pages capped at 256 rows and 1 MiB dynamic data. `shutdown(time, deadline)` clos
 admission, reports cancelled submissions and drains the same services with an
 explicit result; pending acceptance never becomes a fabricated success.
 
+`CommandExecution::reply.view()` exposes an exhaustive borrowed
+`CommandPayloadView` plus `ReplyState`, `should_stop`, error details and the
+typed effect outcome. Rejected commands, executed commands and mixed applied/
+rejected effects remain distinct; stop is independent and may accompany either
+result. Views borrow the bounded rows and preserve their truncation markers.
+Report fields are read through accessors, so hosts cannot mutate runtime state
+or manufacture an unbounded execution result. `SaveQueued` means only that the
+existing persistence queue accepted work; `StatusReport::persistence()` reports
+the owner's current pending/last-save state. The formatter and terminal/admin
+adapters consume the same view. `examples/typed_replies.rs` demonstrates an
+external crate consumer using the ordinary embedded composition and `step`.
+
 `RuntimeTime` carries a monotonic instant and either validated UTC or a typed UTC
 failure. `RuntimeTime::system_now` is an explicit process adapter. Owner deadlines,
 cooldowns and snapshot timestamps use the injected instant; only instrumentation

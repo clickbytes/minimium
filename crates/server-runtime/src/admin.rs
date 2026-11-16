@@ -3,11 +3,12 @@ use minimium_transport::{AdminRequestId, AdminResponse};
 pub(crate) type RequestId = AdminRequestId;
 
 pub(crate) fn response(reply: &crate::commands::CommandReply) -> AdminResponse {
+    let view = reply.view();
     AdminResponse {
-        success: reply.is_success(),
-        error_code: reply.error_code().map(str::to_owned),
+        success: view.state == crate::hosting::replies::ReplyState::Executed,
+        error_code: view.error_code.map(str::to_owned),
         key: None,
-        text: crate::command_output::render_reply(reply)
+        text: crate::command_output::render_reply_view(&view)
             .as_str()
             .to_owned(),
         usage: None,

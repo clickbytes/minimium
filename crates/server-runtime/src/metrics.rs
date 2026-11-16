@@ -7,16 +7,29 @@ use minimium_telemetry::{
 use std::time::{Duration, Instant};
 
 #[derive(Clone, Debug)]
-pub(crate) struct RuntimeMetricsSnapshot {
-    pub fields: Vec<MetricField>,
+pub struct RuntimeMetricsSnapshot {
+    pub(crate) fields: Vec<MetricField>,
+}
+impl RuntimeMetricsSnapshot {
+    pub fn fields(&self) -> &[MetricField] {
+        &self.fields
+    }
 }
 #[derive(Clone, Debug)]
-pub(crate) struct MetricField {
-    pub name: String,
-    pub value: MetricValue,
+pub struct MetricField {
+    pub(crate) name: String,
+    pub(crate) value: MetricValue,
+}
+impl MetricField {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn value(&self) -> &MetricValue {
+        &self.value
+    }
 }
 #[derive(Clone, Debug)]
-pub(crate) enum MetricValue {
+pub enum MetricValue {
     Count(u64),
     Optional(Option<u64>),
     Ratio(f64),

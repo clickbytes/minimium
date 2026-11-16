@@ -38,12 +38,20 @@ const CLIENT_AUTHENTICATION_TIMEOUT: Duration = Duration::from_secs(10);
 const CLIENT_CONTENT_TIMEOUT: Duration = Duration::from_secs(300);
 mod hosting;
 mod runtime;
+pub use commands::{
+    ClientTrafficRow, CommandHelp, EntityComponentRow, EntityKindView, EntityRow, PlayerRow,
+    PropertyReport, RuntimeStatusSnapshot, StatusReport, WorldInspect, WorldRow,
+};
+pub use environment::ClockPropertySnapshot;
+pub use hosting::replies::{CommandPayloadView, CommandReplyView, ReplyState};
 pub use hosting::{
     CommandExecution, RuntimeCommand, RuntimeComposition, RuntimeExecution, RuntimeLoggers,
     RuntimeModules, RuntimeQuery, RuntimeQueryResult, RuntimeStatus, RuntimeTime, RuntimeUtcError,
     ShutdownOutcome, StepOutcome, SubmissionId, SubmitError,
 };
+pub use metrics::{MetricField, MetricValue, RuntimeMetricsSnapshot};
 pub use runtime::ServerRuntime;
+pub use runtime::{ExcavationStatus, ImpactStatus};
 pub use startup::PreparedRuntime;
 
 pub use commands::CommandReply as ModuleCommandReply;
