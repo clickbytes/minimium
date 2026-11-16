@@ -41,6 +41,9 @@ validates modules and exposes their component catalog for storage loading.
 construction (1..64 lanes, 1..16 sector workers). The reusable constructor starts
 no threads, TCP listeners, processes, files or console readers. The host supplies
 authentication, fixed-domain loggers, session nonce and opened S12 services.
+Execution resources remain concrete; one executor lane runs `map` inline, while
+sector generation and collision workers are still created. The conditional
+host-substitution limitation is consciously deferred in the [AR17 decision](../../docs/plan/epic-050/execution-host-decision.md); it is not marked fixed.
 
 `RuntimeCommand` has validated, format-free constructors for help, status,
 players, metrics, save, stop, bounded bolid/meteor operations, typed clock
