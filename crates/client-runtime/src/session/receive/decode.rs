@@ -16,10 +16,16 @@ impl ClientSession {
                         .is_some_and(|started| started.elapsed() >= Duration::from_secs(300))
                     {
                         self.world_content_cancel.cancel();
-                        let error = SessionFailure::new(
+                        let mut error = SessionFailure::new(
                             "session.world_content_timeout",
                             "world-content preparation exceeded 300 seconds",
                         );
+                        if let Some(ticket) = self
+                            .world_content_worker_ticket
+                            .or(self.world_content_request)
+                        {
+                            error = error.with_content_ticket(ticket);
+                        }
                         self.log_failure(&error);
                         self.disconnect(DisconnectReason::WorldContent(error), events);
                         return;

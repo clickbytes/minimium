@@ -135,6 +135,29 @@ reviewed implementation tree. No tests or executables were run.
 No failed required check remains. Runtime acceptance of transfer cancellation,
 reconnect, collision/render parity and real Earth assets remains deferred.
 
+## Deferred content timeout ticket follow-up
+
+On base `7a6dcba5fe4889fca98b1705ea1d90b0ddb99761`, branch
+`work/e050-07-timeout-ticket` updates `ClientSession::decode_available` so its
+existing 300-second deferred-worker timeout attaches the current
+`world_content_worker_ticket`, or the current `world_content_request` when no
+worker ticket is set, before logging and disconnecting. It retains the existing
+`session.world_content_timeout` code, deadline and disconnect lifecycle. No tests
+were added or run. This follow-up only closes ticket metadata on the deferred
+decode timeout path; it does not change resolver, retry or readiness behavior.
+
+| Exact command | Status | Exit / evidence |
+| --- | --- | --- |
+| `rtk cargo fmt --all -- --check` | PASS | Exit 0. |
+| `rtk cargo check -p minimium-client-runtime --locked` | PASS | Exit 0; 14 crates compiled. |
+| `rtk cargo check -p minimium-client --no-default-features --locked` | PASS | Exit 0; 7 crates compiled. |
+| `rtk proxy cargo check --workspace --locked` | PASS | Exit 0; independently run by coordinator on this correction. |
+| `rtk git diff --check` | PASS | Exit 0. |
+| `rtk python scripts/check_file_lengths.py` | PASS | Exit 0; 777 source files, maximum 500 physical lines. |
+
+Correction files: `crates/client-runtime/src/session/receive/decode.rs` and this
+evidence document. The list below also retains the original #552 migration files.
+
 ## Exact changed files
 
 ```text
@@ -159,6 +182,7 @@ crates/client-runtime/src/session.rs
 crates/client-runtime/src/session/content_access.rs
 crates/client-runtime/src/session/excavation.rs
 crates/client-runtime/src/session/receive.rs
+crates/client-runtime/src/session/receive/decode.rs
 crates/client-runtime/src/session/receive/decode/dispatch.rs
 crates/client-runtime/src/session/receive/decode/dispatch/impacts.rs
 crates/client-runtime/src/session/receive/decode/dispatch/transitions.rs
