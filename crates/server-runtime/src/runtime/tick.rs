@@ -11,9 +11,16 @@ impl ServerRuntime {
             let tick_started = Instant::now();
             self.scheduler.simulation_tick = self.scheduler.simulation_tick.saturating_add(1);
             let mut index = 0;
-            while let Some(operation) = self.schedule.tick_operation(index) {
-                if !self.run_tick_operation(operation) {
-                    return;
+            while let Some(step) = self.schedule.tick_step(index) {
+                match step {
+                    crate::runtime::schedule::RuntimeScheduleStep::Operation(operation) => {
+                        if !self.run_tick_operation(operation) {
+                            return;
+                        }
+                    }
+                    crate::runtime::schedule::RuntimeScheduleStep::Stage(stage) => {
+                        self.run_tick_system_stage(stage);
+                    }
                 }
                 index += 1;
             }
@@ -33,8 +40,11 @@ impl ServerRuntime {
         }
     }
 
-    fn run_tick_operation(&mut self, operation: crate::modules::BuiltinOperation) -> bool {
-        use crate::modules::{BuiltinOperation as Op, Stage};
+    fn run_tick_operation(
+        &mut self,
+        operation: crate::runtime::schedule::BuiltinOperation,
+    ) -> bool {
+        use crate::runtime::schedule::BuiltinOperation as Op;
         match operation {
             Op::Commands => self.apply_commands(),
             Op::Bolids => self.update_bolids(),
@@ -42,10 +52,7 @@ impl ServerRuntime {
             Op::Excavation => self.update_excavation(),
             Op::ShutdownGate => return !self.shutdown_request.is_requested(),
             Op::WorldInputs => self.apply_world_inputs(),
-            Op::FixedEffects => self.run_tick_system_stage(Stage::FixedUpdate),
             Op::Simulation => self.simulate_tick(),
-            Op::EnvironmentEffects => self.run_tick_system_stage(Stage::Environment),
-            Op::PostSimulationEffects => self.run_tick_system_stage(Stage::PostSimulation),
             Op::ClearEvents => self.game.gameplay_events.clear(),
         }
         true

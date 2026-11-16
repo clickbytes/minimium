@@ -1,91 +1,105 @@
-//! The executable tick skeleton and module dependencies share one validated graph.
-use crate::{ModuleError, ModuleRegistry, RegisteredSystem, Stage};
+//! Host-supplied schedule graphs and their immutable validated execution order.
+use crate::{ModuleRegistry, RegisteredSystem, Stage};
 use std::collections::BTreeSet;
 
-/// Stable owner operations and effect-publication boundaries in a fixed tick.
-/// A stage runs its ordered systems immediately before its publication boundary.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum BuiltinOperation {
-    Commands,
-    Bolids,
-    Impacts,
-    Excavation,
-    ShutdownGate,
-    WorldInputs,
-    FixedEffects,
-    Simulation,
-    EnvironmentEffects,
-    PostSimulationEffects,
-    ClearEvents,
-}
+/// Stable, neutral IDs reserved for the lifecycle and publication anchors.
+pub const STARTUP_SCHEDULE_ANCHOR: &str = "schedule startup";
+pub const FIXED_UPDATE_SCHEDULE_ANCHOR: &str = "engine fixed effects";
+pub const ENVIRONMENT_SCHEDULE_ANCHOR: &str = "engine environment effects";
+pub const POST_SIMULATION_SCHEDULE_ANCHOR: &str = "engine post simulation effects";
+/// Stable default-host anchor for work that follows the simulation operation.
+pub const SIMULATION_SCHEDULE_ANCHOR: &str = "engine simulation";
 
-impl BuiltinOperation {
-    pub const ALL: [Self; 11] = [
-        Self::Commands,
-        Self::Bolids,
-        Self::Impacts,
-        Self::Excavation,
-        Self::ShutdownGate,
-        Self::WorldInputs,
-        Self::FixedEffects,
-        Self::Simulation,
-        Self::EnvironmentEffects,
-        Self::PostSimulationEffects,
-        Self::ClearEvents,
-    ];
-
-    pub const fn id(self) -> &'static str {
-        match self {
-            Self::Commands => "engine commands",
-            Self::Bolids => "engine bolids",
-            Self::Impacts => "engine impacts",
-            Self::Excavation => "engine excavation",
-            Self::ShutdownGate => "engine shutdown gate",
-            Self::WorldInputs => "engine world inputs",
-            Self::FixedEffects => "engine fixed effects",
-            Self::Simulation => "engine simulation",
-            Self::EnvironmentEffects => "engine environment effects",
-            Self::PostSimulationEffects => "engine post simulation effects",
-            Self::ClearEvents => "engine clear events",
-        }
-    }
-
-    fn phase(self) -> u8 {
-        match self {
-            Self::Commands => 1,
-            Self::Bolids => 2,
-            Self::Impacts => 3,
-            Self::Excavation => 4,
-            Self::ShutdownGate => 5,
-            Self::WorldInputs => 6,
-            Self::FixedEffects => 8,
-            Self::Simulation => 9,
-            Self::EnvironmentEffects => 11,
-            Self::PostSimulationEffects => 13,
-            Self::ClearEvents => 14,
-        }
-    }
-}
-
-fn stage_phase(stage: Stage) -> u8 {
+pub const fn stage_anchor_id(stage: Stage) -> &'static str {
     match stage {
-        Stage::Startup => 0,
-        Stage::FixedUpdate => 7,
-        Stage::Environment => 10,
-        Stage::PostSimulation => 12,
+        Stage::Startup => STARTUP_SCHEDULE_ANCHOR,
+        Stage::FixedUpdate => FIXED_UPDATE_SCHEDULE_ANCHOR,
+        Stage::Environment => ENVIRONMENT_SCHEDULE_ANCHOR,
+        Stage::PostSimulation => POST_SIMULATION_SCHEDULE_ANCHOR,
     }
 }
 
-/// Immutable result of graph validation. Systems of a stage are contiguous;
-/// the host executes them and commits their batch at that stage's boundary.
+/// A host-owned operation or a neutral effect-publication barrier in the host graph.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScheduleNodeKind {
+    Operation,
+    StageBarrier(Stage),
+}
+
+/// One node in a host-supplied schedule. Its array position fixes its phase.
+/// Registered systems share their stage barrier's phase; dependencies can order
+/// systems within that batch but cannot move work backward across host phases.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ScheduleNode {
+    pub id: &'static str,
+    pub kind: ScheduleNodeKind,
+    pub before: &'static [&'static str],
+    pub after: &'static [&'static str],
+}
+
+/// Complete bootstrap definition for a host schedule and its required stage barriers.
+pub struct ScheduleDefinition {
+    pub nodes: &'static [ScheduleNode],
+    /// Startup is a separate per-world lifecycle anchor and is never a tick node.
+    pub startup_anchor: &'static str,
+    pub required_stages: &'static [Stage],
+}
+
+impl ScheduleDefinition {
+    pub const fn new(
+        nodes: &'static [ScheduleNode],
+        startup_anchor: &'static str,
+        required_stages: &'static [Stage],
+    ) -> Self {
+        Self {
+            nodes,
+            startup_anchor,
+            required_stages,
+        }
+    }
+}
+
+/// Typed graph validation failures. Invalid definitions never yield a partial plan.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScheduleError {
+    NodeCountOverflow,
+    InvalidNodeId,
+    DuplicateNodeId,
+    ReservedAnchorCollision,
+    DuplicateStageBarrier,
+    MissingStageBarrier,
+    StartupInTick,
+    UnknownOperation,
+    UnknownDependency,
+    DuplicateDependency,
+    InvalidPhaseOrder,
+    DependencyCycle,
+}
+
+impl std::fmt::Display for ScheduleError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "schedule validation failed: {self:?}")
+    }
+}
+
+impl std::error::Error for ScheduleError {}
+
+/// A validated, immutable sequence of owner operations and publication barriers.
+/// Registered systems are retained in stable topological order for their stage batch.
 pub struct SchedulePlan<'a, S> {
-    operations: Vec<BuiltinOperation>,
+    steps: Vec<ScheduleStep>,
     systems: Vec<&'a RegisteredSystem<S>>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScheduleStep {
+    Operation(&'static str),
+    StageBarrier(Stage),
+}
+
 impl<S> SchedulePlan<'_, S> {
-    pub fn operations(&self) -> &[BuiltinOperation] {
-        &self.operations
+    pub fn steps(&self) -> &[ScheduleStep] {
+        &self.steps
     }
 
     pub fn systems(&self) -> &[&RegisteredSystem<S>] {
@@ -94,93 +108,185 @@ impl<S> SchedulePlan<'_, S> {
 }
 
 impl<H, S> ModuleRegistry<H, S> {
-    pub fn ordered_schedule(&self) -> Result<SchedulePlan<'_, S>, ModuleError> {
-        let builtins = &BuiltinOperation::ALL;
-        let count = builtins.len() + self.systems.len();
-        let id = |index: usize| {
-            if index < builtins.len() {
-                builtins[index].id()
+    /// Validates this registry against the complete schedule supplied by its host.
+    pub fn ordered_schedule(
+        &self,
+        definition: &ScheduleDefinition,
+    ) -> Result<SchedulePlan<'_, S>, ScheduleError> {
+        if definition.startup_anchor != STARTUP_SCHEDULE_ANCHOR {
+            return Err(ScheduleError::InvalidNodeId);
+        }
+        let node_count = definition
+            .nodes
+            .len()
+            .checked_add(1)
+            .ok_or(ScheduleError::NodeCountOverflow)?;
+        let count = node_count
+            .checked_add(self.systems.len())
+            .ok_or(ScheduleError::NodeCountOverflow)?;
+        let mut nodes = Vec::with_capacity(node_count);
+        nodes.push(ScheduleNode {
+            id: definition.startup_anchor,
+            kind: ScheduleNodeKind::StageBarrier(Stage::Startup),
+            before: &[],
+            after: &[],
+        });
+        nodes.extend_from_slice(definition.nodes);
+        let mut stage_indices = [None; 4];
+        let mut ids = BTreeSet::new();
+        let mut last_recurring_stage = None;
+        for (index, node) in nodes.iter().enumerate() {
+            if !crate::valid_path(node.id) {
+                return Err(ScheduleError::InvalidNodeId);
+            }
+            if matches!(node.kind, ScheduleNodeKind::StageBarrier(Stage::Startup)) && index != 0 {
+                return Err(ScheduleError::StartupInTick);
+            }
+            if matches!(node.kind, ScheduleNodeKind::Operation) && is_reserved_anchor(node.id) {
+                return Err(ScheduleError::ReservedAnchorCollision);
+            }
+            if !ids.insert(node.id) {
+                return Err(ScheduleError::DuplicateNodeId);
+            }
+            match node.kind {
+                ScheduleNodeKind::Operation => {}
+                ScheduleNodeKind::StageBarrier(stage) => {
+                    let slot = stage_index(stage);
+                    if stage_indices[slot].is_some() {
+                        return Err(ScheduleError::DuplicateStageBarrier);
+                    }
+                    if stage != Stage::Startup {
+                        if last_recurring_stage.is_some_and(|previous| previous >= stage) {
+                            return Err(ScheduleError::InvalidPhaseOrder);
+                        }
+                        last_recurring_stage = Some(stage);
+                    }
+                    if node.id != stage_anchor_id(stage) {
+                        return Err(ScheduleError::InvalidNodeId);
+                    }
+                    stage_indices[slot] = Some(index);
+                }
+            }
+        }
+        let mut required = BTreeSet::new();
+        for stage in definition.required_stages {
+            if !required.insert(*stage) {
+                return Err(ScheduleError::DuplicateStageBarrier);
+            }
+            if stage_indices[stage_index(*stage)].is_none() {
+                return Err(ScheduleError::MissingStageBarrier);
+            }
+        }
+        if !required.contains(&Stage::Startup) {
+            return Err(ScheduleError::MissingStageBarrier);
+        }
+        if self
+            .systems
+            .iter()
+            .any(|system| stage_indices[stage_index(system.definition.stage)].is_none())
+        {
+            return Err(ScheduleError::MissingStageBarrier);
+        }
+
+        let system_count = self.systems.len();
+        debug_assert_eq!(count, nodes.len() + system_count);
+        let phase = |vertex: usize| {
+            if vertex < nodes.len() {
+                vertex
             } else {
-                self.systems[index - builtins.len()].definition.id
+                stage_indices[stage_index(self.systems[vertex - nodes.len()].definition.stage)]
+                    .expect("required system stage was validated")
             }
         };
-        let phase = |index: usize| {
-            if index < builtins.len() {
-                builtins[index].phase()
+        let id = |vertex: usize| {
+            if vertex < nodes.len() {
+                nodes[vertex].id
             } else {
-                stage_phase(self.systems[index - builtins.len()].definition.stage)
+                self.systems[vertex - nodes.len()].definition.id
             }
         };
         let mut outgoing = vec![BTreeSet::new(); count];
         let mut indegree = vec![0usize; count];
-        let mut edge = |from: usize, to: usize| {
+        let add_edge = |from: usize,
+                        to: usize,
+                        outgoing: &mut Vec<BTreeSet<usize>>,
+                        indegree: &mut Vec<usize>| {
             if outgoing[from].insert(to) {
                 indegree[to] += 1;
             }
         };
-        // Fixed owner order, including the shutdown and publication barriers.
-        for index in 1..builtins.len() {
-            edge(index - 1, index);
-        }
-        for (index, system) in self.systems.iter().enumerate() {
-            if builtins.iter().any(|op| op.id() == system.definition.id) {
-                return Err(ModuleError::DuplicateSystem);
-            }
-            let node = index + builtins.len();
-            let boundary = builtins.partition_point(|op| op.phase() < phase(node));
-            if boundary > 0 {
-                edge(boundary - 1, node);
-            }
-            edge(node, boundary);
-        }
+
         let mut declared_edges = BTreeSet::new();
-        for (index, system) in self.systems.iter().enumerate() {
-            let node = index + builtins.len();
-            let mut declared = BTreeSet::new();
-            for (target, reverse) in system
-                .definition
-                .before
-                .iter()
-                .map(|id| (*id, false))
-                .chain(system.definition.after.iter().map(|id| (*id, true)))
-            {
-                if !declared.insert(target) {
-                    return Err(ModuleError::InvalidDescriptor);
-                }
-                let other = (0..count)
-                    .find(|index| id(*index) == target)
-                    .ok_or(ModuleError::MissingDependency)?;
-                let (from, to) = if reverse {
-                    (other, node)
-                } else {
-                    (node, other)
-                };
-                if !declared_edges.insert((from, to)) {
-                    return Err(ModuleError::InvalidDescriptor);
-                }
-                if phase(from) > phase(to) {
-                    return Err(ModuleError::InvalidPhaseOrder);
-                }
-                edge(from, to);
-            }
+        for (index, node) in nodes.iter().enumerate() {
+            add_declared_edges(
+                index,
+                node.before,
+                node.after,
+                &nodes,
+                &self.systems,
+                nodes.len(),
+                &phase,
+                &mut declared_edges,
+                &mut outgoing,
+                &mut indegree,
+            )?;
         }
+        for (index, system) in self.systems.iter().enumerate() {
+            let vertex = nodes.len() + index;
+            if is_reserved_anchor(system.definition.id) {
+                return Err(ScheduleError::ReservedAnchorCollision);
+            }
+            if ids.contains(system.definition.id) {
+                return Err(ScheduleError::DuplicateNodeId);
+            }
+            if self.systems[..index]
+                .iter()
+                .any(|other| other.definition.id == system.definition.id)
+            {
+                return Err(ScheduleError::DuplicateNodeId);
+            }
+            let barrier = phase(vertex);
+            add_edge(vertex, barrier, &mut outgoing, &mut indegree);
+            let definition = &system.definition;
+            add_declared_edges(
+                vertex,
+                definition.before,
+                definition.after,
+                &nodes,
+                &self.systems,
+                nodes.len(),
+                &phase,
+                &mut declared_edges,
+                &mut outgoing,
+                &mut indegree,
+            )?;
+        }
+
         let mut ready: BTreeSet<_> = (0..count)
-            .filter(|index| indegree[*index] == 0)
-            .map(|index| (phase(index), id(index), index))
+            .filter(|vertex| indegree[*vertex] == 0)
+            .map(|vertex| (phase(vertex), id(vertex), vertex))
             .collect();
         let mut plan = SchedulePlan {
-            operations: Vec::with_capacity(builtins.len()),
-            systems: Vec::with_capacity(self.systems.len()),
+            steps: Vec::with_capacity(nodes.len()),
+            systems: Vec::with_capacity(system_count),
         };
         let mut visited = 0;
-        while let Some((_, _, index)) = ready.pop_first() {
+        while let Some((_, _, vertex)) = ready.pop_first() {
             visited += 1;
-            if index < builtins.len() {
-                plan.operations.push(builtins[index]);
+            if vertex < nodes.len() {
+                match nodes[vertex].kind {
+                    ScheduleNodeKind::Operation => {
+                        plan.steps.push(ScheduleStep::Operation(nodes[vertex].id));
+                    }
+                    ScheduleNodeKind::StageBarrier(Stage::Startup) => {}
+                    ScheduleNodeKind::StageBarrier(stage) => {
+                        plan.steps.push(ScheduleStep::StageBarrier(stage));
+                    }
+                }
             } else {
-                plan.systems.push(&self.systems[index - builtins.len()]);
+                plan.systems.push(&self.systems[vertex - nodes.len()]);
             }
-            for target in &outgoing[index] {
+            for target in &outgoing[vertex] {
                 indegree[*target] -= 1;
                 if indegree[*target] == 0 {
                     ready.insert((phase(*target), id(*target), *target));
@@ -188,8 +294,83 @@ impl<H, S> ModuleRegistry<H, S> {
             }
         }
         if visited != count {
-            return Err(ModuleError::DependencyCycle);
+            return Err(ScheduleError::DependencyCycle);
         }
         Ok(plan)
     }
+}
+
+fn add_declared_edges<S>(
+    vertex: usize,
+    before: &[&'static str],
+    after: &[&'static str],
+    nodes: &[ScheduleNode],
+    systems: &[crate::RegisteredSystem<S>],
+    node_count: usize,
+    phase: &impl Fn(usize) -> usize,
+    declared_edges: &mut BTreeSet<(usize, usize)>,
+    outgoing: &mut Vec<BTreeSet<usize>>,
+    indegree: &mut Vec<usize>,
+) -> Result<(), ScheduleError> {
+    let mut declared = BTreeSet::new();
+    for (target, reverse) in before
+        .iter()
+        .map(|id| (*id, false))
+        .chain(after.iter().map(|id| (*id, true)))
+    {
+        if !declared.insert(target) {
+            return Err(ScheduleError::DuplicateDependency);
+        }
+        let other = (0..node_count + systems.len())
+            .find(|candidate| {
+                if *candidate < node_count {
+                    nodes[*candidate].id == target
+                } else {
+                    systems[*candidate - node_count].definition.id == target
+                }
+            })
+            .ok_or(ScheduleError::UnknownDependency)?;
+        let (from, to) = if reverse {
+            (other, vertex)
+        } else {
+            (vertex, other)
+        };
+        if !declared_edges.insert((from, to)) {
+            return Err(ScheduleError::DuplicateDependency);
+        }
+        if phase(from) > phase(to) {
+            return Err(ScheduleError::InvalidPhaseOrder);
+        }
+        if phase(from) == phase(to)
+            && from == other
+            && nodes
+                .get(other)
+                .is_some_and(|node| matches!(node.kind, ScheduleNodeKind::StageBarrier(_)))
+        {
+            return Err(ScheduleError::InvalidPhaseOrder);
+        }
+        if outgoing[from].insert(to) {
+            indegree[to] += 1;
+        }
+    }
+    Ok(())
+}
+
+fn stage_index(stage: Stage) -> usize {
+    match stage {
+        Stage::Startup => 0,
+        Stage::FixedUpdate => 1,
+        Stage::Environment => 2,
+        Stage::PostSimulation => 3,
+    }
+}
+
+pub(super) fn is_reserved_anchor(id: &str) -> bool {
+    [
+        STARTUP_SCHEDULE_ANCHOR,
+        FIXED_UPDATE_SCHEDULE_ANCHOR,
+        ENVIRONMENT_SCHEDULE_ANCHOR,
+        POST_SIMULATION_SCHEDULE_ANCHOR,
+    ]
+    .contains(&id)
 }

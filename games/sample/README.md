@@ -67,10 +67,10 @@ The interaction system looks up that entity's portal component directly through
 the read-only gameplay context; it does not copy or scan all world components
 for each event.
 
-Its descriptor explicitly depends on `BuiltinOperation::Simulation` and runs
-before `BuiltinOperation::PostSimulationEffects`; the host validates these
-references against the actual tick graph. Portal effects still publish at the
-PostSimulation boundary, with unchanged component encoding and transfer rules.
+Its descriptor explicitly depends on the neutral simulation and
+PostSimulation publication anchors; the host validates these references against
+the supplied tick graph. Portal effects still publish at the PostSimulation
+boundary, with unchanged component encoding and transfer rules.
 
 When adding a sample gameplay feature, define its schema/system in this package
 and register it through `SampleGameplayModule`. `apps/server/src/composition.rs`

@@ -177,22 +177,26 @@ that current signed field, retaining a saved tunnel position only while it is cl
 
 ## Ownership and execution
 
-`ServerSchedule` consumes the validated gameplay `SchedulePlan`. The fixed tick
-dispatches its `BuiltinOperation` sequence, not a second handwritten ordering:
-commands → bolids → impacts → excavation → shutdown gate → world inputs →
-FixedUpdate handlers/effects → simulation → Environment handlers/effects →
-PostSimulation handlers/effects → gameplay-event cleanup. Each stage retains
-one bounded effect batch and its existing publication point. Command batches
-still publish per command. A shutdown requested by commands or asynchronous
-owners still stops at the gate after excavation, before world inputs or module
-stages; tick completion metrics/deadlines remain after the full sequence.
+`RuntimeModules` supplies the production graph to gameplay once during bootstrap
+and retains the resulting validated `ServerSchedule` for runtime execution.
+Runtime-owned operation IDs map exhaustively to concrete owner calls; an unknown
+operation is a typed bootstrap error. The tick consumes that exact returned
+stream: commands → bolids → impacts → excavation → shutdown gate → world inputs
+→ FixedUpdate batch/publication barrier → simulation → Environment
+batch/publication barrier → PostSimulation batch/publication barrier →
+gameplay-event cleanup. Each stage retains one bounded effect batch at its
+existing publication point. Command batches still publish per command. A
+shutdown requested by commands or asynchronous owners still stops at the gate
+after excavation, before world inputs or module stages; tick completion
+metrics/deadlines remain after the full sequence.
 
 Simulation remains one owner operation: synchronize movement policies, update
 sector readiness/collision, commit ready transfers, move ready players, enforce
 surface constraints and reset jump intent. Module dependencies cannot interleave
 inside that transaction. Startup remains once per prepared world after restore;
-replication remains independently scheduled outside the fixed tick. The module
-registry rejects unknown/reserved/duplicate/cyclic dependencies and reverse
+replication remains independently scheduled outside the fixed tick. Startup is
+represented by a separate required lifecycle anchor outside the recurring tick.
+The module registry rejects unknown/reserved/duplicate/cyclic dependencies and reverse
 phase constraints before runtime startup. See the gameplay README for stable
 built-in IDs and extension boundaries. Graph allocation is startup-only;
 dispatch reuses the immutable plan. No tick cadence, monotonic clock, catch-up,

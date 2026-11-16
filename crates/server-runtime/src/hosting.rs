@@ -66,17 +66,22 @@ pub struct RuntimeModules {
     pub(crate) registry:
         ModuleRegistry<crate::commands::ModuleHandler, runtime::schedule::SystemFn>,
     pub(crate) components: minimium_world::entity::ComponentRegistry,
+    pub(crate) schedule: runtime::schedule::ServerSchedule,
 }
 impl RuntimeModules {
     pub fn new(modules: &[Arc<ServerGameplayModule>]) -> io::Result<Self> {
         let registry = crate::commands::initialize_modules(modules).map_err(io::Error::other)?;
-        // Validate built-in dependencies before opening any host service.
-        crate::commands::build_schedule(&registry).map_err(io::Error::other)?;
+        // Validate the complete host graph before opening any host service, retaining
+        // this same validated sequence for execution after construction.
+        let definition = crate::commands::production_schedule_definition();
+        let schedule =
+            crate::commands::build_schedule(&registry, &definition).map_err(io::Error::other)?;
         let components = crate::commands::component_registry(&registry)
             .map_err(|error| io::Error::other(format!("invalid components: {error:?}")))?;
         Ok(Self {
             registry,
             components,
+            schedule,
         })
     }
     pub fn components(&self) -> &minimium_world::entity::ComponentRegistry {

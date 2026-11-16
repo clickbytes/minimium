@@ -1,11 +1,11 @@
 use super::gameplay_terrain::{self, CurrentTerrainRead};
 use crate::commands::RuntimeCommandReadView;
 use crate::modules::{
-    BuiltinOperation, GameplaySystem, GameplaySystemContext, SchedulePlan, Stage, WorldLifecycle,
-};
-use crate::modules::{
     EffectBufferError, EffectProducerId, EffectReceipt, EffectToken, GameplayEvent, WorldEffect,
     WorldEffectBatch, WorldEffectBuffer, MAX_EFFECT_RECEIPTS_PER_PRODUCER,
+};
+use crate::modules::{
+    GameplaySystem, ScheduleError, SchedulePlan, ScheduleStep, Stage, WorldLifecycle,
 };
 use crate::world_registry::WorldRegistry;
 use minimium_gameplay::{
@@ -16,19 +16,17 @@ use minimium_world::world::WorldInstanceId;
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 
-const MAX_STARTUP_EFFECT_RECEIPTS: usize = 4096;
-const MAX_SYSTEM_EFFECT_RECEIPTS: usize = 4096;
+mod diagnostics;
+mod host_plan;
+mod system_context;
+pub(crate) use diagnostics::ScheduleDiagnostics;
+pub(crate) use host_plan::{production_schedule, BuiltinOperation, RuntimeScheduleStep};
+
+const MAX_STARTUP_EFFECT_RECEIPTS: usize = diagnostics::MAX_STARTUP_EFFECT_RECEIPTS;
+const MAX_SYSTEM_EFFECT_RECEIPTS: usize = diagnostics::MAX_SYSTEM_EFFECT_RECEIPTS;
 
 pub type ModuleSystem = GameplaySystem;
 pub(crate) type SystemFn = ModuleSystem;
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct ScheduleDiagnostics {
-    pub(crate) world_instance_count: usize,
-    pub(crate) startup_system_runs: usize,
-    pub(crate) expired_effect_receipts: u64,
-    pub(crate) effect_backpressure_rejections: u64,
-}
 
 /// Systems receive a read-only world/component view, current gameplay events,
 /// a bounded effect buffer and a schedule-owned diagnostic sink. No process,
@@ -161,81 +159,6 @@ impl ModuleSystemContext<'_> {
     }
 }
 
-impl GameplaySystemContext for ModuleSystemContext<'_> {
-    fn terrain(
-        &self,
-        instance: minimium_world::world::WorldInstanceId,
-    ) -> Option<&minimium_terrain::TerrainSnapshot> {
-        Some(&self.worlds.get(instance)?.terrain)
-    }
-    fn terrain_read(
-        &self,
-        instance: WorldInstanceId,
-    ) -> Option<&dyn minimium_world::terrain::TerrainRead> {
-        self.terrain_reads.get(&instance).map(|read| read as _)
-    }
-    fn stage(&self) -> Stage {
-        self.stage()
-    }
-    fn simulation_tick(&self) -> u64 {
-        self.simulation_tick()
-    }
-    fn world_instance(&self) -> Option<minimium_world::world::WorldInstanceId> {
-        self.world_instance()
-    }
-    fn world_lifecycle(&self) -> Option<WorldLifecycle> {
-        self.world_lifecycle()
-    }
-    fn world_count(&self) -> usize {
-        self.world_count()
-    }
-    fn worlds(
-        &self,
-        request: &CommandViewRequest,
-    ) -> Result<CommandViewPage<CommandWorldView>, CommandViewError> {
-        ModuleSystemContext::worlds(self, request)
-    }
-    fn world_initialized(&self, instance: minimium_world::world::WorldInstanceId) -> Option<bool> {
-        self.world_initialized(instance)
-    }
-    fn components(
-        &self,
-        instance: minimium_world::world::WorldInstanceId,
-    ) -> Vec<crate::modules::ComponentView<'_>> {
-        ModuleSystemContext::components(self, instance).collect()
-    }
-    fn component(
-        &self,
-        instance: minimium_world::world::WorldInstanceId,
-        entity: minimium_world::entity::EntityId,
-        kind: minimium_world::entity::ComponentTypeId,
-    ) -> Option<crate::modules::ComponentView<'_>> {
-        ModuleSystemContext::component(self, instance, entity, kind)
-    }
-    fn initial_entities(
-        &self,
-        instance: minimium_world::world::WorldInstanceId,
-    ) -> Vec<crate::modules::InitialEntityView<'_>> {
-        ModuleSystemContext::initial_entities(self, instance)
-    }
-    fn events(&self) -> &[GameplayEvent] {
-        self.events()
-    }
-    fn take_effect_receipts(&mut self) -> Vec<EffectReceipt> {
-        let count = self.receipts.len();
-        if matches!(self.producer, EffectProducerId::System { .. }) {
-            *self.system_pending = self.system_pending.saturating_sub(count);
-        }
-        std::mem::take(&mut self.receipts)
-    }
-    fn record_startup_run(&mut self, world_count: usize) {
-        self.record_startup_run(world_count);
-    }
-    fn emit(&mut self, effect: WorldEffect) -> Result<EffectToken, EffectBufferError> {
-        self.emit(effect)
-    }
-}
-
 struct ScheduledSystem {
     module: &'static str,
     id: &'static str,
@@ -262,7 +185,7 @@ impl Default for ProducerFeedback {
 }
 
 pub(crate) struct ServerSchedule {
-    operations: Vec<BuiltinOperation>,
+    steps: Vec<RuntimeScheduleStep>,
     systems: Vec<ScheduledSystem>,
     startup_worlds: std::collections::BTreeSet<minimium_world::world::WorldInstanceId>,
     diagnostics: ScheduleDiagnostics,
@@ -276,9 +199,19 @@ pub(crate) struct ServerSchedule {
 }
 
 impl ServerSchedule {
-    pub(crate) fn from_plan(plan: &SchedulePlan<'_, SystemFn>) -> Self {
-        Self {
-            operations: plan.operations().to_vec(),
+    pub(crate) fn from_plan(plan: &SchedulePlan<'_, SystemFn>) -> Result<Self, ScheduleError> {
+        let steps = plan
+            .steps()
+            .iter()
+            .map(|step| match step {
+                ScheduleStep::Operation(id) => {
+                    BuiltinOperation::from_id(id).map(RuntimeScheduleStep::Operation)
+                }
+                ScheduleStep::StageBarrier(stage) => Ok(RuntimeScheduleStep::Stage(*stage)),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self {
+            steps,
             systems: plan
                 .systems()
                 .iter()
@@ -298,11 +231,11 @@ impl ServerSchedule {
             startup_reserved_receipts: 0,
             system_pending_receipts: 0,
             system_reserved_receipts: 0,
-        }
+        })
     }
 
-    pub(crate) fn tick_operation(&self, index: usize) -> Option<BuiltinOperation> {
-        self.operations.get(index).copied()
+    pub(crate) fn tick_step(&self, index: usize) -> Option<RuntimeScheduleStep> {
+        self.steps.get(index).copied()
     }
 
     pub(crate) fn run_stage(

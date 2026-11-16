@@ -84,35 +84,40 @@ component uses an ID declared by the example's own registration.
 The server runtime owns the tick and supplies the current tick and per-world
 Startup lifecycle. This crate owns only registration and effect contracts.
 
-`ModuleRegistry::ordered_schedule` validates one graph containing registered
-systems and the stable `BuiltinOperation` IDs. Its immutable `SchedulePlan`
-supplies the runtime's actual operation sequence and ordered stage handlers.
-Built-ins have fixed edges in the order below; stage systems are bounded by the
-listed owner operations and their effect-publication barrier:
+`ModuleRegistry::ordered_schedule` validates a complete `ScheduleDefinition`
+provided by the host. The neutral graph contains host operation IDs and explicit
+stage publication barriers; it has no built-in mechanics list. Its immutable
+`SchedulePlan` returns the ordered operation/barrier stream and registered
+systems in stable topological order. Definitions are trusted bootstrap
+composition data, not parsed from network input or rebuilt each tick. The host
+declares the stage barriers required for its composition:
 
 | Stage | After | Before publication |
 | --- | --- | --- |
-| Startup | Per-world restore (outside repeated tick) | `engine commands` |
+| Startup | Per-world restore (outside repeated tick) | `schedule startup` |
 | FixedUpdate | `engine world inputs` | `engine fixed effects` |
 | Environment | `engine simulation` | `engine environment effects` |
 | PostSimulation | `engine environment effects` | `engine post simulation effects` |
 
-The full tick skeleton is commands → bolids → impacts → excavation → shutdown
-gate → world inputs → fixed effects → simulation → environment effects → post
-simulation effects → clear events. `BuiltinOperation::id()` supplies the exact
-reserved dependency names (all prefixed with `engine `). The host runs a stage's
-ordered handlers together and commits its single bounded batch at the named
-effects barrier; no owner operation can interleave within that stage. Startup
-handlers remain per-world and do not run again in each tick.
+The production host supplies commands → bolids → impacts → excavation → shutdown
+gate → world inputs → FixedUpdate barrier → simulation → Environment barrier →
+PostSimulation barrier → clear events. Stable IDs for host operations are
+supplied by that host; games use neutral schedule anchor constants instead of
+importing a runtime enum. Each stage's systems execute together before its
+publication barrier, so no owner operation can interleave in a system batch.
+Startup is a separate required anchor and cannot be inserted in the recurring
+tick stream; startup handlers remain per-world and do not rerun each tick.
 
-Module `before`/`after` constraints resolve both system and built-in IDs. Missing
-targets return `MissingDependency`; reserved-ID collisions return
-`DuplicateSystem`; repeated target/edge declarations return `InvalidDescriptor`;
-reverse phase edges return `InvalidPhaseOrder`; same-phase cycles return
-`DependencyCycle`. Stable system-ID ordering breaks unconstrained ties. An
-invalid graph never produces a plan. Construction uses memory proportional to
-trusted installed descriptors/edges; the host retains the plan and does not
-rebuild it per tick. No registration, effect capacity or clock policy changes.
+Module `before`/`after` constraints resolve supplied operation and anchor IDs.
+Unknown targets, duplicate IDs/targets, reserved-anchor collisions, missing
+barriers, reverse phase edges and cycles return `ScheduleError`; invalid graphs
+never produce partial plans. Stable system-ID ordering breaks unconstrained
+same-stage ties. If `V` is the number of supplied nodes plus registered systems,
+unique dependency targets bound the declared edges to at most `V^2`. Validation
+uses `O(V + E)` temporary graph memory and `O(E * V)` target lookup work; the
+returned immutable plan retains `O(V)` items after those edges are dropped. The
+host does not rebuild it per tick. No registration, effect capacity or clock
+policy changes.
 
 ## Invariants and errors
 

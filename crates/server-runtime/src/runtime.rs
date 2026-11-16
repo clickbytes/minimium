@@ -184,6 +184,7 @@ impl ServerRuntime {
         let crate::hosting::RuntimeModules {
             registry: module_registry,
             components: component_registry,
+            schedule,
         } = modules;
         let crate::RuntimeLoggers {
             server: server_logger,
@@ -336,9 +337,6 @@ impl ServerRuntime {
         )
         .map_err(io::Error::other)?;
         let environment_dirty_revision = environment_clock.dirty_revision();
-        let schedule = crate::commands::build_schedule(&module_registry).map_err(|error| {
-            io::Error::other(format!("gameplay system schedule is invalid: {error}"))
-        })?;
         let autosave_interval = Duration::from_secs(config.autosave_seconds);
         let component_owner_authority = component_ownership::ComponentOwnerAuthority::new(
             game.worlds.iter().map(|(instance, _)| instance),
