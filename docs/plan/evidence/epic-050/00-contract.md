@@ -86,10 +86,30 @@ runtime and visual checks remain outside this docs-only verification scope.
 
 ## Integration gate and remaining work
 
-This branch is not yet a merged/closed issue. Coordinator review, PR/merge SHA,
-remote main read-back and closing evidence remain required. Record these in the
-issue thread so the report does not need a self-referential post-merge SHA.
+Original delivery merged through PR #544 at `803e5df`; the status-reconciliation
+correction below requires its own coordinator review, PR/merge SHA, remote main
+read-back and closing evidence. Record these in the issue thread so the report
+does not need a self-referential post-merge SHA.
 #522 cannot begin until #521 is actually CLOSED with its complete merge on main.
 Runtime compatibility, CPU prediction, cancellation, durable recovery and visual
 behavior remain unverified. Final integration forwards the risk matrix to
-existing Q03 #470 while preserving E049 #421 and meteor #384 scope.
+existing Q03 #470 while preserving E049 #421 and meteor #384 historical scope.
+
+## Administrative-status reconciliation
+
+Correction prepared on `main@803e5df` after PR #544, branch
+`work/e050-00-status`, using this same isolated worktree. Live GitHub reads confirm
+#384 CLOSED/not_planned at `2026-11-16T09:46:34Z`, #470 CLOSED/not_planned at
+`09:46:37Z` and #421 CLOSED/not_planned at `09:46:50Z`.
+[Q03 comment 6912964095](https://github.com/clickbytes/minimium/issues/470#issuecomment-6912964095)
+attributes this to the user's instruction “to trzeba zamknac wszystko”. It
+explicitly distinguishes administrative closure from completed tests or GO.
+Unit/integration/E2E, full runtime/GPU, benchmarks, meteor acceptance and the
+last excavation runtime check remain NOT RUN by the agent.
+
+The original E050 requirement to keep these issues open is historical and does
+not authorize reopening them. Stage 20 may append its consolidated risk/report
+comment to the existing closed #470 without changing state or claiming acceptance.
+No production files, test policy or verification outcomes changed in this correction.
+Whitespace and local-link/21-issue-sequence checks were rerun successfully with
+the exact commands in the Verification table; Cargo remains NOT APPLICABLE.
