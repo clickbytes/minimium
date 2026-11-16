@@ -47,9 +47,8 @@ pub use runtime::ServerRuntime;
 pub use startup::PreparedRuntime;
 
 pub use commands::CommandReply as ModuleCommandReply;
-pub use minimium_gameplay::{EngineModule, ModuleCommandContext};
+pub use minimium_gameplay::{EngineModule, ModuleCommandContext, ModuleCommandHandler};
 pub use runtime::schedule::{ModuleSystem, ModuleSystemContext};
-pub type ModuleCommandHandler = fn(&mut ModuleCommandContext<'_>, &[&str]) -> ModuleCommandReply;
 pub type ServerGameplayModule = dyn EngineModule<ModuleCommandHandler, ModuleSystem>;
 
 pub use composition::{

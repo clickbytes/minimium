@@ -11,7 +11,8 @@ mod schedule;
 mod system;
 pub use commands::{
     CommandPlayerView, CommandViewError, CommandViewPage, CommandWorldView, ModuleCommandContext,
-    ModuleCommandReadView,
+    ModuleCommandErrorCode, ModuleCommandErrorCodeError, ModuleCommandHandler,
+    ModuleCommandReadView, ModuleCommandResult, ModuleCommandText,
 };
 pub use effects::{
     ComponentValue, ComponentView, EffectBatchOutcome, EffectBufferError, EffectOutcomeError,
@@ -244,6 +245,20 @@ impl<H, S> ModuleRegistry<H, S> {
         &mut self,
         module: &M,
     ) -> Result<(), ModuleError> {
+        self.install_mapped(module, |handler| handler)
+    }
+
+    /// Installs a module with a different host handler type after validating the
+    /// complete registration transaction against this registry.
+    pub fn install_mapped<I, M, F>(
+        &mut self,
+        module: &M,
+        mut map_handler: F,
+    ) -> Result<(), ModuleError>
+    where
+        M: EngineModule<I, S> + ?Sized,
+        F: FnMut(I) -> H,
+    {
         let descriptor = module.descriptor();
         if !valid_path(descriptor.id)
             || descriptor.version == 0
@@ -274,10 +289,15 @@ impl<H, S> ModuleRegistry<H, S> {
         {
             return Err(ModuleError::InvalidDescriptor);
         }
+        let mut reserved_commands = self.reserved_commands.clone();
+        for command in &self.commands {
+            reserved_commands.insert(command.definition.name);
+            reserved_commands.extend(command.definition.aliases.iter().copied());
+        }
         let mut staging = ModuleRegistrar {
             module: descriptor.id,
-            existing_commands: &self.commands,
-            reserved_commands: &self.reserved_commands,
+            existing_commands: &[],
+            reserved_commands: &reserved_commands,
             existing_systems: &self.systems,
             existing_components: &self.components,
             components: Vec::new(),
@@ -291,6 +311,20 @@ impl<H, S> ModuleRegistry<H, S> {
             components,
             ..
         } = staging;
+        let commands = commands
+            .into_iter()
+            .map(|command| RegisteredCommand {
+                module: command.module,
+                definition: CommandDefinition {
+                    name: command.definition.name,
+                    aliases: command.definition.aliases,
+                    usage: command.definition.usage,
+                    arguments: command.definition.arguments,
+                    scope: command.definition.scope,
+                    handler: map_handler(command.definition.handler),
+                },
+            })
+            .collect::<Vec<_>>();
         self.modules.insert(descriptor.id, descriptor);
         self.commands.extend(commands);
         self.systems.extend(systems);

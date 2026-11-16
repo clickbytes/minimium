@@ -7,9 +7,16 @@ pub(crate) use world::RuntimeCommandReadView;
 
 use crate::modules::{CommandScope, ModuleCommandContext, ModuleRegistry, WorldEffectBuffer};
 use crate::runtime::schedule::{ScheduleDiagnostics, ServerSchedule, SystemFn};
+pub(crate) use minimium_gameplay::ModuleCommandText as BoundedText;
 use std::sync::Arc;
 
-pub type ModuleHandler = fn(&mut ModuleCommandContext<'_>, &[&str]) -> CommandReply;
+type BuiltinHandler = fn(&mut ModuleCommandContext<'_>, &[&str]) -> CommandReply;
+
+#[derive(Clone, Copy)]
+pub(crate) enum ModuleHandler {
+    Builtin(BuiltinHandler),
+    Extension(minimium_gameplay::ModuleCommandHandler),
+}
 
 pub(crate) fn initialize_modules(
     modules: &[Arc<crate::ServerGameplayModule>],
@@ -18,7 +25,7 @@ pub(crate) fn initialize_modules(
     registry.reserve_command_names(crate::server_command::SERVER_COMMAND_NAMES)?;
     registry.install(&world::WorldCommands)?;
     for module in modules {
-        registry.install(module.as_ref())?;
+        registry.install_mapped(module.as_ref(), ModuleHandler::Extension)?;
     }
     Ok(registry)
 }
@@ -48,7 +55,17 @@ fn execute_registered(
     match registry.resolve(line) {
         Some((command, args)) if command.definition.scope == CommandScope::ServerAdmin => {
             let arguments = args.iter().map(String::as_str).collect::<Vec<_>>();
-            (command.definition.handler)(context, &arguments)
+            match command.definition.handler {
+                ModuleHandler::Builtin(handler) => handler(context, &arguments),
+                ModuleHandler::Extension(handler) => match handler(context, &arguments) {
+                    minimium_gameplay::ModuleCommandResult::Success(text) => {
+                        CommandReply::module_text(text)
+                    }
+                    minimium_gameplay::ModuleCommandResult::Error { code, detail } => {
+                        CommandReply::error(code.as_str(), detail.as_str())
+                    }
+                },
+            }
         }
         Some(_) => CommandReply::error(
             "server.command.permission_denied",
@@ -154,56 +171,6 @@ pub(crate) enum CommandPayload {
 struct CommandFailure {
     pub code: &'static str,
     pub detail: BoundedText,
-}
-
-#[derive(Clone, Debug)]
-/// Text appended through this builder is UTF-8-safe and capped at [`BoundedText::LIMIT`].
-pub struct BoundedText(String, bool);
-impl Default for BoundedText {
-    fn default() -> Self {
-        Self(String::new(), false)
-    }
-}
-impl std::fmt::Write for BoundedText {
-    fn write_str(&mut self, text: &str) -> std::fmt::Result {
-        self.push_str(text);
-        Ok(())
-    }
-}
-impl BoundedText {
-    /// Maximum rendered or extension text bytes, leaving JSON escaping room under the admin cap.
-    pub const LIMIT: usize = 8 * 1024;
-    pub fn new(text: &str) -> Self {
-        let mut value = Self::default();
-        value.push_str(text);
-        value
-    }
-    /// Append as much of `text` as fits, adding a marker on truncation.
-    pub fn push_str(&mut self, text: &str) {
-        if self.1 {
-            return;
-        }
-        const MARKER: &str = " [truncated]";
-        let remaining = Self::LIMIT.saturating_sub(self.0.len());
-        let mut end = text.len().min(remaining);
-        while !text.is_char_boundary(end) {
-            end -= 1;
-        }
-        self.0.push_str(&text[..end]);
-        if end < text.len() {
-            let marker_start = Self::LIMIT.saturating_sub(MARKER.len());
-            let mut boundary = marker_start.min(self.0.len());
-            while !self.0.is_char_boundary(boundary) {
-                boundary -= 1;
-            }
-            self.0.truncate(boundary);
-            self.0.push_str(MARKER);
-            self.1 = true;
-        }
-    }
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
 }
 
 #[derive(Clone, Debug)]

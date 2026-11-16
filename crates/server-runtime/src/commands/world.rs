@@ -68,7 +68,7 @@ impl EngineModule<ModuleHandler, SystemFn> for WorldCommands {
             usage: "world list",
             arguments: &[],
             scope: CommandScope::ServerAdmin,
-            handler: world_list,
+            handler: ModuleHandler::Builtin(world_list),
         })?;
         registry.command(CommandDefinition {
             name: "world inspect",
@@ -76,7 +76,7 @@ impl EngineModule<ModuleHandler, SystemFn> for WorldCommands {
             usage: "world inspect ID",
             arguments: WORLD_INSPECT_ARGUMENTS,
             scope: CommandScope::ServerAdmin,
-            handler: world_inspect,
+            handler: ModuleHandler::Builtin(world_inspect),
         })?;
         registry.command(CommandDefinition {
             name: "entity list",
@@ -84,7 +84,7 @@ impl EngineModule<ModuleHandler, SystemFn> for WorldCommands {
             usage: "entity list",
             arguments: &[],
             scope: CommandScope::ServerAdmin,
-            handler: entity_list,
+            handler: ModuleHandler::Builtin(entity_list),
         })?;
         registry.command(CommandDefinition {
             name: "entity inspect",
@@ -92,7 +92,7 @@ impl EngineModule<ModuleHandler, SystemFn> for WorldCommands {
             usage: "entity inspect WORLD ENTITY",
             arguments: ENTITY_ARGUMENTS,
             scope: CommandScope::ServerAdmin,
-            handler: entity_inspect,
+            handler: ModuleHandler::Builtin(entity_inspect),
         })?;
         registry.command(CommandDefinition {
             name: "entity despawn",
@@ -100,7 +100,7 @@ impl EngineModule<ModuleHandler, SystemFn> for WorldCommands {
             usage: "entity despawn WORLD ENTITY",
             arguments: ENTITY_ARGUMENTS,
             scope: CommandScope::ServerAdmin,
-            handler: entity_despawn,
+            handler: ModuleHandler::Builtin(entity_despawn),
         })?;
         registry.system(SystemDefinition {
             id: "world-instance-count",

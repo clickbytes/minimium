@@ -56,7 +56,11 @@ The process preflights snapshot and excavation journal versions before creating 
 
 Administrative execution returns a typed success payload or a typed failure code and bounded detail. Built-in commands return structured reports and immutable owner snapshots; the shared command output adapter formats them for both terminal and admin responses. Only extension module text uses the bounded opaque text payload. The admin wire envelope, permissions and stable error codes remain owned by their existing adapters.
 
-Registered module commands receive the neutral `ModuleCommandContext`, not the
+Game modules register the neutral `ModuleCommandHandler` and return bounded
+`ModuleCommandResult` values; the runtime adapts these into its private handler
+tag in the existing registry. Built-in handlers retain their structured typed
+reports. Both use the same scope checks, resolution, effect commit and reply
+formatting. Module handlers receive the neutral `ModuleCommandContext`, not the
 owner command context used by persistence, clock and shutdown built-ins. The
 module context lends bounded world, entity, player and component read pages and
 accepts bounded `WorldEffect` emission. Pages cap at 256 rows; dynamic names and

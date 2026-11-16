@@ -8,6 +8,109 @@ use minimium_world::{
 const MAX_MODULE_COMMAND_VIEW_ROWS: usize = 256;
 const MAX_MODULE_COMMAND_VIEW_BYTES: usize = 1024 * 1024;
 
+/// Bounded UTF-8 command text shared by neutral modules and the host formatter.
+#[derive(Clone, Debug, Default)]
+pub struct ModuleCommandText(String, bool);
+
+impl ModuleCommandText {
+    pub const LIMIT: usize = 8 * 1024;
+    const MARKER: &'static str = " [truncated]";
+
+    pub fn new(text: &str) -> Self {
+        let mut value = Self::default();
+        value.push_str(text);
+        value
+    }
+
+    pub fn push_str(&mut self, text: &str) {
+        if self.1 {
+            return;
+        }
+        let remaining = Self::LIMIT.saturating_sub(self.0.len());
+        let mut end = text.len().min(remaining);
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        self.0.push_str(&text[..end]);
+        if end < text.len() {
+            let mut boundary = Self::LIMIT
+                .saturating_sub(Self::MARKER.len())
+                .min(self.0.len());
+            while !self.0.is_char_boundary(boundary) {
+                boundary -= 1;
+            }
+            self.0.truncate(boundary);
+            self.0.push_str(Self::MARKER);
+            self.1 = true;
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn is_truncated(&self) -> bool {
+        self.1
+    }
+}
+
+impl std::fmt::Write for ModuleCommandText {
+    fn write_str(&mut self, text: &str) -> std::fmt::Result {
+        self.push_str(text);
+        Ok(())
+    }
+}
+
+/// A neutral command result; hosts adapt it to their existing reply format.
+#[derive(Clone, Debug)]
+pub enum ModuleCommandResult {
+    Success(ModuleCommandText),
+    Error {
+        code: ModuleCommandErrorCode,
+        detail: ModuleCommandText,
+    },
+}
+
+/// Validated stable identifier for a module command failure.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ModuleCommandErrorCode(&'static str);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ModuleCommandErrorCodeError;
+
+impl ModuleCommandErrorCode {
+    pub fn new(code: &'static str) -> Result<Self, ModuleCommandErrorCodeError> {
+        if code.is_empty()
+            || code.len() > 128
+            || !code
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+        {
+            return Err(ModuleCommandErrorCodeError);
+        }
+        Ok(Self(code))
+    }
+
+    pub fn as_str(self) -> &'static str {
+        self.0
+    }
+}
+
+impl ModuleCommandResult {
+    pub fn success(text: &str) -> Self {
+        Self::Success(ModuleCommandText::new(text))
+    }
+
+    pub fn error(code: ModuleCommandErrorCode, detail: &str) -> Self {
+        Self::Error {
+            code,
+            detail: ModuleCommandText::new(detail),
+        }
+    }
+}
+
+pub type ModuleCommandHandler = fn(&mut ModuleCommandContext<'_>, &[&str]) -> ModuleCommandResult;
+
 #[derive(Clone, Debug)]
 pub struct CommandViewPage<T> {
     pub rows: Vec<T>,
