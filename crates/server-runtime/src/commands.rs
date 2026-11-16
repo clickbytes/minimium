@@ -54,42 +54,87 @@ pub(crate) fn component_registry(
 }
 
 fn execute_registered(
-    line: &str,
+    command: &minimium_gameplay::RegisteredCommand<ModuleHandler>,
+    args: &[String],
     context: &mut ModuleCommandContext<'_>,
-    registry: &ModuleRegistry<ModuleHandler, SystemFn>,
 ) -> CommandReply {
-    match registry.resolve(line) {
-        Some((command, args)) if command.definition.scope == CommandScope::ServerAdmin => {
-            let arguments = args.iter().map(String::as_str).collect::<Vec<_>>();
-            match command.definition.handler {
-                ModuleHandler::Builtin(handler) => handler(context, &arguments),
-                ModuleHandler::Extension(handler) => match handler(context, &arguments) {
-                    minimium_gameplay::ModuleCommandResult::Success(text) => {
-                        CommandReply::module_text(text)
-                    }
-                    minimium_gameplay::ModuleCommandResult::Error { code, detail } => {
-                        CommandReply::error(code.as_str(), detail.as_str())
-                    }
-                },
-            }
-        }
-        Some(_) => CommandReply::error(
+    if command.definition.scope != CommandScope::ServerAdmin {
+        return CommandReply::error(
             "server.command.permission_denied",
             "command not permitted in the server admin console",
-        ),
-        None => CommandReply::error("server.command.unknown", "unknown command; use `help`"),
+        );
+    }
+    let arguments = args.iter().map(String::as_str).collect::<Vec<_>>();
+    match command.definition.handler {
+        ModuleHandler::Builtin(handler) => handler(context, &arguments),
+        ModuleHandler::Extension(handler) => match handler(context, &arguments) {
+            minimium_gameplay::ModuleCommandResult::Success(text) => {
+                CommandReply::module_text(text)
+            }
+            minimium_gameplay::ModuleCommandResult::Error { code, detail } => {
+                CommandReply::error(code.as_str(), detail.as_str())
+            }
+        },
     }
 }
 
 pub(crate) fn execute_module_command(
-    line: &str,
+    identity: Option<&str>,
+    argv: &[String],
     worlds: &crate::world_registry::WorldRegistry,
     effects: &mut WorldEffectBuffer,
     registry: &ModuleRegistry<ModuleHandler, SystemFn>,
 ) -> CommandReply {
     let view = world::RuntimeCommandReadView::new(worlds);
     let mut context = ModuleCommandContext::new(&view, effects);
-    execute_registered(line, &mut context, registry)
+    let resolved = match identity {
+        Some(identity) => {
+            resolve_module_identity(identity, registry).map(|command| (command, argv))
+        }
+        None => resolve_module_argv(argv, registry),
+    };
+    match resolved {
+        Some((command, args)) => execute_registered(command, args, &mut context),
+        None => CommandReply::error("server.command.unknown", "unknown command; use `help`"),
+    }
+}
+
+fn resolve_module_identity<'a>(
+    identity: &str,
+    registry: &'a ModuleRegistry<ModuleHandler, SystemFn>,
+) -> Option<&'a minimium_gameplay::RegisteredCommand<ModuleHandler>> {
+    registry.commands().iter().find(|command| {
+        command.definition.name == identity || command.definition.aliases.contains(&identity)
+    })
+}
+
+fn resolve_module_argv<'a>(
+    argv: &'a [String],
+    registry: &'a ModuleRegistry<ModuleHandler, SystemFn>,
+) -> Option<(
+    &'a minimium_gameplay::RegisteredCommand<ModuleHandler>,
+    &'a [String],
+)> {
+    registry
+        .commands()
+        .iter()
+        .filter_map(|command| {
+            let command_length = std::iter::once(command.definition.name)
+                .chain(command.definition.aliases.iter().copied())
+                .map(|name| name.split_whitespace().collect::<Vec<_>>())
+                .filter(|name| {
+                    name.len() <= argv.len()
+                        && name
+                            .iter()
+                            .zip(argv)
+                            .all(|(expected, actual)| *expected == actual)
+                })
+                .map(|name| name.len())
+                .max()?;
+            Some((command, command_length))
+        })
+        .max_by_key(|(_, command_length)| *command_length)
+        .map(|(command, command_length)| (command, &argv[command_length..]))
 }
 
 use crate::server_command::ServerCommand;
@@ -367,9 +412,11 @@ pub fn execute(
                 "bolid command must execute on the server owner lane",
             )
         }
-        ServerCommand::Registered(_) => CommandReply::error(
-            "server.command.dispatch_error",
-            "registered command used the owner command context",
-        ),
+        ServerCommand::Registered { .. } | ServerCommand::UnresolvedModule(_) => {
+            CommandReply::error(
+                "server.command.dispatch_error",
+                "registered command used the owner command context",
+            )
+        }
     }
 }
