@@ -1,6 +1,6 @@
 use crate::{
-    ComponentView, EffectBufferError, GameplayEvent, InitialEntityView, Stage, WorldEffect,
-    WorldLifecycle,
+    CommandViewError, CommandViewPage, CommandViewRequest, CommandWorldView, ComponentView,
+    EffectBufferError, GameplayEvent, InitialEntityView, Stage, WorldEffect, WorldLifecycle,
 };
 use minimium_world::entity::{ComponentTypeId, EntityId};
 use minimium_world::world::WorldInstanceId;
@@ -12,6 +12,11 @@ pub trait GameplaySystemContext {
     fn world_instance(&self) -> Option<WorldInstanceId>;
     fn world_lifecycle(&self) -> Option<WorldLifecycle>;
     fn world_count(&self) -> usize;
+    /// Lists worlds through the host's bounded, revision-aware read model.
+    fn worlds(
+        &self,
+        request: &CommandViewRequest,
+    ) -> Result<CommandViewPage<CommandWorldView>, CommandViewError>;
     fn world_initialized(&self, instance: WorldInstanceId) -> Option<bool>;
     fn components(&self, instance: WorldInstanceId) -> Vec<ComponentView<'_>>;
     fn component(

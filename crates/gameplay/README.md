@@ -13,6 +13,15 @@ Startup runs once for each prepared world instance. Startup effects are validate
 The context offers a borrowed component lookup by world, entity and type for
 interaction handlers, avoiding a full component scan per event.
 
+Systems can discover worlds through `GameplaySystemContext::worlds` using the
+same `CommandViewRequest`, `CommandViewPage<CommandWorldView>` and
+`CommandViewError` as module commands. Each call is bounded by the shared row
+and byte caps; a returned cursor continues the same world-membership revision,
+and membership changes produce `StaleCursor`. The reader is borrowed only for
+the current system invocation, so systems retain cursor values rather than a
+registry or runtime reference. This read does not change per-world Startup
+handling or cause normal stages to dispatch once per discovered world.
+
 Read-only module commands share `CommandViewRequest`, `CommandViewPage` and an
 opaque `CommandViewCursor` for worlds, players, per-world entities, components
 and the mixed entity/player listing. Requests accept 1..=256 rows and at most
@@ -36,7 +45,10 @@ systems and components. `examples/neutral_command_module.rs` demonstrates a
 game module using only this crate's public API. At each owner-lane stage, systems receive a
 `GameplaySystemContext` and write bounded `WorldEffectBuffer` operations. The
 host validates and commits them with its world, persistence and replication
-state.
+state. `examples/world_discovery.rs` demonstrates a neutral Environment system
+with a finite four-page budget, typed stale-cursor handling, and a follow-up
+terrain lookup using a discovered world ID. Its safe server-only marker
+component uses an ID declared by the example's own registration.
 
 ## Ownership and execution
 
