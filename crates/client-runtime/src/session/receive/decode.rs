@@ -6,23 +6,24 @@ impl ClientSession {
     pub(in crate::session) fn decode_available(&mut self, events: &mut Vec<SessionEvent>) {
         loop {
             if let Some((deferred, decoded_at_ms)) = self.deferred_world_message.take() {
-                if self
-                    .world_content_worker
-                    .as_ref()
-                    .is_some_and(|worker| !worker.is_finished())
-                {
+                if self.world_content_pending() {
                     if self
                         .world_content_started
                         .is_some_and(|started| started.elapsed() >= Duration::from_secs(300))
                     {
-                        self.world_content_cancel.cancel();
+                        self.cancel_world_content_job();
                         let mut error = SessionFailure::new(
                             "session.world_content_timeout",
                             "world-content preparation exceeded 300 seconds",
                         );
                         if let Some(ticket) = self
-                            .world_content_worker_ticket
-                            .or(self.world_content_request)
+                            .world_content_job
+                            .as_ref()
+                            .and_then(|handle| match handle.ticket() {
+                                crate::ContentJobTicket::World(ticket) => Some(ticket),
+                                _ => None,
+                            })
+                            .or(self.world_content_request.map(|request| request.ticket))
                         {
                             error = error.with_content_ticket(ticket);
                         }
@@ -72,7 +73,7 @@ impl ClientSession {
                             && source_context == context
                             && Some(*context) == self.world_context =>
                         {
-                            self.world_content_cancel.cancel();
+                            self.cancel_world_content_job();
                             self.mark_transition_terminated(*pending_id);
                             self.pending_world_content = None;
                             self.deferred_world_message = None;
@@ -106,7 +107,7 @@ impl ClientSession {
                                 }
                                 self.mark_transition_terminated(*deferred_id);
                             }
-                            self.world_content_cancel.cancel();
+                            self.cancel_world_content_job();
                             self.pending_world_content = None;
                             self.world_content_request = None;
                             self.world_content_started = Some(Instant::now());
@@ -116,7 +117,7 @@ impl ClientSession {
                             continue;
                         }
                         (_, ServerMessage::Error(_) | ServerMessage::Bye) => {
-                            self.world_content_cancel.cancel();
+                            self.cancel_world_content_job();
                             self.deferred_world_message = None;
                             self.world_content_request = None;
                             self.world_content_started = None;

@@ -6,9 +6,8 @@
 //! event collection on each frame. Events are appended; clear the vector before
 //! polling if it should contain only the latest poll's events.
 
-use crate::world_content::{
-    ContentResolutionTicket, ResolvedWorldContent, WorldContentRequest, WorldContentResolver,
-};
+use crate::world_content::{ContentResolutionTicket, ResolvedWorldContent, WorldContentRequest};
+use crate::{ContentJobHandle, ContentJobsSession, PreparedWorldContent};
 use minimium_environment::{time::ClockSample, EnvironmentDescriptor};
 use minimium_protocol::{ClientMessage, ProtocolError, ServerMessage, WorldContext};
 use minimium_transport::client::{ClientFrameToken, ClientQueueError, ClientTransportPort};
@@ -17,7 +16,6 @@ use minimium_world::world::TransitionId;
 use std::{
     collections::HashMap,
     sync::Arc,
-    thread::JoinHandle,
     time::{Duration, Instant},
 };
 
@@ -34,6 +32,7 @@ mod receive;
 mod replication;
 mod transfer;
 mod transport;
+mod world_jobs;
 pub use transport::SessionIoFailure;
 
 /// Maximum retained receive or pending send data.
@@ -141,13 +140,12 @@ pub struct ClientSession {
     server_tick: u64,
     next_input_seq: u64,
     next_target_tick: u64,
-    session_id: u64,
-    world_content_resolver: Option<Arc<dyn WorldContentResolver>>,
-    world_content_worker: Option<JoinHandle<receive::PreparedWorldContent>>,
-    world_content_worker_ticket: Option<ContentResolutionTicket>,
-    world_content_request: Option<ContentResolutionTicket>,
+    content_jobs: ContentJobsSession,
+    world_content_job: Option<ContentJobHandle>,
+    world_content_result: Option<Result<PreparedWorldContent, SessionFailure>>,
+    world_content_request: Option<WorldContentRequest>,
     next_world_content_request_id: u64,
-    world_content_cancel: crate::ContentCancellation,
+    next_material_content_request_id: u64,
     world_content_started: Option<Instant>,
     deferred_world_message: Option<(ServerMessage, u64)>,
     active_world_content: Option<ActiveWorldContent>,
@@ -175,8 +173,6 @@ pub struct ClientSession {
     pending_ping_at: Option<Instant>,
     pending_ping_frame: Option<ClientFrameToken>,
     metrics: SessionMetrics,
-    content_cache_dir: Option<std::path::PathBuf>,
-    content_cache_limit_bytes: u64,
 }
 
 struct ActiveWorldContent {
@@ -210,14 +206,16 @@ impl ClientSession {
     pub fn new(
         transport: Box<dyn ClientTransportPort>,
         authentication: crate::authentication::ClientAuthentication,
+        content_jobs: ContentJobsSession,
     ) -> Result<Self, ClientQueueError> {
-        Self::with_presentation(transport, authentication, None)
+        Self::with_presentation(transport, authentication, None, content_jobs)
     }
 
     pub fn with_presentation(
         transport: Box<dyn ClientTransportPort>,
         authentication: crate::authentication::ClientAuthentication,
         capability: Option<bool>,
+        content_jobs: ContentJobsSession,
     ) -> Result<Self, ClientQueueError> {
         let now = Instant::now();
         let mut content = content::ContentPreparation::default();
@@ -231,13 +229,12 @@ impl ClientSession {
             server_tick: 0,
             next_input_seq: 1,
             next_target_tick: 2,
-            session_id: 0,
-            world_content_resolver: None,
-            world_content_worker: None,
-            world_content_worker_ticket: None,
+            content_jobs,
+            world_content_job: None,
+            world_content_result: None,
             world_content_request: None,
             next_world_content_request_id: 1,
-            world_content_cancel: crate::ContentCancellation::default(),
+            next_material_content_request_id: 1,
             world_content_started: None,
             deferred_world_message: None,
             active_world_content: None,
@@ -263,8 +260,6 @@ impl ClientSession {
             pending_ping_at: None,
             pending_ping_frame: None,
             metrics: SessionMetrics::default(),
-            content_cache_dir: None,
-            content_cache_limit_bytes: minimium_asset_io::DEFAULT_CACHE_LIMIT_BYTES,
         };
         let handshake = session
             .queue_transport(&ClientMessage::Presentation(capability))
@@ -279,14 +274,6 @@ impl ClientSession {
             return Err(error);
         }
         Ok(session)
-    }
-
-    pub(crate) fn set_content_cache_dir(&mut self, cache_dir: Option<std::path::PathBuf>) {
-        self.content_cache_dir = cache_dir;
-    }
-
-    pub(crate) fn set_content_cache_limit(&mut self, maximum_bytes: u64) {
-        self.content_cache_limit_bytes = maximum_bytes.max(1);
     }
 
     pub(crate) fn set_diagnostic_logger(
@@ -323,6 +310,7 @@ impl ClientSession {
 
     /// Close the current transport and discard all buffered data.
     pub fn close(&mut self) {
+        self.cancel_content_jobs();
         self.content = Default::default();
         if let Some(mut transport) = self.transport.take() {
             transport.close();
@@ -333,9 +321,8 @@ impl ClientSession {
         self.world_context = None;
         self.active_world_content = None;
         self.pending_world_content = None;
-        self.world_content_cancel.cancel();
-        self.world_content_worker = None;
-        self.world_content_worker_ticket = None;
+        self.world_content_job = None;
+        self.world_content_result = None;
         self.world_content_request = None;
         self.world_content_started = None;
         self.deferred_world_message = None;
@@ -412,6 +399,7 @@ impl ClientSession {
 
 impl Drop for ClientSession {
     fn drop(&mut self) {
+        self.cancel_content_jobs();
         if let Some(transport) = self.transport.as_mut() {
             transport.close();
         }

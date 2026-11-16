@@ -77,15 +77,15 @@ impl ClientBootstrap {
             profile.as_bytes().to_vec(),
         )?);
         connection.set_diagnostic_logger(logger.clone());
-        connection.set_content_cache_dir(paths.cache_dir.clone());
-        connection.set_content_cache_limit(options.cache_limit_bytes);
-        connection.set_world_content_resolver(Arc::new(
-            crate::world_content::SampleWorldContentResolver::new(
+        connection.set_content_jobs(Arc::new(crate::content_jobs::HostContentJobs::new(
+            paths.cache_dir.clone(),
+            options.cache_limit_bytes,
+            Arc::new(crate::world_content::SampleWorldContentResolver::new(
                 worlds.world_catalog.clone(),
                 worlds.world_manifests.clone(),
                 Some(earth_package_dir),
-            ),
-        ));
+            )),
+        )))?;
         Ok(Self {
             diagnostics,
             logger,

@@ -192,6 +192,7 @@ mod application;
 mod bootstrap;
 mod client_commands;
 mod config;
+mod content_jobs;
 mod diagnostics;
 mod environment;
 mod input;

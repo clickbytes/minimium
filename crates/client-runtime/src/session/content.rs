@@ -1,9 +1,11 @@
-//! Content preparation has its own five-minute deadline, independent of Welcome.
+//! Logical material preparation and its five-minute deadline.
 use super::*;
-use minimium_asset_io::{material_http, materials::MaterialPackage, ContentCache};
+use crate::{
+    ContentJobPoll, ContentJobRequest, ContentJobResult, ContentJobTicket, ContentSubmitError,
+    MaterialContentRequest, MaterialContentTicket,
+};
+use minimium_asset_io::materials::MaterialPackage;
 use minimium_environment::climate::ClimateScenario;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread::JoinHandle;
 
 #[derive(Default)]
 pub(super) struct ContentPreparation {
@@ -13,14 +15,8 @@ pub(super) struct ContentPreparation {
     pub climate: Arc<ClimateScenario>,
     pub awaiting_gpu: bool,
     pub package: Option<MaterialPackage>,
-    pub(super) worker: Option<JoinHandle<Result<MaterialPackage, minimium_asset_io::AssetIoError>>>,
-    pub(super) cancel: Arc<AtomicBool>,
-}
-
-impl Drop for ContentPreparation {
-    fn drop(&mut self) {
-        self.cancel.store(true, Ordering::Relaxed);
-    }
+    request: Option<MaterialContentRequest>,
+    job: Option<ContentJobHandle>,
 }
 
 impl ClientSession {
@@ -42,8 +38,17 @@ impl ClientSession {
         self.append_encoded(&ClientMessage::ContentReady(self.content.hash))?;
         self.content.awaiting_gpu = false;
         self.content.started = None;
+        self.content.request = None;
         self.state_since = Instant::now();
         Ok(())
+    }
+
+    pub(super) fn cancel_content_jobs(&mut self) {
+        self.cancel_world_content_job();
+        if let Some(handle) = self.content.job.as_ref() {
+            handle.request_cancel();
+            self.content_jobs.port().cancel(handle);
+        }
     }
 
     pub(super) fn begin_content(
@@ -92,47 +97,24 @@ impl ClientSession {
                 )
             })?;
         endpoint.set_port(port);
-        let compressed = self.content.capability.unwrap();
-        let cache = self.content_cache_dir.clone().ok_or_else(|| {
+        let request_id = self.next_material_content_request_id;
+        self.next_material_content_request_id = request_id.checked_add(1).ok_or_else(|| {
             SessionFailure::new(
-                "session.material_cache_path_missing",
-                "application did not supply the material cache path",
+                "session.material_content_ticket_exhausted",
+                "material-content request identifiers are exhausted",
             )
         })?;
-        let expected: String = hash.iter().map(|b| format!("{b:02x}")).collect();
-        let cancel = self.content.cancel.clone();
-        let cache_limit_bytes = self.content_cache_limit_bytes;
-        self.content.worker = Some(
-            std::thread::Builder::new()
-                .name("material-download".into())
-                .spawn(move || {
-                    let mut manifest = Vec::new();
-                    material_http::fetch_cancellable(
-                        endpoint,
-                        "manifest.ron",
-                        minimium_assets::terrain_material::MAX_MANIFEST_BYTES as u64,
-                        &mut manifest,
-                        || cancel.load(Ordering::Relaxed),
-                    )?;
-                    ContentCache::new(cache, cache_limit_bytes)?.install(
-                        &manifest,
-                        &expected,
-                        compressed,
-                        |name, size, out| {
-                            material_http::fetch_cancellable(endpoint, name, size, out, || {
-                                cancel.load(Ordering::Relaxed)
-                            })
-                        },
-                    )
-                })
-                .map_err(|error| {
-                    SessionFailure::from_asset_error(minimium_asset_io::AssetIoError::io(
-                        "start material download worker",
-                        error,
-                    ))
-                })?,
-        );
-        Ok(())
+        let ticket = MaterialContentTicket {
+            session_id: self.content_jobs.session_id(),
+            request_id,
+            manifest_hash: hash,
+        };
+        self.content.request = Some(MaterialContentRequest {
+            ticket,
+            endpoint,
+            compressed: self.content.capability.unwrap(),
+        });
+        self.poll_content()
     }
 
     pub(super) fn poll_content(&mut self) -> Result<(), SessionFailure> {
@@ -141,33 +123,102 @@ impl ClientSession {
             .started
             .is_some_and(|start| start.elapsed() >= Duration::from_secs(300))
         {
-            return Err(SessionFailure::new(
+            let mut error = SessionFailure::new(
                 "session.content_preparation_timeout",
                 "material preparation deadline exceeded; reconnect to retry",
-            ));
+            );
+            if let Some(request) = self.content.request {
+                error = error.with_material_ticket(request.ticket);
+            }
+            return Err(error);
         }
-        if self
-            .content
-            .worker
-            .as_ref()
-            .is_some_and(|worker| worker.is_finished())
-        {
-            let package = self
-                .content
-                .worker
-                .take()
-                .unwrap()
-                .join()
-                .map_err(|_| {
-                    SessionFailure::new(
-                        "session.material_worker_failed",
-                        "material worker thread terminated unexpectedly",
+        if self.content.awaiting_gpu {
+            return Ok(());
+        }
+        let Some(request) = self.content.request else {
+            return Ok(());
+        };
+        if self.content.job.is_none() {
+            match self
+                .content_jobs
+                .port()
+                .submit(ContentJobRequest::Material(request))
+            {
+                Ok(handle) if handle.ticket() == ContentJobTicket::Material(request.ticket) => {
+                    self.content.job = Some(handle);
+                }
+                Ok(handle) => {
+                    handle.request_cancel();
+                    self.content_jobs.port().cancel(&handle);
+                    return Err(SessionFailure::new(
+                        "session.material_result_ticket_mismatch",
+                        "content service accepted a different material ticket",
                     )
-                })?
-                .map_err(SessionFailure::from_asset_error)?;
-            self.content.package = Some(package);
-            self.content.awaiting_gpu = true;
+                    .with_material_ticket(request.ticket));
+                }
+                Err(ContentSubmitError::Busy) => return Ok(()),
+                Err(ContentSubmitError::Closed) => {
+                    return Err(SessionFailure::new(
+                        "session.material_worker_failed",
+                        "content service is closed",
+                    )
+                    .with_material_ticket(request.ticket))
+                }
+                Err(ContentSubmitError::Rejected(error)) => {
+                    return Err(error.with_material_ticket(request.ticket))
+                }
+            }
+            // As before, starting work does not install its result in the same
+            // material-offer dispatch. A later poll observes completion.
+            return Ok(());
         }
+        let handle = self.content.job.as_ref().unwrap();
+        let completion = match self.content_jobs.port().poll(handle.ticket()) {
+            ContentJobPoll::Pending => return Ok(()),
+            ContentJobPoll::Complete(completion) if completion.ticket == handle.ticket() => {
+                completion
+            }
+            ContentJobPoll::Complete(_) => return Ok(()),
+            ContentJobPoll::Cancelled | ContentJobPoll::Unknown => {
+                return Err(SessionFailure::new(
+                    "session.material_worker_failed",
+                    "material work stopped unexpectedly",
+                )
+                .with_material_ticket(request.ticket));
+            }
+        };
+        if handle.is_cancelled() {
+            return Ok(());
+        }
+        let package = match completion.result {
+            ContentJobResult::Material(result) => {
+                result.map_err(|error| error.with_material_ticket(request.ticket))?
+            }
+            ContentJobResult::World(_) => {
+                return Err(SessionFailure::new(
+                    "session.material_result_kind_mismatch",
+                    "content service returned a world result for material preparation",
+                )
+                .with_material_ticket(request.ticket))
+            }
+        };
+        let expected: String = request
+            .ticket
+            .manifest_hash
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        if package.manifest_hash != expected || package.variant != usize::from(!request.compressed)
+        {
+            return Err(SessionFailure::new(
+                "session.material_identity_mismatch",
+                "prepared material package does not match the offered hash and variant",
+            )
+            .with_material_ticket(request.ticket));
+        }
+        self.content.package = Some(package);
+        self.content.awaiting_gpu = true;
+        self.content.job = None;
         Ok(())
     }
 }

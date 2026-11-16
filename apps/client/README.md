@@ -237,7 +237,15 @@ pending action. The server remains authoritative. The last action result remains
 visible until another result or context change, distinguishing obstruction from
 unsafe geometry joining. The overlay and console text support English and Polish.
 
-Both frontends install the same `SampleWorldContentResolver`. It validates the
+Both frontends install one shared `HostContentJobs` service from bootstrap. It
+owns the configured cache directory/budget, resolver, worker handles and cancellation
+lifetimes across reconnects. One world slot and one material slot include active,
+cancelled-running and completed-but-unread work; Busy does not queue another job.
+Polling joins only finished workers. Shutdown uses the process-owned deadline and
+reports outstanding work without pretending to interrupt active I/O. The material
+worker uses the existing HTTP and `ContentCache::install` algorithms unchanged;
+package leases move with the completed package through presentation handoff.
+World workers use the same `SampleWorldContentResolver`. It validates the
 revision-6 manifest and expected map fingerprint, loads only configured Earth
 geography for Earth manifests, and recreates generated maps from topology and
 the recorded seed. It returns a private `PreparedTerrainSource` inside

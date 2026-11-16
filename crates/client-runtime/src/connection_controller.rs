@@ -1,17 +1,17 @@
 mod time;
 
 use crate::session::{ClientSession, QueueError, SessionEvent, SessionState};
-use crate::world_content::WorldContentResolver;
 use crate::ControllerError;
 use crate::{
     bootstrap::{LocalServer, LocalServerLaunchConfig},
     connector::{AttemptId, Connector, PollEvent, StartError},
 };
+use crate::{ContentJobsPort, ContentJobsSession, ContentShutdownStatus};
 use minimium_platform::admin_client;
 use minimium_protocol::ClientMessage;
 use std::{
     io,
-    path::PathBuf,
+    num::NonZeroU64,
     sync::Arc,
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -43,9 +43,8 @@ pub struct ConnectionController {
     admin_request: Option<JoinHandle<Result<String, ControllerError>>>,
     cleanup: Option<JoinHandle<io::Result<()>>>,
     authentication: Option<crate::authentication::ClientAuthentication>,
-    content_cache_dir: Option<PathBuf>,
-    content_cache_limit_bytes: u64,
-    world_content_resolver: Option<Arc<dyn WorldContentResolver>>,
+    content_jobs: Option<Arc<dyn ContentJobsPort>>,
+    content_jobs_shutdown: bool,
     diagnostic_logger: Option<minimium_diagnostics::DomainLogger>,
     replica_schemas: Vec<(
         minimium_world::entity::ComponentTypeId,
@@ -67,9 +66,8 @@ impl ConnectionController {
             admin_request: None,
             cleanup: None,
             authentication: None,
-            content_cache_dir: None,
-            content_cache_limit_bytes: minimium_asset_io::DEFAULT_CACHE_LIMIT_BYTES,
-            world_content_resolver: None,
+            content_jobs: None,
+            content_jobs_shutdown: false,
             diagnostic_logger: None,
             replica_schemas: Vec::new(),
         }
@@ -110,20 +108,24 @@ impl ConnectionController {
         );
     }
 
-    pub fn set_world_content_resolver(&mut self, resolver: Arc<dyn WorldContentResolver>) {
-        self.world_content_resolver = Some(resolver);
+    /// Installs one service before the first connection attempt. Keeping it for
+    /// the controller lifetime preserves IDs and resources across reconnects.
+    pub fn set_content_jobs(
+        &mut self,
+        content_jobs: Arc<dyn ContentJobsPort>,
+    ) -> Result<(), StartError> {
+        if self.content_jobs.is_some() || self.busy() {
+            return Err(StartError::Busy {
+                active_attempt: self.active,
+            });
+        }
+        self.content_jobs = Some(content_jobs);
+        self.content_jobs_shutdown = false;
+        Ok(())
     }
 
     pub fn set_presentation(&mut self, compressed: bool) {
         self.presentation = Some(compressed);
-    }
-
-    pub fn set_content_cache_dir(&mut self, cache_dir: PathBuf) {
-        self.content_cache_dir = Some(cache_dir);
-    }
-
-    pub fn set_content_cache_limit(&mut self, maximum_bytes: u64) {
-        self.content_cache_limit_bytes = maximum_bytes.max(1);
     }
 
     pub fn set_authentication(
@@ -281,20 +283,29 @@ impl ConnectionController {
                         "client authentication was not configured",
                     ));
                 };
+                let Some(content_jobs) = self.content_jobs.as_ref() else {
+                    self.session_owns_server = false;
+                    return ConnectionEvent::SetupFailed(io::Error::other(
+                        "client content service was not configured",
+                    ));
+                };
+                let content_jobs = ContentJobsSession::new(
+                    NonZeroU64::new(attempt_id.get()).expect("attempt IDs are checked nonzero"),
+                    content_jobs.clone(),
+                );
                 let session = minimium_transport::client::TcpClientTransport::new(stream).and_then(
                     |transport| {
                         ClientSession::with_presentation(
                             Box::new(transport),
                             authentication,
                             self.presentation,
+                            content_jobs,
                         )
                         .map_err(io::Error::other)
                     },
                 );
                 match session {
                     Ok(mut session) => {
-                        session.set_content_cache_dir(self.content_cache_dir.clone());
-                        session.set_content_cache_limit(self.content_cache_limit_bytes);
                         session.set_diagnostic_logger(self.diagnostic_logger.clone());
                         for (kind, schema) in &self.replica_schemas {
                             if let Err(error) = session.register_replica_schema(*kind, *schema) {
@@ -304,10 +315,6 @@ impl ConnectionController {
                                 )));
                             }
                         }
-                        session.set_world_content_resolver(
-                            attempt_id.get(),
-                            self.world_content_resolver.clone(),
-                        );
                         self.session = Some(session);
                         ConnectionEvent::SessionStarted
                     }
@@ -355,6 +362,12 @@ impl ConnectionController {
         let mut unfinished = self.connector.finish_on_exit_until(deadline);
         if let Some(mut session) = self.session.take() {
             session.close();
+        }
+        if let Some(jobs) = self.content_jobs.as_ref() {
+            self.content_jobs_shutdown = true;
+            if jobs.shutdown_until(deadline) == ContentShutdownStatus::Pending {
+                unfinished.push("client-content-jobs".to_owned());
+            }
         }
         let cleanup_result = self.cleanup.take().map_or(Ok(()), |worker| {
             wait_for_cleanup(worker, deadline, &mut unfinished)
@@ -448,6 +461,11 @@ fn wait_for_cleanup<T: Send + 'static>(
 
 impl Drop for ConnectionController {
     fn drop(&mut self) {
+        // An explicit deadline already governed content cleanup. Drop must not
+        // silently start another wait; explicit finish_until calls remain retryable.
+        if self.content_jobs_shutdown {
+            self.content_jobs = None;
+        }
         if let Err(error) = self.finish() {
             crate::diagnostics::emit(
                 self.diagnostic_logger.as_ref(),

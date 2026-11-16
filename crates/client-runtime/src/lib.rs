@@ -3,6 +3,7 @@ mod authentication;
 pub mod bootstrap;
 mod connection_controller;
 pub mod connector;
+mod content_jobs;
 mod controller_error;
 mod diagnostics;
 pub mod environment;
@@ -19,6 +20,11 @@ mod world_content;
 pub use authentication::{ClientAuthentication, ClientAuthenticationError};
 pub use bootstrap::LocalServerLaunchConfig;
 pub use connection_controller::{ConnectionController, ConnectionEvent};
+pub use content_jobs::{
+    ContentCancelStatus, ContentJobCompletion, ContentJobHandle, ContentJobPoll, ContentJobRequest,
+    ContentJobResult, ContentJobTicket, ContentJobsPort, ContentJobsSession, ContentShutdownStatus,
+    ContentSubmitError, MaterialContentRequest, MaterialContentTicket, PreparedWorldContent,
+};
 pub use controller_error::ControllerError;
 pub use options::ThreadLane;
 pub use prediction::{ClientPrediction, PredictedStep};
