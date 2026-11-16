@@ -97,6 +97,10 @@ does not decide which terrain material an item can remove.
 `Inventory::ensure_items` accepts the fixed item slots supplied by application
 composition, preserves idempotence and revision behavior, and rejects a grant
 that would leave the equipped slot invalid.
+The current two-value `ToolKind` is intentionally retained under the AR18
+decision; it is not a product-extensible definition ID. See the
+[item catalog decision](../../docs/plan/epic-050/item-catalog-decision.md) for
+the current wire/save boundary and the trigger for reopening this limitation.
 `MapTriangle.surface` optionally carries terrain normals and six material
 fractions for generated ground and excavation surfaces. Static authored geometry
 leaves this field absent.

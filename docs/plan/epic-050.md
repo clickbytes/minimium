@@ -190,3 +190,11 @@ E050 closes only after all 21 cards are integrated and verified according to
 their type. Its final claim is architecture/static complete. AR17/18 may remain
 explicitly deferred limitations; runtime acceptance remains NOT RUN in the
 administratively closed Q03 record.
+
+## AR18 decision status — E050-19
+
+The decision is `DEFERRED — current two-tool model
+intentionally retained`; source and open-issue review found no product request
+for more item kinds or slots. AR18 remains unfixed. See the
+[item catalog decision](epic-050/item-catalog-decision.md)
+for evidence and exact wire/save boundaries.
