@@ -351,10 +351,20 @@ impl WorldRegistry {
             let player_state = source.world.player(player)?.clone();
             (player_state, source.world.gravity())
         };
+        if !self
+            .instances
+            .contains_key(&offer.target_context.instance())
+        {
+            return None;
+        }
+        let next_membership_revision = self.next_player_membership_revision()?;
         if let Some(source) = self.instances.get_mut(&source_instance) {
             source.world.leave(player);
         }
-        let target = self.instances.get_mut(&offer.target_context.instance())?;
+        let target = self
+            .instances
+            .get_mut(&offer.target_context.instance())
+            .expect("target membership was checked before changing the source");
         target.world.join_at_with_health(
             player,
             player_state.name.as_ref().to_owned(),
@@ -371,6 +381,7 @@ impl WorldRegistry {
                 epoch: offer.target_context.membership_epoch(),
             },
         );
+        self.player_membership_revision = next_membership_revision;
         Some(CommittedTransfer {
             player,
             transition_id: offer.transition_id,

@@ -53,9 +53,54 @@ impl ServerRuntime {
                 stopping: self.shutdown_request.is_requested(),
                 persistence: self.operations.persistence.status(),
             }),
-            RuntimeQuery::Worlds => RuntimeQueryResult::Worlds(view.worlds(256)),
+            RuntimeQuery::Worlds => RuntimeQueryResult::Worlds(
+                view.worlds(
+                    &crate::CommandViewRequest::new(
+                        minimium_gameplay::MAX_COMMAND_VIEW_ROWS,
+                        minimium_gameplay::MAX_COMMAND_VIEW_BYTES,
+                    )
+                    .expect("valid built-in page limits"),
+                )
+                .expect("valid built-in world page"),
+            ),
+            RuntimeQuery::WorldsPage(request) => {
+                RuntimeQueryResult::WorldsPage(view.worlds(&request))
+            }
             RuntimeQuery::World(id) => RuntimeQueryResult::World(view.world(id)),
-            RuntimeQuery::Players => RuntimeQueryResult::Players(view.players(256, 1024 * 1024)),
+            RuntimeQuery::Players => RuntimeQueryResult::Players(
+                view.players(
+                    &crate::CommandViewRequest::new(
+                        minimium_gameplay::MAX_COMMAND_VIEW_ROWS,
+                        minimium_gameplay::MAX_COMMAND_VIEW_BYTES,
+                    )
+                    .expect("valid built-in page limits"),
+                )
+                .expect("valid built-in player page"),
+            ),
+            RuntimeQuery::PlayersPage(request) => {
+                RuntimeQueryResult::PlayersPage(view.players(&request))
+            }
+            RuntimeQuery::Entities(world, request) => {
+                RuntimeQueryResult::Entities(view.entities(world, &request))
+            }
+            RuntimeQuery::EntityRows(request) => {
+                RuntimeQueryResult::EntityRows(view.entity_rows(&request))
+            }
+            RuntimeQuery::Components(world, entity, request) => RuntimeQueryResult::Components(
+                view.components(world, entity, &request).map(|page| {
+                    let rows = page
+                        .rows
+                        .into_iter()
+                        .map(|component| minimium_gameplay::CommandComponentRow {
+                            entity: component.entity,
+                            kind: component.kind,
+                            schema: component.schema,
+                            bytes: component.bytes.to_vec(),
+                        })
+                        .collect();
+                    crate::CommandViewPage::new(rows, page.next)
+                }),
+            ),
         }
     }
 

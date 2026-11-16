@@ -1,7 +1,7 @@
 use minimium_gameplay::{
-    CommandDefinition, CommandScope, EngineModule, GameplaySystem, ModuleCommandContext,
-    ModuleCommandErrorCode, ModuleCommandHandler, ModuleCommandResult, ModuleDescriptor,
-    ModuleError, ModuleRegistrar, ModuleRegistry, WorldEffect,
+    CommandDefinition, CommandScope, CommandViewRequest, EngineModule, GameplaySystem,
+    ModuleCommandContext, ModuleCommandErrorCode, ModuleCommandHandler, ModuleCommandResult,
+    ModuleDescriptor, ModuleError, ModuleRegistrar, ModuleRegistry, WorldEffect,
 };
 
 const USAGE: &str = "sample inspect-and-remove";
@@ -42,10 +42,15 @@ fn inspect_and_remove(
     context: &mut ModuleCommandContext<'_>,
     _arguments: &[&str],
 ) -> ModuleCommandResult {
-    let Some(world) = context.worlds().rows.into_iter().next() else {
+    let request = CommandViewRequest::new(256, 1024 * 1024).expect("valid example page limits");
+    let Some(world) = context
+        .worlds(&request)
+        .ok()
+        .and_then(|page| page.rows.into_iter().next())
+    else {
         return ModuleCommandResult::success("No worlds are available.");
     };
-    let entities = match context.entities(world.id) {
+    let entities = match context.entities(world.id, &request) {
         Ok(entities) => entities,
         Err(_) => {
             let code = ModuleCommandErrorCode::new("example.world_read_failed")

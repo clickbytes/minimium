@@ -33,8 +33,17 @@ const SERVER_SPECS: &[CommandSpec<ServerCommand, CommandError>] = &[
     CommandSpec {
         name: "players list",
         alias: None,
-        usage: "players list",
-        arguments: &[],
+        usage: "players list [CURSOR]",
+        arguments: &[CommandArgumentSpec::new(
+            "cursor",
+            CommandArgumentType::Text,
+            true,
+            false,
+            None,
+            None,
+            None,
+            "opaque continuation cursor",
+        )],
         parser: parse_server_spec,
     },
     CommandSpec {
@@ -225,6 +234,20 @@ fn parse_server_spec(arguments: &[&str]) -> Result<ServerCommand, CommandError> 
         };
         return validate_bolid_count(count).map(ServerCommand::SpawnRandomBolid);
     }
+    if *command == "players list" {
+        if tail.is_empty() {
+            return Ok(ServerCommand::Players(None));
+        }
+        if tail.len() <= 256 && !tail.chars().any(char::is_control) {
+            return Ok(ServerCommand::Players(Some((*tail).to_owned())));
+        }
+        return Err(parse_error(
+            CommandErrorCode::InvalidArguments,
+            "players list",
+            "cursor exceeds its bound",
+            "players list [CURSOR]",
+        ));
+    }
     if !tail.is_empty() {
         return Err(parse_error(
             CommandErrorCode::InvalidArguments,
@@ -236,7 +259,6 @@ fn parse_server_spec(arguments: &[&str]) -> Result<ServerCommand, CommandError> 
     match *command {
         "help" => Ok(ServerCommand::Help),
         "status" => Ok(ServerCommand::Status),
-        "players list" => Ok(ServerCommand::Players),
         "metrics show" => Ok(ServerCommand::Metrics),
         "world save" => Ok(ServerCommand::Save),
         "stop" => Ok(ServerCommand::Stop),
@@ -253,7 +275,7 @@ fn parse_server_spec(arguments: &[&str]) -> Result<ServerCommand, CommandError> 
 pub enum ServerCommand {
     Help,
     Status,
-    Players,
+    Players(Option<String>),
     Metrics,
     Save,
     Stop,

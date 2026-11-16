@@ -21,11 +21,23 @@ impl WorldRegistry {
         if !self.instances.contains_key(&instance) {
             return Err(RegistryError::UnknownInstance);
         }
-        if self
+        let changes_membership = self
             .memberships
             .get(&id)
-            .is_none_or(|member| member.instance != instance)
-        {
+            .is_none_or(|member| member.instance != instance);
+        let adds_player = self
+            .instances
+            .get(&instance)
+            .is_some_and(|owner| owner.world.player(id).is_none());
+        let next_revision = if changes_membership || adds_player {
+            Some(
+                self.next_player_membership_revision()
+                    .ok_or(RegistryError::MembershipRevisionExhausted)?,
+            )
+        } else {
+            None
+        };
+        if changes_membership {
             let epoch = self.allocate_epoch()?;
             if let Some(previous) = self.memberships.insert(id, Membership { instance, epoch }) {
                 if previous.instance != instance {
@@ -40,6 +52,9 @@ impl WorldRegistry {
             .get_mut(&instance)
             .ok_or(RegistryError::UnknownInstance)?;
         target.world.join_at_with_health(id, name, position, health);
+        if let Some(revision) = next_revision {
+            self.player_membership_revision = revision;
+        }
         Ok(())
     }
 
@@ -73,6 +88,18 @@ impl WorldRegistry {
             if current.instance == instance {
                 current
             } else {
+                let removes_player = self
+                    .instances
+                    .get(&current.instance)
+                    .is_some_and(|owner| owner.world.player(id).is_some());
+                let next_revision = if removes_player {
+                    Some(
+                        self.next_player_membership_revision()
+                            .ok_or(RegistryError::MembershipRevisionExhausted)?,
+                    )
+                } else {
+                    None
+                };
                 let next = Membership {
                     instance,
                     epoch: self.allocate_epoch()?,
@@ -80,6 +107,9 @@ impl WorldRegistry {
                 self.memberships.insert(id, next);
                 if let Some(previous) = self.instances.get_mut(&current.instance) {
                     previous.world.leave(id);
+                }
+                if let Some(revision) = next_revision {
+                    self.player_membership_revision = revision;
                 }
                 next
             }
@@ -150,12 +180,28 @@ impl WorldRegistry {
     }
 
     pub(crate) fn leave(&mut self, id: PlayerId) -> bool {
+        let removes_player = self
+            .memberships
+            .get(&id)
+            .and_then(|member| self.instances.get(&member.instance))
+            .is_some_and(|owner| owner.world.player(id).is_some());
+        let next_revision = if removes_player {
+            let Some(next) = self.next_player_membership_revision() else {
+                return false;
+            };
+            Some(next)
+        } else {
+            None
+        };
         self.transfers.remove(&id);
         let Some(membership) = self.memberships.remove(&id) else {
             return false;
         };
         if let Some(owner) = self.instances.get_mut(&membership.instance) {
             owner.world.leave(id);
+            if let Some(revision) = next_revision {
+                self.player_membership_revision = revision;
+            }
             true
         } else {
             false

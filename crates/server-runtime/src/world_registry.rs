@@ -71,6 +71,7 @@ pub(crate) enum RegistryError {
     Component(ComponentError),
     EntitySectorConflict,
     SnapshotBudgetExceeded,
+    MembershipRevisionExhausted,
 }
 
 /// Server-owned collection of isolated simulation owners and memberships.
@@ -83,4 +84,17 @@ pub(crate) struct WorldRegistry {
     next_transition: u128,
     sector_states: BTreeMap<(WorldInstanceId, minimium_world::world::SectorKey), WorldSectorState>,
     persisted_totals: sector_state::PersistedTotals,
+    pub(crate) player_membership_revision: u128,
+    pub(crate) read_identity: std::sync::Arc<()>,
+    pub(crate) world_membership_revision: u128,
+    pub(crate) entity_membership_revision: u128,
+}
+
+impl WorldRegistry {
+    pub(crate) fn next_entity_membership_revision(&self) -> Option<u128> {
+        self.entity_membership_revision.checked_add(1)
+    }
+    pub(crate) fn next_player_membership_revision(&self) -> Option<u128> {
+        self.player_membership_revision.checked_add(1)
+    }
 }
