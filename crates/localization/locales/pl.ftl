@@ -162,6 +162,8 @@ property-description = { $key ->
     [client_audio_meteor_volume] Głośność meteorów (od 0 do 1).
     [client_weather_cloud_detail] Maksymalna głębokość rekurencji wokseli chmur.
     [client_debug_atmosphere] Diagnostyczny widok atmosfery.
+    [client_debug_moon_flux] Włącz strumień światła odbitego od Księżyca.
+    [client_debug_exposure_ev] Ustaw automatyczną lub stałą ekspozycję sceny.
     [client_debug_terrain] Diagnostyczny widok terenu.
     [client_debug_clouds] Diagnostyczna nakładka chmur.
     [client_sky_demo] Włącza lokalną prezentację ciał niebieskich.
@@ -179,8 +181,8 @@ no-property-matches = Brak właściwości klienta pasujących do { $prefix }
 command-help = { $name ->
     [terrain_status] terrain status
     [atmosphere_status] atmosphere status
-    [atmosphere_debug] atmosphere debug off|transmission|scattering|optical_depth|distance|fog
-    [terrain_debug] terrain debug off|albedo|normals|depth|shadow|base_color|coverage|habitat|source
+    [atmosphere_debug] atmosphere debug off|transmission|scattering|optical_depth|distance|fog|fog_shadow
+    [terrain_debug] terrain debug off|albedo|normals|depth|shadow|base_color|coverage|habitat|source|moon_direct|moon_diffuse|background|moon_coverage|light_channels
     [weather_status] weather status
     [weather_clouds_debug] weather clouds debug off|regions|layers|wind|kinds|detail
     [weather_clouds_detail] weather clouds detail 2|3|4|5|6

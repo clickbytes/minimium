@@ -44,7 +44,7 @@ atlas cancellation remains a separate `Ok(None)` result. Hosts retain their last
 complete publication on failure. Vertex and uniform layouts are unchanged.
 
 Atmosphere presentation is shared from ground to orbit. `atmosphere_view` prepares
-camera/scale values in f64 and uploads a 256-byte checked uniform; `atmosphere_resources`
+camera/scale values in f64 and uploads a 272-byte checked uniform; `atmosphere_resources`
 owns sampled and staged LUTs, and `AtmosphereGpu` computes and composes them in
 linear HDR. Frame group zero shares optics with terrain, authored objects, clouds
 and celestial pipelines. Globe shading no longer applies its own view-path fog.
@@ -52,16 +52,24 @@ The RGB composition uses an explicit scene snapshot, never simultaneous sampling
 and rendering to the same texture. HDR resources require compute and RGBA16F
 storage support; the analytic fallback still fades with optical altitude.
 
-Standard view LUTs are 192x108 sky scattering/transmission and 32x32x32 aerial
-scattering/transmission; low quality updates 128x64 and 16x16x32 subregions with
-fewer integration steps while retaining the bounded maximum allocations. The
+Standard view LUTs are 192x108 sky scattering/transmission and 96x54x48 aerial
+scattering/transmission. Low quality updates 128x64 and 32x18x32 subregions.
+Each aerial column accumulates log-spaced intervals once, front to back.
+Sky rays reuse the foreground up to a stored slice before integrating distant air. The
 128x64 optical-depth LUT is regenerated only for a new optical radius. A 32x32
 isotropic-fill approximation is cached; it is not a full Hillaire multiple-scattering
 solver. View/light/weather changes invalidate the view LUTs; unchanged paused
 views reuse them. Separate storage staging textures avoid read/write aliasing.
 
-Regional fog uses two 9x9 layers with extinction, scale height, source ground
-height and aerosol haze. It is a weather heuristic, not dew-point microphysics.
+Two world-anchored 9x9 weather grids provide extinction, layer thickness,
+ground height and haze at successive UTC hours. The sector worker rasterizes the
+highest exterior surface into a 33x33 cube-face tile from the selected triangles.
+Cells span up to 16 game metres. The worker falls back to the regional estimate
+above 20 km or if the tile exceeds 65,536 triangles or 262,144 candidate samples.
+The local tile becomes visible with the matching terrain publication. Missing coverage
+and the tile border blend into the regional estimate. Solar and lunar shadows independently attenuate
+direct illumination in the local fog. The fog and its shadowed portion can be
+inspected separately through the atmosphere diagnostics.
 Ray integration concentrates samples near the lowest part of each segment and
 clips the reference planet. Optical heights, sea level and origin-relative geometry
 are distinct; below-sea-level depressions retain air. Surface and atmospheric radiance receive exposure before half-float storage;
@@ -73,7 +81,7 @@ logical allocations and optional timestamp-query median/p95 over up to 120 sampl
 Readbacks are asynchronous and polled without waiting. Timings cover sky/aerial
 compute and RGB composition, excluding scene-copy, profile rebuild and atmospheric
 lighting work inside other scene passes; they are not a whole-frame benchmark.
-LUTs, staging, fog and uniforms use approximately 1.71 MiB in the physical path;
+LUTs, staging, fog and uniforms use approximately 8.33 MiB in the physical path;
 the scene snapshot adds about 15.8 MiB at 1080p or 63.3 MiB at 4K.
 Runtime image/performance acceptance is pending.
 
@@ -94,6 +102,10 @@ TerrainVertex (120 bytes) and TerrainGpu form the shared planet surface path
 for overview and FPP. Both cameras use TerrainView, planet_visibility and the
 same shader, material means and climate history. The separate globe texture,
 palette, detail sphere and resources have been retired.
+The first-person planet camera uses `planet_visibility::surface_far_plane_m`
+to cover both the eye-to-horizon distance and the visible relief beyond the
+horizon. Dense patch culling uses the same bound. The client supplies one
+world-space eye in double precision for the view, lighting and atmosphere.
 
 Excavation surfaces carry a typed presentation flag and cached sky visibility
 in a dedicated vertex channel. Their soil/rock weights bypass patch, snow,
@@ -112,7 +124,7 @@ TerrainDebug includes habitat and source diagnostics in addition to color,
 normal, depth, shadow and coverage views.
 
 SurfaceAtlas prepares camera-independent 65x33 global history; CoverGrid prepares
-anchored 9x9 local coverage and a separate tangent fog grid. Both terrain history
+anchored 9x9 local coverage and a separate cube-face fog grid. Both terrain history
 textures have four layers: cover/climate at two UTC-hour endpoints.
 TerrainCoverGpu owns their 71,232 bytes of GPU storage and upload lifetime;
 no history calculation occurs on the rendering thread. Local/global blending
@@ -330,41 +342,120 @@ mesh resolution can still disappear. There is no separate painted globe mask.
 
 ## View-dependent terrain shadows and night lighting (2026-11-06)
 
-ShadowRegion fits one directional map to a 5x5 camera/reference-shell footprint,
+ShadowRegion fits the contact map to a 5x5 camera/reference-shell footprint,
 including the planet limb when rays miss. Near resident ground it retains a
 128 m contact region; flight and planetary overview expand/retarget that region.
 Projection width/depth follow its settings instead of fixed 514/768 m dimensions.
-Extent quantization and shrink hysteresis limit rescaling; absolute f64 light-space
-texel snapping survives floating-origin changes. PCF still uses nine tent-weighted
-taps and the exact geometric receiver plane. Standard remains one 1024-square
-depth target; Low still disables shadows. No additional shadow texture/pass is added.
+Extent quantization and the previous valid receiver radius limit rescaling.
+Directional shadows snap texels in f64 relative to the nearest world-fixed cell
+of one map width. This bounds the effect of solar/lunar rotation on texel
+placement near the observer and preserves the grid through floating-origin changes.
+PCF uses nine tent-weighted taps and the geometric receiver plane. Cleared taps
+contribute full visibility inside a published map. Standard reserves a four-layer
+1024-square Depth32Float texture (16 MiB) and four 128-byte projection uniforms.
+A bind group samples one array view. Each depth pass targets its own layer.
+The primary uses contact and optional landscape coverage. When a Sun or bolid
+owns the primary, an eligible Moon uses a second pair with identical projections,
+bias and caster selection. Low quality binds a shared 1×1 placeholder. A refused
+Standard allocation uses the existing Low fallback.
+
+The solar landscape covers up to 4096 m from a surface observer. The lunar
+landscape also fits the visible reference shell with a relief margin. The contact
+map retains local detail. Each directional projection intersects published caster
+bounds along the receiver-to-source ray, including distant off-screen ridges.
+For a low Moon the projection follows the upper limb. Up to twelve depth probes
+and four refinement probes estimate the highest intervening ridge across the
+vertical diameter. The resulting circular segment and the planetary horizon
+jointly bound the visible disk. This is a straight-horizon approximation at the
+map resolution. Terrain, objects, water, the observer meter and local fog share
+the lookup. The Standard path suppresses direct lunar light at uncovered surface
+receivers. Low quality estimates a local ridge angle from up to 24 columns of
+published relief. Distant ridges outside that tile require Standard shadows.
+
+A 65×17 RGBA16F table (8,840 bytes) stores clear-air diffuse irradiance per
+unit source flux, indexed by source elevation and receiver height. It is uploaded
+with the 128×64 optical-depth table when the optical radius changes. Quadrature
+uses six cosine-weighted zenith bins, twelve azimuths and twenty view segments.
+Attenuation on both legs and the local planetary shadow enter the single-scattering
+integral. Runtime sampling scales by the prepared phase- and distance-dependent
+lunar flux once. The fourth relief channel carries blocked sky fraction from
+eight terrain horizons. Fog integrates extinction and scattering from direct and
+diffuse light. The analytic Earth route shares the optical tables.
 
 The quadtree retains coarse off-screen and raised-horizon casters without refining
 them, under the existing 256/512-leaf budgets. This can trade some visible detail
 for caster coverage. Client selection uses complete active buffers, never stale
-overlapping LODs. Distant shadows are limited by the map texel size and coarse
-caster geometry; this is not cascaded/full-resolution planet shadow coverage.
+overlapping LODs. Distant shadow detail depends on the landscape texel size and
+the resident caster geometry.
 Refinement replaces a parent only when all four child patches survive culling;
 otherwise the parent remains. This preserves complete globe coverage near the
 frustum and horizon boundaries.
 
-Physical surface lighting and its lunar shadow now use the same geometric
-camera-to-Moon direction. Source choice considers the viewed region and actual
+The sky disk and the orbital Moon sphere share a reflected-radiance shader.
+`moon_lighting::resolved_disk_radiance` derives the full-phase mean from lunar
+irradiance and astronomical angular area. The shader applies the observed V-band
+flux and a normalized lit-face profile once. The existing additive halo pass can
+draw a small corona on the physical atmosphere path when the integrated fog depth
+along the line of sight indicates a thin moist layer. Its intensity drops to
+zero in the limits of zero fog depth and optically thick fog.
+
+The Earth lighting profile sets the reference full Moon to two millionths of
+solar luminance before extinction. The environment adapter scales the global
+solar irradiance by that ratio and by the apparent V-band flux, which includes
+phase and distance. The lunar tint preserves luminance. Surfaces, clouds, fog
+and shadow-source selection consume the same reflected light. The analytic
+fallback applies its night gain to the disk and to moonlit receivers.
+On Earth the solar and lunar disks, direct surface and cloud lighting, scattering
+and shadow projection use the incoming direction at the receiver. The Moon's
+finite position supplies local parallax. Sea-level refraction follows Astronomy
+Engine and falls with air density to the geometric direction in vacuum. Both
+GPU tiers use the physical angular radii and the receiver's spherical horizon.
+Source choice considers the viewed region and actual
 lunar phase, with the existing source hysteresis. Only the dominant source casts.
 Day ambient is reduced; night fill is weak airglow plus phase/horizon-dependent
 moon scatter. Reflections use local illumination rather than the observer's sky
 palette across the whole globe. Cached landform concavity reduces indirect light
 by at most 35%; this is a cavity approximation, not measured horizon AO or GI.
 
-Physical HDR exposure varies continuously with the brightest sampled solar
-altitude in the view: no night gain above -6 degrees and at most 15 stops by
--18 degrees. This is deterministic view metering, not temporal eye adaptation.
-Moon irradiance is unchanged. Scene and sky/aerial LUT radiance are pre-exposed
-before RGBA16F storage to preserve low light precision, with matching cache keys.
-Clouds decode LUT radiance before lighting; final composition applies exposure
-exactly once. Terrain/atmosphere diagnostics and existing display-calibrated
-celestial sprites/markers retain their own display scale. Analytic fallback
-keeps its prior exposure policy. No histogram, readback, new asset or GPU target.
+The star catalogue and Milky Way plate use the active view's reference
+exposure to encode their authored contrast into the linear HDR scene.
+Twilight attenuation is applied once, and the measured camera exposure still
+adjusts their contrast against the rest of the frame. At sea level the Earth
+profile reaches 8% stellar contrast at solar altitude −6°, 50% at −12° and
+100% at −18°. The physical atmosphere supplies scattering and extinction
+along the ray. The analytic view also approximates lunar glare on the galactic
+band from local horizontal moonlight. Both the draw decision and the
+`sky info` stellar and galactic contrast fields use the prepared view values.
+
+The physical route pre-exposes scene and atmosphere radiance before RGBA16F
+storage to preserve dim light. The final HDR camera meters 1,024 fixed positions
+in the composited scene before the held item and UI. A single GPU workgroup builds
+a 112-bin log-luminance histogram. Measurement removes the storage gain.
+The 40–80% and 87–97% rank bands constrain middle tones and broad highlights.
+Deep night permits up to 21 stops of camera gain above the profile exposure.
+At low measured luminance the meter targets darker midtones and highlights,
+so full-Moon illumination remains visible on soil while clouds and snow
+retain a nocturnal appearance. The analytic path estimates reflected light
+on a horizontal snow surface to bound its lunar exposure.
+Tiny bright bodies have little effect on the result. A 32-byte GPU history holds
+absolute exposure, the previous metered target, incident light and exposure ceiling.
+At accelerated render UTC the meter samples a horizontal reference illuminated by
+the same Sun, Moon and atmosphere as the terrain. It follows changes to its measured
+target up to the corresponding change in incident light or a binding twilight
+ceiling. The remaining adjustment uses monotonic time (0.5 s when closing,
+3 s when opening), including camera turns under fixed lighting. A new world, clock
+revision or view, backwards UTC, or a real frame gap of one second reacquires
+exposure on the current image. The compute pass shares the existing world bindings
+and uses a 48-byte parameter buffer. A two-stop
+highlight allowance limits overshoot after a rapid turn from dark sky to
+bright terrain. At orbital heights the meter can also adapt when pointing
+away from a sunlit planet. Output
+divides the adapted gain by the current storage gain before the final shoulder.
+Surface and atmospheric diagnostics use fixed exposure. The SDR route uses its
+existing output transfer, as do authored worlds without the physical Earth
+atmosphere. The opaque HDR viewmodel writes a signed alpha tag after scene
+blending so the output resolve can keep its authored color and restore opaque
+alpha. The meter needs no readback or extra render target.
 
 Static compilation and WGSL validation are separate from visual acceptance.
 Still pending: low-Sun ridges/valleys, full/crescent Moon and moonless nights,

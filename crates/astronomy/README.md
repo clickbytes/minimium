@@ -7,6 +7,7 @@ Provides the existing client-side astronomical calculation backend, including it
 ## Public API
 
 `SkyCalculator`, sky model values, errors and observed bodies are exported from `src/lib.rs`.
+`standard_refraction_rad` exposes the calculator's sea-level elevation correction for presentation at other receiver locations.
 
 ## Dependencies
 

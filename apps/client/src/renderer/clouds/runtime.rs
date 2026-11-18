@@ -15,6 +15,9 @@ use std::{
 pub(in crate::renderer) struct WeatherState {
     worker: CloudWorker,
     stamp: Option<Stamp>,
+    climate: Option<Arc<minimium_environment::climate::ClimateScenario>>,
+    weather_epoch: u64,
+    cover: Option<Arc<minimium_renderer::surface_cover::CoverGrid>>,
     published: Option<Arc<Publication>>,
     last_request: Option<Instant>,
     sequence: u64,
@@ -31,6 +34,9 @@ impl WeatherState {
         Self {
             worker: CloudWorker::new(),
             stamp: None,
+            climate: None,
+            weather_epoch: 0,
+            cover: None,
             published: None,
             last_request: None,
             sequence: 0,
@@ -47,7 +53,24 @@ impl WeatherState {
 }
 
 impl DesktopHost {
+    fn clear_weather(&mut self) {
+        self.weather.cover = None;
+        self.weather.stamp = None;
+        self.weather.published = None;
+        self.weather.last_request = None;
+        self.weather.worker.clear();
+        self.renderer.cloud_gpu.clear();
+        self.renderer.terrain_gpu.clear_cover();
+        self.renderer.atmosphere_gpu.clear_weather();
+    }
+
     pub(in crate::renderer) fn update_weather(&mut self, frame: &EnvironmentFrame) {
+        let climate = self
+            .application
+            .connection_view()
+            .session()
+            .map(|s| s.climate_scenario())
+            .unwrap_or_default();
         // The inexpensive seasonal fallback is available even before cloud publication.
         if let (Some(manifest), Some(utc)) = (
             self.application.core_view().manifest,
@@ -59,18 +82,12 @@ impl DesktopHost {
             self.renderer.terrain_gpu.uniform.debug[2] = (seed >> 32) as u32 ^ (seed >> 96) as u32;
             let direction =
                 DVec3::from_array(frame.render_view.camera_eye_world_m).normalize_or_zero();
-            let scenario = self
-                .application
-                .connection_view()
-                .session()
-                .map(|s| s.climate_scenario())
-                .unwrap_or_default();
-            let offset = scenario.offset(direction, utc);
+            let offset = climate.offset(direction, utc);
             self.renderer.terrain_gpu.uniform.climate = [
                 minimium_environment::climate::seasonality(DVec3::Y, utc) as f32,
                 offset.temperature_c as f32,
                 offset.moisture as f32,
-                scenario.relief_influence as f32,
+                climate.relief_influence as f32,
             ];
         }
         let inputs = self
@@ -88,13 +105,7 @@ impl DesktopHost {
                         == crate::renderer::environment::EnvironmentFrameStatus::Available
             })
         else {
-            self.weather.stamp = None;
-            self.weather.published = None;
-            self.weather.last_request = None;
-            self.weather.worker.clear();
-            self.renderer.cloud_gpu.clear();
-            self.renderer.terrain_gpu.clear_cover();
-            self.renderer.atmosphere_gpu.clear_weather();
+            self.clear_weather();
             return;
         };
         let Some(active_inputs) = self
@@ -103,11 +114,7 @@ impl DesktopHost {
             .session()
             .and_then(|session| session.terrain_inputs())
         else {
-            self.weather.stamp = None;
-            self.weather.published = None;
-            self.weather.worker.clear();
-            self.renderer.cloud_gpu.clear();
-            self.renderer.terrain_gpu.clear_cover();
+            self.clear_weather();
             return;
         };
         let Ok(terrain_inputs) = minimium_procgen::TerrainInputs::new(
@@ -116,16 +123,23 @@ impl DesktopHost {
         ) else {
             return;
         };
+        if self.weather.stamp.is_none() || self.weather.climate.as_ref() != Some(&climate) {
+            self.weather.weather_epoch = self.weather.weather_epoch.wrapping_add(1);
+            self.weather.climate = Some(climate.clone());
+        }
         let stamp = Stamp {
             manifest,
             context,
             clock_revision,
+            map_fingerprint: terrain_inputs.source().map_fingerprint(),
+            weather_epoch: self.weather.weather_epoch,
             resolved_relief_policy: terrain_inputs.source().relief_policy(),
         };
         let utc = utc as f64 / 1000.0;
         let position = DVec3::from_array(frame.render_view.camera_eye_world_m);
         let observer = position.normalize_or_zero();
         if self.weather.stamp != Some(stamp) {
+            self.weather.cover = None;
             self.renderer.terrain_gpu.clear_cover();
             self.renderer.atmosphere_gpu.clear_weather();
             self.weather.stamp = Some(stamp);
@@ -142,13 +156,22 @@ impl DesktopHost {
             }
         }
         if let Some((cover_stamp, cover)) = self.weather.worker.take_cover() {
-            if cover_stamp == stamp {
+            if cover_stamp == stamp
+                && cover.address == minimium_renderer::surface_cover::CoverAddress::at(observer)
+                && cover.start_utc == (utc / 3600.0).floor() * 3600.0
+                && self
+                    .weather
+                    .cover
+                    .as_ref()
+                    .is_none_or(|active| !Arc::ptr_eq(active, &cover))
+            {
                 self.renderer
                     .terrain_gpu
                     .upload_cover(&self.renderer.queue, &cover);
                 self.renderer
                     .atmosphere_gpu
                     .set_weather(&self.renderer.queue, &cover);
+                self.weather.cover = Some(cover);
             }
         }
         self.renderer.terrain_gpu.set_cover_time(utc);
@@ -163,12 +186,7 @@ impl DesktopHost {
         {
             self.weather.sequence += 1;
             self.weather.worker.submit(Request {
-                climate: self
-                    .application
-                    .connection_view()
-                    .session()
-                    .map(|s| s.climate_scenario())
-                    .unwrap_or_default(),
+                climate,
                 stamp,
                 utc,
                 observer,

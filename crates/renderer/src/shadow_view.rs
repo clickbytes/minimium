@@ -72,6 +72,53 @@ impl ShadowRegion {
             settings,
         })
     }
+
+    /// A second, coarser map covers valley floors around a surface observer.
+    /// At altitude the primary map already grows to fit the visible footprint.
+    pub fn landscape(self, view: RenderViewFrame) -> Option<Self> {
+        const LANDSCAPE_RADIUS_M: f32 = 4096.0;
+        let radius = LANDSCAPE_RADIUS_M.min((2.0 * view.game_planet_radius_m) as f32);
+        if view.kind != crate::EnvironmentViewKind::Surface
+            || !self.settings.enabled
+            || radius <= self.settings.receiver_radius_m
+        {
+            return None;
+        }
+        Some(self.resized(radius))
+    }
+
+    /// Cover the visible reference shell, with relief margin around the observer
+    /// and beyond the limb samples. Resolution remains bounded at every altitude.
+    pub fn lunar_landscape(self, view: RenderViewFrame) -> Option<Self> {
+        let center = DVec3::from_array(self.center_world);
+        let footprint = surface_footprint(view)
+            .iter()
+            .map(|p| p.distance(center) as f32)
+            .fold(0.0, f32::max);
+        let radius = ((footprint * 1.25 + 4096.0).min((2.5 * view.game_planet_radius_m) as f32))
+            .max(
+                self.landscape(view)
+                    .map_or(0.0, |r| r.settings.receiver_radius_m),
+            );
+        let radius = ((radius.max(1.0).log2() * 4.0).ceil() / 4.0).exp2();
+        (radius > self.settings.receiver_radius_m).then(|| self.resized(radius))
+    }
+
+    fn resized(self, radius: f32) -> Self {
+        let scale = radius / self.settings.receiver_radius_m;
+        Self {
+            center_world: self.center_world,
+            settings: ShadowSettings {
+                receiver_radius_m: radius,
+                caster_radius_m: self.settings.caster_radius_m * scale,
+                fade_start_m: 0.9 * radius,
+                constant_bias_m: self.settings.constant_bias_m * scale,
+                slope_bias_m: self.settings.slope_bias_m * scale,
+                max_bias_m: self.settings.max_bias_m * scale,
+                ..self.settings
+            },
+        }
+    }
 }
 
 /// A small fixed grid includes the limb when a ray misses the planet. Sampling
@@ -87,8 +134,10 @@ pub fn surface_footprint(view: RenderViewFrame) -> Vec<DVec3> {
     let mut points = Vec::with_capacity(25);
     for y in [-1.0, -0.5, 0.0, 0.5, 1.0] {
         for x in [-1.0, -0.5, 0.0, 0.5, 1.0] {
-            let ray = inverse
-                .project_point3(DVec3::new(x, y, 1.0))
+            // The sky view contains rotation only. The homogeneous xyz is
+            // the ray direction even when the far endpoint has zero w.
+            let ray = (inverse * DVec3::new(x, y, 1.0).extend(1.0))
+                .truncate()
                 .normalize_or_zero();
             if let Some(point) = shell_point(eye, ray, radius) {
                 points.push(point);

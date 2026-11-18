@@ -113,11 +113,12 @@ pub fn compute(
     device: &wgpu::Device,
     frame: &wgpu::BindGroupLayout,
     output: &wgpu::BindGroupLayout,
+    shadows: &wgpu::BindGroupLayout,
     kind: &str,
 ) -> wgpu::ComputePipeline {
     let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: Some("atmosphere compute layout"),
-        bind_group_layouts: &[Some(frame), Some(output)],
+        bind_group_layouts: &[Some(frame), Some(output), Some(shadows)],
         immediate_size: 0,
     });
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {

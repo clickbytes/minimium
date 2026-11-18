@@ -1,6 +1,51 @@
 //! Pure camera/optical-scale preparation, independent of the player observer.
 use crate::{AtmosphereUniform, RenderViewFrame};
 use glam::DVec3;
+
+/// Catalog and diffuse galactic contrast before cloud/air transmission and camera exposure.
+pub fn celestial_visibility(
+    sky: &crate::gpu_frame::EnvironmentUniform,
+    air: &AtmosphereUniform,
+) -> (f32, f32) {
+    if sky.flags[2] == 0
+        || sky.flags[0] == minimium_environment::EnvironmentProfile::Interior as u32
+    {
+        return (0.0, 0.0);
+    }
+    if sky.flags[1] == crate::EnvironmentViewKind::Overview as u32 {
+        return (1.0, 1.0);
+    }
+    let above_air = stellar_altitude_weight(air);
+    let surface = sky.sky_horizon_rgb_star_visibility[3];
+    let stars = surface + (1.0 - surface) * above_air;
+    if air.config[3] > 0.5 {
+        // The physical sky adds the actual scattered lunar radiance over the stars.
+        return (stars, stars);
+    }
+    // Approximate the lunar sky glow on the analytic path using the incident
+    // light on a horizontal surface relative to the overhead full Moon.
+    let luma = |[r, g, b, _]: [f32; 4]| crate::render_frame::luminance([r, g, b]);
+    let global = luma(sky.global_moon_rgb);
+    let transmission = if global > 0.0 {
+        luma(sky.local_moon_rgb_visibility) / global
+    } else {
+        0.0
+    };
+    let moon = glam::Vec4::from_array(sky.moon_apparent_world).truncate();
+    let up = glam::Vec4::from_array(sky.observer_up_horizon_cos).truncate();
+    let lunar_glow =
+        sky.moon_disk_radiance[3] * transmission * moon.dot(up).max(0.0) * (1.0 - above_air);
+    (stars, stars / (1.0 + 8.0 * lunar_glow))
+}
+
+pub(crate) fn stellar_altitude_weight(air: &AtmosphereUniform) -> f32 {
+    if air.config[0] <= 0.0 {
+        return 0.0;
+    }
+    let t = ((air.up_height[3] - 12_000.0) / 68_000.0).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
 #[derive(Clone)]
 pub struct WeatherEndpoints {
     pub utc: f64,
@@ -11,13 +56,13 @@ pub struct WeatherEndpoints {
 }
 impl WeatherEndpoints {
     pub fn from_grid(grid: &crate::surface_cover::CoverGrid) -> Self {
+        let axis = |v| glam::Vec4::from_array(v).truncate().as_dvec3();
         Self {
             utc: grid.start_utc,
-            center: DVec3::new(
-                grid.center[0] as f64,
-                grid.center[1] as f64,
-                grid.center[2] as f64,
-            ),
+            center: (axis(grid.center)
+                + axis(grid.east) * f64::from(grid.east[3])
+                + axis(grid.north) * f64::from(grid.north[3]))
+            .normalize(),
             values: grid.atmosphere_weather,
             basis: [grid.center, grid.east, grid.north],
             has_fog: grid
@@ -105,6 +150,7 @@ pub fn prepare(
         fog_east: basis[1],
         fog_north: basis[2],
         fog_time,
+        relief_tile: [0.0; 4],
         inverse_view_projection: glam::Mat4::from_cols_array_2d(&view.view_projection)
             .inverse()
             .to_cols_array_2d(),

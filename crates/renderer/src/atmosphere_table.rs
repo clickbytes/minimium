@@ -3,8 +3,8 @@
 use crate::atmosphere::Optics;
 use glam::DVec3;
 
-const WIDTH: u32 = 128;
-const HEIGHT: u32 = 64;
+pub(super) const WIDTH: u32 = 128;
+pub(super) const HEIGHT: u32 = 64;
 pub const BYTES: u64 = WIDTH as u64 * HEIGHT as u64 * 8;
 
 pub fn entry() -> wgpu::BindGroupLayoutEntry {
@@ -20,33 +20,61 @@ pub fn entry() -> wgpu::BindGroupLayoutEntry {
     }
 }
 
+pub struct OpticalTables {
+    pub depth: wgpu::TextureView,
+    pub irradiance: wgpu::TextureView,
+}
+
+impl OpticalTables {
+    pub const BYTES: u64 =
+        BYTES + crate::sky_irradiance::WIDTH as u64 * crate::sky_irradiance::HEIGHT as u64 * 8;
+
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, profile: Optics) -> Self {
+        let tables = Self {
+            depth: texture(device, "spherical atmosphere optical depth", WIDTH, HEIGHT),
+            irradiance: texture(
+                device,
+                "upper hemisphere unit irradiance",
+                crate::sky_irradiance::WIDTH,
+                crate::sky_irradiance::HEIGHT,
+            ),
+        };
+        tables.update(queue, profile);
+        tables
+    }
+
+    pub fn update(&self, queue: &wgpu::Queue, profile: Optics) {
+        let depth = pixels(profile);
+        let irradiance = crate::sky_irradiance::pixels(profile, &depth);
+        upload(queue, self.depth.texture(), &depth);
+        upload(queue, self.irradiance.texture(), &irradiance);
+    }
+}
+
+fn texture(device: &wgpu::Device, label: &str, width: u32, height: u32) -> wgpu::TextureView {
+    device
+        .create_texture(&wgpu::TextureDescriptor {
+            label: Some(label),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba16Float,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        })
+        .create_view(&Default::default())
+}
+
+// Standalone optical-depth consumers can still allocate just the original table.
 pub fn create(device: &wgpu::Device, queue: &wgpu::Queue, profile: Optics) -> wgpu::TextureView {
-    let pixels = pixels(profile);
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("spherical atmosphere optical depth"),
-        size: wgpu::Extent3d {
-            width: WIDTH,
-            height: HEIGHT,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba16Float,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
-    });
-    queue.write_texture(
-        texture.as_image_copy(),
-        bytemuck::cast_slice(&pixels),
-        wgpu::TexelCopyBufferLayout {
-            offset: 0,
-            bytes_per_row: Some(WIDTH * 8),
-            rows_per_image: Some(HEIGHT),
-        },
-        texture.size(),
-    );
-    texture.create_view(&wgpu::TextureViewDescriptor::default())
+    let view = texture(device, "spherical atmosphere optical depth", WIDTH, HEIGHT);
+    update(queue, view.texture(), profile);
+    view
 }
 
 fn pixels(profile: Optics) -> Vec<u16> {
@@ -84,14 +112,17 @@ fn pixels(profile: Optics) -> Vec<u16> {
 }
 
 pub fn update(queue: &wgpu::Queue, texture: &wgpu::Texture, profile: Optics) {
-    let data = pixels(profile);
+    upload(queue, texture, &pixels(profile));
+}
+
+fn upload(queue: &wgpu::Queue, texture: &wgpu::Texture, data: &[u16]) {
     queue.write_texture(
         texture.as_image_copy(),
-        bytemuck::cast_slice(&data),
+        bytemuck::cast_slice(data),
         wgpu::TexelCopyBufferLayout {
             offset: 0,
-            bytes_per_row: Some(WIDTH * 8),
-            rows_per_image: Some(HEIGHT),
+            bytes_per_row: Some(texture.width() * 8),
+            rows_per_image: Some(texture.height()),
         },
         texture.size(),
     );

@@ -272,7 +272,14 @@ impl DesktopHost {
                 render_view,
                 meteor_surface_scale,
                 observed_bodies: observations,
-                settings: EnvironmentSettings::planetary(),
+                settings: {
+                    let mut settings = EnvironmentSettings::planetary();
+                    if !self.moon_flux {
+                        settings.moonlight.full_phase_strength = 0.0;
+                        settings.halos.moon_rgb = [0.0; 3];
+                    }
+                    settings
+                },
             },
         ) {
             Ok(mut frame) => {

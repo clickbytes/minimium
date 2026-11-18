@@ -1,5 +1,14 @@
 use super::{scene_bridge::RenderSceneSnapshot, Renderer};
 
+#[derive(Clone, Copy)]
+pub(super) struct ExposureHistory {
+    context: minimium_protocol::WorldContext,
+    view: minimium_renderer::EnvironmentViewKind,
+    clock: Option<minimium_environment::time::ClockRevision>,
+    sampled_at: std::time::Instant,
+    world_utc_ms: i64,
+}
+
 impl Renderer {
     /// Keeps every GPU pass on the one immutable snapshot prepared for this frame.
     pub(super) fn render(
@@ -59,12 +68,46 @@ impl Renderer {
         };
         self.shadow_publish_ready =
             self.shadow_upload_status == super::shadow_gpu::ShadowUploadStatus::Ready;
-        if self.shadow_publish_ready {
-            self.shadow_gpu
-                .write_uniform(&self.queue, &snapshot.shadow.uniform);
-        }
+        let mut disabled = minimium_renderer::shadow_uniform::ShadowUniform::default();
+        disabled.flags[3] = u32::from(self.shadow_gpu.settings.enabled);
+        let (local, landscape) = if self.shadow_publish_ready {
+            (
+                &snapshot.shadow.uniform,
+                snapshot.shadow.landscape_uniform.as_ref(),
+            )
+        } else {
+            (&disabled, None)
+        };
+        let moon = snapshot
+            .shadow
+            .secondary_moon
+            .each_ref()
+            .map(|v| v.as_ref().filter(|_| self.shadow_publish_ready));
+        self.shadow_gpu
+            .write_cascades(&self.queue, local, landscape, moon);
+        self.atmosphere_gpu.mark_shadows(
+            publication_stamp,
+            self.shadow_gpu.caster_revision(),
+            local,
+            landscape,
+            moon,
+        );
         let mut environment_upload = render_frame
             .presentation_environment(self.hdr_enabled, self.atmosphere_gpu.is_active());
+        // Fixed gain applies before the HDR storage conversion. The analytic route
+        // also removes its observer-dependent lunar gain for a reproducible comparison.
+        if let Some(ev) = self.fixed_exposure_ev {
+            if !self.atmosphere_gpu.is_active() || !self.hdr_enabled {
+                environment_upload.ambient_rgb_exposure[3] = ev.exp2();
+                environment_upload.star_animation[2] = 1.0;
+            }
+        }
+        let (stars, galaxy) = minimium_renderer::atmosphere_view::celestial_visibility(
+            &environment_upload,
+            self.atmosphere_gpu.optical_uniform(),
+        );
+        environment_upload.sky_horizon_rgb_star_visibility[3] = stars;
+        environment_upload.star_animation[3] = galaxy;
         environment_upload.render_origin = [
             self.render_origin[0],
             self.render_origin[1],
@@ -160,8 +203,77 @@ impl Renderer {
             0,
             bytemuck::bytes_of(&environment_upload),
         );
+        let scene_visible = self.scene_visible
+            && self.terrain_gpu.valid
+            && publication_stamp.is_some_and(|stamp| stamp.instance == client.world_instance);
         if let Some(output) = &self.output_encoder {
-            output.update_exposure_with_water(&self.queue, 1.0, submerged_fraction);
+            let context = snapshot.context.filter(|_| {
+                self.hdr_enabled
+                    && self.atmosphere_gpu.is_active()
+                    && scene_visible
+                    && self.terrain_gpu.uniform.debug[0] == 0
+                    && self.atmosphere_gpu.debug == 0
+                    && !self.cloud_gpu.debug
+                    && !self.transient_transmission
+            });
+            let fixed_gain = self.fixed_exposure_ev.map(|ev| {
+                if self.hdr_enabled && self.atmosphere_gpu.is_active() {
+                    ev.exp2() / environment_upload.ambient_rgb_exposure[3].max(1e-5)
+                } else {
+                    1.0
+                }
+            });
+            if let (Some(context), Some(sky)) = (context, environment.sky.as_ref()) {
+                let now = std::time::Instant::now();
+                let view = render_frame.view;
+                let history = ExposureHistory {
+                    context,
+                    view: view.kind,
+                    clock: environment.clock_revision,
+                    sampled_at: now,
+                    world_utc_ms: sky.utc_ms.get(),
+                };
+                let cadence = self
+                    .exposure_history
+                    .replace(history)
+                    .filter(|old| {
+                        old.context == history.context
+                            && old.view == history.view
+                            && old.clock == history.clock
+                    })
+                    .and_then(|old| {
+                        let real = now.saturating_duration_since(old.sampled_at);
+                        let world_ms = history.world_utc_ms.saturating_sub(old.world_utc_ms);
+                        (world_ms >= 0 && real.as_secs_f32() < 1.0).then(|| {
+                            minimium_renderer::output::ExposureInterval {
+                                real,
+                                world: std::time::Duration::from_millis(world_ms as u64),
+                            }
+                        })
+                    });
+                let base = render_frame.environment.ambient_rgb_exposure[3];
+                let reference = minimium_renderer::render_frame::exposure_reference(
+                    view,
+                    environment_upload.global_sun_direction,
+                    base,
+                );
+                output.meter_exposure_with_water(
+                    &self.queue,
+                    environment_upload.ambient_rgb_exposure[3],
+                    base,
+                    reference,
+                    cadence,
+                    submerged_fraction,
+                    fixed_gain,
+                );
+            } else {
+                self.exposure_history = None;
+                output.update_exposure_with_water(
+                    &self.queue,
+                    fixed_gain.unwrap_or(1.0),
+                    submerged_fraction,
+                );
+            }
         }
         let ui_vertices = render_frame.ui_vertices();
         if !ui_vertices.is_empty() {
@@ -183,18 +295,18 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("frame-encoder"),
             });
+        // A finite disk can peek over a dipped or refracted horizon on either GPU tier.
+        let planetary_surface_sky = super::sky::should_draw_surface_sky(environment)
+            && self.atmosphere_gpu.optical_uniform().config[0] > 0.0;
         let environment_flags = minimium_renderer::scene_encoder::EnvironmentDrawFlags {
             overview_sky: super::sky::should_draw_overview_sky(environment),
             overview_stars: super::sky::should_draw_overview_stars(environment),
             overview_sun: super::sky::should_draw_overview_sun(environment),
             overview_moon: super::sky::should_draw_overview_moon(environment),
             surface_sky: super::sky::should_draw_surface_sky(environment),
-            surface_stars: super::sky::should_draw_stars(environment)
-                || self.atmosphere_gpu.high_stars(),
-            surface_sun: super::sky::should_draw_sun(environment)
-                || self.atmosphere_gpu.is_active(),
-            surface_moon: super::sky::should_draw_moon(environment)
-                || self.atmosphere_gpu.is_active(),
+            surface_stars: super::sky::should_draw_stars(environment, stars),
+            surface_sun: super::sky::should_draw_sun(environment) || planetary_surface_sky,
+            surface_moon: super::sky::should_draw_moon(environment) || planetary_surface_sky,
         };
         let instance = publication_stamp.map_or(client.world_instance, |stamp| stamp.instance);
         let (local_water_buffer, local_water_vertex_count) =
@@ -230,9 +342,7 @@ impl Renderer {
             world_vertex_catalog: self.world_geometry.catalog(),
             instance,
             sector_hints: publication_keys,
-            scene_visible: self.scene_visible
-                && self.terrain_gpu.valid
-                && publication_stamp.is_some_and(|stamp| stamp.instance == client.world_instance),
+            scene_visible,
             overview_active: self.overview_active,
             overview_planet: self.overview_planet,
             uploaded_stars_match: self.uploaded_star_stamp == environment.diagnostics.star_frame,
@@ -255,6 +365,11 @@ impl Renderer {
                         && snapshot.shadow.geometry_stamp == publication_stamp,
                     instance: client.world_instance,
                     keys: &snapshot.shadow.caster_keys,
+                    secondary_moon: std::array::from_fn(|i| {
+                        moon[i].map(|_| snapshot.shadow.moon_keys[i].as_slice())
+                    }),
+                    landscape_keys: landscape
+                        .map(|_| snapshot.shadow.landscape_caster_keys.as_slice()),
                     world_vertices: self.world_geometry.catalog(),
                     map: self.shadow_gpu.map_casters(),
                     player: self.shadow_gpu.player_casters(),

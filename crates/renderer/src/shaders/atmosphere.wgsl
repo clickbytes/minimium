@@ -29,5 +29,6 @@
         return vec4<f32>(vec3<f32>(clamp(distance,0.0,1.0)),1.0);
     }
     if atmosphere.weather.w == 5.0 {return vec4<f32>(vec3<f32>(1.0-exp(-path.fog)),1.0);}
+    if atmosphere.weather.w == 6.0 {return vec4<f32>(vec3<f32>(1.0-exp(-path.shadowed_fog)),1.0);}
     return vec4<f32>(color*path.transmission+path.scattering*scene_exposure(),1.0);
 }

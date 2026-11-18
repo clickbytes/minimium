@@ -8,7 +8,12 @@ fn halo_source(body: u32) -> HaloSource {
 }
 
 fn halo_direction(body: u32) -> vec3<f32> {
-    return normalize(halo_source(body).direction_extent.xyz);
+    let source = halo_source(body);
+    if u32(source.parameters.x) == 0u && has_spherical_atmosphere() { return visual_sun_direction(); }
+    if u32(source.parameters.x) == 1u && environment.flags.y == 0u && has_spherical_atmosphere() {
+        return visual_moon_ray().xyz;
+    }
+    return normalize(source.direction_extent.xyz);
 }
 
 fn finite_scalar(value: f32) -> bool {
@@ -48,7 +53,7 @@ fn finite_vec3(value: vec3<f32>) -> bool {
     }
     let source = halo_source(input.body);
     let extent = source.direction_extent.w;
-    let visibility = source.linear_rgb_visibility.w;
+    var visibility = source.linear_rgb_visibility.w;
     if !finite_scalar(extent) || !finite_scalar(visibility)
         || !finite_vec3(source.direction_extent.xyz)
         || !finite_vec3(source.linear_rgb_visibility.xyz)
@@ -63,12 +68,19 @@ fn finite_vec3(value: vec3<f32>) -> bool {
     let far_point = camera.inverse_sky_view_projection * vec4<f32>(ndc, 1.0, 1.0);
     let ray = normalize(far_point.xyz / max(abs(far_point.w), 0.000001));
     let center = halo_direction(input.body);
-    let angle = acos(clamp(dot(ray, center), -1.0, 1.0));
+    let angle = atan2(length(cross(ray, center)), dot(ray, center));
     let horizon = horizon_visibility(ray);
     if horizon <= 0.0 {
         discard;
     }
     let shape = u32(source.parameters.x);
+    if shape<=1u && has_spherical_atmosphere() {
+        let limb=camera_horizon();
+        let radius=select(sin(environment.sun_apparent_world.w),visual_moon_ray().w,shape==1u);
+        let half_width=max(radius*sqrt(max(1.0-limb.w*limb.w,0.0)),1e-7);
+        visibility=smoothstep(limb.w-half_width,limb.w+half_width,dot(limb.xyz,center));
+        if visibility<=0.0 {discard;}
+    }
     var envelope = exp(-angle / max(extent * 0.25, 0.0001))
         * (1.0 - smoothstep(extent * 0.875, extent, angle));
     var radiance = source.linear_rgb_visibility.xyz * envelope;
@@ -77,6 +89,24 @@ fn finite_vec3(value: vec3<f32>) -> bool {
             * (1.0 - smoothstep(extent * 0.875, extent, angle));
         radiance = source.linear_rgb_visibility.xyz * envelope;
     } else if shape == 1u {
+        if physical_atmosphere() {
+            // A compact droplet corona rides on the broad Mie glow already
+            // integrated in the atmosphere. Its energy follows the Moon's flux.
+            if atmosphere.fog_time.z <= 0.0 || angle >= extent { discard; }
+            let tau = sample_sky(input.clip_position.xy * camera.viewport.zw).fog;
+            let moisture = (1.0 - exp(-tau)) * (1.0 - smoothstep(0.8, 3.0, tau));
+            if moisture <= 0.0 { discard; }
+            let width = extent * 0.20;
+            let a = angle / width;
+            let ring_offset = (a - 2.3)/0.30;
+            let ring = exp(-0.5 * ring_offset * ring_offset);
+            let profile = (exp(-a) + 0.12*ring) * (1.0-smoothstep(0.85*extent, extent, angle));
+            let radius = environment.moon_orbit_world.w / max(length(environment.moon_orbit_world.xyz-camera.eye_world.xyz), 1.0);
+            let angular_gain = 0.5 * pow(min(radius/width, 1.0), 2.0);
+            let lunar = environment.moon_disk_radiance;
+            radiance = lunar.rgb * lunar.w * source.linear_rgb_visibility.rgb * angular_gain * moisture * profile;
+            return vec4<f32>(tone_map_linear(radiance * visibility * horizon), 0.0);
+        }
         let phase = clamp(source.parameters.y, 0.0, 1.0);
         let sun = normalize(source.source_direction.xyz);
         let tangent = sun - center * dot(sun, center);
@@ -94,6 +124,6 @@ fn finite_vec3(value: vec3<f32>) -> bool {
     } else if shape == 4u {
         radiance *= 1.25;
     }
-    if physical_atmosphere() && (shape == 0u || shape == 1u) { discard; }
+    if physical_atmosphere() && shape == 0u { discard; }
     return vec4<f32>(tone_map_display(radiance * visibility * horizon), 0.0);
 }

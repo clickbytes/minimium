@@ -35,15 +35,39 @@ pub(super) fn prepare_halos(
     moon_source: [f64; 3],
     bodies: &[ObservedBody],
     profile: EnvironmentSettings,
+    spherical_atmosphere: bool,
 ) -> Result<HaloPreparation, super::EnvironmentFrameError> {
     let moon_orbit_world = super::orbit::moon_orbit_world(sky, view)?;
     let overview_moon_direction = std::array::from_fn(|axis| {
         f64::from(moon_orbit_world[axis]) - view.camera_eye_world_m[axis]
     });
+    // Retain a candidate through maximum sea-level refraction. The GPU clips
+    // its visible fraction with the optical camera's actual altitude.
+    let candidate = |mut body: LocalBodyFrame, direction, radius| {
+        if spherical_atmosphere {
+            let up = normalize_or_zero(view.camera_eye_world_m);
+            let altitude = dot(up, normalize_or_zero(direction))
+                .clamp(-1.0, 1.0)
+                .asin();
+            let lift = minimium_astronomy::standard_refraction_rad(altitude)
+                .unwrap_or(0.0)
+                .max(0.0);
+            body.visible_fraction =
+                visible_disk_fraction(altitude + lift, radius, view_horizon_altitude(view));
+        }
+        body
+    };
+    let lunar_radius = (f64::from(moon_orbit_world[3]) / length(overview_moon_direction).max(1.0))
+        .clamp(0.0, 1.0)
+        .asin();
     let context = HaloContext {
         view,
-        sun,
-        moon,
+        sun: candidate(
+            sun,
+            sky.geocentric_sun_direction_world,
+            sun.angular_radius_rad,
+        ),
+        moon: candidate(moon, overview_moon_direction, lunar_radius),
         overview_sun_direction: sky.geocentric_sun_direction_world,
         overview_moon_direction,
         moon_source,

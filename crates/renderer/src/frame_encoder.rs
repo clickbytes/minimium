@@ -26,6 +26,8 @@ pub struct ShadowPass<'a> {
     pub enabled: bool,
     pub instance: WorldInstanceId,
     pub keys: &'a [(SectorKey, u8)],
+    pub secondary_moon: [Option<&'a [(SectorKey, u8)]>; 2],
+    pub landscape_keys: Option<&'a [(SectorKey, u8)]>,
     pub world_vertices: &'a HashMap<(WorldInstanceId, SectorKey, u8), (wgpu::Buffer, u32)>,
     pub map: Option<(&'a wgpu::Buffer, u32)>,
     pub player: Option<(&'a wgpu::Buffer, u32)>,
@@ -52,22 +54,51 @@ pub struct FrameDrawStats {
 
 /// Encodes shadow, scene, atmosphere, cloud, overlay and output passes in order.
 pub fn encode_frame(encoder: &mut wgpu::CommandEncoder, frame: FramePasses<'_>) -> FrameDrawStats {
-    let shadow_casters = frame.shadow.keys.iter().filter_map(|(key, lod)| {
+    let caster = |&(key, lod): &(SectorKey, u8)| {
         frame
             .shadow
             .world_vertices
-            .get(&(frame.shadow.instance, *key, *lod))
+            .get(&(frame.shadow.instance, key, lod))
             .map(|(buffer, count)| (buffer, *count))
-    });
-    let shadow_draws = frame.shadow.gpu.encode_depth_pass(
+    };
+    let mut shadow_draws = frame.shadow.gpu.encode_depth_pass(
         encoder,
-        shadow_casters
+        frame
+            .shadow
+            .keys
+            .iter()
+            .filter_map(caster)
             .chain(frame.shadow.map.into_iter())
             .chain(frame.shadow.player.into_iter()),
         frame.shadow.enabled,
     );
+    if let Some(keys) = frame.shadow.landscape_keys.filter(|_| frame.shadow.enabled) {
+        shadow_draws += frame.shadow.gpu.encode_landscape_depth(
+            encoder,
+            keys.iter()
+                .filter_map(caster)
+                .chain(frame.shadow.map)
+                .chain(frame.shadow.player),
+        );
+    }
+    for (i, keys) in frame.shadow.secondary_moon.iter().enumerate() {
+        if let Some(keys) = keys.filter(|_| frame.shadow.enabled) {
+            shadow_draws += frame.shadow.gpu.encode_secondary_moon(
+                encoder,
+                i,
+                keys.iter()
+                    .filter_map(caster)
+                    .chain(frame.shadow.map)
+                    .chain(frame.shadow.player),
+            );
+        }
+    }
     if frame.scene.scene_visible {
-        frame.scene.atmosphere.prepare(encoder, frame.scene.camera);
+        frame.scene.atmosphere.prepare(
+            encoder,
+            frame.scene.camera,
+            &frame.shadow.gpu.sampling_bind_group,
+        );
     }
     let mut scene = scene_encoder::encode_main_scene_pass(encoder, frame.scene);
     let atmosphere = frame.scene.atmosphere.encode(
@@ -87,6 +118,9 @@ pub fn encode_frame(encoder: &mut wgpu::CommandEncoder, frame: FramePasses<'_>) 
             && frame.scene.atmosphere.debug == 0,
     );
     scene.draws += crate::bolid_dust::resolve(encoder, frame.scene, frame.clouds);
+    if let Some(output) = frame.final_passes.output {
+        output.meter_scene(encoder, frame.scene.camera, frame.scene.shadow_sampling);
+    }
     let held_tool = if frame.scene.scene_visible && !frame.scene.overview_active {
         frame.held_tool.map_or(0, |(gpu, model_index)| {
             gpu.encode(encoder, frame.scene.color_view, model_index)

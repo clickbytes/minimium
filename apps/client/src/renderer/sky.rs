@@ -30,10 +30,8 @@ pub(super) fn should_draw_sun(frame: &EnvironmentFrame) -> bool {
             .is_some_and(|sun| sun.visible_fraction > 0.0)
 }
 
-pub(super) fn should_draw_stars(frame: &EnvironmentFrame) -> bool {
-    should_draw_surface_sky(frame)
-        && frame.diagnostics.star_frame.is_some()
-        && frame.environment_uniform.sky_horizon_rgb_star_visibility[3] > 0.0
+pub(super) fn should_draw_stars(frame: &EnvironmentFrame, visibility: f32) -> bool {
+    should_draw_surface_sky(frame) && frame.diagnostics.star_frame.is_some() && visibility > 0.0
 }
 
 pub(super) fn should_draw_moon(frame: &EnvironmentFrame) -> bool {

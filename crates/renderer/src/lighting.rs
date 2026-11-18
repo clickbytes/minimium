@@ -4,6 +4,8 @@ use minimium_environment::sky::ObserverFrame;
 
 pub const CLEAR_SKY_MODEL_REVISION: u32 = 1;
 
+pub use crate::render_frame::luminance;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ClearSkyParameters {
     pub ambient_rgb: [f32; 3],

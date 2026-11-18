@@ -204,9 +204,9 @@ Startup acquires the data lock, loads the map and player snapshot with the optio
 The extension API is Rust source through `minimium-gameplay`, map data and validated world definitions; it is not a dynamic plugin ABI. Keep generated manifests and verified authored content available to both clients and server. New protocol messages require a separately planned version decision. The active contracts are wire v21, save format v11 and generated revision 6; each rejects unsupported revisions without migration or fallback. Sample systems/components live in `minimium-game-sample`; engine domains do not depend on that package. The example `dev.profile` provider is a local development claim, not public account authentication. TLS is not implemented. Source review, compilation and runtime acceptance are tracked separately in `docs/architecture-execution.md`.
 
 Atmosphere presentation now has one camera-relative renderer path from the ground
-to orbit. Renderer owns bounded optical/sky/aerial LUTs, regional fog presentation,
-RGB scene composition and optional asynchronous GPU timing. Common frame bindings
-include a separate 256-byte atmosphere view/optics uniform; the 224-byte camera
+to orbit. Renderer owns bounded optical/sky/aerial LUTs, terrain-shadowed fog
+presentation, RGB scene composition and optional asynchronous GPU timing. Common frame bindings
+include a separate 272-byte atmosphere view/optics uniform; the 224-byte camera
 uniform remains unchanged. The client prepares a render-only astronomical
 reference at the camera's latitude/longitude with bounded reference altitude,
 while optical rendering uses the uncapped camera. This supersedes the earlier

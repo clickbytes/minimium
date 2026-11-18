@@ -47,6 +47,8 @@ impl DesktopHost {
             Key::MeteorVolume => self.stored_property(key),
             Key::CloudDetail => self.stored_property(key),
             Key::AtmosphereDebug => self.stored_property(key),
+            Key::MoonFlux => self.stored_property(key),
+            Key::ExposureEv => self.stored_property(key),
             Key::TerrainDebug => self.stored_property(key),
             Key::CloudDebug => self.stored_property(key),
             Key::SkyDemo => self.stored_property(key),

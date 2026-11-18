@@ -30,7 +30,8 @@ fn macro_climate(direction: vec3<f32>, elevation: f32) -> vec2<f32> {
     let angular_latitude = latitude/1.57079632679;
     let temperature = 28.0-52.0*angular_latitude*angular_latitude
         +18.0*direction.y*terrain.climate.x-max(elevation, 0.0)*0.0065+terrain.climate.y;
-    let dry_belt = exp(-pow((abs(latitude)-0.5)/0.18, 2.0));
+    let belt_distance = (abs(latitude)-0.5)/0.18;
+    let dry_belt = exp(-(belt_distance*belt_distance));
     return vec2<f32>(temperature, clamp(0.55-0.38*dry_belt+terrain.climate.z, 0.02, 0.99));
 }
 
@@ -116,21 +117,20 @@ fn macro_climate(direction: vec3<f32>, elevation: f32) -> vec2<f32> {
     let variance = min(0.15,0.5*max(dot(normal_dx,normal_dx),dot(normal_dy,normal_dy)));
     let roughness = pow(min(1.0,pow(base_roughness,4.0)+variance),0.25);
     var visibility = 1.0;
+    var lunar_direct = vec3<f32>(0.0);
     var direct = vec3<f32>(0.0);
     if length(environment.sun_geometric_world.xyz) > 1e-8 {
-        let light = normalize(select(environment.sun_geometric_world.xyz,environment.global_sun_direction.xyz,physical_atmosphere()));
-        if shadow.flags.y == 1u { visibility = shadow_visibility(input.position, input.geometric_normal, light); }
-        var irradiance = environment.local_sun_rgb_visibility.xyz;
-        if physical_atmosphere() { irradiance=physical_sun(input.position); }
-        direct += surface_light(normal, view, light, albedo, roughness, packed.a) * irradiance * visibility;
+        let sun = sunlight_at_surface(input.position);
+        let light = sun.direction;
+        if shadow.flags.y == 1u { visibility = shadow_visibility(input.position, input.geometric_normal, base_normal, light); }
+        direct += surface_light(normal, view, light, albedo, roughness, packed.a) * sun.irradiance * visibility;
     }
     if length(environment.moon_geometric_world.xyz) > 1e-8 {
-        let light = normalize(select(environment.moon_geometric_world.xyz,surface_moon_direction(),physical_atmosphere()));
-        var moon_visibility = 1.0;
-        if shadow.flags.y == 2u { moon_visibility = shadow_visibility(input.position, input.geometric_normal, light); visibility = moon_visibility; }
-        var irradiance=environment.local_moon_rgb_visibility.xyz;
-        if physical_atmosphere() {irradiance=physical_moon(input.position);}
-        direct += surface_light(normal, view, light, albedo, roughness, packed.a) * irradiance * moon_visibility;
+        let moon = moonlight_at_surface(input.position);
+        let light = moon.direction;
+        let moon_visibility = lunar_shadow_visibility(input.position, input.geometric_normal, base_normal, light);
+        if shadow.flags.y == 2u { visibility = moon_visibility; }
+        lunar_direct = surface_light(normal, view, light, albedo, roughness, packed.a) * moon.irradiance * moon_visibility;
     }
     if environment.bolid_position_intensity.w > 0.0 {
         let bolt = environment.bolid_position_intensity.xyz
@@ -140,7 +140,7 @@ fn macro_climate(direction: vec3<f32>, elevation: f32) -> vec2<f32> {
         if dot(normal,light)>0.0 {irradiance=bolid_incident(input.position);}
         var bolt_visibility = 1.0;
         if shadow.flags.y == 3u {
-            bolt_visibility = shadow_visibility(input.position, input.geometric_normal, light);
+            bolt_visibility = shadow_visibility(input.position, input.geometric_normal, input.geometric_normal, light);
             visibility = bolt_visibility;
         }
         direct += surface_light(normal, view, light, albedo, roughness, packed.a)
@@ -171,8 +171,8 @@ fn macro_climate(direction: vec3<f32>, elevation: f32) -> vec2<f32> {
     // Cached landform concavity supplies a restrained cavity approximation.
     // It attenuates only indirect light; directional shadows remain geometric.
     let shelter=smoothstep(0.45,0.85,input.habitat.x)*(1.0-smoothstep(0.15,0.5,input.habitat.y));
-    let ambient = terrain_ambient(normal,view,direction,albedo,roughness,
-        packed.g*mix(1.0,0.65,shelter),packed.a,input.position)
-        * select(1.0,mix(0.12,1.0,input.sky_visibility),excavation);
-    return vec4<f32>(tone_map_linear(ambient+direct), 1.0);
+    let ao = packed.g*mix(1.0,0.65,shelter)*select(1.0,mix(0.12,1.0,input.sky_visibility),excavation);
+    let ambient = terrain_ambient(normal,view,direction,albedo,roughness,ao,packed.a,background_ambient(input.position),false);
+    let diffuse = terrain_ambient(normal,view,direction,albedo,roughness,ao,packed.a,lunar_sky_irradiance(input.position),true);
+    return terrain_light_output(input.position,lunar_direct,diffuse,ambient+direct);
 }

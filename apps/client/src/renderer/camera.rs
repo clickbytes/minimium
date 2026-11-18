@@ -142,18 +142,19 @@ impl DesktopHost {
             && !self.application.overview().is_open();
         self.update_render_origin();
         let visual_offset = self.camera_visual_offset;
-        let (view, far) = if self.application.overview().is_open() {
+        let render_origin = glam::Vec3::from_array(self.renderer.render_origin).as_dvec3();
+        let (view, far, camera_eye_world) = if self.application.overview().is_open() {
             let (view, far) = self.overview_camera();
+            let world_eye = view.inverse().transform_point3(glam::Vec3::ZERO);
             (
-                view * glam::Mat4::from_translation(glam::Vec3::from_array(
-                    self.renderer.render_origin,
-                )),
+                view * glam::Mat4::from_translation(render_origin.as_vec3()),
                 far,
+                world_eye.as_dvec3().to_array(),
             )
         } else {
             let client = self.application.core_view();
             let character = client.character;
-            let feet_m = self.application.core_view().position_mm.map_or_else(
+            let feet_m = client.position_mm.map_or_else(
                 || character.position.map(f64::from),
                 |position| position.0.map(|value| value as f64 / 1000.0),
             );
@@ -179,38 +180,24 @@ impl DesktopHost {
                 },
                 CharacterGeometry::eye_position_m,
             );
-            let camera_position = glam::Vec3::from_array(eye_world.map(|value| value as f32))
-                + glam::Vec3::from_array(visual_offset);
-            let far = if self
-                .application
-                .core_view()
+            let eye = glam::DVec3::from_array(eye_world)
+                + glam::Vec3::from_array(visual_offset).as_dvec3();
+            let far = client
                 .manifest
-                .is_some_and(|manifest| manifest.topology() == WorldTopology::Planet)
-            {
-                let radius = self
-                    .application
-                    .core_view()
-                    .manifest
-                    .map(|manifest| {
-                        minimium_procgen::planet_surface_for(manifest).radius_mm() as f32 / 1000.0
-                    })
-                    .unwrap_or(10_000.0);
-                (camera_position.length_squared() - radius * radius)
-                    .max(0.0)
-                    .sqrt()
-                    .max(220.0)
-                    + 10.0
-            } else {
-                200.0
-            };
-            let local_camera = glam::Vec3::from_array(std::array::from_fn(|axis| {
-                (eye_world[axis] - f64::from(self.renderer.render_origin[axis])) as f32
-            })) + glam::Vec3::from_array(visual_offset);
-            (glam::Mat4::look_to_rh(local_camera, direction, up), far)
+                .filter(|manifest| manifest.topology() == WorldTopology::Planet)
+                .map_or(200.0, |manifest| {
+                    minimium_renderer::planet_visibility::surface_far_plane_m(
+                        manifest,
+                        eye.to_array(),
+                    )
+                });
+            let local_camera = (eye - render_origin).as_vec3();
+            (
+                glam::Mat4::look_to_rh(local_camera, direction, up),
+                far,
+                eye.to_array(),
+            )
         };
-        let camera_eye_local = view.inverse().transform_point3(glam::Vec3::ZERO);
-        let render_origin = glam::Vec3::from_array(self.renderer.render_origin);
-        let camera_eye_world = (camera_eye_local + render_origin).as_dvec3().to_array();
         // The overview camera is millions of metres from the globe. A 5 cm
         // near plane rounds its depth to 1.0 in f32 and hides the surface.
         let near = if self.application.overview().is_open()
@@ -351,7 +338,11 @@ impl DesktopHost {
         self.renderer.last_shadow_prepare_cpu = Some(shadow_prepare_started.elapsed());
 
         let celestial_labels = if self.show_celestial_names {
-            celestial_labels::prepare(&prepared_environment.frame, self.sky_catalogue.as_ref())
+            celestial_labels::prepare(
+                &prepared_environment.frame,
+                self.sky_catalogue.as_ref(),
+                self.renderer.atmosphere_gpu.optical_uniform(),
+            )
         } else {
             Vec::new()
         };

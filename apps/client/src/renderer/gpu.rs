@@ -102,16 +102,6 @@ impl Renderer {
         } else {
             config.format
         };
-        let output_encoder =
-            (hdr_enabled || !super::gpu_surface::is_srgb(config.format)).then(|| {
-                minimium_renderer::OutputEncoder::new(
-                    &device,
-                    [size.width, size.height],
-                    config.format,
-                    scene_color_format,
-                    hdr_enabled,
-                )
-            });
         let atmosphere_resources =
             minimium_renderer::atmosphere_resources::AtmosphereResources::new(
                 &device,
@@ -122,6 +112,23 @@ impl Renderer {
             &device,
             &atmosphere_resources,
         );
+        let mut shadow_gpu = minimium_renderer::ShadowGpu::new(
+            &device,
+            minimium_renderer::ShadowSettings::for_quality(initial_quality),
+            shadow_format,
+        )?;
+        let output_encoder =
+            (hdr_enabled || !super::gpu_surface::is_srgb(config.format)).then(|| {
+                minimium_renderer::OutputEncoder::new(
+                    &device,
+                    [size.width, size.height],
+                    config.format,
+                    scene_color_format,
+                    hdr_enabled,
+                    &frame_bindings.layout,
+                    &shadow_gpu.group2_layout,
+                )
+            });
         let mut milky_way =
             minimium_renderer::MilkyWayGpu::new(&device, &queue, &frame_bindings.layout);
         let environment_pipelines = minimium_renderer::EnvironmentPipelines::new(
@@ -182,15 +189,11 @@ impl Renderer {
             &device,
             &queue,
             &frame_bindings.layout,
+            &shadow_gpu.group2_layout,
             scene_color_format,
             &depth_view,
             atmosphere_resources,
         );
-        let mut shadow_gpu = minimium_renderer::ShadowGpu::new(
-            &device,
-            minimium_renderer::ShadowSettings::for_quality(initial_quality),
-            shadow_format,
-        )?;
         if adapter_fallback_reason.is_some() {
             shadow_gpu.fallback_reason = adapter_fallback_reason;
         }
@@ -356,6 +359,8 @@ impl Renderer {
             overview_planet: false,
             scene_visible: true,
             output_encoder,
+            fixed_exposure_ev: None,
+            exposure_history: None,
         })
     }
 

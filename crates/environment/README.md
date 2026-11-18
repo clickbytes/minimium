@@ -20,6 +20,19 @@ same scenario to cloud conditions and surface history. Surface cover replays 168
 hourly samples for snow and six for wetness, using one prepared geographic site;
 there is no reconnect-dependent accumulator or snapshot field.
 
+`WeatherModel::surface_state` includes liquid dew in the published wetness.
+It replays six hours of deposition and drying at the same site for regional
+and planet cover. `WeatherModel::ground_fog_endpoints` samples two UTC times
+at one site and returns surface extinction (m⁻¹), scale height, displayed
+ground height (both optical metres) and regional haze extinction. Liquid
+condensation uses a calibrated moisture-to-relative-humidity estimate and
+the dew-point spread. A seasonal local-solar cooling curve has a two-hour
+thermal lag and a weather-dependent cloudiness approximation. Four opposing
+terrain samples estimate valley pooling across a two-kilometre physical
+radius. Ocean columns start at the sea surface above any bathymetry.
+The atmosphere receives instantaneous air condensation independently of rain
+and retained surface dew. The model adds no wind field or persisted water mass.
+
 Annual means use angular latitude to avoid overcooling temperate zones. Terrain
 lapse rate/uplift default to the source elevation scale (`height_scale_permille` on
 Earth), independently of planet radius and cloud render scale. Surface history

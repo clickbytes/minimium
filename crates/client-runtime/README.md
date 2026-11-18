@@ -207,13 +207,20 @@ the operation. Invalid samples leave those logical owners unchanged.
 | Clock sites | Domain and preserved policy |
 | --- | --- |
 | Session state/Welcome, heartbeat/Ping, world/material preparation, transfer retry and tool use | Supplied `ClientTime`; existing 5s Welcome, 10s heartbeat cadence, 20s heartbeat timeout, 300s preparation and 500ms tool cooldown remain unchanged. Ping starts only when its tracked frame is completely written; queue acceptance commits tool timestamps/counters. |
-| Session clock epoch/reset, probe enqueue/receive, stale age and estimates | Supplied sample converted with checked relative milliseconds. Probe cadence, estimator smoothing/clamps and UTC/world-time arithmetic remain unchanged. Read-only clock getters report the last admitted sample; they do not read the host clock. |
+| Session clock epoch/reset, probe enqueue/receive, stale age and estimates | The session converts the supplied sample to checked relative milliseconds. Read-only clock getters report the last admitted sample. |
 | Controller/connector starts, polls, cancellation and retry | Supplied sample is validated before lifecycle effects. Empty connector polls compare the logical attempt deadline against this sample. |
 | Connector worker DNS/socket/process startup and completion | Physical `Instant` budgets bound actual OS work. An already available result completed within that resource budget still wins a late logical poll, preserving prior behavior. Worker availability remains an external resource fact. |
 | Snapshot receipt/interpolation | Supplied sample, checked host elapsed conversion; server timestamp ordering and saturating interpolation arithmetic remain unchanged. |
 | Prediction and input tick IDs | Fixed simulation steps and server tick/sequence values; independent of monotonic lifecycle samples and environment `time_scale`. |
 | Bootstrap, worker/child drain and controller cleanup | Physical OS/resource deadlines, including the existing 28s default controller cleanup budget. Drop uses the last admitted session sample for logical teardown and reads physical time only to bound resource drain. |
 | Environment/astronomy | Authoritative UTC/world clock samples; never substituted for lifecycle time. |
+
+The render UTC estimate slews a same-revision correction over a two-second
+real-time constant, at up to 10% of clock speed. Its 30-second deadline tracks
+unresolved bias above half a UTC tick or half a monotonic timestamp tick,
+whichever spans more world time. At 1000× this band is 500 world milliseconds.
+Inside the band the residual drains at the same slew limit. Large corrections
+and expired corrections log their signed UTC displacement and configured rate.
 
 The compile-only `host_clock` example drives the real injected session/transport
 and content adapters with controlled equal, advancing and backward samples and

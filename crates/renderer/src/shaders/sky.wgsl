@@ -43,25 +43,20 @@ fn milky_way_radiance(ray_world: vec3<f32>) -> vec3<f32> {
     let far_point = camera.inverse_sky_view_projection * vec4<f32>(ndc, 1.0, 1.0);
     let ray_world = normalize(far_point.xyz / max(abs(far_point.w), 1.0e-6));
     if physical_atmosphere() {
-        let galaxy = milky_way_radiance(ray_world)*MILKY_WAY_ORBIT_GAIN*horizon_visibility(ray_world)*celestial_contrast();
-        return vec4<f32>(galaxy,1.0);
+        let galaxy = milky_way_radiance(ray_world)*MILKY_WAY_ORBIT_GAIN*horizon_visibility(ray_world)*environment.star_animation.w;
+        return vec4<f32>(galaxy*environment.star_animation.y,1.0);
     }
     if environment.flags.y == 1u {
         return vec4<f32>(tone_map_linear(milky_way_radiance(ray_world) * MILKY_WAY_ORBIT_GAIN), 1.0);
     }
     let sample = sample_clear_sky(ray_world);
-    let moon_flux = max(environment.moon_disk_radiance.w, 0.0)
-        * environment.local_moon_rgb_visibility.w;
-    let moon_contrast = 1.0 / (1.0 + 8.0 * moon_flux);
-    let galactic_visibility = sample.transmittance
-        * celestial_contrast() * moon_contrast;
+    let galactic_visibility = sample.transmittance * environment.star_animation.w;
     var galactic_light = vec3<f32>(0.0);
-    if celestial_contrast() > 0.0 {
+    if environment.star_animation.w > 0.0 {
         galactic_light = milky_way_radiance(ray_world);
     }
     let sky = tone_map_linear(sample.scattering_rgb
-        + galactic_light * MILKY_WAY_SURFACE_GAIN * galactic_visibility
-);
+        + galactic_light * MILKY_WAY_SURFACE_GAIN * galactic_visibility);
     let ground = HORIZON_OCCLUSION_RGB;
     let visibility = horizon_visibility(ray_world);
     return vec4<f32>(mix(ground, sky, visibility), 1.0);

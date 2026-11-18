@@ -35,6 +35,7 @@ pub fn world() -> String {
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
         include_str!("shaders/transient_lighting.wgsl"),
+        include_str!("shaders/shadow_frame.wgsl"),
         include_str!("shaders/shadow_sampling.wgsl"),
         include_str!("shaders/world.wgsl"),
     ])
@@ -48,6 +49,7 @@ pub fn terrain() -> String {
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
         include_str!("shaders/transient_lighting.wgsl"),
+        include_str!("shaders/shadow_frame.wgsl"),
         include_str!("shaders/shadow_sampling.wgsl"),
         include_str!("shaders/terrain_material.wgsl"),
         include_str!("shaders/terrain_patch.wgsl"),
@@ -78,6 +80,7 @@ pub fn ocean() -> String {
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
         include_str!("shaders/transient_lighting.wgsl"),
+        include_str!("shaders/shadow_frame.wgsl"),
         include_str!("shaders/shadow_sampling.wgsl"),
         include_str!("shaders/terrain_material.wgsl"),
         include_str!("shaders/ocean.wgsl"),
@@ -110,6 +113,7 @@ pub fn moon() -> String {
         include_str!("shaders/atmosphere_frame.wgsl"),
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
+        include_str!("shaders/lunar_radiance.wgsl"),
         include_str!("shaders/moon.wgsl"),
     ])
 }
@@ -120,6 +124,7 @@ pub fn moon_sphere() -> String {
         include_str!("shaders/atmosphere_frame.wgsl"),
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/sky_common.wgsl"),
+        include_str!("shaders/lunar_radiance.wgsl"),
         include_str!("shaders/moon_sphere.wgsl"),
     ])
 }
@@ -164,8 +169,21 @@ pub fn ui() -> String {
 
 pub fn encode_output() -> String {
     combine(&[
+        include_str!("shaders/exposure_params.wgsl"),
         include_str!("shaders/output_color.wgsl"),
         include_str!("shaders/encode_output.wgsl"),
+    ])
+}
+
+pub fn exposure_meter() -> String {
+    combine(&[
+        include_str!("shaders/frame.wgsl"),
+        include_str!("shaders/atmosphere_frame.wgsl"),
+        include_str!("shaders/atmosphere_common.wgsl"),
+        include_str!("shaders/shadow_frame.wgsl"),
+        include_str!("shaders/shadow_sampling.wgsl"),
+        include_str!("shaders/exposure_params.wgsl"),
+        include_str!("shaders/exposure_meter.wgsl"),
     ])
 }
 
@@ -202,6 +220,10 @@ pub fn atmosphere_compute(kind: &str) -> String {
         include_str!("shaders/frame.wgsl"),
         include_str!("shaders/atmosphere_frame.wgsl"),
         include_str!("shaders/atmosphere_common.wgsl"),
+        include_str!("shaders/shadow_frame.wgsl"),
+        include_str!("shaders/shadow_sampling.wgsl"),
+        include_str!("shaders/atmosphere_shadow.wgsl"),
+        include_str!("shaders/atmosphere_integrate.wgsl"),
         &body,
     ])
 }

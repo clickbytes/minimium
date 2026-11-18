@@ -92,7 +92,12 @@ impl Renderer {
         let ready = self
             .world_geometry
             .publish_scene(instance, stage, fingerprint, &keys);
-        if !ready {
+        if ready {
+            self.atmosphere_gpu.set_relief(
+                &self.queue,
+                scene.prepared.as_ref().and_then(|p| p.fog_relief.clone()),
+            );
+        } else {
             self.release_scene_stage(instance, scene.owner);
         }
         self.fixed_gpu_bytes = self
@@ -117,6 +122,13 @@ impl Renderer {
         instance: minimium_world::world::WorldInstanceId,
     ) {
         self.shadow_publish_ready = false;
+        if self
+            .world_geometry
+            .publication()
+            .is_some_and(|p| p.stamp.instance == instance)
+        {
+            self.atmosphere_gpu.set_relief(&self.queue, None);
+        }
         self.fixed_gpu_bytes = self
             .fixed_gpu_bytes
             .saturating_sub(self.world_geometry.release_world(instance));
@@ -151,6 +163,7 @@ impl Renderer {
         self.clear_remote_vertices();
         self.shadow_publish_ready = false;
         if !self.world_geometry.rebase(&self.device, &self.queue, delta) {
+            self.atmosphere_gpu.set_relief(&self.queue, None);
             self.fixed_gpu_bytes = self
                 .fixed_gpu_bytes
                 .saturating_sub(self.world_geometry.clear());

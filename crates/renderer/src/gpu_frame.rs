@@ -37,6 +37,7 @@ pub struct EnvironmentUniform {
     pub flags: [u32; 4],
     pub eqj_to_world: [[f32; 4]; 4],
     pub moon_disk_radiance: [f32; 4],
+    /// Cosmetic seconds, star/galaxy HDR storage multiplier, analytic lunar gain, galactic contrast.
     pub star_animation: [f32; 4],
     pub moon_orbit_world: [f32; 4],
     pub halo_count: [u32; 4],
@@ -45,6 +46,8 @@ pub struct EnvironmentUniform {
     /// RGB emission tint; w is the analytic-output exposure compensation.
     pub bolid_rgb: [f32; 4],
     pub render_origin: [f32; 4],
+    /// Reflected solar irradiance for the current lunar phase, before local extinction.
+    pub global_moon_rgb: [f32; 4],
 }
 use bytemuck::{Pod, Zeroable};
 
@@ -108,7 +111,8 @@ const _: () = {
     assert!(std::mem::offset_of!(CameraUniform, eye_world) == 208);
     assert!(std::mem::size_of::<HaloSource>() == 64);
     assert!(std::mem::align_of::<HaloSource>() == 16);
-    assert!(std::mem::size_of::<EnvironmentUniform>() == 928);
+    assert!(std::mem::size_of::<EnvironmentUniform>() == 944);
+    assert!(std::mem::offset_of!(EnvironmentUniform, global_moon_rgb) == 928);
     assert!(std::mem::align_of::<EnvironmentUniform>() == 16);
     assert!(std::mem::offset_of!(EnvironmentUniform, sun_geometric_world) == 0);
     assert!(std::mem::offset_of!(EnvironmentUniform, sun_apparent_world) == 16);

@@ -1,8 +1,10 @@
 //! Deterministic regional weather. No camera, GPU, network or persistence state.
 mod climate;
+mod condensation;
 mod families;
 mod population;
 mod shape;
+pub use condensation::GroundFogSample;
 pub use families::CloudKind;
 pub use shape::DensityField;
 pub mod region;
@@ -204,8 +206,11 @@ impl<T: TerrainSampler> WeatherModel<T> {
                 seasonality: crate::climate::seasonality(direction, time),
             }
         };
+        let mut cover = crate::climate::surface_cover(utc, at);
+        let dew = condensation::retained_dew(self, direction, utc, &site);
+        cover.wetness += (1.0 - cover.wetness) * dew;
         Ok(crate::climate::SurfaceState {
-            cover: crate::climate::surface_cover(utc, at),
+            cover,
             climate: at(utc),
             source_elevation_m: self.ground_elevation_m(direction)?,
             climate_elevation_m: self.climate_elevation_m(direction)?,

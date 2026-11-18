@@ -77,6 +77,10 @@ impl StartupSettings {
     #[cfg(feature = "desktop")]
     getter!(mouse_sensitivity, MouseSensitivity, f32);
     #[cfg(feature = "desktop")]
+    getter!(moon_flux, MoonFlux, bool);
+    #[cfg(feature = "desktop")]
+    getter!(exposure_ev, ExposureEv, Option<f32>);
+    #[cfg(feature = "desktop")]
     getter!(sky_names, SkyNames, bool);
     #[cfg(feature = "desktop")]
     getter!(cloud_detail, CloudDetail, u8);

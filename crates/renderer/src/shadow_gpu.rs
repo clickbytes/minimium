@@ -1,7 +1,5 @@
 use crate::{
-    geometry::Vertex,
-    shadow_target::{create_target_checked, uniform_layout_entry, DEFAULT_RESOLUTION},
-    shadow_uniform::ShadowUniform,
+    geometry::Vertex, shadow_target::create_target_checked, shadow_uniform::ShadowUniform,
     ShadowSettings,
 };
 use bytemuck::Zeroable;
@@ -14,6 +12,12 @@ pub struct ShadowGpu {
     pub depth_pipeline: wgpu::RenderPipeline,
     pub depth_view: wgpu::TextureView,
     pub uniform_bind_group: wgpu::BindGroup,
+    moon_views: [wgpu::TextureView; 2],
+    moon_groups: [wgpu::BindGroup; 2],
+    moon_uniforms: [wgpu::Buffer; 2],
+    landscape_view: wgpu::TextureView,
+    landscape_bind_group: wgpu::BindGroup,
+    landscape_uniform: wgpu::Buffer,
     pub sampling_bind_group: wgpu::BindGroup,
     pub empty_bind_group: wgpu::BindGroup,
     pub empty_layout: wgpu::BindGroupLayout,
@@ -23,6 +27,7 @@ pub struct ShadowGpu {
     map_caster_count: u32,
     player_casters: Option<wgpu::Buffer>,
     player_caster_count: u32,
+    caster_revision: u64,
     _texture: wgpu::Texture,
     sampler: wgpu::Sampler,
     gpu_bytes: u64,
@@ -47,28 +52,7 @@ impl ShadowGpu {
                 count: None,
             }],
         });
-        let group2_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("world-shadow-sampling-layout"),
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Depth,
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Comparison),
-                    count: None,
-                },
-                uniform_layout_entry(2, wgpu::ShaderStages::VERTEX_FRAGMENT),
-            ],
-        });
+        let group2_layout = crate::shadow_target::sampling_layout(device);
         let empty_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("world-material-reserved-layout"),
             entries: &[],
@@ -78,26 +62,34 @@ impl ShadowGpu {
             layout: &empty_layout,
             entries: &[],
         });
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("world-shadow-uniform"),
-            contents: bytemuck::bytes_of(&ShadowUniform::zeroed()),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("shadow-depth-uniform-bind-group"),
-            layout: &uniform_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
-            }],
-        });
+        let create_uniform = |label| {
+            let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(label),
+                contents: bytemuck::bytes_of(&ShadowUniform::zeroed()),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            });
+            let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some(label),
+                layout: &uniform_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                }],
+            });
+            (buffer, group)
+        };
+        let (uniform_buffer, uniform_bind_group) = create_uniform("local-shadow-uniform");
+        let (landscape_uniform, landscape_bind_group) = create_uniform("landscape-shadow-uniform");
+        let [(moon_near, near_group), (moon_far, far_group)] =
+            ["secondary-moon-contact", "secondary-moon-landscape"].map(create_uniform);
+        let moon_uniforms = [moon_near, moon_far];
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("shadow-comparison-sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::MipmapFilterMode::Nearest,
             compare: Some(wgpu::CompareFunction::LessEqual),
             ..Default::default()
@@ -141,6 +133,8 @@ impl ShadowGpu {
             device,
             &group2_layout,
             &uniform_buffer,
+            &landscape_uniform,
+            &moon_uniforms,
             &sampler,
             settings,
             format,
@@ -152,6 +146,8 @@ impl ShadowGpu {
                     device,
                     &group2_layout,
                     &uniform_buffer,
+                    &landscape_uniform,
+                    &moon_uniforms,
                     &sampler,
                     fallback,
                     format,
@@ -165,15 +161,20 @@ impl ShadowGpu {
             }
             Err(reason) => return Err(reason),
         };
-        let (texture, depth_view, sampling_bind_group, gpu_bytes) = target;
         Ok(Self {
             settings,
             fallback_reason,
             format,
             depth_pipeline,
-            depth_view,
+            depth_view: target.local_view,
             uniform_bind_group,
-            sampling_bind_group,
+            moon_views: target.moon_views,
+            moon_groups: [near_group, far_group],
+            moon_uniforms,
+            landscape_view: target.landscape_view,
+            landscape_uniform,
+            landscape_bind_group,
+            sampling_bind_group: target.sampling,
             empty_bind_group,
             empty_layout,
             group2_layout,
@@ -182,9 +183,10 @@ impl ShadowGpu {
             map_caster_count: 0,
             player_casters: None,
             player_caster_count: 0,
-            _texture: texture,
+            caster_revision: 0,
+            _texture: target.texture,
             sampler,
-            gpu_bytes,
+            gpu_bytes: target.bytes,
         })
     }
 
@@ -198,11 +200,57 @@ impl ShadowGpu {
         if !enabled {
             return 0;
         }
+        self.encode_map(
+            encoder,
+            &self.depth_view,
+            &self.uniform_bind_group,
+            casters,
+            "local-shadow-depth-pass",
+        )
+    }
+
+    pub(crate) fn encode_landscape_depth<'a>(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        casters: impl IntoIterator<Item = (&'a wgpu::Buffer, u32)>,
+    ) -> u32 {
+        self.encode_map(
+            encoder,
+            &self.landscape_view,
+            &self.landscape_bind_group,
+            casters,
+            "landscape-shadow-depth-pass",
+        )
+    }
+
+    pub(crate) fn encode_secondary_moon<'a>(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        cascade: usize,
+        casters: impl IntoIterator<Item = (&'a wgpu::Buffer, u32)>,
+    ) -> u32 {
+        self.encode_map(
+            encoder,
+            &self.moon_views[cascade],
+            &self.moon_groups[cascade],
+            casters,
+            "secondary-moon-shadow-depth",
+        )
+    }
+
+    fn encode_map<'a>(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+        uniform: &wgpu::BindGroup,
+        casters: impl IntoIterator<Item = (&'a wgpu::Buffer, u32)>,
+        label: &str,
+    ) -> u32 {
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("local-shadow-depth-pass"),
+            label: Some(label),
             color_attachments: &[],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: &self.depth_view,
+                view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
                     store: wgpu::StoreOp::Store,
@@ -214,7 +262,7 @@ impl ShadowGpu {
             multiview_mask: None,
         });
         pass.set_pipeline(&self.depth_pipeline);
-        pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+        pass.set_bind_group(0, uniform, &[]);
         let mut draws = 0;
         for (buffer, vertex_count) in casters {
             pass.set_vertex_buffer(0, buffer.slice(..));
@@ -232,6 +280,9 @@ impl ShadowGpu {
         capacity_bytes: u64,
     ) -> Result<u64, ()> {
         let bytes = std::mem::size_of_val(vertices) as u64;
+        if self.map_caster_count != 0 || !vertices.is_empty() {
+            self.caster_revision = self.caster_revision.wrapping_add(1);
+        }
         if bytes > capacity_bytes {
             self.map_caster_count = 0;
             return Err(());
@@ -270,11 +321,14 @@ impl ShadowGpu {
     }
 
     pub fn release_map_casters(&mut self) -> u64 {
-        self.map_caster_count = 0;
+        self.clear_map_casters();
         self.map_casters.take().map_or(0, |buffer| buffer.size())
     }
 
     pub fn clear_map_casters(&mut self) {
+        if self.map_caster_count != 0 {
+            self.caster_revision = self.caster_revision.wrapping_add(1);
+        }
         self.map_caster_count = 0;
     }
 
@@ -286,6 +340,9 @@ impl ShadowGpu {
         capacity_bytes: u64,
     ) -> Result<u64, ()> {
         let bytes = std::mem::size_of_val(vertices) as u64;
+        if self.player_caster_count != 0 || !vertices.is_empty() {
+            self.caster_revision = self.caster_revision.wrapping_add(1);
+        }
         if bytes > capacity_bytes {
             self.player_caster_count = 0;
             return Err(());
@@ -324,20 +381,69 @@ impl ShadowGpu {
     }
 
     pub fn release_player_casters(&mut self) -> u64 {
-        self.player_caster_count = 0;
+        self.clear_player_casters();
         self.player_casters.take().map_or(0, |buffer| buffer.size())
     }
 
     pub fn clear_player_casters(&mut self) {
+        if self.player_caster_count != 0 {
+            self.caster_revision = self.caster_revision.wrapping_add(1);
+        }
         self.player_caster_count = 0;
     }
 
+    /// Changes when auxiliary map or moving player caster data is republished.
+    pub fn caster_revision(&self) -> u64 {
+        self.caster_revision
+    }
+
     pub fn write_uniform(&self, queue: &wgpu::Queue, uniform: &ShadowUniform) {
+        self.write_uniforms(queue, uniform, None);
+    }
+
+    pub fn write_uniforms(
+        &self,
+        queue: &wgpu::Queue,
+        uniform: &ShadowUniform,
+        landscape: Option<&ShadowUniform>,
+    ) {
+        self.write_cascades(queue, uniform, landscape, [None; 2]);
+    }
+
+    pub fn write_cascades(
+        &self,
+        queue: &wgpu::Queue,
+        uniform: &ShadowUniform,
+        landscape: Option<&ShadowUniform>,
+        moon: [Option<&ShadowUniform>; 2],
+    ) {
+        for (buffer, value) in self.moon_uniforms.iter().zip(moon) {
+            queue.write_buffer(
+                buffer,
+                0,
+                bytemuck::bytes_of(value.unwrap_or(&ShadowUniform::default())),
+            );
+        }
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(uniform));
+        queue.write_buffer(
+            &self.landscape_uniform,
+            0,
+            bytemuck::bytes_of(landscape.unwrap_or(&ShadowUniform::default())),
+        );
+    }
+
+    pub fn uniform_bytes(&self) -> u64 {
+        self.uniform_buffer.size()
+            + self.landscape_uniform.size()
+            + self
+                .moon_uniforms
+                .iter()
+                .map(wgpu::Buffer::size)
+                .sum::<u64>()
     }
 
     pub fn gpu_bytes(&self) -> u64 {
-        self.gpu_bytes + self.uniform_buffer.size()
+        self.texture_bytes() + self.uniform_bytes()
     }
 
     pub fn reconfigure(
@@ -352,35 +458,29 @@ impl ShadowGpu {
         if settings.enabled && self.format != wgpu::TextureFormat::Depth32Float {
             return Err("standard_profile_requires_depth32float");
         }
-        let (texture, depth_view, sampling_bind_group, gpu_bytes) = create_target_checked(
+        let target = create_target_checked(
             device,
             &self.group2_layout,
             &self.uniform_buffer,
+            &self.landscape_uniform,
+            &self.moon_uniforms,
             &self.sampler,
             settings,
             self.format,
         )?;
-        self._texture = texture;
-        self.depth_view = depth_view;
-        self.sampling_bind_group = sampling_bind_group;
-        self.gpu_bytes = gpu_bytes;
+        self._texture = target.texture;
+        self.depth_view = target.local_view;
+        self.landscape_view = target.landscape_view;
+        self.moon_views = target.moon_views;
+        self.sampling_bind_group = target.sampling;
+        self.gpu_bytes = target.bytes;
         self.settings = settings;
         self.fallback_reason = None;
         Ok(())
     }
 
     pub fn texture_bytes(&self) -> u64 {
-        let resolution = if self.settings.enabled {
-            self.settings.resolution.min(DEFAULT_RESOLUTION)
-        } else {
-            1
-        };
-        let bytes_per_pixel = if self.format == wgpu::TextureFormat::Depth16Unorm {
-            2
-        } else {
-            4
-        };
-        u64::from(resolution) * u64::from(resolution) * bytes_per_pixel
+        self.gpu_bytes
     }
 }
 

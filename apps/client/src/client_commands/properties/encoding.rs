@@ -20,7 +20,9 @@ impl Value {
             | Self::MovementAccel(value) => value.to_string(),
             Self::InputBindings(value) | Self::WorldTimeScale(value) => value.clone(),
             Self::SkyQuality(value) | Self::MeteorQuality(value) => value.label().into(),
-            Self::SkyNames(value)
+            Self::ExposureEv(value) => value.map_or_else(|| "auto".into(), |ev| ev.to_string()),
+            Self::MoonFlux(value)
+            | Self::SkyNames(value)
             | Self::MeteorAudio(value)
             | Self::MeteorEnabled(value)
             | Self::SkyDemo(value)
@@ -35,6 +37,7 @@ impl Value {
                 AtmosphereDebug::OpticalDepth => "optical_depth",
                 AtmosphereDebug::Distance => "distance",
                 AtmosphereDebug::Fog => "fog",
+                AtmosphereDebug::FogShadow => "fog_shadow",
             }
             .into(),
             Self::TerrainDebug(value) => match value {
@@ -47,6 +50,11 @@ impl Value {
                 TerrainDebug::Coverage => "coverage",
                 TerrainDebug::Habitat => "habitat",
                 TerrainDebug::Source => "source",
+                TerrainDebug::MoonDirect => "moon_direct",
+                TerrainDebug::MoonDiffuse => "moon_diffuse",
+                TerrainDebug::Background => "background",
+                TerrainDebug::MoonCoverage => "moon_coverage",
+                TerrainDebug::LightChannels => "light_channels",
             }
             .into(),
             Self::CloudDebug(value) => match value {

@@ -11,6 +11,7 @@ const MAX_STAR_CANDIDATES: usize = 160;
 pub(super) fn prepare(
     frame: &EnvironmentFrame,
     catalogue: Option<&StarCatalogueAdapter>,
+    atmosphere: &minimium_renderer::AtmosphereUniform,
 ) -> Vec<CelestialLabel> {
     if frame.status != EnvironmentFrameStatus::Available {
         return Vec::new();
@@ -46,9 +47,11 @@ pub(super) fn prepare(
     let Some(catalogue) = catalogue else {
         return labels;
     };
-    if frame.render_view.kind == super::environment::EnvironmentViewKind::Surface
-        && frame.environment_uniform.sky_horizon_rgb_star_visibility[3] < 0.08
-    {
+    let (stars, _) = minimium_renderer::atmosphere_view::celestial_visibility(
+        &frame.environment_uniform,
+        atmosphere,
+    );
+    if stars < 0.08 {
         return labels;
     }
     let eqj_to_world = Mat4::from_cols_array_2d(&frame.environment_uniform.eqj_to_world);

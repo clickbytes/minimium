@@ -5,7 +5,7 @@ use wgpu::util::DeviceExt;
 pub struct AtmosphereResources {
     pub uniform: wgpu::Buffer,
     pub physical: bool,
-    pub optical: wgpu::TextureView,
+    pub optical: crate::atmosphere_table::OpticalTables,
     pub sampler: wgpu::Sampler,
     pub textures: Vec<wgpu::Texture>,
     pub views: Vec<wgpu::TextureView>,
@@ -16,17 +16,33 @@ pub struct AtmosphereResources {
 }
 
 impl AtmosphereResources {
+    const FOG_BYTES: u64 = crate::fog_relief::EDGE as u64 * crate::fog_relief::EDGE as u64 * 3 * 8;
     pub const SIZES: [[u32; 3]; 5] = [
         [192, 108, 1],
         [192, 108, 1],
-        [32, 32, 32],
-        [32, 32, 32],
+        [96, 54, 48],
+        [96, 54, 48],
         [32, 32, 1],
     ];
-    pub const BYTES: u64 = crate::atmosphere_table::BYTES
-        + 256
-        + 9 * 9 * 2 * 8
-        + 2 * (192 * 108 * 16 + 32 * 32 * 32 * 16 + 32 * 32 * 8);
+    const LOW_SIZES: [[u32; 3]; 5] = [
+        [128, 64, 1],
+        [128, 64, 1],
+        [32, 18, 32],
+        [32, 18, 32],
+        [32, 32, 1],
+    ];
+
+    pub fn active_size(index: usize, standard: bool) -> [u32; 3] {
+        if standard {
+            Self::SIZES[index]
+        } else {
+            Self::LOW_SIZES[index]
+        }
+    }
+    pub const BYTES: u64 = crate::atmosphere_table::OpticalTables::BYTES
+        + std::mem::size_of::<AtmosphereUniform>() as u64
+        + Self::FOG_BYTES
+        + 2 * (192 * 108 * 16 + 96 * 54 * 48 * 16 + 32 * 32 * 8);
 
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, physical: bool) -> Self {
         let uniform = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -34,7 +50,8 @@ impl AtmosphereResources {
             contents: bytemuck::bytes_of(&AtmosphereUniform::default()),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        let optical = crate::atmosphere_table::create(device, queue, crate::atmosphere::EARTH);
+        let optical =
+            crate::atmosphere_table::OpticalTables::new(device, queue, crate::atmosphere::EARTH);
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("atmosphere linear clamp"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -66,8 +83,14 @@ impl AtmosphereResources {
         };
         let textures: Vec<_> = Self::SIZES
             .map(|s| {
+                // The analytic route only needs compatible sampled bindings.
+                let sampled = if physical {
+                    s
+                } else {
+                    [1, 1, if s[2] > 1 { 2 } else { 1 }]
+                };
                 make(
-                    s,
+                    sampled,
                     wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
                 )
             })
@@ -93,11 +116,11 @@ impl AtmosphereResources {
             .map(|t| t.create_view(&Default::default()))
             .collect();
         let fog = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("regional fog endpoints"),
+            label: Some("regional fog endpoints and published exterior relief"),
             size: wgpu::Extent3d {
-                width: 9,
-                height: 9,
-                depth_or_array_layers: 2,
+                width: crate::fog_relief::EDGE,
+                height: crate::fog_relief::EDGE,
+                depth_or_array_layers: 3,
             },
             mip_level_count: 1,
             sample_count: 1,
@@ -129,7 +152,7 @@ impl AtmosphereResources {
             },
             wgpu::BindGroupEntry {
                 binding: 3,
-                resource: wgpu::BindingResource::TextureView(&self.optical),
+                resource: wgpu::BindingResource::TextureView(&self.optical.depth),
             },
             wgpu::BindGroupEntry {
                 binding: 4,
@@ -146,6 +169,10 @@ impl AtmosphereResources {
                 }),
         );
         entries.push(wgpu::BindGroupEntry {
+            binding: 12,
+            resource: wgpu::BindingResource::TextureView(&self.optical.irradiance),
+        });
+        entries.push(wgpu::BindGroupEntry {
             binding: 10,
             resource: wgpu::BindingResource::TextureView(&self.fog_view),
         });
@@ -161,7 +188,9 @@ impl AtmosphereResources {
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
                     has_dynamic_offset: false,
-                    min_binding_size: wgpu::BufferSize::new(256),
+                    min_binding_size: wgpu::BufferSize::new(
+                        std::mem::size_of::<AtmosphereUniform>() as u64,
+                    ),
                 },
                 count: None,
             },
@@ -172,7 +201,7 @@ impl AtmosphereResources {
                 count: None,
             },
         ];
-        for binding in [3, 5, 6, 7, 8, 9, 10] {
+        for binding in [3, 5, 6, 7, 8, 9, 10, 12] {
             entries.push(wgpu::BindGroupLayoutEntry {
                 binding,
                 visibility,
@@ -194,9 +223,9 @@ impl AtmosphereResources {
     }
 
     pub fn bytes(&self) -> u64 {
-        crate::atmosphere_table::BYTES
+        crate::atmosphere_table::OpticalTables::BYTES
             + self.uniform.size()
-            + 9 * 9 * 2 * 8
+            + Self::FOG_BYTES
             + self
                 .textures
                 .iter()
@@ -208,12 +237,22 @@ impl AtmosphereResources {
                 .sum::<u64>()
     }
 
-    pub fn publish(&self, encoder: &mut wgpu::CommandEncoder, range: std::ops::Range<usize>) {
+    pub fn publish(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        range: std::ops::Range<usize>,
+        standard: bool,
+    ) {
         for i in range {
+            let [width, height, depth_or_array_layers] = Self::active_size(i, standard);
             encoder.copy_texture_to_texture(
                 self.staging[i].as_image_copy(),
                 self.textures[i].as_image_copy(),
-                self.textures[i].size(),
+                wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers,
+                },
             );
         }
     }

@@ -82,10 +82,9 @@ fn star_hash(id: u32) -> f32 {
     if !overview && !physical_atmosphere() {
         let atmosphere = sample_clear_sky(ray_world);
         background = atmosphere.scattering_rgb;
-        transmission = atmosphere.transmittance * celestial_contrast();
+        transmission = atmosphere.transmittance;
     }
-    if physical_atmosphere() {transmission=celestial_contrast();}
-    let visibility = horizon * transmission;
+    let visibility = horizon * transmission * environment.sky_horizon_rgb_star_visibility.w;
     if visibility <= 0.0 {
         discard;
     }
@@ -124,7 +123,8 @@ fn star_hash(id: u32) -> f32 {
     let star_radiance = input.color_linear * relative_flux * STAR_RADIANCE_SCALE
         * area_compensation * profile * visibility * twinkle;
     if environment.flags.w != 0u {
-        return vec4<f32>(star_radiance, 0.0);
+        let storage_gain=select(1.0,environment.star_animation.y,physical_atmosphere());
+        return vec4<f32>(star_radiance*storage_gain, 0.0);
     }
     let with_star = tone_map_linear(background + star_radiance);
     let linear_delta = max(with_star - base, vec3<f32>(0.0));

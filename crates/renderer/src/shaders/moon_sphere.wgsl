@@ -15,14 +15,14 @@ struct MoonSphereFragment {
     let offset = environment.moon_orbit_world.xyz - camera.eye_world.xyz;
     let distance = length(offset);
     let direction = offset / max(distance, 0.000001);
-    let angular_radius = asin(clamp(environment.moon_orbit_world.w / distance, 0.0, 0.999));
+    let angular_radius = asin(clamp(environment.moon_orbit_world.w / max(distance,1.0), 0.0, 0.999));
     let reference = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(direction.y) > 0.95);
     let right = normalize(cross(reference, direction));
     let up = normalize(cross(direction, right));
     let ray = normalize(direction + (right * corners[index].x + up * corners[index].y) * tan(angular_radius));
     let clip = camera.sky_view_projection * vec4<f32>(ray, 0.0);
     var output: MoonSphereVertex;
-    if clip.w <= 0.00001 {
+    if clip.w <= 0.00001 || angular_radius<=0.0 || distance<1.0 {
         output.clip_position = vec4<f32>(2.0, 2.0, 2.0, 1.0);
     } else {
         output.clip_position = vec4<f32>(clip.xy, clip.w, clip.w);
@@ -50,18 +50,15 @@ struct MoonSphereFragment {
     if distance <= 0.0 {
         discard;
     }
-    let hit = camera.eye_world.xyz + ray * distance;
-    let normal = normalize(hit - center);
-    let sun = normalize(environment.moon_light_world_phase.xyz);
-    let illumination = max(dot(normal, sun), 0.0);
-    let albedo = vec3<f32>(0.72, 0.73, 0.75);
-    let linear = albedo * (0.015 + 1.8 * illumination);
-    let projected = camera.view_projection * vec4<f32>(hit, 1.0);
+    let normal = normalize(-closest_offset - ray * sqrt(discriminant));
+    let linear = lunar_surface_radiance(normal);
+    let local_hit = (camera.eye_world.xyz - environment.render_origin.xyz) + ray * distance;
+    let projected = camera.view_projection * vec4<f32>(local_hit, 1.0);
     if projected.w <= 0.0 {
         discard;
     }
     var output: MoonSphereFragment;
-    output.color = vec4<f32>(tone_map_display(linear), 1.0);
+    output.color = vec4<f32>(tone_map_linear(linear), 1.0);
     output.depth = clamp(projected.z / projected.w, 0.0, 1.0);
     return output;
 }

@@ -110,11 +110,17 @@ fn tone_map_display(rgb: vec3<f32>) -> vec3<f32> {
     return tone_map_color(rgb);
 }
 
+fn camera_horizon()->vec4<f32> {
+    if !has_spherical_atmosphere() {return environment.observer_up_horizon_cos;}
+    let h=max(atmosphere.up_height.w,0.0);
+    let radius=atmosphere.radii.x;
+    let horizon=-sqrt(h*(2.0*radius+h))/(radius+h);
+    return vec4<f32>(atmosphere.up_height.xyz,horizon);
+}
 fn horizon_visibility(ray_world: vec3<f32>) -> f32 {
-    let up = normalize(environment.observer_up_horizon_cos.xyz);
-    let cosine = dot(up, normalize(ray_world));
-    let horizon = environment.observer_up_horizon_cos.w;
-    return smoothstep(horizon - 0.0015, horizon + 0.0015, cosine);
+    let horizon=camera_horizon();
+    let cosine = dot(horizon.xyz, normalize(ray_world));
+    return smoothstep(horizon.w - 0.0015, horizon.w + 0.0015, cosine);
 }
 
 fn clear_air_transmittance(altitude: f32) -> f32 {
@@ -133,12 +139,12 @@ fn sample_clear_sky(ray_world: vec3<f32>) -> SkySample {
     let horizon = environment.sky_horizon_rgb_star_visibility.xyz;
     let sun_altitude = environment.sky_zenith_rgb_sun_altitude.w;
     let day_factor = smoothstep(radians(-18.0), radians(4.0), sun_altitude);
-    let sun_direction = normalize(environment.sun_apparent_world.xyz);
+    let sun_direction = visual_sun_direction();
     let sun_angle = acos(clamp(dot(ray, sun_direction), -1.0, 1.0));
     let horizon_glow = exp(-sun_angle * 7.0) * day_factor;
     var scattering = mix(zenith, horizon, horizon_weight)
         + vec3<f32>(0.34, 0.16, 0.055) * horizon_glow * 0.28;
-    let moon_direction = environment.moon_apparent_world.xyz;
+    let moon_direction = visual_moon_ray().xyz;
     if environment.local_moon_rgb_visibility.w > 0.0 && length(moon_direction) > 1.0e-8 {
         let moon_angle = acos(clamp(dot(ray, normalize(moon_direction)), -1.0, 1.0));
         let halo_width = max(radians(7.0), environment.moon_apparent_world.w * 16.0);

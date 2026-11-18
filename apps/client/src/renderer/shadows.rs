@@ -1,5 +1,8 @@
 use super::environment::{EnvironmentFrame, EnvironmentFrameStatus, LocalBodyFrame};
+use glam::DVec3;
+use minimium_renderer::lighting::luminance;
 pub(crate) use minimium_renderer::shadow_uniform::ShadowUniform;
+use minimium_renderer::AtmosphereUniform;
 const SHADOW_SOURCE_SUN: u32 = 1;
 const SHADOW_SOURCE_MOON: u32 = 2;
 const SHADOW_SOURCE_BOLID: u32 = 3;
@@ -28,23 +31,45 @@ impl ShadowSource {
         }
     }
 
-    pub(super) fn direction(self, frame: &EnvironmentFrame, physical: bool) -> Option<[f64; 3]> {
+    pub(super) fn direction(
+        self,
+        frame: &EnvironmentFrame,
+        air: Option<&AtmosphereUniform>,
+        point: DVec3,
+    ) -> Option<DVec3> {
+        let Some(air) = air else {
+            let body = match self {
+                Self::Sun => frame.local_sun?,
+                Self::Moon => frame.local_moon?,
+                Self::Bolid => return None,
+            };
+            return DVec3::from_array(body.apparent_direction_world).try_normalize();
+        };
         let direction = match self {
-            Self::Sun if physical => frame.global_sun?.direction_world,
-            Self::Moon if physical => std::array::from_fn(|i| {
-                f64::from(frame.environment_uniform.moon_orbit_world[i])
-                    - frame.render_view.camera_eye_world_m[i]
-            }),
-            Self::Sun => frame.local_sun?.geometric_direction_world,
-            Self::Moon => frame.local_moon?.geometric_direction_world,
+            Self::Sun => DVec3::from_array(frame.global_sun?.direction_world).try_normalize()?,
+            Self::Moon => {
+                let [x, y, z, radius] = frame.environment_uniform.moon_orbit_world;
+                if radius <= 0.0 {
+                    return None;
+                }
+                (DVec3::new(x.into(), y.into(), z.into()) - point).try_normalize()?
+            }
             Self::Bolid => return None,
         };
-        let length = direction
-            .iter()
-            .map(|value| value * value)
-            .sum::<f64>()
-            .sqrt();
-        (length.is_finite() && length > 1.0e-12).then(|| direction.map(|value| value / length))
+        let up = point.try_normalize()?;
+        let height =
+            ((point.length() - f64::from(air.config[0])) * f64::from(air.config[1])).max(0.0);
+        let cosine = up.dot(direction).clamp(-1.0, 1.0);
+        let tangent = up - direction * cosine;
+        if height >= f64::from(air.radii[1])
+            || air.radii[2] <= 0.0
+            || tangent.length_squared() < 1e-8
+        {
+            return Some(direction);
+        }
+        let lift = minimium_astronomy::standard_refraction_rad(cosine.asin()).ok()?
+            * (-height / f64::from(air.radii[2])).exp();
+        Some(direction * lift.cos() + tangent.normalize() * lift.sin())
     }
 }
 
@@ -95,34 +120,47 @@ pub(super) fn select_source(
     frame: &EnvironmentFrame,
     previous: Option<ShadowSource>,
     center: [f64; 3],
-    physical: bool,
-) -> Option<ShadowSource> {
+    atmosphere: Option<&AtmosphereUniform>,
+) -> (Option<ShadowSource>, bool) {
     if frame.status != EnvironmentFrameStatus::Available {
-        return None;
+        return (None, false);
     }
-    let (sun, moon) = if physical {
+    let (sun, moon) = if let Some(air) = atmosphere {
         let mut points = minimium_renderer::shadow_view::surface_footprint(frame.render_view);
         points.push(glam::DVec3::from_array(center));
         let strength = |source: ShadowSource, rgb: [f32; 3]| -> f32 {
-            let Some(direction) = source.direction(frame, true) else {
-                return 0.0;
-            };
-            let direction = glam::DVec3::from_array(direction);
-            let cosine = points
+            let solar_radius = frame
+                .local_sun
+                .map_or(0.0, |sun| sun.angular_radius_rad.sin());
+            let [x, y, z, r] = frame.environment_uniform.moon_orbit_world;
+            let moon_center = DVec3::new(x.into(), y.into(), z.into());
+            let maximum = points
                 .iter()
-                .map(|point| point.normalize_or_zero().dot(direction))
-                .fold(-1.0, f64::max);
-            let disk = ((cosine + 0.00465) / 0.0093).clamp(0.0, 1.0) as f32;
-            luminance(rgb) * disk * cosine.max(0.02) as f32
+                .filter_map(|&point| {
+                    let direction = source.direction(frame, Some(air), point)?;
+                    let cosine = point.try_normalize()?.dot(direction);
+                    let radius_ratio = (f64::from(air.config[0]) / point.length()).min(1.0);
+                    let horizon = -(1.0 - radius_ratio * radius_ratio).sqrt();
+                    let radius = if source == ShadowSource::Moon {
+                        (f64::from(r) / point.distance(moon_center)).clamp(1e-7, 1.0)
+                    } else {
+                        solar_radius
+                    };
+                    if radius <= 0.0 {
+                        return None;
+                    }
+                    let half_width = (radius * radius_ratio).max(1e-7);
+                    let t = ((cosine - horizon + half_width) / (2.0 * half_width)).clamp(0.0, 1.0);
+                    Some(t * t * (3.0 - 2.0 * t) * cosine.max(0.02))
+                })
+                .fold(0.0, f64::max);
+            luminance(rgb) * maximum as f32
         };
         let sun_rgb = frame.environment_uniform.global_sun_rgb;
-        let flux = frame.environment_uniform.moon_disk_radiance[3];
+        let moon_rgb = frame.environment_uniform.global_moon_rgb;
         (
             strength(ShadowSource::Sun, [sun_rgb[0], sun_rgb[1], sun_rgb[2]]),
-            strength(
-                ShadowSource::Moon,
-                [0.25, 0.32, 0.5].map(|v| v * 2e-6 * flux),
-            ),
+            strength(ShadowSource::Moon, [moon_rgb[0], moon_rgb[1], moon_rgb[2]]),
         )
     } else {
         (
@@ -138,13 +176,16 @@ pub(super) fn select_source(
         })
     } else {
         None
-    }?;
+    };
+    let Some(strongest) = strongest else {
+        return (None, false);
+    };
     let strongest_value = match strongest {
         ShadowSource::Sun => sun,
         ShadowSource::Moon => moon,
         ShadowSource::Bolid => 0.0,
     };
-    previous
+    let selected = previous
         .filter(|source| {
             let value = match source {
                 ShadowSource::Sun => sun,
@@ -153,7 +194,8 @@ pub(super) fn select_source(
             };
             value > 0.0 && value >= strongest_value * 0.95
         })
-        .or(Some(strongest))
+        .or(Some(strongest));
+    (selected, moon > 0.0)
 }
 
 fn body_strength(body: Option<LocalBodyFrame>) -> f32 {
@@ -163,6 +205,46 @@ fn body_strength(body: Option<LocalBodyFrame>) -> f32 {
     luminance(body.effective_linear_rgb)
 }
 
-fn luminance([red, green, blue]: [f32; 3]) -> f32 {
-    (0.2126 * red + 0.7152 * green + 0.0722 * blue).max(0.0)
+// The view footprint samples sea level. A published peak can see the Moon
+// after every such sample has entered the planetary shadow. Bounding corners
+// conservatively retain the map until all candidate receivers are dark.
+pub(super) fn published_moonlight(
+    frame: &EnvironmentFrame,
+    air: Option<&minimium_renderer::AtmosphereUniform>,
+    region: minimium_renderer::shadow_view::ShadowRegion,
+    mut bounds: impl Iterator<Item = minimium_renderer::shadow_geometry::ShadowBounds>,
+) -> bool {
+    let Some(air) = air else {
+        return false;
+    };
+    let env = &frame.environment_uniform;
+    if !env.global_moon_rgb[..3].iter().any(|v| *v > 0.0) {
+        return false;
+    }
+    let [x, y, z, r] = env.moon_orbit_world;
+    let moon = glam::DVec3::new(x.into(), y.into(), z.into());
+    let radius = f64::from(air.config[0]);
+    // An enclosing sphere bounds receiver height, radial direction and parallax.
+    bounds.any(|bounds| {
+        if !bounds.intersects_sphere(
+            region.center_world,
+            region.settings.receiver_radius_m.into(),
+        ) {
+            return false;
+        }
+        let lo = glam::DVec3::from_array(bounds.minimum);
+        let hi = glam::DVec3::from_array(bounds.maximum);
+        let center = (lo + hi) * 0.5;
+        let extent = (hi - lo).length() * 0.5;
+        let distance = center.length();
+        if distance <= extent {
+            return true;
+        }
+        let ray = moon - center;
+        let zenith = (center / distance).angle_between(ray);
+        let dip = (radius / (distance + extent)).clamp(0.0, 1.0).acos();
+        let spread =
+            (extent / distance).asin() + ((extent + f64::from(r)) / ray.length()).min(1.0).asin();
+        zenith < std::f64::consts::FRAC_PI_2 + dip + spread + 1.0_f64.to_radians()
+    })
 }

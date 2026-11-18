@@ -5,6 +5,7 @@ use super::{
     DesktopHost,
 };
 use minimium_protocol::WorldContext;
+use minimium_renderer::{shadow_geometry::ShadowBounds, shadow_view::ShadowRegion};
 use minimium_world::world::{
     GenerationRevision, SectorKey, WorldContentRevision, WorldInstanceId, WorldMap,
 };
@@ -12,8 +13,8 @@ use minimium_world::world::{
 pub(super) struct ShadowSectorSnapshot {
     pub(super) key: SectorKey,
     pub(super) lod: u8,
-    pub(super) resident: bool,
-    pub(super) bounds: Option<([f64; 3], [f64; 3])>,
+    pub(super) vertex_count: Option<u32>,
+    pub(super) bounds: Option<ShadowBounds>,
 }
 
 pub(super) struct PreparedShadowFrame {
@@ -25,6 +26,10 @@ pub(super) struct PreparedShadowFrame {
         Option<minimium_renderer::world_geometry_gpu::GeometryPublicationStamp>,
     pub(super) caster_keys: Vec<(SectorKey, u8)>,
     pub(super) uniform: ShadowUniform,
+    pub(super) secondary_moon: [Option<ShadowUniform>; 2],
+    pub(super) moon_keys: [Vec<(SectorKey, u8)>; 2],
+    pub(super) landscape_uniform: Option<ShadowUniform>,
+    pub(super) landscape_caster_keys: Vec<(SectorKey, u8)>,
     pub(super) map_casters: Option<PreparedMapCasters>,
     pub(super) invalid_reason: Option<ShadowInvalidReason>,
     pub(super) valid: bool,
@@ -40,6 +45,10 @@ impl PreparedShadowFrame {
             geometry_stamp: None,
             caster_keys: Vec::new(),
             uniform: bytemuck::Zeroable::zeroed(),
+            secondary_moon: [None; 2],
+            moon_keys: Default::default(),
+            landscape_uniform: None,
+            landscape_caster_keys: Vec::new(),
             map_casters: None,
             invalid_reason: Some(reason),
             valid: false,
@@ -60,7 +69,6 @@ pub(super) struct ShadowPreparationInput<'a> {
     pub(super) overview_planet: bool,
     pub(super) remote_complete: bool,
     pub(super) shadow_enabled: bool,
-    pub(super) physical: bool,
     pub(super) settings: minimium_renderer::ShadowSettings,
     pub(super) player_position_m: [f64; 3],
     pub(super) render_origin: [f32; 3],
@@ -73,6 +81,11 @@ pub(super) fn prepare_shadow_frame(
     state: &mut ShadowState,
     map_cache: &mut ShadowMapPreparationCache,
 ) -> Result<PreparedShadowFrame, ShadowInvalidReason> {
+    let previous_radius = if state.valid {
+        state.receiver_radius_m
+    } else {
+        0.0
+    };
     state.caster_keys.clear();
     state.valid = false;
     state.source = None;
@@ -116,27 +129,22 @@ pub(super) fn prepare_shadow_frame(
         .active_sectors
         .iter()
         .filter_map(|sector| sector.bounds)
-        .map(|(minimum, maximum)| {
-            bounds_distance(
-                minimum,
-                maximum,
-                input.environment.render_view.camera_eye_world_m,
-            )
-        })
+        .map(|bounds| bounds.distance_to(input.environment.render_view.camera_eye_world_m))
         .fold(f64::INFINITY, f64::min);
     let Some(region) = minimium_renderer::shadow_view::ShadowRegion::for_view(
         input.environment.render_view,
         input.player_position_m,
         ground_distance,
         input.settings,
-        state.receiver_radius_m,
+        previous_radius,
     ) else {
         return Err(ShadowInvalidReason::IncompleteCasters);
     };
     state.receiver_radius_m = region.settings.receiver_radius_m;
     state.texel_m =
         region.settings.receiver_radius_m * 2.02 / region.settings.resolution.max(1) as f32;
-    let physical = input.physical;
+    let atmosphere = (input.atmosphere.config[0] > 0.0).then_some(input.atmosphere);
+    let origin = input.render_origin.map(f64::from);
     let bolid_position = input.bolid_light.and_then(|(position, color)| {
         let distance_squared = (0..3)
             .map(|i| (f64::from(position[i]) - region.center_world[i]).powi(2))
@@ -173,16 +181,38 @@ pub(super) fn prepare_shadow_frame(
                 (position, weight as f32)
             })
     });
-    let Some(source) = bolid_position
+    // A point inside the receiver region cannot provide a perspective shadow.
+    // Keep the directional maps eligible when that projection cannot be built.
+    let bolid_shadow = bolid_position.and_then(|(position, weight)| {
+        let source = [position[0], position[1], position[2]].map(f64::from);
+        let mut uniform = minimium_renderer::shadow_uniform::prepare_point_at_origin(
+            source,
+            region.center_world,
+            origin,
+            region.settings,
+        )?;
+        uniform.flags[2] = weight.to_bits();
+        Some(uniform)
+    });
+    let (primary, footprint_moonlight) = shadows::select_source(
+        input.environment,
+        state.previous_source,
+        region.center_world,
+        atmosphere,
+    );
+    let moon = shadows::ShadowSource::Moon;
+    let lunar_landscape = region.lunar_landscape(input.environment.render_view);
+    let moon_contributes = footprint_moonlight
+        || shadows::published_moonlight(
+            input.environment,
+            atmosphere,
+            lunar_landscape.unwrap_or(region),
+            input.active_sectors.iter().filter_map(|s| s.bounds),
+        );
+    let Some(source) = bolid_shadow
         .map(|_| shadows::ShadowSource::Bolid)
-        .or_else(|| {
-            shadows::select_source(
-                input.environment,
-                state.previous_source,
-                region.center_world,
-                physical,
-            )
-        })
+        .or(primary)
+        .or_else(|| moon_contributes.then_some(moon))
     else {
         state.previous_source = None;
         return Err(ShadowInvalidReason::NoSource);
@@ -192,57 +222,89 @@ pub(super) fn prepare_shadow_frame(
     if (!input.overview_active && !input.remote_complete) || input.active_sectors.is_empty() {
         return Err(ShadowInvalidReason::IncompleteCasters);
     }
-    let radius = f64::from(region.settings.caster_radius_m);
-    for sector in input.active_sectors {
-        let Some((minimum, maximum)) = sector.bounds else {
-            return Err(ShadowInvalidReason::IncompleteCasters);
-        };
-        if !sector.resident {
-            return Err(ShadowInvalidReason::IncompleteCasters);
-        }
-        if bounds_intersect_sphere(minimum, maximum, region.center_world, radius) {
-            state.caster_keys.push((sector.key, sector.lod));
-        }
-    }
-    if state.caster_keys.is_empty() {
+    // An empty, resident patch (for example ocean without a solid caster) is
+    // a complete publication. A missing buffer or bounds on a nonempty one is not.
+    if input.active_sectors.iter().any(|sector| {
+        sector.vertex_count.is_none() || (sector.vertex_count != Some(0) && sector.bounds.is_none())
+    }) {
         return Err(ShadowInvalidReason::IncompleteCasters);
     }
-    let direction = if let Some((position, _)) = bolid_position {
-        let delta = std::array::from_fn(|i| f64::from(position[i]) - region.center_world[i]);
-        let length = delta.iter().map(|v| v * v).sum::<f64>().sqrt();
-        (length > 1.0).then(|| delta.map(|v| v / length))
-    } else {
-        source.direction(input.environment, physical)
-    };
-    let Some(direction) = direction else {
-        return Err(ShadowInvalidReason::InvalidFrame);
-    };
-    let uniform = if let Some((position, _)) = bolid_position {
-        minimium_renderer::shadow_uniform::prepare_point_at_origin(
-            [
-                f64::from(position[0]),
-                f64::from(position[1]),
-                f64::from(position[2]),
-            ],
-            region.center_world,
-            input.render_origin.map(f64::from),
-            region.settings,
-        )
-    } else {
-        minimium_renderer::shadow_uniform::prepare_at_origin(
-            direction,
-            region.center_world,
-            input.render_origin.map(f64::from),
-            region.settings,
-            source.id(),
-        )
-    };
-    let Some(mut uniform) = uniform else {
-        return Err(ShadowInvalidReason::InvalidFrame);
-    };
-    if let Some((_, weight)) = bolid_position {
-        uniform.flags[2] = weight.to_bits();
+    let mut landscape_uniform = None;
+    let mut landscape_caster_keys = Vec::new();
+    let [mx, my, mz, mr] = input.environment.environment_uniform.moon_orbit_world;
+    let moon_distance =
+        glam::DVec3::new(mx.into(), my.into(), mz.into()).distance(region.center_world.into());
+    let lunar_radius = (f64::from(mr) / moon_distance.max(1.0))
+        .clamp(0.0, 1.0)
+        .asin();
+    let mut moon_keys = [Vec::new(), Vec::new()];
+    let mut secondary_moon = [None; 2];
+    if source != moon && moon_contributes {
+        let direction = moon
+            .direction(input.environment, atmosphere, region.center_world.into())
+            .ok_or(ShadowInvalidReason::InvalidFrame)?
+            .to_array();
+        for (i, area) in [Some(region), lunar_landscape].into_iter().enumerate() {
+            if let Some(area) = area {
+                secondary_moon[i] = directional_cascade(
+                    area,
+                    direction,
+                    origin,
+                    moon.id(),
+                    lunar_radius,
+                    input.active_sectors,
+                    &mut moon_keys[i],
+                );
+            }
+        }
     }
+    let uniform = if let Some(point) = bolid_shadow {
+        let radius = f64::from(region.settings.caster_radius_m);
+        state
+            .caster_keys
+            .extend(input.active_sectors.iter().filter_map(|sector| {
+                (sector.vertex_count != Some(0)
+                    && sector
+                        .bounds?
+                        .intersects_sphere(region.center_world, radius))
+                .then_some((sector.key, sector.lod))
+            }));
+        Some(point)
+    } else {
+        let direction = source
+            .direction(input.environment, atmosphere, region.center_world.into())
+            .ok_or(ShadowInvalidReason::InvalidFrame)?
+            .to_array();
+        let near = directional_cascade(
+            region,
+            direction,
+            origin,
+            source.id(),
+            lunar_radius,
+            input.active_sectors,
+            &mut state.caster_keys,
+        );
+        let landscape = if source == moon {
+            lunar_landscape
+        } else {
+            region.landscape(input.environment.render_view)
+        };
+        if let Some(landscape) = landscape {
+            landscape_uniform = directional_cascade(
+                landscape,
+                direction,
+                origin,
+                source.id(),
+                lunar_radius,
+                input.active_sectors,
+                &mut landscape_caster_keys,
+            );
+        }
+        near
+    };
+    let Some(uniform) = uniform else {
+        return Err(ShadowInvalidReason::InvalidFrame);
+    };
     let map_casters = map_cache
         .prepare(
             geometry_stamp,
@@ -265,6 +327,10 @@ pub(super) fn prepare_shadow_frame(
         geometry_stamp: Some(geometry_stamp),
         caster_keys: state.caster_keys.clone(),
         uniform,
+        secondary_moon,
+        moon_keys,
+        landscape_uniform,
+        landscape_caster_keys,
         map_casters: Some(map_casters),
         invalid_reason: None,
         valid: true,
@@ -290,11 +356,16 @@ impl DesktopHost {
                     .world_geometry
                     .bounds()
                     .get(&catalog_key)
-                    .map(|bounds| (bounds.minimum, bounds.maximum));
+                    .copied();
                 ShadowSectorSnapshot {
                     key: *key,
                     lod: *lod,
-                    resident: self.renderer.world_geometry.contains(instance, *key, *lod),
+                    vertex_count: self
+                        .renderer
+                        .world_geometry
+                        .catalog()
+                        .get(&catalog_key)
+                        .map(|(_, count)| *count),
                     bounds,
                 }
             })
@@ -319,7 +390,6 @@ impl DesktopHost {
             remote_complete: self.renderer.shadow_remote_complete
                 && self.renderer.shadow_remote_stamp == geometry_stamp,
             shadow_enabled: self.renderer.shadow_gpu.settings.enabled,
-            physical: self.renderer.atmosphere_gpu.is_active(),
             settings: self.renderer.shadow_gpu.settings,
             player_position_m,
             render_origin: self.renderer.render_origin,
@@ -348,29 +418,39 @@ impl DesktopHost {
     }
 }
 
-fn bounds_distance(minimum: [f64; 3], maximum: [f64; 3], point: [f64; 3]) -> f64 {
-    (0..3)
-        .map(|axis| {
-            (minimum[axis] - point[axis])
-                .max(point[axis] - maximum[axis])
-                .max(0.0)
-                .powi(2)
-        })
-        .sum::<f64>()
-        .sqrt()
-}
-
-fn bounds_intersect_sphere(
-    minimum: [f64; 3],
-    maximum: [f64; 3],
-    center: [f64; 3],
-    radius: f64,
-) -> bool {
-    let distance_squared = (0..3)
-        .map(|axis| {
-            let closest = center[axis].clamp(minimum[axis], maximum[axis]);
-            (center[axis] - closest).powi(2)
-        })
-        .sum::<f64>();
-    distance_squared <= radius * radius
+fn directional_cascade(
+    region: ShadowRegion,
+    direction: [f64; 3],
+    origin: [f64; 3],
+    source_id: u32,
+    lunar_radius: f64,
+    sectors: &[ShadowSectorSnapshot],
+    keys: &mut Vec<(SectorKey, u8)>,
+) -> Option<ShadowUniform> {
+    let mut direction = glam::DVec3::from_array(direction);
+    let up = glam::DVec3::from_array(region.center_world).normalize_or_zero();
+    let vertical = up - direction * up.dot(direction);
+    let transition = ((0.35 - up.dot(direction)) / 0.10).clamp(0.0, 1.0);
+    let limb_radius =
+        if source_id == shadows::ShadowSource::Moon.id() && vertical.length_squared() > 1e-8 {
+            lunar_radius * transition * transition * (3.0 - 2.0 * transition)
+        } else {
+            0.0
+        };
+    if limb_radius > 0.0 {
+        direction = direction * limb_radius.cos() + vertical.normalize() * limb_radius.sin();
+    }
+    let mut projection = minimium_renderer::shadow_uniform::DirectionalShadowProjection::new(
+        direction.to_array(),
+        region.center_world,
+        region.settings,
+    )?;
+    for sector in sectors {
+        if sector.vertex_count != Some(0) && projection.include_caster(sector.bounds?) {
+            keys.push((sector.key, sector.lod));
+        }
+    }
+    let mut uniform = projection.uniform(origin, source_id)?;
+    uniform.flags[3] = (limb_radius as f32).to_bits();
+    Some(uniform)
 }

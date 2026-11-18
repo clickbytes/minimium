@@ -8,7 +8,7 @@ struct SunVertexOutput {
         vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, 1.0),
     );
     let corner = corners[index];
-    let sun = normalize(environment.sun_apparent_world.xyz);
+    let sun = visual_sun_direction();
     let reference = select(vec3<f32>(0.0, 1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), abs(sun.y) > 0.95);
     let right = normalize(cross(reference, sun));
     let up = normalize(cross(sun, right));
@@ -16,7 +16,7 @@ struct SunVertexOutput {
     let direction = normalize(sun + (right * corner.x + up * corner.y) * tan(radius));
     var output: SunVertexOutput;
     let clip = camera.sky_view_projection * vec4<f32>(direction, 0.0);
-    if clip.w <= 0.00001 {
+    if clip.w <= 0.00001 || radius<=0.0 {
         output.clip_position = vec4<f32>(2.0, 2.0, 2.0, 1.0);
     } else {
         output.clip_position = vec4<f32>(clip.xy, clip.w, clip.w);
@@ -31,7 +31,7 @@ struct SunVertexOutput {
     );
     let far_point = camera.inverse_sky_view_projection * vec4<f32>(ndc, 1.0, 1.0);
     let ray_world = normalize(far_point.xyz / max(abs(far_point.w), 1.0e-6));
-    let sun = normalize(environment.sun_apparent_world.xyz);
+    let sun = visual_sun_direction();
     let angle = acos(clamp(dot(ray_world, sun), -1.0, 1.0));
     let radius = max(environment.sun_apparent_world.w, 1.0e-7);
     let edge = max(fwidth(angle), 1.0e-7);
@@ -46,6 +46,7 @@ struct SunVertexOutput {
         radiance = radiance * atmosphere.transmittance
             + atmosphere.scattering_rgb * SOLAR_HALO_FACTOR;
     }
-    let color = tone_map_display(radiance);
+    var color = tone_map_display(radiance);
+    if physical_atmosphere() {color=tone_map_linear(radiance);}
     return vec4<f32>(color, coverage * visibility);
 }

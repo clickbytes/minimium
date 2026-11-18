@@ -39,24 +39,50 @@ impl DesktopHost {
             .map(|b| b.surface.size() + b.ocean.size() + b.objects.size())
             .sum();
         let environment = self.render_environment_frame.environment_uniform;
-        let view_exposure = minimium_renderer::render_frame::view_exposure(
-            self.render_environment_frame.render_view,
-            environment.global_sun_direction,
-            environment.ambient_rgb_exposure[3],
-        );
+        let rgb_luminance =
+            |[r, g, b, _]: [f32; 4]| minimium_renderer::lighting::luminance([r, g, b]);
+        let solar = rgb_luminance(environment.global_sun_rgb);
+        let lunar_ratio = if solar > 0.0 {
+            rgb_luminance(environment.global_moon_rgb) / solar
+        } else {
+            0.0
+        };
+        let view = self.render_environment_frame.render_view;
+        let base = environment.ambient_rgb_exposure[3];
+        let physical = self.renderer.atmosphere_gpu.is_active();
+        let (storage, reference) = if physical && self.renderer.hdr_enabled {
+            let sun = environment.global_sun_direction;
+            (
+                minimium_renderer::render_frame::view_exposure(view, sun, base),
+                minimium_renderer::render_frame::exposure_reference(view, sun, base),
+            )
+        } else {
+            (base, base)
+        };
         vec![
             format!(
-                "terrain debug={:?} (diagnostic colors bypass lighting)",
-                self.terrain_debug
+                "terrain debug={:?} exposure_ev={} moon_flux_enabled={} lunar_shadow={} utc_ms={}",
+                self.terrain_debug,
+                self.renderer.fixed_exposure_ev.map_or_else(|| "auto".to_owned(), |ev| ev.to_string()),
+                self.moon_flux,
+                if !self.renderer.shadow_publish_ready { "unavailable" }
+                else if self.prepared_shadow.uniform.flags[1] == 2 { "primary" }
+                else if self.prepared_shadow.secondary_moon[0].is_some() { "secondary" } else { "inactive" },
+                self.render_environment_frame.sky.as_ref().map_or_else(|| "unavailable".to_owned(), |s| s.utc_ms.get().to_string())
             ),
             format!(
-                "terrain light atmosphere={} hdr={} base_exposure={:.2} view_exposure={:.2} moon_flux={:.3e}",
-                self.renderer.atmosphere_gpu.is_active(),
-                self.renderer.hdr_enabled,
-                environment.ambient_rgb_exposure[3],
-                view_exposure,
-                environment.moon_disk_radiance[3]
+                "terrain light atmosphere={physical} hdr={} base={base:.2} pre_exposure={storage:.2} exposure_reference={reference:.2}",
+                self.renderer.hdr_enabled
             ),
+            format!(
+                "sun_alt={:.1}deg moon_alt={:.1}deg moon_lit={:.0}% ephemeris_flux={:.3e} (relative to full Moon)",
+                environment.sun_geometric_world[3].to_degrees(),
+                environment.moon_geometric_world[3].to_degrees(),
+                100.0 * environment.moon_light_world_phase[3],
+                environment.moon_disk_radiance[3],
+            ),
+            format!("moon/sun_above_atmosphere={lunar_ratio:.3e} moon_disk_above_horizon={:.0}%",
+                100.0 * environment.local_moon_rgb_visibility[3]),
             format!(
                 "terrain view={} patches={}/{} triangles={} resident_surface_mib={:.2}",
                 if self.application.overview().is_open() {

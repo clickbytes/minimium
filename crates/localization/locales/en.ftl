@@ -160,6 +160,8 @@ property-description = { $key ->
     [client_audio_meteor_volume] Meteor audio volume (0 to 1).
     [client_weather_cloud_detail] Preferred maximum recursive cloud voxel depth.
     [client_debug_atmosphere] Atmosphere diagnostic view.
+    [client_debug_moon_flux] Enable reflected lunar flux.
+    [client_debug_exposure_ev] Use automatic or fixed absolute scene exposure.
     [client_debug_terrain] Terrain diagnostic view.
     [client_debug_clouds] Cloud diagnostic overlay.
     [client_sky_demo] Enable the local celestial demonstration.
@@ -177,8 +179,8 @@ no-property-matches = No client properties match { $prefix }
 command-help = { $name ->
     [terrain_status] terrain status
     [atmosphere_status] atmosphere status
-    [atmosphere_debug] atmosphere debug off|transmission|scattering|optical_depth|distance|fog
-    [terrain_debug] terrain debug off|albedo|normals|depth|shadow|base_color|coverage|habitat|source
+    [atmosphere_debug] atmosphere debug off|transmission|scattering|optical_depth|distance|fog|fog_shadow
+    [terrain_debug] terrain debug off|albedo|normals|depth|shadow|base_color|coverage|habitat|source|moon_direct|moon_diffuse|background|moon_coverage|light_channels
     [weather_status] weather status
     [weather_clouds_debug] weather clouds debug off|regions|layers|wind|kinds|detail
     [weather_clouds_detail] weather clouds detail 2|3|4|5|6

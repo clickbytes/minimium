@@ -3,6 +3,7 @@ use super::ClientClock;
 const MAX_FRAME_DELTA_S: f64 = 0.25;
 const SMOOTHING_TAU_S: f64 = 2.0;
 const MAX_SMOOTHING_EPISODE_MS: u64 = 30_000;
+const HALF_TIMESTAMP_TICK_MS: f64 = 0.5;
 
 pub(super) struct SmoothInput {
     pub(super) raw_world_ms: f64,
@@ -28,6 +29,9 @@ impl ClientClock {
             dt_s,
         } = input;
         let rate = rate_ppm as f64 / 1_000_000.0;
+        // Both monotonic timestamps and published world UTC have millisecond
+        // resolution. Half a probe timestamp tick spans 500 world ms at 1000x.
+        let settle_world_ms = HALF_TIMESTAMP_TICK_MS * rate.max(1.0);
         if is_new_revision || self.previous_revision.is_none() {
             self.smoothing_bias_ms = 0.0;
             self.smoothing_started_at_ms = None;
@@ -47,8 +51,7 @@ impl ClientClock {
                 let threshold = 1_000.0_f64.max(2_000.0 * rate);
                 if error.abs() <= threshold {
                     self.smoothing_bias_ms = predicted - raw_world_ms;
-                    if self.smoothing_bias_ms.abs() > 0.5 && self.smoothing_started_at_ms.is_none()
-                    {
+                    if error.abs() > settle_world_ms && self.smoothing_started_at_ms.is_none() {
                         self.smoothing_started_at_ms = Some(now_ms);
                     }
                 } else {
@@ -59,6 +62,8 @@ impl ClientClock {
                         "client_runtime.clock_resync",
                         &[
                             ("revision", revision.to_string()),
+                            ("reason", "large_correction".to_owned()),
+                            ("rate_ppm", rate_ppm.to_string()),
                             ("error_world_ms", format!("{error:.1}")),
                         ],
                     );
@@ -71,11 +76,13 @@ impl ClientClock {
             self.smoothing_started_at_ms = None;
             return raw_world_ms;
         }
-        if self
-            .smoothing_started_at_ms
-            .is_some_and(|started| now_ms.saturating_sub(started) >= MAX_SMOOTHING_EPISODE_MS)
-            && self.smoothing_bias_ms.abs() > 0.5
+        let residual = self.smoothing_bias_ms.abs();
+        if residual > settle_world_ms
+            && self
+                .smoothing_started_at_ms
+                .is_some_and(|started| now_ms.saturating_sub(started) >= MAX_SMOOTHING_EPISODE_MS)
         {
+            let error = -self.smoothing_bias_ms;
             self.smoothing_bias_ms = 0.0;
             self.smoothing_started_at_ms = None;
             self.resync_stale_until_ms = Some(now_ms.saturating_add(2_000));
@@ -84,16 +91,23 @@ impl ClientClock {
                 &[
                     ("revision", revision.to_string()),
                     ("reason", "smoothing_timeout".to_owned()),
+                    ("rate_ppm", rate_ppm.to_string()),
+                    ("error_world_ms", format!("{error:.1}")),
                 ],
             );
             return raw_world_ms;
         }
-        let correction = self.smoothing_bias_ms * (1.0 - (-dt_s / SMOOTHING_TAU_S).exp());
+        // Drain the unresolvable tail at the normal slew limit. Snapping the
+        // entire tail would move a fast render clock on a zero-delta poll.
+        let correction = if residual <= settle_world_ms {
+            self.smoothing_bias_ms
+        } else {
+            self.smoothing_bias_ms * (1.0 - (-dt_s / SMOOTHING_TAU_S).exp())
+        };
         let maximum_step = 0.1 * rate * 1_000.0 * dt_s;
         let applied = correction.abs().min(maximum_step) * correction.signum();
         self.smoothing_bias_ms -= applied;
-        if self.smoothing_bias_ms.abs() <= 0.5 {
-            self.smoothing_bias_ms = 0.0;
+        if self.smoothing_bias_ms.abs() <= settle_world_ms {
             self.smoothing_started_at_ms = None;
         }
         raw_world_ms + self.smoothing_bias_ms

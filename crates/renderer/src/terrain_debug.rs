@@ -12,4 +12,9 @@ pub enum TerrainDebug {
     Coverage,
     Habitat,
     Source,
+    MoonDirect,
+    MoonDiffuse,
+    Background,
+    MoonCoverage,
+    LightChannels,
 }

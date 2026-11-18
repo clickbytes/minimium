@@ -25,3 +25,10 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     return vec4<f32>(input.color, 1.0);
 }
+
+// Opaque viewmodel after all world blending and the metering pass. Signed
+// alpha identifies a display-calibrated pixel for the final HDR resolve.
+@fragment
+fn fs_hdr_overlay(input: VertexOutput) -> @location(0) vec4<f32> {
+    return vec4<f32>(input.color, -1.0);
+}

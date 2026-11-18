@@ -131,8 +131,8 @@ fn surface_light(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, albedo: vec3<f32>, ro
     let h = half_vector/max(length(half_vector),0.00001);
     let nl = max(dot(n,l), 0.0);
     let nv = max(dot(n,v), 0.001);
-    let nh = max(dot(n,h), 0.0);
-    let vh = max(dot(v,h), 0.0);
+    let nh = saturate(dot(n,h));
+    let vh = saturate(dot(v,h));
     let a2 = pow(roughness, 4.0);
     let d = a2 / max(3.14159265 * pow(nh*nh*(a2-1.0)+1.0, 2.0), 0.0001);
     let k = pow(roughness+1.0, 2.0)/8.0;
@@ -144,21 +144,36 @@ fn surface_light(n: vec3<f32>, v: vec3<f32>, l: vec3<f32>, albedo: vec3<f32>, ro
 // Low-cost hemisphere lighting and a broad sky reflection. This has no scene
 // captures, visibility queries or sharp environment reflections.
 fn terrain_ambient(n: vec3<f32>, v: vec3<f32>, up: vec3<f32>, albedo: vec3<f32>,
-    roughness: f32, ao: f32, f0: f32, local_position: vec3<f32>) -> vec3<f32> {
-    var ambient_light=environment.ambient_rgb_exposure.xyz;
-    if physical_atmosphere() { ambient_light=physical_ambient(local_position); }
+    roughness: f32, ao: f32, f0: f32, ambient_light: vec3<f32>, lunar: bool) -> vec3<f32> {
     let sky_facing = clamp(dot(n,up)*0.5+0.5,0.0,1.0);
     let diffuse_light = ambient_light*mix(0.45,1.0,sky_facing);
     let reflection = reflect(-v,n);
     let sky_weight = clamp(dot(reflection,up),0.0,1.0);
     var sky = mix(environment.sky_horizon_rgb_star_visibility.xyz,
         environment.sky_zenith_rgb_sun_altitude.xyz,sqrt(sky_weight));
-    if physical_atmosphere() {sky=ambient_light*mix(1.4,2.2,sqrt(sky_weight));}
+    if physical_atmosphere() || lunar {sky=ambient_light*mix(1.4,2.2,sqrt(sky_weight));}
     let ground = ambient_light*albedo*0.35;
     let reflected_light = mix(ground,sky,smoothstep(-0.1,0.25,dot(reflection,up)));
-    let nv = max(dot(n,v),0.0);
+    let nv = saturate(dot(n,v));
     let fresnel = f0+(max(1.0-roughness,f0)-f0)*pow(1.0-nv,5.0);
     // Broad lobes retain less directional contrast; keep the approximation weak.
     let specular = reflected_light*fresnel*mix(0.45,0.15,roughness);
     return (albedo*diffuse_light*(1.0-fresnel)+specular)*ao;
+}
+
+// Return shaded scene contributions through the same transfer as the normal frame.
+fn terrain_light_output(p: vec3<f32>, lunar: vec3<f32>, diffuse: vec3<f32>, background: vec3<f32>) -> vec4<f32> {
+    var rgb = background + lunar + diffuse;
+    switch terrain.debug.x {
+        case 9u: { rgb = lunar; }
+        case 10u: { rgb = diffuse; }
+        case 11u: { rgb = background; }
+        case 12u: { return vec4<f32>(lunar_map_coverage(p),0.0,select(1.0,-2.0,environment.flags.w != 0u)); }
+        case 13u: {
+            let y = vec3<f32>(0.2126,0.7152,0.0722);
+            rgb = vec3<f32>(dot(lunar,y),dot(diffuse,y),dot(background,y));
+        }
+        default: {}
+    }
+    return vec4<f32>(tone_map_linear(rgb),1.0);
 }

@@ -9,4 +9,5 @@ pub enum AtmosphereDebug {
     OpticalDepth,
     Distance,
     Fog,
+    FogShadow,
 }

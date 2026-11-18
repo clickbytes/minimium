@@ -141,6 +141,19 @@ fn validate_transform(matrix: Matrix3, handedness: f64) -> Result<Matrix3, SkyEr
     Ok(matrix)
 }
 
+/// Standard sea-level refraction lift in radians at a geometric elevation.
+pub fn standard_refraction_rad(altitude_rad: f64) -> Result<f64, SkyError> {
+    if !(-FRAC_PI_2..=FRAC_PI_2).contains(&altitude_rad) {
+        return Err(SkyError::InvalidUpstreamValue);
+    }
+    let lift =
+        ffi::refraction(altitude_rad.to_degrees()).map_err(crate::ephemeris_cache::map_status)?;
+    if !lift.is_finite() || !(-5.0..=5.0).contains(&lift) {
+        return Err(SkyError::InvalidUpstreamValue);
+    }
+    Ok(lift.to_radians())
+}
+
 pub(crate) fn body_state(
     eqj_direction: [f64; 3],
     distance_m: f64,
@@ -165,14 +178,9 @@ pub(crate) fn body_state(
     };
     let apparent_altitude_rad = match refraction {
         RefractionMode::None => geometric_altitude_rad,
-        RefractionMode::Standard => {
-            let lift = ffi::refraction(geometric_altitude_rad.to_degrees())
-                .map_err(crate::ephemeris_cache::map_status)?;
-            if !lift.is_finite() || !(-5.0..=5.0).contains(&lift) {
-                return Err(SkyError::InvalidUpstreamValue);
-            }
-            (geometric_altitude_rad + lift.to_radians()).clamp(-FRAC_PI_2, FRAC_PI_2)
-        }
+        RefractionMode::Standard => (geometric_altitude_rad
+            + standard_refraction_rad(geometric_altitude_rad)?)
+        .clamp(-FRAC_PI_2, FRAC_PI_2),
     };
     let cos_altitude = apparent_altitude_rad.cos();
     let apparent_hor = [

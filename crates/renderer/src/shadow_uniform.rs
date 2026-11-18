@@ -6,7 +6,7 @@ const SHADOW_SOURCE_NONE: u32 = 0;
 
 /// Uniform shared by shadow depth and sampling passes at every viewing scale.
 #[repr(C, align(16))]
-#[derive(Clone, Copy, Debug, Default, bytemuck::Pod, bytemuck::Zeroable)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ShadowUniform {
     pub light_view_projection: [[f32; 4]; 4],
     pub receiver_center_relative_radius: [f32; 4],
@@ -31,8 +31,8 @@ pub fn prepare(
     )
 }
 
-/// Snap in absolute f64 light space so a floating-origin shift does not move
-/// the shadow texels. Cast to f32 only after constructing the relative matrix.
+/// Snap in a nearby world-anchored light grid. A floating-origin shift does
+/// not move the grid, and rotation of the light has only a local lever arm.
 pub fn prepare_at_origin(
     direction_to_body: [f64; 3],
     center_world: [f64; 3],
@@ -40,73 +40,154 @@ pub fn prepare_at_origin(
     settings: ShadowSettings,
     source_id: u32,
 ) -> Option<ShadowUniform> {
-    let to_body = glam::DVec3::from_array(direction_to_body).normalize();
-    let center = glam::DVec3::from_array(center_world);
-    let origin = glam::DVec3::from_array(render_origin);
-    if !to_body.is_finite()
-        || !center.is_finite()
-        || !origin.is_finite()
-        || to_body.length_squared() < 0.99
-        || settings.receiver_radius_m <= 0.0
-        || settings.caster_radius_m < settings.receiver_radius_m
-    {
-        return None;
+    DirectionalShadowProjection::new(direction_to_body, center_world, settings)?
+        .uniform(render_origin, source_id)
+}
+
+/// Directional shadow footprint with an independently fitted depth toward the light.
+/// The same snapped square determines both the caster query and the GPU projection.
+pub struct DirectionalShadowProjection {
+    center: glam::DVec3,
+    snapped_center: glam::DVec3,
+    to_body: glam::DVec3,
+    right: glam::DVec3,
+    up: glam::DVec3,
+    half_extent: f64,
+    sunward_reach: f64,
+    settings: ShadowSettings,
+}
+
+impl DirectionalShadowProjection {
+    pub fn new(
+        direction_to_body: [f64; 3],
+        center_world: [f64; 3],
+        settings: ShadowSettings,
+    ) -> Option<Self> {
+        let to_body = glam::DVec3::from_array(direction_to_body).try_normalize()?;
+        let center = glam::DVec3::from_array(center_world);
+        if !center.is_finite()
+            || !settings.receiver_radius_m.is_finite()
+            || !settings.caster_radius_m.is_finite()
+            || settings.receiver_radius_m <= 0.0
+            || settings.caster_radius_m < settings.receiver_radius_m
+        {
+            return None;
+        }
+        let view_direction = -to_body;
+        let reference_up = if view_direction.cross(glam::DVec3::Y).length_squared() > 1e-12 {
+            glam::DVec3::Y
+        } else {
+            glam::DVec3::X
+        };
+        let right = view_direction.cross(reference_up).normalize();
+        let up = right.cross(view_direction).normalize();
+        let half_extent = f64::from(settings.receiver_radius_m) * 1.01;
+        let grid_width = 2.0 * half_extent;
+        let texel_m = grid_width / f64::from(settings.resolution.max(1));
+        // Anchor close to the observer so a rotating light has only a local lever arm.
+        let anchor = (center / grid_width).round() * grid_width;
+        let local = center - anchor;
+        let light_x = local.dot(right);
+        let light_y = local.dot(up);
+        let snapped_x = (light_x / texel_m).round() * texel_m;
+        let snapped_y = (light_y / texel_m).round() * texel_m;
+        let snapped_center = center + right * (snapped_x - light_x) + up * (snapped_y - light_y);
+        Some(Self {
+            center,
+            snapped_center,
+            to_body,
+            right,
+            up,
+            half_extent,
+            sunward_reach: f64::from(settings.caster_radius_m) * 1.01,
+            settings,
+        })
     }
-    let view_direction = -to_body;
-    let reference_up = least_parallel_axis(view_direction);
-    let right = view_direction.cross(reference_up).normalize();
-    let up = right.cross(view_direction).normalize();
-    let half_extent = f64::from(settings.receiver_radius_m) * 1.01;
-    let texel_m = half_extent * 2.0 / f64::from(settings.resolution.max(1));
-    let light_x = center.dot(right);
-    let light_y = center.dot(up);
-    let snapped_x = (light_x / texel_m).round() * texel_m;
-    let snapped_y = (light_y / texel_m).round() * texel_m;
-    let snapped_center = center + right * (snapped_x - light_x) + up * (snapped_y - light_y);
-    let depth_radius = f64::from(settings.caster_radius_m) * 1.01;
-    let relative = snapped_center - origin;
-    let eye = relative + to_body * (depth_radius + 1.0);
-    let view = glam::DMat4::look_at_rh(eye, relative, up);
-    let near = 1.0;
-    let far = 1.0 + 2.0 * depth_radius;
-    let projection = glam::DMat4::orthographic_rh(
-        -half_extent,
-        half_extent,
-        -half_extent,
-        half_extent,
-        near,
-        far,
-    );
-    let matrix = (projection * view).as_mat4();
-    let center_relative = (center - origin).to_array();
-    let uniform = ShadowUniform {
-        light_view_projection: matrix.to_cols_array_2d(),
-        receiver_center_relative_radius: [
-            center_relative[0] as f32,
-            center_relative[1] as f32,
-            center_relative[2] as f32,
-            settings.receiver_radius_m,
-        ],
-        texel_depth_range: [
-            1.0 / settings.resolution.max(1) as f32,
-            1.0 / settings.resolution.max(1) as f32,
-            near as f32,
-            far as f32,
-        ],
-        bias_fade: [
-            settings.constant_bias_m,
-            settings.slope_bias_m,
-            settings.max_bias_m,
-            settings.fade_start_m,
-        ],
-        flags: [1, source_id, 0, 0],
-    };
-    uniform
-        .light_view_projection
-        .iter()
-        .flatten()
-        .all(|value| value.is_finite())
-        .then_some(uniform)
+
+    /// Select a resident sector whose bounds can project into this map. The map
+    /// width determines contact resolution even for a ridge kilometres upstream.
+    pub fn include_caster(&mut self, bounds: crate::shadow_geometry::ShadowBounds) -> bool {
+        let lo = glam::DVec3::from_array(bounds.minimum) - self.snapped_center;
+        let hi = glam::DVec3::from_array(bounds.maximum) - self.snapped_center;
+        let midpoint = (lo + hi) * 0.5;
+        let half = (hi - lo) * 0.5;
+        for axis in [self.right, self.up] {
+            if midpoint.dot(axis).abs() > self.half_extent + half.dot(axis.abs()) {
+                return false;
+            }
+        }
+        // Intersect the center ray with the AABB expanded by the footprint.
+        // This also bounds the depth of very coarse diagonal planetary patches
+        // without fitting the shadow map to their most remote, off-map corner.
+        let padding = (self.right.abs() + self.up.abs()) * self.half_extent;
+        let mut start = -f64::from(self.settings.receiver_radius_m);
+        let mut end = midpoint.dot(self.to_body) + half.dot(self.to_body.abs());
+        for axis in 0..3 {
+            let low = lo[axis] - padding[axis];
+            let high = hi[axis] + padding[axis];
+            let direction = self.to_body[axis];
+            if direction == 0.0 {
+                if low > 0.0 || high < 0.0 {
+                    return false;
+                }
+            } else {
+                let a = low / direction;
+                let b = high / direction;
+                start = start.max(a.min(b));
+                end = end.min(a.max(b));
+            }
+        }
+        if end < start {
+            return false;
+        }
+        self.sunward_reach = self.sunward_reach.max(end);
+        true
+    }
+
+    pub fn uniform(self, render_origin: [f64; 3], source_id: u32) -> Option<ShadowUniform> {
+        let origin = glam::DVec3::from_array(render_origin);
+        if !origin.is_finite() {
+            return None;
+        }
+        let back = f64::from(self.settings.caster_radius_m) * 1.01;
+        // Quantize only an extended reach; small changes to faraway bounds
+        // should not rescale the depth map at every solar update.
+        let front = if self.sunward_reach > back {
+            let step = (self.sunward_reach.log2().floor() - 4.0).exp2();
+            ((self.sunward_reach + 1.0) / step).ceil() * step
+        } else {
+            back
+        };
+        let relative = self.snapped_center - origin;
+        let eye = relative + self.to_body * (front + 1.0);
+        let view = glam::DMat4::look_to_rh(eye, -self.to_body, self.up);
+        let near = 1.0;
+        let far = 1.0 + front + back;
+        let extent = self.half_extent;
+        let projection = glam::DMat4::orthographic_rh(-extent, extent, -extent, extent, near, far);
+        let matrix = (projection * view).as_mat4();
+        let settings = self.settings;
+        matrix.is_finite().then(|| ShadowUniform {
+            light_view_projection: matrix.to_cols_array_2d(),
+            receiver_center_relative_radius: (self.center - origin)
+                .as_vec3()
+                .extend(settings.receiver_radius_m)
+                .to_array(),
+            texel_depth_range: [
+                1.0 / settings.resolution.max(1) as f32,
+                1.0 / settings.resolution.max(1) as f32,
+                near as f32,
+                far as f32,
+            ],
+            bias_fade: [
+                settings.constant_bias_m,
+                settings.slope_bias_m,
+                settings.max_bias_m,
+                settings.fade_start_m,
+            ],
+            flags: [1, source_id, 0, 0],
+        })
+    }
 }
 
 fn least_parallel_axis(direction: glam::DVec3) -> glam::DVec3 {

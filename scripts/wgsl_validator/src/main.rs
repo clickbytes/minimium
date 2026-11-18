@@ -35,6 +35,7 @@ fn main() {
         ("marker", source::marker()),
         ("ui", source::ui()),
         ("encode_output", source::encode_output()),
+        ("exposure_meter", source::exposure_meter()),
         ("ui_output_srgb", source::ui_output(true)),
         ("ui_output_linear", source::ui_output(false)),
         (
@@ -57,11 +58,25 @@ fn main() {
         ) {
             atmosphere_contract(&module, &info);
         }
+        if matches!(
+            name,
+            "terrain"
+                | "ocean"
+                | "world"
+                | "exposure_meter"
+                | "atmosphere_sky_lut"
+                | "atmosphere_aerial_lut"
+        ) {
+            lunar_bindings(&module, &info);
+        }
         if name == "clouds" {
             cloud_contract(&module, &info);
         }
         if name == "geometry_rebase" {
             rebase_contract(&module);
+        }
+        if matches!(name, "exposure_meter" | "encode_output") {
+            exposure_contract(&module);
         }
         if name == "sky" {
             bolid_contract(&module, &info);
@@ -71,6 +86,76 @@ fn main() {
         }
         transient_contract(&module, &info);
         println!("{name}: valid");
+    }
+}
+
+fn lunar_bindings(module: &naga::Module, info: &naga::valid::ModuleInfo) {
+    for (group, binding, name) in [
+        (0, 12, "sky_irradiance"),
+        (2, 0, "shadow_depth"),
+        (2, 2, "shadow"),
+        (2, 4, "landscape_shadow"),
+        (2, 5, "secondary_moon"),
+        (2, 6, "secondary_landscape"),
+    ] {
+        let (handle, var) = module
+            .global_variables
+            .iter()
+            .find(|(_, v)| v.name.as_deref() == Some(name))
+            .expect("lunar lighting binding");
+        assert_eq!(var.binding, Some(naga::ResourceBinding { group, binding }));
+        match &module.types[var.ty].inner {
+            naga::TypeInner::Image {
+                dim: naga::ImageDimension::D2,
+                arrayed,
+                class,
+                ..
+            } => {
+                assert_eq!(*arrayed, name == "shadow_depth");
+                assert_eq!(
+                    matches!(class, naga::ImageClass::Depth { multi: false }),
+                    name == "shadow_depth"
+                );
+            }
+            naga::TypeInner::Struct { span, .. } => {
+                assert_eq!(var.space, naga::AddressSpace::Uniform);
+                assert_eq!(*span, 128);
+            }
+            _ => panic!("unexpected lunar lighting binding type {name}"),
+        }
+        assert!(module
+            .entry_points
+            .iter()
+            .enumerate()
+            .any(|(i, entry)| matches!(
+                entry.stage,
+                naga::ShaderStage::Compute | naga::ShaderStage::Fragment
+            ) && !info.get_entry_point(i)[handle].is_empty()));
+    }
+}
+
+fn exposure_contract(module: &naga::Module) {
+    for (name, size, offsets) in [
+        (
+            "OutputParams",
+            48,
+            &[0, 4, 8, 12, 16, 20, 24, 28, 32, 36][..],
+        ),
+        ("EyeExposure", 32, &[0, 4, 8, 12, 16][..]),
+    ] {
+        let (_, ty) = module
+            .types
+            .iter()
+            .find(|(_, ty)| ty.name.as_deref() == Some(name))
+            .expect("output exposure buffer type");
+        let naga::TypeInner::Struct { members, span } = &ty.inner else {
+            panic!("expected {name} struct");
+        };
+        assert_eq!(*span, size);
+        assert_eq!(
+            members.iter().map(|m| m.offset).collect::<Vec<_>>(),
+            offsets
+        );
     }
 }
 
@@ -160,9 +245,11 @@ fn terrain_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
             };
             let visible = match (binding.group, binding.binding) {
                 (0, 0..=2) => true,
-                (0, 3..=11) => entry.stage != naga::ShaderStage::Vertex,
+                (0, 3..=12) => entry.stage != naga::ShaderStage::Vertex,
                 (1, 4) => true,
-                (1, 0..=3) | (1, 5..=6) | (2, 0..=2) => entry.stage == naga::ShaderStage::Fragment,
+                (1, 0..=3) | (1, 5..=6) | (2, 0..=2 | 4..=6) => {
+                    entry.stage == naga::ShaderStage::Fragment
+                }
                 _ => false,
             };
             assert!(
@@ -200,7 +287,7 @@ fn cloud_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
             };
             let visible = match (binding.group, binding.binding) {
                 (0, 0..=2) | (1, 0..=1) => true,
-                (0, 3..=11) => entry.stage != naga::ShaderStage::Vertex,
+                (0, 3..=12) => entry.stage != naga::ShaderStage::Vertex,
                 (1, 2) => entry.stage == naga::ShaderStage::Fragment,
                 (2, 0) => {
                     matches!(entry.name.as_str(), "fs_bolid_mask" | "fs_inside_mask")
@@ -220,16 +307,20 @@ fn cloud_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
 fn atmosphere_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
     for (_, ty) in module.types.iter() {
         let expected = match ty.name.as_deref() {
-            Some("AtmosphereUniform") => 256,
+            Some("AtmosphereUniform") => 272,
             _ => continue,
         };
         let naga::TypeInner::Struct { members, span } = &ty.inner else {
             panic!("expected struct");
         };
         assert_eq!(*span, expected);
-        for (index, member) in members.iter().enumerate() {
-            assert_eq!(member.offset, index as u32 * 16);
-        }
+        assert_eq!(
+            members
+                .iter()
+                .map(|member| member.offset)
+                .collect::<Vec<_>>(),
+            [0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 256]
+        );
     }
     for (index, entry) in module.entry_points.iter().enumerate() {
         for (handle, global) in module.global_variables.iter() {
@@ -241,8 +332,9 @@ fn atmosphere_contract(module: &naga::Module, info: &naga::valid::ModuleInfo) {
             };
             let visible = match (binding.group, binding.binding) {
                 (0, 0..=2) => true,
-                (0, 3..=11) => entry.stage != naga::ShaderStage::Vertex,
-                (1, 0..=1) | (2, 0) => entry.stage != naga::ShaderStage::Vertex,
+                (0, 3..=12) => entry.stage != naga::ShaderStage::Vertex,
+                (1, 0..=1) => entry.stage != naga::ShaderStage::Vertex,
+                (2, 0..=2 | 4..=6) => entry.stage == naga::ShaderStage::Compute,
                 (1, 2) => entry.stage == naga::ShaderStage::Fragment,
                 _ => false,
             };

@@ -60,12 +60,11 @@ fn push_milky_way_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &Deskt
     let frame = &renderer.render_environment_frame;
     let overview = frame.render_view.kind == super::environment::EnvironmentViewKind::Overview;
     let u = &frame.environment_uniform;
-    let moon_flux = u.moon_disk_radiance[3].max(0.0) * u.local_moon_rgb_visibility[3];
-    let visibility = if overview {
-        1.0
-    } else {
-        u.sky_horizon_rgb_star_visibility[3] / (1.0 + 8.0 * moon_flux)
-    };
+    let (stars, visibility) = minimium_renderer::atmosphere_view::celestial_visibility(
+        u,
+        renderer.renderer.atmosphere_gpu.optical_uniform(),
+    );
+    snapshot.push("star_visibility_before_extinction_and_clouds", stars);
     let drawn = renderer.renderer.environment_draw_calls.sky > 0;
     snapshot.push(
         "milky_way_state",
@@ -118,6 +117,13 @@ fn push_clock_fields(
             .unwrap_or_else(|| "n/a".to_owned()),
     );
     snapshot.push_optional("rate_ppm", input.rate_ppm);
+    snapshot.push_optional(
+        "render_minus_estimated_utc_ms",
+        input
+            .render_world_utc_ms
+            .zip(input.estimated_world_utc_ms)
+            .map(|(render, estimate)| render.saturating_sub(estimate)),
+    );
     snapshot.push(
         "rate",
         input.rate_ppm.map_or_else(
@@ -373,6 +379,15 @@ fn push_shadow_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &DesktopH
         + usize::from(gpu.shadow_gpu.player_casters().is_some())
         + renderer.shadow_state.caster_keys.len();
     snapshot.push_optional("shadow_caster_count", enabled.then_some(caster_count));
+    let landscape = renderer.prepared_shadow.landscape_uniform.filter(|_| valid);
+    snapshot.push_optional(
+        "shadow_landscape_range_m",
+        landscape.map(|uniform| uniform.receiver_center_relative_radius[3]),
+    );
+    snapshot.push_optional(
+        "shadow_landscape_sector_count",
+        landscape.map(|_| renderer.prepared_shadow.landscape_caster_keys.len()),
+    );
     snapshot.push_optional(
         "shadow_coverage_complete",
         enabled.then_some(
@@ -408,7 +423,7 @@ fn push_gpu_fields(snapshot: &mut SkyDiagnosticsSnapshot, renderer: &DesktopHost
     let uniform_bytes = gpu.environment_buffer.size()
         + gpu.camera_buffer.size()
         + gpu.transient_buffer.size()
-        + gpu.shadow_gpu.uniform_buffer.size();
+        + gpu.shadow_gpu.uniform_bytes();
     let shadow_texture_bytes = gpu.shadow_gpu.texture_bytes();
     let map_caster_bytes = gpu.shadow_gpu.map_caster_buffer_bytes();
     let player_caster_bytes = gpu.shadow_gpu.player_caster_buffer_bytes();

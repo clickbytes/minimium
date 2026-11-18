@@ -14,6 +14,7 @@ impl DesktopHost {
             return;
         }
         if position_mm.is_some() {
+            self.renderer.exposure_history = None;
             self.refresh_after_position_change();
             self.application.ui.console.push_ui_message(
                 minimium_localization::UiMessage::AltitudeResult(true),
@@ -41,6 +42,7 @@ impl DesktopHost {
             return;
         }
         if position_mm.is_some() {
+            self.renderer.exposure_history = None;
             self.meteors.audio.clear();
             let position = self.application.core_view().character.position;
             let origin = position.map(|coordinate| (coordinate / 256.0).round() * 256.0);

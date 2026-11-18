@@ -12,9 +12,9 @@ pub(super) fn sample<T: TerrainSampler>(
 }
 
 pub(super) struct Site {
-    ground: f64,
+    pub(super) ground: f64,
     climate_ground: f64,
-    ocean: bool,
+    pub(super) ocean: bool,
     supply: f64,
     uplift: f64,
 }

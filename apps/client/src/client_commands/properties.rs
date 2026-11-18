@@ -315,6 +315,20 @@ fn parse_value(key: ClientPropertyKey, value: &str) -> Result<ClientPropertyValu
         ClientPropertyKey::AtmosphereDebug => parse_atmosphere_debug(value)
             .map(ClientPropertyValue::AtmosphereDebug)
             .ok_or_else(|| invalid("unknown atmosphere debug mode".into())),
+        ClientPropertyKey::MoonFlux => parse_bool(value)
+            .map(ClientPropertyValue::MoonFlux)
+            .ok_or_else(|| invalid("expected true or false".into())),
+        ClientPropertyKey::ExposureEv => {
+            if value == "auto" {
+                return Ok(ClientPropertyValue::ExposureEv(None));
+            }
+            value
+                .parse::<f32>()
+                .ok()
+                .filter(|ev| (-8.0..=24.0).contains(ev))
+                .map(|ev| ClientPropertyValue::ExposureEv(Some(ev)))
+                .ok_or_else(|| invalid("expected auto or exposure stops from -8 to 24".into()))
+        }
         ClientPropertyKey::TerrainDebug => parse_terrain_debug(value)
             .map(ClientPropertyValue::TerrainDebug)
             .ok_or_else(|| invalid("unknown terrain debug mode".into())),
@@ -376,7 +390,7 @@ fn parse_bool(value: &str) -> Option<bool> {
     }
 }
 
-fn parse_atmosphere_debug(value: &str) -> Option<AtmosphereDebug> {
+pub(super) fn parse_atmosphere_debug(value: &str) -> Option<AtmosphereDebug> {
     Some(match value {
         "off" => AtmosphereDebug::Off,
         "transmission" => AtmosphereDebug::Transmission,
@@ -384,11 +398,12 @@ fn parse_atmosphere_debug(value: &str) -> Option<AtmosphereDebug> {
         "optical_depth" => AtmosphereDebug::OpticalDepth,
         "distance" => AtmosphereDebug::Distance,
         "fog" => AtmosphereDebug::Fog,
+        "fog_shadow" => AtmosphereDebug::FogShadow,
         _ => return None,
     })
 }
 
-fn parse_terrain_debug(value: &str) -> Option<TerrainDebug> {
+pub(super) fn parse_terrain_debug(value: &str) -> Option<TerrainDebug> {
     Some(match value {
         "off" => TerrainDebug::Off,
         "albedo" => TerrainDebug::Albedo,
@@ -399,6 +414,11 @@ fn parse_terrain_debug(value: &str) -> Option<TerrainDebug> {
         "coverage" => TerrainDebug::Coverage,
         "habitat" => TerrainDebug::Habitat,
         "source" => TerrainDebug::Source,
+        "moon_direct" => TerrainDebug::MoonDirect,
+        "moon_diffuse" => TerrainDebug::MoonDiffuse,
+        "background" => TerrainDebug::Background,
+        "moon_coverage" => TerrainDebug::MoonCoverage,
+        "light_channels" => TerrainDebug::LightChannels,
         _ => return None,
     })
 }

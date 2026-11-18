@@ -7,6 +7,49 @@ use std::sync::Arc;
 
 const MAX_VISIBLE_SECTORS: usize = 512;
 
+struct PlanetHorizon {
+    sea_radius_m: f64,
+    relief_m: f64,
+    ground_distance_m: f64,
+    far_distance_m: f64,
+}
+
+impl PlanetHorizon {
+    fn for_eye(manifest: WorldManifest, eye_m: [f64; 3]) -> Self {
+        let surface = planet_surface_for(manifest);
+        let sea_level_m = manifest
+            .planet()
+            .map_or(0.0, |d| d.sea_level_mm as f64 / 1000.0);
+        let sea_radius_m = surface.radius_mm() as f64 / 1000.0 + sea_level_m;
+        let peak_height_m = surface.relief_mm() as f64 / 1000.0;
+        let eye_radius_m = glam::DVec3::from_array(eye_m).length();
+        // On a sphere the eye and a visible peak can lie on opposite sides
+        // of the tangent point. Both tangent lengths contribute to the range.
+        let tangent = |height_m: f64| {
+            let height_m = height_m.max(0.0);
+            (height_m * (2.0 * sea_radius_m + height_m)).sqrt()
+        };
+        let ground_distance_m = tangent(eye_radius_m - sea_radius_m).max(220.0);
+        let far_distance_m = if manifest.planet().is_some() {
+            ground_distance_m + tangent(peak_height_m - sea_level_m) + 100.0
+        } else {
+            // Legacy sector selection uses a fixed guard around the ground horizon.
+            ground_distance_m + 130.0
+        };
+        Self {
+            sea_radius_m,
+            relief_m: peak_height_m + sea_level_m.abs(),
+            ground_distance_m,
+            far_distance_m,
+        }
+    }
+}
+
+/// First-person far plane including the same elevated terrain as sector selection.
+pub fn surface_far_plane_m(manifest: WorldManifest, eye_m: [f64; 3]) -> f32 {
+    PlanetHorizon::for_eye(manifest, eye_m).far_distance_m as f32
+}
+
 pub fn render_patches_for_view(
     world: minimium_world::world::WorldInstanceId,
     manifest: WorldManifest,
@@ -27,12 +70,7 @@ pub fn render_patches_for_view(
         return dense_render_patches(manifest, view, collision, geography, cache, cancelled);
     }
     let terrain = PlanetTerrain::for_manifest(manifest, geography.clone())?;
-    let radius = planet_surface_for(manifest).radius_mm() as f32 / 1000.0;
-    let altitude_radius = position.iter().map(|x| x * x).sum::<f32>().sqrt();
-    let horizon = (altitude_radius * altitude_radius - radius * radius)
-        .max(0.0)
-        .sqrt()
-        .max(220.0);
+    let far = surface_far_plane_m(manifest, position.map(f64::from));
     let count = minimium_procgen::planet_sector_count(manifest);
     let mut queue = VecDeque::from([PlanetSectorKey::from_direction_with_count(position, count)]);
     let mut visited = HashSet::new();
@@ -58,7 +96,7 @@ pub fn render_patches_for_view(
             .map(|(a, b)| (a - b) * (a - b))
             .sum::<f32>()
             .sqrt();
-        if distance > horizon + 130.0 {
+        if distance > far {
             continue;
         }
         let subdivisions = if distance < 100.0 {
@@ -146,17 +184,10 @@ fn dense_render_patches(
     let radius = minimium_procgen::planet_surface_for(manifest).radius_mm() as f64 / 1000.0;
     let camera = view.position.map(f64::from);
     let camera_radius = camera.iter().map(|v| v * v).sum::<f64>().sqrt();
-    let visibility_radius = radius
-        + manifest
-            .planet()
-            .map_or(0.0, |d| d.sea_level_mm as f64 / 1000.0);
-    let horizon = (camera_radius * camera_radius - visibility_radius * visibility_radius)
-        .max(0.0)
-        .sqrt()
-        .max(220.0);
-    let relief = manifest.planet().map_or(100.0, |d| {
-        (f64::from(d.mountain_limit_mm) + d.sea_level_mm.unsigned_abs() as f64) / 1000.0
-    });
+    let range = PlanetHorizon::for_eye(manifest, camera);
+    let visibility_radius = range.sea_radius_m;
+    let horizon = range.ground_distance_m;
+    let relief = range.relief_m;
     let terrain = PlanetTerrain::for_manifest(manifest, geography.clone())?;
     let cell_width = radius * 2.0
         / f64::from(count)
@@ -189,8 +220,7 @@ fn dense_render_patches(
         // A raised ridge beyond the ground horizon can still cast into the view.
         // Retain a coarse halo outside the camera frustum; only on-screen leaves
         // compete for detail. The same leaf budget and upload limits still apply.
-        let caster_horizon = (2.0 * visibility_radius * relief.max(0.0)).sqrt();
-        if distance - bound > horizon + caster_horizon + 100.0 {
+        if distance - bound > range.far_distance_m {
             return Ok(None);
         }
         let mut score = cell_width * f64::from(span) / distance.max(cell_width * 0.5);

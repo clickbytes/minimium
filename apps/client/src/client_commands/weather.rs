@@ -22,7 +22,7 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "atmosphere debug",
         alias: None,
-        usage: "atmosphere debug off|transmission|scattering|optical_depth|distance|fog",
+        usage: "atmosphere debug off|transmission|scattering|optical_depth|distance|fog|fog_shadow",
         arguments: &[Arg::new(
             "mode",
             ArgType::Enumeration,
@@ -35,6 +35,7 @@ const COMMANDS: &[CommandSpec] = &[
                 "optical_depth",
                 "distance",
                 "fog",
+                "fog_shadow",
             ]),
             None,
             None,
@@ -45,7 +46,7 @@ const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "terrain debug",
         alias: None,
-        usage: "terrain debug off|albedo|normals|depth|shadow|base_color|coverage|habitat|source",
+        usage: "terrain debug off|albedo|normals|depth|shadow|base_color|coverage|habitat|source|moon_direct|moon_diffuse|background|moon_coverage|light_channels",
         arguments: &[Arg::new(
             "mode",
             ArgType::Enumeration,
@@ -61,6 +62,11 @@ const COMMANDS: &[CommandSpec] = &[
                 "coverage",
                 "habitat",
                 "source",
+                "moon_direct",
+                "moon_diffuse",
+                "background",
+                "moon_coverage",
+                "light_channels",
             ]),
             None,
             None,
@@ -121,33 +127,12 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
         ["atmosphere status", ""] => Ok(ClientCommand::Presentation(
             super::PresentationOperation::AtmosphereStatus,
         )),
-        ["atmosphere debug", mode] => {
-            use minimium_renderer::atmosphere_debug::AtmosphereDebug as D;
-            Ok(ClientCommand::AtmosphereDebug(match *mode {
-                "off" => D::Off,
-                "transmission" => D::Transmission,
-                "scattering" => D::Scattering,
-                "optical_depth" => D::OpticalDepth,
-                "distance" => D::Distance,
-                "fog" => D::Fog,
-                _ => return Err(ParseError::UnknownCommand),
-            }))
-        }
-        ["terrain debug", mode] => {
-            use minimium_renderer::terrain_debug::TerrainDebug;
-            Ok(ClientCommand::TerrainDebug(match *mode {
-                "off" => TerrainDebug::Off,
-                "albedo" => TerrainDebug::Albedo,
-                "normals" => TerrainDebug::Normals,
-                "depth" => TerrainDebug::Depth,
-                "shadow" => TerrainDebug::Shadow,
-                "base_color" => TerrainDebug::BaseColor,
-                "coverage" => TerrainDebug::Coverage,
-                "habitat" => TerrainDebug::Habitat,
-                "source" => TerrainDebug::Source,
-                _ => return Err(ParseError::UnknownCommand),
-            }))
-        }
+        ["atmosphere debug", mode] => super::properties::parse_atmosphere_debug(mode)
+            .map(ClientCommand::AtmosphereDebug)
+            .ok_or(ParseError::UnknownCommand),
+        ["terrain debug", mode] => super::properties::parse_terrain_debug(mode)
+            .map(ClientCommand::TerrainDebug)
+            .ok_or(ParseError::UnknownCommand),
         ["weather status", ""] => Ok(ClientCommand::Presentation(
             super::PresentationOperation::WeatherStatus,
         )),

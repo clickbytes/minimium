@@ -140,12 +140,6 @@ impl CloudWorker {
                     let started = std::time::Instant::now();
                     if stamp != Some(request.stamp) {
                         meshes = MeshCache::default();
-                        stamp = Some(request.stamp);
-                    }
-                    if model
-                        .as_ref()
-                        .is_none_or(|m| m.manifest() != request.stamp.manifest)
-                    {
                         model = match create_weather_model(
                             request.stamp.manifest,
                             SeasonalProfile::Seasonal,
@@ -157,6 +151,7 @@ impl CloudWorker {
                                 continue;
                             }
                         };
+                        stamp = Some(request.stamp);
                     }
                     let Some(model) = &mut model else {
                         continue;
@@ -167,16 +162,9 @@ impl CloudWorker {
                     let next_cover_stamp = (
                         request.stamp,
                         (request.utc / 3600.0).floor() as i64,
-                        (request.observer * 1000.0)
-                            .round()
-                            .to_array()
-                            .map(|v| v as i64),
+                        minimium_renderer::surface_cover::CoverAddress::at(request.observer),
                     );
-                    let next_atlas_stamp = (
-                        request.stamp,
-                        next_cover_stamp.1,
-                        (*request.climate).clone(),
-                    );
+                    let next_atlas_stamp = (request.stamp, next_cover_stamp.1);
                     if atlas_stamp.as_ref() != Some(&next_atlas_stamp) {
                         let built = minimium_renderer::surface_atlas::SurfaceAtlas::build(
                             model,
@@ -202,7 +190,10 @@ impl CloudWorker {
                         atlas_stamp = Some(next_atlas_stamp);
                         cover_stamp = None;
                     }
-                    if cover_stamp != Some(next_cover_stamp) {
+                    if cover_stamp
+                        .as_ref()
+                        .is_none_or(|(key, _)| *key != next_cover_stamp)
+                    {
                         let mut cover = match minimium_renderer::surface_cover::CoverGrid::build(
                             model,
                             request.observer,
@@ -215,9 +206,10 @@ impl CloudWorker {
                             }
                         };
                         cover.atlas = atlas.clone();
-                        let cover = Arc::new(cover);
-                        cover_stamp = Some(next_cover_stamp);
-                        // Publish cover before cloud meshing, which can be cancelled or slow.
+                        cover_stamp = Some((next_cover_stamp, Arc::new(cover)));
+                    }
+                    // Replay the retained tile if an earlier notification arrived after a camera cut.
+                    {
                         let mut state = shared.0.lock().unwrap();
                         if !state.stop
                             && state
@@ -225,7 +217,9 @@ impl CloudWorker {
                                 .as_ref()
                                 .is_none_or(|next| next.stamp == request.stamp)
                         {
-                            state.cover = Some((request.stamp, cover));
+                            state.cover = cover_stamp
+                                .as_ref()
+                                .map(|(_, tile)| (request.stamp, Arc::clone(tile)));
                         }
                     }
                     let snapshot =

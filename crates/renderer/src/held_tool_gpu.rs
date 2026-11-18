@@ -46,7 +46,11 @@ impl HeldToolGpu {
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
-                entry_point: Some("fs_main"),
+                entry_point: Some(if color_format == wgpu::TextureFormat::Rgba16Float {
+                    "fs_hdr_overlay"
+                } else {
+                    "fs_main"
+                }),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: color_format,

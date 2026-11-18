@@ -56,7 +56,7 @@ const DEFAULT_CLEAR_SKY: [ClearSkyNode; 5] = [
         horizon_rgb: [0.2500, 0.0700, 0.0250],
         ambient_rgb: [0.0450, 0.0300, 0.0220],
         exposure: 1.05,
-        stars: 0.0,
+        stars: 0.08,
         direct: 0.0,
     },
     ClearSkyNode {
@@ -88,8 +88,9 @@ pub struct SunlightProfile {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MoonlightProfile {
+    /// Linear chromaticity of light reflected onto the landscape. Black disables it.
     pub local_rgb: [f32; 3],
-    /// Full-Moon illumination coefficient relative to unit-sun irradiance.
+    /// Reference full-Moon / Sun luminance ratio before atmospheric extinction.
     pub full_phase_strength: f32,
 }
 

@@ -21,6 +21,8 @@ struct Stamp {
     manifest: WorldManifest,
     context: WorldContext,
     clock_revision: u64,
+    map_fingerprint: u64,
+    weather_epoch: u64,
     resolved_relief_policy: Option<minimium_procgen::ResolvedPlanetReliefPolicy>,
 }
 

@@ -93,6 +93,7 @@ impl DesktopHost {
             effective_quality,
             gpu.shadow_gpu.fallback_reason,
         );
+        gpu.fixed_exposure_ev = startup_settings.exposure_ev();
         gpu.atmosphere_gpu.debug = startup_settings.atmosphere_debug() as u32;
         gpu.terrain_gpu.uniform.debug[0] = startup_settings.terrain_debug() as u32;
         // Pending collision jobs and bounded GPU uploads complete in the frame loop.
@@ -195,6 +196,7 @@ impl DesktopHost {
             mouse_sensitivity: startup_settings.mouse_sensitivity(),
             show_celestial_names: startup_settings.sky_names(),
             atmosphere_debug: startup_settings.atmosphere_debug(),
+            moon_flux: startup_settings.moon_flux(),
             terrain_debug: startup_settings.terrain_debug(),
             sky_quality: sky_quality_state,
             environment_frame: EnvironmentFrameInput::unavailable(),

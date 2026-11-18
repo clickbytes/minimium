@@ -116,6 +116,8 @@ impl DesktopHost {
                     self.renderer.terrain_gpu.update(&self.renderer.queue);
                 }
             }
+            Value::MoonFlux(enabled) => self.moon_flux = enabled,
+            Value::ExposureEv(ev) => self.renderer.fixed_exposure_ev = ev,
             Value::TerrainDebug(value) => {
                 self.terrain_debug = value;
                 self.renderer.terrain_gpu.uniform.debug[0] = value as u32;

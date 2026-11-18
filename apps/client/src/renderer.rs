@@ -130,6 +130,8 @@ struct Renderer {
     overview_planet: bool,
     scene_visible: bool,
     output_encoder: Option<minimium_renderer::OutputEncoder>,
+    fixed_exposure_ev: Option<f32>,
+    exposure_history: Option<render::ExposureHistory>,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -191,6 +193,7 @@ struct DesktopHost {
     mouse_sensitivity: f32,
     show_celestial_names: bool,
     atmosphere_debug: minimium_renderer::atmosphere_debug::AtmosphereDebug,
+    moon_flux: bool,
     terrain_debug: minimium_renderer::terrain_debug::TerrainDebug,
     sky_quality: minimium_renderer::quality::SkyQualityState,
     environment_frame: EnvironmentFrameInput,

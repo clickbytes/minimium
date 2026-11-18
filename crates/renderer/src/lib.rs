@@ -50,6 +50,8 @@ mod coast_probe;
 #[cfg(feature = "gpu")]
 pub mod environment_pipelines;
 #[cfg(feature = "gpu")]
+pub mod fog_relief;
+#[cfg(feature = "gpu")]
 pub mod frame_encoder;
 pub mod geometry;
 #[cfg(feature = "gpu")]
@@ -108,6 +110,8 @@ pub mod shadow_target;
 pub mod shadow_uniform;
 #[cfg(feature = "gpu")]
 mod shoreline;
+#[cfg(feature = "gpu")]
+mod sky_irradiance;
 #[cfg(feature = "gpu")]
 pub mod star_gpu;
 #[cfg(feature = "gpu")]
@@ -175,6 +179,8 @@ pub use moon_disk::MoonGpu;
 pub use moon_sphere::MoonSphereGpu;
 #[cfg(feature = "gpu")]
 pub use output::OutputEncoder;
+#[cfg(feature = "gpu")]
+mod output_meter;
 pub use render_frame::RenderFrame;
 #[cfg(feature = "gpu")]
 pub use shadow_gpu::ShadowGpu;

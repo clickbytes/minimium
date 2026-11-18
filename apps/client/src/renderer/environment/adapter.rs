@@ -12,10 +12,8 @@ use minimium_environment::{
 use minimium_protocol::WorldContext;
 use minimium_renderer::gpu_frame::camera_uniform;
 use minimium_renderer::gpu_frame::EnvironmentUniform;
+use minimium_renderer::{lighting::luminance, moon_lighting};
 use std::f64::consts::PI;
-
-// Presentation scale for sky disks; physical angular radii still drive lighting and visibility.
-const SKY_DISK_DISPLAY_SCALE: f64 = 1.8;
 
 pub(super) fn from_sky_state(
     sky: &SkyState,
@@ -93,20 +91,18 @@ pub(super) fn from_sky_state(
     let moon_flux =
         minimium_renderer::moon_lighting::apparent_moon_flux(sky.moon.apparent_v_magnitude)
             .ok_or(EnvironmentFrameError::SkyStateInvalid)?;
-    let moon_scale = minimium_renderer::moon_lighting::lunar_irradiance_at_observer(
-        moon_flux,
-        sky.moon.body.apparent_altitude_rad,
-        sky.moon.body.angular_radius_rad,
+    let solar_rgb = settings
+        .sunlight
+        .global_rgb
+        .map(|c| c * settings.sunlight.global_strength);
+    let full_moon = moon_lighting::full_moon_irradiance(solar_rgb, &settings.moonlight);
+    let reflected = full_moon.map(|c| c * moon_flux);
+    let transmission = moon_lighting::atmospheric_transmittance(
+        sky.moon.body.apparent_altitude_rad + sky.moon.body.angular_radius_rad,
         observer.geographic.height_m(),
-        settings.moonlight.full_phase_strength,
     )
     .ok_or(EnvironmentFrameError::SkyStateInvalid)?;
-    let disk_moon = super::body_frame(
-        sky.moon.body,
-        settings.moonlight.local_rgb,
-        moon_scale,
-        moon_visible,
-    );
+    let disk_moon = super::body_frame(sky.moon.body, reflected, transmission, moon_visible);
     let moon_to_sun = rotate_shortest_arc(
         sky.moon.body.geometric_direction_world,
         sky.moon.body.apparent_direction_world,
@@ -132,6 +128,7 @@ pub(super) fn from_sky_state(
         moon_to_sun,
         &observed_bodies,
         settings,
+        descriptor.profile() == EnvironmentProfile::Earth && render_view.game_planet_radius_m > 0.0,
     )?;
     let environment_uniform = EnvironmentUniform {
         sun_geometric_world: direction_altitude(
@@ -140,7 +137,7 @@ pub(super) fn from_sky_state(
         )?,
         sun_apparent_world: direction_radius(
             sky.sun.apparent_direction_world,
-            sky.sun.angular_radius_rad * SKY_DISK_DISPLAY_SCALE,
+            sky.sun.angular_radius_rad,
         )?,
         moon_geometric_world: direction_altitude(
             sky.moon.body.geometric_direction_world,
@@ -148,9 +145,16 @@ pub(super) fn from_sky_state(
         )?,
         moon_apparent_world: direction_radius(
             sky.moon.body.apparent_direction_world,
-            sky.moon.body.angular_radius_rad * SKY_DISK_DISPLAY_SCALE,
+            sky.moon.body.angular_radius_rad,
         )?,
-        moon_light_world_phase: direction_fraction(moon_to_sun, sky.moon.illuminated_fraction)?,
+        moon_light_world_phase: direction_fraction(
+            if render_view.kind == super::EnvironmentViewKind::Overview {
+                sky.moon.moon_to_sun_world
+            } else {
+                moon_to_sun
+            },
+            sky.moon.illuminated_fraction,
+        )?,
         moon_pole_world: direction_zero(moon_pole)?,
         local_sun_rgb_visibility: color_fraction(
             disk_sun.effective_linear_rgb,
@@ -161,12 +165,8 @@ pub(super) fn from_sky_state(
             disk_moon.visible_fraction,
         )?,
         global_sun_direction: direction_zero(sky.geocentric_sun_direction_world)?,
-        global_sun_rgb: color_zero(
-            settings
-                .sunlight
-                .global_rgb
-                .map(|channel| channel * settings.sunlight.global_strength),
-        )?,
+        global_sun_rgb: color_zero(solar_rgb)?,
+        global_moon_rgb: color_zero(reflected)?,
         ambient_rgb_exposure: color_exposure(
             clear_sky.ambient_rgb,
             if render_view.kind == super::EnvironmentViewKind::Overview {
@@ -192,7 +192,12 @@ pub(super) fn from_sky_state(
             transfer_route(render_view),
         ],
         eqj_to_world: matrix4(sky.catalog_epoch_to_world)?,
-        moon_disk_radiance: minimium_renderer::moon_lighting::moon_disk_radiance(moon_flux),
+        moon_disk_radiance: minimium_renderer::moon_lighting::resolved_disk_radiance(
+            moon_flux,
+            sky.moon.body.angular_radius_rad,
+            luminance(full_moon),
+        )
+        .ok_or(EnvironmentFrameError::SkyStateInvalid)?,
         star_animation: [0.0; 4],
         moon_orbit_world,
         halo_count: [halo_count, 0, 0, 0],

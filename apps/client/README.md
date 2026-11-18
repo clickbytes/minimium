@@ -93,9 +93,15 @@ package and has no wgpu/winit/astronomy dependency. Renderer quality/debug value
 remain CPU-only public contracts when its `gpu` feature is disabled.
 
 The renderer's `RenderFrame`, `PreparedSector`, uniform and vertex data are also
-available without GPU. Desktop exposure calculation and diagnostics share
-`render_frame::view_exposure` with CPU consumers; upload still uses the same
-renderer data types and feature-gated GPU owners.
+available without GPU. The desktop Earth renderer pre-exposes its scene for
+half-float storage, then meters visible HDR luminance before drawing the held
+item and UI. `terrain status` reports the storage gain, adaptation reference,
+solar and lunar altitudes, illuminated fraction and relative lunar flux.
+The client passes elapsed presentation UTC and elapsed monotonic time from the same
+two rendered frames to the meter. Accelerated celestial changes can reach the HDR
+output in that frame. The actual adapted gain stays on the GPU. In `sky info`,
+`render_minus_estimated_utc_ms` compares the rendered sky's UTC with the current
+client estimate. A negative value gives the age of that sky in world milliseconds.
 
 Consumes renderer, client-runtime, core, environment, world, assets, asset-io, astronomy, platform, protocol, procgen, sectors, telemetry and sample-game content. The application supplies the client-runtime world-content resolver shared by desktop and terminal frontends. Headless server and ctl must not depend on this package.
 
@@ -222,6 +228,12 @@ overview model owns finite, bounded zoom and transient drag state.
 `DesktopHost` owns CPU shadow selection state and passes it to GPU submission
 through the immutable per-frame scene snapshot; `Renderer` owns caster buffers
 and uniforms, not shadow validity or source selection.
+
+For each directional cascade the host queries the resident terrain of that
+publication in light space. A published ridge can cast into a valley from
+beyond the local caster radius. Empty resident buffers contribute zero draws.
+Missing buffers or missing bounds on nonempty geometry invalidate the frame.
+Authored map geometry retains its local bounded upload cache.
 The snapshot carries the renderer's complete geometry publication stamp and keys;
 scene receivers, selected casters, remote casters and the uploaded map must match
 the same world, content, publication and floating-origin revisions before shadow
@@ -328,7 +340,9 @@ state (visible sky integration is E047-03, the automatic generator E047-04).
 
 `atmosphere status` reports quality, optical altitude, logical GPU memory and
 optional asynchronous GPU timings. `atmosphere debug
-off|transmission|scattering|optical_depth|distance|fog` selects atmosphere diagnostics.
+off|transmission|scattering|optical_depth|distance|fog|fog_shadow` selects atmosphere diagnostics.
+Compare `fog` (total fog optical depth) with `fog_shadow` (fog optical depth
+in terrain shadow for the selected Sun or Moon). Greater depth appears brighter.
 Atmosphere and terrain diagnostic selections are mutually exclusive; diagnostic
 views suppress cloud overlays. Terminal builds parse these commands but require
 the graphical frontend to display them. No save reset or protocol change is needed.
@@ -338,9 +352,19 @@ uniform for deterministic local habitat variation. It updates the UTC interpolat
 phase of the two worker-supplied cover endpoints. This does not change world
 generation revisions or saves, and needs no world reset.
 
-`terrain debug off|albedo|normals|depth|shadow|base_color|coverage|habitat|source` selects terrain diagnostics in the
+`terrain debug off|albedo|normals|depth|shadow|base_color|coverage|habitat|source|moon_direct|moon_diffuse|background|moon_coverage|light_channels` selects terrain diagnostics in the
 desktop console. The text frontend reports presentation-only commands without
-constructing GPU resources. Desktop startup loads the cooked offline base set;
+constructing GPU resources. For moonset comparisons, use
+`set client.debug.exposure_ev 18` to hold an absolute gain of 2¹⁸, and
+`set client.debug.moon_flux false` for the zero-lunar-flux control at the same UTC.
+`reset client.debug.exposure_ev` and `reset client.debug.moon_flux` restore startup
+values (defaults `auto` and `true`). In `terrain debug light_channels`, red is
+shaded direct moonlight, green is lunar skylight and blue is all other surface
+lighting. The individual views use the same material and exposure. In
+`terrain debug moon_coverage`, red and green show contact and landscape coverage.
+`terrain status` reports UTC, primary/secondary lunar shadows and exposure mode.
+
+Desktop startup loads the cooked offline base set;
 server-required sets are installed before content readiness. Distribute the
 executable with `materials/manifest.ron` and its declared sibling maps using
 `tools/package_client.py --manifest PATH EXECUTABLE NEW_OUTPUT_DIRECTORY`.
@@ -460,7 +484,7 @@ for guarded frustum selection and a bounded 512-leaf terrain budget. FPP remains
 at 256 leaves. Terrain status reports the requested view's budget; worker and GPU
 upload scheduling are unchanged. Coastline and frame-time acceptance are pending.
 
-Planetary overview now participates in the same single-source shadow pass as FPP.
+Planetary overview and FPP share the directional shadow projections.
 The client supplies camera/active bounds, chooses the dominant viewed Sun/Moon,
 and selects complete active terrain casters around the renderer-fitted region.
 Authored-map casters use a padded spatial cache instead of rebuilding for every
@@ -599,7 +623,9 @@ it is a presentation transition, not a physical penumbra or light-power fade.
 The weight is carried as f32 bits in the reserved ShadowUniform flags.z word.
 Sun/Moon maps ignore that word; direct point irradiance is unchanged.
 The local dev bolid lighting command prints the prepared point-shadow weight.
-The renderer still owns one shadow map, not simultaneous lunar/bolid shadows.
+The bolid uses the primary contact map. When the Moon can illuminate
+visible terrain it retains contact and landscape coverage during a takeover.
+A rejected publication disables sampling of its maps for that frame.
 Release manual replay at Bergen, event 1/Burst seed 590085, confirmed prepared
 weights 0.04449 at 1.2 s, 0.54657 at 1.3 s and 1 at 1.4 s (received camera
 luminance 3.138e-5, 5.159e-5 and 8.059e-5 respectively). The 4 s extinct
@@ -784,3 +810,8 @@ Water-only updates coalesce behind an active preparation instead of cancelling
 it every solver tick; the last complete water frame remains presentable while
 the latest one is prepared. Structural terrain and origin changes still cancel
 stale work. See `docs/excavation.md` for controls and deferred acceptance.
+
+The sector worker also prepares the exterior fog height tile for an Earth scene.
+Publishing the selected terrain installs its matching tile. Water-only refreshes
+reuse its CPU data. Regional weather remains on the cloud worker. A cover upload
+must match the active source, climate, clock, UTC hour and world-grid address.

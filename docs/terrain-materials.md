@@ -643,7 +643,7 @@ is constructed to produce the desired physical altitude within the existing
 bounded observer API, capped at 80 km; the atmospheric model retains the uncapped
 camera. Authoritative player observers, geometry, saves and protocol are unchanged.
 
-Shared frame bindings expose the 256-byte atmosphere uniform, optical-depth LUT,
+Shared frame bindings expose the 272-byte atmosphere uniform, optical-depth LUT,
 sky scattering/transmission, aerial scattering/transmission, isotropic-fill LUT
 and regional fog grid. Sampled textures and storage staging are distinct, with
 explicit copies between compute passes and before scene rendering. There are
@@ -656,8 +656,8 @@ Current resources and update rules:
 | Optical-depth table | 128x64 RGBA16F | CPU rebuild for optical-radius changes | same |
 | Isotropic fill | 32x32 RGBA16F | cached GPU rebuild for optical changes | same |
 | Sky scattering + RGB transmission | two 192x108 RGBA16F | 192x108, 24 ray steps | 128x64 subregion, 12 steps |
-| Aerial scattering + RGB transmission | two 32x32x32 RGBA16F | 32x32x32, 16 steps | 16x16x32 subregion, 8 steps |
-| Regional fog endpoints | 9x9x2 RGBA16F | worker update | same |
+| Aerial scattering + RGB transmission | two 96x54x48 RGBA16F | 2 samples per log interval, one front-to-back sweep per column | 32x18x32 subregion |
+| Regional fog endpoints and local ground elevation | 33x33x3 RGBA16F | two 9x9 hourly grids and one 33x33 local height tile | same |
 
 Low quality retains maximum allocations but reduces active work and remaps lookup
 coordinates to the updated subregions. View/light/weather changes invalidate view
@@ -668,7 +668,9 @@ reprojection or history rejection is introduced.
 Single-scattering integration includes Rayleigh, aerosols, ozone, directional
 solar illumination, lunar illumination and the reference planet's shadow. Samples
 concentrate around the lowest point of each ray segment so thin fog is not skipped
-when viewed from above. Detailed terrain does not cast volumetric light shafts.
+when viewed from above. Direct illumination follows the active Sun or Moon's
+terrain shadow in air. Distant sky and visible geometry share the same foreground
+integral, including its scattering and RGB transmission.
 
 The HDR scene is rendered before a shared RGB composite:
 surface_color * RGB_transmission + scattered_radiance.
@@ -684,27 +686,26 @@ blending, over the already fogged opaque background. Their opacity is retained.
 OIT remains approximate for many overlapping layers. HDR exposure/tone mapping
 occurs once in the final output; UI is composed afterward.
 
-Weather requests follow the render view. The worker supplies local extinction,
-100 m fog scale height, physical ground elevation and aerosol haze, with two UTC
-hour endpoints. Fog potential is an explicit visual heuristic from model humidity,
-temperature and surface wetness, not a measured relative-humidity/dew-point model.
-Parameters interpolate in UTC, fade at regional boundaries and expire smoothly.
-A clock/world reset discards old weather. There is no saved or frame-integrated fog.
-The ground grid is broad: it does not resolve individual small valleys or air
-moving around obstacles.
+Weather requests follow the render view. The environment estimates condensation
+from climate moisture, nocturnal cooling and relief, with a separate replay for
+dew retained on the material. Hourly fog endpoints interpolate in UTC and fade at
+regional boundaries. Near the surface the active terrain mesh supplies heights
+on a world-anchored lattice with a maximum spacing of 16 game metres. Valid
+coverage refines layer thickness and suppresses surface fog below exterior ground.
+Uncovered cells use the regional approximation. The model omits local wind transport.
 
 HDR/compute/RGBA16F-storage capability gates the physical route. The analytic
 fallback fades sky scattering by optical height and restores celestial contrast
 aloft. It does not provide the full physical aerial perspective. The fallback
 does not create storage-output textures or compute pipelines.
 
-Logical maximum LUT/staging/fog/uniform storage is approximately 1.71 MiB, plus a
+Logical maximum LUT/staging/fog/uniform storage is approximately 8.33 MiB, plus a
 scene snapshot of about 15.8 MiB at 1080p or 63.3 MiB at 4K. Optional timestamp
 buffers add 512 bytes. Driver allocation overhead and resize overlap are excluded.
 
 Commands:
 - atmosphere status: active route, quality, physical optical altitude and memory.
-- atmosphere debug off|transmission|scattering|optical_depth|distance|fog.
+- atmosphere debug off|transmission|scattering|optical_depth|distance|fog|fog_shadow.
 - terrain diagnostics bypass atmosphere composition; cloud overlays are suppressed
   during diagnostic views. Selecting one diagnostic family disables the other.
 
@@ -972,13 +973,13 @@ worker, texture, readback or pass is introduced.
 Sun/Moon selection follows the viewed ground. Physical lunar light and shadows
 share a direction. Reduced daytime fill, weak phase-dependent night fill and a
 bounded landform cavity approximation improve the direct/indirect balance.
-A deterministic view exposure curve spans 0..15 stops between solar altitudes
--6..-18 degrees, constrained by the brightest sampled viewed location. It is
-not temporal automatic exposure or photometric validation. Lunar irradiance
-remains unchanged. HDR radiance is exposed before scene/sky/aerial RGBA16F writes;
-LUT readers and final output account for that once, avoiding low-light underflow
-or double exposure. Authored celestial sprite colors and diagnostics retain
-display calibration. Analytic fallback has no new night adaptation.
+HDR scene and atmosphere textures use deterministic storage gain to preserve
+dim radiance in RGBA16F. The output camera meters the visible scene independently.
+A GPU log-luminance histogram limits the influence of point highlights and
+captures brighter areas of terrain against a dark sky. Adaptation uses elapsed
+real seconds and an observer-relative exposure ceiling for night. The final
+tone mapper applies the ratio of adapted gain to storage gain. Diagnostic
+views use fixed exposure and the UI is composited after tone mapping.
 
 Acceptance remains deferred: compare terrain debug shadow and normals at low Sun,
 high flight and globe zoom; inspect full/crescent Moon and moonless darkness,

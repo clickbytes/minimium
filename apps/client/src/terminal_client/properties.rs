@@ -82,6 +82,8 @@ impl TextProperties {
                     | Key::MeteorVolume
                     | Key::CloudDetail
                     | Key::AtmosphereDebug
+                    | Key::MoonFlux
+                    | Key::ExposureEv
                     | Key::TerrainDebug
                     | Key::CloudDebug
                     | Key::SkyDemo => Ok(self.get(key, options)),

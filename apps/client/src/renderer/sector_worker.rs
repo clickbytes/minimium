@@ -53,6 +53,7 @@ struct Request {
 pub(super) struct PreparedScene {
     key: Key,
     pub patches: Vec<Arc<PreparedSector>>,
+    pub fog_relief: Option<Arc<minimium_renderer::fog_relief::FogRelief>>,
     pub water_vertices: Arc<Vec<minimium_renderer::ocean_geometry::OceanVertex>>,
     pub build_ms: f64,
     pub cache_bytes: usize,
@@ -121,6 +122,10 @@ impl SectorWorker {
                     u64,
                     [f32; 3],
                     Arc<Vec<minimium_renderer::ocean_geometry::OceanVertex>>,
+                )> = None;
+                let mut relief_cache: Option<(
+                    Key,
+                    Option<Arc<minimium_renderer::fog_relief::FogRelief>>,
                 )> = None;
                 'requests: loop {
                     let request = {
@@ -318,6 +323,28 @@ impl SectorWorker {
                     if cancelled {
                         continue;
                     }
+                    let fog_relief = if let Some((_, tile)) = relief_cache
+                        .as_ref()
+                        .filter(|(key, _)| key.same_geometry(request.key))
+                    {
+                        tile.clone()
+                    } else {
+                        let tile = terrain
+                            .as_ref()
+                            .filter(|planet| planet.is_earth())
+                            .and_then(|planet| {
+                                minimium_renderer::fog_relief::FogRelief::build(
+                                    &patches,
+                                    request.key.origin,
+                                    request.key.view.position,
+                                    (planet.radius_mm() as f64 + planet.sea_level_mm() as f64)
+                                        / 1000.0,
+                                )
+                                .map(Arc::new)
+                            });
+                        relief_cache = Some((request.key, tile.clone()));
+                        tile
+                    };
                     let mut s = shared.0.lock().unwrap();
                     if !s.stop
                         && s.requested.get(&request.owner) == Some(&request.key)
@@ -331,6 +358,7 @@ impl SectorWorker {
                             Arc::new(PreparedScene {
                                 key: request.key,
                                 patches,
+                                fog_relief,
                                 water_vertices,
                                 build_ms: started.elapsed().as_secs_f64() * 1000.0,
                                 cache_bytes: geometry.bytes(),

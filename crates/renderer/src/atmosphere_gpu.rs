@@ -2,6 +2,17 @@
 use crate::{
     atmosphere_pipeline as pipeline, atmosphere_resources::AtmosphereResources, RenderViewFrame,
 };
+use crate::{shadow_uniform::ShadowUniform, world_geometry_gpu::GeometryPublicationStamp};
+
+#[derive(Clone, Copy, PartialEq)]
+struct DirectionalShadowKey {
+    terrain: GeometryPublicationStamp,
+    caster_revision: u64,
+    near: ShadowUniform,
+    far: Option<ShadowUniform>,
+    moon: [Option<ShadowUniform>; 2],
+}
+
 pub struct AtmosphereGpu {
     pub pipeline: wgpu::RenderPipeline,
     pub depth_bind_group: wgpu::BindGroup,
@@ -15,12 +26,14 @@ pub struct AtmosphereGpu {
     last_radius: f64,
     dirty: std::cell::Cell<bool>,
     weather: Option<crate::atmosphere_view::WeatherEndpoints>,
+    relief: Option<std::sync::Arc<crate::fog_relief::FogRelief>>,
     pub debug: u32,
     timing: Option<crate::atmosphere_timing::AtmosphereTiming>,
     last_view: crate::AtmosphereUniform,
     needs_lut: std::cell::Cell<bool>,
     computed: std::cell::Cell<bool>,
     light_key: std::cell::Cell<Option<[[f32; 4]; 5]>>,
+    shadow_key: Option<DirectionalShadowKey>,
 }
 impl AtmosphereGpu {
     pub const BYTES: u64 = AtmosphereResources::BYTES;
@@ -28,6 +41,7 @@ impl AtmosphereGpu {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         frame: &wgpu::BindGroupLayout,
+        shadows: &wgpu::BindGroupLayout,
         format: wgpu::TextureFormat,
         depth: &wgpu::TextureView,
         resources: AtmosphereResources,
@@ -66,9 +80,9 @@ impl AtmosphereGpu {
                 output(2, 3, &out3),
             ];
             let compute = vec![
-                pipeline::compute(device, frame, &out2, "multi"),
-                pipeline::compute(device, frame, &out2, "sky"),
-                pipeline::compute(device, frame, &out3, "aerial"),
+                pipeline::compute(device, frame, &out2, shadows, "multi"),
+                pipeline::compute(device, frame, &out2, shadows, "sky"),
+                pipeline::compute(device, frame, &out3, shadows, "aerial"),
             ];
             (compute, outputs)
         } else {
@@ -84,15 +98,17 @@ impl AtmosphereGpu {
             outputs,
             active: false,
             standard: true,
-            last_radius: 0.0,
+            last_radius: crate::atmosphere::EARTH.radius_m,
             dirty: std::cell::Cell::new(true),
             weather: None,
+            relief: None,
             debug: 0,
             timing: crate::atmosphere_timing::AtmosphereTiming::new(device, queue),
             last_view: Default::default(),
             needs_lut: std::cell::Cell::new(true),
             computed: std::cell::Cell::new(false),
             light_key: std::cell::Cell::new(None),
+            shadow_key: None,
         }
     }
     fn scratch(
@@ -129,9 +145,10 @@ impl AtmosphereGpu {
         self.active
     }
     pub fn high_stars(&self) -> bool {
-        self.last_view.config[0] > 0.0 && self.last_view.up_height[3] > 12000.0
+        crate::atmosphere_view::stellar_altitude_weight(&self.last_view) > 0.0
     }
     pub fn set_weather(&mut self, queue: &wgpu::Queue, grid: &crate::surface_cover::CoverGrid) {
+        let edge = crate::surface_cover::EDGE;
         self.weather = Some(crate::atmosphere_view::WeatherEndpoints::from_grid(grid));
         self.needs_lut.set(true);
         queue.write_texture(
@@ -139,11 +156,51 @@ impl AtmosphereGpu {
             bytemuck::cast_slice(&grid.fog_pixels),
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(9 * 8),
-                rows_per_image: Some(9),
+                bytes_per_row: Some(edge * 8),
+                rows_per_image: Some(edge),
             },
-            self.resources.fog.size(),
+            wgpu::Extent3d {
+                width: edge,
+                height: edge,
+                depth_or_array_layers: 2,
+            },
         );
+    }
+    pub fn set_relief(
+        &mut self,
+        queue: &wgpu::Queue,
+        relief: Option<std::sync::Arc<crate::fog_relief::FogRelief>>,
+    ) {
+        if self
+            .relief
+            .as_ref()
+            .zip(relief.as_ref())
+            .is_some_and(|(old, new)| std::sync::Arc::ptr_eq(old, new))
+            || (self.relief.is_none() && relief.is_none())
+        {
+            return;
+        }
+        if let Some(tile) = &relief {
+            let edge = crate::fog_relief::EDGE;
+            let mut destination = self.resources.fog.as_image_copy();
+            destination.origin.z = 2;
+            queue.write_texture(
+                destination,
+                bytemuck::cast_slice(&tile.pixels),
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(edge * 8),
+                    rows_per_image: None,
+                },
+                wgpu::Extent3d {
+                    width: edge,
+                    height: edge,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+        self.relief = relief;
+        self.needs_lut.set(true);
     }
     pub fn clear_weather(&mut self) {
         self.weather = None;
@@ -163,7 +220,7 @@ impl AtmosphereGpu {
         }
         self.standard = standard;
         self.active = radius > 0.0 && self.resources.physical;
-        let value = crate::atmosphere_view::prepare(
+        let mut value = crate::atmosphere_view::prepare(
             view,
             radius,
             scale,
@@ -173,13 +230,16 @@ impl AtmosphereGpu {
             self.debug,
             self.active,
         );
+        if let Some(tile) = &self.relief {
+            value.relief_tile = tile.mapping;
+        }
         // Fallback dust also samples this CPU-built optical-depth table.
         // Its radius must follow the view even when compute/HDR is disabled.
         if radius > 0.0 && (self.last_radius - value.radii[0] as f64).abs() > 0.1 {
             self.last_radius = value.radii[0] as f64;
             let mut profile = crate::atmosphere::EARTH;
             profile.radius_m = self.last_radius.max(1.0);
-            crate::atmosphere_table::update(queue, self.resources.optical.texture(), profile);
+            self.resources.optical.update(queue, profile);
             self.dirty.set(true);
         }
         queue.write_buffer(&self.resources.uniform, 0, bytemuck::bytes_of(&value));
@@ -197,7 +257,12 @@ impl AtmosphereGpu {
             &self.scratch.create_view(&Default::default()),
         );
     }
-    pub fn prepare(&self, encoder: &mut wgpu::CommandEncoder, frame: &wgpu::BindGroup) {
+    pub fn prepare(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        frame: &wgpu::BindGroup,
+        shadows: &wgpu::BindGroup,
+    ) {
         self.computed.set(false);
         if !self.active {
             return;
@@ -212,6 +277,11 @@ impl AtmosphereGpu {
             if i == 0 && !dirty {
                 continue;
             }
+            let outputs = match i {
+                0 => 4..5,
+                1 => 0..2,
+                _ => 2..4,
+            };
             {
                 let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: Some("atmosphere LUT update"),
@@ -224,29 +294,12 @@ impl AtmosphereGpu {
                 pass.set_pipeline(&self.compute[i]);
                 pass.set_bind_group(0, frame, &[]);
                 pass.set_bind_group(1, &self.outputs[i], &[]);
-                match i {
-                    0 => pass.dispatch_workgroups(4, 4, 1),
-                    1 => {
-                        if self.standard {
-                            pass.dispatch_workgroups(24, 14, 1)
-                        } else {
-                            pass.dispatch_workgroups(16, 8, 1)
-                        }
-                    }
-                    _ => {
-                        if self.standard {
-                            pass.dispatch_workgroups(8, 8, 8)
-                        } else {
-                            pass.dispatch_workgroups(4, 4, 8)
-                        }
-                    }
-                }
+                pass.set_bind_group(2, shadows, &[]);
+                let [width, height, _] =
+                    AtmosphereResources::active_size(outputs.start, self.standard);
+                pass.dispatch_workgroups(width.div_ceil(8), height.div_ceil(8), 1);
             }
-            match i {
-                0 => self.resources.publish(encoder, 4..5),
-                1 => self.resources.publish(encoder, 0..2),
-                _ => self.resources.publish(encoder, 2..4),
-            }
+            self.resources.publish(encoder, outputs, self.standard);
         }
     }
     pub fn encode(
@@ -300,15 +353,39 @@ impl AtmosphereGpu {
         }
     }
     pub fn mark_environment(&self, environment: &crate::gpu_frame::EnvironmentUniform) {
+        let [sx, sy, sz, _] = environment.global_sun_direction;
         let key = [
-            environment.global_sun_direction,
+            [sx, sy, sz, environment.sun_apparent_world[3]],
             environment.global_sun_rgb,
             environment.moon_orbit_world,
-            environment.moon_disk_radiance,
+            environment.global_moon_rgb,
             environment.ambient_rgb_exposure,
         ];
         if self.light_key.get() != Some(key) {
             self.light_key.set(Some(key));
+            self.needs_lut.set(true);
+        }
+    }
+    /// A stationary camera can acquire new terrain or moving shadow casters.
+    pub fn mark_shadows(
+        &mut self,
+        terrain: Option<GeometryPublicationStamp>,
+        caster_revision: u64,
+        near: &ShadowUniform,
+        far: Option<&ShadowUniform>,
+        moon: [Option<&ShadowUniform>; 2],
+    ) {
+        let key = terrain
+            .filter(|_| near.flags[0] != 0 && (matches!(near.flags[1], 1 | 2) || moon[0].is_some()))
+            .map(|terrain| DirectionalShadowKey {
+                terrain,
+                caster_revision,
+                near: *near,
+                far: far.copied(),
+                moon: moon.map(|value| value.copied()),
+            });
+        if self.shadow_key != key {
+            self.shadow_key = key;
             self.needs_lut.set(true);
         }
     }
