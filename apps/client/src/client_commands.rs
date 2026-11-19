@@ -14,6 +14,7 @@ use minimium_renderer::quality::SkyQuality;
 use std::sync::OnceLock;
 
 mod bindings;
+pub(crate) mod bolid_preview;
 pub(crate) mod camera;
 mod catalog;
 mod explain;
@@ -26,6 +27,7 @@ mod gameplay;
 mod help;
 mod interface;
 pub(crate) mod local_environment;
+pub(crate) mod meteor_adapter;
 mod meteors;
 mod movement;
 pub(crate) mod navigation;
@@ -47,9 +49,9 @@ pub(crate) use minimium_commands::{
 };
 pub(crate) use navigation::nearest_portal_entity;
 #[cfg(feature = "desktop")]
-pub(crate) use presentation::PresentationRequirement;
+pub(crate) use presentation::BolidPath;
 #[cfg(feature = "desktop")]
-pub(crate) use presentation::{BolidPath, DeveloperOperation};
+pub(crate) use presentation::PresentationRequirement;
 pub(crate) use presentation::{
     PresentationCapability, PresentationOperation, PresentationResult, PresentationUnavailable,
     PresentationUnavailableReason,

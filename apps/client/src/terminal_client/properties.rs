@@ -14,6 +14,46 @@ pub(super) struct TextProperties {
 }
 
 impl TextProperties {
+    pub(super) fn meteor_property_operation(
+        &mut self,
+        identity: &minimium_commands::results::OperationContext,
+        action: &crate::client_commands::FrontendAction,
+    ) -> Option<minimium_commands::results::OperationResult> {
+        use minimium_commands::results::{
+            OperationFailure, OperationReceipt, OperationResult, Payload, Stage,
+        };
+        let crate::client_commands::FrontendAction::Property(command) = action else {
+            return None;
+        };
+        let key = match command {
+            ClientPropertyCommand::Get(key) => *key,
+            ClientPropertyCommand::Set(value) => value.key(),
+            ClientPropertyCommand::Reset(key) => *key,
+            _ => return None,
+        };
+        if !crate::client_commands::meteor_adapter::owns(key) {
+            return None;
+        }
+        match command {
+            ClientPropertyCommand::Get(_) => Some(OperationResult::new(
+                identity.clone(),
+                OperationReceipt::at(Stage::Completed),
+                Ok(Payload::Property(self.settings.typed_property(
+                    key,
+                    crate::client_commands::meteor_adapter::encode,
+                ))),
+            )),
+            _ => Some(OperationResult::new(
+                identity.clone(),
+                OperationReceipt::at(Stage::Rejected),
+                Err(OperationFailure::command(
+                    "TextProperties",
+                    unsupported_context(key.key()),
+                )),
+            )),
+        }
+    }
+
     pub(super) fn local_environment_operation(
         &mut self,
         identity: &minimium_commands::results::OperationContext,
@@ -68,9 +108,10 @@ impl TextProperties {
         Some(OperationResult::new(
             identity.clone(),
             OperationReceipt::at(stage),
-            Ok(Payload::Property(
-                self.settings.local_environment_property(key),
-            )),
+            Ok(Payload::Property(self.settings.typed_property(
+                key,
+                crate::client_commands::local_environment::encode,
+            ))),
         ))
     }
 
@@ -112,14 +153,13 @@ impl TextProperties {
                 Key::MovementFly | Key::MovementSpeed | Key::MovementAccel => {
                     unreachable!("shared movement operation")
                 }
-                Key::Locale
-                | Key::CameraFov
-                | Key::MeteorEnabled
+                Key::Locale | Key::CameraFov => Ok(self.get(key)),
+                Key::MeteorEnabled
                 | Key::MeteorRate
                 | Key::MeteorQuality
                 | Key::MeteorSeed
                 | Key::MeteorAudio
-                | Key::MeteorVolume => Ok(self.get(key)),
+                | Key::MeteorVolume => unreachable!("typed meteor property operation"),
                 Key::InputBindings
                 | Key::MouseSensitivity
                 | Key::SkyQuality

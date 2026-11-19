@@ -72,11 +72,118 @@ pub(super) fn lower(
     if op.path == "world.time.initial_config" {
         return Ok(ClientCommand::InitialClockConfig);
     }
-    if let Some(request) = op.property_request(entry) {
-        return super::properties::parse_request(request)
-            .map_err(|e| e.at(span))?
-            .map(ClientCommand::Property)
-            .ok_or_else(|| invalid("unsupported property operation"));
+    if matches!(
+        op.path.as_str(),
+        "client.render.bolids.transmission"
+            | "client.sky.meteors.debug.mode"
+            | "client.sky.meteors.debug.light"
+    ) && !op.legacy
+    {
+        use minimium_commands::syntax::canonical::AccessKind;
+        match (op.path.as_str(), op.kind) {
+            ("client.render.bolids.transmission", AccessKind::Read) => {
+                return Ok(ClientCommand::Presentation(
+                    super::PresentationOperation::Developer(
+                        super::presentation::DeveloperOperation::BolidTransmissionRead,
+                    ),
+                ))
+            }
+            ("client.render.bolids.transmission", AccessKind::Reset) => {
+                return Ok(ClientCommand::Presentation(
+                    super::PresentationOperation::Developer(
+                        super::presentation::DeveloperOperation::BolidTransmission(false),
+                    ),
+                ))
+            }
+            ("client.render.bolids.transmission", AccessKind::Write) => {
+                let enabled = matches!(
+                    op.arguments.first().map(|arg| arg.text.as_str()),
+                    Some("true")
+                );
+                return Ok(ClientCommand::Presentation(
+                    super::PresentationOperation::Developer(
+                        super::presentation::DeveloperOperation::BolidTransmission(enabled),
+                    ),
+                ));
+            }
+            ("client.sky.meteors.debug.mode", AccessKind::Read) => {
+                return Ok(ClientCommand::Presentation(
+                    super::PresentationOperation::MeteorDebugRead,
+                ))
+            }
+            ("client.sky.meteors.debug.mode", AccessKind::Reset) => {
+                return Ok(ClientCommand::Presentation(
+                    super::PresentationOperation::MeteorDebug(super::MeteorDebug::Off),
+                ))
+            }
+            ("client.sky.meteors.debug.mode", AccessKind::Write) => {
+                let mode = op
+                    .arguments
+                    .first()
+                    .and_then(|arg| super::MeteorDebug::parse(&arg.text))
+                    .ok_or_else(|| invalid("expected off|light|occlusion|paths|budget"))?;
+                return Ok(ClientCommand::Presentation(
+                    super::PresentationOperation::MeteorDebug(mode),
+                ));
+            }
+            ("client.sky.meteors.debug.light", AccessKind::Read) => {
+                return Ok(ClientCommand::Presentation(
+                    super::PresentationOperation::MeteorLightRead,
+                ))
+            }
+            ("client.sky.meteors.debug.light", AccessKind::Reset) => {
+                return Ok(ClientCommand::Presentation(
+                    super::PresentationOperation::MeteorLight(super::MeteorLightDebug::On),
+                ))
+            }
+            ("client.sky.meteors.debug.light", AccessKind::Write) => {
+                let mode = match op.arguments.first().map(|arg| arg.text.as_str()) {
+                    Some("on") => super::MeteorLightDebug::On,
+                    Some("off") => super::MeteorLightDebug::Off,
+                    Some("transmission") => super::MeteorLightDebug::Transmission,
+                    _ => return Err(invalid("expected on|off|transmission")),
+                };
+                return Ok(ClientCommand::Presentation(
+                    super::PresentationOperation::MeteorLight(mode),
+                ));
+            }
+            _ => {}
+        }
+    }
+    if op.kind == minimium_commands::syntax::canonical::AccessKind::Read {
+        match op.path.as_str() {
+            "client.render.bolids.transmission" => {
+                return Ok(ClientCommand::Presentation(
+                    super::PresentationOperation::Developer(
+                        super::presentation::DeveloperOperation::BolidTransmissionRead,
+                    ),
+                ))
+            }
+            "client.sky.meteors.debug.mode" => {
+                return Ok(ClientCommand::Presentation(
+                    super::PresentationOperation::MeteorDebugRead,
+                ))
+            }
+            "client.sky.meteors.debug.light" if !op.legacy => {
+                return Ok(ClientCommand::Presentation(
+                    super::PresentationOperation::MeteorLightRead,
+                ))
+            }
+            _ => {}
+        }
+    }
+    if !matches!(
+        op.path.as_str(),
+        "client.render.bolids.transmission"
+            | "client.sky.meteors.debug.mode"
+            | "client.sky.meteors.debug.light"
+    ) {
+        if let Some(request) = op.property_request(entry) {
+            return super::properties::parse_request(request)
+                .map_err(|e| e.at(span))?
+                .map(ClientCommand::Property)
+                .ok_or_else(|| invalid("unsupported property operation"));
+        }
     }
     if op.kind == minimium_commands::syntax::canonical::AccessKind::Read
         && entry.spec.kind == minimium_commands::operation::OperationKind::Property

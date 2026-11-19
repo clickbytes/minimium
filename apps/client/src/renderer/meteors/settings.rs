@@ -3,68 +3,37 @@ use crate::client_commands::ClientPropertyValue as Value;
 use minimium_renderer::quality::SkyQuality;
 
 impl MeteorRuntime {
-    pub(in crate::renderer) fn budget_lines(&self) -> Vec<String> {
-        use minimium_renderer::meteors::{
-            fragmentation::{BODY_SLOTS, SOLID_SLOTS},
-            kinematics::Body,
-            MAX_METEOR_HISTORY_SAMPLES,
+    pub(in crate::renderer) fn set_debug_mode(
+        &mut self,
+        mode: crate::client_commands::MeteorDebug,
+    ) {
+        self.debug_mode = mode;
+        self.light_mode = if mode == crate::client_commands::MeteorDebug::Occlusion {
+            crate::client_commands::MeteorLightDebug::Transmission
+        } else {
+            crate::client_commands::MeteorLightDebug::On
         };
-        let age = self.now_s();
-        let mut solids = 0;
-        let mut grains = 0;
-        for event in self.active.iter().filter(|event| event.basis.is_some()) {
-            if let Some(history) = &event.evolution {
-                let elapsed = age - event.start_s;
-                if elapsed >= history.duration_s() {
-                    continue;
-                }
-                for slot in 0..BODY_SLOTS {
-                    if elapsed >= history.births[slot]
-                        && history.sample_body(elapsed, slot).gas_power_w > 0.01
-                    {
-                        if slot < SOLID_SLOTS {
-                            solids += 1;
-                        } else {
-                            grains += 1;
-                        }
-                    }
-                }
-            }
-        }
-        let history_bytes = super::MAX_ACTIVE_METEOR_EVENTS
-            * MAX_METEOR_HISTORY_SAMPLES
-            * BODY_SLOTS
-            * std::mem::size_of::<Body>();
-        let metadata_bytes = super::MAX_ACTIVE_METEOR_EVENTS
-            * (std::mem::size_of::<super::ActiveEvent>()
-                + std::mem::size_of::<super::evolution::Evolution>());
-        vec![format!("meteor CPU: prepare {} us (last valid frame), emitting solid fragments {}, grain packets {}, histories {} bytes, pooled metadata/trains {} bytes, frame {} bytes; GPU meteor timestamp n/a (not instrumented)",
-            self.prepare_us, solids, grains, history_bytes, metadata_bytes, std::mem::size_of::<minimium_renderer::meteors::MeteorFrame>())]
+        self.debug_revision = self.debug_revision.saturating_add(1);
     }
+
+    pub(in crate::renderer) fn set_light_mode(
+        &mut self,
+        mode: crate::client_commands::MeteorLightDebug,
+    ) {
+        self.debug_mode = crate::client_commands::MeteorDebug::Off;
+        self.light_mode = mode;
+        self.debug_revision = self.debug_revision.saturating_add(1);
+    }
+
     pub(in crate::renderer) fn enabled_status(&self) -> (bool, Option<String>) {
         if !self.spawner.enabled {
             return (false, Some("disabled by local preference".into()));
         }
         match self.context_state {
-            super::ContextState::Available { .. } => (true, None),
+            super::ContextState::Available => (true, None),
             super::ContextState::Pending => (false, Some("waiting for environment".into())),
             super::ContextState::Unavailable { reason } => (false, Some(reason.into())),
         }
-    }
-    pub(in crate::renderer) fn path_lines(&self) -> Vec<String> {
-        self.active
-            .iter()
-            .map(|event| {
-                format!(
-                    "meteor {} {}: seed {}, planet-centred SI basis {:?}, fragments {:?}",
-                    event.id,
-                    event.preset.label(),
-                    event.seed,
-                    event.basis,
-                    event.evolution.as_ref().map(|history| history.births)
-                )
-            })
-            .collect()
     }
     pub(in crate::renderer) fn configured(values: &crate::application::StartupSettings) -> Self {
         let mut runtime = Self::new();

@@ -1248,3 +1248,5 @@ The desktop supplies presentation simulation time to star scintillation, meteors
 
 
 AtmosphereGpu::timing_report exposes optional asynchronous GPU timestamp summaries with median and p95 milliseconds, sample count and monotonic sample age. timing_supported distinguishes an unsupported adapter from an enabled query set awaiting a sample. The timing covers the atmosphere sky LUT, aerial LUT and composite passes when those passes run. It excludes scene copy, profile rebuild and other lighting passes. The client packages the CPU projection with prepared presentation identity.
+
+The client diagnostic adapter reads bounded CPU meteor and retained bolid snapshots from the presentation owner. The renderer exposes the effective bolid transmission diagnostic flag through its existing Milky Way GPU resource; resize resets that flag, so a requested client value can differ from effective. These local previews retain the eight-event budgets and do not enter server simulation or persistence. Meteor cadence uses presentation simulation time; server bolid intervals and manual server cooldown use separate owners and clocks.

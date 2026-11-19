@@ -62,6 +62,7 @@ impl Default for BolidGpuFrame {
 }
 
 pub struct MilkyWayGpu {
+    transmission_diagnostic: std::cell::Cell<bool>,
     pub meteors: crate::meteors_gpu::MeteorGpu,
     _texture: wgpu::Texture,
     pub layout: wgpu::BindGroupLayout,
@@ -192,6 +193,7 @@ impl MilkyWayGpu {
             }],
         });
         Self {
+            transmission_diagnostic: std::cell::Cell::new(false),
             meteors: crate::meteors_gpu::MeteorGpu::new(device, camera, &occlusion_layout),
             _texture: texture,
             layout,
@@ -236,10 +238,18 @@ impl MilkyWayGpu {
             0,
             bytemuck::cast_slice(&[u32::from(enabled), 0, 0, 0]),
         );
+        self.transmission_diagnostic.set(enabled);
         true
     }
 
+    pub fn transmission_diagnostic(&self) -> Option<bool> {
+        self.layer
+            .as_ref()
+            .map(|_| self.transmission_diagnostic.get())
+    }
+
     pub fn set_depth(&mut self, device: &wgpu::Device, depth: &wgpu::TextureView, size: [u32; 2]) {
+        self.transmission_diagnostic.set(false);
         self.layer = Some(crate::bolid_layer::BolidLayer::new(device, size));
         self.occlusion = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("bolid scene depth"),

@@ -1,12 +1,17 @@
 use super::SettingsStore;
-use crate::client_commands::{local_environment, property_spec, ClientPropertyKey as Key};
+use crate::client_commands::{
+    property_spec, ClientPropertyKey as Key, ClientPropertyValue as Value,
+};
 use minimium_commands::operation::CommandValue;
 use minimium_commands::results::property::{Freshness, ReadSource, StartupValue};
 use minimium_commands::{PropertySource, PropertyValue};
 
 impl SettingsStore {
-    pub(crate) fn local_environment_property(&self, key: Key) -> PropertyValue<CommandValue> {
-        assert!(local_environment::owns(key));
+    pub(crate) fn typed_property(
+        &self,
+        key: Key,
+        encode: fn(&Value) -> CommandValue,
+    ) -> PropertyValue<CommandValue> {
         let name = key.key();
         let record = self.records.get(name).expect("registered startup setting");
         let startup = self.startup.get(name).expect("registered startup setting");
@@ -16,18 +21,15 @@ impl SettingsStore {
                 crate::client_commands::parse_setting_value(name, text)
                     .expect("validated property default")
             })
-            .map(|value| local_environment::encode(&value));
-        let requested = local_environment::encode(&record.requested.typed);
+            .map(|value| encode(&value));
+        let requested = encode(&record.requested.typed);
         PropertyValue {
             lifecycle: property_spec(name).expect("registered property").lifecycle,
             requested: Some(requested.clone()),
-            effective: record
-                .effective
-                .as_ref()
-                .map(|v| local_environment::encode(&v.typed)),
+            effective: record.effective.as_ref().map(|v| encode(&v.typed)),
             default,
             startup: Some(StartupValue {
-                value: local_environment::encode(&startup.requested.typed),
+                value: encode(&startup.requested.typed),
                 source: minimium_commands::results::property::ConfigurationSource::from_source(
                     startup.source,
                 )

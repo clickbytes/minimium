@@ -1,6 +1,9 @@
 //! Manual meteor lifecycle mechanics: frame building, spawn/clear and status.
 
-use super::{ActiveEvent, ContextState, MeteorRuntime};
+use super::{
+    ActiveEvent, ContextState, MeteorPathSnapshot, MeteorRuntime, MeteorRuntimeSnapshot,
+    SpawnedMeteor,
+};
 use crate::client_commands::MeteorPreset;
 use crate::renderer::environment::{EnvironmentFrame, EnvironmentFrameStatus, RenderViewFrame};
 use minimium_renderer::meteors::{
@@ -9,9 +12,59 @@ use minimium_renderer::meteors::{
 use minimium_renderer::planet_coordinates::PlanetSurfaceScale;
 
 impl MeteorRuntime {
+    pub(in crate::renderer) fn path_snapshots(&self) -> Vec<MeteorPathSnapshot> {
+        self.active
+            .iter()
+            .map(|event| {
+                let age_s = (self.now_s() - event.start_s).max(0.0);
+                let body = event
+                    .evolution
+                    .as_ref()
+                    .map(|history| history.sample(age_s));
+                MeteorPathSnapshot {
+                    id: event.id,
+                    preset: event.preset,
+                    seed: event.seed,
+                    age_s,
+                    phase: event.phase,
+                    start_phys_m: event.basis.map(|basis| basis.start_phys_m),
+                    velocity_m_s: event.basis.map(|basis| basis.velocity_m_s),
+                    mass_kg: body.map(|body| body.mass_kg),
+                    speed_m_s: body.map(|body| body.velocity_m_s.length()),
+                    train_points: event.trains.point_count(),
+                    train_overwritten: event.trains.overwritten(),
+                }
+            })
+            .collect()
+    }
+
+    pub(in crate::renderer) fn snapshot(&self) -> MeteorRuntimeSnapshot {
+        MeteorRuntimeSnapshot {
+            context: self.context,
+            presentation_time_s: self.now_s(),
+            active: self.active.len(),
+            spawned_total: self.spawned_total,
+            dismissed_total: self.dismissed_total,
+            last_seed: self.last_seed,
+            paused: self.paused,
+            enabled: self.spawner.enabled,
+            rate: self.spawner.rate,
+            next_in_presentation_s: self.spawner.next_in_s(self.now_s()),
+            automatic_spawned: self.spawner.spawned,
+            automatic_skipped: self.spawner.skipped,
+            automatic_peak: self.spawner.peak,
+            gate: self.spawner.reason,
+            prepare_us: self.prepare_us,
+            omitted_cores: self.omitted_cores,
+        }
+    }
+
     /// Creates the runtime with an initial presentation time.
     pub(in crate::renderer) fn new() -> Self {
         Self {
+            debug_mode: crate::client_commands::MeteorDebug::Off,
+            light_mode: crate::client_commands::MeteorLightDebug::On,
+            debug_revision: 0,
             audio: crate::audio::MeteorAudio::default(),
             seed_override: None,
             quality: minimium_renderer::quality::SkyQuality::Standard,
@@ -58,7 +111,7 @@ impl MeteorRuntime {
         &mut self,
         preset: MeteorPreset,
         seed: Option<u64>,
-    ) -> Result<String, String> {
+    ) -> Result<SpawnedMeteor, String> {
         if self.paused {
             return Err("simulation paused".into());
         }
@@ -71,7 +124,7 @@ impl MeteorRuntime {
             );
         }
         match &self.context_state {
-            ContextState::Available { .. } => {}
+            ContextState::Available => {}
             ContextState::Pending => {
                 return Err("meteors: no environment context yet; event not spawned".to_owned());
             }
@@ -97,10 +150,12 @@ impl MeteorRuntime {
         ));
         self.spawned_total = self.spawned_total.wrapping_add(1);
         self.last_seed = seed;
-        Ok(format!(
-            "meteors: spawned {} meteor {id} (seed 0x{seed:016x}); initializes on the next valid environment frame",
-            preset.label()
-        ))
+        Ok(SpawnedMeteor {
+            id,
+            preset,
+            seed,
+            presentation_time_s: now_s,
+        })
     }
 
     /// Clears every active event; identical input sets stay deterministic.
@@ -170,7 +225,7 @@ impl MeteorRuntime {
             };
             return meteor_frame;
         }
-        self.context_state = ContextState::Available { context };
+        self.context_state = ContextState::Available;
         let now_s = self.now_s();
         if let Some(candidate) = self.spawner.advance(context, now_s) {
             if now_s - candidate.at_s >= 20.0 {
@@ -295,107 +350,6 @@ impl MeteorRuntime {
         };
         let mut state = now_us ^ self.spawned_total.rotate_left(32);
         super::track::splitmix64(&mut state)
-    }
-
-    /// Console status: counters, explicit context reason, seed and event ages
-    /// (lifetimes stay bounded; panic-free in every state).
-    pub(in crate::renderer) fn status_lines(&self) -> Vec<String> {
-        let mut lines = Vec::with_capacity(super::MAX_ACTIVE_METEOR_EVENTS + 4);
-        lines.push(format!(
-            "meteor controls: enabled {}, rate {}, seed_override {:?}, requested quality {}",
-            self.spawner.enabled,
-            self.spawner.rate,
-            self.seed_override,
-            self.quality.label()
-        ));
-        lines.push(self.audio.status());
-        lines.extend(self.budget_lines());
-        lines.push(format!(
-            "meteors: client-local runtime; active {}/{}, spawned {}, dismissed {}",
-            self.active.len(),
-            super::MAX_ACTIVE_METEOR_EVENTS,
-            self.spawned_total,
-            self.dismissed_total
-        ));
-        lines.push(match self.context_state {
-            ContextState::Pending => "meteors: environment context: none yet".to_owned(),
-            ContextState::Available { context } => {
-                format!("meteors: environment context: available ({context:?})")
-            }
-            ContextState::Unavailable { reason } => {
-                format!("meteors: environment context: unavailable ({reason})")
-            }
-        });
-        lines.push(format!(
-            "meteors: last spawn seed 0x{:016x}",
-            self.last_seed
-        ));
-        let now_s = self.now_s();
-        lines.push(format!(
-            "meteors auto: enabled {}, seed {}, base interval 120..300 real s, next {:?}s, spawned {}, skipped {}, peak {}, gate {}",
-            self.spawner.enabled,
-            self.spawner.seed,
-            self.spawner.next_in_s(now_s),
-            self.spawner.spawned,
-            self.spawner.skipped,
-            self.spawner.peak,
-            self.spawner.reason,
-        ));
-        lines.push(format!(
-            "meteors budgets: rejected core submissions {}, free history slots {}/8, history sample bytes {}",
-            self.omitted_cores,
-            self.history_pool.len(),
-            8 * minimium_renderer::meteors::MAX_METEOR_HISTORY_SAMPLES
-                * minimium_renderer::meteors::fragmentation::BODY_SLOTS
-                * std::mem::size_of::<minimium_renderer::meteors::kinematics::Body>()
-        ));
-        for event in &self.active {
-            let age_s = (now_s - event.start_s).max(0.0);
-            lines.push(format!(
-                "meteor {} {}: age {:.1}s, lifetime {:.1}s, phase {}, track {}",
-                event.id,
-                event.preset.label(),
-                age_s,
-                event.duration_s,
-                event.phase.label(),
-                if event.basis.is_some() {
-                    "initialized"
-                } else {
-                    "awaiting environment"
-                }
-            ));
-            if let Some(history) = event.evolution.as_ref().filter(|_| event.basis.is_some()) {
-                let body = history.sample(age_s);
-                lines.push(format!(
-                    "  train points {}, overwritten {}, skipped captures {}, glow TTL {:.1}s, dust TTL {:.1}s",
-                    event.trains.point_count(), event.trains.overwritten(), event.trains.skipped_samples,
-                    event.trains.profile.glow_ttl_s, event.trains.profile.dust_ttl_s,
-                ));
-                lines.push(format!(
-                    "  material {:?}, mass {:.6} kg, speed {:.1} m/s, solid radius {:.5} m, emission {:.2} W",
-                    history.material.kind, body.mass_kg, body.velocity_m_s.length(),
-                    body.radius_m(history.material), body.gas_power_w,
-                ));
-                lines.push(format!(
-                    "  final mass ledger solid/dust packets/unrepresented dust/ablated {:?} kg; residual {:.9} kg; grain packets {}; events {}/64 omitted {}",
-                    history.mass_ledger,
-                    event.params.mass_kg - history.mass_ledger.iter().sum::<f64>(),
-                    history.grain_packets, history.event_count, history.omitted_events,
-                ));
-                for process in history.events[..history.event_count]
-                    .iter()
-                    .filter(|process| process.at_s <= age_s)
-                    .rev()
-                    .take(4)
-                {
-                    lines.push(format!(
-                        "  {:?} at {:.3}s slot {} transferred {:.9} kg",
-                        process.kind, process.at_s, process.slot, process.mass_kg
-                    ));
-                }
-            }
-        }
-        lines
     }
 }
 

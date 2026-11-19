@@ -50,7 +50,12 @@ pub(crate) fn resolve_preferences(
     path: Option<&Path>,
     command_line: &BTreeMap<String, String>,
 ) -> Result<ClientPreferenceConfig, CommandError> {
-    let document = path.map(read_document).transpose()?;
+    let document = path
+        .map(read_document)
+        .transpose()?
+        .map(|document| normalize_audio_alias(document.settings().clone()).map(ConfigDocument::new))
+        .transpose()?;
+    let command_line = normalize_audio_alias(command_line.clone())?;
     if let Some(document) = &document {
         document
             .validate_keys(persistent_keys())
@@ -77,7 +82,7 @@ pub(crate) fn resolve_preferences(
         .collect::<BTreeMap<_, _>>();
     let environment = mapped_environment_values();
     let resolved =
-        ConfigResolution::resolve(&defaults, document.as_ref(), &environment, command_line);
+        ConfigResolution::resolve(&defaults, document.as_ref(), &environment, &command_line);
     let startup = StartupSettings::from_resolution(&resolved)?;
     let atmosphere_debug = startup.atmosphere_debug();
     let terrain_debug = startup.terrain_debug();
@@ -95,6 +100,28 @@ pub(crate) fn resolve_preferences(
         startup,
         file_settings: document.map_or_else(BTreeMap::new, |document| document.settings().clone()),
     })
+}
+
+/// Accept the historical config spelling without creating a second state owner.
+fn normalize_audio_alias(
+    mut settings: BTreeMap<String, String>,
+) -> Result<BTreeMap<String, String>, CommandError> {
+    let canonical = Key::MeteorAudio.key();
+    if let Some(alias) = settings.remove("client.audio.meteors") {
+        if settings
+            .get(canonical)
+            .is_some_and(|current| current != &alias)
+        {
+            return Err(CommandError::new(
+                CommandErrorCode::Conflict,
+                Some(canonical),
+                "client.audio.meteors conflicts with client.sky.meteors.sound",
+                Some("keep one meteor sound value in the configuration"),
+            ));
+        }
+        settings.insert(canonical.to_owned(), alias);
+    }
+    Ok(settings)
 }
 
 fn mapped_environment_values() -> BTreeMap<String, String> {

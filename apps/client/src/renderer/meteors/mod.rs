@@ -3,7 +3,7 @@
 //! The desktop frame supplies simulation time for births, flight, trails and acoustic cues.
 //! Context changes discard the bounded local event set. The server owns physical impacts.
 
-use crate::client_commands::MeteorPreset;
+use crate::client_commands::{MeteorDebug, MeteorLightDebug, MeteorPreset};
 use minimium_protocol::WorldContext;
 use minimium_renderer::meteors::model::{MeteorId, MeteorPhase};
 
@@ -23,6 +23,47 @@ const EVENT_ID_STRIDE: u64 = 32;
 /// automatic generator (E047-04) keeps headroom; `8 × 8` trail slots still fit
 /// the 8-per-core frame budget exactly.
 pub(crate) const MAX_ACTIVE_METEOR_EVENTS: usize = 8;
+
+/// CPU projection of one local presentation-time meteor sample.
+pub(in crate::renderer) struct MeteorRuntimeSnapshot {
+    pub context: Option<WorldContext>,
+    pub presentation_time_s: f64,
+    pub active: usize,
+    pub spawned_total: u64,
+    pub dismissed_total: u64,
+    pub last_seed: u64,
+    pub paused: bool,
+    pub enabled: bool,
+    pub rate: f64,
+    pub next_in_presentation_s: Option<f64>,
+    pub automatic_spawned: u64,
+    pub automatic_skipped: u64,
+    pub automatic_peak: usize,
+    pub gate: &'static str,
+    pub prepare_us: u64,
+    pub omitted_cores: u64,
+}
+
+pub(in crate::renderer) struct SpawnedMeteor {
+    pub id: u64,
+    pub preset: MeteorPreset,
+    pub seed: u64,
+    pub presentation_time_s: f64,
+}
+
+pub(in crate::renderer) struct MeteorPathSnapshot {
+    pub id: u64,
+    pub preset: MeteorPreset,
+    pub seed: u64,
+    pub age_s: f64,
+    pub phase: MeteorPhase,
+    pub start_phys_m: Option<[f64; 3]>,
+    pub velocity_m_s: Option<[f64; 3]>,
+    pub mass_kg: Option<f64>,
+    pub speed_m_s: Option<f64>,
+    pub train_points: usize,
+    pub train_overwritten: u64,
+}
 
 /// Per-event trail slots, equal to the contract's 8-per-core budget; each slot
 /// has a deterministic capture time and is reconstructed in every fresh frame.
@@ -60,7 +101,7 @@ pub(crate) enum ContextState {
     /// No valid environment frame has been built since runtime creation.
     Pending,
     /// The environment currently admits meteors for this world scope.
-    Available { context: WorldContext },
+    Available,
     /// Explicit zero-cost state with the validated reason.
     Unavailable { reason: &'static str },
 }
@@ -125,6 +166,9 @@ impl ActiveEvent {
 
 /// Client-local manual meteor lifetime state (ADR 0013 § 2).
 pub(crate) struct MeteorRuntime {
+    pub(in crate::renderer) debug_mode: MeteorDebug,
+    pub(in crate::renderer) light_mode: MeteorLightDebug,
+    pub(in crate::renderer) debug_revision: u64,
     pub(in crate::renderer) seed_override: Option<u64>,
     pub(in crate::renderer) quality: minimium_renderer::quality::SkyQuality,
     pub(in crate::renderer) audio: crate::audio::MeteorAudio,

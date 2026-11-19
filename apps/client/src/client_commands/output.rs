@@ -10,6 +10,8 @@ pub(crate) enum ClientPayload {
     Native(Payload),
     Player(super::player_actions::PlayerReceipt),
     Connection(super::connection_adapter::ConnectionReport),
+    #[cfg(feature = "desktop")]
+    MeteorDiagnostic(super::meteor_adapter::MeteorDiagnosticReport),
     CatalogHelp(super::help::CatalogHelp),
     Clear,
     // Preserve localization tokens, clear instructions and capability reports until display.
@@ -83,6 +85,37 @@ pub(crate) fn native(result: OperationResult) -> ClientResult {
         result.identity,
         result.receipt,
         result.outcome.map(ClientPayload::Native),
+    )
+}
+
+#[cfg(feature = "desktop")]
+pub(crate) fn meteor_diagnostic(
+    identity: OperationContext,
+    stage: Stage,
+    report: super::meteor_adapter::MeteorDiagnosticReport,
+) -> ClientResult {
+    let property = OperationResult::new(
+        identity.clone(),
+        OperationReceipt::at(stage),
+        Ok(Payload::Property(report.property.clone())),
+    );
+    if let Err(error) = property.validate() {
+        return failure(identity, Stage::Rejected, "meteor_diagnostic", error);
+    }
+    if let Some(snapshot) = &report.snapshot {
+        let projection = OperationResult::new(
+            identity.clone(),
+            OperationReceipt::at(stage),
+            Ok(Payload::Value(snapshot.clone())),
+        );
+        if let Err(error) = projection.validate() {
+            return failure(identity, Stage::Rejected, "meteor_diagnostic", error);
+        }
+    }
+    OperationResult::new(
+        identity,
+        OperationReceipt::at(stage),
+        Ok(ClientPayload::MeteorDiagnostic(report)),
     )
 }
 
@@ -176,6 +209,18 @@ pub(crate) fn display(
         Ok(ClientPayload::LegacyText(output)) => return output,
         Ok(ClientPayload::Native(Payload::Property(value))) => {
             format!("{id} {stage} {}", value.format_with(CommandValue::encode))
+        }
+        #[cfg(feature = "desktop")]
+        Ok(ClientPayload::MeteorDiagnostic(report)) => {
+            let mut line = format!(
+                "{id} {stage} {}",
+                report.property.format_with(CommandValue::encode)
+            );
+            if let Some(snapshot) = report.snapshot {
+                line.push_str(" report=");
+                line.push_str(&snapshot.encode());
+            }
+            line
         }
         Ok(ClientPayload::Native(Payload::Value(CommandValue::Unit))) => format!("{id} {stage}"),
         Ok(ClientPayload::Native(Payload::Value(value))) => {

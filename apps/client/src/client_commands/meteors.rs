@@ -120,6 +120,17 @@ pub(crate) enum MeteorLightDebug {
     Transmission,
 }
 
+#[cfg(feature = "desktop")]
+impl MeteorLightDebug {
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::On => "on",
+            Self::Off => "off",
+            Self::Transmission => "transmission",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MeteorDebug {
     Off,
@@ -130,6 +141,16 @@ pub(crate) enum MeteorDebug {
 }
 
 impl MeteorDebug {
+    #[cfg(feature = "desktop")]
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Light => "light",
+            Self::Occlusion => "occlusion",
+            Self::Paths => "paths",
+            Self::Budget => "budget",
+        }
+    }
     pub(crate) fn parse(value: &str) -> Option<Self> {
         Some(match value {
             "off" => Self::Off,

@@ -20,6 +20,9 @@ fn build() -> Result<OperationCatalog, CatalogError> {
     for property in super::properties::property_specs() {
         package.property(resolve(property.key, property.persistent)?, property)?;
     }
+    for property in PRESENTATION_PROPERTIES.iter() {
+        package.property(resolve(property.key, false)?, property)?;
+    }
     package.alias(
         "client.sky.meteors.sound",
         "client.audio.meteors",
@@ -54,6 +57,49 @@ fn build() -> Result<OperationCatalog, CatalogError> {
     package.operation(minimium_commands::syntax::bind::explain_entry())?;
     package.finish()
 }
+
+/// Session-only properties whose state is owned by the desktop presentation.
+static PRESENTATION_PROPERTIES: [minimium_commands::PropertySpec; 3] = [
+    minimium_commands::PropertySpec::new(
+        "client.sky.meteors.debug.mode",
+        minimium_commands::PropertyType::Enumeration,
+        None,
+        "Local meteor diagnostics mode.",
+        Some("off"),
+        Some("off|light|occlusion|paths|budget"),
+        "DesktopHost",
+        minimium_commands::PropertyPermission::Local,
+        minimium_commands::PropertyLifecycle::Live,
+        false,
+        true,
+    ),
+    minimium_commands::PropertySpec::new(
+        "client.sky.meteors.debug.light",
+        minimium_commands::PropertyType::Enumeration,
+        None,
+        "Local meteor light diagnostics mode.",
+        Some("on"),
+        Some("on|off|transmission"),
+        "DesktopHost",
+        minimium_commands::PropertyPermission::Local,
+        minimium_commands::PropertyLifecycle::Live,
+        false,
+        true,
+    ),
+    minimium_commands::PropertySpec::new(
+        "client.render.bolids.transmission",
+        minimium_commands::PropertyType::Boolean,
+        None,
+        "Local bolid transmission diagnostic.",
+        Some("false"),
+        Some("true|false"),
+        "DesktopHost",
+        minimium_commands::PropertyPermission::Local,
+        minimium_commands::PropertyLifecycle::Live,
+        false,
+        true,
+    ),
+];
 
 fn resolve(name: &str, persistent: bool) -> Result<CatalogEntry, CatalogError> {
     presentation::entry(name, persistent)

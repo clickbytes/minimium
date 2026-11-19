@@ -413,3 +413,32 @@ Po polsku: odczyt, zapis i reset lokalnych preferencji zachowują osobno wartoś
 żądaną, efektywną i startową oraz przyczynę ograniczenia. Zapytania renderera
 wymagają przygotowanej próbki; brak próbki zwraca Unavailable. Lista ciał
 jest ograniczona i oznacza obcięcie.
+
+## Typed local meteor and bolid preview operations (E051-17)
+
+`get/set/reset client.sky.meteors.enabled|rate|quality|seed_override|sound` and
+`client.audio.meteor_volume` return typed property values with requested,
+effective, source and revision. The old `client.audio.meteors` spelling is an
+alias of the persistent `client.sky.meteors.sound` preference. Config files may
+contain either spelling; equal values normalize to one canonical setting and
+conflicting values stop startup. An unavailable audio backend leaves the requested
+preference intact and reports effective audio as unavailable.
+
+`sky meteors status`, `spawn PRESET [SEED]`, and `clear` use the local presentation
+owner. All 24 existing preset names remain valid; IDs and seeds are exact u64.
+`sky meteors debug MODE` and `sky meteors debug light MODE` update session state
+and return a typed property value. The light, paths and budget modes also attach
+a bounded diagnostic snapshot; a property read does not run diagnostics.
+Meteor status names presentation time and reports prepared context, source,
+capability and uninstrumented GPU timing. Local active events are capped at eight.
+
+`dev bolid transmission on|off` controls a local GPU diagnostic and can differ
+from its requested value after resize. `dev bolid path ID KIND SEED DURATION_MS
+X0 Y0 Z0 X1 Y1 Z1`, `dev bolid replay AGE [SEED [EVENT_ID]]` and `dev bolid
+freeze AGE [SEED [EVENT_ID]]` require an event retained for the active world.
+Age is 0..120 presentation seconds; path duration is 300..6000 ms. `dev bolid
+status|fragments|lighting` return bounded typed reports with context and source.
+A missing event or wrong context is an error. These commands never create a
+server request, entity or save record. The server-owned `server.sky.bolid_interval`
+controls automatic bolids in simulation seconds (off or 10..3600), while manual
+server meteorid requests have a five-second real-time cooldown.

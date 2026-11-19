@@ -6,6 +6,77 @@ use crate::client_commands::{
 use minimium_commands::{PropertySource, PropertyValue};
 
 impl DesktopHost {
+    pub(in crate::renderer) fn meteor_property_operation(
+        &mut self,
+        identity: &minimium_commands::results::OperationContext,
+        action: &crate::client_commands::FrontendAction,
+    ) -> Option<minimium_commands::results::OperationResult> {
+        use minimium_commands::operation::CommandValue as V;
+        use minimium_commands::results::{OperationReceipt, OperationResult, Payload, Stage};
+        let crate::client_commands::FrontendAction::Property(command) = action else {
+            return None;
+        };
+        let (key, changed) = match command {
+            ClientPropertyCommand::Get(key)
+                if crate::client_commands::meteor_adapter::owns(*key) =>
+            {
+                (*key, false)
+            }
+            ClientPropertyCommand::Set(value)
+                if crate::client_commands::meteor_adapter::owns(value.key()) =>
+            {
+                (self.set_property(value.clone()), true)
+            }
+            ClientPropertyCommand::Reset(key)
+                if crate::client_commands::meteor_adapter::owns(*key) =>
+            {
+                self.reset_property(*key);
+                (*key, true)
+            }
+            _ => return None,
+        };
+        let mut property = self
+            .application
+            .settings
+            .values
+            .typed_property(key, crate::client_commands::meteor_adapter::encode);
+        match key {
+            Key::MeteorEnabled => {
+                let (enabled, reason) = self.meteors.enabled_status();
+                property.effective = Some(V::Bool(enabled));
+                property.difference_reason = reason;
+            }
+            Key::MeteorQuality => {
+                let effective = self.meteors.effective_quality(self.sky_quality.effective);
+                property.effective = Some(V::Enum(effective.label().into()));
+                property.difference_reason = (effective != self.meteors.quality)
+                    .then(|| "sky quality limits meteor visibility to low".into());
+            }
+            Key::MeteorAudio | Key::MeteorVolume => {
+                let status = self.meteors.audio.backend_status();
+                if status != "ready" {
+                    property.effective = if key == Key::MeteorAudio && !self.meteors.audio.enabled {
+                        Some(V::Bool(false))
+                    } else {
+                        None
+                    };
+                    property.difference_reason = Some(status.into());
+                }
+            }
+            _ => {}
+        }
+        let stage = if changed {
+            Stage::OwnerCommitted
+        } else {
+            Stage::Completed
+        };
+        Some(OperationResult::new(
+            identity.clone(),
+            OperationReceipt::at(stage),
+            Ok(Payload::Property(property)),
+        ))
+    }
+
     pub(in crate::renderer) fn local_environment_operation(
         &mut self,
         identity: &minimium_commands::results::OperationContext,
@@ -38,7 +109,7 @@ impl DesktopHost {
             .application
             .settings
             .values
-            .local_environment_property(key);
+            .typed_property(key, crate::client_commands::local_environment::encode);
         let stage = if changed {
             Stage::OwnerCommitted
         } else {

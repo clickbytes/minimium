@@ -104,7 +104,7 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
                 LocalPresentation,
             )
         }
-        "sky meteors debug" => binding.declaration(
+        "sky meteors debug" | "client.sky.meteors.debug.mode" => binding.declaration(
             "client.sky.meteors.debug.mode",
             Property,
             &[ParameterSpec::required("value", "MeteorDebug")],
@@ -159,7 +159,7 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
                 LocalPresentation,
             )
         }
-        "sky meteors debug light" => binding.declaration(
+        "sky meteors debug light" | "client.sky.meteors.debug.light" => binding.declaration(
             "client.sky.meteors.debug.light",
             Property,
             &[ParameterSpec::required("value", "MeteorLightDebug")],
@@ -222,7 +222,7 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
                 Query,
             )
         }
-        "dev bolid transmission" => binding.declaration(
+        "dev bolid transmission" | "client.render.bolids.transmission" => binding.declaration(
             "client.render.bolids.transmission",
             Property,
             &[ParameterSpec::required("value", "Bool").scalar(ScalarType::Bool)],

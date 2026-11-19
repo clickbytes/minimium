@@ -165,6 +165,8 @@ impl DesktopHost {
             bolid_worker: bolids::BolidWorker::new()?,
             prepared_bolids: Default::default(),
             diagnostic_bolid_age: None,
+            bolid_transmission_requested: None,
+            bolid_transmission_revision: 0,
             last_sky_view_at: None,
             pending_bolid_request: None,
             localizer,

@@ -24,6 +24,8 @@ pub(crate) enum PresentationOperation {
     SkyInfo,
     SkyBodies,
     MeteorStatus,
+    MeteorDebugRead,
+    MeteorLightRead,
     MeteorSpawn(super::MeteorPreset, Option<u64>),
     MeteorClear,
     MeteorLight(super::MeteorLightDebug),
@@ -34,6 +36,7 @@ pub(crate) enum PresentationOperation {
 pub(crate) enum DeveloperOperation {
     Clouds,
     BolidTransmission(bool),
+    BolidTransmissionRead,
     BolidPath(BolidPath),
     BolidFragments,
     BolidLighting,
@@ -171,6 +174,8 @@ impl PresentationOperation {
             }
             Self::SkyInfo | Self::SkyBodies => PresentationCapability::SkyDiagnostics,
             Self::MeteorStatus
+            | Self::MeteorDebugRead
+            | Self::MeteorLightRead
             | Self::MeteorSpawn(_, _)
             | Self::MeteorClear
             | Self::MeteorLight(_)
@@ -181,10 +186,13 @@ impl PresentationOperation {
     pub(crate) fn requirement(&self) -> PresentationRequirement {
         match self {
             Self::Developer(DeveloperOperation::BolidTransmission(_))
+            | Self::Developer(DeveloperOperation::BolidTransmissionRead)
             | Self::AtmosphereStatus
             | Self::WeatherStatus
             | Self::TerrainStatus
             | Self::MeteorStatus
+            | Self::MeteorDebugRead
+            | Self::MeteorLightRead
             | Self::MeteorClear
             | Self::MeteorLight(_)
             | Self::MeteorDebug(_) => PresentationRequirement::HostOnly,

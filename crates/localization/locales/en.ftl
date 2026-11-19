@@ -166,7 +166,7 @@ property-description = { $key ->
     [client_sky_meteors_quality] Requested meteor quality; limited by effective sky quality.
     [client_sky_meteors_seed_override] Session-only deterministic seed override: none or decimal u64.
     [client_sky_meteors_sound] Enable optional delayed meteor sound (desktop-audio build required).
-    [client_audio_meteors] Enable optional delayed meteor audio in this session.
+    [client_audio_meteors] Compatibility alias of client.sky.meteors.sound; the canonical preference is persistent.
     [client_audio_meteor_volume] Meteor audio volume (0 to 1).
     [client_weather_cloud_detail] Preferred maximum recursive cloud voxel depth.
     [client_debug_atmosphere] Atmosphere diagnostic view.

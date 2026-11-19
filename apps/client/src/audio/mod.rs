@@ -151,8 +151,4 @@ impl MeteorAudio {
             "desktop-audio feature disabled"
         }
     }
-    pub fn status(&self) -> String {
-        format!("meteor audio: enabled {}, volume {:.2}, backend {}, queued {}/16, submitted {}, dropped {}, last_due {:?}",
-            self.enabled,self.volume,self.backend_status(),self.queue.len(),self.submitted,self.dropped,self.last_due)
-    }
 }

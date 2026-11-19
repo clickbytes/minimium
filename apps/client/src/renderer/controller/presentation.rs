@@ -1,7 +1,7 @@
 use super::super::DesktopHost;
 use crate::client_commands::{
-    MeteorLightDebug, PresentationOperation, PresentationRequirement, PresentationResult,
-    PresentationUnavailable, PresentationUnavailableReason,
+    PresentationOperation, PresentationRequirement, PresentationResult, PresentationUnavailable,
+    PresentationUnavailableReason,
 };
 
 pub(super) fn execute(
@@ -13,8 +13,8 @@ pub(super) fn execute(
     }
     let mut lines = Vec::new();
     match operation {
-        PresentationOperation::Developer(operation) => {
-            lines.extend(super::dev_input::execute_developer(renderer, operation));
+        PresentationOperation::Developer(_) => {
+            unreachable!("typed developer presentation operation")
         }
         PresentationOperation::AtmosphereStatus => {
             lines.extend(renderer.renderer.atmosphere_gpu.status());
@@ -61,33 +61,13 @@ pub(super) fn execute(
                 }
             }
         }
-        PresentationOperation::MeteorStatus => {
-            lines.extend(super::super::meteor_diagnostics::status(renderer));
-            lines.push(super::super::meteor_diagnostics::optical_status(renderer));
-            lines.extend(renderer.meteors.status_lines());
-        }
-        PresentationOperation::MeteorSpawn(preset, seed) => {
-            lines.push(
-                renderer
-                    .meteors
-                    .spawn(preset, seed)
-                    .unwrap_or_else(|error| error),
-            );
-        }
-        PresentationOperation::MeteorClear => {
-            lines.push(format!(
-                "meteors: cleared {} active event(s)",
-                renderer.meteors.clear()
-            ));
-        }
-        PresentationOperation::MeteorLight(mode) => {
-            renderer.renderer.transient_enabled = mode != MeteorLightDebug::Off;
-            renderer.renderer.transient_transmission = mode == MeteorLightDebug::Transmission;
-            lines.push(format!("meteors: local light {mode:?}"));
-        }
-        PresentationOperation::MeteorDebug(mode) => {
-            lines.extend(super::super::meteor_diagnostics::debug(renderer, mode));
-        }
+        PresentationOperation::MeteorStatus
+        | PresentationOperation::MeteorDebugRead
+        | PresentationOperation::MeteorLightRead
+        | PresentationOperation::MeteorSpawn(..)
+        | PresentationOperation::MeteorClear
+        | PresentationOperation::MeteorLight(..)
+        | PresentationOperation::MeteorDebug(..) => unreachable!("typed meteor operation"),
     }
     PresentationResult::Output(lines)
 }

@@ -15,6 +15,7 @@ use std::{
 mod actions;
 mod events;
 mod output;
+mod presentation;
 mod properties;
 
 const INPUT_QUEUE_CAPACITY: usize = 64;
@@ -328,23 +329,13 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                     ) {
                         return (false, dispatch::native(result));
                     }
-                    if crate::client_commands::render_queries::RenderQuery::from_action(&action)
-                        .is_some()
+                    if let Some(result) =
+                        text_properties.meteor_property_operation(&identity, &action)
                     {
-                        return (
-                            false,
-                            dispatch::failure(
-                                identity,
-                                minimium_commands::results::Stage::Rejected,
-                                "TextHost",
-                                minimium_commands::CommandError::new(
-                                    minimium_commands::CommandErrorCode::Unavailable,
-                                    Some("Renderer"),
-                                    "this host has no renderer or prepared presentation sample",
-                                    None::<String>,
-                                ),
-                            ),
-                        );
+                        return (false, dispatch::native(result));
+                    }
+                    if let Some(result) = presentation::unavailable(&identity, &action) {
+                        return (false, result);
                     }
                     if let crate::client_commands::FrontendAction::Clock(clock) = &action {
                         let frame = application

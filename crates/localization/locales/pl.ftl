@@ -168,7 +168,7 @@ property-description = { $key ->
     [client_sky_meteors_quality] Żądana jakość meteorów, ograniczona efektywną jakością nieba.
     [client_sky_meteors_seed_override] Ziarno diagnostyczne tej sesji: none lub dziesiętne u64.
     [client_sky_meteors_sound] Włącz opóźniony huk meteorów (wymaga kompilacji desktop-audio).
-    [client_audio_meteors] Włącz opcjonalny opóźniony huk meteorów w tej sesji.
+    [client_audio_meteors] Alias client.sky.meteors.sound; kanoniczna preferencja jest zapisywana.
     [client_audio_meteor_volume] Głośność meteorów (od 0 do 1).
     [client_weather_cloud_detail] Maksymalna głębokość rekurencji wokseli chmur.
     [client_debug_atmosphere] Diagnostyczny widok atmosfery.

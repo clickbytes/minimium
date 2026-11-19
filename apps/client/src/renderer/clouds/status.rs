@@ -48,21 +48,6 @@ impl DesktopHost {
         ]))
     }
 
-    /// Read-only aiming hints for manual finite-source cloud occlusion checks.
-    pub(in crate::renderer) fn cloud_targets(&self) -> Vec<String> {
-        if self.weather.published.is_none() {
-            return vec!["dev: no published clouds".into()];
-        }
-        let Some(targets) = self.cloud_target_candidates() else {
-            return vec!["dev: no published clouds for the current world".into()];
-        };
-        targets.into_iter().map(|target| format!(
-            "cloud={} kind={} tau={:.2} distance_world_m={:.1} radius_deg={:.2} dev look {:.2} {:.2}",
-            target.id, target.kind, target.opacity, target.distance_m,
-            target.radius_deg, target.yaw_deg, target.pitch_deg
-        )).collect()
-    }
-
     pub(in crate::renderer) fn cloud_targets_report(
         &self,
     ) -> Option<minimium_commands::operation::CommandValue> {

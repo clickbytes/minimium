@@ -91,7 +91,7 @@ impl Spawner {
             self.start_s = now_s + 120.0 / self.rate;
             self.next_slot = 0;
         }
-        self.reason = "waiting_monotonic_deadline";
+        self.reason = "waiting_presentation_time_deadline";
         if now_s < self.at(self.next_slot) {
             return None;
         }

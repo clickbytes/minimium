@@ -145,6 +145,24 @@ pub(super) fn execute_input(
         if let Some(result) = renderer.local_environment_operation(&identity, &action) {
             return (false, dispatch::native(result));
         }
+        if let Some(result) = renderer.meteor_property_operation(&identity, &action) {
+            return (false, dispatch::native(result));
+        }
+        if let Some(operation) =
+            client_commands::meteor_adapter::MeteorOperation::from_action(&action)
+        {
+            if let Some(result) = renderer.meteor_operation(&identity, operation) {
+                return (false, result);
+            }
+        }
+        if let Some(operation) =
+            client_commands::bolid_preview::BolidPreviewOperation::from_action(&action)
+        {
+            return (
+                false,
+                renderer.bolid_preview_operation(&identity, operation),
+            );
+        }
         if let Some(query) = client_commands::render_queries::RenderQuery::from_action(&action) {
             return (
                 false,

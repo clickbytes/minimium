@@ -27,6 +27,7 @@ use winit::{
 };
 
 mod atmosphere_gpu;
+mod bolid_preview;
 mod bolids;
 mod camera;
 mod celestial_labels;
@@ -48,6 +49,7 @@ mod impacts;
 mod init;
 mod materials;
 mod meteor_diagnostics;
+mod meteor_operations;
 mod meteors;
 mod overview;
 mod quality;
@@ -173,6 +175,8 @@ struct DesktopHost {
     bolid_worker: bolids::BolidWorker,
     prepared_bolids: minimium_renderer::milky_way_gpu::BolidGpuFrame,
     diagnostic_bolid_age: Option<(minimium_protocol::WorldContext, u64, f32)>,
+    bolid_transmission_requested: Option<bool>,
+    bolid_transmission_revision: u64,
     bolids: Vec<(
         minimium_protocol::WorldContext,
         minimium_protocol::BolidEvent,

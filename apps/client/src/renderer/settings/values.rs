@@ -18,36 +18,12 @@ impl DesktopHost {
                     .fov_property()
                     .format_with(minimium_commands::operation::CommandValue::encode)
             }
-            Key::MeteorAudio => (
-                self.meteors.audio.enabled.to_string(),
-                (self.meteors.audio.enabled && self.meteors.audio.backend_status() == "ready")
-                    .to_string(),
-                Some(self.meteors.audio.backend_status().into()),
-            ),
-            Key::MeteorEnabled => {
-                let (enabled, reason) = self.meteors.enabled_status();
-                (
-                    self.application
-                        .settings
-                        .requested(key.key())
-                        .expect("local startup setting exists")
-                        .into(),
-                    enabled.to_string(),
-                    reason,
-                )
-            }
-            Key::MeteorRate => self.stored_property(key),
-            Key::MeteorSeed => self.stored_property(key),
-            Key::MeteorQuality => (
-                self.meteors.quality.label().into(),
-                self.meteors
-                    .effective_quality(self.sky_quality.effective)
-                    .label()
-                    .into(),
-                (self.sky_quality.effective == minimium_renderer::quality::SkyQuality::Low)
-                    .then(|| "sky quality limits meteor visibility to low".into()),
-            ),
-            Key::MeteorVolume => self.stored_property(key),
+            Key::MeteorAudio
+            | Key::MeteorEnabled
+            | Key::MeteorRate
+            | Key::MeteorSeed
+            | Key::MeteorQuality
+            | Key::MeteorVolume => unreachable!("typed meteor property operation"),
             Key::MouseSensitivity
             | Key::InputBindings
             | Key::SkyQuality
