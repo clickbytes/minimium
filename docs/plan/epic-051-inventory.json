@@ -4536,7 +4536,7 @@
       "current": {
         "status": "integrated",
         "issue": 592,
-        "commit": "e5e7c7a5426993cb65b5af8c865405555182a466",
+        "commit": "fb28099cef4b94a6c15a4753362c70ef4815c7d9",
         "registration": "crates/environment/src/console.rs",
         "line": 19
       }
@@ -4567,7 +4567,7 @@
       "current": {
         "status": "integrated",
         "issue": 592,
-        "commit": "e5e7c7a5426993cb65b5af8c865405555182a466",
+        "commit": "fb28099cef4b94a6c15a4753362c70ef4815c7d9",
         "registration": "crates/environment/src/console.rs",
         "line": 140
       }
