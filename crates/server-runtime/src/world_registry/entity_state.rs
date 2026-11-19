@@ -170,9 +170,11 @@ impl WorldRegistry {
                             )
                             .is_ok()
                         });
-                    if reservations.is_reserved(*world, entity.get()) || !owns_protected_components
-                    {
-                        return Err(RegistryError::InvalidEntityState);
+                    if reservations.is_reserved(*world, entity.get()) {
+                        return Err(RegistryError::EntityReservationConflict);
+                    }
+                    if !owns_protected_components {
+                        return Err(RegistryError::ProtectedComponent);
                     }
                     if !store.despawn(*entity).map_err(RegistryError::Component)? {
                         return Err(RegistryError::EntitySectorConflict);

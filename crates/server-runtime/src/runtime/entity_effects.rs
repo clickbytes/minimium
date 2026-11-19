@@ -105,7 +105,7 @@ impl ServerRuntime {
                     Err(crate::world_registry::RegistryError::SnapshotBudgetExceeded) => {
                         (Some(EntityEffectRejection::StorageBudget), Vec::new())
                     }
-                    Err(_) => (Some(EntityEffectRejection::Validation), Vec::new()),
+                    Err(error) => (Some(entity_effect_rejection(error)), Vec::new()),
                 };
                 let mut spawned = spawned.into_iter();
                 for index in entity_indices {
@@ -249,11 +249,24 @@ impl ServerRuntime {
     }
 
     pub(super) fn report_effect_batch_outcome(&self, source: &str, outcome: &EffectBatchOutcome) {
-        let mut counts = [0usize; 8];
+        let mut counts = [0usize; 13];
         for result in outcome.results() {
             let index = match result {
                 WorldEffectOutcome::EntityRejected(EntityEffectRejection::Validation) => Some(0),
                 WorldEffectOutcome::EntityRejected(EntityEffectRejection::StorageBudget) => Some(1),
+                WorldEffectOutcome::EntityRejected(EntityEffectRejection::UnknownInstance) => {
+                    Some(8)
+                }
+                WorldEffectOutcome::EntityRejected(EntityEffectRejection::UnknownEntity) => Some(9),
+                WorldEffectOutcome::EntityRejected(EntityEffectRejection::ProtectedComponent) => {
+                    Some(10)
+                }
+                WorldEffectOutcome::EntityRejected(EntityEffectRejection::ReservationConflict) => {
+                    Some(11)
+                }
+                WorldEffectOutcome::EntityRejected(
+                    EntityEffectRejection::IdentifierSpaceExhausted,
+                ) => Some(12),
                 WorldEffectOutcome::Transfer(TransferOutcome::Rejected(
                     TransferRejection::Validation,
                 )) => Some(2),
@@ -288,6 +301,11 @@ impl ServerRuntime {
             ("transfer", "client_unavailable"),
             ("transfer", "environment_unavailable"),
             ("transfer", "backpressure"),
+            ("entity", "unknown_instance"),
+            ("entity", "unknown_entity"),
+            ("entity", "protected_component"),
+            ("entity", "reservation_conflict"),
+            ("entity", "identifier_space_exhausted"),
         ];
         for (index, count) in counts.into_iter().enumerate() {
             if count > 0 {
@@ -308,5 +326,25 @@ impl ServerRuntime {
                 ),
             );
         }
+    }
+}
+
+fn entity_effect_rejection(error: crate::world_registry::RegistryError) -> EntityEffectRejection {
+    use crate::world_registry::RegistryError;
+    use minimium_world::entity::ComponentError;
+    match error {
+        RegistryError::UnknownInstance => EntityEffectRejection::UnknownInstance,
+        RegistryError::EntitySectorConflict
+        | RegistryError::Component(ComponentError::UnknownEntity) => {
+            EntityEffectRejection::UnknownEntity
+        }
+        RegistryError::ProtectedComponent => EntityEffectRejection::ProtectedComponent,
+        RegistryError::EntityReservationConflict => EntityEffectRejection::ReservationConflict,
+        RegistryError::MembershipRevisionExhausted
+        | RegistryError::Component(
+            ComponentError::RevisionExhausted | ComponentError::ExhaustedIds,
+        ) => EntityEffectRejection::IdentifierSpaceExhausted,
+        RegistryError::SnapshotBudgetExceeded => EntityEffectRejection::StorageBudget,
+        _ => EntityEffectRejection::Validation,
     }
 }

@@ -43,6 +43,9 @@ impl CommandReplyView<'_> {
             receipt.revision = Some(clock.revision());
             receipt.freshness = Some(minimium_commands::results::property::Freshness::Current);
         }
+        if let Some(CommandPayloadView::EntityDespawn { revision, .. }) = &self.payload {
+            receipt.revision = *revision;
+        }
         if let Some(outcome) = self.effects {
             receipt.effects = effects(outcome);
         }

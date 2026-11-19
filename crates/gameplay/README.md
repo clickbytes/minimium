@@ -1,5 +1,7 @@
 # minimium-gameplay
 
+Entity effect receipts now distinguish unknown instance/entity, protected component, reservation conflict, identifier exhaustion and storage budget from generic validation. The server host maps its owner staging errors to these bounded neutral outcomes; the neutral effect buffer still carries no authority token.
+
 ## Purpose / Non-goals
 
 Owns neutral descriptors and validated registration for modules, commands, systems and component schemas. It has no runtime, persistence, transport, process, filesystem, or graphics responsibilities.

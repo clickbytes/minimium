@@ -66,6 +66,8 @@ pub(crate) enum RegistryError {
     InvalidTerrainMaterialProfile,
     InvalidReliefPolicy,
     InvalidEntityState,
+    ProtectedComponent,
+    EntityReservationConflict,
     StaleSectorRevision,
     SectorStateCapacity,
     Component(ComponentError),

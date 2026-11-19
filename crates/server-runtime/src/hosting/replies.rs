@@ -76,6 +76,7 @@ pub enum CommandPayloadView<'a> {
     EntityDespawn {
         world: minimium_world::world::WorldInstanceId,
         entity: minimium_world::entity::EntityId,
+        revision: Option<u64>,
     },
     Bolid {
         id: u64,
@@ -187,9 +188,14 @@ impl CommandReply {
                 truncated: *truncated,
                 next_cursor: next_cursor.as_deref(),
             },
-            CommandPayload::EntityDespawn { world, entity } => CommandPayloadView::EntityDespawn {
+            CommandPayload::EntityDespawn {
+                world,
+                entity,
+                revision,
+            } => CommandPayloadView::EntityDespawn {
                 world: *world,
                 entity: *entity,
+                revision: *revision,
             },
             CommandPayload::Bolid {
                 id,

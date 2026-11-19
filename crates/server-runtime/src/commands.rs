@@ -230,6 +230,7 @@ pub(crate) enum CommandPayload {
     EntityDespawn {
         world: minimium_world::world::WorldInstanceId,
         entity: minimium_world::entity::EntityId,
+        revision: Option<u64>,
     },
     Bolid {
         id: u64,
@@ -323,6 +324,13 @@ impl CommandReply {
                 .as_ref()
                 .filter(|outcome| outcome.has_rejections())
                 .map(|outcome| {
+                    if matches!(self.payload(), Some(CommandPayload::EntityDespawn { .. })) {
+                        if let Some(crate::modules::WorldEffectOutcome::EntityRejected(reason)) =
+                            outcome.results().first()
+                        {
+                            return world::despawn_rejection_code(*reason);
+                        }
+                    }
                     if outcome.has_successes() {
                         "server.command.partial_effects"
                     } else {

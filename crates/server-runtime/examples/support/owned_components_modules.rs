@@ -133,7 +133,11 @@ fn spawn_empty_entities(context: &mut dyn GameplaySystemContext) {
 fn try_ordinary_mutations(context: &mut dyn GameplaySystemContext) {
     for receipt in context.take_effect_receipts() {
         let expected = match receipt.token.sequence() {
-            1..=3 => matches!(
+            1 => matches!(
+                receipt.outcome,
+                WorldEffectOutcome::EntityRejected(EntityEffectRejection::ReservationConflict)
+            ),
+            2..=3 => matches!(
                 receipt.outcome,
                 WorldEffectOutcome::EntityRejected(EntityEffectRejection::Validation)
             ),

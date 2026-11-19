@@ -1,5 +1,7 @@
 # minimium-server-runtime
 
+`world.entities.despawn(instance_id, entity_id)` and legacy `entity despawn WORLD ENTITY` submit one bounded world effect through the same ServerAdmin module context. The owner checks world and entity identity, component mutation policy, entity reservation and snapshot budget before publishing the staged store. A successful response exposes the entity store revision and the effect token's producer and sequence; a rejected effect retains its typed reason. Host code uses `RuntimeCommand::world_entity_despawn`. Admin possession does not grant an OwnerOnly or ServerOnly component port. This is an owner commit and snapshot reservation, not a disk fsync promise.
+
 E051 assigns administrative validation, instance selection and commit receipts to the server owner. [Public operation contract](../../docs/console-api/contract.md)
 
 The administrative parser and server terminal bind operation syntax against the installed module catalog. Namespace output and `ui.console.explain(text)` are rendered at these input adapters before command admission. Domain mutations retain their owner-side checks and tick ordering.

@@ -148,14 +148,6 @@ fn invalid(usage: &'static str) -> CommandReply {
     CommandReply::error("server.command.invalid_arguments", usage)
 }
 
-fn first_read_request() -> CommandViewRequest {
-    CommandViewRequest::new(
-        minimium_gameplay::MAX_COMMAND_VIEW_ROWS,
-        minimium_gameplay::MAX_COMMAND_VIEW_BYTES,
-    )
-    .expect("built-in command page limits are valid")
-}
-
 fn world_list(context: &mut ModuleCommandContext<'_>, args: &[&str]) -> CommandReply {
     let request = match access::page(
         context,
@@ -332,13 +324,6 @@ fn entity_despawn(context: &mut ModuleCommandContext<'_>, args: &[&str]) -> Comm
         Ok(ids) => ids,
         Err(reply) => return reply,
     };
-    if let Err(error) = context.components(world, entity, &first_read_request()) {
-        return match error {
-            CommandViewError::UnknownWorld => invalid("world instance not found"),
-            CommandViewError::UnknownEntity => invalid("entity not found in world"),
-            _ => CommandReply::error("server.command.read_failed", "component page unavailable"),
-        };
-    }
     if let Err(error) = context.emit(crate::modules::WorldEffect::DespawnEntity { world, entity }) {
         let (code, detail) = match error {
             crate::modules::EffectBufferError::OperationLimit => (
@@ -360,7 +345,26 @@ fn entity_despawn(context: &mut ModuleCommandContext<'_>, args: &[&str]) -> Comm
         };
         return CommandReply::error(code, detail);
     }
-    CommandReply::success(CommandPayload::EntityDespawn { world, entity })
+    CommandReply::success(CommandPayload::EntityDespawn {
+        world,
+        entity,
+        revision: None,
+    })
+}
+
+pub(super) fn despawn_rejection_code(
+    reason: crate::modules::EntityEffectRejection,
+) -> &'static str {
+    use crate::modules::EntityEffectRejection as Rejection;
+    match reason {
+        Rejection::UnknownInstance => "server.entity.unknown_instance",
+        Rejection::UnknownEntity => "server.entity.unknown_entity",
+        Rejection::ProtectedComponent => "server.entity.protected_component",
+        Rejection::ReservationConflict => "server.entity.reservation_conflict",
+        Rejection::StorageBudget => "server.entity.persistence_failure",
+        Rejection::IdentifierSpaceExhausted => "server.entity.identifier_space_exhausted",
+        Rejection::Validation => "server.entity.validation_failed",
+    }
 }
 
 mod access;

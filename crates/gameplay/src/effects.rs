@@ -118,6 +118,11 @@ pub enum EffectBufferError {
 pub enum EntityEffectRejection {
     Validation,
     StorageBudget,
+    UnknownInstance,
+    UnknownEntity,
+    ProtectedComponent,
+    ReservationConflict,
+    IdentifierSpaceExhausted,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -56,6 +56,32 @@ pub(super) fn payload(
             .into(),
         )),
         Some(View::Property(r)) => return Payload::Property(r.typed_value()),
+        Some(View::EntityDespawn {
+            world,
+            entity,
+            revision,
+        }) => Some(V::Record(
+            [
+                ("source".into(), V::Enum("owner_snapshot".into())),
+                ("instance_id".into(), V::U128(world.get())),
+                ("entity_id".into(), V::U64(entity.get())),
+                ("revision".into(), revision.map_or(V::Unit, V::U64)),
+                (
+                    "state".into(),
+                    V::Enum(
+                        if view.state == crate::hosting::replies::ReplyState::Rejected {
+                            "rejected"
+                        } else if revision.is_some() {
+                            "owner_committed"
+                        } else {
+                            "owner_accepted"
+                        }
+                        .into(),
+                    ),
+                ),
+            ]
+            .into(),
+        )),
         Some(
             v @ (View::Bolid { .. }
             | View::BolidStatus(_)

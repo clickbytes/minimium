@@ -86,6 +86,17 @@ impl RuntimeCommand {
         )
     }
 
+    /// Submit one world-scoped effect through the ordinary module command and owner staging path.
+    pub fn world_entity_despawn(
+        world: WorldInstanceId,
+        entity: minimium_world::entity::EntityId,
+    ) -> Self {
+        Self(ServerCommand::Registered {
+            identity: "entity despawn".into(),
+            arguments: vec![world.get().to_string(), entity.get().to_string()],
+        })
+    }
+
     fn world_page(
         identity: &str,
         ids: &[String],

@@ -174,12 +174,15 @@ pub(crate) fn render(payload: &CommandPayloadView<'_>) -> BoundedText {
                 out.push_str(" [truncated]");
             }
         }
-        CommandPayloadView::EntityDespawn { world, entity } => {
-            let _ = write!(
-                out,
-                "world={world} entity={} despawn requested",
-                entity.get()
-            );
+        CommandPayloadView::EntityDespawn {
+            world,
+            entity,
+            revision,
+        } => {
+            let _ = write!(out, "world={world} entity={} despawn effect", entity.get());
+            if let Some(revision) = revision {
+                let _ = write!(out, " committed revision={revision}");
+            }
         }
         CommandPayloadView::Bolid {
             id,
@@ -397,6 +400,13 @@ pub(crate) fn entity_rejection_label(
     match reason {
         crate::modules::EntityEffectRejection::Validation => "validation",
         crate::modules::EntityEffectRejection::StorageBudget => "storage_budget",
+        crate::modules::EntityEffectRejection::UnknownInstance => "unknown_instance",
+        crate::modules::EntityEffectRejection::UnknownEntity => "unknown_entity",
+        crate::modules::EntityEffectRejection::ProtectedComponent => "protected_component",
+        crate::modules::EntityEffectRejection::ReservationConflict => "reservation_conflict",
+        crate::modules::EntityEffectRejection::IdentifierSpaceExhausted => {
+            "identifier_space_exhausted"
+        }
     }
 }
 

@@ -30,11 +30,35 @@ impl ServerRuntime {
                 match self.commit_effect_batch(batch) {
                     Ok(outcome) => {
                         self.report_effect_batch_outcome("command", &outcome);
+                        if !outcome.has_rejections() {
+                            if let Some(commands::CommandPayload::EntityDespawn {
+                                world,
+                                revision,
+                                ..
+                            }) = reply.payload_mut()
+                            {
+                                *revision = Some(
+                                    self.game
+                                        .worlds
+                                        .get(*world)
+                                        .expect("committed despawn retains its world")
+                                        .entities
+                                        .revision(),
+                                );
+                            }
+                        }
                         reply.set_effect_outcome(outcome);
                     }
                     Err(error) => {
                         reply = commands::CommandReply::error(
-                            "server.command.effect_commit_failed",
+                            if matches!(
+                                reply.payload(),
+                                Some(commands::CommandPayload::EntityDespawn { .. })
+                            ) {
+                                "server.entity.persistence_failure"
+                            } else {
+                                "server.command.effect_commit_failed"
+                            },
                             &format!("could not commit command effects: {error}"),
                         );
                     }

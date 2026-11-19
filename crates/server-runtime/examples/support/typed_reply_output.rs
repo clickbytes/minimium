@@ -278,8 +278,15 @@ pub(super) fn inspect_reply(reply: CommandReplyView<'_>) {
             }
             println!("entity components truncated={truncated} next={next_cursor:?}");
         }
-        CommandPayloadView::EntityDespawn { world, entity } => {
-            println!("despawn requested world={world} entity={}", entity.get());
+        CommandPayloadView::EntityDespawn {
+            world,
+            entity,
+            revision,
+        } => {
+            println!(
+                "despawn effect world={world} entity={} revision={revision:?}",
+                entity.get()
+            );
         }
         CommandPayloadView::Bolid {
             id,

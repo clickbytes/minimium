@@ -131,6 +131,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         RuntimeCommand::world_instance(instance),
         RuntimeCommand::world_instances_page(None, 64)?,
         RuntimeCommand::world_objects_page(None, 64)?,
+        RuntimeCommand::world_entity_despawn(
+            instance,
+            minimium_world::entity::EntityId::new(42).unwrap(),
+        ),
         RuntimeCommand::get_property("world.primary.generation.seed")?,
         RuntimeCommand::bolid_shower_status(1)?,
         RuntimeCommand::spawn_random_bolids(2)?,

@@ -128,6 +128,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "alpha despawn while beta still reserves the entity",
     )?;
     runtime.release_component_entity(&beta_first, alpha_entity)?;
+    // Admin possession does not grant the owner port required by an OwnerOnly component.
+    let denied = runtime.submit(RuntimeCommand::world_entity_despawn(
+        first_world,
+        alpha_entity,
+    ))?;
+    time.monotonic += Duration::from_millis(50);
+    let denial = runtime.step(time)?;
+    let result = denial
+        .commands
+        .iter()
+        .find(|result| result.id == denied)
+        .ok_or_else(|| std::io::Error::other("admin despawn receipt missing"))?;
+    if result.reply.error_code() != Some("server.entity.protected_component") {
+        return Err(format!(
+            "expected protected-component refusal, got {:?}",
+            result.reply.error_code()
+        )
+        .into());
+    }
+    println!("admin despawn: {:?}", result.reply.error_code());
     runtime.apply_owned_component_effects(
         &alpha_first,
         &[WorldEffect::DespawnEntity {
