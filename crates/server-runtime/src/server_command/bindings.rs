@@ -114,6 +114,41 @@ fn lower(op: &PreparedOperation, entry: &CatalogEntry) -> Result<ServerCommand, 
         .iter()
         .map(|arg| arg.text.clone())
         .collect::<Vec<_>>();
+    if !op.legacy
+        && matches!(
+            op.path.as_str(),
+            "world.instances.list" | "world.objects.list" | "world.entities.inspect"
+        )
+    {
+        let required = usize::from(op.path == "world.entities.inspect") * 2;
+        let mut normalized = args[..required].to_vec();
+        normalized.push(args.get(required).cloned().unwrap_or_else(|| "none".into()));
+        let limit = args.get(required + 1).map_or(Ok(64), |arg| {
+            arg.parse::<u16>().map_err(|_| {
+                CommandError::new(
+                    Code::InvalidValue,
+                    Some("limit"),
+                    "expected 1..=256 rows",
+                    None::<String>,
+                )
+                .at(span)
+            })
+        })?;
+        if !(1..=256).contains(&limit) {
+            return Err(CommandError::new(
+                Code::InvalidValue,
+                Some("limit"),
+                "expected 1..=256 rows",
+                None::<String>,
+            )
+            .at(span));
+        }
+        normalized.push(limit.to_string());
+        return Ok(ServerCommand::Registered {
+            identity: name.into(),
+            arguments: normalized,
+        });
+    }
     if name == "help" {
         return Ok(if let Some(target) = args.first() {
             ServerCommand::Property(super::ServerPropertyCommand::Help(Some(target.clone())))

@@ -83,7 +83,7 @@ impl ServerRuntime {
                         .operation_catalog
                         .resolve(key)
                         .and_then(|entry| entry.property.map(|spec| (entry, spec)))
-                        .filter(|(_, spec)| spec.key == key)
+                        .filter(|(entry, spec)| spec.key == key || entry.spec.path == *key)
                     {
                         commands::CommandReply::success(commands::CommandPayload::PropertyHelp(
                             *spec,
@@ -156,59 +156,13 @@ impl ServerRuntime {
             key,
             "world.seed" | "world.generation_revision" | "world.generator_digest"
         ) {
-            let manifest = self.game.worlds.primary().manifest;
-            let actual = match key {
-                "world.seed" => manifest.generation().seed().get().to_string(),
-                "world.generation_revision" => manifest.generation().revision().get().to_string(),
-                "world.generator_digest" => manifest
-                    .generator_digest()
-                    .as_bytes()
-                    .iter()
-                    .map(|byte| format!("{byte:02x}"))
-                    .collect(),
-                _ => unreachable!(),
-            };
-            let (requested, default, request_source) = if key == "world.seed" {
-                crate::config::property_value(&self.resolved_settings, key)
-                    .map(|(requested, default, source)| {
-                        (requested.to_owned(), default.map(str::to_owned), source)
-                    })
-                    .unwrap_or_else(|| {
-                        (
-                            "auto".to_owned(),
-                            Some("auto".to_owned()),
-                            PropertySource::Default,
-                        )
-                    })
-            } else {
-                (actual.clone(), None, PropertySource::Runtime)
-            };
-            PropertyValue {
-                lifecycle: self
-                    .operation_catalog
-                    .resolve(key)
-                    .and_then(|e| e.property)
-                    .expect("registered property")
-                    .lifecycle,
-                startup: ConfigurationSource::from_source(request_source).map(|source| {
-                    StartupValue {
-                        value: requested.clone(),
-                        source,
-                    }
-                }),
-                session_override: None,
-                read_source: ReadSource::OwnerSnapshot,
-                revision: None,
-                freshness: Freshness::Current,
-                requested: Some(requested),
-                effective: Some(actual),
-                default,
-                source: PropertySource::Runtime,
-                difference_reason: Some(format!(
-                    "actual world manifest; requested source={}",
-                    request_source.as_str()
-                )),
-            }
+            commands::project_generation(
+                key,
+                self.game.worlds.primary().manifest,
+                &self.resolved_settings,
+                &self.operation_catalog,
+            )
+            .expect("registered primary generation property")
         } else if minimium_environment::console::live_clock_field(key) {
             let clock = match self.monotonic_ms(self.now) {
                 Ok(clock) => clock,

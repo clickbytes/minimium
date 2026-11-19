@@ -9,7 +9,6 @@ use minimium_environment::console::{clock_entry, ClockReadBinding};
 mod console;
 mod persistence;
 mod primary;
-mod worlds;
 
 pub(crate) fn build(
     registry: &ModuleRegistry<ModuleHandler, SystemFn>,
@@ -132,6 +131,6 @@ fn resolve(name: &str, _persistent: bool) -> Result<CatalogEntry, CatalogError> 
         .or_else(|| console::entry(name))
         .or_else(|| admin::entry(name))
         .or_else(|| persistence::entry(name))
-        .or_else(|| worlds::entry(name))
+        .or_else(|| crate::commands::world_catalog_entry(name))
         .ok_or_else(|| CatalogError::InvalidName(name.to_owned()))
 }

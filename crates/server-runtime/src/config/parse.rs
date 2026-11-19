@@ -1,6 +1,7 @@
 use super::ServerConfig;
 mod keys;
 mod offline;
+mod seed_alias;
 mod values;
 use keys::KEYS;
 use minimium_commands::{

@@ -24,10 +24,10 @@ pub use effects::{
     MAX_WORLD_EFFECT_BYTES_PER_STAGE,
 };
 pub use read_views::{
-    CommandComponentRow, CommandEntityKind, CommandEntityRow, CommandPlayerView, CommandViewCursor,
-    CommandViewCursorIssuer, CommandViewError, CommandViewKind, CommandViewPage,
-    CommandViewRequest, CommandViewScope, CommandWorldView, ModuleCommandReadView,
-    MAX_COMMAND_VIEW_BYTES, MAX_COMMAND_VIEW_ROWS,
+    CommandComponentMetadata, CommandComponentRow, CommandEntityKind, CommandEntityRow,
+    CommandPlayerView, CommandViewCursor, CommandViewCursorIssuer, CommandViewError,
+    CommandViewKind, CommandViewPage, CommandViewRequest, CommandViewScope, CommandWorldView,
+    ModuleCommandReadView, MAX_COMMAND_VIEW_BYTES, MAX_COMMAND_VIEW_ROWS,
 };
 pub use schedule::{
     stage_anchor_id, ScheduleDefinition, ScheduleError, ScheduleNode, ScheduleNodeKind,

@@ -120,7 +120,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         execution,
         time,
     )?;
-    let limits = (32, 1024 * 1024);
+    let limits = (64, 32 * 1024);
     let mut request = CommandViewRequest::new(limits.0, limits.1)?;
     loop {
         match runtime.query(RuntimeQuery::WorldsPage(request.clone())) {
@@ -194,6 +194,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     let components = CommandViewRequest::new(limits.0, limits.1)?;
+    match runtime.query(RuntimeQuery::ComponentMetadata(
+        instance,
+        minimium_world::entity::EntityId::new(1).unwrap(),
+        components.clone(),
+    )) {
+        RuntimeQueryResult::ComponentMetadata(Err(CommandViewError::UnknownEntity)) => {
+            println!("entity metadata is absent")
+        }
+        RuntimeQueryResult::ComponentMetadata(Ok(page)) => {
+            for component in page.rows {
+                println!(
+                    "component {} schema {} bytes {}",
+                    component.kind.get(),
+                    component.schema.get(),
+                    component.bytes
+                );
+            }
+        }
+        _ => {}
+    }
     match runtime.query(RuntimeQuery::Components(
         instance,
         minimium_world::entity::EntityId::new(1).unwrap(),

@@ -60,6 +60,8 @@ the byte cap are typed errors. Cursors are tied to the live reader, query,
 scope and membership revisions. Membership stays consistent between pages;
 mutable values such as player position are read live on each request.
 
+`CommandComponentMetadata` exposes component type, schema and byte count without copying payload. The server reader implements a dedicated bounded metadata page; extensions that implement only the existing component view inherit the trait's conversion default. Cursor tokens use a fixed-width versioned encoding so exact u128 world IDs and u64 entity IDs remain continuable through the bounded administrative envelope. Readers still validate runtime, query, scope and membership revisions on every page.
+
 ## Dependencies
 
 Depends on generic command metadata, world component descriptors, and neutral terrain/fluid value models for world-change plans. It does not depend on `minimium-server-runtime`, `minimium-storage`, transport, or GPU packages.

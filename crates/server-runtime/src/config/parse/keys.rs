@@ -14,6 +14,7 @@ pub(super) const KEYS: &[&str] = &[
     "server.material_package",
     "server.material_http_port",
     "world.seed",
+    "world.primary.generation.seed",
     "world.map",
     "world.definition",
     "world.planet_config",

@@ -128,7 +128,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         RuntimeCommand::get_property("server.autosave_interval")?,
         RuntimeCommand::set_autosave_interval(60)?,
         RuntimeCommand::time(TimeCommand::Scale(typed_rate))?,
-        RuntimeCommand::module("world inspect", ["1"])?,
+        RuntimeCommand::world_instance(instance),
+        RuntimeCommand::world_instances_page(None, 64)?,
+        RuntimeCommand::world_objects_page(None, 64)?,
+        RuntimeCommand::get_property("world.primary.generation.seed")?,
     ];
     for command in commands {
         match runtime.submit(command) {

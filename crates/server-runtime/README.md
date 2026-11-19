@@ -4,6 +4,10 @@ E051 assigns administrative validation, instance selection and commit receipts t
 
 The administrative parser and server terminal bind operation syntax against the installed module catalog. Namespace output and `ui.console.explain(text)` are rendered at these input adapters before command admission. Domain mutations retain their owner-side checks and tick ordering.
 
+Primary generation properties `world.primary.generation.seed`, `.revision` and `.digest` read the primary manifest even when an administrator's player is in another instance. The seed report retains the configured `auto` or exact u128 request, its source, and the effective manifest seed. Startup config accepts `world.primary.generation.seed` as an alias for `world.seed`; the existing file key, CLI `--seed` and environment source remain valid. A live seed write is rejected as creation-only, and revision/digest are read-only.
+
+The world catalog routes `world.instances.list`, `world.instances.inspect`, `world.objects.list` and `world.entities.inspect` through the existing `ServerAdmin` module handlers and `WorldRegistry` read view. Canonical pages default to 64 rows, permit 1..=256, and use a 32 KiB reader budget. Legacy `world list`, `entity list` and `entity inspect` retain their 256-row default. Object pages include players and entities with explicit kind and world ID. Component pages return only kind, schema and byte count. The v3 continuation token is 134 bytes, tied to runtime identity, query, world/entity scope and membership revisions; position and other values remain live between pages. Admission checks the `ServerAdmin` scope before any world existence lookup. The trusted `RuntimeQuery` host port remains available for direct bounded reads, including component metadata.
+
 The admin adapter binds both typed operations and source text against the installed catalog, retains the correlation alongside the transport ID through owner dispatch and projects replies to bounded v1 data. Shared world-property help and catalog reads use registered schemas. [Wire contract](../../docs/console-api/admin-v1.md)
 
 ## Registered effect receipts

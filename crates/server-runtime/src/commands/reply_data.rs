@@ -128,9 +128,16 @@ impl PropertyReport {
         &self,
     ) -> minimium_commands::PropertyValue<minimium_commands::operation::CommandValue> {
         self.value.clone().map(|text| {
-            self.clock_value
-                .clone()
-                .unwrap_or_else(|| super::encode_configuration(&self.key, text))
+            self.clock_value.clone().unwrap_or_else(|| {
+                if matches!(
+                    self.key.as_str(),
+                    "world.seed" | "world.generation_revision" | "world.generator_digest"
+                ) {
+                    super::encode_generation(&self.key, text)
+                } else {
+                    super::encode_configuration(&self.key, text)
+                }
+            })
         })
     }
     pub fn key(&self) -> &str {

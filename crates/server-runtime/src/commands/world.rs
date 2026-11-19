@@ -157,17 +157,20 @@ fn first_read_request() -> CommandViewRequest {
 }
 
 fn world_list(context: &mut ModuleCommandContext<'_>, args: &[&str]) -> CommandReply {
-    let mut request = first_read_request();
-    match args {
-        [] => {}
-        [token] => match context.cursor(token) {
-            Ok(cursor) => request = request.after(cursor),
-            Err(_) => return invalid("world list cursor is invalid or stale"),
-        },
-        _ => return invalid("usage: world list [CURSOR]"),
-    }
+    let request = match access::page(
+        context,
+        args,
+        1,
+        "usage: world list [CURSOR] or world.instances.list(cursor?, limit?)",
+    ) {
+        Ok(request) => request,
+        Err(reply) => return reply,
+    };
     let page = match context.worlds(&request) {
         Ok(page) => page,
+        Err(CommandViewError::StaleCursor) => {
+            return CommandReply::error("server.command.stale_cursor", "world cursor is stale")
+        }
         Err(_) => {
             return CommandReply::error("server.command.read_failed", "world page unavailable")
         }
@@ -215,17 +218,20 @@ fn world_inspect(context: &mut ModuleCommandContext<'_>, args: &[&str]) -> Comma
 }
 
 fn entity_list(context: &mut ModuleCommandContext<'_>, args: &[&str]) -> CommandReply {
-    let mut request = first_read_request();
-    match args {
-        [] => {}
-        [token] => match context.cursor(token) {
-            Ok(cursor) => request = request.after(cursor),
-            Err(_) => return invalid("entity list cursor is invalid or stale"),
-        },
-        _ => return invalid("usage: entity list [CURSOR]"),
-    }
+    let request = match access::page(
+        context,
+        args,
+        1,
+        "usage: entity list [CURSOR] or world.objects.list(cursor?, limit?)",
+    ) {
+        Ok(request) => request,
+        Err(reply) => return reply,
+    };
     let page = match context.entity_rows(&request) {
         Ok(page) => page,
+        Err(CommandViewError::StaleCursor) => {
+            return CommandReply::error("server.command.stale_cursor", "object cursor is stale")
+        }
         Err(CommandViewError::UnknownWorld) => return invalid("world instance not found"),
         Err(_) => {
             return CommandReply::error("server.command.read_failed", "entity page unavailable")
@@ -283,18 +289,18 @@ fn entity_inspect(context: &mut ModuleCommandContext<'_>, args: &[&str]) -> Comm
         Ok(ids) => ids,
         Err(reply) => return reply,
     };
-    if args.len() > 3 {
+    if args.len() > 4 {
         return invalid("usage: entity inspect WORLD ENTITY [CURSOR]");
     }
-    let mut request = first_read_request();
-    if let Some(token) = args.get(2) {
-        match context.cursor(token) {
-            Ok(cursor) => request = request.after(cursor),
-            Err(_) => return invalid("entity component cursor is invalid or stale"),
-        }
-    }
-    let components = match context.components(world, entity, &request) {
+    let request = match access::page(context, &args[2..], 1, "usage: entity inspect WORLD ENTITY [CURSOR] or world.entities.inspect(WORLD, ENTITY, cursor?, limit?)") {
+        Ok(request) => request,
+        Err(reply) => return reply,
+    };
+    let components = match context.component_metadata(world, entity, &request) {
         Ok(page) => page,
+        Err(CommandViewError::StaleCursor) => {
+            return CommandReply::error("server.command.stale_cursor", "component cursor is stale")
+        }
         Err(CommandViewError::UnknownWorld) => return invalid("world instance not found"),
         Err(CommandViewError::UnknownEntity) => return invalid("entity not found in world"),
         Err(_) => {
@@ -309,7 +315,7 @@ fn entity_inspect(context: &mut ModuleCommandContext<'_>, args: &[&str]) -> Comm
         .map(|component| super::EntityComponentRow {
             kind: component.kind,
             schema: component.schema,
-            bytes: component.bytes.len(),
+            bytes: component.bytes,
         })
         .collect();
     CommandReply::success(CommandPayload::EntityInspect {
@@ -357,5 +363,8 @@ fn entity_despawn(context: &mut ModuleCommandContext<'_>, args: &[&str]) -> Comm
     CommandReply::success(CommandPayload::EntityDespawn { world, entity })
 }
 
+mod access;
+mod catalog;
 mod read_view;
+pub(crate) use catalog::entry as catalog_entry;
 pub(crate) use read_view::RuntimeCommandReadView;

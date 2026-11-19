@@ -89,3 +89,5 @@ use the bounded reader; legacy `players list [CURSOR]` retains 256 rows.
 Status, metrics and stop use owner payloads. Stop's committed request is
 separate from process completion. Configuration reads share `PropertyValue`
 provenance and the server resolver's defaults and validation.
+
+Batch #586 binds primary generation properties and world/object/component metadata pages to the existing server owner. Legacy world and entity lists keep a 256-row default; canonical lists default to 64 and cap at 256 with a 32 KiB page budget. Both formats retain the entity/player union and exact IDs. Seed aliases still read the primary manifest and preserve startup provenance. The v3 cursor replaces v2; old tokens expire explicitly. A canonical `world.entities.inspect` request with maximal u128/u64 IDs, maximal correlation, cursor and limit occupies 496 of 512 bytes with `expected_context:null`; these admin queries are actor independent and require no world context. The trusted host query port also exposes a metadata-only component page.

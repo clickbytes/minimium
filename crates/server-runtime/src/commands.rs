@@ -1,4 +1,6 @@
 mod administration;
+mod generation;
+pub(crate) use generation::{encode as encode_generation, project as project_generation};
 mod configuration;
 mod owner_context;
 pub use configuration::ConfigurationValue;
@@ -15,6 +17,7 @@ mod time;
 mod world;
 
 pub(crate) use owner_context::OwnerCommandContext;
+pub(crate) use world::catalog_entry as world_catalog_entry;
 pub(crate) use world::RuntimeCommandReadView;
 
 use crate::modules::{CommandScope, ModuleCommandContext, ModuleRegistry, WorldEffectBuffer};

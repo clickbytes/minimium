@@ -5,6 +5,7 @@ use minimium_world::{
     world::{GenerationRevision, WorldInstanceId, WorldManifest, WorldTopology},
 };
 use std::sync::Arc;
+mod cursor_codec;
 
 /// Maximum rows and dynamic data accepted by any command read page.
 pub const MAX_COMMAND_VIEW_ROWS: usize = 256;
@@ -77,23 +78,7 @@ impl CommandViewCursor {
         self.after
     }
     pub fn token(&self) -> String {
-        let scope = match self.scope {
-            CommandViewScope::None => String::from("n"),
-            CommandViewScope::World(world) => format!("w{:x}", world.get()),
-            CommandViewScope::Entity { world, entity } => {
-                format!("e{:x}-{:x}", world.get(), entity.get())
-            }
-        };
-        format!(
-            "v2:{:x}:{}:{}:{:x}:{:x}:{:x}:{:x}",
-            Arc::as_ptr(&self.identity) as usize,
-            self.query.code(),
-            scope,
-            self.revision,
-            self.secondary_revision,
-            self.tertiary_revision,
-            self.after
-        )
+        cursor_codec::encode(self)
     }
 }
 
@@ -134,65 +119,7 @@ impl CommandViewCursorIssuer {
         }
     }
     pub fn parse(&self, token: &str) -> Result<CommandViewCursor, CommandViewError> {
-        if token.len() > 256 {
-            return Err(CommandViewError::StaleCursor);
-        }
-        let parts = token.split(':').collect::<Vec<_>>();
-        if parts.len() != 8
-            || parts[0] != "v2"
-            || parts[1] != format!("{:x}", Arc::as_ptr(&self.0) as usize)
-        {
-            return Err(CommandViewError::StaleCursor);
-        }
-        let query = parts[2]
-            .parse::<u8>()
-            .ok()
-            .and_then(CommandViewKind::from_code)
-            .ok_or(CommandViewError::StaleCursor)?;
-        let scope = match parts[3].as_bytes().first() {
-            Some(b'n') if parts[3] == "n" => CommandViewScope::None,
-            Some(b'w') => CommandViewScope::World(
-                minimium_world::world::WorldInstanceId::new(
-                    u128::from_str_radix(&parts[3][1..], 16)
-                        .map_err(|_| CommandViewError::StaleCursor)?,
-                )
-                .ok_or(CommandViewError::StaleCursor)?,
-            ),
-            Some(b'e') => {
-                let (world, entity) = parts[3][1..]
-                    .split_once('-')
-                    .ok_or(CommandViewError::StaleCursor)?;
-                CommandViewScope::Entity {
-                    world: minimium_world::world::WorldInstanceId::new(
-                        u128::from_str_radix(world, 16)
-                            .map_err(|_| CommandViewError::StaleCursor)?,
-                    )
-                    .ok_or(CommandViewError::StaleCursor)?,
-                    entity: EntityId::new(
-                        u64::from_str_radix(entity, 16)
-                            .map_err(|_| CommandViewError::StaleCursor)?,
-                    )
-                    .ok_or(CommandViewError::StaleCursor)?,
-                }
-            }
-            _ => return Err(CommandViewError::StaleCursor),
-        };
-        let revision =
-            u128::from_str_radix(parts[4], 16).map_err(|_| CommandViewError::StaleCursor)?;
-        let secondary_revision =
-            u128::from_str_radix(parts[5], 16).map_err(|_| CommandViewError::StaleCursor)?;
-        let tertiary_revision =
-            u128::from_str_radix(parts[6], 16).map_err(|_| CommandViewError::StaleCursor)?;
-        let after =
-            u128::from_str_radix(parts[7], 16).map_err(|_| CommandViewError::StaleCursor)?;
-        Ok(self.issue_versions(
-            query,
-            scope,
-            revision,
-            secondary_revision,
-            tertiary_revision,
-            after,
-        ))
+        cursor_codec::decode(self, token)
     }
 }
 
@@ -320,6 +247,14 @@ pub struct CommandComponentRow {
     pub bytes: Vec<u8>,
 }
 
+/// Component description with its byte count, never its payload.
+#[derive(Clone, Copy, Debug)]
+pub struct CommandComponentMetadata {
+    pub kind: minimium_world::entity::ComponentTypeId,
+    pub schema: minimium_world::entity::SchemaVersion,
+    pub bytes: usize,
+}
+
 #[derive(Clone, Debug)]
 pub enum CommandEntityKind {
     Entity(EntityId),
@@ -353,4 +288,24 @@ pub trait ModuleCommandReadView {
         entity: EntityId,
         request: &CommandViewRequest,
     ) -> Result<CommandViewPage<ComponentView<'_>>, CommandViewError>;
+
+    fn component_metadata(
+        &self,
+        world: WorldInstanceId,
+        entity: EntityId,
+        request: &CommandViewRequest,
+    ) -> Result<CommandViewPage<CommandComponentMetadata>, CommandViewError> {
+        let page = self.components(world, entity, request)?;
+        Ok(CommandViewPage::new(
+            page.rows
+                .into_iter()
+                .map(|row| CommandComponentMetadata {
+                    kind: row.kind,
+                    schema: row.schema,
+                    bytes: row.bytes.len(),
+                })
+                .collect(),
+            page.next,
+        ))
+    }
 }

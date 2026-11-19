@@ -102,6 +102,11 @@ impl ServerRuntime {
                     crate::CommandViewPage::new(rows, page.next)
                 }),
             ),
+            RuntimeQuery::ComponentMetadata(world, entity, request) => {
+                RuntimeQueryResult::ComponentMetadata(
+                    view.component_metadata(world, entity, &request),
+                )
+            }
         }
     }
 

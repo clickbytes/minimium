@@ -75,10 +75,16 @@ impl ModuleCommandReadView for RuntimeCommandReadView<'_> {
             .iter()
             .filter(|(id, _)| id.get() as u128 > after)
             .filter_map(|(id, _)| self.world_view(id));
-        let rows = candidates
-            .by_ref()
-            .take(request.limit())
-            .collect::<Vec<_>>();
+        let row_budget = if request.max_bytes() <= 32 * 1024 {
+            192
+        } else {
+            std::mem::size_of::<CommandWorldView>()
+        };
+        let count = request.limit().min(request.max_bytes() / row_budget);
+        if count == 0 {
+            return Err(CommandViewError::RecordTooLarge);
+        }
+        let rows = candidates.by_ref().take(count).collect::<Vec<_>>();
         let next = if candidates.next().is_some() {
             rows.last().map(|last| {
                 self.cursor_issuer().issue_versions(
@@ -253,7 +259,11 @@ impl ModuleCommandReadView for RuntimeCommandReadView<'_> {
                     more = true;
                     break;
                 }
-                let row_bytes = std::mem::size_of::<minimium_gameplay::CommandEntityRow>();
+                let row_bytes = if request.max_bytes() <= 32 * 1024 {
+                    224
+                } else {
+                    std::mem::size_of::<minimium_gameplay::CommandEntityRow>()
+                };
                 if bytes.saturating_add(row_bytes) > request.max_bytes() {
                     if rows.is_empty() {
                         return Err(CommandViewError::RecordTooLarge);
@@ -280,8 +290,11 @@ impl ModuleCommandReadView for RuntimeCommandReadView<'_> {
                     more = true;
                     break;
                 }
-                let row_bytes =
-                    std::mem::size_of::<minimium_gameplay::CommandEntityRow>() + player.name.len();
+                let row_bytes = if request.max_bytes() <= 32 * 1024 {
+                    224 + player.name.len()
+                } else {
+                    std::mem::size_of::<minimium_gameplay::CommandEntityRow>() + player.name.len()
+                };
                 if bytes.saturating_add(row_bytes) > request.max_bytes() {
                     if rows.is_empty() {
                         return Err(CommandViewError::RecordTooLarge);
@@ -374,6 +387,76 @@ impl ModuleCommandReadView for RuntimeCommandReadView<'_> {
         }
         more |= components
             .any(|(owner, kind, _, _)| ((owner.get() as u128) << 32) | kind.get() as u128 > last);
+        let next = more.then(|| {
+            self.cursor_issuer().issue_versions(
+                CommandViewKind::Components,
+                scope,
+                revisions[0],
+                revisions[1],
+                revisions[2],
+                last,
+            )
+        });
+        Ok(CommandViewPage::new(rows, next))
+    }
+
+    fn component_metadata(
+        &self,
+        world: WorldInstanceId,
+        entity: EntityId,
+        request: &CommandViewRequest,
+    ) -> Result<CommandViewPage<minimium_gameplay::CommandComponentMetadata>, CommandViewError>
+    {
+        let instance = self
+            .worlds
+            .get(world)
+            .ok_or(CommandViewError::UnknownWorld)?;
+        if !instance.entities.contains(entity) {
+            return Err(CommandViewError::UnknownEntity);
+        }
+        let revisions = [
+            instance.entities.component_membership_revision() as u128,
+            0,
+            0,
+        ];
+        let scope = CommandViewScope::Entity { world, entity };
+        let after = self.validate_cursor(request, CommandViewKind::Components, scope, revisions)?;
+        let components = self
+            .worlds
+            .component_views(world)
+            .ok_or(CommandViewError::UnknownWorld)?;
+        let mut rows = Vec::new();
+        let mut bytes = 0usize;
+        let mut last = after;
+        let mut more = false;
+        for (owner, kind, schema, payload) in components.filter(|(owner, _, _, _)| *owner == entity)
+        {
+            let key = ((owner.get() as u128) << 32) | kind.get() as u128;
+            if key <= after {
+                continue;
+            }
+            let row_bytes = if request.max_bytes() <= 32 * 1024 {
+                128
+            } else {
+                std::mem::size_of::<minimium_gameplay::CommandComponentMetadata>()
+            };
+            if rows.len() >= request.limit()
+                || bytes.saturating_add(row_bytes) > request.max_bytes()
+            {
+                if rows.is_empty() {
+                    return Err(CommandViewError::RecordTooLarge);
+                }
+                more = true;
+                break;
+            }
+            rows.push(minimium_gameplay::CommandComponentMetadata {
+                kind,
+                schema,
+                bytes: payload.len(),
+            });
+            bytes += row_bytes;
+            last = key;
+        }
         let next = more.then(|| {
             self.cursor_issuer().issue_versions(
                 CommandViewKind::Components,

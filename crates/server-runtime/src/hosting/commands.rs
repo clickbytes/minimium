@@ -51,6 +51,68 @@ impl RuntimeCommand {
         crate::server_command::players_page(cursor, limit).map(Self)
     }
 
+    pub fn world_instances_page(
+        cursor: Option<String>,
+        limit: u16,
+    ) -> Result<Self, minimium_commands::CommandError> {
+        Self::world_page("world list", &[], cursor, limit)
+    }
+
+    pub fn world_objects_page(
+        cursor: Option<String>,
+        limit: u16,
+    ) -> Result<Self, minimium_commands::CommandError> {
+        Self::world_page("entity list", &[], cursor, limit)
+    }
+
+    pub fn world_instance(id: WorldInstanceId) -> Self {
+        Self(ServerCommand::Registered {
+            identity: "world inspect".into(),
+            arguments: vec![id.get().to_string()],
+        })
+    }
+
+    pub fn world_entity_metadata_page(
+        world: WorldInstanceId,
+        entity: minimium_world::entity::EntityId,
+        cursor: Option<String>,
+        limit: u16,
+    ) -> Result<Self, minimium_commands::CommandError> {
+        Self::world_page(
+            "entity inspect",
+            &[world.get().to_string(), entity.get().to_string()],
+            cursor,
+            limit,
+        )
+    }
+
+    fn world_page(
+        identity: &str,
+        ids: &[String],
+        cursor: Option<String>,
+        limit: u16,
+    ) -> Result<Self, minimium_commands::CommandError> {
+        if !(1..=256).contains(&limit)
+            || cursor.as_ref().is_some_and(|token| {
+                token.is_empty() || token.len() > 256 || token.chars().any(char::is_control)
+            })
+        {
+            return Err(command_error(
+                minimium_commands::CommandErrorCode::InvalidArguments,
+                identity,
+                "cursor or limit is outside its bounds",
+                "world page(cursor?, limit:U16=64)",
+            ));
+        }
+        let mut arguments = ids.to_vec();
+        arguments.push(cursor.unwrap_or_else(|| "none".into()));
+        arguments.push(limit.to_string());
+        Ok(Self(ServerCommand::Registered {
+            identity: identity.into(),
+            arguments,
+        }))
+    }
+
     pub fn metrics() -> Self {
         Self(ServerCommand::Metrics)
     }
@@ -271,6 +333,11 @@ pub enum RuntimeQuery {
         minimium_world::entity::EntityId,
         CommandViewRequest,
     ),
+    ComponentMetadata(
+        WorldInstanceId,
+        minimium_world::entity::EntityId,
+        CommandViewRequest,
+    ),
 }
 pub enum RuntimeQueryResult {
     Status(RuntimeStatus),
@@ -282,6 +349,9 @@ pub enum RuntimeQueryResult {
     Entities(Result<CommandViewPage<minimium_world::entity::EntityId>, CommandViewError>),
     EntityRows(Result<CommandViewPage<minimium_gameplay::CommandEntityRow>, CommandViewError>),
     Components(Result<CommandViewPage<minimium_gameplay::CommandComponentRow>, CommandViewError>),
+    ComponentMetadata(
+        Result<CommandViewPage<minimium_gameplay::CommandComponentMetadata>, CommandViewError>,
+    ),
 }
 #[derive(Clone, Debug)]
 pub struct RuntimeStatus {

@@ -22,7 +22,14 @@ pub(super) fn resolve(
     overrides: BTreeMap<String, String>,
     process_environment: &BTreeMap<String, String>,
 ) -> Result<BTreeMap<String, ResolvedConfigValue>, CommandError> {
-    let document = path.map(read_document).transpose()?;
+    let document = path
+        .map(read_document)
+        .transpose()?
+        .map(|document| {
+            super::seed_alias::normalize(document.settings().clone()).map(ConfigDocument::new)
+        })
+        .transpose()?;
+    let overrides = super::seed_alias::normalize(overrides)?;
     if let Some(document) = &document {
         document
             .validate_keys(KEYS.iter().copied())
@@ -377,7 +384,7 @@ fn parse_value<T: std::str::FromStr>(key: &str, value: &str) -> Result<T, Comman
     })
 }
 
-fn parse_seed(value: &str) -> Result<u128, CommandError> {
+pub(super) fn parse_seed(value: &str) -> Result<u128, CommandError> {
     if let Some(hex) = value.strip_prefix("0x") {
         u128::from_str_radix(hex, 16)
     } else {

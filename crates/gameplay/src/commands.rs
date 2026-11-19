@@ -183,6 +183,16 @@ impl<'a> ModuleCommandContext<'a> {
         self.view.components(world, entity, request)
     }
 
+    pub fn component_metadata(
+        &self,
+        world: WorldInstanceId,
+        entity: EntityId,
+        request: &CommandViewRequest,
+    ) -> Result<CommandViewPage<crate::read_views::CommandComponentMetadata>, CommandViewError>
+    {
+        self.view.component_metadata(world, entity, request)
+    }
+
     pub fn emit(&mut self, effect: WorldEffect) -> Result<EffectToken, EffectBufferError> {
         let sequence = self
             .next_sequence

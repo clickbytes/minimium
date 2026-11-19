@@ -27,6 +27,19 @@ pub(super) fn validate_property_request(
             usage,
         ));
     }
+    let request = match request {
+        PropertyRequest::Get { key } => PropertyRequest::Get {
+            key: primary_key(key),
+        },
+        PropertyRequest::Set { key, value } => PropertyRequest::Set {
+            key: primary_key(key),
+            value,
+        },
+        PropertyRequest::Reset { key } => PropertyRequest::Reset {
+            key: primary_key(key),
+        },
+        other => other,
+    };
     match request {
         PropertyRequest::Get { key } => {
             require_property(&key, usage)?;
@@ -157,6 +170,15 @@ pub(super) fn validate_property_request(
             // Installed module names are available on the runtime owner.
             Ok(ServerCommand::Property(ServerPropertyCommand::Help(target)))
         }
+    }
+}
+
+fn primary_key(key: String) -> String {
+    match key.as_str() {
+        "world.primary.generation.seed" => "world.seed".into(),
+        "world.primary.generation.revision" => "world.generation_revision".into(),
+        "world.primary.generation.digest" => "world.generator_digest".into(),
+        _ => key,
     }
 }
 

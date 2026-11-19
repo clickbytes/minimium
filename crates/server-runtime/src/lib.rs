@@ -58,10 +58,10 @@ pub use startup::PreparedRuntime;
 
 pub use commands::CommandReply as ModuleCommandReply;
 pub use minimium_gameplay::{
-    CommandComponentRow, CommandEntityKind, CommandEntityRow, CommandPlayerView, CommandViewCursor,
-    CommandViewError, CommandViewKind, CommandViewPage, CommandViewRequest, CommandViewScope,
-    CommandWorldView, EffectBatchOutcome, EffectProducerId, EffectReceipt, EffectToken,
-    WorldEffectOutcome, MAX_COMMAND_VIEW_BYTES, MAX_COMMAND_VIEW_ROWS,
+    CommandComponentMetadata, CommandComponentRow, CommandEntityKind, CommandEntityRow,
+    CommandPlayerView, CommandViewCursor, CommandViewError, CommandViewKind, CommandViewPage,
+    CommandViewRequest, CommandViewScope, CommandWorldView, EffectBatchOutcome, EffectProducerId,
+    EffectReceipt, EffectToken, WorldEffectOutcome, MAX_COMMAND_VIEW_BYTES, MAX_COMMAND_VIEW_ROWS,
 };
 pub use minimium_gameplay::{EngineModule, ModuleCommandContext, ModuleCommandHandler};
 pub use runtime::schedule::{ModuleSystem, ModuleSystemContext};

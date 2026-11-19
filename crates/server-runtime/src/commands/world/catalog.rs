@@ -3,7 +3,7 @@ use minimium_commands::operation::{
 };
 use minimium_commands::operation::{ParameterSpec, ScalarType};
 
-pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
+pub(crate) fn entry(name: &str) -> Option<CatalogEntry> {
     let binding = DomainBinding {
         owner: "WorldRegistry",
         scope: "WorldRegistry",
