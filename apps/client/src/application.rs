@@ -1,3 +1,4 @@
+mod admin;
 #[cfg(feature = "desktop")]
 mod desktop_ops;
 #[cfg(feature = "desktop")]
@@ -45,6 +46,10 @@ pub(crate) use minimium_client_runtime::{
 pub(crate) struct ClientApplication {
     core: ClientApplicationCore,
     next_command_id: u64,
+    admin_output_source: Option<(
+        minimium_commands::admin::Correlation,
+        crate::client_commands::CommandSource,
+    )>,
     #[cfg(feature = "desktop")]
     pub(crate) ui: UiModel,
     #[cfg(feature = "desktop")]
@@ -106,6 +111,7 @@ impl ClientApplication {
         Ok(Self {
             core,
             next_command_id: 1,
+            admin_output_source: None,
             ui,
             settings,
             input,
@@ -183,6 +189,7 @@ impl ClientApplication {
         Ok(Self {
             core,
             next_command_id: 1,
+            admin_output_source: None,
             #[cfg(feature = "desktop")]
             ui,
             #[cfg(feature = "desktop")]
@@ -270,6 +277,7 @@ impl ClientApplication {
     ) -> crate::client_commands::output::Submission {
         let mut identity = minimium_commands::results::OperationContext {
             request_id: self.next_command_id,
+            correlation_nonce: None,
             operation: minimium_commands::operation::OperationId("ui.console.input".into()),
             scope: "Client".into(),
             session: self.core.session().map(|s| s.content_jobs_session_id()),

@@ -1,5 +1,6 @@
 pub mod bind;
 pub mod canonical;
+pub mod typed;
 mod values;
 
 use crate::{CommandError, CommandErrorCode};

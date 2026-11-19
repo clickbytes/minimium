@@ -1,5 +1,7 @@
 # minimium-platform
 
+The typed admin client uses the same bounded socket exchange as legacy requests, verifies nonce and request ID, and distinguishes cancellation before sending from an unknown outcome after delivery. The stop receipt and process shutdown confirmation are separate. [Wire contract](../../docs/console-api/admin-v1.md)
+
 ## Purpose / Non-goals
 
 Owns operating-system adapters for durable files, advisory shared/exclusive file locks, identity, endpoint files, typed atomic local-server startup status, local administrative requests, and the `AppPaths` value used by applications to pass resolved paths to runtimes. Command schemas and parsing live in `minimium-commands`; server module registration lives in `minimium-server`.

@@ -14,7 +14,7 @@ impl ClientApplicationCore {
     pub(crate) fn poll_admin_result(
         &mut self,
         now: ClientTime,
-    ) -> Result<Option<Result<String, ControllerError>>, ClientTimeError> {
+    ) -> Result<Option<minimium_commands::admin::AdminReplyV1>, ClientTimeError> {
         self.connection.poll_admin_result(now)
     }
 
@@ -338,6 +338,14 @@ impl ClientApplicationCore {
     ) -> Result<(), ControllerError> {
         self.accept_controller_time(now)?;
         self.connection.request_set_time(minute, longitude, now)
+    }
+    pub fn request_admin_help(
+        &mut self,
+        target: &str,
+        now: ClientTime,
+    ) -> Result<minimium_commands::admin::Correlation, ControllerError> {
+        self.accept_controller_time(now)?;
+        self.connection.request_admin_help(target, now)
     }
     pub fn request_time_scale(
         &mut self,

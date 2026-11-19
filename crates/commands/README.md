@@ -1,5 +1,7 @@
 # minimium-commands
 
+The public `admin` codec validates opt-in administrative v1 requests and correlated replies, preserving exact IDs and tagged command values. [Wire contract](../../docs/console-api/admin-v1.md)
+
 ## Purpose / Non-goals
 
 Owns generic command parsing, typed parse outcomes and errors, property metadata, and the format of immutable configuration layers. It contains no domain-specific command or property vocabulary. Domain state, value validation and execution remain with feature owners and host applications.

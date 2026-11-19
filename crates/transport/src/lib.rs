@@ -6,7 +6,7 @@ mod host;
 
 use std::{fmt, io};
 
-pub use admin::{AdminRequestId, AdminResponse, AdminTransportEvent};
+pub use admin::{AdminInput, AdminRequestId, AdminResponse, AdminTransportEvent};
 pub use game::{
     ConnectionId, GameConnectionStats, GameDisconnectReason, GameOutput, GameOutputPort,
     GameTransportEvent, QueuedFrame, SocketSetupOperation, TransportSender,

@@ -44,8 +44,10 @@ impl Stage {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OperationReceipt {
     pub stage: Stage,
+    #[serde(with = "crate::admin::number::optional")]
     pub revision: Option<u64>,
     pub freshness: Option<property::Freshness>,
     pub effects: Vec<CommandValue>,
@@ -65,17 +67,26 @@ impl OperationReceipt {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WorldBinding {
+    #[serde(with = "crate::admin::number")]
     pub instance: u128,
+    #[serde(with = "crate::admin::number")]
     pub content_revision: u64,
+    #[serde(with = "crate::admin::number")]
     pub membership_epoch: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OperationContext {
+    #[serde(default, with = "crate::admin::number::optional")]
+    pub correlation_nonce: Option<u64>,
+    #[serde(with = "crate::admin::number")]
     pub request_id: u64,
     pub operation: OperationId,
     pub scope: String,
+    #[serde(with = "crate::admin::number::optional")]
     pub session: Option<u64>,
     pub context: Option<WorldBinding>,
 }
@@ -89,6 +100,7 @@ pub enum Payload {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OperationFailure {
     pub code: String,
     pub subject: Option<String>,
@@ -113,6 +125,7 @@ impl OperationFailure {
 
 /// Host projections may borrow an existing exhaustive payload. Wire projections own their data.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OperationResult<T = Payload> {
     pub schema_version: u16,
     pub identity: OperationContext,
@@ -137,6 +150,21 @@ impl<T> OperationResult<T> {
 
 impl OperationResult {
     pub fn validate(&self) -> Result<(), CommandError> {
+        let needs_error = matches!(
+            self.receipt.stage,
+            Stage::Rejected | Stage::Suppressed | Stage::Cancelled | Stage::UnknownAfterDisconnect
+        );
+        if self.outcome.is_err() != needs_error
+            || self.identity.request_id == 0
+            || self.identity.operation.0.is_empty()
+        {
+            return Err(CommandError::new(
+                CommandErrorCode::InvalidValue,
+                Some("result"),
+                "inconsistent operation result",
+                None::<String>,
+            ));
+        }
         if self.schema_version != 1 || !limits::fits(self) {
             return Err(CommandError::new(
                 CommandErrorCode::ResultLimit,

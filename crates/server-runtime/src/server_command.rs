@@ -196,11 +196,21 @@ fn parse_server_spec(arguments: &[&str]) -> Result<ServerCommand, CommandError> 
             "help",
         ));
     };
+    // Cursor text can contain spaces in the legacy raw-tail form.
+    let values = if *command == "players list" && !tail.is_empty() {
+        vec![*tail]
+    } else {
+        tail.split_whitespace().collect()
+    };
+    parse_server_arguments(command, &values)
+}
+
+fn parse_server_arguments(command: &str, values: &[&str]) -> Result<ServerCommand, CommandError> {
     if command.starts_with("time") {
         let time_arguments = command
             .split_whitespace()
             .skip(1)
-            .chain(tail.split_whitespace())
+            .chain(values.iter().copied())
             .collect::<Vec<_>>();
         return TimeCommand::parse(&time_arguments)
             .and_then(|command| validate_time_command(command).map_err(str::to_owned))
@@ -214,23 +224,28 @@ fn parse_server_spec(arguments: &[&str]) -> Result<ServerCommand, CommandError> 
                 )
             });
     }
-    if *command == "spawn_random_meteorid" && tail.is_empty() {
+    if command == "spawn_random_meteorid" && values.is_empty() {
         return Ok(ServerCommand::SpawnRandomMeteorid);
     }
-    if *command == "spawn_random_bolid" {
-        let count = if tail.is_empty() {
+    if command == "spawn_random_bolid" {
+        let count = if values.is_empty() {
             Some(1)
         } else {
-            tail.parse::<u16>().ok()
+            match values {
+                [count] => count.parse::<u16>().ok(),
+                _ => None,
+            }
         };
         return validate_bolid_count(count).map(ServerCommand::SpawnRandomBolid);
     }
-    if *command == "players list" {
-        if tail.is_empty() {
+    if command == "players list" {
+        if values.is_empty() {
             return Ok(ServerCommand::Players(None));
         }
-        if tail.len() <= 256 && !tail.chars().any(char::is_control) {
-            return Ok(ServerCommand::Players(Some((*tail).to_owned())));
+        if let [tail] = values {
+            if tail.len() <= 256 && !tail.chars().any(char::is_control) {
+                return Ok(ServerCommand::Players(Some((*tail).to_owned())));
+            }
         }
         return Err(parse_error(
             CommandErrorCode::InvalidArguments,
@@ -239,15 +254,15 @@ fn parse_server_spec(arguments: &[&str]) -> Result<ServerCommand, CommandError> 
             "players list [CURSOR]",
         ));
     }
-    if !tail.is_empty() {
+    if !values.is_empty() {
         return Err(parse_error(
             CommandErrorCode::InvalidArguments,
-            *command,
+            command,
             "command takes no arguments",
             command,
         ));
     }
-    match *command {
+    match command {
         "help" => Ok(ServerCommand::Help),
         "status" => Ok(ServerCommand::Status),
         "metrics show" => Ok(ServerCommand::Metrics),
@@ -255,7 +270,7 @@ fn parse_server_spec(arguments: &[&str]) -> Result<ServerCommand, CommandError> 
         "stop" => Ok(ServerCommand::Stop),
         _ => Err(parse_error(
             CommandErrorCode::UnknownCommand,
-            *command,
+            command,
             "unknown command",
             "help",
         )),

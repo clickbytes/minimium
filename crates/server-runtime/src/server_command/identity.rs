@@ -53,6 +53,7 @@ impl ServerCommand {
 fn context(request_id: u64, operation: OperationId, scope: &str) -> OperationContext {
     OperationContext {
         request_id,
+        correlation_nonce: None,
         operation,
         scope: scope.to_owned(),
         session: None,

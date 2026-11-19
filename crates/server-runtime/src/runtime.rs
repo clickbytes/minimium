@@ -88,7 +88,7 @@ struct ConnectionState {
     client_indices_by_player: HashMap<PlayerId, usize>,
     messages: Vec<(usize, ClientMessage, Instant)>,
     disconnected: Vec<usize>,
-    admin_requests: VecDeque<(RequestId, String)>,
+    admin_requests: VecDeque<(RequestId, minimium_transport::AdminInput)>,
 }
 struct OperationsState {
     transport: Box<dyn minimium_transport::TransportPort>,

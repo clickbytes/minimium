@@ -49,7 +49,7 @@ pub struct AppliedSessionEvent {
 }
 
 pub struct ClientStepOutput {
-    pub admin_result: Option<Result<String, crate::ControllerError>>,
+    pub admin_result: Option<minimium_commands::admin::AdminReplyV1>,
     pub connection: ConnectionEvent,
     pub session_events: Vec<AppliedSessionEvent>,
     pub disconnect: Option<ClientStepDisconnect>,

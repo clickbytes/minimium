@@ -58,6 +58,24 @@ pub struct ConfigurationValue<'a, T> {
 }
 
 impl<T> PropertyValue<T> {
+    pub fn map<U>(self, convert: impl Fn(T) -> U) -> PropertyValue<U> {
+        PropertyValue {
+            lifecycle: self.lifecycle,
+            startup: self.startup.map(|s| StartupValue {
+                source: s.source,
+                value: convert(s.value),
+            }),
+            session_override: self.session_override.map(&convert),
+            read_source: self.read_source,
+            revision: self.revision,
+            freshness: self.freshness,
+            requested: self.requested.map(&convert),
+            effective: self.effective.map(&convert),
+            default: self.default.map(&convert),
+            source: self.source,
+            difference_reason: self.difference_reason,
+        }
+    }
     pub fn configuration(&self) -> Option<ConfigurationValue<'_, T>> {
         Some(ConfigurationValue {
             startup: self.startup.as_ref()?,

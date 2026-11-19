@@ -1,3 +1,4 @@
+mod admin;
 mod prepared_session;
 mod shutdown;
 mod time;
@@ -46,7 +47,9 @@ pub struct ConnectionController {
     session: Option<ClientSession>,
     local_server: Option<LocalServer>,
     session_owns_server: bool,
-    admin_request: Option<JoinHandle<Result<String, ControllerError>>>,
+    admin_request: Option<admin::Pending>,
+    admin_nonce: Option<u64>,
+    next_admin_id: Option<u64>,
     cleanup: Option<JoinHandle<io::Result<()>>>,
     authentication: Option<crate::authentication::ClientAuthentication>,
     content_jobs: Option<Arc<dyn ContentJobsPort>>,
@@ -72,6 +75,8 @@ impl ConnectionController {
             local_server: None,
             session_owns_server: false,
             admin_request: None,
+            admin_nonce: None,
+            next_admin_id: Some(1),
             cleanup: None,
             authentication: None,
             content_jobs: None,
@@ -188,6 +193,7 @@ impl ConnectionController {
     ) -> Result<Option<ClientSession>, ClientTimeError> {
         self.accept_time(now)?;
         self.session_owns_server = false;
+        self.cancel_unsent_admin();
         Ok(self.session.take())
     }
 

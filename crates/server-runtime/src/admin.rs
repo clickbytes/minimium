@@ -1,33 +1,109 @@
-use minimium_transport::{AdminRequestId, AdminResponse};
+use crate::server_command::ServerCommand;
+use minimium_commands::admin::{AdminPayload, Correlation};
+use minimium_commands::operation::OperationCatalog;
+use minimium_commands::results::{OperationResult, Stage};
+use minimium_commands::{CommandError, CommandErrorCode};
+use minimium_transport::{AdminInput, AdminRequestId, AdminResponse};
+mod pages;
+mod projection;
 
 pub(crate) type RequestId = AdminRequestId;
 
-pub(crate) fn response(reply: &crate::commands::CommandReply) -> AdminResponse {
+pub(crate) fn response(
+    reply: &crate::commands::CommandReply,
+    correlation: Option<Correlation>,
+    command: &ServerCommand,
+    catalog: &OperationCatalog,
+) -> AdminResponse {
     let view = reply.view();
+    let text = crate::command_output::render_reply_view(&view)
+        .as_str()
+        .to_owned();
+    let typed = correlation.map(|c| {
+        let mut identity = command.identity(c.request_id, catalog);
+        identity.correlation_nonce = Some(c.nonce);
+        let projected = reply.view().operation_result(identity);
+        let outcome = projected
+            .outcome
+            .map(|v| projection::payload(&v, command, catalog));
+        OperationResult::new(projected.identity, projected.receipt, outcome)
+    });
     AdminResponse {
-        success: !matches!(
-            view.stage(),
-            minimium_commands::results::Stage::Rejected
-                | minimium_commands::results::Stage::Partial
-        ),
+        typed,
+        success: view.state == crate::hosting::replies::ReplyState::Executed,
         error_code: view.error_code.map(str::to_owned),
         key: view.error_subject.map(str::to_owned),
-        text: crate::command_output::render_reply_view(&view)
-            .as_str()
-            .to_owned(),
+        text,
         usage: None,
     }
 }
 
 pub(crate) fn parse(
-    line: &str,
-    catalog: &minimium_commands::operation::OperationCatalog,
-) -> Result<crate::server_command::ServerCommand, AdminResponse> {
-    crate::server_command::bindings::parse(line, catalog).map_err(|error| AdminResponse {
+    input: &AdminInput,
+    catalog: &OperationCatalog,
+) -> Result<ServerCommand, AdminResponse> {
+    let parsed = match input {
+        AdminInput::Legacy(line) => crate::server_command::bindings::parse(line, catalog),
+        AdminInput::Typed(request) => request.encode().and_then(|_| {
+            if request.expected_context.is_some() {
+                return Err(CommandError::new(
+                    CommandErrorCode::StaleContext,
+                    Some("expected_context"),
+                    "server administration has no implicit actor binding",
+                    None::<String>,
+                ));
+            }
+            match &request.payload {
+                AdminPayload::Text { text } => {
+                    crate::server_command::bindings::parse(text, catalog)
+                }
+                payload => minimium_commands::syntax::typed::bind_operation(catalog, payload)
+                    .and_then(|op| crate::server_command::bindings::from_prepared(op, catalog)),
+            }
+        }),
+    };
+    parsed.map_err(|error| AdminResponse {
+        typed: match input {
+            AdminInput::Typed(r) => Some(r.correlation.failure(
+                r.operation(),
+                Stage::Rejected,
+                "admin_input",
+                error.clone(),
+            )),
+            _ => None,
+        },
         success: false,
-        error_code: Some(error.code.as_str().to_owned()),
+        error_code: Some(error.code.as_str().into()),
         key: error.subject,
         text: error.reason,
         usage: error.usage,
     })
+}
+
+pub(crate) fn refuse(input: &AdminInput, code: &str, reason: &str, stage: Stage) -> AdminResponse {
+    let typed = if let AdminInput::Typed(request) = input {
+        let error = minimium_commands::results::OperationFailure {
+            code: code.to_owned(),
+            subject: None,
+            reason: reason.to_owned(),
+            usage: None,
+            span: None,
+            origin: "server_admission".into(),
+        };
+        Some(OperationResult::new(
+            request.correlation.identity(request.operation()),
+            minimium_commands::results::OperationReceipt::at(stage),
+            Err(error),
+        ))
+    } else {
+        None
+    };
+    AdminResponse {
+        typed,
+        success: false,
+        error_code: Some(code.to_owned()),
+        key: None,
+        text: reason.to_owned(),
+        usage: None,
+    }
 }

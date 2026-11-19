@@ -14,59 +14,45 @@ impl ServerRuntime {
             .admin_requests
             .drain(..)
             .collect::<Vec<_>>();
-        for (id, line) in admin_requests {
-            let command = match crate::admin::parse(&line, &self.operation_catalog) {
-                Ok(crate::server_command::ServerCommand::CatalogOutput { text, .. }) => {
-                    let reply = crate::commands::CommandReply::module_text(
-                        crate::commands::BoundedText::new(&text),
-                    );
-                    if let Err(error) = self
-                        .operations
-                        .transport
-                        .respond_admin(id, crate::admin::response(&reply))
+        for (id, input) in admin_requests {
+            let correlation = input.correlation();
+            let response = match crate::admin::parse(&input, &self.operation_catalog) {
+                Err(response) => response,
+                Ok(command) => {
+                    if let crate::server_command::ServerCommand::CatalogOutput { text, .. } =
+                        &command
                     {
-                        crate::diagnostics::emit(
-                            &self.server_logger,
-                            minimium_diagnostics::Level::Debug,
-                            "server.admin_response_dropped",
-                            &[("reason", error.to_string())],
+                        let reply = crate::commands::CommandReply::module_text(
+                            crate::commands::BoundedText::new(text),
                         );
+                        crate::admin::response(
+                            &reply,
+                            correlation,
+                            &command,
+                            &self.operation_catalog,
+                        )
+                    } else if self
+                        .enqueue_command(CommandOrigin::Admin(id, correlation), command)
+                        .is_ok()
+                    {
+                        continue;
+                    } else {
+                        crate::admin::refuse(
+                            &input,
+                            "server.command.queue_full",
+                            "command queue full",
+                            minimium_commands::results::Stage::Rejected,
+                        )
                     }
-                    continue;
-                }
-                Ok(command) => command,
-                Err(response) => {
-                    if let Err(error) = self.operations.transport.respond_admin(id, response) {
-                        crate::diagnostics::emit(
-                            &self.server_logger,
-                            minimium_diagnostics::Level::Debug,
-                            "server.admin_response_dropped",
-                            &[("reason", error.to_string())],
-                        );
-                    }
-                    continue;
                 }
             };
-            if self
-                .enqueue_command(CommandOrigin::Admin(id), command)
-                .is_err()
-            {
-                let reply = crate::commands::CommandReply::error(
-                    "server.command.queue_full",
-                    "command queue full",
+            if let Err(error) = self.operations.transport.respond_admin(id, response) {
+                crate::diagnostics::emit(
+                    &self.server_logger,
+                    minimium_diagnostics::Level::Debug,
+                    "server.admin_response_dropped",
+                    &[("reason", error.to_string())],
                 );
-                if let Err(error) = self
-                    .operations
-                    .transport
-                    .respond_admin(id, crate::admin::response(&reply))
-                {
-                    crate::diagnostics::emit(
-                        &self.server_logger,
-                        minimium_diagnostics::Level::Debug,
-                        "server.admin_response_dropped",
-                        &[("reason", error.to_string())],
-                    );
-                }
             }
         }
         if let Some(console_rx) = self.operations.console_rx.take() {

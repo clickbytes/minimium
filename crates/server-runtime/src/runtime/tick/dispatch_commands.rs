@@ -10,7 +10,7 @@ impl ServerRuntime {
             let Some((request_id, command)) = self.operations.command_queue.pop_front() else {
                 break;
             };
-            if matches!(request_id, CommandOrigin::Admin(id) if {
+            if matches!(request_id, CommandOrigin::Admin(id,_) if {
                 !self
                     .operations
                     .transport
@@ -130,12 +130,11 @@ impl ServerRuntime {
                     )],
                 );
             }
-            if let CommandOrigin::Admin(id) = request_id {
-                if let Err(error) = self
-                    .operations
-                    .transport
-                    .respond_admin(id, crate::admin::response(&reply))
-                {
+            if let CommandOrigin::Admin(id, correlation) = request_id {
+                if let Err(error) = self.operations.transport.respond_admin(
+                    id,
+                    crate::admin::response(&reply, correlation, &command, &self.operation_catalog),
+                ) {
                     crate::diagnostics::emit(
                         &self.server_logger,
                         minimium_diagnostics::Level::Debug,

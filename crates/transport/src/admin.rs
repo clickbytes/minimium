@@ -6,6 +6,13 @@ use std::{
 };
 
 use crate::QueueError;
+mod typed;
+use minimium_commands::{
+    admin::{AdminRequestV1, Correlation},
+    operation::OperationId,
+    results::{OperationResult, Stage},
+};
+pub use typed::AdminInput;
 
 const MAX_ACTIVE_CLIENTS: usize = 8;
 const MAX_ACCEPTS_PER_POLL: usize = 4;
@@ -42,6 +49,7 @@ impl fmt::Display for AdminRequestId {
 
 /// Neutral response data supplied after runtime-side execution and formatting.
 pub struct AdminResponse {
+    pub typed: Option<OperationResult>,
     pub success: bool,
     pub error_code: Option<String>,
     pub key: Option<String>,
@@ -53,7 +61,7 @@ pub enum AdminTransportEvent {
     Request {
         id: AdminRequestId,
         peer: SocketAddr,
-        line: String,
+        input: AdminInput,
     },
 }
 
@@ -62,6 +70,7 @@ pub(crate) struct AdminState {
     token: String,
     clients: Vec<Client>,
     next_request_id: Option<u64>,
+    correlations: typed::Correlations,
 }
 
 enum Phase {
@@ -79,6 +88,7 @@ struct Client {
     deadline: Instant,
     response_deadline: Option<Instant>,
     id: Option<AdminRequestId>,
+    correlation: Option<(Correlation, OperationId)>,
     output: Vec<u8>,
     output_offset: usize,
 }
@@ -91,6 +101,7 @@ impl AdminState {
             token,
             clients: Vec::with_capacity(MAX_ACTIVE_CLIENTS),
             next_request_id: Some(1),
+            correlations: Default::default(),
         })
     }
 
@@ -112,6 +123,7 @@ impl AdminState {
                         deadline: now + REQUEST_TIMEOUT,
                         response_deadline: None,
                         id: None,
+                        correlation: None,
                         output: Vec::new(),
                         output_offset: 0,
                     });
@@ -134,7 +146,17 @@ impl AdminState {
                 keep = false;
             } else if now >= client.deadline && !matches!(client.phase, Phase::WritingResponse) {
                 if matches!(client.phase, Phase::AwaitingResponse) {
-                    queue_reply(client, b"ERR request timed out\n", now);
+                    if client.correlation.is_some() {
+                        typed::reject(
+                            client,
+                            "unknown_after_disconnect",
+                            "request expired before owner response",
+                            Stage::UnknownAfterDisconnect,
+                            now,
+                        );
+                    } else {
+                        queue_reply(client, b"ERR request timed out\n", now);
+                    }
                 } else {
                     keep = false;
                 }
@@ -168,10 +190,45 @@ impl AdminState {
                                         break;
                                     }
                                     Phase::Command => {
+                                        let input = if line.trim_start().starts_with("@console/") {
+                                            match AdminRequestV1::decode(&line) {
+                                                Ok(r) => {
+                                                    client.correlation =
+                                                        Some((r.correlation, r.operation()));
+                                                    if let Err(error) =
+                                                        self.correlations.admit(r.correlation)
+                                                    {
+                                                        typed::reject(
+                                                            client,
+                                                            error.code.as_str(),
+                                                            &error.reason,
+                                                            Stage::Rejected,
+                                                            now,
+                                                        );
+                                                        break;
+                                                    }
+                                                    AdminInput::Typed(r)
+                                                }
+                                                Err(error) => {
+                                                    typed::reject(
+                                                        client,
+                                                        error.code.as_str(),
+                                                        &error.reason,
+                                                        Stage::Rejected,
+                                                        now,
+                                                    );
+                                                    break;
+                                                }
+                                            }
+                                        } else {
+                                            AdminInput::Legacy(line.trim().to_owned())
+                                        };
                                         let Some(value) = self.next_request_id else {
-                                            queue_reply(
+                                            typed::reject(
                                                 client,
-                                                b"ERR request IDs exhausted\n",
+                                                "result_limit",
+                                                "transport request IDs exhausted",
+                                                Stage::Rejected,
                                                 now,
                                             );
                                             break;
@@ -184,7 +241,7 @@ impl AdminState {
                                         events.push(AdminTransportEvent::Request {
                                             id,
                                             peer: client.peer,
-                                            line: line.trim().to_owned(),
+                                            input,
                                         });
                                         break;
                                     }
@@ -262,6 +319,23 @@ impl AdminState {
         }) else {
             return Err(QueueError::UnknownAdminRequest);
         };
+        if client.correlation.is_some() {
+            if let Some(result) = response.typed {
+                return typed::send(client, result, now);
+            }
+            typed::reject(
+                client,
+                response.error_code.as_deref().unwrap_or("invalid_response"),
+                &response.text,
+                if response.error_code.as_deref() == Some("server.stopping") {
+                    Stage::Cancelled
+                } else {
+                    Stage::Rejected
+                },
+                now,
+            );
+            return Ok(());
+        }
         let detail_bytes = response
             .text
             .len()
@@ -327,6 +401,7 @@ impl AdminState {
             let _ = self.respond(
                 id,
                 AdminResponse {
+                    typed: None,
                     success: false,
                     error_code: Some("server.stopping".to_owned()),
                     key: None,

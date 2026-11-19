@@ -1,4 +1,4 @@
-use super::{catalog, parse_server_spec, validate_property_request, ServerCommand};
+use super::{catalog, validate_property_request, ServerCommand};
 use minimium_commands::operation::{CatalogEntry, OperationCatalog};
 use minimium_commands::syntax::bind::{bind_line, ParsedLine, PreparedOperation};
 use minimium_commands::{CommandError, CommandErrorCode as Code};
@@ -22,40 +22,44 @@ pub(crate) fn parse(line: &str, catalog: &OperationCatalog) -> Result<ServerComm
                 .collect::<Vec<_>>()
                 .join(" "),
         }),
-        ParsedLine::Operation(op) => {
-            let entry = catalog.resolve(&op.path).expect("catalog binding");
-            if op.path == "ui.console.explain" {
-                let report = match bind_line(catalog, &op.arguments[0].text)? {
-                    ParsedLine::Namespace(name) => format!("namespace {name}"),
-                    ParsedLine::Legacy => match ServerCommand::parse_legacy(&op.arguments[0].text)?
-                    {
-                        ServerCommand::UnresolvedModule(_) => {
-                            return Err(CommandError::new(
-                                Code::UnknownCommand,
-                                Some(&op.arguments[0].text),
-                                "unknown operation",
-                                Some("help"),
-                            )
-                            .at(op.arguments[0].span))
-                        }
-                        request => format!("legacy request {request:?}"),
-                    },
-                    ParsedLine::Operation(inner) => {
-                        let spec = catalog.resolve(&inner.path).expect("catalog binding");
-                        if inner.path != "ui.console.explain" {
-                            let _ = lower(&inner, spec)?;
-                        }
-                        inner.explanation(spec).to_string()
-                    }
-                };
-                Ok(ServerCommand::CatalogOutput {
-                    operation: "ui.console.explain",
-                    text: report,
-                })
-            } else {
-                lower(&op, entry)
+        ParsedLine::Operation(op) => from_prepared(op, catalog),
+    }
+}
+
+pub(crate) fn from_prepared(
+    op: PreparedOperation,
+    catalog: &OperationCatalog,
+) -> Result<ServerCommand, CommandError> {
+    let entry = catalog.resolve(&op.path).expect("catalog binding");
+    if op.path == "ui.console.explain" {
+        let report = match bind_line(catalog, &op.arguments[0].text)? {
+            ParsedLine::Namespace(name) => format!("namespace {name}"),
+            ParsedLine::Legacy => match ServerCommand::parse_legacy(&op.arguments[0].text)? {
+                ServerCommand::UnresolvedModule(_) => {
+                    return Err(CommandError::new(
+                        Code::UnknownCommand,
+                        Some(&op.arguments[0].text),
+                        "unknown operation",
+                        Some("help"),
+                    )
+                    .at(op.arguments[0].span))
+                }
+                request => format!("legacy request {request:?}"),
+            },
+            ParsedLine::Operation(inner) => {
+                let spec = catalog.resolve(&inner.path).expect("catalog binding");
+                if inner.path != "ui.console.explain" {
+                    let _ = lower(&inner, spec)?;
+                }
+                inner.explanation(spec).to_string()
             }
-        }
+        };
+        Ok(ServerCommand::CatalogOutput {
+            operation: "ui.console.explain",
+            text: report,
+        })
+    } else {
+        lower(&op, entry)
     }
 }
 
@@ -99,7 +103,11 @@ fn lower(op: &PreparedOperation, entry: &CatalogEntry) -> Result<ServerCommand, 
             )
             .at(span));
         }
-        return parse_server_spec(&[name, &args.join(" ")]).map_err(|err| err.at(span));
+        return super::parse_server_arguments(
+            name,
+            &args.iter().map(String::as_str).collect::<Vec<_>>(),
+        )
+        .map_err(|err| err.at(span));
     }
     Ok(ServerCommand::Registered {
         identity: name.into(),

@@ -152,21 +152,20 @@ impl ServerRuntime {
                 }
                 TransportEvent::Admin(minimium_transport::AdminTransportEvent::Request {
                     id,
-                    line,
+                    input,
                     ..
                 }) => {
                     if self.connections.admin_requests.len() < 64 {
-                        self.connections.admin_requests.push_back((id, line));
+                        self.connections.admin_requests.push_back((id, input));
                     } else {
                         if let Err(error) = self.operations.transport.respond_admin(
                             id,
-                            minimium_transport::AdminResponse {
-                                success: false,
-                                error_code: Some("server.command.queue_full".to_owned()),
-                                key: None,
-                                text: "command queue full".to_owned(),
-                                usage: None,
-                            },
+                            crate::admin::refuse(
+                                &input,
+                                "server.command.queue_full",
+                                "command queue full",
+                                minimium_commands::results::Stage::Rejected,
+                            ),
                         ) {
                             crate::diagnostics::emit(
                                 &self.server_logger,

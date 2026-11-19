@@ -1,5 +1,7 @@
 # minimium-transport
 
+After authentication the admin listener negotiates v1 or legacy input. The connection retains correlation until response delivery. Request IDs are monotone per nonce. The transport depends on the neutral commands codec. [Wire contract](../../docs/console-api/admin-v1.md)
+
 ## Purpose / Non-goals
 
 Owns host-side game and administrative TCP listeners and the client TCP adapter, sockets, bounded byte queues, framing/codecs, partial writes, and stable transport IDs. It exposes typed events and bounded message ports. It does not own gameplay authentication, principal permissions, sessions, commands, world rules, or persistence.

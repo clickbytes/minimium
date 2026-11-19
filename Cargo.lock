@@ -1272,6 +1272,7 @@ version = "0.1.0"
 dependencies = [
  "minimium-asset-io",
  "minimium-assets",
+ "minimium-commands",
  "minimium-core",
  "minimium-diagnostics",
  "minimium-environment",
@@ -1295,6 +1296,7 @@ dependencies = [
  "minimium-core",
  "ron",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1523,6 +1525,7 @@ dependencies = [
 name = "minimium-transport"
 version = "0.1.0"
 dependencies = [
+ "minimium-commands",
  "minimium-protocol",
  "serde",
  "serde_json",

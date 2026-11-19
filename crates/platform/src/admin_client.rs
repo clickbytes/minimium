@@ -1,5 +1,6 @@
 use crate::{endpoint::ServerEndpoint, server_lock::ServerDataLock};
 use serde::Deserialize;
+mod typed;
 use std::fmt;
 use std::{
     io::{self, Read, Write},
@@ -8,6 +9,7 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
+pub use typed::{new_nonce, request_v1, request_v1_cancellable, text_request, Delivery};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 pub const SHUTDOWN_FILE: &str = "server.shutdown";
@@ -56,6 +58,50 @@ pub fn request_until(
     command: &str,
     deadline: Instant,
 ) -> io::Result<String> {
+    let response = exchange(endpoint, command, deadline, &mut false, None)?;
+    let response = response.trim();
+    if let Some(payload) = response.strip_prefix("OK ") {
+        return Ok(payload.to_owned());
+    }
+    if response == "OK" {
+        return Ok(String::new());
+    }
+    if let Some(message) = response.strip_prefix("ERR ") {
+        return Err(io::Error::other(message.to_owned()));
+    }
+    if let Some(payload) = response.strip_prefix("ERRJSON ") {
+        let envelope: AdminErrorEnvelope = serde_json::from_str(payload).map_err(|error| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("server returned an invalid structured admin error: {error}"),
+            )
+        })?;
+        if envelope.schema_version != 1 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "server returned an unsupported admin error schema",
+            ));
+        }
+        return Err(io::Error::other(AdminError {
+            code: envelope.code,
+            key: envelope.key,
+            reason: envelope.reason,
+            usage: envelope.usage,
+        }));
+    }
+    Err(io::Error::new(
+        io::ErrorKind::InvalidData,
+        "server returned an invalid response",
+    ))
+}
+
+fn exchange(
+    endpoint: &ServerEndpoint,
+    command: &str,
+    deadline: Instant,
+    sent: &mut bool,
+    delivery: Option<&Delivery>,
+) -> io::Result<String> {
     if command.len() > 512
         || endpoint.token.len() != 64
         || !endpoint.token.bytes().all(|byte| byte.is_ascii_hexdigit())
@@ -91,7 +137,15 @@ pub fn request_until(
     let response_deadline =
         Instant::now() + RESPONSE_TIMEOUT.min(deadline.saturating_duration_since(Instant::now()));
     let request = format!("AUTH {}\n{}\n", endpoint.token, command);
+    if delivery.is_some_and(|d| !d.begin()) {
+        return Err(io::Error::new(
+            io::ErrorKind::Interrupted,
+            "administrative request cancelled before send",
+        ));
+    }
     write_before_deadline(&mut stream, request.as_bytes(), response_deadline)?;
+    *sent = true;
+    stream.flush()?;
 
     let mut response = Vec::with_capacity(1024);
     let mut chunk = [0u8; 4096];
@@ -119,42 +173,8 @@ pub fn request_until(
             Err(error) => return Err(error),
         }
     }
-    let response = String::from_utf8(response)
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "admin response is not UTF-8"))?;
-    let response = response.trim();
-    if let Some(payload) = response.strip_prefix("OK ") {
-        return Ok(payload.to_owned());
-    }
-    if response == "OK" {
-        return Ok(String::new());
-    }
-    if let Some(message) = response.strip_prefix("ERR ") {
-        return Err(io::Error::other(message.to_owned()));
-    }
-    if let Some(payload) = response.strip_prefix("ERRJSON ") {
-        let envelope: AdminErrorEnvelope = serde_json::from_str(payload).map_err(|error| {
-            io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!("server returned an invalid structured admin error: {error}"),
-            )
-        })?;
-        if envelope.schema_version != 1 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "server returned an unsupported admin error schema",
-            ));
-        }
-        return Err(io::Error::other(AdminError {
-            code: envelope.code,
-            key: envelope.key,
-            reason: envelope.reason,
-            usage: envelope.usage,
-        }));
-    }
-    Err(io::Error::new(
-        io::ErrorKind::InvalidData,
-        "server returned an invalid response",
-    ))
+    String::from_utf8(response)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "admin response is not UTF-8"))
 }
 
 #[derive(Deserialize)]
@@ -236,13 +256,12 @@ fn write_before_deadline(
             Err(error) => return Err(error),
         }
     }
-    stream.flush()
+    Ok(())
 }
 
 /// Waits for the captured server instance to report successful shutdown and release its data lock.
 pub fn stop_and_wait(data_dir: &Path, endpoint: &ServerEndpoint) -> io::Result<()> {
     let deadline = Instant::now() + STOP_TIMEOUT;
-    let status_path = data_dir.join(SHUTDOWN_FILE);
     if !data_dir.is_dir() {
         return Err(io::Error::new(
             io::ErrorKind::NotFound,
@@ -256,6 +275,19 @@ pub fn stop_and_wait(data_dir: &Path, endpoint: &ServerEndpoint) -> io::Result<(
             "server returned an unexpected stop response",
         ));
     }
+    wait_for_shutdown_until(data_dir, endpoint, deadline)
+}
+
+/// Wait after receiving a correlated stop receipt without sending a second stop request.
+pub fn wait_for_shutdown(data_dir: &Path, endpoint: &ServerEndpoint) -> io::Result<()> {
+    wait_for_shutdown_until(data_dir, endpoint, Instant::now() + STOP_TIMEOUT)
+}
+fn wait_for_shutdown_until(
+    data_dir: &Path,
+    endpoint: &ServerEndpoint,
+    deadline: Instant,
+) -> io::Result<()> {
+    let status_path = data_dir.join(SHUTDOWN_FILE);
     loop {
         ensure_endpoint_matches_or_absent(data_dir, endpoint)?;
         let status = read_shutdown_status(&status_path)?;

@@ -175,7 +175,7 @@ forbidden_dependencies = ["minimium-server", "minimium-client", "minimium-render
 [[package]]
 name = "minimium-commands"
 role = "engine-domain"
-responsibility = "Immutable public operation catalogs, typed schemas, alias and namespace validation, canonical and legacy operation binding with UTF-8 byte spans, typed explanations, bounded operation results, property provenance and errors, property descriptors, and immutable layered configuration resolution with no domain-specific vocabulary."
+responsibility = "Immutable public operation catalogs, typed schemas, alias and namespace validation, canonical and legacy operation binding with UTF-8 byte spans, typed explanations, versioned administrative DTOs and codec, bounded operation results, property provenance and errors, property descriptors, and immutable layered configuration resolution with no domain-specific vocabulary."
 forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-platform", "minimium-assets", "minimium-procgen", "minimium-sectors", "minimium-telemetry", "minimium-server", "minimium-client", "minimiumctl", "minimium-loadtest", "minimium-renderer", "minimium-game-sample"]
 
 [[package]]
@@ -193,7 +193,7 @@ forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-p
 [[package]]
 name = "minimium-transport"
 role = "adapter"
-responsibility = "Host-owned game and administrative TCP listeners plus the sole client TCP adapter, sockets, bounded framing/codecs, partial-write queues and stable transport IDs behind typed TransportPort, GameOutputPort and ClientTransportPort contracts. Client typed peek/consume retains bounded capacity and frame-token flush progress reports actual writes using a validated host monotonic sample; no logical session, gameplay admission or command policy."
+responsibility = "Neutral commands codec for authenticated administrative v1 negotiation and bounded correlation. Host-owned game and administrative TCP listeners plus the sole client TCP adapter, sockets, bounded framing/codecs, partial-write queues and stable transport IDs behind typed TransportPort, GameOutputPort and ClientTransportPort contracts. Client typed peek/consume retains bounded capacity and frame-token flush progress reports actual writes using a validated host monotonic sample; no logical session, gameplay admission or command policy."
 forbidden_dependencies = ["minimium-astronomy", "minimium-procgen", "minimium-sectors", "minimium-server", "minimium-client", "minimium-client-runtime", "minimium-server-runtime", "wgpu", "winit"]
 
 [[package]]

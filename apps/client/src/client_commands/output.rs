@@ -166,7 +166,7 @@ pub(crate) fn display(
         Ok(ClientPayload::Native(Payload::Value(value))) => {
             format!("{id} {stage} {}", value.encode())
         }
-        Ok(ClientPayload::Native(Payload::LegacyText(text))) => text,
+        Ok(ClientPayload::Native(Payload::LegacyText(text))) => format!("{id} {stage} {text}"),
         Err(error) => {
             let header = localizer.format(
                 locale,
@@ -182,6 +182,14 @@ pub(crate) fn display(
             }
             text
         }
+    };
+    let line = if let Some(nonce) = result.identity.correlation_nonce {
+        format!(
+            "request={} nonce={} {line}",
+            result.identity.request_id, nonce
+        )
+    } else {
+        line
     };
     CommandActionResult {
         outputs: line

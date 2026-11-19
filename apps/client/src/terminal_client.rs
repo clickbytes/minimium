@@ -100,12 +100,11 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                 application.record_diagnostic_failure("client.collision_readiness_failed", &error);
             }
         }
-        if let Some(result) = step.admin_result {
-            match result {
-                Ok(response) => println!("{}", response.trim()),
-                Err(error) => {
-                    application.record_diagnostic_failure("client.admin_response_failed", &error);
-                    println!("{error}");
+        if let Some(reply) = step.admin_result {
+            let (_, result) = application.finish_admin(reply);
+            for output in dispatch::display(Some(result), &localizer, options.locale).outputs {
+                if let crate::client_commands::CommandOutput::Line(line) = output {
+                    println!("{line}");
                 }
             }
         }
@@ -253,6 +252,12 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                         }
                         return (false, dispatch::native(result));
                     }
+                    if let Some(result) =
+                        application.admin_help(&identity, &action, CommandSource::Terminal)
+                    {
+                        return (false, result);
+                    }
+                    let pending = application.connection_view().pending_admin();
                     let (should_exit, result) = actions::handle(
                         action,
                         &mut options,
@@ -264,6 +269,11 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                         &parent_run_id,
                         &mut text_properties,
                     );
+                    if let Some(result) =
+                        application.admin_submission(pending, &identity, CommandSource::Terminal)
+                    {
+                        return (should_exit, result);
+                    }
                     (
                         should_exit,
                         dispatch::legacy(identity, result, &localizer, options.locale),

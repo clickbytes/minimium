@@ -94,18 +94,17 @@ fn drain_transport(
             Ok(events) => {
                 for event in events {
                     if let minimium_transport::TransportEvent::Admin(
-                        minimium_transport::AdminTransportEvent::Request { id, .. },
+                        minimium_transport::AdminTransportEvent::Request { id, input, .. },
                     ) = event
                     {
                         let _ = transport.respond_admin(
                             id,
-                            minimium_transport::AdminResponse {
-                                success: false,
-                                error_code: Some("server.stopping".to_owned()),
-                                key: None,
-                                text: "server stopping".to_owned(),
-                                usage: None,
-                            },
+                            crate::admin::refuse(
+                                &input,
+                                "server.stopping",
+                                "server stopping",
+                                minimium_commands::results::Stage::Cancelled,
+                            ),
                         );
                     }
                 }

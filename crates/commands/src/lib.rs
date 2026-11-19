@@ -1,5 +1,6 @@
 //! Generic command metadata registry shared by domain-owned command declarations.
 
+pub mod admin;
 mod cli;
 mod config;
 mod error;

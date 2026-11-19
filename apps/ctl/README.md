@@ -1,5 +1,7 @@
 # minimiumctl
 
+Select `--format=json` for a correlated machine-readable reply on stdout. The default text format continues to work with legacy servers. Both formats use failing exit status for refusal. [Wire contract](../../docs/console-api/admin-v1.md)
+
 ## Purpose / Non-goals
 
 Provides a small administrative CLI that contacts a local server endpoint. It does not host the server or define gameplay rules.

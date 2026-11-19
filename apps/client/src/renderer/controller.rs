@@ -53,7 +53,17 @@ pub(super) fn execute_input(
             }
             return (false, dispatch::native(result));
         }
+        if let Some(result) = renderer.application.admin_help(&identity, &action, source) {
+            return (false, result);
+        }
+        let pending = renderer.application.connection_view().pending_admin();
         let (exit, output) = action::execute(renderer, action);
+        if let Some(result) = renderer
+            .application
+            .admin_submission(pending, &identity, source)
+        {
+            return (exit, result);
+        }
         (
             exit,
             dispatch::legacy(

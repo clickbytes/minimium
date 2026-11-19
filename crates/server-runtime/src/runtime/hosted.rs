@@ -6,7 +6,7 @@ use minimium_gameplay::ModuleCommandReadView;
 #[derive(Clone, Copy)]
 pub(super) enum CommandOrigin {
     Console,
-    Admin(RequestId),
+    Admin(RequestId, Option<minimium_commands::admin::Correlation>),
     Host(SubmissionId),
 }
 
@@ -212,11 +212,16 @@ impl ServerRuntime {
                     identity: command.identity(id.get(), &self.operation_catalog),
                     reply,
                 }),
-                CommandOrigin::Admin(id) => {
-                    let _ = self
-                        .operations
-                        .transport
-                        .respond_admin(id, crate::admin::response(&reply));
+                CommandOrigin::Admin(id, correlation) => {
+                    let _ = self.operations.transport.respond_admin(
+                        id,
+                        crate::admin::response(
+                            &reply,
+                            correlation,
+                            &command,
+                            &self.operation_catalog,
+                        ),
+                    );
                 }
                 CommandOrigin::Console => {}
             }

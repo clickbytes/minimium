@@ -7,6 +7,14 @@ use std::{error::Error, path::PathBuf};
 
 const OPTIONS: &[CliOptionSpec] = &[
     CliOptionSpec {
+        name: "--format",
+        alias: None,
+        value_name: Some("text|json"),
+        description: "Response format. JSON selects the versioned administrative protocol.",
+        repeatable: false,
+        help: false,
+    },
+    CliOptionSpec {
         name: "--data-dir",
         alias: None,
         value_name: Some("PATH"),
@@ -89,7 +97,24 @@ fn run() -> Result<(), CtlError> {
         println!("minimiumctl {}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
+    let json = match parsed.get("--format").unwrap_or("text") {
+        "json" => true,
+        "text" => false,
+        _ => {
+            return Err(CtlError {
+                exit_code: 2,
+                message: "--format accepts text or json".into(),
+            })
+        }
+    };
     let command = format_command_arguments(parsed.positionals()).map_err(CtlError::arguments)?;
+    let typed = if json {
+        let request = admin_client::text_request(command.clone()).map_err(CtlError::runtime)?;
+        request.encode().map_err(CtlError::arguments)?;
+        Some(request)
+    } else {
+        None
+    };
     let data_dir = parsed
         .get("--data-dir")
         .map(PathBuf::from)
@@ -119,7 +144,27 @@ fn run() -> Result<(), CtlError> {
                 && statement.access == minimium_commands::syntax::canonical::AccessKind::Invoke
                 && statement.arguments.is_empty()
         });
-    if stop {
+    if let Some(request) = typed {
+        let reply = admin_client::request_v1(&endpoint, &request);
+        let line = reply
+            .encode(request.correlation)
+            .map_err(CtlError::runtime)?;
+        println!(
+            "{}",
+            line.trim_start_matches(minimium_commands::admin::PREFIX)
+        );
+        if reply.result.outcome.is_err()
+            || reply.result.receipt.stage == minimium_commands::results::Stage::Partial
+        {
+            return Err(CtlError {
+                exit_code: 1,
+                message: format!("operation {}", reply.result.receipt.stage.label()),
+            });
+        }
+        if stop && reply.result.receipt.should_stop {
+            admin_client::wait_for_shutdown(&data_dir, &endpoint).map_err(CtlError::runtime)?;
+        }
+    } else if stop {
         admin_client::stop_and_wait(&data_dir, &endpoint).map_err(CtlError::runtime)?;
         println!("server stopped cleanly");
     } else {

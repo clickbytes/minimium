@@ -7,7 +7,8 @@ pub struct Literal {
     pub span: SourceSpan,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum AccessKind {
     Read,
     Write,

@@ -316,7 +316,7 @@ pub fn bind_line(catalog: &OperationCatalog, line: &str) -> Result<ParsedLine, C
     ))
 }
 
-fn prepare(
+pub(super) fn prepare(
     entry: &CatalogEntry,
     s: Statement,
     legacy: bool,

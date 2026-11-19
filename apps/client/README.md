@@ -4,6 +4,8 @@ The F1 console, terminal and developer input bind canonical fields, methods and 
 
 Console input receives a host request ID. All three text inputs dispatch through the same result adapter. The settings owner returns the typed `ui.locale` read, set or reset with revision and startup provenance. Localized display consumes this receipt. The remaining legacy actions retain their localized display output and carry the `legacy_reported` stage.
 
+An owned local server can answer catalog help for shared world properties. The invoking console receives a correlated submission and the eventual owner response. Developer stdin receives its completion on stdout. [Wire contract](../../docs/console-api/admin-v1.md)
+
 ## Collision and presentation readiness
 
 The runtime `WorldReadiness` provider owns CPU sector materialization and collision

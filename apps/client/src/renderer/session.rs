@@ -107,17 +107,20 @@ impl DesktopHost {
 
     pub(super) fn handle_step_connector(
         &mut self,
-        admin_result: Option<Result<String, minimium_client_runtime::ControllerError>>,
+        admin_result: Option<minimium_commands::admin::AdminReplyV1>,
         connection: ConnectionEvent,
     ) {
-        if let Some(result) = admin_result {
-            match result {
-                Ok(response) => self.application.ui.console.push_line(response.trim()),
-                Err(error) => {
-                    self.application
-                        .record_diagnostic_failure("client.admin_response_failed", &error);
-                    self.application.ui.console.push_line(error.to_string());
-                }
+        if let Some(reply) = admin_result {
+            let (source, result) = self.application.finish_admin(reply);
+            if source == Some(crate::client_commands::CommandSource::DeveloperStdin) {
+                super::dev_input::format_output(self, Some(result));
+            } else {
+                let output = crate::client_commands::output::display(
+                    Some(result),
+                    &self.localizer,
+                    self.application.settings.locale,
+                );
+                super::controller::format_console_output(self, output);
             }
         }
         match connection {

@@ -26,17 +26,18 @@ impl FiniteValue {
 pub enum CommandValue {
     Unit,
     Bool(bool),
-    I64(i64),
-    U64(u64),
-    U128(u128),
+    I64(#[serde(with = "crate::admin::number")] i64),
+    U64(#[serde(with = "crate::admin::number")] u64),
+    U128(#[serde(with = "crate::admin::number")] u128),
     Decimal {
+        #[serde(with = "crate::admin::number")]
         coefficient: i128,
         fractional_digits: u8,
     },
     Finite(FiniteValue),
     Enum(String),
     Text(String),
-    InstantMs(i64),
+    InstantMs(#[serde(with = "crate::admin::number")] i64),
     Record(BTreeMap<String, CommandValue>),
     Page {
         rows: Vec<CommandValue>,
@@ -54,6 +55,23 @@ impl CommandValue {
             Self::U64(value) => value.to_string(),
             Self::U128(value) => value.to_string(),
             Self::Finite(value) => value.get().to_string(),
+            Self::Decimal {
+                coefficient,
+                fractional_digits,
+            } => {
+                let mut digits = coefficient.unsigned_abs().to_string();
+                let scale = usize::from(*fractional_digits);
+                if scale > 0 {
+                    if digits.len() <= scale {
+                        digits = format!("{}{}", "0".repeat(scale + 1 - digits.len()), digits);
+                    }
+                    digits.insert(digits.len() - scale, '.');
+                }
+                if *coefficient < 0 {
+                    digits.insert(0, '-');
+                }
+                digits
+            }
             other => ron::to_string(other).expect("validated operation value"),
         }
     }

@@ -4,6 +4,8 @@ E051 assigns administrative validation, instance selection and commit receipts t
 
 The administrative parser and server terminal bind operation syntax against the installed module catalog. Namespace output and `ui.console.explain(text)` are rendered at these input adapters before command admission. Domain mutations retain their owner-side checks and tick ordering.
 
+The admin adapter binds both typed operations and source text against the installed catalog, retains the correlation alongside the transport ID through owner dispatch and projects replies to bounded v1 data. Shared world-property help and catalog reads use registered schemas. [Wire contract](../../docs/console-api/admin-v1.md)
+
 ## Registered effect receipts
 
 The runtime binds each ordinary system writer to its registered module and
