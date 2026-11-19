@@ -173,6 +173,7 @@ impl Impacts {
             "world.impact_failed",
             &[("reason", error.to_string())],
         );
+        self.receipts.fail_pending(&error.to_string());
         self.failure = Some(error.to_string());
     }
 }

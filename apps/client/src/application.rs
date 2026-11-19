@@ -433,6 +433,23 @@ impl ClientApplication {
         self.core.request_random_meteorid(now)
     }
 
+    pub(crate) fn request_bolid_shower_status(
+        &mut self,
+        id: u64,
+        now: ClientTime,
+    ) -> Result<(), minimium_client_runtime::ControllerError> {
+        self.core.request_bolid_shower_status(id, now)
+    }
+
+    pub(crate) fn request_impact_receipt_status(
+        &mut self,
+        world: minimium_world::world::WorldInstanceId,
+        id: u64,
+        now: ClientTime,
+    ) -> Result<(), minimium_client_runtime::ControllerError> {
+        self.core.request_impact_receipt_status(world, id, now)
+    }
+
     fn prepare_bootstrap_terrain(&mut self, now: ClientTime) {
         let view = self.core.view();
         let instance = view.world_instance;

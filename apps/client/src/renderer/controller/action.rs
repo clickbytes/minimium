@@ -38,26 +38,13 @@ pub(super) fn execute(
         }
         FrontendAction::Clock(_) => unreachable!("clock actions use the shared time adapter"),
         FrontendAction::SpawnRandomBolid(count) => {
-            if let Some(unavailable) = super::presentation::unavailable_for(
-                renderer,
-                client_commands::PresentationCapability::DeveloperRenderer,
-                client_commands::PresentationRequirement::ActiveWorldPresentation,
-            ) {
-                output
-                    .result
-                    .outputs
-                    .push(client_commands::CommandOutput::Presentation(
-                        client_commands::PresentationResult::Unavailable(unavailable),
-                    ));
-            } else {
-                // Publish the current gaze before the separate admin request,
-                // including when the camera just moved.
-                renderer.pending_bolid_request = Some(count);
-                renderer.last_sky_view_at = None;
-                output.push_ui_message(minimium_localization::UiMessage::Notice(
-                    minimium_localization::UiNotice::BolidRequestQueued,
-                ));
-            }
+            // A current gaze is useful input; the server still selects and validates
+            // the observer. Rendering readiness never grants admin permission.
+            renderer.pending_bolid_request = Some(count);
+            renderer.last_sky_view_at = None;
+            output.push_ui_message(minimium_localization::UiMessage::Notice(
+                minimium_localization::UiNotice::BolidRequestQueued,
+            ));
         }
         FrontendAction::SpawnRandomMeteorid => {
             let text = match renderer
@@ -66,6 +53,27 @@ pub(super) fn execute(
             {
                 Ok(()) => "Meteorite request sent".to_owned(),
                 Err(error) => format!("spawn_random_meteorid: {error}"),
+            };
+            output.push_line(text);
+        }
+        FrontendAction::BolidStatus(id) => {
+            let text = match renderer
+                .application
+                .request_bolid_shower_status(id, crate::host_time::sample())
+            {
+                Ok(()) => format!("bolid shower {id} status requested"),
+                Err(error) => format!("bolids status: {error}"),
+            };
+            output.push_line(text);
+        }
+        FrontendAction::ImpactStatus { world, id } => {
+            let text = match renderer.application.request_impact_receipt_status(
+                world,
+                id,
+                crate::host_time::sample(),
+            ) {
+                Ok(()) => format!("impact {world}/{id} status requested"),
+                Err(error) => format!("impacts status: {error}"),
             };
             output.push_line(text);
         }

@@ -1,6 +1,28 @@
 use super::*;
 use minimium_world::terrain_edits::{length, project};
 
+struct PreparedImpact {
+    id: u64,
+    world: WorldInstanceId,
+    observer: PlayerId,
+    context: minimium_protocol::WorldContext,
+    tick: u64,
+}
+
+struct ImpactSpawnError {
+    code: &'static str,
+    detail: String,
+}
+
+impl ImpactSpawnError {
+    fn new(code: &'static str, detail: impl Into<String>) -> Self {
+        Self {
+            code,
+            detail: detail.into(),
+        }
+    }
+}
+
 impl ServerRuntime {
     pub(in crate::runtime) fn spawn_meteorid(
         &mut self,
@@ -8,26 +30,48 @@ impl ServerRuntime {
     ) -> crate::commands::CommandReply {
         let result = self.prepare_meteorid(manual);
         match result {
-            Ok(id) => crate::commands::CommandReply::success(
-                crate::commands::CommandPayload::ImpactSpawn { id },
-            ),
-            Err(error) => {
-                crate::commands::CommandReply::error("server.impact.rejected", &error.to_string())
+            Ok(prepared) => {
+                self.impacts.record_impact_accepted(super::ImpactReceipt {
+                    id: prepared.id,
+                    world: prepared.world,
+                    observer: prepared.observer,
+                    context: prepared.context,
+                    requested_tick: prepared.tick,
+                    stage: super::ImpactReceiptStage::OwnerAccepted,
+                    journal_revision: None,
+                    committed_tick: None,
+                    reason: None,
+                });
+                crate::commands::CommandReply::success(
+                    crate::commands::CommandPayload::ImpactSpawn {
+                        id: prepared.id,
+                        world: prepared.world,
+                        observer: prepared.observer,
+                        context: prepared.context,
+                        tick: prepared.tick,
+                    },
+                )
             }
+            Err(error) => crate::commands::CommandReply::error(error.code, &error.detail),
         }
     }
 
-    fn prepare_meteorid(&mut self, manual: bool) -> io::Result<u64> {
-        let profile = self
-            .impacts
-            .profile
-            .ok_or_else(|| io::Error::other("game has no impact profile"))?;
-        if self.impacts.failure.is_some()
-            || self.active_body_count() >= minimium_world::impact::MAX_ACTIVE_BODIES
+    fn prepare_meteorid(&mut self, manual: bool) -> Result<PreparedImpact, ImpactSpawnError> {
+        let profile = self.impacts.profile.ok_or_else(|| {
+            ImpactSpawnError::new("server.impact.no_profile", "game has no impact profile")
+        })?;
+        if self.impacts.failure.is_some() {
+            return Err(ImpactSpawnError::new(
+                "server.impact.service_failed",
+                "impact service unavailable",
+            ));
+        }
+        if self.active_body_count() >= minimium_world::impact::MAX_ACTIVE_BODIES
             || self.impacts.body_count() + self.impacts.pending_count() >= 4096
         {
-            return Err(io::Error::other(
-                "impact service unavailable or capacity reached",
+            return Err(ImpactSpawnError::new(
+                "server.impact.capacity",
+                "impact body capacity reached",
             ));
         }
         if manual
@@ -36,7 +80,10 @@ impl ServerRuntime {
                 .last_manual
                 .is_some_and(|t| self.now.saturating_duration_since(t) < Duration::from_secs(5))
         {
-            return Err(io::Error::other("meteorid rate limited; wait five seconds"));
+            return Err(ImpactSpawnError::new(
+                "server.impact.rate_limited",
+                "meteorid rate limited; wait five seconds",
+            ));
         }
         let players = self.game.worlds.player_snapshots();
         let candidates: Vec<_> = players
@@ -65,10 +112,23 @@ impl ServerRuntime {
             })
             .collect();
         if candidates.is_empty() {
-            return Err(io::Error::other("no active planet player"));
+            return Err(ImpactSpawnError::new(
+                "server.impact.no_observer",
+                "no active planet player",
+            ));
         }
         let &(world, ref player) =
             candidates[self.step_boundary().tick() as usize % candidates.len()];
+        let context = self
+            .game
+            .worlds
+            .context_for_player(player.id)
+            .ok_or_else(|| {
+                ImpactSpawnError::new(
+                    "server.impact.stale_context",
+                    "selected impact observer has no active world context",
+                )
+            })?;
         let owner = self.game.worlds.get(world).unwrap();
         let manifest = owner.manifest;
         let definition = manifest.planet().unwrap();
@@ -103,7 +163,9 @@ impl ServerRuntime {
             .game
             .worlds
             .prepared_terrain_inputs(world, self.prepared_geography.as_ref())
-            .map_err(io::Error::other)?;
+            .map_err(|error| {
+                ImpactSpawnError::new("server.impact.terrain_unavailable", error.to_string())
+            })?;
         let heading = self
             .sky_views
             .get(&player.id)
@@ -182,13 +244,20 @@ impl ServerRuntime {
                 }
             }
         }
-        let target = target.ok_or_else(|| io::Error::other("no valid land impact near players"))?;
+        let target = target.ok_or_else(|| {
+            ImpactSpawnError::new(
+                "server.impact.no_placement",
+                "no valid land impact near players",
+            )
+        })?;
         let normal = project(target, 1.0);
         let start = std::array::from_fn(|i| {
             target[i] + normal[i] * 80000.0 * scale - east[i] * 16000.0 * scale
         });
         let velocity = project(std::array::from_fn(|i| target[i] - start[i]), 18000.0);
-        let id = self.reserve_body_entity(world)?;
+        let id = self.reserve_body_entity(world).map_err(|error| {
+            ImpactSpawnError::new("server.impact.reservation_failed", error.to_string())
+        })?;
         let body = BodyState {
             world_seed: manifest.generation().seed().get(),
             id,
@@ -207,11 +276,26 @@ impl ServerRuntime {
             energy_j: 0.0,
             fragmentation: 0,
         };
-        self.queue_body(body)?;
+        self.queue_body(body).map_err(|error| {
+            ImpactSpawnError::new(
+                if error.kind() == io::ErrorKind::WouldBlock {
+                    "server.impact.worker_busy"
+                } else {
+                    "server.impact.checkpoint_rejected"
+                },
+                error.to_string(),
+            )
+        })?;
         if manual {
             self.impacts.last_manual = Some(self.now);
         }
-        Ok(id)
+        Ok(PreparedImpact {
+            id,
+            world,
+            observer: player.id,
+            context,
+            tick: self.step_boundary().tick(),
+        })
     }
 }
 

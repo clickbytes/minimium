@@ -6,6 +6,8 @@ A host can correlate a local command with the session identity already used by c
 
 One local admin worker carries a checked request ID and nonce through the owner reply into `ClientStepOutput.admin_result`. A disconnect cancels an unsent request. Once sent, the worker returns the verified result or an unknown outcome. [Wire contract](../../docs/console-api/admin-v1.md)
 
+Owned-local bolid spawn, meteorid spawn, shower status and impact receipt status submit typed admin operations through that same worker. The controller validates count and nonzero IDs before submission; queue acceptance is separate from the server's selected observer, emitted event, durable checkpoint and later status. A joined remote session cannot acquire this administrative channel.
+
 ## CPU world and collision readiness
 
 `world_readiness::WorldReadiness` owns the client sector manager, immutable

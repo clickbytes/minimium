@@ -399,6 +399,26 @@ impl ClientApplicationCore {
         self.connection.request_random_meteorid(now)
     }
 
+    pub fn request_bolid_shower_status(
+        &mut self,
+        id: u64,
+        now: ClientTime,
+    ) -> Result<(), ControllerError> {
+        self.accept_controller_time(now)?;
+        self.connection.request_bolid_shower_status(id, now)
+    }
+
+    pub fn request_impact_receipt_status(
+        &mut self,
+        world: minimium_world::world::WorldInstanceId,
+        id: u64,
+        now: ClientTime,
+    ) -> Result<(), ControllerError> {
+        self.accept_controller_time(now)?;
+        self.connection
+            .request_impact_receipt_status(world, id, now)
+    }
+
     pub fn take_material_package_if_awaiting_gpu(
         &mut self,
         now: ClientTime,

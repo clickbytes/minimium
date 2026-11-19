@@ -23,7 +23,7 @@ impl DesktopHost {
             .is_some_and(|session| session.state() == SessionState::Connected)
             && self
                 .last_sky_view_at
-                .is_some_and(|at| now.saturating_duration_since(at) >= Duration::from_millis(200))
+                .is_none_or(|at| now.saturating_duration_since(at) >= Duration::from_millis(200))
         {
             self.pending_bolid_request = None;
             match self

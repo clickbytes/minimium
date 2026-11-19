@@ -1,4 +1,5 @@
 mod administration;
+pub(crate) mod bolids;
 mod generation;
 pub(crate) use generation::{encode as encode_generation, project as project_generation};
 mod configuration;
@@ -235,9 +236,19 @@ pub(crate) enum CommandPayload {
         kind: u8,
         recipients: usize,
         shower: Option<usize>,
+        world: minimium_world::world::WorldInstanceId,
+        observer: minimium_core::ids::PlayerId,
+        context: minimium_protocol::WorldContext,
+        tick: u64,
     },
+    BolidStatus(crate::runtime::BolidShowerStatus),
+    ImpactReceipt(crate::runtime::ImpactReceipt),
     ImpactSpawn {
         id: u64,
+        world: minimium_world::world::WorldInstanceId,
+        observer: minimium_core::ids::PlayerId,
+        context: minimium_protocol::WorldContext,
+        tick: u64,
     },
     ModuleText(BoundedText),
 }
@@ -444,12 +455,13 @@ pub fn execute(
             "server.property.wrong_lane",
             "setting command must execute on the server owner lane",
         ),
-        ServerCommand::SpawnRandomBolid(_) | ServerCommand::SpawnRandomMeteorid => {
-            CommandReply::error(
-                "server.bolid.wrong_lane",
-                "bolid command must execute on the server owner lane",
-            )
-        }
+        ServerCommand::SpawnRandomBolid(_)
+        | ServerCommand::SpawnRandomMeteorid
+        | ServerCommand::BolidStatus(_)
+        | ServerCommand::ImpactReceiptStatus { .. } => CommandReply::error(
+            "server.bolid.wrong_lane",
+            "bolid command must execute on the server owner lane",
+        ),
         ServerCommand::Registered { .. } | ServerCommand::UnresolvedModule(_) => {
             CommandReply::error(
                 "server.command.dispatch_error",

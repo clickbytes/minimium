@@ -53,7 +53,10 @@ pub use hosting::{
 pub use metrics::{MetricField, MetricValue, RuntimeMetricsSnapshot};
 pub use runtime::ServerRuntime;
 pub use runtime::StartupEffectFailure;
-pub use runtime::{ComponentOwnerError, ComponentOwnerPort, ExcavationStatus, ImpactStatus};
+pub use runtime::{
+    BolidShowerStatus, ComponentOwnerError, ComponentOwnerPort, ExcavationStatus, ImpactReceipt,
+    ImpactReceiptStage, ImpactStatus, ShowerState,
+};
 pub use startup::PreparedRuntime;
 
 pub use commands::CommandReply as ModuleCommandReply;

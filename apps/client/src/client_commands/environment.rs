@@ -255,6 +255,50 @@ const COMMANDS: &[CommandSpec] = &[
         parser: parse,
     },
     CommandSpec {
+        name: "bolids status",
+        alias: None,
+        usage: "bolids status SHOWER_ID (owned local server)",
+        arguments: &[Arg::new(
+            "shower_id",
+            ArgType::Integer,
+            false,
+            false,
+            None,
+            Some("positive u64"),
+            None,
+            "shower identifier",
+        )],
+        parser: parse,
+    },
+    CommandSpec {
+        name: "impacts status",
+        alias: None,
+        usage: "impacts status WORLD ID (owned local server)",
+        arguments: &[
+            Arg::new(
+                "world",
+                ArgType::Integer,
+                false,
+                false,
+                None,
+                Some("positive u128"),
+                None,
+                "world instance identifier",
+            ),
+            Arg::new(
+                "id",
+                ArgType::Integer,
+                false,
+                false,
+                None,
+                Some("positive u64"),
+                None,
+                "reserved body identifier",
+            ),
+        ],
+        parser: parse,
+    },
+    CommandSpec {
         name: "time scale",
         alias: Some("timescale"),
         usage: "time scale DECIMAL (alias timescale; owned local server; 0.1-1000000x or 0)",
@@ -376,6 +420,19 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
             Ok(ClientCommand::SpawnRandomBolid(count))
         }
         ("spawn_random_bolid", _) => Err(ParseError::Usage("spawn_random_bolid [N: 1..64]")),
+        ("bolids status", [id]) => id
+            .parse::<u64>()
+            .ok()
+            .filter(|id| *id != 0)
+            .map(ClientCommand::BolidStatus)
+            .ok_or(ParseError::Usage("bolids status SHOWER_ID")),
+        ("impacts status", [world, id]) => world
+            .parse::<u128>()
+            .ok()
+            .and_then(minimium_world::world::WorldInstanceId::new)
+            .zip(id.parse::<u64>().ok().filter(|id| *id != 0))
+            .map(|(world, id)| ClientCommand::ImpactStatus { world, id })
+            .ok_or(ParseError::Usage("impacts status WORLD ID")),
         ("time scale", [value]) => {
             parse_scale_ppm(value).map_err(|_| ParseError::TimeScaleUsage)?;
             Ok(ClientCommand::TimeScale((*value).to_owned()))

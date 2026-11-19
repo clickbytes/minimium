@@ -17,9 +17,8 @@ impl CommandReplyView<'_> {
             ReplyState::Executed => match &self.payload {
                 Some(CommandPayloadView::SaveQueued) => Stage::OwnerAccepted,
                 Some(CommandPayloadView::ModuleText { .. }) => Stage::LegacyReported,
-                Some(CommandPayloadView::Bolid { .. } | CommandPayloadView::ImpactSpawn { .. }) => {
-                    Stage::OwnerAccepted
-                }
+                Some(CommandPayloadView::Bolid { .. }) => Stage::OwnerCommitted,
+                Some(CommandPayloadView::ImpactSpawn { .. }) => Stage::OwnerAccepted,
                 Some(CommandPayloadView::Stopping) => Stage::OwnerCommitted,
                 Some(
                     CommandPayloadView::ClockCommitted(_)

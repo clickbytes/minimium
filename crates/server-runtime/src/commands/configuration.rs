@@ -115,6 +115,24 @@ pub(crate) fn project(
 pub(crate) fn encode(key: &str, value: String) -> minimium_commands::operation::CommandValue {
     use minimium_commands::operation::{CommandValue as V, FiniteValue};
     match key {
+        "server.sky.bolid_interval" if value == "off" => V::Enum(value),
+        "server.sky.bolid_interval" => {
+            if let Some((minimum, maximum)) = value
+                .split_once("..")
+                .and_then(|(a, b)| a.parse::<u64>().ok().zip(b.parse::<u64>().ok()))
+            {
+                V::Record(
+                    [
+                        ("minimum".into(), V::U64(minimum)),
+                        ("maximum".into(), V::U64(maximum)),
+                        ("unit".into(), V::Enum("simulation_seconds".into())),
+                    ]
+                    .into(),
+                )
+            } else {
+                V::Text(value)
+            }
+        }
         "server.threads" | "server.sector_workers" if value == "auto" => V::Enum(value),
         "server.threads"
         | "server.sector_workers"

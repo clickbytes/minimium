@@ -88,6 +88,18 @@ pub(super) fn handle(
                 Err(error) => println!("spawn_random_meteorid: {error}"),
             }
         }
+        FrontendAction::BolidStatus(id) => {
+            match application.request_bolid_shower_status(id, crate::host_time::sample()) {
+                Ok(()) => println!("bolid shower {id} status requested"),
+                Err(error) => println!("bolids status: {error}"),
+            }
+        }
+        FrontendAction::ImpactStatus { world, id } => {
+            match application.request_impact_receipt_status(world, id, crate::host_time::sample()) {
+                Ok(()) => println!("impact {world}/{id} status requested"),
+                Err(error) => println!("impacts status: {error}"),
+            }
+        }
         FrontendAction::Presentation(operation) => {
             let unavailable_result = crate::client_commands::PresentationUnavailable {
                 capability: operation.capability(),

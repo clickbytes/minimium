@@ -49,6 +49,10 @@ impl ServerRuntime {
             self.environment_clock.set_host_utc(time.utc);
         }
         self.shutdown_request.request();
+        self.finish_active_shower(
+            super::bolid::receipts::ShowerState::Cancelled,
+            Some("server shutdown"),
+        );
         self.cancel_commands();
         let commands = std::mem::take(&mut self.operations.host_outcomes);
         let effect_receipts = self.schedule.drain_pending_effect_receipts();

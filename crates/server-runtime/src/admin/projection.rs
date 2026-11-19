@@ -56,6 +56,12 @@ pub(super) fn payload(
             .into(),
         )),
         Some(View::Property(r)) => return Payload::Property(r.typed_value()),
+        Some(
+            v @ (View::Bolid { .. }
+            | View::BolidStatus(_)
+            | View::ImpactSpawn { .. }
+            | View::ImpactReceipt(_)),
+        ) => crate::commands::bolids::project(v),
         Some(View::Status(_) | View::Metrics { .. } | View::Stopping) => view
             .payload
             .as_ref()

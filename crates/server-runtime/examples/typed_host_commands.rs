@@ -132,6 +132,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         RuntimeCommand::world_instances_page(None, 64)?,
         RuntimeCommand::world_objects_page(None, 64)?,
         RuntimeCommand::get_property("world.primary.generation.seed")?,
+        RuntimeCommand::bolid_shower_status(1)?,
+        RuntimeCommand::spawn_random_bolids(2)?,
+        RuntimeCommand::spawn_random_meteorite(),
+        RuntimeCommand::impact_receipt_status(instance, 1)?,
     ];
     for command in commands {
         match runtime.submit(command) {

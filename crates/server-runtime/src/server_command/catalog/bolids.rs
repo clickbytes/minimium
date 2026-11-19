@@ -30,6 +30,29 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
             Some("count of bolids"),
             AuthoritativeMutation,
         ),
+        "bolids status" => {
+            binding.declaration(
+                "server.sky.bolids.status",
+                Method,
+                &[ParameterSpec::required("shower_id", "BolidShowerId")
+                    .scalar(ScalarType::NonzeroU64)],
+                TypeRef::domain("BolidShowerStatus"),
+                None,
+                Query,
+            )
+        }
+        "impacts status" => binding.declaration(
+            "world.impacts.status",
+            Method,
+            &[
+                ParameterSpec::required("instance_id", "WorldInstanceId")
+                    .scalar(ScalarType::NonzeroU128),
+                ParameterSpec::required("body_id", "ImpactBodyId").scalar(ScalarType::NonzeroU64),
+            ],
+            TypeRef::domain("ImpactReceipt"),
+            None,
+            Query,
+        ),
         _ => return None,
     })
 }

@@ -131,6 +131,33 @@ impl RuntimeCommand {
             .map(Self)
     }
 
+    pub fn bolid_shower_status(id: u64) -> Result<Self, minimium_commands::CommandError> {
+        if id == 0 {
+            return Err(command_error(
+                minimium_commands::CommandErrorCode::InvalidArguments,
+                "shower_id",
+                "shower ID must be a positive u64",
+                "server.sky.bolids.status(shower_id)",
+            ));
+        }
+        Ok(Self(ServerCommand::BolidStatus(id)))
+    }
+
+    pub fn impact_receipt_status(
+        world: WorldInstanceId,
+        id: u64,
+    ) -> Result<Self, minimium_commands::CommandError> {
+        if id == 0 {
+            return Err(command_error(
+                minimium_commands::CommandErrorCode::InvalidArguments,
+                "body_id",
+                "body ID must be a positive u64",
+                "world.impacts.status(instance_id, body_id)",
+            ));
+        }
+        Ok(Self(ServerCommand::ImpactReceiptStatus { world, id }))
+    }
+
     pub fn spawn_random_meteorite() -> Self {
         Self(ServerCommand::SpawnRandomMeteorid)
     }

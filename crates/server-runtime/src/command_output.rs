@@ -186,8 +186,12 @@ pub(crate) fn render(payload: &CommandPayloadView<'_>) -> BoundedText {
             kind,
             recipients,
             shower,
+            world,
+            observer,
+            tick,
+            ..
         } => {
-            let _ = write!(out, "bolid id={id} kind={kind} recipients={recipients}");
+            let _ = write!(out, "bolid id={id} world={world} observer={} tick={tick} kind={kind} recipients={recipients}", observer.get());
             if let Some(count) = shower {
                 let _ = write!(
                     out,
@@ -196,11 +200,49 @@ pub(crate) fn render(payload: &CommandPayloadView<'_>) -> BoundedText {
                 );
             }
         }
-        CommandPayloadView::ImpactSpawn { id } => {
+        CommandPayloadView::ImpactSpawn {
+            id,
+            world,
+            observer,
+            tick,
+            ..
+        } => {
             let _ = write!(
                 out,
-                "meteorid {id} accepted; authoritative flight and permanent terrain impact queued"
+                "meteorid {id} reserved world={world} observer={} tick={tick}; checkpoint pending",
+                observer.get()
             );
+        }
+        CommandPayloadView::BolidStatus(status) => {
+            let _ = write!(out, "shower id={} state={} requested={} emitted={} remaining={} world={} observer={} started_tick={}",
+                status.id(), status.state().label(), status.requested(), status.emitted(), status.remaining(),
+                status.world(), status.observer().get(), status.started_tick());
+            if let Some(tick) = status.terminal_tick() {
+                let _ = write!(out, " terminal_tick={tick}");
+            }
+            if let Some(reason) = status.reason() {
+                let _ = write!(out, " reason={reason}");
+            }
+        }
+        CommandPayloadView::ImpactReceipt(receipt) => {
+            let _ = write!(
+                out,
+                "impact id={} world={} observer={} stage={} requested_tick={}",
+                receipt.id(),
+                receipt.world(),
+                receipt.observer().get(),
+                receipt.stage().label(),
+                receipt.requested_tick()
+            );
+            if let Some(revision) = receipt.journal_revision() {
+                let _ = write!(out, " journal_revision={revision}");
+            }
+            if let Some(tick) = receipt.committed_tick() {
+                let _ = write!(out, " committed_tick={tick}");
+            }
+            if let Some(reason) = receipt.reason() {
+                let _ = write!(out, " reason={reason}");
+            }
         }
         CommandPayloadView::Help {
             builtins,

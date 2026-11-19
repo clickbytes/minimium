@@ -2,6 +2,7 @@ mod action_state;
 mod admission;
 mod altitude;
 mod bolid;
+pub use bolid::receipts::{BolidShowerStatus, ShowerState};
 mod clock;
 mod combat;
 mod component_ownership;
@@ -17,7 +18,7 @@ pub(crate) use component_ownership::ComponentOwnerAuthority;
 pub use component_ownership::{ComponentOwnerError, ComponentOwnerPort};
 pub use effect_receipts::StartupEffectFailure;
 pub use excavation::ExcavationStatus;
-pub use impacts::ImpactStatus;
+pub use impacts::{ImpactReceipt, ImpactReceiptStage, ImpactStatus};
 mod hosted;
 mod input_movement;
 mod input_receipts;
@@ -186,6 +187,7 @@ pub struct ServerRuntime {
     >,
     last_manual_bolid_at: Option<Instant>,
     bolid_shower: Option<bolid::shower::Shower>,
+    bolid_history: std::collections::VecDeque<bolid::receipts::BolidShowerStatus>,
 }
 
 impl ServerRuntime {
@@ -448,6 +450,7 @@ impl ServerRuntime {
             sky_views: HashMap::new(),
             last_manual_bolid_at: None,
             bolid_shower: None,
+            bolid_history: std::collections::VecDeque::new(),
         };
         runtime.initialize_component_owner_ports()?;
         runtime.restore_excavation_impacts()?;

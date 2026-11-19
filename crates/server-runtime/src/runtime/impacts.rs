@@ -2,6 +2,7 @@
 mod checkpoints;
 mod owner;
 pub(super) mod projection;
+mod receipts;
 mod replication;
 mod spawn;
 use super::*;
@@ -11,6 +12,7 @@ use minimium_world::{
     impact::{BodyState, BODY_COMPONENT, BODY_SCHEMA},
     world::{SectorKey, WorldInstanceId},
 };
+pub use receipts::{ImpactReceipt, ImpactReceiptStage};
 use std::collections::BTreeMap;
 
 pub(super) struct Impacts {
@@ -24,6 +26,7 @@ pub(super) struct Impacts {
     integration: Option<Vec<(WorldInstanceId, u64)>>,
     last_manual: Option<Instant>,
     failure: Option<String>,
+    receipts: receipts::ImpactReceiptLedger,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -75,6 +78,7 @@ impl Impacts {
             integration: None,
             last_manual: None,
             failure: None,
+            receipts: receipts::ImpactReceiptLedger::default(),
         })
     }
 }

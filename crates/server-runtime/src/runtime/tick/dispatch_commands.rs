@@ -88,6 +88,28 @@ impl ServerRuntime {
                 crate::server_command::ServerCommand::SpawnRandomBolid(count) => {
                     self.start_bolid_shower(*count)
                 }
+                crate::server_command::ServerCommand::BolidStatus(id) => {
+                    match self.bolid_shower_status(*id) {
+                        Some(status) => commands::CommandReply::success(
+                            commands::CommandPayload::BolidStatus(status),
+                        ),
+                        None => commands::CommandReply::error(
+                            "server.bolid.untracked",
+                            "shower is unknown or expired",
+                        ),
+                    }
+                }
+                crate::server_command::ServerCommand::ImpactReceiptStatus { world, id } => {
+                    match self.impacts.impact_receipt(*world, *id) {
+                        Some(receipt) => commands::CommandReply::success(
+                            commands::CommandPayload::ImpactReceipt(receipt),
+                        ),
+                        None => commands::CommandReply::error(
+                            "server.impact.untracked",
+                            "impact receipt is unknown or expired",
+                        ),
+                    }
+                }
                 _ => match monotonic_ms {
                     Ok(monotonic_ms) => commands::execute(
                         &command,

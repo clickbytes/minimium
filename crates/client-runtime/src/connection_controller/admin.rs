@@ -33,10 +33,6 @@ impl ConnectionController {
     pub fn pending_admin(&self) -> Option<Correlation> {
         self.admin_request.as_ref().map(|p| p.correlation)
     }
-    pub(super) fn request_admin_command(&mut self, command: String) -> Result<(), ControllerError> {
-        self.submit_admin(AdminPayload::Text { text: command })
-            .map(|_| ())
-    }
 
     pub fn request_initial_clock_config(
         &mut self,

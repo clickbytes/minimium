@@ -29,6 +29,11 @@ impl ServerRuntime {
                             self.shutdown_request.request();
                             return;
                         }
+                        self.impacts.record_impact_committed(
+                            body.world,
+                            body.id,
+                            self.step_boundary().tick(),
+                        );
                     }
                 }
                 Err(error) => {

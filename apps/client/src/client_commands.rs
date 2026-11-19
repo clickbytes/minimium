@@ -72,7 +72,10 @@ pub(crate) enum ClientCommand {
     TerrainDebug(minimium_renderer::terrain_debug::TerrainDebug),
     Property(properties::ClientPropertyCommand),
     SetAltitude(f32),
-    Goto { latitude: f32, longitude: f32 },
+    Goto {
+        latitude: f32,
+        longitude: f32,
+    },
     ConfigSave(std::path::PathBuf),
     Help,
     Print(String),
@@ -97,7 +100,10 @@ pub(crate) enum ClientCommand {
     SkyDemo(bool),
     Fov(Option<f32>),
     ShowCelestialNames(bool),
-    CameraLook { yaw: f32, pitch: f32 },
+    CameraLook {
+        yaw: f32,
+        pitch: f32,
+    },
     CameraStatus,
     InitialClockConfig,
     SetInstant(minimium_environment::time::WorldTimeMs),
@@ -105,7 +111,15 @@ pub(crate) enum ClientCommand {
     TimeScale(String),
     SpawnRandomBolid(u16),
     SpawnRandomMeteorid,
-    SetTime { minute: u16, local: bool },
+    BolidStatus(u64),
+    ImpactStatus {
+        world: minimium_world::world::WorldInstanceId,
+        id: u64,
+    },
+    SetTime {
+        minute: u16,
+        local: bool,
+    },
     WeatherDebug(minimium_renderer::cloud_presentation::CloudDebug),
     WeatherDetail(u8),
 }
@@ -264,6 +278,11 @@ pub(crate) enum FrontendAction {
     CameraStatus,
     SpawnRandomBolid(u16),
     SpawnRandomMeteorid,
+    BolidStatus(u64),
+    ImpactStatus {
+        world: minimium_world::world::WorldInstanceId,
+        id: u64,
+    },
 
     Presentation(PresentationOperation),
 }
@@ -446,6 +465,12 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext) -> C
         }
         ClientCommand::SpawnRandomMeteorid => {
             return CommandResult::Action(FrontendAction::SpawnRandomMeteorid)
+        }
+        ClientCommand::BolidStatus(id) => {
+            return CommandResult::Action(FrontendAction::BolidStatus(id))
+        }
+        ClientCommand::ImpactStatus { world, id } => {
+            return CommandResult::Action(FrontendAction::ImpactStatus { world, id })
         }
     }
 }

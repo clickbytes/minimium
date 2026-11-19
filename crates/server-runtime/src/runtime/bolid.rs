@@ -1,4 +1,5 @@
 mod framing;
+pub(crate) mod receipts;
 pub(super) mod shower;
 use super::ServerRuntime;
 use crate::{commands::CommandReply, connection::queue_message};
@@ -232,11 +233,20 @@ impl ServerRuntime {
             self.last_manual_bolid_at = Some(now);
         }
         if recipients > 0 {
+            let context = self
+                .sky_views
+                .get(&player_id)
+                .expect("selected observer has a sky view")
+                .0;
             CommandReply::success(crate::commands::CommandPayload::Bolid {
                 id: event.id,
                 kind: event.kind,
                 recipients,
                 shower: None,
+                world: instance,
+                observer: player_id,
+                context,
+                tick: self.step_boundary().tick(),
             })
         } else {
             CommandReply::error(

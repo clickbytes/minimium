@@ -8,156 +8,8 @@ use minimium_commands::{
 };
 use minimium_environment::{TimeCommand, TIME_USAGE};
 
-const SERVER_SPECS: &[CommandSpec<ServerCommand, CommandError>] = &[
-    CommandSpec {
-        name: "spawn_random_meteorid",
-        alias: None,
-        usage: "spawn_random_meteorid",
-        arguments: &[],
-        parser: parse_server_spec,
-    },
-    CommandSpec {
-        name: "help",
-        alias: None,
-        usage: "help",
-        arguments: &[],
-        parser: parse_server_spec,
-    },
-    CommandSpec {
-        name: "status",
-        alias: None,
-        usage: "status",
-        arguments: &[],
-        parser: parse_server_spec,
-    },
-    CommandSpec {
-        name: "players list",
-        alias: None,
-        usage: "players list [CURSOR]",
-        arguments: &[CommandArgumentSpec::new(
-            "cursor",
-            CommandArgumentType::Text,
-            true,
-            false,
-            None,
-            None,
-            None,
-            "opaque continuation cursor",
-        )],
-        parser: parse_server_spec,
-    },
-    CommandSpec {
-        name: "metrics show",
-        alias: None,
-        usage: "metrics show",
-        arguments: &[],
-        parser: parse_server_spec,
-    },
-    CommandSpec {
-        name: "world save",
-        alias: None,
-        usage: "world save",
-        arguments: &[],
-        parser: parse_server_spec,
-    },
-    CommandSpec {
-        name: "stop",
-        alias: None,
-        usage: "stop",
-        arguments: &[],
-        parser: parse_server_spec,
-    },
-    CommandSpec {
-        name: "spawn_random_bolid",
-        alias: None,
-        usage: "spawn_random_bolid [N: 1..64]",
-        arguments: &[CommandArgumentSpec::new(
-            "count",
-            CommandArgumentType::Integer,
-            true,
-            false,
-            None,
-            Some("1..64"),
-            Some("bolids"),
-            "number of bolids, default 1",
-        )],
-        parser: parse_server_spec,
-    },
-    CommandSpec {
-        name: "time",
-        alias: None,
-        usage: TIME_USAGE,
-        arguments: &[],
-        parser: parse_server_spec,
-    },
-    CommandSpec {
-        name: "time status",
-        alias: None,
-        usage: "time status",
-        arguments: &[],
-        parser: parse_server_spec,
-    },
-    CommandSpec {
-        name: "time mode real_time",
-        alias: None,
-        usage: "time mode real_time",
-        arguments: &[],
-        parser: parse_server_spec,
-    },
-    CommandSpec {
-        name: "time mode time_scale",
-        alias: None,
-        usage: "time mode time_scale",
-        arguments: &[],
-        parser: parse_server_spec,
-    },
-    CommandSpec {
-        name: "time set",
-        alias: None,
-        usage: "time set RFC3339_UTC",
-        arguments: &[CommandArgumentSpec::new(
-            "utc",
-            CommandArgumentType::Rfc3339Utc,
-            false,
-            false,
-            None,
-            Some("RFC3339 with Z offset"),
-            Some("UTC"),
-            "set the world clock instant",
-        )],
-        parser: parse_server_spec,
-    },
-    CommandSpec {
-        name: "time scale",
-        alias: None,
-        usage: "time scale DECIMAL",
-        arguments: &[CommandArgumentSpec::new(
-            "scale",
-            CommandArgumentType::Decimal,
-            false,
-            false,
-            None,
-            Some("0 or 0.1..=1000000"),
-            Some("x"),
-            "requested global simulation speed (zero pauses gameplay)",
-        )],
-        parser: parse_server_spec,
-    },
-    CommandSpec {
-        name: "time offline pause",
-        alias: None,
-        usage: "time offline pause",
-        arguments: &[],
-        parser: parse_server_spec,
-    },
-    CommandSpec {
-        name: "time offline advance",
-        alias: None,
-        usage: "time offline advance",
-        arguments: &[],
-        parser: parse_server_spec,
-    },
-];
+mod specs;
+use specs::SERVER_SPECS;
 
 static SERVER_REGISTRY: OnceLock<CommandRegistry<ServerCommand, CommandError>> = OnceLock::new();
 static PROPERTY_REGISTRY: OnceLock<PropertyRegistry> = OnceLock::new();
@@ -240,6 +92,53 @@ fn parse_server_arguments(command: &str, values: &[&str]) -> Result<ServerComman
         };
         return validate_bolid_count(count).map(ServerCommand::SpawnRandomBolid);
     }
+    if command == "bolids status" {
+        return match values {
+            [id] => id
+                .parse::<u64>()
+                .ok()
+                .filter(|id| *id != 0)
+                .map(ServerCommand::BolidStatus)
+                .ok_or_else(|| {
+                    parse_error(
+                        CommandErrorCode::InvalidArguments,
+                        command,
+                        "shower ID must be a positive u64",
+                        "bolids status SHOWER_ID",
+                    )
+                }),
+            _ => Err(parse_error(
+                CommandErrorCode::InvalidArguments,
+                command,
+                "expected one shower ID",
+                "bolids status SHOWER_ID",
+            )),
+        };
+    }
+    if command == "impacts status" {
+        return match values {
+            [world, id] => world
+                .parse::<u128>()
+                .ok()
+                .and_then(minimium_world::world::WorldInstanceId::new)
+                .zip(id.parse::<u64>().ok().filter(|id| *id != 0))
+                .map(|(world, id)| ServerCommand::ImpactReceiptStatus { world, id })
+                .ok_or_else(|| {
+                    parse_error(
+                        CommandErrorCode::InvalidArguments,
+                        command,
+                        "expected exact positive world u128 and body u64",
+                        "impacts status WORLD ID",
+                    )
+                }),
+            _ => Err(parse_error(
+                CommandErrorCode::InvalidArguments,
+                command,
+                "expected world and body IDs",
+                "impacts status WORLD ID",
+            )),
+        };
+    }
     if command == "players list" {
         if values.is_empty() {
             return Ok(ServerCommand::Players {
@@ -301,6 +200,11 @@ pub enum ServerCommand {
     Save,
     Stop,
     SpawnRandomBolid(u16),
+    BolidStatus(u64),
+    ImpactReceiptStatus {
+        world: minimium_world::world::WorldInstanceId,
+        id: u64,
+    },
     SpawnRandomMeteorid,
     Time(TimeCommand),
     TimeOfDay {

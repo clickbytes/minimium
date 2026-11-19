@@ -6,6 +6,8 @@ Console input receives a host request ID. All three text inputs dispatch through
 
 An owned local server can answer catalog help for shared world properties. The invoking console receives a correlated submission and the eventual owner response. Developer stdin receives its completion on stdout. [Wire contract](../../docs/console-api/admin-v1.md)
 
+F1 and terminal commands `spawn_random_bolid`, `spawn_random_meteorid`, `bolids status` and `impacts status` use the same owned-local typed admin channel. The desktop may send a fresh gaze before a bolid request; missing renderer readiness does not reject admin permission. The server chooses the actual observer and world, and replies with that selection. The local cosmetic meteor controls remain separate.
+
 ## Collision and presentation readiness
 
 The runtime `WorldReadiness` provider owns CPU sector materialization and collision
