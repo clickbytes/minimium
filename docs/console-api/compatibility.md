@@ -80,3 +80,12 @@ Batch #582 routes `world portal`/`portal`, `dev goto`, and `set_altitude` throug
 
 
 Batch E051-16 binds P010-P020 and seven local renderer query declarations to typed results. Desktop settings and legacy aliases use SettingsStore plus effective input or renderer state. The text host exposes the same catalog and reports renderer capability errors for presentation queries.
+
+Batch #585 completes P029-P034, P036-P038, P040-P042, P044-P045,
+S001-S004 and C051-C053/C055. The four S rows are now registered
+restart-required properties and remain baseline inventory rows, not duplicate
+owners. Canonical `server.players.list(cursor?, limit=64)` and typed host pages
+use the bounded reader; legacy `players list [CURSOR]` retains 256 rows.
+Status, metrics and stop use owner payloads. Stop's committed request is
+separate from process completion. Configuration reads share `PropertyValue`
+provenance and the server resolver's defaults and validation.

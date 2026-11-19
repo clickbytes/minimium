@@ -17,11 +17,10 @@ impl CommandReplyView<'_> {
             ReplyState::Executed => match &self.payload {
                 Some(CommandPayloadView::SaveQueued) => Stage::OwnerAccepted,
                 Some(CommandPayloadView::ModuleText { .. }) => Stage::LegacyReported,
-                Some(
-                    CommandPayloadView::Stopping
-                    | CommandPayloadView::Bolid { .. }
-                    | CommandPayloadView::ImpactSpawn { .. },
-                ) => Stage::OwnerAccepted,
+                Some(CommandPayloadView::Bolid { .. } | CommandPayloadView::ImpactSpawn { .. }) => {
+                    Stage::OwnerAccepted
+                }
+                Some(CommandPayloadView::Stopping) => Stage::OwnerCommitted,
                 Some(
                     CommandPayloadView::ClockCommitted(_)
                     | CommandPayloadView::EntityDespawn { .. },

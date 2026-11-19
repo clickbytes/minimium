@@ -44,6 +44,10 @@ pub(crate) struct SectorGenerationPool {
 }
 
 impl SectorGenerationPool {
+    pub(crate) fn worker_count(&self) -> usize {
+        self.workers.len()
+    }
+
     /// Releases queued/results capacity for retired tickets. In-flight workers
     /// finish normally; installation still rejects their stale ticket identity.
     pub(crate) fn discard_cancelled(&self, sectors: &SectorManager<SectorPayload>) {

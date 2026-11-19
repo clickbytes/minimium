@@ -20,7 +20,10 @@ impl RuntimeCommand {
     }
 
     pub fn players() -> Self {
-        Self(ServerCommand::Players(None))
+        Self(ServerCommand::Players {
+            cursor: None,
+            limit: 64,
+        })
     }
 
     pub fn players_after(
@@ -35,7 +38,17 @@ impl RuntimeCommand {
                 "players list [CURSOR]",
             ));
         }
-        Ok(Self(ServerCommand::Players(Some(cursor))))
+        Ok(Self(ServerCommand::Players {
+            cursor: Some(cursor),
+            limit: 64,
+        }))
+    }
+
+    pub fn players_page(
+        cursor: Option<String>,
+        limit: u16,
+    ) -> Result<Self, minimium_commands::CommandError> {
+        crate::server_command::players_page(cursor, limit).map(Self)
     }
 
     pub fn metrics() -> Self {

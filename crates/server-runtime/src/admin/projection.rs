@@ -56,6 +56,10 @@ pub(super) fn payload(
             .into(),
         )),
         Some(View::Property(r)) => return Payload::Property(r.typed_value()),
+        Some(View::Status(_) | View::Metrics { .. } | View::Stopping) => view
+            .payload
+            .as_ref()
+            .and_then(super::administration::project),
         other => other.and_then(super::pages::project),
     };
     value.map(Payload::Value).unwrap_or_else(|| {

@@ -1,4 +1,10 @@
+mod administration;
+mod configuration;
 mod owner_context;
+pub use configuration::ConfigurationValue;
+pub(crate) use configuration::{
+    encode as encode_configuration, project as project_configuration, ConfigurationProjection,
+};
 mod reply_data;
 pub use reply_data::{
     ClientTrafficRow, CommandHelp, EntityComponentRow, EntityKindView, EntityRow, PlayerRow,
@@ -15,7 +21,6 @@ use crate::modules::{CommandScope, ModuleCommandContext, ModuleRegistry, WorldEf
 use crate::runtime::schedule::{
     production_schedule, ScheduleDiagnostics, ServerSchedule, SystemFn,
 };
-use minimium_gameplay::ModuleCommandReadView;
 pub(crate) use minimium_gameplay::ModuleCommandText as BoundedText;
 use std::sync::Arc;
 
@@ -384,66 +389,18 @@ pub fn execute(
                 .collect(),
             truncated: registry.commands().len() > 256,
         }),
-        ServerCommand::Status => CommandReply::success(CommandPayload::Status(StatusReport {
-            players: worlds.total_players(),
+        ServerCommand::Status => administration::status(
+            worlds,
             lanes,
-            ticks: metrics.ticks,
-            clock_probe_requests: metrics.clock_probe_requests,
-            clock_probe_accepted: metrics.clock_probe_accepted,
-            clock_probe_rejected: metrics.clock_probe_rejected,
-            environment_sync_messages: metrics.environment_sync_messages,
-            scheduled_world_instances: schedule_diagnostics.world_instance_count,
-            startup_system_runs: schedule_diagnostics.startup_system_runs,
-            persistence: persistence.status(),
-            runtime: runtime_status,
-        })),
-        ServerCommand::Players(cursor) => {
-            let view = RuntimeCommandReadView::new(worlds);
-            let mut request = minimium_gameplay::CommandViewRequest::new(
-                minimium_gameplay::MAX_COMMAND_VIEW_ROWS,
-                minimium_gameplay::MAX_COMMAND_VIEW_BYTES,
-            )
-            .expect("built-in player page limits are valid");
-            if let Some(token) = cursor {
-                match view.parse_cursor(&token) {
-                    Ok(cursor) => request = request.after(cursor),
-                    Err(_) => {
-                        return CommandReply::error(
-                            "server.command.invalid_arguments",
-                            "players cursor is invalid or stale",
-                        );
-                    }
-                }
-            }
-            match view.players(&request) {
-                Ok(page) => {
-                    let truncated = page.truncated();
-                    let next_cursor = page.next.as_ref().map(|cursor| cursor.token());
-                    CommandReply::success(CommandPayload::Players {
-                        rows: page
-                            .rows
-                            .into_iter()
-                            .map(|player| PlayerRow {
-                                id: player.id,
-                                name: player.name,
-                                world: player.world,
-                                position: player.position,
-                            })
-                            .collect(),
-                        truncated,
-                        next_cursor,
-                    })
-                }
-                Err(_) => {
-                    CommandReply::error("server.command.read_failed", "player page unavailable")
-                }
-            }
+            metrics,
+            schedule_diagnostics,
+            persistence,
+            runtime_status,
+        ),
+        ServerCommand::Players { cursor, limit } => {
+            administration::players(worlds, cursor.as_deref(), *limit)
         }
-        ServerCommand::Metrics => CommandReply::success(CommandPayload::Metrics {
-            snapshot: metrics.snapshot(worlds.total_players()),
-            clients: client_traffic.rows,
-            clients_truncated: client_traffic.truncated,
-        }),
+        ServerCommand::Metrics => administration::metrics(worlds, metrics, client_traffic),
         ServerCommand::Save => {
             if persistence.has_pending_save() {
                 let error = persistence.reject_pending_save();
@@ -466,7 +423,7 @@ pub fn execute(
                 }
             }
         }
-        ServerCommand::Stop => CommandReply::stopping(CommandPayload::Stopping),
+        ServerCommand::Stop => administration::stop(),
         ServerCommand::TimeOfDay {
             minute,
             solar,

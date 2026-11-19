@@ -256,76 +256,20 @@ impl ServerRuntime {
                 difference_reason: None,
             }
         } else {
-            let Some((configured, default, configured_source)) =
-                crate::config::property_value(&self.resolved_settings, key)
-            else {
+            let context = commands::ConfigurationProjection {
+                resolved: &self.resolved_settings,
+                catalog: &self.operation_catalog,
+                autosave_seconds: self.autosave_seconds,
+                autosave_session_override: self.autosave_session_override,
+                lanes: self.lanes,
+                sector_workers: self.sector_workers.worker_count(),
+                game_port: self.endpoint.as_ref().map(|endpoint| endpoint.game_port),
+                material_http_port: self.content.http_port(),
+            };
+            let Some(value) = commands::project_configuration(context, key) else {
                 return commands::PropertyReportOutcome::Unknown(key.to_owned());
             };
-            let (requested, effective, source, difference_reason) = if key
-                == "server.autosave_interval"
-            {
-                (
-                    self.autosave_seconds.to_string(),
-                    self.autosave_seconds.to_string(),
-                    if self.autosave_session_override {
-                        PropertySource::Session
-                    } else {
-                        configured_source
-                    },
-                    (self.autosave_seconds == 0).then_some("periodic saves disabled".to_owned()),
-                )
-            } else if key == "server.threads" {
-                let effective = self.lanes.to_string();
-                (
-                    configured.to_owned(),
-                    effective.clone(),
-                    configured_source,
-                    (configured != effective)
-                        .then_some("auto resolved to the available worker lane count".to_owned()),
-                )
-            } else if key == "server.game_port" {
-                let effective = self.endpoint.as_ref().map_or_else(
-                    || "unavailable".to_owned(),
-                    |endpoint| endpoint.game_port.to_string(),
-                );
-                (
-                    configured.to_owned(),
-                    effective.clone(),
-                    configured_source,
-                    (configured != effective)
-                        .then_some("port 0 selected an available port".to_owned()),
-                )
-            } else {
-                (
-                    configured.to_owned(),
-                    configured.to_owned(),
-                    configured_source,
-                    None,
-                )
-            };
-            PropertyValue {
-                lifecycle: self
-                    .operation_catalog
-                    .resolve(key)
-                    .and_then(|e| e.property)
-                    .expect("registered property")
-                    .lifecycle,
-                startup: ConfigurationSource::from_source(configured_source).map(|source| {
-                    StartupValue {
-                        value: configured.to_owned(),
-                        source,
-                    }
-                }),
-                session_override: (source == PropertySource::Session).then(|| requested.clone()),
-                read_source: ReadSource::OwnerSnapshot,
-                revision: None,
-                freshness: Freshness::Current,
-                requested: Some(requested),
-                effective: Some(effective),
-                default: default.map(str::to_owned),
-                source,
-                difference_reason,
-            }
+            value
         };
         commands::PropertyReportOutcome::Value(commands::PropertyReport {
             clock_value,

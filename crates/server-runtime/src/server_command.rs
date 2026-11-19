@@ -161,6 +161,8 @@ const SERVER_SPECS: &[CommandSpec<ServerCommand, CommandError>] = &[
 
 static SERVER_REGISTRY: OnceLock<CommandRegistry<ServerCommand, CommandError>> = OnceLock::new();
 static PROPERTY_REGISTRY: OnceLock<PropertyRegistry> = OnceLock::new();
+mod catalog_config;
+mod players;
 mod properties;
 mod property_parsing;
 use properties::SERVER_PROPERTIES;
@@ -240,11 +242,17 @@ fn parse_server_arguments(command: &str, values: &[&str]) -> Result<ServerComman
     }
     if command == "players list" {
         if values.is_empty() {
-            return Ok(ServerCommand::Players(None));
+            return Ok(ServerCommand::Players {
+                cursor: None,
+                limit: 256,
+            });
         }
         if let [tail] = values {
             if tail.len() <= 256 && !tail.chars().any(char::is_control) {
-                return Ok(ServerCommand::Players(Some((*tail).to_owned())));
+                return Ok(ServerCommand::Players {
+                    cursor: Some((*tail).to_owned()),
+                    limit: 256,
+                });
             }
         }
         return Err(parse_error(
@@ -285,7 +293,10 @@ pub enum ServerCommand {
     },
     Help,
     Status,
-    Players(Option<String>),
+    Players {
+        cursor: Option<String>,
+        limit: u16,
+    },
     Metrics,
     Save,
     Stop,
@@ -372,6 +383,8 @@ pub(crate) fn set_bolid_interval(
 ) -> Result<ServerCommand, CommandError> {
     property_parsing::set_bolid_interval(interval)
 }
+
+pub(crate) use players::players_page;
 
 pub(crate) fn validate_bolid_count(count: Option<u16>) -> Result<u16, CommandError> {
     count

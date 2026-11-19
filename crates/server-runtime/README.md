@@ -565,3 +565,23 @@ Queued actor movement, fire, chat and rename retain their admission world contex
 Wire v25 owner receipts identify the request sequence, world context and action family. Queued admission reports Accepted; the execution lane reports Committed or a specific refusal. Tool grant commitment is emitted only after the equipment owner exposes the durably published inventory candidate.
 
 Wire v26 adds portal, goto and altitude receipts. Navigation admission and execution recheck the actor's current world context and principal. Portal receipts stay tied to the source context and transfer ID; the owner reports commitment only after membership commits, cancellation after the matching transfer is cancelled, and refusal when a gameplay interaction produces no transfer.
+
+## E051-18 server configuration and administration
+
+The server configuration catalog includes sector worker, fluid cell and developer
+mode startup fields. The resolver remains the validator; catalog metadata supplies
+lifecycle and help. `ConfigurationValue<T>` aliases `PropertyValue<T>` and projects
+default/file/environment/CLI startup provenance plus a live autosave override.
+Autosave reset restores the resolved startup value. Runtime lane, sector worker
+and bound port values are reported separately from the configured request.
+Startup-only writes and resets are rejected by their lifecycle.
+
+`server.status()`, `server.players.list(cursor?, limit=64)`,
+`server.metrics.status()` and `server.stop()` use owner command payloads. Legacy
+`players list [CURSOR]` retains its 256-row default. Player pages carry an opaque
+continuation cursor, have a 32 KiB typed payload ceiling and return
+`response_too_large` for an oversized row. Stop commits a shutdown request and
+sets `should_stop`; process shutdown and save completion are separate results.
+The admin envelope rejects oversized typed results without claiming success.
+Rust hosts, ctl JSON output and owned-local client admin paths consume the same
+typed result.

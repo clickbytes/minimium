@@ -6,7 +6,6 @@ use minimium_commands::operation::*;
 mod admin;
 mod bolids;
 use minimium_environment::console::{clock_entry, ClockReadBinding};
-mod config;
 mod console;
 mod persistence;
 mod primary;
@@ -126,7 +125,7 @@ pub(crate) fn builtin_usages(catalog: &OperationCatalog) -> Vec<&'static str> {
 }
 
 fn resolve(name: &str, _persistent: bool) -> Result<CatalogEntry, CatalogError> {
-    config::entry(name)
+    super::catalog_config::entry(name)
         .or_else(|| primary::entry(name))
         .or_else(|| clock_entry(name, ClockReadBinding::OwnerSnapshot))
         .or_else(|| bolids::entry(name))

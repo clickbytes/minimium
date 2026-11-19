@@ -442,3 +442,46 @@ A missing event or wrong context is an error. These commands never create a
 server request, entity or save record. The server-owned `server.sky.bolid_interval`
 controls automatic bolids in simulation seconds (off or 10..3600), while manual
 server meteorid requests have a five-second real-time cooldown.
+
+## Typed server configuration and administration (E051-18)
+
+`get` and `help` expose `server.sector_workers` (auto or 1..16),
+`server.fluid.world_cells` (1..262144), `server.fluid.server_cells`
+(1..524288) and `server.dev-mode` (true/false) alongside the existing server
+configuration fields. The two fluid budgets must also satisfy world <= server.
+These fields require restart; `world.map`, `world.definition` and
+`world.planet_config` are creation-only. Live `set/reset` does not change the
+configuration file. `server.autosave_interval` is live, 0..604800 monotonic
+seconds; reset restores the resolved startup value, including a file or CLI
+value. Reads identify default/file/environment/CLI and any session override,
+with configured and effective worker or port values separated.
+
+`server.status()`, `server.metrics.status()`, `server.players.list()` and
+`server.stop()` are typed owner operations. The player list defaults to 64 rows,
+accepts `server.players.list(none, 1..256)` or a returned cursor, and carries
+`next_cursor` in a bounded page. Legacy `players list [CURSOR]` retains a 256-row
+default. Stop confirms that the owner committed the shutdown request; it does
+not claim the process or save has finished. An oversized typed result is a
+`response_too_large` error in the outer admin response too. Local admin access
+is required, independently of the desktop renderer.
+
+## Typowana konfiguracja i administracja serwera (E051-18)
+
+`get` i `help` pokazują `server.sector_workers` (auto lub 1..16),
+`server.fluid.world_cells` (1..262144), `server.fluid.server_cells`
+(1..524288) i `server.dev-mode` (true/false). Budżet świata nie może
+przekroczyć budżetu serwera. Te pola wymagają restartu; `world.map`,
+`world.definition` i `world.planet_config` obowiązują tylko przy tworzeniu.
+Zwykłe `set/reset` nie zmienia pliku konfiguracji. `server.autosave_interval`
+można zmieniać na żywo w zakresie 0..604800 sekund czasu monotonicznego;
+reset przywraca wartość rozstrzygniętą przy starcie, również z pliku lub CLI.
+Odczyt podaje pochodzenie oraz osobno wartość żądaną i efektywną.
+
+`server.status()`, `server.metrics.status()`, `server.players.list()` i
+`server.stop()` zwracają typowane wyniki właściciela. Lista graczy domyślnie
+ma 64 wiersze, dopuszcza limit 1..256 i zwraca kursor następnej strony.
+Stara składnia `players list [CURSOR]` zachowuje limit 256. Stop potwierdza
+przyjęcie żądania zamknięcia przez właściciela, a nie zakończenie procesu
+lub zapisu. Zbyt duży wynik daje `response_too_large` także w zewnętrznej
+odpowiedzi administracyjnej. Wymagane są uprawnienia administratora;
+renderowanie nie nadaje takich uprawnień.

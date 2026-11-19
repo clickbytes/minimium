@@ -130,7 +130,7 @@ impl PropertyReport {
         self.value.clone().map(|text| {
             self.clock_value
                 .clone()
-                .unwrap_or(minimium_commands::operation::CommandValue::Text(text))
+                .unwrap_or_else(|| super::encode_configuration(&self.key, text))
         })
     }
     pub fn key(&self) -> &str {

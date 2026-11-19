@@ -3,7 +3,7 @@ use minimium_commands::operation::{
 };
 use minimium_commands::operation::{ParameterSpec, ScalarType};
 
-pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
+pub(crate) fn entry(name: &str) -> Option<CatalogEntry> {
     let binding = DomainBinding {
         owner: "ServerRuntime",
         scope: "Server",
@@ -20,6 +20,30 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
             &[],
             TypeRef::domain("ConfigurationValue<AutoOr<U8>>"),
             Some("lanes"),
+            Query,
+        ),
+        "server.sector_workers" => binding.declaration(
+            "server.sector_workers",
+            Property,
+            &[],
+            TypeRef::domain("ConfigurationValue<AutoOr<U8>>"),
+            Some("workers"),
+            Query,
+        ),
+        "server.fluid.world_cells" => binding.declaration(
+            "server.fluid.world_cells",
+            Property,
+            &[],
+            TypeRef::domain("ConfigurationValue<U32>"),
+            Some("cells per instance"),
+            Query,
+        ),
+        "server.fluid.server_cells" => binding.declaration(
+            "server.fluid.server_cells",
+            Property,
+            &[],
+            TypeRef::domain("ConfigurationValue<U32>"),
+            Some("cells per server"),
             Query,
         ),
         "server.data_dir" => binding.declaration(
@@ -72,6 +96,14 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
         ),
         "server.headless" => binding.declaration(
             "server.headless",
+            Property,
+            &[],
+            TypeRef::domain("ConfigurationValue<Bool>"),
+            None,
+            Query,
+        ),
+        "server.dev-mode" => binding.declaration(
+            "server.dev-mode",
             Property,
             &[],
             TypeRef::domain("ConfigurationValue<Bool>"),

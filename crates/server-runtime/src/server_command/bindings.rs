@@ -65,6 +65,24 @@ pub(crate) fn from_prepared(
 
 fn lower(op: &PreparedOperation, entry: &CatalogEntry) -> Result<ServerCommand, CommandError> {
     let span = op.arguments.first().map_or(op.span, |arg| arg.span);
+    if op.path == "server.players.list" && !op.legacy {
+        let cursor = op
+            .arguments
+            .first()
+            .and_then(|arg| (arg.text != "none").then(|| arg.text.clone()));
+        let limit = op.arguments.get(1).map_or(Ok(64), |arg| {
+            arg.text.parse::<u16>().map_err(|_| {
+                CommandError::new(
+                    Code::InvalidValue,
+                    Some("limit"),
+                    "expected 1..=256 rows",
+                    None::<String>,
+                )
+                .at(arg.span)
+            })
+        })?;
+        return super::players_page(cursor, limit).map_err(|error| error.at(span));
+    }
     if let Some(request) = op.property_request(entry) {
         return validate_property_request(request).map_err(|err| err.at(span));
     }

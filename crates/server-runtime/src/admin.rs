@@ -1,9 +1,10 @@
 use crate::server_command::ServerCommand;
 use minimium_commands::admin::{AdminPayload, Correlation};
 use minimium_commands::operation::OperationCatalog;
-use minimium_commands::results::{OperationResult, Stage};
+use minimium_commands::results::{OperationFailure, OperationReceipt, OperationResult, Stage};
 use minimium_commands::{CommandError, CommandErrorCode};
 use minimium_transport::{AdminInput, AdminRequestId, AdminResponse};
+mod administration;
 mod pages;
 mod projection;
 
@@ -19,7 +20,7 @@ pub(crate) fn response(
     let text = crate::command_output::render_reply_view(&view)
         .as_str()
         .to_owned();
-    let typed = correlation.map(|c| {
+    let mut typed = correlation.map(|c| {
         let mut identity = command.identity(c.request_id, catalog);
         identity.correlation_nonce = Some(c.nonce);
         let projected = reply.view().operation_result(identity);
@@ -28,6 +29,32 @@ pub(crate) fn response(
             .map(|v| projection::payload(&v, command, catalog));
         OperationResult::new(projected.identity, projected.receipt, outcome)
     });
+    if typed
+        .as_ref()
+        .is_some_and(|result| result.validate().is_err())
+    {
+        let result = typed.take().expect("validated above");
+        typed = Some(OperationResult::new(
+            result.identity,
+            OperationReceipt::at(Stage::Rejected),
+            Err(OperationFailure {
+                code: CommandErrorCode::ResponseTooLarge.as_str().into(),
+                subject: None,
+                reason: "admin result exceeds the typed response budget".into(),
+                usage: None,
+                span: None,
+                origin: "ServerRuntime".into(),
+            }),
+        ));
+        return AdminResponse {
+            typed,
+            success: false,
+            error_code: Some(CommandErrorCode::ResponseTooLarge.as_str().into()),
+            key: None,
+            text: "admin result exceeds the typed response budget".into(),
+            usage: None,
+        };
+    }
     AdminResponse {
         typed,
         success: view.state == crate::hosting::replies::ReplyState::Executed,

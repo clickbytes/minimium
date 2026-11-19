@@ -9,7 +9,7 @@ impl ServerCommand {
             Self::CatalogOutput { operation, .. } => operation,
             Self::Help => "help",
             Self::Status => "status",
-            Self::Players(_) => "players list",
+            Self::Players { .. } => "players list",
             Self::Metrics => "metrics show",
             Self::Save => "world save",
             Self::Stop => "stop",
