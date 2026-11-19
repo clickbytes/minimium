@@ -14,6 +14,8 @@ registered alias input uses one catalog binder result; historical `list` is an
 explicit compatibility adapter. Client semantic responses no longer use the
 `LegacyReported` display wrapper. Runtime comparisons remain NOT RUN.
 
+The [E051 closeout record](../plan/evidence/epic-051/30-closeout.md) lists issue-to-commit ancestry, the #592 repair, consumer coverage, protocol/save versions and the deferred runtime observations. The #597 issue receipt records the required matrix's exact integrated HEAD and exits. Source changes after that receipt require a targeted check of the affected graph.
+
 ## Final static matrix
 
 Record the exit and checked SHA for each command plus examples added during E051. [Final acceptance issue](https://github.com/clickbytes/minimium/issues/597)

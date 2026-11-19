@@ -2,7 +2,7 @@
 
 [ADR 0017](../adr/0017-public-console-contract.md) · [Public contract](../console-api/contract.md) · [Compatibility](../console-api/compatibility.md) · [Discrepancies](../console-api/discrepancies.md) · [Verification](../console-api/verification.md)
 
-The baseline for [#567](https://github.com/clickbytes/minimium/issues/567) is `fb626d32944b373dd995a5c703ee98eef0db9b35` on local and remote main. Protocol 22 and save 12 are declared by [limits.rs](../../crates/protocol/src/limits.rs) and [format.rs](../../crates/storage/src/format.rs). Each issue's evidence records the integration SHA. Begin a successor only after reading back its predecessor on main and verifying CLOSED/completed.
+The baseline for [#567](https://github.com/clickbytes/minimium/issues/567) is `fb626d32944b373dd995a5c703ee98eef0db9b35` (Protocol 22 / Save 12). The integrated source declares Protocol 26 / Save 12 in [limits.rs](../../crates/protocol/src/limits.rs) and [format.rs](../../crates/storage/src/format.rs). All 29 predecessor issues were read back as CLOSED/completed on main; #592 was reopened for its domain-registration proof, corrected in `fb28099`, then reclosed. [Closeout evidence](evidence/epic-051/30-closeout.md) records each commit and the final static gate. Runtime verification remains NOT RUN.
 
 | Batch | Issue | Deliverable |
 | --- | --- | --- |

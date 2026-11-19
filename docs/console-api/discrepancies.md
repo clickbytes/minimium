@@ -71,3 +71,5 @@ for actual `time` module reservation, [89d29fa](https://github.com/clickbytes/mi
 for a single-field movement patch, and [9ffc52b](https://github.com/clickbytes/minimium/commit/9ffc52b)
 for impact reservation before journal commit. Clock owner snapshots and client
 session samples remain intentionally distinct and identify their source.
+
+The final E051 audit found one additional acceptance gap outside C01–C23: #592's first commit added clock operations through per-name client entries. The owner issue was reopened; [fb28099](https://github.com/clickbytes/minimium/commit/fb28099) now registers them in the environment package and routes client reads and queries by catalog owner/kind. The original commit remains in the provenance trail. Runtime behavior comparisons are deferred.
