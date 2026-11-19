@@ -397,6 +397,12 @@ impl UiMessage {
                     }
                     UiNotice::TimeScaleResponseFailed => "time_scale_response_failed",
                     UiNotice::EnvironmentUnavailable => "environment_unavailable",
+                    UiNotice::CompletionField => "completion_field",
+                    UiNotice::CompletionMethod => "completion_method",
+                    UiNotice::CompletionNamespace => "completion_namespace",
+                    UiNotice::CompletionArgument => "completion_argument",
+                    UiNotice::CompletionIncomplete => "completion_incomplete",
+                    UiNotice::CompletionInvalid => "completion_invalid",
                     UiNotice::ClipboardUnavailable => "clipboard_unavailable",
                     UiNotice::AltitudeRequiresFlight => "altitude_requires_flight",
                     UiNotice::PortalSnapshotUnavailable => "portal_snapshot_unavailable",

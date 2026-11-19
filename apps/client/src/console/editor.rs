@@ -112,22 +112,36 @@ impl Editor {
         self.changed_at = Instant::now();
     }
 
-    pub fn replace_range(&mut self, range: Range<usize>, replacement: &str) {
-        if range.start > range.end
+    pub fn apply_completion(
+        &mut self,
+        item: &minimium_commands::completion::CompletionItem,
+    ) -> bool {
+        let range = item.replace_range.clone();
+        let replacement = &item.insert_text;
+        if self.composing
+            || self.revision != item.buffer_revision
+            || self.text.get(range.clone()).is_none()
             || !self.is_grapheme_boundary(range.start)
             || !self.is_grapheme_boundary(range.end)
+            || self.text.len() - range.len() + replacement.len() > MAX_INPUT
         {
-            return;
+            return false;
         }
-        if self.text.len() - range.len() + replacement.len() > MAX_INPUT {
-            return;
+        let mut next = self.text.clone();
+        next.replace_range(range.clone(), replacement);
+        let Some(caret) = range.start.checked_add(item.caret_offset) else {
+            return false;
+        };
+        if caret != next.len() && !next.grapheme_indices(true).any(|(at, _)| at == caret) {
+            return false;
         }
         self.record();
         self.revision = self.revision.wrapping_add(1);
-        self.text.replace_range(range.clone(), replacement);
-        self.cursor = self.next_grapheme_boundary(range.start + replacement.len());
-        self.anchor = self.cursor;
+        self.text = next;
+        self.cursor = caret;
+        self.anchor = caret;
         self.changed_at = Instant::now();
+        true
     }
 
     fn is_grapheme_boundary(&self, at: usize) -> bool {

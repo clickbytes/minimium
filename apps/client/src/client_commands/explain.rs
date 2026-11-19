@@ -53,3 +53,26 @@ pub(super) fn describe(input: &str) -> Result<String, CommandError> {
         )),
     }
 }
+
+#[cfg(feature = "desktop")]
+pub(crate) fn validate_edit(
+    input: &str,
+    result: &CompletionResult,
+) -> Result<(), Option<CommandError>> {
+    match &result.state {
+        AnalysisState::Complete { prepared, .. } if prepared.path != "ui.console.explain" => {
+            super::bindings::lower(
+                prepared,
+                super::catalog::catalog()
+                    .resolve(&prepared.path)
+                    .expect("bound operation"),
+            )
+            .map(|_| ())
+            .map_err(Some)
+        }
+        AnalysisState::HostQuery => super::text::legacy(input).map(|_| ()).map_err(Some),
+        AnalysisState::Namespace(_) | AnalysisState::Complete { .. } => Ok(()),
+        AnalysisState::Incomplete => Err(result.diagnostic.clone()),
+        AnalysisState::Invalid(error) => Err(Some(error.clone())),
+    }
+}

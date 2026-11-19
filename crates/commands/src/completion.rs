@@ -28,6 +28,8 @@ pub struct CompletionItem {
     pub kind: ItemKind,
     pub label: String,
     pub value_type: Option<TypeRef>,
+    pub writable: bool,
+    pub signature: Option<SignatureHelp>,
     pub unit: Option<&'static str>,
     pub access: Option<Access>,
     pub description: String,
@@ -49,6 +51,7 @@ pub enum AnalysisState {
 #[derive(Clone, Debug)]
 pub struct CompletionResult {
     pub state: AnalysisState,
+    pub diagnostic: Option<CommandError>,
     pub tokens: Vec<CommandToken>,
     pub items: Vec<CompletionItem>,
     pub signature: Option<SignatureHelp>,
@@ -67,6 +70,7 @@ pub fn analyze_partial(
     catalog: &OperationCatalog,
 ) -> CompletionResult {
     let mut result = CompletionResult {
+        diagnostic: None,
         state: AnalysisState::Incomplete,
         tokens: Vec::new(),
         items: Vec::new(),
@@ -130,6 +134,7 @@ pub fn analyze_partial(
                     Code::UnknownKey | Code::UnknownCommand | Code::UnknownProperty
                 ) && !result.items.is_empty()) =>
         {
+            result.diagnostic = Some(e);
             AnalysisState::Incomplete
         }
         Err(e) => AnalysisState::Invalid(e),

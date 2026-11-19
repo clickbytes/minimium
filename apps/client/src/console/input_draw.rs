@@ -98,23 +98,8 @@ pub(super) fn draw(
             ),
         );
     }
-    for (row, hint) in suggestions.lines().into_iter().enumerate() {
-        text::append_text(
-            vertices,
-            context,
-            TextDraw {
-                x: 22.0,
-                y: context.height - 66.0 - (row as f32 * 20.0),
-                text: &hint,
-                color: if row == 0 {
-                    [0.80, 0.88, 0.94]
-                } else {
-                    [0.61, 0.70, 0.77]
-                },
-                max_chars: ((context.width - 44.0) / advance) as usize,
-                scale: 1.0,
-            },
-        );
+    if !editor.is_composing() {
+        super::completion_popup::draw(vertices, context, editor, suggestions);
     }
 }
 

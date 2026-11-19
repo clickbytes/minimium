@@ -1,9 +1,11 @@
 mod atlas;
+mod completion_popup;
 mod editor;
 mod glyph_atlas;
 mod history;
 mod hud;
 mod input_draw;
+mod signature_help;
 mod state;
 mod suggestions;
 mod text;

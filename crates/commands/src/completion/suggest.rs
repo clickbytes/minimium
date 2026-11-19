@@ -40,6 +40,10 @@ impl CompletionResult {
                 replace_range: range.clone(),
                 buffer_revision: self.buffer_revision,
                 kind,
+                writable: spec.is_some_and(|s| s.write.is_some()),
+                signature: entry
+                    .filter(|_| kind == ItemKind::Method)
+                    .map(|e| signature_help(e, 0)),
                 value_type: ty.or_else(|| spec.map(|s| s.result)),
                 unit: spec.and_then(|s| s.unit),
                 access: spec.and_then(|s| match kind {
@@ -208,7 +212,9 @@ pub(super) fn populate(
             if !suffix.starts_with(sep) {
                 insert.push(sep);
             }
-            caret += 1;
+            if insert.ends_with(sep) {
+                caret += 1;
+            }
         } else if kind == ItemKind::Method && !is_alias && !property {
             let spaces = suffix.len() - suffix.trim_start().len();
             if suffix.trim_start().starts_with('(') {

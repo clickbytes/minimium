@@ -20,7 +20,7 @@ pub(crate) mod camera;
 mod catalog;
 mod explain;
 #[cfg(feature = "desktop")]
-pub(crate) use explain::analyze as analyze_console;
+pub(crate) use explain::{analyze as analyze_console, validate_edit};
 mod connection;
 mod environment;
 mod gameplay;

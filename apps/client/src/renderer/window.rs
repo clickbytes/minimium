@@ -136,7 +136,13 @@ impl ApplicationHandler for App {
                         renderer.application.settings.locale,
                     );
                 }
-                winit::event::Ime::Disabled => renderer.application.ui.console.clear_preedit(),
+                winit::event::Ime::Disabled if renderer.application.ui.console.open => {
+                    renderer.application.ui.console.clear_preedit();
+                    renderer.application.ui.console.refresh_suggestions(
+                        &renderer.localizer,
+                        renderer.application.settings.locale,
+                    );
+                }
                 _ => {}
             },
             WindowEvent::MouseInput { state, button, .. } => {

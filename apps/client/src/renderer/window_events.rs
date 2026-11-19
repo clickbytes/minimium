@@ -31,11 +31,12 @@ pub(super) fn keyboard(
             }
             if event.state == ElementState::Pressed {
                 match code {
-                    KeyCode::Enter => {
+                    KeyCode::Enter | KeyCode::NumpadEnter if !event.repeat => {
                         if super::controller::execute_console_input(renderer) {
                             event_loop.exit();
                         }
                     }
+                    KeyCode::Enter | KeyCode::NumpadEnter => {}
                     _ => super::console_events::key(
                         &mut renderer.application.ui.console,
                         code,
@@ -82,7 +83,7 @@ fn apply_action(
             if renderer.application.ui.console.open {
                 if renderer.application.ui.console.editor.is_composing() {
                     renderer.application.ui.console.clear_preedit();
-                } else {
+                } else if !renderer.application.ui.console.dismiss_popup() {
                     renderer.application.input.clear_held();
                     renderer.application.ui.console.open = false;
                     renderer.application.ui.console.clear_preedit();

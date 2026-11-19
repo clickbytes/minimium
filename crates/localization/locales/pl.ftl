@@ -139,6 +139,12 @@ ui-notice = { $notice ->
     [time_offline_policy_request_failed] Nie udało się wysłać żądania zmiany zasady czasu offline
     [time_scale_response_failed] Serwer nie zastosował żądanej skali czasu
     [environment_unavailable] Dane środowiska są tymczasowo niedostępne
+    [completion_field] pole
+    [completion_method] metoda
+    [completion_namespace] zakres
+    [completion_argument] argument
+    [completion_incomplete] Niepełne polecenie
+    [completion_invalid] Nieprawidłowe polecenie
     [clipboard_unavailable] Schowek jest niedostępny
     [altitude_requires_flight] set_altitude wymaga włączonego latania
     [portal_snapshot_unavailable] Interakcja z portalem wymaga migawki gracza

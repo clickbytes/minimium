@@ -842,3 +842,5 @@ Movement commands carry one field to the authoritative actor policy. F1, develop
 The jump command and its alias use the CPU application path and the ordinary gameplay permission. F1, developer stdin and terminal display both admission and the physics result.
 
 F1 suggestions and the CPU explain adapter share partial input analysis. Each edit carries a buffer revision, full replacement range and caret offset. Explain projects prepared arguments or reports incomplete input through terminal, developer stdin and F1.
+
+The F1 popup displays eight catalog candidates with Polish or English role labels, a focus indicator and the active argument. Up and Down select an open candidate. Tab applies its complete byte-range edit as one undo step. Escape dismisses composition, then the popup, then the console. Enter checks the complete input before storing history or clearing the editor. Diagnostics mark the source span.

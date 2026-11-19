@@ -115,6 +115,7 @@ impl Console {
         localizer: &minimium_localization::Localizer,
         locale: minimium_localization::Locale,
     ) {
+        self.suggestions.edited(&self.editor, localizer, locale);
         for line in &mut self.lines {
             let Some(message) = &line.localized else {
                 continue;
@@ -174,6 +175,9 @@ impl Console {
 
     pub fn set_preedit(&mut self, text: &str) {
         self.editor.set_preedit(text);
+        if self.editor.is_composing() {
+            self.suggestions.dismiss();
+        }
     }
 
     pub fn clear_preedit(&mut self) {
@@ -199,14 +203,6 @@ impl Console {
         self.edit_changed(localizer, locale);
     }
 
-    pub fn take_input(
-        &mut self,
-        localizer: &minimium_localization::Localizer,
-        locale: minimium_localization::Locale,
-    ) -> String {
-        history::take_input(self, localizer, locale)
-    }
-
     pub fn history_up(
         &mut self,
         localizer: &minimium_localization::Localizer,
@@ -221,16 +217,6 @@ impl Console {
         locale: minimium_localization::Locale,
     ) {
         history::history_down(self, localizer, locale);
-    }
-
-    pub fn complete_input(
-        &mut self,
-        reverse: bool,
-        localizer: &minimium_localization::Localizer,
-        locale: minimium_localization::Locale,
-    ) {
-        self.suggestions
-            .cycle(&mut self.editor, reverse, localizer, locale);
     }
 
     pub fn edit_changed(
@@ -431,7 +417,7 @@ impl Console {
         let scale = 1.0;
         let line_height = 22.0;
         let max_chars = ((context.width - 44.0) / text::glyph_advance()) as usize;
-        let hint_space = self.suggestions.lines().len() as f32 * 20.0;
+        let hint_space = self.suggestions.row_count() as f32 * 20.0;
         let visible_lines = ((panel_height - 70.0 - hint_space) / line_height).max(0.0) as usize;
         self.scroll_offset = self
             .scroll_offset

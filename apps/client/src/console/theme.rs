@@ -20,6 +20,14 @@ pub(super) const CONSOLE_TEXT: [f32; 3] = [0.78, 0.86, 0.92];
 pub(super) const ERROR_TEXT: [f32; 3] = [1.0, 0.40, 0.34];
 pub(super) const CHAT_TEXT: [f32; 3] = [0.76, 0.88, 0.96];
 pub(super) const ECHO_TEXT: [f32; 3] = [0.35, 0.88, 0.88];
+const fn srgb(r: u8, g: u8, b: u8) -> [f32; 3] {
+    [r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0]
+}
+pub(super) const POPUP_BG: [f32; 3] = srgb(0x11, 0x19, 0x23);
+pub(super) const POPUP_SELECTED: [f32; 3] = srgb(0x26, 0x38, 0x4a);
+pub(super) const POPUP_FIELD: [f32; 3] = srgb(0x7c, 0xc4, 0xff);
+pub(super) const POPUP_METHOD: [f32; 3] = srgb(0xd6, 0xa8, 0xff);
+pub(super) const POPUP_SCOPE: [f32; 3] = srgb(0xc9, 0xd3, 0xdf);
 pub(super) const INPUT_TEXT: [f32; 3] = [0.88, 0.96, 0.98];
 
 pub(super) fn white_uv() -> [f32; 2] {

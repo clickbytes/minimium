@@ -72,6 +72,8 @@ pub(super) fn key(
             console.editor.delete(false, false);
             console.edit_changed(localizer, locale);
         }
+        KeyCode::ArrowUp if console.select_popup(true) => {}
+        KeyCode::ArrowDown if console.select_popup(false) => {}
         KeyCode::ArrowUp => console.history_up(localizer, locale),
         KeyCode::ArrowDown => console.history_down(localizer, locale),
         KeyCode::PageUp => console.scroll_lines(10),

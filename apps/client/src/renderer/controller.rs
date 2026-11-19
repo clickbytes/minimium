@@ -6,11 +6,14 @@ use crate::client_commands::output as dispatch;
 pub(super) use output::format_console_output;
 
 pub(super) fn execute_console_input(renderer: &mut DesktopHost) -> bool {
-    let input = renderer
+    let Some(input) = renderer
         .application
         .ui
         .console
-        .take_input(&renderer.localizer, renderer.application.settings.locale);
+        .submission(&renderer.localizer, renderer.application.settings.locale)
+    else {
+        return false;
+    };
     let (exit, result) = execute_input(renderer, &input, client_commands::CommandSource::Console);
     let output = dispatch::display(
         result,

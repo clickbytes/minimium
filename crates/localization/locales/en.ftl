@@ -137,6 +137,12 @@ ui-notice = { $notice ->
     [time_offline_policy_request_failed] Could not submit the offline time policy request
     [time_scale_response_failed] The server did not apply the time scale request
     [environment_unavailable] Environment data is temporarily unavailable
+    [completion_field] field
+    [completion_method] method
+    [completion_namespace] namespace
+    [completion_argument] argument
+    [completion_incomplete] Incomplete input
+    [completion_invalid] Invalid input
     [clipboard_unavailable] Clipboard access is unavailable
     [altitude_requires_flight] set_altitude requires flight to be enabled
     [portal_snapshot_unavailable] Portal interaction requires a player snapshot
