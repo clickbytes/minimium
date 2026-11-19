@@ -1,6 +1,15 @@
 use super::*;
 
 impl PreparedScene {
+    pub(in crate::renderer) fn water_summary(
+        &self,
+        owner: SceneInterestOwner,
+    ) -> Option<super::super::diagnostics::WaterInstalledSummary> {
+        Some(super::super::diagnostics::WaterInstalledSummary {
+            key: self.key.water_summary(owner)?,
+            vertices: self.water_vertices.len(),
+        })
+    }
     pub fn terrain_revision(&self) -> SectorContentVersion {
         self.key.terrain_revision
     }

@@ -1,5 +1,7 @@
 # minimium-client-runtime
 
+`ClientSession::water_replica_summary()` exposes a bounded, immutable CPU projection of the active context's published fluid snapshot: sync ID, fluid and terrain revisions, catalog digest and received region. It reports replica receipt only; worker request and GPU activation belong to the desktop presentation adapter. The projection is available without renderer or GPU features.
+
 E051 distinguishes a session sample and a submitted intent from a server commit. [Public operation contract](../../docs/console-api/contract.md)
 
 A host can correlate a local command with the session identity already used by content jobs and the current active world context.

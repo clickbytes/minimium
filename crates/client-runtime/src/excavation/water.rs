@@ -9,6 +9,14 @@ impl ExcavationReplica {
         self.fluid_region
     }
 
+    pub fn published_fluid_sync_id(&self) -> Option<u64> {
+        self.published_fluid_sync_id
+    }
+
+    pub fn fluid_context(&self) -> Option<WorldContext> {
+        self.fluids.as_ref().and(self.context)
+    }
+
     pub fn water_region_covers_capsule(
         &self,
         feet_m: [f64; 3],

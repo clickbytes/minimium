@@ -93,6 +93,10 @@ impl Renderer {
             .world_geometry
             .publish_scene(instance, stage, fingerprint, &keys);
         if ready {
+            self.water_installed = scene
+                .prepared
+                .as_ref()
+                .and_then(|prepared| prepared.water_summary(scene.owner));
             self.atmosphere_gpu.set_relief(
                 &self.queue,
                 scene.prepared.as_ref().and_then(|p| p.fog_relief.clone()),
@@ -121,6 +125,12 @@ impl Renderer {
         &mut self,
         instance: minimium_world::world::WorldInstanceId,
     ) {
+        if self
+            .water_installed
+            .is_some_and(|summary| summary.key.instance == instance)
+        {
+            self.water_installed = None;
+        }
         self.shadow_publish_ready = false;
         if self
             .world_geometry
@@ -163,6 +173,7 @@ impl Renderer {
         self.clear_remote_vertices();
         self.shadow_publish_ready = false;
         if !self.world_geometry.rebase(&self.device, &self.queue, delta) {
+            self.water_installed = None;
             self.atmosphere_gpu.set_relief(&self.queue, None);
             self.fixed_gpu_bytes = self
                 .fixed_gpu_bytes

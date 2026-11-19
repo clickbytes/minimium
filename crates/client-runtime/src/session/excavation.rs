@@ -2,6 +2,16 @@ use super::*;
 use minimium_protocol::{ClientWorldInput, ExcavationInput};
 use minimium_world::items::{ActionResult, Inventory};
 
+#[derive(Clone, Copy, Debug)]
+pub struct WaterReplicaSummary {
+    pub context: WorldContext,
+    pub sync_id: Option<u64>,
+    pub fluid_revision: u64,
+    pub terrain_version: Option<minimium_procgen::SectorContentVersion>,
+    pub catalog_digest: Option<[u8; 32]>,
+    pub region: Option<([i32; 3], [i32; 3])>,
+}
+
 #[derive(Default)]
 pub(super) struct ToolClientState {
     next_id: u64,
@@ -66,6 +76,28 @@ impl ClientSession {
 
     pub fn fluid_snapshot(&self) -> Option<std::sync::Arc<minimium_fluids::FluidSnapshot>> {
         self.excavation.fluids()
+    }
+
+    pub fn water_replica_summary(&self) -> Option<WaterReplicaSummary> {
+        let context = self.active_world_context()?;
+        let snapshot = self.excavation.fluids()?;
+        if snapshot.world() != context.instance()
+            || self.excavation.fluid_context() != Some(context)
+        {
+            return None;
+        }
+        Some(WaterReplicaSummary {
+            context,
+            sync_id: self.excavation.published_fluid_sync_id(),
+            fluid_revision: snapshot.revision(),
+            terrain_version: self
+                .terrain_inputs_for_context(context)
+                .map(|inputs| inputs.revision()),
+            catalog_digest: self
+                .water_catalog_for_context(context)
+                .map(|catalog| catalog.digest),
+            region: self.excavation.fluid_region(),
+        })
     }
 
     pub fn water_region_covers_capsule(

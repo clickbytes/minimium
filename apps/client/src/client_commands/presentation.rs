@@ -20,6 +20,7 @@ pub(crate) enum PresentationOperation {
     Developer(DeveloperOperation),
     AtmosphereStatus,
     TerrainStatus,
+    WaterStatus,
     WeatherStatus,
     SkyInfo,
     SkyBodies,
@@ -169,9 +170,10 @@ impl PresentationOperation {
     pub(crate) fn capability(&self) -> PresentationCapability {
         match self {
             Self::Developer(_) => PresentationCapability::DeveloperRenderer,
-            Self::AtmosphereStatus | Self::WeatherStatus | Self::TerrainStatus => {
-                PresentationCapability::WeatherDiagnostics
-            }
+            Self::AtmosphereStatus
+            | Self::WeatherStatus
+            | Self::TerrainStatus
+            | Self::WaterStatus => PresentationCapability::WeatherDiagnostics,
             Self::SkyInfo | Self::SkyBodies => PresentationCapability::SkyDiagnostics,
             Self::MeteorStatus
             | Self::MeteorDebugRead
@@ -190,6 +192,7 @@ impl PresentationOperation {
             | Self::AtmosphereStatus
             | Self::WeatherStatus
             | Self::TerrainStatus
+            | Self::WaterStatus
             | Self::MeteorStatus
             | Self::MeteorDebugRead
             | Self::MeteorLightRead

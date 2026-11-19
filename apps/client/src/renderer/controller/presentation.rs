@@ -21,6 +21,7 @@ pub(super) fn execute(
         }
         PresentationOperation::WeatherStatus => lines.extend(renderer.weather_status()),
         PresentationOperation::TerrainStatus => lines.extend(renderer.terrain_status()),
+        PresentationOperation::WaterStatus => unreachable!("typed water query"),
         PresentationOperation::SkyInfo => lines.extend(renderer.sky_info_lines()),
         PresentationOperation::SkyBodies => {
             let frame = &renderer.render_environment_frame;

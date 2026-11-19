@@ -51,6 +51,7 @@ pub struct ExcavationReplica {
     fluids: Option<Arc<minimium_fluids::FluidSnapshot>>,
     staged_fluid: Option<StagedFluid>,
     fluid_region: Option<([i32; 3], [i32; 3])>,
+    published_fluid_sync_id: Option<u64>,
     craters: Option<Arc<TerrainSnapshot>>,
 }
 
@@ -68,6 +69,7 @@ impl Default for ExcavationReplica {
             fluids: None,
             staged_fluid: None,
             fluid_region: None,
+            published_fluid_sync_id: None,
             craters: None,
         }
     }
@@ -89,6 +91,7 @@ impl ExcavationReplica {
             self.fluids = None;
             self.staged_fluid = None;
             self.fluid_region = None;
+            self.published_fluid_sync_id = None;
             self.craters = None;
         } else {
             self.context = Some(context);
@@ -311,6 +314,7 @@ impl ExcavationReplica {
                 self.craters = Some(Arc::new(batch.staged_craters));
                 if let Some(fluids) = batch.fluids {
                     self.fluids = Some(fluids);
+                    self.published_fluid_sync_id = Some(sync_id);
                 }
                 if batch.fluid_region.is_some() {
                     self.fluid_region = batch.fluid_region;
@@ -409,6 +413,7 @@ impl ExcavationReplica {
                 } else {
                     self.fluids = Some(snapshot);
                     self.fluid_region = Some((stage.region_min, stage.region_max));
+                    self.published_fluid_sync_id = Some(sync_id);
                 }
             }
             ExcavationMessage::Crater {

@@ -1,4 +1,5 @@
 //! Latest-request worker with bounded geometry/prepared caches; never owns GPU handles.
+mod diagnostics;
 mod prepared;
 mod water;
 
@@ -26,21 +27,11 @@ struct Key {
     origin_generation: u64,
     water_level_revision: Option<u64>,
     fluid_revision: u64,
+    water_center_m: Option<[f64; 3]>,
+    water_source_revision: Option<u64>,
+    water_catalog_digest: Option<[u8; 32]>,
+    water_interface_cells: Option<usize>,
     view: minimium_renderer::terrain_view::TerrainView,
-}
-impl Key {
-    fn same_geometry(self, other: Self) -> bool {
-        self.world == other.world
-            && self.map_fingerprint == other.map_fingerprint
-            && self.manifest == other.manifest
-            && self.terrain_revision == other.terrain_revision
-            && self.material_profile == other.material_profile
-            && self.resolved_relief_policy == other.resolved_relief_policy
-            && self.origin == other.origin
-            && self.origin_generation == other.origin_generation
-            && self.water_level_revision.is_some() == other.water_level_revision.is_some()
-            && self.view == other.view
-    }
 }
 #[derive(Clone)]
 struct Request {
@@ -66,6 +57,7 @@ struct State {
     requested: HashMap<SceneInterestOwner, Key>,
     completed: HashMap<SceneInterestOwner, Arc<PreparedScene>>,
     failed: HashMap<SceneInterestOwner, (Key, minimium_procgen::ExcavationGeometryError)>,
+    last_failed: HashMap<SceneInterestOwner, Key>,
     stop: bool,
 }
 impl State {
@@ -77,6 +69,7 @@ impl State {
         if !self.stop && self.requested.get(&request.owner) == Some(&request.key) {
             self.failed
                 .insert(request.owner, (request.key, error.into()));
+            self.last_failed.insert(request.owner, request.key);
             self.pending.remove(&request.owner);
         }
     }
@@ -407,6 +400,10 @@ impl SectorWorker {
             origin_generation,
             water_level_revision: water.as_ref().map(|water| water.level_revision),
             fluid_revision: water.as_ref().map_or(0, |water| water.fluid_revision),
+            water_center_m: water.as_ref().map(|water| water.center_m),
+            water_source_revision: water.as_ref().map(WaterPresentation::source_revision),
+            water_catalog_digest: water.as_ref().map(|water| water.catalog.digest),
+            water_interface_cells: water.as_ref().map(|water| water.interface_boxes.len()),
         };
         let mut s = self.state.0.lock().unwrap();
         if s.stop || self.thread.as_ref().is_none_or(JoinHandle::is_finished) {
@@ -437,6 +434,7 @@ impl SectorWorker {
                     water,
                 },
             );
+            s.last_failed.remove(&owner);
             if !s.pending_order.contains(&owner) {
                 s.pending_order.push_back(owner);
             }
@@ -453,6 +451,7 @@ impl SectorWorker {
         let requested = state.requested.remove(&owner).is_some();
         state.completed.remove(&owner);
         state.failed.remove(&owner);
+        state.last_failed.remove(&owner);
         requested
     }
 
@@ -481,6 +480,9 @@ impl SectorWorker {
         }
         if let Some((key, error)) = state.failed.remove(&source) {
             state.failed.insert(target, (key, error));
+        }
+        if let Some(key) = state.last_failed.remove(&source) {
+            state.last_failed.insert(target, key);
         }
     }
 }

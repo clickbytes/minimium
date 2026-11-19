@@ -189,6 +189,17 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
                 Query,
             )
         }
+        "client.render.water.status" => {
+            binding.capability = Some("Renderer");
+            binding.declaration(
+                "client.render.water.status",
+                Method,
+                &[],
+                TypeRef::domain("WaterRenderStatus"),
+                None,
+                Query,
+            )
+        }
         "atmosphere status" => {
             binding.capability = Some("Renderer");
             binding.declaration(

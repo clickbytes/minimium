@@ -1,5 +1,7 @@
 # minimium-client
 
+`client.render.water.status()` is a local typed query over three independent stages: received fluid replica, last accepted scene-worker request and actually activated water geometry. Each retains its own world/context, fluid revision, terrain version, catalog digest and local region/key. The water-level value is a hash of nearby water presentation inputs, not a server revision; the builder uses a 96 m radius and at most 4096 nearby interface cells. Installed vertex and triangle counts describe local geometry, not water volume. An old installed key is marked retained/stale after context or origin change. Terminal builds expose the catalog method but return `Unavailable(renderer_missing)`; the server's `world.water.status(instance_id)` remains separate.
+
 The F1 console, terminal and developer input bind canonical fields, methods and longest registered legacy spellings through the shared command syntax. `ui.console.explain(text)` prints the prepared operation using the local immutable catalog and argument validators.
 
 Console input receives a host request ID. All three text inputs dispatch through the same result adapter. The settings owner returns the typed `ui.locale` read, set or reset with revision and startup provenance. Localized display consumes this receipt. The remaining legacy actions retain their localized display output and carry the `legacy_reported` stage.

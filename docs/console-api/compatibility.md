@@ -97,3 +97,5 @@ Batch #587 keeps `server.sky.bolid_interval` and the legacy bolid/meteorid spell
 Batch #588 routes canonical `world.entities.despawn(instance_id, entity_id)` and legacy `entity despawn WORLD ENTITY` through one staged world effect. The reply includes the producer/sequence token and committed entity-store revision, or a typed rejection. Admin does not acquire a protected-component owner port.
 
 Batch #589 adds the designed `world.water.status(instance_id)` ServerAdmin query. It captures one instance's water state, catalog digest, terrain versions, pending job and checkpoint timing, with committed and pending tick boundaries separate. It starts no hydrology work and never falls back to the primary instance.
+
+Batch #590 adds local `client.render.water.status()` for received replica, accepted worker request and activated geometry. The three keys are kept distinct across context/origin changes. Terminal returns `Unavailable(renderer_missing)`; the server water query remains independent.

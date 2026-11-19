@@ -12,7 +12,7 @@ pub(super) fn unavailable(
     } else if client_commands::bolid_preview::BolidPreviewOperation::from_action(action).is_some() {
         "this host has no local bolid preview"
     } else if client_commands::render_queries::RenderQuery::from_action(action).is_some() {
-        "this host has no renderer or prepared presentation sample"
+        "renderer_missing: this host has no renderer or prepared presentation sample"
     } else {
         return None;
     };

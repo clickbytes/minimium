@@ -215,6 +215,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "initial impact/excavation synchronization did not open CPU movement readiness".into(),
         );
     }
+    let water_replica: Option<minimium_client_runtime::WaterReplicaSummary> = core
+        .session()
+        .and_then(ClientSession::water_replica_summary);
+    println!(
+        "CPU water replica revision: {:?}",
+        water_replica.map(|water| water.fluid_revision)
+    );
 
     let mut readiness = WorldReadiness::new()?;
     let mut latest_motion = None;

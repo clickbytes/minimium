@@ -25,6 +25,7 @@ mod content;
 mod content_access;
 mod environment;
 mod excavation;
+pub use excavation::WaterReplicaSummary;
 mod impacts;
 mod operation_error;
 mod receive;

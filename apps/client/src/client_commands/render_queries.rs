@@ -7,6 +7,7 @@ pub(crate) enum RenderQuery {
     Sky,
     Bodies,
     Terrain,
+    Water,
     Atmosphere,
     Weather,
     CloudTargets,
@@ -19,6 +20,7 @@ impl RenderQuery {
             FrontendAction::Presentation(PresentationOperation::SkyInfo) => Self::Sky,
             FrontendAction::Presentation(PresentationOperation::SkyBodies) => Self::Bodies,
             FrontendAction::Presentation(PresentationOperation::TerrainStatus) => Self::Terrain,
+            FrontendAction::Presentation(PresentationOperation::WaterStatus) => Self::Water,
             FrontendAction::Presentation(PresentationOperation::AtmosphereStatus) => {
                 Self::Atmosphere
             }

@@ -69,6 +69,11 @@ pub(super) fn lower(
     if op.path == "client.camera.status" {
         return Ok(ClientCommand::CameraStatus);
     }
+    if op.path == "client.render.water.status" {
+        return Ok(ClientCommand::Presentation(
+            super::PresentationOperation::WaterStatus,
+        ));
+    }
     if op.path == "world.time.initial_config" {
         return Ok(ClientCommand::InitialClockConfig);
     }

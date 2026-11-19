@@ -23,13 +23,14 @@ impl DesktopHost {
         identity: &OperationContext,
         query: RenderQuery,
     ) -> OperationResult {
-        let unavailable = if query == RenderQuery::Frames {
+        let unavailable = if matches!(query, RenderQuery::Frames | RenderQuery::Water) {
             None
         } else {
             let operation = match query {
                 RenderQuery::Sky => PresentationOperation::SkyInfo,
                 RenderQuery::Bodies => PresentationOperation::SkyBodies,
                 RenderQuery::Terrain => PresentationOperation::TerrainStatus,
+                RenderQuery::Water => PresentationOperation::WaterStatus,
                 RenderQuery::Atmosphere => PresentationOperation::AtmosphereStatus,
                 RenderQuery::Weather | RenderQuery::CloudTargets => {
                     PresentationOperation::WeatherStatus
@@ -49,6 +50,7 @@ impl DesktopHost {
                 RenderQuery::Sky => self.sky_report(),
                 RenderQuery::Bodies => self.bodies_report(),
                 RenderQuery::Terrain => self.terrain_report(),
+                RenderQuery::Water => Some(self.water_render_report()),
                 RenderQuery::Atmosphere => self.atmosphere_report(),
                 RenderQuery::Weather => self.weather_report(),
                 RenderQuery::CloudTargets => self.cloud_targets_report(),
@@ -71,8 +73,10 @@ impl DesktopHost {
                 )),
             );
         };
-        if let V::Record(ref mut fields) = value {
-            self.report_context(fields, query);
+        if query != RenderQuery::Water {
+            if let V::Record(ref mut fields) = value {
+                self.report_context(fields, query);
+            }
         }
         OperationResult::new(
             identity.clone(),
@@ -87,6 +91,7 @@ impl DesktopHost {
             RenderQuery::Frames => "sampled_frame_history",
             RenderQuery::Sky | RenderQuery::Bodies => "prepared_current",
             RenderQuery::Terrain => "matching_geometry_publication",
+            RenderQuery::Water => "owner_capture_with_stage_keys",
             RenderQuery::Atmosphere => "prepared_scene_async_timing",
             RenderQuery::Weather | RenderQuery::CloudTargets => "matching_weather_publication",
         };

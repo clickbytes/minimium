@@ -13,6 +13,9 @@ pub(in crate::renderer) struct WaterPresentation {
 }
 
 impl WaterPresentation {
+    pub(super) fn source_revision(&self) -> u64 {
+        self.source_revision
+    }
     pub fn new(
         catalog: Arc<minimium_procgen::WaterCatalog>,
         snapshot: Arc<minimium_fluids::FluidSnapshot>,

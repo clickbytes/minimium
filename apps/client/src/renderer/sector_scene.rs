@@ -17,7 +17,7 @@ pub(super) struct ClientSectorCache {
 }
 
 pub(super) struct SectorPresentationCache {
-    worker: SectorWorker,
+    pub(super) worker: SectorWorker,
     presentations: HashMap<SceneInterestOwner, Arc<PreparedScene>>,
     water_presentations: HashMap<SceneInterestOwner, super::sector_worker::WaterPresentation>,
 }
