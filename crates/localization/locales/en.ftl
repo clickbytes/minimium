@@ -204,7 +204,7 @@ command-help = { $name ->
     [console_clear] console clear
     [console_quit] console quit (alias: exit)
     [movement_move] movement move X Z (-1..1 each; tangent direction)
-    [movement_jump] movement jump
+    [movement_jump] movement jump (reports the physics result at the resolved tick)
     [world_portal] world portal
     [world_teleport] world teleport: click land on the Earth overview
     [combat_fire] combat fire

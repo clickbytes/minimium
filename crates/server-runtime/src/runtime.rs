@@ -21,6 +21,7 @@ pub use impacts::ImpactStatus;
 mod hosted;
 mod inputs;
 mod r#loop;
+mod movement_receipts;
 mod network;
 mod operations;
 mod outbound;
@@ -70,6 +71,7 @@ struct GameState {
     pending_world_inputs: Vec<(WorldInput, Option<Instant>)>,
     gameplay_events: Vec<crate::modules::GameplayEvent>,
     pending_departures: HashSet<PlayerProfileId>,
+    jumps: HashMap<PlayerId, Vec<movement_receipts::Ticket>>,
     active_inputs: HashMap<PlayerId, MovementIntent>,
     player_movement_policies: HashMap<PlayerId, minimium_simulation::MovementPolicy>,
     input_last_received: HashMap<PlayerId, Instant>,
@@ -304,6 +306,7 @@ impl ServerRuntime {
             pending_world_inputs: Vec::new(),
             gameplay_events: Vec::with_capacity(MAX_PENDING_WORLD_INPUTS),
             pending_departures: HashSet::new(),
+            jumps: HashMap::new(),
             active_inputs: HashMap::with_capacity(config.max_players),
             player_movement_policies: HashMap::with_capacity(config.max_players),
             input_last_received: HashMap::with_capacity(config.max_players),

@@ -1,4 +1,4 @@
-# Game protocol v23
+# Game protocol v24
 
 `minimium-protocol` defines typed messages and binary encoding without depending
 on TCP, UDP, sockets or a runtime. The current server adapter carries frames over
@@ -10,14 +10,14 @@ Every frame begins with a four-byte header:
 
 | Offset | Size | Meaning |
 | --- | ---: | --- |
-| 0 | 1 byte | Protocol version (`23`) |
+| 0 | 1 byte | Protocol version (`24`) |
 | 1 | 1 byte | Message type |
 | 2 | 2 bytes | Payload length, unsigned little-endian |
 
 The payload follows immediately. Maximum payload is 4096 bytes. Receivers may
 provide partial or concatenated frames; decoders report incomplete input
 without consuming it. Unknown versions, message types, malformed fields and
-oversized payloads are rejected. Every version other than v23 is rejected;
+oversized payloads are rejected. Every version other than v24 is rejected;
 there is no fallback parser or version migration. The server returns the existing Protocol error for
 an unsupported client version; clients surface the unsupported version header
 when they receive a frame from an older server. Integers and `f32` values are little-endian.
@@ -165,7 +165,7 @@ restart bootstrap without catch-up probes. Status becomes Stale after fifteen
 seconds without a fresh sample/probe and Unavailable after sixty seconds; there
 is no client-wall-clock fallback for network sessions.
 
-For current v23 `WorldInput`, subtype `11` is `InteractEntity` with a nonzero
+For current v24 `WorldInput`, subtype `11` is `InteractEntity` with a nonzero
 world-scoped entity ID. The previous no-target `UsePortal` subtype is removed.
 Current movement uses subtype `7` with numbered input and target tick;
 `MapTeleport` uses a unit direction (three `f32` values), and `SetAltitude`
@@ -213,8 +213,12 @@ authentication or TLS. This source contract does not establish performance,
 network resilience or rendered-scene acceptance.
 
 Every gameplay input uses `WorldInput` and a full `WorldContext`; the movement
-form is `Motion`. The decoder rejects every wire version other than v23.
+form is `Motion`. The decoder rejects every wire version other than v24.
 
 ## Movement policy requests
 
 WorldInput subtype 13 carries an optional expected u64 revision and a patch for speed, acceleration, flight or both numeric fields. The enclosing nonzero world sequence identifies the request within the connection. PolicyReply (0x9a) carries the original WorldContext and sequence, followed by the committed full policy or a rejection for permission, context, invalid value, revision conflict, busy or pause. The server checks the current membership and permissions, applies a patch to the latest policy and increments its revision once. Client and server require the same wire version. Server persistence stays at format 12.
+
+## Jump receipts
+
+WorldInput subtype 14 requests a jump with a nonzero movement input sequence. Its envelope binds the request ID and expected world. The server feeds an ordinary jump with zero vertical flight input into the movement aggregator. MovementReceipt (0x9b) identifies its intent, original context, world sequence, input sequence and tick. Jump admission and final resolution are separate messages. The applied step reports an impulse, an airborne, swimming or flight-mode no-op, or an admission failure. Coalesced requests identify the first request and carry its physical resolution. Wire v24 requires a matching client and server.

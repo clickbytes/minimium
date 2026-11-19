@@ -10,6 +10,8 @@ mod models;
 mod policy;
 pub use policy::{MovementPatch, PolicyRejection, PolicyReply};
 mod movement_codec;
+mod movement_receipt;
+pub use movement_receipt::{JumpOutcome, MotionRejection, MovementOutcome, MovementReceipt};
 mod reading;
 mod validation;
 mod world_context;

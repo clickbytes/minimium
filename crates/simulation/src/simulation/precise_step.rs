@@ -36,6 +36,28 @@ pub fn step_character_mm_with_water(
     delta_seconds: f32,
     water: Option<minimium_world::fluid::WaterSample>,
 ) {
+    let _ = step_character_mm_with_water_outcome(
+        state,
+        position_mm,
+        input,
+        policy,
+        colliders,
+        surfaces,
+        delta_seconds,
+        water,
+    );
+}
+
+pub(super) fn step_character_mm_with_water_outcome(
+    state: &mut CharacterState,
+    position_mm: &mut Position3Mm,
+    input: MovementIntent,
+    policy: super::MovementPolicy,
+    colliders: &[Aabb],
+    surfaces: &[MapTriangle],
+    delta_seconds: f32,
+    water: Option<minimium_world::fluid::WaterSample>,
+) -> Option<super::JumpResolution> {
     let origin = position_mm.0;
     let local = |point: [f32; 3]| -> [f32; 3] {
         std::array::from_fn(|axis| (f64::from(point[axis]) - origin[axis] as f64 / 1000.0) as f32)
@@ -73,7 +95,7 @@ pub fn step_character_mm_with_water(
     };
     state.position = [0.0; 3];
     state.gravity = gravity;
-    super::step_character_with_water(
+    let jump = super::movement::step_character_with_water_outcome(
         state,
         input,
         policy,
@@ -87,13 +109,18 @@ pub fn step_character_mm_with_water(
     });
     state.position = position_mm.0.map(|value| (value as f64 / 1000.0) as f32);
     state.gravity = original_gravity;
+    jump
 }
 
 impl World {
+    pub fn jump_resolutions(&self) -> &[(minimium_core::ids::PlayerId, super::JumpResolution)] {
+        &self.jump_resolutions
+    }
     pub(super) fn apply_step_results(
         &mut self,
         processed_batches: Vec<SimulationBatch>,
     ) -> CollisionQueryStats {
+        self.jump_resolutions.clear();
         let players = Arc::make_mut(&mut self.players);
         let cells = Arc::make_mut(&mut self.cells);
         let player_cells = Arc::make_mut(&mut self.player_cells);
@@ -111,6 +138,9 @@ impl World {
                 player.velocity = result.state.velocity;
                 player.grounded = result.state.grounded;
                 update_cell_index(cells, player_cells, result.id, player.position);
+                if let Some(jump) = result.jump {
+                    self.jump_resolutions.push((result.id, jump));
+                }
             }
         }
         self.simulation_batches = processed_batches;

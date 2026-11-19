@@ -57,6 +57,9 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
             }
             ServerMessage::Bolid { context, event }
         }
+        ServerKind::MovementReceipt => {
+            ServerMessage::MovementReceipt(crate::MovementReceipt::read(&mut reader)?)
+        }
         ServerKind::PolicyReply => {
             ServerMessage::PolicyReply(crate::policy::read_reply(&mut reader)?)
         }

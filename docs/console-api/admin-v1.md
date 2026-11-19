@@ -20,7 +20,7 @@ The reply uses the same marker and includes `schema_version`, `nonce` and the ve
 
 Wide integers, request IDs, nonces and exact decimal coefficients use JSON strings. Typed payload and effects together allow 32 KiB. The codec validates size, nesting, element count, schema, operation result consistency and correlation. Excess data receives a typed limit error. The server keeps the highest request ID per nonce for its lifetime and rejects duplicates and stale IDs. Both numbers must be nonzero. The table holds 65,536 nonces and reports capacity exhaustion explicitly.
 
-The client allows one pending administrative worker. Cancellation before sending is definitive. A failure after a complete request line was sent leaves the outcome unknown unless a correlated reply arrives. The client never resends an operation automatically. The game protocol is version 23 and the save format is version 12.
+The client allows one pending administrative worker. Cancellation before sending is definitive. A failure after a complete request line was sent leaves the outcome unknown unless a correlated reply arrives. The client never resends an operation automatically. The game protocol is version 24 and the save format is version 12.
 
 `minimiumctl --format=json help world.time.scale` writes a machine reply to stdout. Plain `minimiumctl help world.time.scale` uses the legacy display mode. A failed operation exits with status 1 in both modes. With an owned local server, F1, developer stdin and terminal help for a shared world property receive the server's catalog metadata. Offline help uses the local catalog.
 

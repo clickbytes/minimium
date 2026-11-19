@@ -75,6 +75,13 @@ pub fn encode_client(message: &ClientMessage) -> Result<Vec<u8>, ProtocolError> 
             payload.extend_from_slice(&sequence.to_le_bytes());
             payload.extend_from_slice(&control_revision.to_le_bytes());
             match input {
+                ClientWorldInput::Jump { input_seq } => {
+                    if *input_seq == 0 {
+                        return Err(ProtocolError::InvalidPayload);
+                    }
+                    payload.push(14);
+                    payload.extend_from_slice(&input_seq.to_le_bytes());
+                }
                 ClientWorldInput::Motion(sample) => {
                     payload.push(7);
                     if sample.input_seq == 0 || sample.target_tick == 0 {

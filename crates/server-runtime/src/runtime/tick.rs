@@ -183,6 +183,10 @@ impl ServerRuntime {
         self.game.pending_world_inputs.retain(|(input, _)| {
             !matches!(input, crate::world_inputs::WorldInput::Move(player, _) if *player == transfer.player)
         });
+        self.abort_jumps(
+            transfer.player,
+            minimium_protocol::MotionRejection::StaleContext,
+        );
         self.game.pending_movement_inputs.remove(&transfer.player);
         self.game.pending_input_seqs.remove(&transfer.player);
         self.game.last_input_seq.insert(transfer.player, 0);
@@ -298,6 +302,7 @@ impl ServerRuntime {
                 .map(|(id, _)| *id),
         );
         let (worlds, active_inputs) = (&mut self.game.worlds, &self.game.active_inputs);
+        let mut jump_decisions = HashMap::new();
         let mut collision_stats = CollisionQueryStats::default();
         for (_, instance) in worlds.iter_mut() {
             let manifest = instance.manifest;
@@ -313,6 +318,7 @@ impl ServerRuntime {
                 TICK.as_secs_f32(),
                 &self.executor,
             ));
+            jump_decisions.extend(instance.world.jump_resolutions().iter().copied());
             if let Some((batched, batches)) = instance.world.precise_dispatch_stats() {
                 self.metrics.record_precise_dispatch(batched, batches);
             }
@@ -348,6 +354,7 @@ impl ServerRuntime {
                 }
             }
         }
+        self.complete_jumps(&jump_decisions);
         self.metrics.record_collision_queries(collision_stats);
         let simulation_elapsed = simulation_started.elapsed();
         self.metrics.simulation.record(simulation_elapsed);

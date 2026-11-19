@@ -340,3 +340,5 @@ render workers. This runtime binding adds no protocol, save or manifest field.
 EnvironmentFrameInput exposes the committed session sample for clock operations and labels a local preview LocalDemo. ConnectionController::request_clock sends a correlated typed mutation only to the owned administrative endpoint of a connected session. A solar request captures the player from Welcome and the active WorldContext. The server resolves the position when the request executes.
 
 ConnectionController and ClientApplicationCore accept typed movement patches. At most 32 pending or undelivered policy outcomes are retained. The application step returns correlated movement_results. The session sample supplies effective values, revision and monotonic sample age. Disconnection resolves pending requests as unknown and clears the sample.
+
+The CPU controller allows 32 outstanding console jumps. A prepared jump carries the active session and WorldContext and uses zero vertical flight input. OwnerAccepted, final physical decisions and disconnect outcomes share the movement result stream.

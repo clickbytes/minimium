@@ -13,16 +13,18 @@ impl ClientApplication {
         action: &FrontendAction,
         source: CommandSource,
     ) -> Option<output::ClientResult> {
-        let FrontendAction::Movement(field, patch) = action else {
-            return None;
-        };
         let now = crate::host_time::sample();
-        let result = match patch {
-            Some(patch) => self.core.request_movement_policy(*patch, None, now),
-            None => self
-                .core
-                .connection_view()
-                .movement_property(*field, identity.request_id, now),
+        let result = match action {
+            FrontendAction::Jump => self.core.request_jump(now),
+            FrontendAction::Movement(_, Some(patch)) => {
+                self.core.request_movement_policy(*patch, None, now)
+            }
+            FrontendAction::Movement(field, None) => {
+                self.core
+                    .connection_view()
+                    .movement_property(*field, identity.request_id, now)
+            }
+            _ => return None,
         };
         if result.receipt.stage == Stage::Submitted {
             if let Some(session) = result.identity.session {
@@ -37,8 +39,12 @@ impl ClientApplication {
         result: OperationResult,
     ) -> (Option<CommandSource>, output::ClientResult) {
         let source = result.identity.session.and_then(|session| {
-            self.policy_output_sources
-                .remove(&(session, result.identity.request_id))
+            let key = (session, result.identity.request_id);
+            if result.receipt.stage == Stage::OwnerAccepted {
+                self.policy_output_sources.get(&key).copied()
+            } else {
+                self.policy_output_sources.remove(&key)
+            }
         });
         (source, output::native(result))
     }

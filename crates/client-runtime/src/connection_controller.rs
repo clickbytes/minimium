@@ -1,5 +1,7 @@
 mod admin;
+mod jump;
 mod policy;
+pub(crate) use policy::patch_path;
 pub use policy::MovementField;
 mod prepared_session;
 mod shutdown;
@@ -42,6 +44,7 @@ pub enum ConnectionEvent {
 pub struct ConnectionController {
     now: ClientTime,
     presentation: Option<bool>,
+    jumps: jump::JumpRequests,
     policy: policy::Requests,
     pub movement: minimium_simulation::MovementPolicy,
     pub flight_enabled: bool,
@@ -70,6 +73,7 @@ impl ConnectionController {
         Ok(Self {
             now,
             presentation: None,
+            jumps: Default::default(),
             policy: Default::default(),
             movement: Default::default(),
             flight_enabled: false,
@@ -198,6 +202,7 @@ impl ConnectionController {
         self.accept_time(now)?;
         self.session_owns_server = false;
         self.cancel_unsent_admin();
+        self.jumps.end_session();
         self.policy.end_session();
         Ok(self.session.take())
     }

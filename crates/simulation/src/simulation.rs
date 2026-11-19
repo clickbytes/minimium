@@ -23,6 +23,8 @@ mod collision_partitions;
 mod collision_queries;
 mod combat;
 mod movement;
+mod movement_outcome;
+pub use movement_outcome::JumpResolution;
 mod precise_step;
 mod radial_collision;
 mod raycast;

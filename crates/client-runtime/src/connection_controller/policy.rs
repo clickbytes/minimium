@@ -35,7 +35,7 @@ impl MovementField {
 fn number(v: f32) -> V {
     V::Finite(FiniteValue::new(f64::from(v)).expect("validated policy"))
 }
-fn path(patch: MovementPatch) -> &'static str {
+pub(crate) fn patch_path(patch: MovementPatch) -> &'static str {
     match patch {
         MovementPatch::Speed(_) => MovementField::Speed.path(),
         MovementPatch::Acceleration(_) => MovementField::Acceleration.path(),
@@ -43,14 +43,19 @@ fn path(patch: MovementPatch) -> &'static str {
         MovementPatch::SetBoth { .. } => "player.movement.policy",
     }
 }
-fn binding(context: WorldContext) -> WorldBinding {
+pub(super) fn binding(context: WorldContext) -> WorldBinding {
     WorldBinding {
         instance: context.instance().get(),
         content_revision: context.content_revision().get(),
         membership_epoch: context.membership_epoch().get(),
     }
 }
-fn failure(identity: OperationContext, stage: Stage, code: &str, reason: &str) -> OperationResult {
+pub(super) fn failure(
+    identity: OperationContext,
+    stage: Stage,
+    code: &str,
+    reason: &str,
+) -> OperationResult {
     let subject = Some(identity.operation.0.clone());
     OperationResult::new(
         identity,
@@ -87,9 +92,9 @@ impl Requests {
     }
 }
 impl ConnectionController {
-    pub(crate) fn policy_time_failure(
+    pub(crate) fn movement_time_failure(
         &self,
-        patch: MovementPatch,
+        path: &str,
         error: ClientTimeError,
     ) -> OperationResult {
         failure(
@@ -97,14 +102,14 @@ impl ConnectionController {
                 self.session
                     .as_ref()
                     .map_or(1, ClientSession::next_world_request_id),
-                path(patch),
+                path,
             ),
             Stage::Rejected,
             "invalid_time",
             &error.to_string(),
         )
     }
-    fn policy_identity(&self, request_id: u64, path: &str) -> OperationContext {
+    pub(super) fn policy_identity(&self, request_id: u64, path: &str) -> OperationContext {
         let s = self.session.as_ref();
         OperationContext {
             request_id,
@@ -143,7 +148,7 @@ impl ConnectionController {
             if id.context != identity.context {
                 return None;
             }
-            (path(*patch) == field.path()
+            (patch_path(*patch) == field.path()
                 || matches!(patch, MovementPatch::SetBoth { .. }) && field != MovementField::Flight)
                 .then(|| patch.apply(confirmed).map(|p| field.value(p)))
                 .flatten()
@@ -194,7 +199,7 @@ impl ConnectionController {
             .session
             .as_ref()
             .map_or(1, ClientSession::next_world_request_id);
-        let identity = self.policy_identity(id, path(patch));
+        let identity = self.policy_identity(id, patch_path(patch));
         if self.accept_time(now).is_err() {
             return failure(
                 identity,
@@ -264,7 +269,9 @@ impl ConnectionController {
     }
 
     pub fn take_movement_results(&mut self) -> Vec<OperationResult> {
-        std::mem::take(&mut self.policy.ready)
+        let mut results = std::mem::take(&mut self.policy.ready);
+        results.append(&mut self.jumps.ready);
+        results
     }
 
     pub(super) fn observe_policy(&mut self, event: &SessionEvent, now: ClientTime) {
@@ -273,14 +280,17 @@ impl ConnectionController {
                 ServerMessage::Welcome { context, .. }
                 | ServerMessage::TransitionCommitted { context, .. },
             ) => {
+                self.jumps.transfer(*context);
                 self.policy.context = Some(*context);
                 self.policy.sampled = None;
             }
             SessionEvent::Message(ServerMessage::MovementPolicy(policy)) => {
                 self.install_policy(*policy, now)
             }
+            SessionEvent::Message(ServerMessage::MovementReceipt(ack)) => self.jumps.receive(*ack),
             SessionEvent::Message(ServerMessage::PolicyReply(ack)) => self.policy_reply(*ack, now),
             SessionEvent::Disconnected(_) | SessionEvent::Message(ServerMessage::Bye) => {
+                self.jumps.end_session();
                 self.policy.end_session()
             }
             _ => {}

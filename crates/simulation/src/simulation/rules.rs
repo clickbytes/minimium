@@ -68,22 +68,22 @@ pub(super) fn step_character_once(
     surfaces: &[MapTriangle],
     delta_seconds: f32,
     water: Option<minimium_world::fluid::WaterSample>,
-) {
+) -> Option<super::JumpResolution> {
     if !delta_seconds.is_finite() || delta_seconds <= 0.0 {
-        return;
+        return None;
     }
     if !policy.valid() || !input.vertical.is_finite() {
-        return;
+        return None;
     }
     let water = water.filter(|sample| sample.valid());
     if policy.can_fly {
         state.velocity = super::movement::velocity(*state, input, policy, delta_seconds);
         state.position = add(state.position, scale(state.velocity, delta_seconds));
         state.grounded = false;
-        return;
+        return input.jump.then_some(super::JumpResolution::FlightMode);
     }
     if matches!(state.gravity, CharacterGravity::Radial { .. }) {
-        step_radial_character(
+        return step_radial_character(
             state,
             input,
             policy,
@@ -92,7 +92,6 @@ pub(super) fn step_character_once(
             delta_seconds,
             water,
         );
-        return;
     }
 
     let velocity = super::swimming::movement_velocity(*state, input, policy, delta_seconds, water);
@@ -100,9 +99,9 @@ pub(super) fn step_character_once(
     state.velocity[2] = velocity[2];
 
     let swimming = water.is_some_and(|sample| sample.submerged_fraction > 0.5);
-    let should_jump = input.jump && state.grounded && !swimming;
+    let jump = super::JumpResolution::at_ground(input.jump, state.grounded, swimming);
     state.grounded = false;
-    if should_jump {
+    if jump == Some(super::JumpResolution::Applied) {
         state.velocity[1] = PLAYER_JUMP_SPEED;
     }
     state.velocity[1] = (state.velocity[1] - GRAVITY * delta_seconds).max(-MAX_FALL_SPEED);
@@ -246,6 +245,7 @@ pub(super) fn step_character_once(
             }
         }
     }
+    jump
 }
 
 fn step_radial_character(
@@ -256,15 +256,15 @@ fn step_radial_character(
     surfaces: &[MapTriangle],
     delta_seconds: f32,
     water: Option<minimium_world::fluid::WaterSample>,
-) {
+) -> Option<super::JumpResolution> {
     let swimming = water.is_some_and(|sample| sample.submerged_fraction > 0.5);
-    let should_jump = input.jump && state.grounded && !swimming;
+    let jump = super::JumpResolution::at_ground(input.jump, state.grounded, swimming);
     state.grounded = false;
     let mut vertical_speed = dot(
         state.velocity,
         character_frame(state.gravity, state.position).0,
     );
-    if should_jump {
+    if jump == Some(super::JumpResolution::Applied) {
         vertical_speed = PLAYER_JUMP_SPEED;
     }
     let steps = (policy.speed * delta_seconds / (PLAYER_RADIUS * 0.5))
@@ -332,6 +332,7 @@ fn step_radial_character(
     if state.grounded {
         state.velocity = tangent_velocity;
     }
+    jump
 }
 
 fn remove_up_component(velocity: [f32; 3], up: [f32; 3]) -> (f32, [f32; 3]) {

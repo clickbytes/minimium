@@ -17,8 +17,8 @@ pub fn step_batch(
                 step.movement_policy,
             ));
         let mut position_mm = step.position_mm;
-        if let Some(position_mm) = &mut position_mm {
-            precise_step::step_character_mm_with_water(
+        let jump = if let Some(position_mm) = &mut position_mm {
+            precise_step::step_character_mm_with_water_outcome(
                 &mut state,
                 position_mm,
                 step.input,
@@ -27,9 +27,9 @@ pub fn step_batch(
                 batch.collision_query.surface_candidates(),
                 delta_seconds,
                 step.water,
-            );
+            )
         } else {
-            super::step_character_with_water(
+            super::movement::step_character_with_water_outcome(
                 &mut state,
                 step.input,
                 step.movement_policy,
@@ -37,9 +37,10 @@ pub fn step_batch(
                 batch.collision_query.surface_candidates(),
                 delta_seconds,
                 step.water,
-            );
-        }
+            )
+        };
         batch.results.push(PlayerStepResult {
+            jump,
             id: step.id,
             state,
             position_mm,

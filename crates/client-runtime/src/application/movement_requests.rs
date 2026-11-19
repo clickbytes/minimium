@@ -3,6 +3,14 @@ use crate::{ClientTime, ConnectionController};
 use minimium_commands::results::{OperationResult, Stage};
 use minimium_protocol::MovementPatch;
 impl ClientApplicationCore {
+    pub fn request_jump(&mut self, now: ClientTime) -> OperationResult {
+        if let Err(error) = self.accept_time(now) {
+            return self
+                .connection
+                .movement_time_failure("player.movement.jump", error);
+        }
+        self.connection.request_jump(now)
+    }
     pub fn request_movement_policy(
         &mut self,
         patch: MovementPatch,
@@ -10,7 +18,9 @@ impl ClientApplicationCore {
         now: ClientTime,
     ) -> OperationResult {
         if let Err(error) = self.accept_time(now) {
-            return self.connection.policy_time_failure(patch, error);
+            return self
+                .connection
+                .movement_time_failure(crate::connection_controller::patch_path(patch), error);
         }
         self.connection
             .request_movement_policy(patch, expected_revision, now)

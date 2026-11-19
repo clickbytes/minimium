@@ -365,7 +365,7 @@ pub(super) fn prepare(
     };
     if let Some(extra) = s.arguments.get(params.len()) {
         return Err(diagnostic(
-            Code::InvalidArguments,
+            Code::UnexpectedArgument,
             &s.name,
             "unexpected argument",
             extra.span,

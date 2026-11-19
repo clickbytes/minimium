@@ -206,7 +206,7 @@ command-help = { $name ->
     [console_clear] console clear
     [console_quit] console quit (alias: exit)
     [movement_move] movement move X Z (-1..1 każda; kierunek styczny)
-    [movement_jump] movement jump
+    [movement_jump] movement jump (wynik fizyki w rozliczonym kroku symulacji)
     [world_portal] world portal
     [world_teleport] world teleport: kliknij ląd w przeglądzie Earth
     [combat_fire] combat fire

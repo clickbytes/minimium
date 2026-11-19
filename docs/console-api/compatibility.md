@@ -65,3 +65,5 @@ Batch #573 migrates the live `world.time` fields, startup configuration and cloc
 The FOV property, camera fov and fov aliases share the finite 30–110 degree validator and the same startup, override and renderer-effective report. The look command consumes degrees through the camera adapter. Camera status exposes presentation coordinates and orientation. Config save returns the destination and byte count after replacement, or the failing I/O stage. Terminal hosts can save their preferences and read FOV provenance. Camera mutations and status require a renderer.
 
 The three player.movement fields and their word aliases read the confirmed session sample. Set and reset use a single-field wire v23 patch. The correlated decision returns to the submitting frontend. Reset requests 5 m/s, 30 m/s² or flight disabled.
+
+The movement jump and jump spellings invoke player.movement.jump(). The request uses the gameplay permission. Queueing and server admission have distinct stages. The final receipt records the physical impulse decision or a coalesced result at the resolved tick.

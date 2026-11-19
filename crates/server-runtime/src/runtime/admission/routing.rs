@@ -32,6 +32,11 @@ impl ServerRuntime {
                 .worlds
                 .world_input_context_is_current(player, *context)
             {
+                self.reject_jump_message(
+                    index,
+                    &message,
+                    minimium_protocol::MotionRejection::StaleContext,
+                );
                 self.metrics.rejected_inputs = self.metrics.rejected_inputs.saturating_add(1);
                 return RoutingOutcome::Handled;
             }

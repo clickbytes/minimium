@@ -84,3 +84,5 @@ client previews. Callers pass nearby remote-player `ToolRayCapsule` blockers
 containing the same `CharacterGeometry`; the authoritative
 `World::tool_surface_hit` delegates through the same query. Camera, hitscan and
 tool rays share the 1.6 m eye point.
+
+JumpResolution records the decision from the first movement substep for flat, radial and precise-coordinate movement. The world exposes resolutions for the most recent applied step, including worker results after publication.

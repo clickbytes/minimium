@@ -59,6 +59,11 @@ pub fn encode_server_into(
                 frame.push(event.kind);
                 ServerKind::Bolid
             }
+            ServerMessage::MovementReceipt(receipt) => {
+                write_world_context(receipt.context, frame);
+                receipt.write(frame)?;
+                ServerKind::MovementReceipt
+            }
             ServerMessage::PolicyReply(ack) => {
                 write_world_context(ack.context, frame);
                 crate::policy::write_reply(frame, ack)?;

@@ -32,6 +32,7 @@ impl ConnectionController {
     ) -> Result<(), Box<dyn std::error::Error>> {
         self.cancel_current();
         let mut unfinished = self.connector.finish_on_exit_until(deadline);
+        self.jumps.end_session();
         self.policy.end_session();
         if let Some(mut session) = self.session.take() {
             session.close_resources();

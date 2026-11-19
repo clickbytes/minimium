@@ -85,3 +85,5 @@ replacement image for the announced region; the paired reservoir balances remain
 complete. A structural batch installs its terrain and captured water together.
 
 Wire v23 adds single-field movement patches with optional policy revision checks and correlated PolicyReply messages. Speed and acceleration use metres per second and metres per second squared. The sequence and world context travel back to the requesting session.
+
+Wire v24 adds an explicit jump request and an intent-tagged MovementReceipt for admission, final physical resolution, coalescing or rejection. Ordinary device motion keeps its existing bounded stream.

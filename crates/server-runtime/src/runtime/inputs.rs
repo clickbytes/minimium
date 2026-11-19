@@ -146,6 +146,7 @@ impl ServerRuntime {
                 self.game.input_last_received.insert(id, self.now);
             }
             WorldInput::Leave(id) => {
+                self.abort_jumps(id, minimium_protocol::MotionRejection::StaleContext);
                 if let Some(instance_id) = self.game.worlds.instance_for_player(id) {
                     if let Some(instance) = self.game.worlds.get(instance_id) {
                         let gravity = instance.world.gravity();
@@ -179,6 +180,11 @@ impl ServerRuntime {
                 }
             }
             WorldInput::Move(id, mut sample) => {
+                if let Some(ticket) = self.game.jumps.get_mut(&id).and_then(|tickets| {
+                    tickets.iter_mut().find(|t| t.input_seq == sample.input_seq)
+                }) {
+                    ticket.scheduled = true;
+                }
                 sample.target_tick = self.step_boundary().tick();
                 if self
                     .game
@@ -211,6 +217,7 @@ impl ServerRuntime {
                 let position_mm = self.map_teleport(id, context, direction);
                 if position_mm.is_some() {
                     teleported.insert(id);
+                    self.abort_jumps(id, minimium_protocol::MotionRejection::Superseded);
                     if let Some(samples) = self.game.pending_movement_inputs.remove(&id) {
                         for sample in samples.values() {
                             self.resolve_movement_input(id, sample.input_seq);

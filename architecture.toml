@@ -134,7 +134,7 @@ forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-p
 [[package]]
 name = "minimium-simulation"
 role = "engine-domain"
-responsibility = "Mutable simulation state, movement, collision indexing/queries, local-frame combat using shared character geometry, snapshots and step results. Owns immutable coherent spatial-geometry publications with movement indices, a full-map combat baseline and exact-sector replacements, and requires a server-certified full-ray coverage plan matched to the publication revision and shot ray before combat mutates health. Also owns pure SI impact integration through a terrain port, incremental collision partitions, bounded authoritative tool admission using application-supplied per-kind definitions selected from confirmed inventory, and shared swimming through neutral water observations."
+responsibility = "Jump resolution at the applied movement step. Mutable simulation state, movement, collision indexing/queries, local-frame combat using shared character geometry, snapshots and step results. Owns immutable coherent spatial-geometry publications with movement indices, a full-map combat baseline and exact-sector replacements, and requires a server-certified full-ray coverage plan matched to the publication revision and shot ray before combat mutates health. Also owns pure SI impact integration through a terrain port, incremental collision partitions, bounded authoritative tool admission using application-supplied per-kind definitions selected from confirmed inventory, and shared swimming through neutral water observations."
 forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-platform", "minimium-assets", "minimium-procgen", "minimium-sectors", "minimium-telemetry", "minimium-commands", "minimium-environment", "minimium-renderer", "minimium-game-sample"]
 
 [[package]]
@@ -199,7 +199,7 @@ forbidden_dependencies = ["minimium-astronomy", "minimium-procgen", "minimium-se
 [[package]]
 name = "minimium-protocol"
 role = "engine-domain"
-responsibility = "Correlated movement policy patch and owner reply codecs. Protocol-22 message models, bounded terrain/fluid/crater image parts, contextual revisions, resynchronization, codecs, validation and wire limits."
+responsibility = "Correlated movement policy patches, jump intents and authoritative movement receipt codecs. Protocol-22 message models, bounded terrain/fluid/crater image parts, contextual revisions, resynchronization, codecs, validation and wire limits."
 forbidden_dependencies = ["minimium-renderer", "minimium-game-sample"]
 
 [[package]]

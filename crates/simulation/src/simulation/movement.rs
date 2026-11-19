@@ -89,21 +89,35 @@ pub fn step_character(
 /// Shared prediction/authority movement with an optional neutral water sample.
 pub fn step_character_with_water(
     state: &mut CharacterState,
-    mut input: MovementIntent,
+    input: MovementIntent,
     policy: MovementPolicy,
     colliders: &[super::Aabb],
     surfaces: &[MapTriangle],
     dt: f32,
     water: Option<minimium_world::fluid::WaterSample>,
 ) {
+    let _ = step_character_with_water_outcome(state, input, policy, colliders, surfaces, dt, water);
+}
+
+pub(super) fn step_character_with_water_outcome(
+    state: &mut CharacterState,
+    mut input: MovementIntent,
+    policy: MovementPolicy,
+    colliders: &[super::Aabb],
+    surfaces: &[MapTriangle],
+    dt: f32,
+    water: Option<minimium_world::fluid::WaterSample>,
+) -> Option<super::JumpResolution> {
     if !dt.is_finite() || dt <= 0.0 || !policy.valid() {
-        return;
+        return None;
     }
     input.direction = input.direction.map(super::rules::finite_input);
     input.vertical = super::rules::finite_input(input.vertical);
     let dt = dt.min(super::SIMULATION_STEP_SECONDS);
     let water = water.filter(|sample| sample.valid() && !policy.can_fly);
+    let mut resolution = None;
     if water.is_some_and(|sample| sample.submerged_fraction > 0.5) {
+        resolution = input.jump.then_some(super::JumpResolution::Swimming);
         input.jump = false;
     }
     let steps = if policy.can_fly {
@@ -114,7 +128,7 @@ pub fn step_character_with_water(
             .max(1.0) as u32
     };
     for index in 0..steps {
-        super::rules::step_character_once(
+        let decision = super::rules::step_character_once(
             state,
             input,
             policy,
@@ -124,7 +138,9 @@ pub fn step_character_with_water(
             water,
         );
         if index == 0 {
+            resolution = resolution.or(decision);
             input.jump = false;
         }
     }
+    resolution
 }

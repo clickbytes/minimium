@@ -30,6 +30,11 @@ pub(super) fn dispatch_message(
             "gameplay",
         )
     {
+        runtime.reject_jump_message(
+            index,
+            &message,
+            minimium_protocol::MotionRejection::Forbidden,
+        );
         if let ClientMessage::WorldInput {
             sequence,
             context,
@@ -65,6 +70,11 @@ pub(super) fn dispatch_message(
         // TCP preserves order. Consume the id even if this action is refused or paused.
         let client = &mut runtime.connections.clients[index];
         if *sequence <= client.world_sequence {
+            runtime.reject_jump_message(
+                index,
+                &message,
+                minimium_protocol::MotionRejection::InvalidSequence,
+            );
             return;
         }
         client.world_sequence = *sequence;
@@ -94,6 +104,12 @@ pub(super) fn dispatch_message(
                         action_id: *action_id,
                         reason: minimium_world::items::ActionRejection::Paused,
                     },
+                );
+            } else if matches!(input, ClientWorldInput::Jump { .. }) {
+                runtime.reject_jump_message(
+                    index,
+                    &message,
+                    minimium_protocol::MotionRejection::Paused,
                 );
             } else if input.policy_change().is_some() {
                 super::movement_policy::reply(
@@ -142,7 +158,12 @@ fn handle_admitted_message(
         ClientMessage::Authenticate { .. } => {
             disconnect_invalid_sequence(runtime, index);
         }
-        ClientMessage::WorldInput { context, input, .. } => match (player_id, input) {
+        ClientMessage::WorldInput {
+            context,
+            sequence,
+            input,
+            ..
+        } => match (player_id, input) {
             (Some(player), ClientWorldInput::Excavation(input)) => {
                 if matches!(input, minimium_protocol::ExcavationInput::Resync { .. }) {
                     runtime.apply_excavation(player, context, input);
@@ -182,8 +203,22 @@ fn handle_admitted_message(
             (Some(player), ClientWorldInput::SetName(name)) => {
                 actions::movement::admit_name(runtime, index, player, name, decoded_at)
             }
+            (Some(player), ClientWorldInput::Jump { input_seq }) => actions::movement::admit_jump(
+                runtime, index, player, context, sequence, input_seq, decoded_at,
+            ),
             (Some(player), ClientWorldInput::Motion(input)) => {
-                actions::movement::admit_motion(runtime, index, player, input, decoded_at)
+                if matches!(
+                    actions::movement::admit_motion(runtime, index, player, input, decoded_at),
+                    Err(minimium_protocol::MotionRejection::Busy)
+                ) {
+                    crate::connection::queue_message(
+                        &mut runtime.connections.clients[index],
+                        &mut runtime.metrics,
+                        minimium_protocol::ServerMessage::Error(
+                            minimium_protocol::ServerErrorCode::Busy,
+                        ),
+                    );
+                }
             }
             (Some(player), ClientWorldInput::Fire { direction }) => {
                 actions::combat::admit_fire(runtime, index, player, direction, decoded_at)

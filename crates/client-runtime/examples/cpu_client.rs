@@ -346,6 +346,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("policy acknowledgement missing".into());
     }
 
+    let jump = core.request_jump(time_at(base, time_index));
+    if jump.receipt.stage != minimium_commands::results::Stage::Submitted {
+        return Err("jump was not submitted".into());
+    }
+    // Only the matched MovementReceipt delivered by a later step resolves the physical outcome.
+
     readiness.shutdown_until(Instant::now() + Duration::from_secs(2));
     let _ = core.finish_until(
         Instant::now() + Duration::from_secs(2),

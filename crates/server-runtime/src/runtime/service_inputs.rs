@@ -52,6 +52,10 @@ impl ServerRuntime {
             }
         }
         if paused {
+            let players: Vec<_> = self.game.jumps.keys().copied().collect();
+            for id in players {
+                self.abort_jumps(id, minimium_protocol::MotionRejection::Paused);
+            }
             self.game.pending_movement_inputs.clear();
             self.game.pending_input_seqs.clear();
             self.game

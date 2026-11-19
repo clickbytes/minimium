@@ -33,6 +33,7 @@ pub(super) struct PlayerStepInput {
 
 #[derive(Clone, Copy)]
 pub(super) struct PlayerStepResult {
+    pub(super) jump: Option<super::JumpResolution>,
     pub(super) id: PlayerId,
     pub(super) state: CharacterState,
     pub(super) position_mm: Option<Position3Mm>,
@@ -55,6 +56,7 @@ pub struct World {
     pub(super) collision_query: CollisionQuery,
     pub(super) combat_player_query: PlayerRayQuery,
     pub(super) combat_map_query: MapRayQuery,
+    pub(super) jump_resolutions: Vec<(PlayerId, super::JumpResolution)>,
     pub(super) simulation_batches: Vec<SimulationBatch>,
     pub(super) next_id: u64,
     pub(super) spawn: [f32; 3],
@@ -230,6 +232,7 @@ impl World {
         selected: Option<&HashSet<PlayerId>>,
         delta_seconds: f32,
     ) -> CollisionQueryStats {
+        self.jump_resolutions.clear();
         let water_samples: HashMap<_, _> = self
             .players
             .iter()
@@ -287,7 +290,7 @@ impl World {
                 movement_policy: policy,
                 water,
             };
-            if resting_steps.get(id) == Some(&(step, delta_seconds)) {
+            if !input.jump && resting_steps.get(id) == Some(&(step, delta_seconds)) {
                 continue;
             }
             collision_stats.accumulate(collision_query.fill_for_policy(
@@ -296,8 +299,8 @@ impl World {
                 delta_seconds,
                 policy,
             ));
-            if let Some(position_mm) = &mut player.position_mm {
-                precise_step::step_character_mm_with_water(
+            let jump = if let Some(position_mm) = &mut player.position_mm {
+                precise_step::step_character_mm_with_water_outcome(
                     &mut state,
                     position_mm,
                     input,
@@ -306,9 +309,9 @@ impl World {
                     collision_query.surface_candidates(),
                     delta_seconds,
                     water,
-                );
+                )
             } else {
-                super::step_character_with_water(
+                super::movement::step_character_with_water_outcome(
                     &mut state,
                     input,
                     policy,
@@ -316,7 +319,10 @@ impl World {
                     collision_query.surface_candidates(),
                     delta_seconds,
                     water,
-                );
+                )
+            };
+            if let Some(jump) = jump {
+                self.jump_resolutions.push((*id, jump));
             }
             if state == step.state && player.position_mm == step.position_mm {
                 resting_steps.insert(*id, (step, delta_seconds));

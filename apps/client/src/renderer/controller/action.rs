@@ -115,7 +115,9 @@ pub(super) fn execute(
         FrontendAction::CameraStatus
         | FrontendAction::CameraLook { .. }
         | FrontendAction::ConfigSave(_) => unreachable!("shared preference operation"),
-        FrontendAction::Movement(..) => unreachable!("shared policy operations"),
+        FrontendAction::Jump | FrontendAction::Movement(..) => {
+            unreachable!("shared policy operations")
+        }
         FrontendAction::Clock(_) => unreachable!("clock actions use the shared time adapter"),
         FrontendAction::SpawnRandomBolid(count) => {
             if let Some(unavailable) = super::presentation::unavailable_for(

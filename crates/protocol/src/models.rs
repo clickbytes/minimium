@@ -80,6 +80,9 @@ pub enum ClientMessage {
 pub enum ClientWorldInput {
     SetName(String),
     Motion(MovementSample),
+    Jump {
+        input_seq: u64,
+    },
     Fire {
         direction: [f32; 3],
     },
@@ -257,6 +260,7 @@ pub enum ServerMessage {
         event: BolidEvent,
     },
     PolicyReply(crate::PolicyReply),
+    MovementReceipt(crate::MovementReceipt),
     MovementPolicy(minimium_simulation::MovementPolicy),
     EntitySyncBegin {
         context: WorldContext,

@@ -140,7 +140,7 @@ Tab completes canonical names and aliases.
 | `movement speed [0..10000]` | Shared walk/fly maximum speed in m/s; default 5. |
 | `movement accel [0..10000]` | Shared walk/fly acceleration and braking in m/s²; default 30. |
 | `movement move X Z` | Tangent movement direction, each component from -1 to 1. |
-| `movement jump` | Jump when walking; upward input when flying. |
+| `movement jump` | Request a jump and report the physical resolution. Flight mode returns a no-op. |
 
 Speed and acceleration accept finite decimal values, inclusive of both limits.
 Omitting their value reports current settings. Speed zero stops controlled movement;
@@ -374,3 +374,5 @@ The FOV factory default is 70 degrees. With 80 in the preferences file, setting 
 ## Movement policy
 
 Speed, acceleration and flight are scoped to the session actor and current world. Each write sends only its field. The reply carries the original request sequence and context, and the approved policy revision or reason for refusal. Reads show the confirmed effective value and sample age, with pending requests reported separately. A paused client suppresses the request. Disconnecting before acknowledgement leaves the outcome unknown.
+
+Jump admission reserves one console intent. Its final receipt carries the physical decision at the resolved tick. Multiple requests in a tick share one impulse decision. Device flight ascent remains a separate input.

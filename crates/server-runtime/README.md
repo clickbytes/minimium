@@ -557,3 +557,5 @@ A tick awaiting water, excavation or impact durability resumes at its saved oper
 ClockPropertySnapshot::status projects the shared committed boundary, revision, calendar epoch, configured rate and measured progress. Mutations return ClockCommitted after the owner applies them. Solar HHMM checks the expected actor membership and reads the current authoritative position in millimetres. Startup clock configuration is read through resolved settings.
 
 The admission owner applies movement patches to the current player policy after checking membership, permission, value and any expected revision. Full-policy writes remain atomic. The owner queues the resulting revision or structured refusal and keeps its committed state if the peer disconnects.
+
+Jump admission, per-tick movement aggregation and the applied simulation batch share request identity. Each coalesced request reports the first request ID and the same physics result. Transfers, pause, full queues and unavailable geometry yield explicit outcomes.

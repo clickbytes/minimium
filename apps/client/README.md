@@ -838,3 +838,5 @@ F1, developer stdin and the terminal dispatch clock reads and writes through the
 Camera operations share a CPU settings owner. Each store has a unique base ID for its lifetime and a monotonic FOV revision. The renderer confirms effective FOV against both. Terminal reads expose startup and requested values with camera availability recorded separately. Config save atomically replaces the preference file using its persistent file layer and session overrides.
 
 Movement commands carry one field to the authoritative actor policy. F1, developer stdin and terminal display submission and the eventual owner decision using the same session, context and request sequence.
+
+The jump command and its alias use the CPU application path and the ordinary gameplay permission. F1, developer stdin and terminal display both admission and the physics result.

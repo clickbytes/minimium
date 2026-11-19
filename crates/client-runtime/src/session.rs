@@ -193,6 +193,9 @@ struct PendingWorldContent {
 }
 
 impl ClientSession {
+    pub(crate) fn next_movement_input_seq(&self) -> u64 {
+        self.next_input_seq
+    }
     pub(crate) fn next_world_request_id(&self) -> u64 {
         self.next_world_sequence
     }
@@ -431,7 +434,14 @@ impl ClientSession {
         let context = self.world_context.ok_or(QueueError::AwaitingWelcome)?;
         let mut queued_sample = None;
         let mut motion_counters = None;
-        if let minimium_protocol::ClientWorldInput::Motion(sample) = &mut input {
+        if let minimium_protocol::ClientWorldInput::Jump { input_seq } = &mut input {
+            *input_seq = self.next_input_seq;
+            motion_counters = Some(
+                input_seq
+                    .checked_add(1)
+                    .ok_or(QueueError::InputSequenceExhausted)?,
+            );
+        } else if let minimium_protocol::ClientWorldInput::Motion(sample) = &mut input {
             let input_seq = self.next_input_seq;
             let next_input_seq = input_seq
                 .checked_add(1)

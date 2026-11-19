@@ -107,6 +107,13 @@ pub fn decode_client(input: &[u8]) -> Result<Option<(ClientMessage, usize)>, Pro
                     }
                     ClientWorldInput::SetMovementPolicy { speed, accel }
                 }
+                14 => {
+                    let input_seq = reader.u64()?;
+                    if input_seq == 0 {
+                        return Err(ProtocolError::InvalidPayload);
+                    }
+                    ClientWorldInput::Jump { input_seq }
+                }
                 13 => crate::policy::read_patch(&mut reader)?,
                 10 => ClientWorldInput::SetFlightEnabled(reader.boolean()?),
                 12 => ClientWorldInput::Excavation(match reader.byte()? {

@@ -247,6 +247,7 @@ pub(crate) enum FrontendAction {
     Property(properties::ClientPropertyCommand),
     ConfigSave(std::path::PathBuf),
     Clock(ClockAction),
+    Jump,
     Movement(
         minimium_client_runtime::MovementField,
         Option<minimium_protocol::MovementPatch>,
@@ -319,11 +320,7 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
                 ..Default::default()
             })
         }
-        ClientCommand::Jump => ClientAction::Motion(minimium_simulation::MovementIntent {
-            jump: true,
-            vertical: 1.0,
-            ..Default::default()
-        }),
+        ClientCommand::Jump => return CommandResult::Action(FrontendAction::Jump),
         ClientCommand::InteractPortal => {
             if context.player_position.is_none() {
                 return CommandResult::Action(FrontendAction::Notice(
