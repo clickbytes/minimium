@@ -321,6 +321,31 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                         }
                         return (false, dispatch::native(result));
                     }
+                    if let Some(result) = text_properties.local_environment_operation(
+                        &identity,
+                        &action,
+                        &mut options,
+                    ) {
+                        return (false, dispatch::native(result));
+                    }
+                    if crate::client_commands::render_queries::RenderQuery::from_action(&action)
+                        .is_some()
+                    {
+                        return (
+                            false,
+                            dispatch::failure(
+                                identity,
+                                minimium_commands::results::Stage::Rejected,
+                                "TextHost",
+                                minimium_commands::CommandError::new(
+                                    minimium_commands::CommandErrorCode::Unavailable,
+                                    Some("Renderer"),
+                                    "this host has no renderer or prepared presentation sample",
+                                    None::<String>,
+                                ),
+                            ),
+                        );
+                    }
                     if let crate::client_commands::FrontendAction::Clock(clock) = &action {
                         let frame = application
                             .session()

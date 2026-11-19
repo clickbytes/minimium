@@ -17,6 +17,7 @@ pub struct FrameStats {
     environment: environment::EnvironmentStats,
     process: ProcessSampler,
     process_cpu_time: Option<Duration>,
+    last_frame_at: Option<Instant>,
 }
 
 impl Default for FrameStats {
@@ -32,17 +33,87 @@ impl Default for FrameStats {
             environment: environment::EnvironmentStats::default(),
             process: ProcessSampler::default(),
             process_cpu_time: None,
+            last_frame_at: None,
         }
     }
 }
 
 impl FrameStats {
+    pub(crate) fn report(&self) -> Option<minimium_commands::operation::CommandValue> {
+        use minimium_commands::operation::{CommandValue as V, FiniteValue};
+        use std::collections::BTreeMap;
+        if self.sample_count == 0 || self.elapsed_nanoseconds == 0 {
+            return None;
+        }
+        let mut fields = BTreeMap::new();
+        let finite = |value: f64| V::Finite(FiniteValue::new(value).expect("finite frame metric"));
+        fields.insert("sample_count".into(), V::U64(self.sample_count));
+        fields.insert("presented_frames".into(), V::U64(self.presented_frames));
+        if let Some(at) = self.last_frame_at {
+            fields.insert(
+                "sample_age_ms".into(),
+                V::U64(at.elapsed().as_millis().min(u128::from(u64::MAX)) as u64),
+            );
+        }
+        fields.insert(
+            "fps".into(),
+            finite(self.presented_frames as f64 * 1e9 / self.elapsed_nanoseconds as f64),
+        );
+        if let Some(us) = self.frame_intervals.average_microseconds() {
+            fields.insert("frame_average_ms".into(), finite(us as f64 / 1000.0));
+        }
+        if let Some(us) = self.cpu_work.average_microseconds() {
+            fields.insert("cpu_average_ms".into(), finite(us as f64 / 1000.0));
+        }
+        for (name, percentile) in [
+            ("frame_p50_ms", 50),
+            ("frame_p95_ms", 95),
+            ("frame_p99_ms", 99),
+        ] {
+            if let Some(us) = self.frame_intervals.percentile_microseconds(percentile) {
+                fields.insert(name.into(), finite(us as f64 / 1000.0));
+            }
+        }
+        for (name, percentile) in [("cpu_p50_ms", 50), ("cpu_p95_ms", 95), ("cpu_p99_ms", 99)] {
+            if let Some(us) = self.cpu_work.percentile_microseconds(percentile) {
+                fields.insert(name.into(), finite(us as f64 / 1000.0));
+            }
+        }
+        if let Some(ms) = self.frame_intervals.maximum_milliseconds() {
+            fields.insert("frame_max_ms".into(), finite(ms));
+        }
+        if let Some(ms) = self.cpu_work.maximum_milliseconds() {
+            fields.insert("cpu_max_ms".into(), finite(ms));
+        }
+        if self.presented_frames > 0 {
+            fields.insert(
+                "draw_calls_per_presented_frame".into(),
+                finite(self.total_draw_calls as f64 / self.presented_frames as f64),
+            );
+        }
+        if let Some(cpu) = self.process_cpu_time {
+            fields.insert(
+                "process_cpu_time_ms".into(),
+                V::U64(cpu.as_millis().min(u128::from(u64::MAX)) as u64),
+            );
+        }
+        if let Some(bytes) = self.gpu_bytes {
+            fields.insert("gpu_estimate_bytes".into(), V::U64(bytes));
+        }
+        fields.insert(
+            "gpu_estimate_scope".into(),
+            V::Enum("engine_resources_not_driver_vram".into()),
+        );
+        Some(V::Record(fields))
+    }
+
     /// Records one render-loop sample.
     ///
     /// `draw_calls == 0` denotes a skipped frame. Any positive value counts as
     /// a presented frame for FPS, so callers should pass zero when surface
     /// acquisition skips presentation.
     pub fn record_frame(&mut self, interval: Duration, cpu_work: Duration, draw_calls: u32) {
+        self.last_frame_at = Some(Instant::now());
         self.process_cpu_time = self.process.sample(Instant::now()).cpu_time;
         self.frame_intervals.record(interval);
         self.cpu_work.record(cpu_work);

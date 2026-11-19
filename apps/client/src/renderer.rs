@@ -52,6 +52,7 @@ mod meteors;
 mod overview;
 mod quality;
 mod render;
+mod render_queries;
 mod scene_bridge;
 mod sector_scene;
 mod sector_worker;

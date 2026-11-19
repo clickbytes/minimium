@@ -1,4 +1,5 @@
 //! Optional nonblocking GPU timing; no queue waits or synchronous readbacks.
+use std::time::Instant;
 use std::{
     cell::{Cell, RefCell},
     collections::VecDeque,
@@ -17,6 +18,8 @@ pub struct AtmosphereTiming {
     ready: Arc<AtomicU8>,
     history: RefCell<VecDeque<[f64; 3]>>,
     sampled_lut: Cell<bool>,
+    last_sample: Cell<Option<Instant>>,
+    submitted_at: Cell<Option<Instant>>,
 }
 impl AtmosphereTiming {
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Option<Self> {
@@ -46,6 +49,8 @@ impl AtmosphereTiming {
             ready: Arc::new(AtomicU8::new(0)),
             history: RefCell::new(VecDeque::with_capacity(120)),
             sampled_lut: Cell::new(true),
+            last_sample: Cell::new(None),
+            submitted_at: Cell::new(None),
         })
     }
     pub fn compute(&self, index: u32) -> wgpu::ComputePassTimestampWrites<'_> {
@@ -76,6 +81,7 @@ impl AtmosphereTiming {
             return;
         }
         self.pending.set(true);
+        self.submitted_at.set(Some(Instant::now()));
         let ready = self.ready.clone();
         self.readback
             .slice(0..48)
@@ -111,19 +117,36 @@ impl AtmosphereTiming {
                     history.pop_front();
                 }
                 history.push_back(values);
+                self.last_sample.set(self.submitted_at.take());
             }
             self.readback.unmap();
         }
         self.pending.set(false);
+        self.submitted_at.set(None);
     }
     pub fn status(&self) -> String {
+        let Some((median, p95, samples, _age_ms)) = self.summary() else {
+            return "GPU timings: preparing asynchronous samples".into();
+        };
+        format!("atmosphere GPU median={median:.3}ms p95={p95:.3}ms samples={samples} (sky LUT + aerial LUT + composite)")
+    }
+
+    pub fn summary(&self) -> Option<(f64, f64, usize, u64)> {
         let history = self.history.borrow();
         if history.is_empty() {
-            return "GPU timings: preparing asynchronous samples".into();
+            return None;
         }
         let mut totals: Vec<_> = history.iter().map(|s| s.iter().sum::<f64>()).collect();
         totals.sort_by(f64::total_cmp);
-        format!("atmosphere GPU median={:.3}ms p95={:.3}ms samples={} (sky LUT + aerial LUT + composite)",
-            totals[totals.len()/2],totals[((totals.len()-1) as f64*0.95).ceil() as usize],totals.len())
+        Some((
+            totals[totals.len() / 2],
+            totals[((totals.len() - 1) as f64 * 0.95).ceil() as usize],
+            totals.len(),
+            self.last_sample
+                .get()?
+                .elapsed()
+                .as_millis()
+                .min(u128::from(u64::MAX)) as u64,
+        ))
     }
 }

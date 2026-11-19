@@ -117,7 +117,7 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
     PropertySpec::new(
         Key::CloudDetail.key(),
         PropertyType::Integer,
-        None,
+        Some("depth"),
         "Preferred maximum recursive cloud voxel depth.",
         Some("6"),
         Some("2..=6"),

@@ -99,7 +99,7 @@ fn unavailable(
     unavailable_for(renderer, operation.capability(), operation.requirement())
 }
 
-pub(super) fn unavailable_for(
+pub(in crate::renderer) fn unavailable_for(
     renderer: &DesktopHost,
     capability: crate::client_commands::PresentationCapability,
     requirement: PresentationRequirement,

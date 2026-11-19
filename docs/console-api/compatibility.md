@@ -75,3 +75,6 @@ Batch #580 migrates client.connection host_local, connect, disconnect, ping, sta
 Player action bindings preserve raw chat tails, validate decoded chat and player names with the wire predicates, and distinguish queue acceptance from a complete frame write. Fire reports the actual camera or terminal compatibility direction. Owner inventory snapshots and untagged shot events retain their independent identities.
 
 Batch #582 routes `world portal`/`portal`, `dev goto`, and `set_altitude` through actor intents. `dev goto` uses a CPU geographic conversion in every host; `world teleport`/`map_telepo` arms a desktop map click and never means immediate teleport. Active source membership, pending destination and owner commit remain separate. Wire v26 adds correlated portal, goto and altitude results; map selection itself stays local.
+
+
+Batch E051-16 binds P010-P020 and seven local renderer query declarations to typed results. Desktop settings and legacy aliases use SettingsStore plus effective input or renderer state. The text host exposes the same catalog and reports renderer capability errors for presentation queries.

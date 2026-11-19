@@ -6,6 +6,51 @@ use crate::client_commands::{
 use minimium_commands::{PropertySource, PropertyValue};
 
 impl DesktopHost {
+    pub(in crate::renderer) fn local_environment_operation(
+        &mut self,
+        identity: &minimium_commands::results::OperationContext,
+        action: &crate::client_commands::FrontendAction,
+    ) -> Option<minimium_commands::results::OperationResult> {
+        use minimium_commands::results::{OperationReceipt, OperationResult, Payload, Stage};
+        let crate::client_commands::FrontendAction::Property(command) = action else {
+            return None;
+        };
+        let (key, changed) = match command {
+            ClientPropertyCommand::Get(key)
+                if crate::client_commands::local_environment::owns(*key) =>
+            {
+                (*key, false)
+            }
+            ClientPropertyCommand::Set(value)
+                if crate::client_commands::local_environment::owns(value.key()) =>
+            {
+                (self.set_property(value.clone()), true)
+            }
+            ClientPropertyCommand::Reset(key)
+                if crate::client_commands::local_environment::owns(*key) =>
+            {
+                self.reset_property(*key);
+                (*key, true)
+            }
+            _ => return None,
+        };
+        let property = self
+            .application
+            .settings
+            .values
+            .local_environment_property(key);
+        let stage = if changed {
+            Stage::OwnerCommitted
+        } else {
+            Stage::Completed
+        };
+        Some(OperationResult::new(
+            identity.clone(),
+            OperationReceipt::at(stage),
+            Ok(Payload::Property(property)),
+        ))
+    }
+
     pub(super) fn apply_property(&mut self, command: ClientPropertyCommand) -> String {
         match command {
             ClientPropertyCommand::Get(key) => self.property_line(key, false),

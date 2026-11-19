@@ -1245,3 +1245,6 @@ Only regions near stored chunks need the additional base cache and guard meshes.
 The preparation fails closed when its contour or memory bounds cannot be met.
 
 The desktop supplies presentation simulation time to star scintillation, meteors, bolid trails, impact dust and tool animation. Cloud geometry, lighting and finite-source occlusion consume the selected publication for the frame UTC. Sorted transparency uses the current camera and cloud positions. Camera input and eye adaptation use real frame time.
+
+
+AtmosphereGpu::timing_report exposes optional asynchronous GPU timestamp summaries with median and p95 milliseconds, sample count and monotonic sample age. timing_supported distinguishes an unsupported adapter from an enabled query set awaiting a sample. The timing covers the atmosphere sky LUT, aerial LUT and composite passes when those passes run. It excludes scene copy, profile rebuild and other lighting passes. The client packages the CPU projection with prepared presentation identity.

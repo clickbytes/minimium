@@ -193,7 +193,7 @@ The text client and in-window console use one startup command registry and parse
 
 The desktop client requests a 1920×1080 physical-pixel window by default; the window manager may constrain it to the available display area. Press F1 to open or close the console. It uses the shared registry above and renders text in Roboto Mono. Arrow keys browse history; PageUp/PageDown or the mouse wheel scroll the console, Home jumps to the oldest lines, End returns to the newest lines, and Tab suggests canonical commands and aliases. Lock the mouse and left-click to fire. `fps show` reports frame interval and render-loop work summaries; `net stats` reports application bytes, latest round-trip time, and nearby-player count. Registered command descriptors define argument types, optional/rest behavior, choices, constraints, units, and descriptions; help and enum completion use this metadata.
 
-`sky quality low|standard` changes only local rendering quality: `low` disables shadows and `standard` enables one 1024×1024 local shadow map. If the adapter refuses that resource, the client uses `low` and `sky info` shows requested/effective quality and the fallback reason. `sky info` prints a versioned, on-demand snapshot of clock synchronization, observer and celestial values, CPU timings, actual environment draw calls, shadow coverage, and estimated environment GPU bytes. `time status` prints the current session's read-only clock sample and synchronization state. `time scale` uses the owned server's private administrative endpoint and is unavailable for attached or remote sessions.
+`sky quality low|standard` changes only local rendering quality: `low` disables shadows and `standard` enables one 1024×1024 local shadow map. If the adapter refuses that resource, the client uses `low` and `sky info` shows requested/effective quality and the fallback reason. `sky info` returns a bounded typed prepared sky report with observer, quality and Sun/Moon values. `time status` prints the current session's read-only clock sample and synchronization state. `time scale` uses the owned server's private administrative endpoint and is unavailable for attached or remote sessions.
 
 The desktop console accepts `fov` to display the current vertical field of view and `fov DEGREES` to set it from 30 to 110 degrees (default: 70). `show_celestial_names true|false` toggles on-screen labels for the Sun, Moon, visible catalog bodies, and up to 32 bright stars (default: false). The star display uses a fixed 1000-star HYG catalog. Both settings are local to the current client session.
 
@@ -217,7 +217,7 @@ unavailable reason without arming the map action.
 `spawn_random_bolid [N]` also requires the active matching scene before it
 stages the existing gaze/admin request; unavailable input is not retained.
 
-`weather status` reports the local AnnualMean conditions, region, active cloud layers, wind, family counts and altitude bounds, effective voxel resolution, cache usage, simplification, morph lag, memory and transparency mode.
+`weather status` returns a typed prepared weather publication report with revision, cloud and region counts, build time, sample age and GPU memory estimate.
 
 `weather clouds debug off|regions|layers|wind|kinds|detail` controls the graphical client's regional grid, source-floor colours, eastward wind arrows, family colours and voxel detail display.
 
@@ -386,3 +386,30 @@ Use client.connection.stats() for total process traffic and the optional current
 Chat accepts 1..128 UTF-8 bytes without control characters. Player names accept 1..24 ASCII letters, digits or underscores. The fire receipt includes the direction and its source (camera or terminal default). Player action receipts identify their world input sequence and report when the transport confirms a complete frame write.
 
 Portal, dev goto LAT LON, and set_altitude KM submit typed actor navigation. Goto accepts finite latitude -90..90 and longitude -180..180 degrees and prepares direction on the CPU, including terminal mode. The server decides world context, permission and target validity. world teleport/map_telepo only arms a desktop Earth-map click; the click submits a separate teleport request and the arm receipt does not claim teleport completion.
+
+### Local presentation values and reports / Lokalne ustawienia i raporty
+
+The get, set, and reset forms for client.input.mouse_sensitivity,
+client.input.bindings, client.graphics.sky_quality, client.sky.names,
+client.weather.cloud_detail, client.debug.atmosphere, client.debug.moon_flux,
+client.debug.exposure_ev, client.debug.terrain, client.debug.clouds, and
+client.sky.demo return typed property values. Requested, effective, startup,
+default, source, and fallback reason stay separate. Reset restores startup.
+F1 and terminal share parsing and validation. A text host can read preferences
+and change input bindings; renderer settings require the desktop capability.
+
+The seven presentation queries are client.render.frames.status(),
+client.sky.status(), client.sky.bodies.list(), client.render.terrain.status(),
+client.render.atmosphere.status(), client.weather.status(), and
+client.weather.clouds.targets(). Existing fps show, sky info, sky bodies,
+terrain status, atmosphere status, weather status, and dev clouds spellings
+bind to them. Each returns a bounded typed record with available world identity,
+clock revision, freshness, and source. Missing samples and stale world content
+return Unavailable. GPU timing distinguishes unsupported, pending, and measured
+samples; measured values include pass scope and age. Body results are capped at
+128 rows and carry truncated.
+
+Po polsku: odczyt, zapis i reset lokalnych preferencji zachowują osobno wartość
+żądaną, efektywną i startową oraz przyczynę ograniczenia. Zapytania renderera
+wymagają przygotowanej próbki; brak próbki zwraca Unavailable. Lista ciał
+jest ograniczona i oznacza obcięcie.

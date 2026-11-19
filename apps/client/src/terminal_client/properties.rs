@@ -14,6 +14,66 @@ pub(super) struct TextProperties {
 }
 
 impl TextProperties {
+    pub(super) fn local_environment_operation(
+        &mut self,
+        identity: &minimium_commands::results::OperationContext,
+        action: &crate::client_commands::FrontendAction,
+        options: &mut ClientOptions,
+    ) -> Option<minimium_commands::results::OperationResult> {
+        use minimium_commands::results::{
+            OperationFailure, OperationReceipt, OperationResult, Payload, Stage,
+        };
+        let crate::client_commands::FrontendAction::Property(command) = action else {
+            return None;
+        };
+        let key = match command {
+            ClientPropertyCommand::Get(key) => *key,
+            ClientPropertyCommand::Set(value) => value.key(),
+            ClientPropertyCommand::Reset(key) => *key,
+            _ => return None,
+        };
+        if !crate::client_commands::local_environment::owns(key) {
+            return None;
+        }
+        let changed = match command {
+            ClientPropertyCommand::Get(_) => false,
+            ClientPropertyCommand::Set(Value::InputBindings(bindings)) => {
+                options.input_bindings = bindings.clone();
+                self.settings.set(Value::InputBindings(bindings.clone()));
+                true
+            }
+            ClientPropertyCommand::Reset(Key::InputBindings) => {
+                let Some(Value::InputBindings(bindings)) = self.settings.reset(key.key()) else {
+                    unreachable!("validated startup input bindings")
+                };
+                options.input_bindings = bindings;
+                true
+            }
+            _ => {
+                return Some(OperationResult::new(
+                    identity.clone(),
+                    OperationReceipt::at(Stage::Rejected),
+                    Err(OperationFailure::command(
+                        "TextProperties",
+                        unsupported_context(key.key()),
+                    )),
+                ));
+            }
+        };
+        let stage = if changed {
+            Stage::OwnerCommitted
+        } else {
+            Stage::Completed
+        };
+        Some(OperationResult::new(
+            identity.clone(),
+            OperationReceipt::at(stage),
+            Ok(Payload::Property(
+                self.settings.local_environment_property(key),
+            )),
+        ))
+    }
+
     pub fn new(options: &ClientOptions) -> Self {
         let mut settings = SettingsStore::new(&options.startup_settings);
         for value in options.startup_settings.iter() {
@@ -28,7 +88,7 @@ impl TextProperties {
     pub fn execute(
         &mut self,
         command: ClientPropertyCommand,
-        options: &mut ClientOptions,
+        _options: &mut ClientOptions,
         connection: &ConnectionController,
     ) -> Result<String, CommandError> {
         match command {
@@ -53,43 +113,29 @@ impl TextProperties {
                     unreachable!("shared movement operation")
                 }
                 Key::Locale
-                | Key::InputBindings
                 | Key::CameraFov
-                | Key::MouseSensitivity
-                | Key::SkyQuality
-                | Key::SkyNames
                 | Key::MeteorEnabled
                 | Key::MeteorRate
                 | Key::MeteorQuality
                 | Key::MeteorSeed
                 | Key::MeteorAudio
-                | Key::MeteorVolume
+                | Key::MeteorVolume => Ok(self.get(key)),
+                Key::InputBindings
+                | Key::MouseSensitivity
+                | Key::SkyQuality
+                | Key::SkyNames
                 | Key::CloudDetail
                 | Key::AtmosphereDebug
                 | Key::MoonFlux
                 | Key::ExposureEv
                 | Key::TerrainDebug
                 | Key::CloudDebug
-                | Key::SkyDemo => Ok(self.get(key, options)),
+                | Key::SkyDemo => {
+                    unreachable!("typed local environment operation")
+                }
             },
-            ClientPropertyCommand::Set(value) => match value {
-                crate::client_commands::ClientPropertyValue::InputBindings(bindings) => {
-                    options.input_bindings = bindings.clone();
-                    self.settings.set(Value::InputBindings(bindings));
-                    Ok(self.get(Key::InputBindings, options))
-                }
-                other => Err(unsupported_context(other.key().key())),
-            },
-            ClientPropertyCommand::Reset(key) => {
-                if key != Key::InputBindings {
-                    return Err(unsupported_context(key.key()));
-                }
-                match self.settings.reset(key.key()) {
-                    Some(Value::InputBindings(bindings)) => options.input_bindings = bindings,
-                    _ => unreachable!("local startup setting is validated"),
-                }
-                Ok(self.get(key, options))
-            }
+            ClientPropertyCommand::Set(value) => Err(unsupported_context(value.key().key())),
+            ClientPropertyCommand::Reset(key) => Err(unsupported_context(key.key())),
             ClientPropertyCommand::Help(_)
             | ClientPropertyCommand::List(_)
             | ClientPropertyCommand::CommandHelp(_)
@@ -97,7 +143,7 @@ impl TextProperties {
         }
     }
 
-    fn get(&self, key: Key, _options: &ClientOptions) -> String {
+    fn get(&self, key: Key) -> String {
         let requested = self
             .settings
             .requested(key.key())

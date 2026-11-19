@@ -1,6 +1,6 @@
 mod action;
 mod output;
-mod presentation;
+pub(in crate::renderer) mod presentation;
 use super::*;
 use crate::client_commands::output as dispatch;
 pub(super) use output::format_console_output;
@@ -141,6 +141,15 @@ pub(super) fn execute_input(
                 renderer.apply_property_value(client_commands::ClientPropertyValue::Locale(locale));
             }
             return (false, dispatch::native(result));
+        }
+        if let Some(result) = renderer.local_environment_operation(&identity, &action) {
+            return (false, dispatch::native(result));
+        }
+        if let Some(query) = client_commands::render_queries::RenderQuery::from_action(&action) {
+            return (
+                false,
+                dispatch::native(renderer.render_query_operation(&identity, query)),
+            );
         }
         if let client_commands::FrontendAction::Clock(clock) = &action {
             let frame = renderer

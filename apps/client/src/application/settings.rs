@@ -1,3 +1,4 @@
+mod local_environment;
 mod locale;
 mod revisions;
 pub(crate) use revisions::{PropertyRevision, SettingsBaseId};

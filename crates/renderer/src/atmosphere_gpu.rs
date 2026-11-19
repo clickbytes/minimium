@@ -36,6 +36,13 @@ pub struct AtmosphereGpu {
     shadow_key: Option<DirectionalShadowKey>,
 }
 impl AtmosphereGpu {
+    pub fn timing_report(&self) -> Option<(f64, f64, usize, u64)> {
+        self.timing.as_ref()?.summary()
+    }
+
+    pub fn timing_supported(&self) -> bool {
+        self.timing.is_some()
+    }
     pub const BYTES: u64 = AtmosphereResources::BYTES;
     pub fn new(
         device: &wgpu::Device,

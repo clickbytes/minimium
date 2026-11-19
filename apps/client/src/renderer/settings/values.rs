@@ -18,10 +18,6 @@ impl DesktopHost {
                     .fov_property()
                     .format_with(minimium_commands::operation::CommandValue::encode)
             }
-            Key::MouseSensitivity => self.stored_property(key),
-            Key::InputBindings => self.stored_property(key),
-            Key::SkyQuality => self.stored_property(key),
-            Key::SkyNames => self.stored_property(key),
             Key::MeteorAudio => (
                 self.meteors.audio.enabled.to_string(),
                 (self.meteors.audio.enabled && self.meteors.audio.backend_status() == "ready")
@@ -52,13 +48,19 @@ impl DesktopHost {
                     .then(|| "sky quality limits meteor visibility to low".into()),
             ),
             Key::MeteorVolume => self.stored_property(key),
-            Key::CloudDetail => self.stored_property(key),
-            Key::AtmosphereDebug => self.stored_property(key),
-            Key::MoonFlux => self.stored_property(key),
-            Key::ExposureEv => self.stored_property(key),
-            Key::TerrainDebug => self.stored_property(key),
-            Key::CloudDebug => self.stored_property(key),
-            Key::SkyDemo => self.stored_property(key),
+            Key::MouseSensitivity
+            | Key::InputBindings
+            | Key::SkyQuality
+            | Key::SkyNames
+            | Key::CloudDetail
+            | Key::AtmosphereDebug
+            | Key::MoonFlux
+            | Key::ExposureEv
+            | Key::TerrainDebug
+            | Key::CloudDebug
+            | Key::SkyDemo => {
+                unreachable!("typed local environment operation")
+            }
             Key::MovementFly | Key::MovementSpeed | Key::MovementAccel => {
                 unreachable!("shared movement operation")
             }
