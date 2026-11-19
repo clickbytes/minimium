@@ -221,6 +221,7 @@ pub enum ServerCommand {
     },
     Metrics,
     Save,
+    SaveStatus(Option<minimium_storage::SaveJobId>),
     Stop,
     SpawnRandomBolid(u16),
     BolidStatus(u64),

@@ -153,6 +153,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         time.monotonic += Duration::from_millis(50);
         let outcome = runtime.step(time)?;
         for result in outcome.commands {
+            if let Some(CommandPayloadView::SaveJob(job)) = result.reply.view().payload {
+                println!("accepted save job {}", job.id.0);
+                let _status = RuntimeCommand::save_status(Some(job.id));
+            }
             println!(
                 "command {} accepted earlier; executed: {}",
                 result.id.get(),

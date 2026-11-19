@@ -419,6 +419,20 @@ impl ClientApplicationCore {
             .request_impact_receipt_status(world, id, now)
     }
 
+    pub fn request_persistence_save(&mut self, now: ClientTime) -> Result<(), ControllerError> {
+        self.accept_controller_time(now)?;
+        self.connection.request_persistence_save(now)
+    }
+
+    pub fn request_persistence_status(
+        &mut self,
+        id: Option<u128>,
+        now: ClientTime,
+    ) -> Result<(), ControllerError> {
+        self.accept_controller_time(now)?;
+        self.connection.request_persistence_status(id, now)
+    }
+
     pub fn take_material_package_if_awaiting_gpu(
         &mut self,
         now: ClientTime,

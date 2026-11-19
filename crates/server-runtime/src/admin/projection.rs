@@ -57,6 +57,10 @@ pub(super) fn payload(
         )),
         Some(View::Property(r)) => return Payload::Property(r.typed_value()),
         Some(View::WaterStatus(status)) => Some(crate::commands::water::project(status)),
+        Some(View::SaveJob(job)) => Some(crate::commands::persistence::project_job(job)),
+        Some(View::SaveStatus(status)) => {
+            Some(crate::commands::persistence::project_status(status))
+        }
         Some(View::EntityDespawn {
             world,
             entity,

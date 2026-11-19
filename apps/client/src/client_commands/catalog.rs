@@ -7,6 +7,7 @@ use minimium_environment::console::{clock_entry, ClockReadBinding};
 mod connection;
 mod console;
 mod movement;
+mod persistence;
 mod presentation;
 mod settings;
 
@@ -54,6 +55,9 @@ fn build() -> Result<OperationCatalog, CatalogError> {
     package.alias("client.quit", "quit", "quit", &[])?;
     package.operation(resolve("client.camera.status", false)?)?;
     package.operation(resolve("client.render.water.status", false)?)?;
+    package.operation(resolve("server.persistence.save", false)?)?;
+    package.operation(resolve("server.persistence.status", false)?)?;
+    package.alias("server.persistence.save", "world save", "world save", &[])?;
     package.operation(resolve("world.time.initial_config", false)?)?;
     package.operation(minimium_commands::syntax::bind::explain_entry())?;
     package.finish()
@@ -111,5 +115,6 @@ fn resolve(name: &str, persistent: bool) -> Result<CatalogEntry, CatalogError> {
         .or_else(|| connection::entry(name))
         .or_else(|| actor::entry(name))
         .or_else(|| bolids::entry(name))
+        .or_else(|| persistence::entry(name))
         .ok_or_else(|| CatalogError::InvalidName(name.to_owned()))
 }

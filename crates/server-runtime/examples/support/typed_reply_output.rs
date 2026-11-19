@@ -139,8 +139,14 @@ pub(super) fn inspect_reply(reply: CommandReplyView<'_>) {
             }
             println!("client traffic truncated={clients_truncated}");
         }
-        CommandPayloadView::SaveQueued => {
-            println!("save queued; status reports pending/completed state");
+        CommandPayloadView::SaveJob(job) => {
+            println!(
+                "save queued: job={} revision={}",
+                job.id.0, job.snapshot_revision
+            );
+        }
+        CommandPayloadView::SaveStatus(status) => {
+            println!("save status: {status:?}");
         }
         CommandPayloadView::Stopping => println!("stopping"),
         CommandPayloadView::Time(clock) | CommandPayloadView::ClockCommitted(clock) => {

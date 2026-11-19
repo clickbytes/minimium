@@ -12,6 +12,7 @@ impl ServerCommand {
             Self::Players { .. } => "players list",
             Self::Metrics => "metrics show",
             Self::Save => "world save",
+            Self::SaveStatus(_) => "server.persistence.status",
             Self::Stop => "stop",
             Self::SpawnRandomBolid(_) => "spawn_random_bolid",
             Self::BolidStatus(_) => "bolids status",

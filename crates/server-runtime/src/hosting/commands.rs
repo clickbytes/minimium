@@ -132,6 +132,10 @@ impl RuntimeCommand {
         Self(ServerCommand::Save)
     }
 
+    pub fn save_status(id: Option<minimium_storage::SaveJobId>) -> Self {
+        Self(ServerCommand::SaveStatus(id))
+    }
+
     pub fn stop() -> Self {
         Self(ServerCommand::Stop)
     }

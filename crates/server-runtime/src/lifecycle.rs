@@ -18,6 +18,7 @@ pub(crate) struct ShutdownContext<'a> {
     pub transport: &'a mut dyn minimium_transport::TransportPort,
     pub player_store: &'a mut PlayerStore,
     pub persistence: &'a mut dyn PersistencePort,
+    pub save_jobs: &'a mut crate::runtime::persistence_jobs::PersistenceJobs,
     pub content: &'a mut dyn crate::composition::ContentServicePort,
     pub sector_workers: &'a mut SectorGenerationPool,
     pub executor: &'a mut Executor,
@@ -57,8 +58,13 @@ pub(crate) fn shutdown(mut context: ShutdownContext<'_>) -> io::Result<()> {
     } else {
         Err(io::Error::other("incomplete simulation boundary"))
     };
-    let save_result =
-        persist_final_snapshot(context.persistence, snapshot, deadline, context.logger);
+    let save_result = persist_final_snapshot(
+        context.persistence,
+        context.save_jobs,
+        snapshot,
+        deadline,
+        context.logger,
+    );
     if !unfinished.is_empty() {
         crate::diagnostics::emit(
             context.logger,
@@ -173,14 +179,62 @@ fn capture_final_snapshot(
 
 fn persist_final_snapshot(
     persistence: &mut dyn PersistencePort,
+    jobs: &mut crate::runtime::persistence_jobs::PersistenceJobs,
     snapshot: io::Result<crate::storage::SaveSnapshot>,
     deadline: Instant,
     logger: &minimium_diagnostics::DomainLogger,
 ) -> io::Result<()> {
+    while (persistence.has_pending_save() || jobs.has_active()) && Instant::now() < deadline {
+        for completion in persistence.poll_completions() {
+            jobs.complete(completion, Instant::now());
+        }
+        if persistence.has_pending_save() || jobs.has_active() {
+            thread::sleep(Duration::from_millis(5));
+        }
+    }
+    if persistence.has_pending_save() || jobs.has_active() {
+        let _ = persistence.shutdown_until(None, deadline);
+        return Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "pending snapshot save exceeded shutdown deadline",
+        ));
+    }
     match snapshot {
-        Ok(snapshot) => persistence
-            .shutdown_until(Some(snapshot), deadline)
-            .map_err(io::Error::from),
+        Ok(snapshot) => {
+            let id = jobs.allocate();
+            let revision = snapshot.revision();
+            jobs.queued(
+                id,
+                crate::runtime::SaveSource::Shutdown,
+                &snapshot,
+                Instant::now(),
+            );
+            let durability = persistence.completion_durability();
+            let result = persistence.shutdown_until(Some((id, snapshot)), deadline);
+            for completion in persistence.poll_completions() {
+                jobs.complete(completion, Instant::now());
+            }
+            match result {
+                Ok(()) => {
+                    jobs.complete(
+                        crate::storage::SaveCompletion {
+                            id,
+                            revision,
+                            durability,
+                            result: Ok(()),
+                        },
+                        Instant::now(),
+                    );
+                    Ok(())
+                }
+                Err(error) => {
+                    if error.kind() != crate::storage::StorageErrorKind::Timeout {
+                        jobs.fail(id, &error, Instant::now());
+                    }
+                    Err(io::Error::from(error))
+                }
+            }
+        }
         Err(error) => {
             if let Err(cleanup_error) = persistence.shutdown_until(None, deadline) {
                 crate::diagnostics::emit(

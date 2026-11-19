@@ -1,8 +1,6 @@
 use super::{ClientTrafficSnapshot, RuntimeStatusSnapshot, ScheduleDiagnostics};
 use crate::{
-    environment::EnvironmentClock,
-    metrics::RuntimeMetrics,
-    storage::{PersistencePort, PlayerStore},
+    environment::EnvironmentClock, metrics::RuntimeMetrics, storage::PersistencePort,
     world_registry::WorldRegistry,
 };
 use minimium_environment::time::MonotonicMs;
@@ -10,9 +8,7 @@ use minimium_environment::time::MonotonicMs;
 /// Private owner-only inputs for commands that operate storage or server services.
 pub(crate) struct OwnerCommandContext<'a> {
     pub(crate) worlds: &'a WorldRegistry,
-    pub(crate) player_store: &'a mut PlayerStore,
     pub(crate) persistence: &'a mut dyn PersistencePort,
-    pub(crate) map_fingerprint: u64,
     pub(crate) lanes: usize,
     pub(crate) metrics: &'a RuntimeMetrics,
     pub(crate) environment_clock: &'a mut EnvironmentClock,

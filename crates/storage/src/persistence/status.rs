@@ -2,6 +2,25 @@ use crate::compact_error;
 use crate::StorageError;
 use minimium_diagnostics::{DomainLogger, EventCode, Level};
 
+/// An exact identifier supplied by the runtime for one accepted snapshot job.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct SaveJobId(pub u128);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SaveDurability {
+    Durable,
+    Volatile,
+    BackendDefined,
+}
+
+#[derive(Debug)]
+pub struct SaveCompletion {
+    pub id: SaveJobId,
+    pub revision: u64,
+    pub durability: SaveDurability,
+    pub result: Result<(), StorageError>,
+}
+
 #[derive(Clone, Debug)]
 pub enum SaveStatus {
     Never,
@@ -37,7 +56,9 @@ impl SaveBookkeeping {
     }
 
     pub(super) fn record_enqueue_failure(&mut self, error: &StorageError) {
-        self.last_save = SaveStatus::Failed(compact_error(error));
+        if self.pending_saves == 0 {
+            self.last_save = SaveStatus::Failed(compact_error(error));
+        }
         self.emit(
             "storage.save_enqueue_failed",
             Level::Error,
@@ -45,7 +66,7 @@ impl SaveBookkeeping {
         );
     }
 
-    pub(super) fn record_completion(&mut self, result: Result<(), StorageError>) {
+    pub(super) fn record_completion(&mut self, result: &Result<(), StorageError>) {
         self.pending_saves = self.pending_saves.saturating_sub(1);
         match result {
             Ok(()) => {

@@ -450,6 +450,20 @@ impl ClientApplication {
         self.core.request_impact_receipt_status(world, id, now)
     }
 
+    pub(crate) fn request_persistence_save(
+        &mut self,
+        now: ClientTime,
+    ) -> Result<(), minimium_client_runtime::ControllerError> {
+        self.core.request_persistence_save(now)
+    }
+    pub(crate) fn request_persistence_status(
+        &mut self,
+        id: Option<u128>,
+        now: ClientTime,
+    ) -> Result<(), minimium_client_runtime::ControllerError> {
+        self.core.request_persistence_status(id, now)
+    }
+
     fn prepare_bootstrap_terrain(&mut self, now: ClientTime) {
         let view = self.core.view();
         let instance = view.world_instance;

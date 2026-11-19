@@ -124,6 +124,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let typed_rate = minimium_environment::time::TimeScalePpm::new(1_000_000)?;
     let commands = [
         RuntimeCommand::save_world(),
+        RuntimeCommand::save_status(None),
         RuntimeCommand::status(),
         RuntimeCommand::get_property("server.autosave_interval")?,
         RuntimeCommand::set_autosave_interval(60)?,
@@ -168,8 +169,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             };
             match reply.payload {
-                Some(CommandPayloadView::SaveQueued) => {
-                    println!("submission {} queued a save", result.id.get());
+                Some(CommandPayloadView::SaveJob(job)) => {
+                    println!(
+                        "submission {} queued save job {}",
+                        result.id.get(),
+                        job.id.0
+                    );
                 }
                 Some(CommandPayloadView::Property(property)) => {
                     println!("{} = {:?}", property.key(), property.value());

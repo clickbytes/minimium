@@ -94,6 +94,18 @@ pub(super) fn handle(
                 Err(error) => println!("bolids status: {error}"),
             }
         }
+        FrontendAction::SaveWorld => {
+            match application.request_persistence_save(crate::host_time::sample()) {
+                Ok(()) => println!("save requested; await owner job receipt"),
+                Err(error) => println!("world save: {error}"),
+            }
+        }
+        FrontendAction::SaveStatus(id) => {
+            match application.request_persistence_status(id, crate::host_time::sample()) {
+                Ok(()) => println!("save status requested"),
+                Err(error) => println!("server.persistence.status: {error}"),
+            }
+        }
         FrontendAction::ImpactStatus { world, id } => {
             match application.request_impact_receipt_status(world, id, crate::host_time::sample()) {
                 Ok(()) => println!("impact {world}/{id} status requested"),

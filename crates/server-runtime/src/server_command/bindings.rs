@@ -65,6 +65,30 @@ pub(crate) fn from_prepared(
 
 fn lower(op: &PreparedOperation, entry: &CatalogEntry) -> Result<ServerCommand, CommandError> {
     let span = op.arguments.first().map_or(op.span, |arg| arg.span);
+    if op.path == "server.persistence.status" {
+        let id = op
+            .arguments
+            .first()
+            .filter(|arg| arg.text != "none")
+            .map(|arg| {
+                arg.text
+                    .parse::<u128>()
+                    .ok()
+                    .filter(|id| *id != 0)
+                    .map(minimium_storage::SaveJobId)
+                    .ok_or_else(|| {
+                        CommandError::new(
+                            Code::InvalidValue,
+                            Some("job_id"),
+                            "expected exact positive SaveJobId",
+                            None::<String>,
+                        )
+                        .at(arg.span)
+                    })
+            })
+            .transpose()?;
+        return Ok(ServerCommand::SaveStatus(id));
+    }
     if op.path == "server.players.list" && !op.legacy {
         let cursor = op
             .arguments

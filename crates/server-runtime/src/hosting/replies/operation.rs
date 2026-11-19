@@ -15,7 +15,7 @@ impl CommandReplyView<'_> {
             ReplyState::Rejected => Stage::Rejected,
             ReplyState::Partial => Stage::Partial,
             ReplyState::Executed => match &self.payload {
-                Some(CommandPayloadView::SaveQueued) => Stage::OwnerAccepted,
+                Some(CommandPayloadView::SaveJob(_)) => Stage::OwnerCommitted,
                 Some(CommandPayloadView::ModuleText { .. }) => Stage::LegacyReported,
                 Some(CommandPayloadView::Bolid { .. }) => Stage::OwnerCommitted,
                 Some(CommandPayloadView::ImpactSpawn { .. }) => Stage::OwnerAccepted,
@@ -45,6 +45,10 @@ impl CommandReplyView<'_> {
         }
         if let Some(CommandPayloadView::EntityDespawn { revision, .. }) = &self.payload {
             receipt.revision = *revision;
+        }
+        if let Some(CommandPayloadView::SaveJob(job)) = &self.payload {
+            receipt.revision = Some(job.snapshot_revision);
+            receipt.freshness = Some(minimium_commands::results::property::Freshness::Current);
         }
         if let Some(outcome) = self.effects {
             receipt.effects = effects(outcome);

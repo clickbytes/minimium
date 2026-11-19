@@ -54,6 +54,18 @@ impl SaveSnapshot {
         self.revision
     }
 
+    pub fn committed_tick(&self) -> u64 {
+        self.saved_clock.boundary().tick()
+    }
+
+    pub fn journal_revision(&self) -> u64 {
+        self.excavation_revision
+    }
+
+    pub fn world_count(&self) -> usize {
+        self.world_manifests.len()
+    }
+
     pub fn write(self, data_dir: &Path) -> Result<(), StorageError> {
         crate::format::write(self, data_dir).map_err(StorageError::from_io)
     }

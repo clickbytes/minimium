@@ -6,8 +6,12 @@ pub(crate) fn render(payload: &CommandPayloadView<'_>) -> BoundedText {
     let mut out = BoundedText::default();
     match payload {
         CommandPayloadView::ModuleText { text, .. } => out.push_str(text),
-        CommandPayloadView::SaveQueued => {
-            out.push_str("world save queued; use status to check completion")
+        CommandPayloadView::SaveJob(job) => {
+            let _ = write!(out, "world save queued job_id={} snapshot_revision={} committed_tick={} journal_revision={} worlds={}; use server.persistence.status({})", job.id.0, job.snapshot_revision, job.committed_tick, job.journal_revision, job.world_count, job.id.0);
+        }
+        CommandPayloadView::SaveStatus(status) => {
+            let value = crate::commands::persistence::project_status(status);
+            let _ = write!(out, "{value:?}");
         }
         CommandPayloadView::Stopping => out.push_str("stopping"),
         CommandPayloadView::Property(report) => property(&mut out, report),

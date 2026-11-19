@@ -121,14 +121,24 @@ impl ServerRuntime {
                         ),
                     }
                 }
+                Cmd::Save => match monotonic_ms {
+                    Ok(at) => self.queue_manual_save(at),
+                    Err(error) => commands::CommandReply::error(
+                        "server.monotonic_clock_failed",
+                        &error.to_string(),
+                    ),
+                },
+                Cmd::SaveStatus(id) => {
+                    commands::CommandReply::success(commands::CommandPayload::SaveStatus(
+                        self.operations.save_jobs.status(*id, self.now),
+                    ))
+                }
                 _ => match monotonic_ms {
                     Ok(monotonic_ms) => commands::execute(
                         &command,
                         commands::OwnerCommandContext {
                             worlds: &self.game.worlds,
-                            player_store: &mut self.operations.player_store,
                             persistence: &mut *self.operations.persistence,
-                            map_fingerprint: self.map.fingerprint(),
                             lanes,
                             metrics: &self.metrics,
                             environment_clock: &mut self.environment_clock,

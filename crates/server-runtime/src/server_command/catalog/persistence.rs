@@ -1,6 +1,7 @@
 use minimium_commands::operation::{
     CatalogEntry, DomainBinding, Effect::*, OperationKind::*, PersistenceKind, TypeRef,
 };
+use minimium_commands::operation::{ParameterSpec, ScalarType};
 
 pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
     let binding = DomainBinding {
@@ -21,6 +22,17 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
             None,
             PersistenceJob,
         ),
+        "server.persistence.status" => {
+            binding.declaration(
+                "server.persistence.status",
+                Method,
+                &[ParameterSpec::optional("job_id", "SaveJobId", None)
+                    .scalar(ScalarType::NonzeroU128)],
+                TypeRef::domain("SaveStatus"),
+                None,
+                Query,
+            )
+        }
         _ => return None,
     })
 }

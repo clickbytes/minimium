@@ -101,9 +101,14 @@ result. Views borrow bounded rows and preserve continuation cursors. `world list
 `players list`, `entity list` and `entity inspect` accept the returned cursor as
 an optional argument.
 Report fields are read through accessors, so hosts cannot mutate runtime state
-or manufacture an unbounded execution result. `SaveQueued` means only that the
-existing persistence queue accepted work; `StatusReport::persistence()` reports
-the owner's current pending/last-save state. The formatter and terminal/admin
+or manufacture an unbounded execution result. `SaveJob` identifies the
+accepted all-world snapshot, its revision and journal boundary. The runtime's
+bounded job ledger correlates manual, autosave and shutdown jobs with exact
+backend completions. `server.persistence.status(job_id?)` exposes the active
+and last result; `StatusReport::persistence()` retains its historical summary.
+File completion is durable, memory completion is volatile, and an injected
+backend without a declared guarantee is backend-defined. Busy does not replace
+the earlier job. The formatter and terminal/admin
 adapters consume the same view. `examples/typed_replies.rs` demonstrates an
 external crate consumer using the ordinary embedded composition and `step`.
 `examples/typed_host_commands.rs` demonstrates typed save, status, setting and

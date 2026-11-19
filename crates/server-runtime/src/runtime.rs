@@ -31,6 +31,10 @@ mod r#loop;
 mod movement_receipts;
 mod network;
 mod operations;
+pub(crate) mod persistence_jobs;
+pub use persistence_jobs::{
+    SaveJobLookup, SaveJobRecord, SaveJobState, SaveJobsStatus, SaveSource,
+};
 mod outbound;
 pub mod schedule;
 mod service_inputs;
@@ -117,6 +121,7 @@ struct OperationsState {
     host_outcomes: Vec<crate::CommandExecution>,
     player_store: PlayerStore,
     persistence: Box<dyn PersistencePort>,
+    save_jobs: persistence_jobs::PersistenceJobs,
     next_player: u64,
 }
 struct Scheduler {
@@ -359,6 +364,7 @@ impl ServerRuntime {
             command_queue: VecDeque::with_capacity(64),
             player_store,
             persistence,
+            save_jobs: persistence_jobs::PersistenceJobs::new(time.monotonic),
             next_player,
         };
         let metrics = RuntimeMetrics::default();

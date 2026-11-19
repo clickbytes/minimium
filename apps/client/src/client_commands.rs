@@ -112,6 +112,8 @@ pub(crate) enum ClientCommand {
     SpawnRandomBolid(u16),
     SpawnRandomMeteorid,
     BolidStatus(u64),
+    SaveWorld,
+    SaveStatus(Option<u128>),
     ImpactStatus {
         world: minimium_world::world::WorldInstanceId,
         id: u64,
@@ -279,6 +281,8 @@ pub(crate) enum FrontendAction {
     SpawnRandomBolid(u16),
     SpawnRandomMeteorid,
     BolidStatus(u64),
+    SaveWorld,
+    SaveStatus(Option<u128>),
     ImpactStatus {
         world: minimium_world::world::WorldInstanceId,
         id: u64,
@@ -468,6 +472,10 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext) -> C
         }
         ClientCommand::BolidStatus(id) => {
             return CommandResult::Action(FrontendAction::BolidStatus(id))
+        }
+        ClientCommand::SaveWorld => return CommandResult::Action(FrontendAction::SaveWorld),
+        ClientCommand::SaveStatus(id) => {
+            return CommandResult::Action(FrontendAction::SaveStatus(id))
         }
         ClientCommand::ImpactStatus { world, id } => {
             return CommandResult::Action(FrontendAction::ImpactStatus { world, id })

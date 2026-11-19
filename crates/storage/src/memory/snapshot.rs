@@ -5,6 +5,8 @@ pub(super) struct MemorySnapshots {
     lease: Arc<Lease>,
     maximum: usize,
     pending: Option<Vec<u8>>,
+    pending_job: Option<(SaveJobId, u64)>,
+    completed: Vec<SaveCompletion>,
     last_revision: u64,
     status: PersistenceStatus,
     stopped: bool,
@@ -15,6 +17,8 @@ impl MemorySnapshots {
             lease,
             maximum,
             pending: None,
+            pending_job: None,
+            completed: Vec::new(),
             last_revision: 0,
             stopped: false,
             status: PersistenceStatus {
@@ -25,20 +29,28 @@ impl MemorySnapshots {
     }
     fn commit_pending(&mut self) -> Result<(), StorageError> {
         if let Some(bytes) = self.pending.take() {
-            self.status.pending_saves = 0;
             let mut state = self
                 .lease
                 .state
                 .lock()
                 .map_err(|_| io::Error::other("memory backend poisoned"))?;
             state.snapshot = Some(bytes);
+            self.status.pending_saves = 0;
             self.status.last_save = SaveStatus::Complete;
+            if let Some((id, revision)) = self.pending_job.take() {
+                self.completed.push(SaveCompletion {
+                    id,
+                    revision,
+                    durability: SaveDurability::Volatile,
+                    result: Ok(()),
+                });
+            }
         }
         Ok(())
     }
 }
 impl PersistencePort for MemorySnapshots {
-    fn queue_save(&mut self, snapshot: SaveSnapshot) -> Result<(), StorageError> {
+    fn queue_save(&mut self, id: SaveJobId, snapshot: SaveSnapshot) -> Result<(), StorageError> {
         let result = (|| {
             if self.stopped {
                 return Err(StorageError::worker_stopped("memory snapshots stopped"));
@@ -53,35 +65,50 @@ impl PersistencePort for MemorySnapshots {
             }
             let bytes = crate::format::encode_bytes(&snapshot, self.maximum)?;
             self.last_revision = snapshot.revision();
+            self.pending_job = Some((id, snapshot.revision()));
             self.pending = Some(bytes);
             self.status.pending_saves = 1;
             self.status.last_save = SaveStatus::Pending;
             Ok(())
         })();
         if let Err(error) = &result {
-            self.status.last_save = SaveStatus::Failed(compact_error(error));
+            if self.pending.is_none() {
+                self.status.last_save = SaveStatus::Failed(compact_error(error));
+            }
         }
         result
     }
-    fn poll_completions(&mut self) {
+    fn poll_completions(&mut self) -> Vec<SaveCompletion> {
         if let Err(error) = self.commit_pending() {
+            self.status.pending_saves = 0;
             self.status.last_save = SaveStatus::Failed(compact_error(&error));
+            if let Some((id, revision)) = self.pending_job.take() {
+                self.completed.push(SaveCompletion {
+                    id,
+                    revision,
+                    durability: SaveDurability::Volatile,
+                    result: Err(error),
+                });
+            }
         }
+        std::mem::take(&mut self.completed)
     }
     fn has_pending_save(&self) -> bool {
         self.pending.is_some()
     }
     fn reject_pending_save(&mut self) -> StorageError {
         let error = StorageError::busy("a world save is already pending");
-        self.status.last_save = SaveStatus::Failed(compact_error(&error));
         error
     }
     fn status(&self) -> PersistenceStatus {
         self.status.clone()
     }
+    fn completion_durability(&self) -> SaveDurability {
+        SaveDurability::Volatile
+    }
     fn shutdown_until(
         &mut self,
-        snapshot: Option<SaveSnapshot>,
+        snapshot: Option<(SaveJobId, SaveSnapshot)>,
         deadline: Instant,
     ) -> Result<(), StorageError> {
         if Instant::now() >= deadline {
@@ -90,8 +117,8 @@ impl PersistencePort for MemorySnapshots {
             );
         }
         self.commit_pending()?;
-        if let Some(snapshot) = snapshot {
-            self.queue_save(snapshot)?;
+        if let Some((id, snapshot)) = snapshot {
+            self.queue_save(id, snapshot)?;
             self.commit_pending()?;
         }
         self.stopped = true;

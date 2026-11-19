@@ -352,3 +352,5 @@ ConnectionController accumulates closed wire byte counters when it takes the ses
 After queuing a world input, the session exposes its sequence and a session-local transport token. A transport supporting frame completion can report when the complete frame was written. A completed write provides transport evidence only.
 
 The session exposes whether the matching TransferReady request has been locally queued. The application projects preparation, local readiness, owner commitment or cancellation while retaining the source WorldContext until TransitionCommitted changes membership.
+
+Batch #591 adds typed owned-local admin intents for server persistence save and status. It forwards exact optional u128 job IDs and retains no snapshot or save ledger; acceptance and backend completion remain server-side results.

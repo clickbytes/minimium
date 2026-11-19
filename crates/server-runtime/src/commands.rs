@@ -5,6 +5,7 @@ pub(crate) mod water;
 pub(crate) use generation::{encode as encode_generation, project as project_generation};
 mod configuration;
 mod owner_context;
+pub(crate) mod persistence;
 pub use configuration::ConfigurationValue;
 pub(crate) use configuration::{
     encode as encode_configuration, project as project_configuration, ConfigurationProjection,
@@ -195,7 +196,8 @@ pub(crate) enum CommandPayload {
         clients: Vec<ClientTrafficRow>,
         clients_truncated: bool,
     },
-    SaveQueued,
+    SaveJob(crate::runtime::SaveJobRecord),
+    SaveStatus(crate::runtime::SaveJobsStatus),
     Stopping,
     Time(crate::environment::ClockPropertySnapshot),
     ClockCommitted(crate::environment::ClockPropertySnapshot),
@@ -381,9 +383,7 @@ pub fn execute(
 ) -> CommandReply {
     let OwnerCommandContext {
         worlds,
-        player_store,
         persistence,
-        map_fingerprint,
         lanes,
         metrics,
         environment_clock,
@@ -425,28 +425,14 @@ pub fn execute(
             administration::players(worlds, cursor.as_deref(), *limit)
         }
         ServerCommand::Metrics => administration::metrics(worlds, metrics, client_traffic),
-        ServerCommand::Save => {
-            if persistence.has_pending_save() {
-                let error = persistence.reject_pending_save();
-                return CommandReply::error(error.code(), &error.to_string());
-            }
-            let result = match environment_clock.capture_saved_state(monotonic_ms) {
-                Err(error) => Err((error.code(), error.to_string())),
-                Ok(saved_clock) => match worlds.snapshot_for_save(map_fingerprint) {
-                    Err(error) => Err(("server.world_snapshot_failed", error.to_string())),
-                    Ok(input) => player_store
-                        .save_snapshot(input, saved_clock)
-                        .and_then(|snapshot| persistence.queue_save(snapshot))
-                        .map_err(|error| (error.code(), error.to_string())),
-                },
-            };
-            match result {
-                Ok(()) => CommandReply::success(CommandPayload::SaveQueued),
-                Err((error_code, error)) => {
-                    CommandReply::error(error_code, &format!("world save: {error}"))
-                }
-            }
-        }
+        ServerCommand::Save => CommandReply::error(
+            "server.persistence.wrong_lane",
+            "save must execute on runtime owner lane",
+        ),
+        ServerCommand::SaveStatus(_) => CommandReply::error(
+            "server.persistence.wrong_lane",
+            "save status must execute on runtime owner lane",
+        ),
         ServerCommand::Stop => administration::stop(),
         ServerCommand::TimeOfDay {
             minute,

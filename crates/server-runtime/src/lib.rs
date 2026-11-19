@@ -51,6 +51,7 @@ pub use hosting::{
     ShutdownOutcome, StepOutcome, SubmissionId, SubmitError,
 };
 pub use metrics::{MetricField, MetricValue, RuntimeMetricsSnapshot};
+pub use minimium_storage::{SaveDurability, SaveJobId};
 pub use runtime::ServerRuntime;
 pub use runtime::StartupEffectFailure;
 pub use runtime::{
@@ -58,6 +59,7 @@ pub use runtime::{
     ImpactReceiptStage, ImpactStatus, ShowerState, WaterJobState, WaterJobStatus, WaterStatus,
     WaterStatusError, WaterStatusState,
 };
+pub use runtime::{SaveJobLookup, SaveJobRecord, SaveJobState, SaveJobsStatus, SaveSource};
 pub use startup::PreparedRuntime;
 
 pub use commands::CommandReply as ModuleCommandReply;

@@ -58,7 +58,10 @@ pub use error::{StorageError, StorageErrorKind};
 pub use format::SAVE_VERSION;
 pub use impact_journal::ImpactJournalPort;
 pub use loaded_state::LoadedState;
-pub use persistence::{PersistencePort, PersistenceStatus, PersistenceWorker, SaveStatus};
+pub use persistence::{
+    PersistencePort, PersistenceStatus, PersistenceWorker, SaveCompletion, SaveDurability,
+    SaveJobId, SaveStatus,
+};
 pub use player_store::{PlayerStore, SaveSnapshot};
 
 /// Checks the saved snapshot version without creating files or loading records.

@@ -44,6 +44,24 @@ pub(super) fn lower(
         )
         .at(span)
     };
+    if op.path == "server.persistence.save" {
+        return Ok(ClientCommand::SaveWorld);
+    }
+    if op.path == "server.persistence.status" {
+        let id = op
+            .arguments
+            .first()
+            .filter(|arg| arg.text != "none")
+            .map(|arg| {
+                arg.text
+                    .parse::<u128>()
+                    .ok()
+                    .filter(|id| *id != 0)
+                    .ok_or_else(|| invalid("expected exact positive SaveJobId"))
+            })
+            .transpose()?;
+        return Ok(ClientCommand::SaveStatus(id));
+    }
     if op.path == "client.connection.connect"
         && !minimium_client_runtime::valid_endpoint(&op.arguments[0].text)
     {

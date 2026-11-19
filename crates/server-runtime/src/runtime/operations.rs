@@ -2,7 +2,9 @@ use super::*;
 
 impl ServerRuntime {
     pub(super) fn poll_operations(&mut self) -> std::io::Result<Instant> {
-        self.operations.persistence.poll_completions();
+        for completion in self.operations.persistence.poll_completions() {
+            self.operations.save_jobs.complete(completion, self.now);
+        }
         self.environment_dirty_revision = self.environment_clock.dirty_revision();
         if !self.simulation_work_pending() {
             self.poll_autosave()?;
@@ -98,12 +100,17 @@ impl ServerRuntime {
             .next_autosave
             .is_some_and(|deadline| autosave_check_at >= deadline)
         {
-            if !self.operations.persistence.has_pending_save() && !self.prepare_save_boundary()? {
+            if !self.operations.persistence.has_pending_save()
+                && !self.operations.save_jobs.has_active()
+                && !self.prepare_save_boundary()?
+            {
                 return Ok(());
             }
             self.scheduler.next_autosave =
                 Some(autosave_check_at + self.scheduler.autosave_interval);
-            if !self.operations.persistence.has_pending_save() {
+            if !self.operations.persistence.has_pending_save()
+                && !self.operations.save_jobs.has_active()
+            {
                 let capture_at = self.monotonic_ms(self.now)?;
                 let snapshot_clock = self.environment_clock.capture_saved_state(capture_at);
                 self.environment_dirty_revision = self.environment_clock.dirty_revision();
@@ -117,7 +124,20 @@ impl ServerRuntime {
                                     .player_store
                                     .save_snapshot(input, saved_clock)
                             })
-                            .and_then(|snapshot| self.operations.persistence.queue_save(snapshot));
+                            .and_then(|snapshot| {
+                                let id = self.operations.save_jobs.allocate();
+                                self.operations.save_jobs.queued(
+                                    id,
+                                    persistence_jobs::SaveSource::Autosave,
+                                    &snapshot,
+                                    self.now,
+                                );
+                                let result = self.operations.persistence.queue_save(id, snapshot);
+                                if result.is_err() {
+                                    self.operations.save_jobs.reject_queued(id);
+                                }
+                                result
+                            });
                         if let Err(error) = queue_result {
                             crate::diagnostics::emit(
                                 &self.server_logger,

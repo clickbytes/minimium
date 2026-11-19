@@ -190,4 +190,48 @@ impl ConnectionController {
         )
         .map(|_| ())
     }
+
+    pub fn request_persistence_save(&mut self, now: ClientTime) -> Result<(), ControllerError> {
+        self.accept_time(now).map_err(ControllerError::from_time)?;
+        self.submit_contextual_admin(
+            minimium_commands::admin::AdminPayload::Operation {
+                operation_id: minimium_commands::operation::OperationId(
+                    "server.persistence.save".into(),
+                ),
+                access: minimium_commands::syntax::canonical::AccessKind::Invoke,
+                arguments: vec![],
+                value: None,
+            },
+            false,
+        )
+        .map(|_| ())
+    }
+
+    pub fn request_persistence_status(
+        &mut self,
+        id: Option<u128>,
+        now: ClientTime,
+    ) -> Result<(), ControllerError> {
+        self.accept_time(now).map_err(ControllerError::from_time)?;
+        if id == Some(0) {
+            return Err(ControllerError::new(
+                "client_runtime.invalid_save_job_id",
+                "save job ID must be positive",
+            ));
+        }
+        self.submit_contextual_admin(
+            minimium_commands::admin::AdminPayload::Operation {
+                operation_id: minimium_commands::operation::OperationId(
+                    "server.persistence.status".into(),
+                ),
+                access: minimium_commands::syntax::canonical::AccessKind::Invoke,
+                arguments: id.map_or(Vec::new(), |id| {
+                    vec![minimium_commands::operation::CommandValue::U128(id)]
+                }),
+                value: None,
+            },
+            false,
+        )
+        .map(|_| ())
+    }
 }

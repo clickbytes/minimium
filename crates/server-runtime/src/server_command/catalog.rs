@@ -75,6 +75,7 @@ pub(crate) fn build(
         package.command(resolve(name, false)?, name, [], usage, &[])?;
     }
     package.alias("world.time.status", "time", "time", &[])?;
+    package.operation(resolve("server.persistence.status", false)?)?;
     package.operation(minimium_commands::syntax::bind::explain_entry())?;
     package.finish()
 }

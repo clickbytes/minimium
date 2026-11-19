@@ -104,6 +104,7 @@ impl ServerRuntime {
             transport: &mut *self.operations.transport,
             player_store: &mut self.operations.player_store,
             persistence: &mut *self.operations.persistence,
+            save_jobs: &mut self.operations.save_jobs,
             content: &mut *self.content,
             sector_workers: &mut self.sector_workers,
             executor: &mut self.executor,

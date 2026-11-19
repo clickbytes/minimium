@@ -2,6 +2,7 @@ use super::{player_store::SaveSnapshot, StorageError};
 use minimium_diagnostics::DomainLogger;
 use minimium_telemetry::allocations::{self, Phase};
 use std::{
+    collections::VecDeque,
     io,
     path::PathBuf,
     sync::mpsc,
@@ -10,21 +11,23 @@ use std::{
 };
 
 mod status;
-pub use status::{PersistenceStatus, SaveStatus};
+pub use status::{PersistenceStatus, SaveCompletion, SaveDurability, SaveJobId, SaveStatus};
 
 use status::SaveBookkeeping;
 
 enum PersistenceRequest {
-    Save(SaveSnapshot),
+    Save(SaveJobId, SaveSnapshot),
     Shutdown(
-        Option<SaveSnapshot>,
+        Option<(SaveJobId, SaveSnapshot)>,
         mpsc::SyncSender<Result<(), StorageError>>,
     ),
     Stop,
 }
 pub struct PersistenceWorker {
     sender: mpsc::SyncSender<PersistenceRequest>,
-    completions: mpsc::Receiver<Result<(), StorageError>>,
+    completions: mpsc::Receiver<SaveCompletion>,
+    completed: Vec<SaveCompletion>,
+    pending_ids: VecDeque<(SaveJobId, u64)>,
     thread: Option<thread::JoinHandle<()>>,
     status: SaveBookkeeping,
     last_queued_revision: u64,
@@ -33,23 +36,26 @@ pub struct PersistenceWorker {
 /// Host-provided durable snapshot service. Queueing is acceptance only; callers
 /// must poll status/completions and must not treat acceptance as durable ACK.
 pub trait PersistencePort: Send {
-    fn queue_save(&mut self, snapshot: SaveSnapshot) -> Result<(), StorageError>;
-    fn poll_completions(&mut self);
+    fn queue_save(&mut self, id: SaveJobId, snapshot: SaveSnapshot) -> Result<(), StorageError>;
+    fn poll_completions(&mut self) -> Vec<SaveCompletion>;
     fn has_pending_save(&self) -> bool;
     fn reject_pending_save(&mut self) -> StorageError;
     fn status(&self) -> PersistenceStatus;
+    fn completion_durability(&self) -> SaveDurability {
+        SaveDurability::BackendDefined
+    }
     fn shutdown_until(
         &mut self,
-        snapshot: Option<SaveSnapshot>,
+        snapshot: Option<(SaveJobId, SaveSnapshot)>,
         deadline: Instant,
     ) -> Result<(), StorageError>;
 }
 
 impl PersistencePort for PersistenceWorker {
-    fn queue_save(&mut self, snapshot: SaveSnapshot) -> Result<(), StorageError> {
-        PersistenceWorker::queue_save(self, snapshot)
+    fn queue_save(&mut self, id: SaveJobId, snapshot: SaveSnapshot) -> Result<(), StorageError> {
+        PersistenceWorker::queue_save(self, id, snapshot)
     }
-    fn poll_completions(&mut self) {
+    fn poll_completions(&mut self) -> Vec<SaveCompletion> {
         PersistenceWorker::poll_completions(self)
     }
     fn has_pending_save(&self) -> bool {
@@ -63,9 +69,12 @@ impl PersistencePort for PersistenceWorker {
     fn status(&self) -> PersistenceStatus {
         PersistenceWorker::status(self)
     }
+    fn completion_durability(&self) -> SaveDurability {
+        SaveDurability::Durable
+    }
     fn shutdown_until(
         &mut self,
-        snapshot: Option<SaveSnapshot>,
+        snapshot: Option<(SaveJobId, SaveSnapshot)>,
         deadline: Instant,
     ) -> Result<(), StorageError> {
         PersistenceWorker::shutdown_until(self, snapshot, deadline)
@@ -83,16 +92,22 @@ impl PersistenceWorker {
                 let mut last_written_revision = 0;
                 while let Ok(request) = requests.recv() {
                     match request {
-                        PersistenceRequest::Save(snapshot) => {
+                        PersistenceRequest::Save(id, snapshot) => {
+                            let revision = snapshot.revision();
                             let result = write_revisioned_snapshot(
                                 snapshot,
                                 &data_dir,
                                 &mut last_written_revision,
                             );
-                            let _ = completion_sender.send(result);
+                            let _ = completion_sender.send(SaveCompletion {
+                                id,
+                                revision,
+                                durability: SaveDurability::Durable,
+                                result,
+                            });
                         }
                         PersistenceRequest::Shutdown(snapshot, reply) => {
-                            let result = snapshot.map_or(Ok(()), |snapshot| {
+                            let result = snapshot.map_or(Ok(()), |(_, snapshot)| {
                                 write_revisioned_snapshot(
                                     snapshot,
                                     &data_dir,
@@ -110,13 +125,19 @@ impl PersistenceWorker {
         Ok(Self {
             sender,
             completions,
+            completed: Vec::new(),
+            pending_ids: VecDeque::new(),
             thread: Some(worker),
             status: SaveBookkeeping::new(logger),
             last_queued_revision: 0,
         })
     }
 
-    pub fn queue_save(&mut self, snapshot: SaveSnapshot) -> Result<(), StorageError> {
+    pub fn queue_save(
+        &mut self,
+        id: SaveJobId,
+        snapshot: SaveSnapshot,
+    ) -> Result<(), StorageError> {
         if snapshot.revision() <= self.last_queued_revision {
             let error = StorageError::from(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -126,9 +147,10 @@ impl PersistenceWorker {
             return Err(error);
         }
         let revision = snapshot.revision();
-        match self.sender.try_send(PersistenceRequest::Save(snapshot)) {
+        match self.sender.try_send(PersistenceRequest::Save(id, snapshot)) {
             Ok(()) => {
                 self.last_queued_revision = revision;
+                self.pending_ids.push_back((id, revision));
                 self.status.record_queued();
                 Ok(())
             }
@@ -145,19 +167,34 @@ impl PersistenceWorker {
         }
     }
 
-    pub fn poll_completions(&mut self) {
+    pub fn poll_completions(&mut self) -> Vec<SaveCompletion> {
         loop {
             match self.completions.try_recv() {
-                Ok(result) => {
-                    self.status.record_completion(result);
+                Ok(completion) => {
+                    self.pending_ids.retain(|(id, revision)| {
+                        *id != completion.id || *revision != completion.revision
+                    });
+                    self.status.record_completion(&completion.result);
+                    self.completed.push(completion);
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => {
                     self.status.record_worker_stopped();
+                    for (id, revision) in self.pending_ids.drain(..) {
+                        self.completed.push(SaveCompletion {
+                            id,
+                            revision,
+                            durability: SaveDurability::Durable,
+                            result: Err(StorageError::worker_stopped(
+                                "world storage worker stopped",
+                            )),
+                        });
+                    }
                     break;
                 }
             }
         }
+        std::mem::take(&mut self.completed)
     }
 
     pub fn has_pending_save(&self) -> bool {
@@ -170,13 +207,13 @@ impl PersistenceWorker {
 
     pub fn shutdown_until(
         &mut self,
-        snapshot: Option<SaveSnapshot>,
+        snapshot: Option<(SaveJobId, SaveSnapshot)>,
         deadline: Instant,
     ) -> Result<(), StorageError> {
         let stale_final = snapshot
             .as_ref()
-            .is_some_and(|snapshot| snapshot.revision() <= self.last_queued_revision);
-        let final_revision = snapshot.as_ref().map(SaveSnapshot::revision);
+            .is_some_and(|(_, snapshot)| snapshot.revision() <= self.last_queued_revision);
+        let final_revision = snapshot.as_ref().map(|(_, snapshot)| snapshot.revision());
         let snapshot = if stale_final { None } else { snapshot };
         let (reply_sender, reply_receiver) = mpsc::sync_channel(1);
         let send_result = self.send_shutdown_until(snapshot, reply_sender, deadline);
@@ -199,7 +236,6 @@ impl PersistenceWorker {
             Err(error) => Err(error),
         };
         let join_result = self.join_worker_until(deadline);
-        self.poll_completions();
         if let Err(error) = &join_result {
             self.status.emit(
                 "storage.worker_join_failed",
@@ -225,7 +261,7 @@ impl PersistenceWorker {
 
     fn send_shutdown_until(
         &self,
-        snapshot: Option<SaveSnapshot>,
+        snapshot: Option<(SaveJobId, SaveSnapshot)>,
         reply: mpsc::SyncSender<Result<(), StorageError>>,
         deadline: Instant,
     ) -> Result<(), StorageError> {

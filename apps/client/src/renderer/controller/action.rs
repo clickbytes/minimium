@@ -66,6 +66,26 @@ pub(super) fn execute(
             };
             output.push_line(text);
         }
+        FrontendAction::SaveWorld => {
+            let text = match renderer
+                .application
+                .request_persistence_save(crate::host_time::sample())
+            {
+                Ok(()) => "save requested; await owner job receipt".to_owned(),
+                Err(error) => format!("world save: {error}"),
+            };
+            output.push_line(text);
+        }
+        FrontendAction::SaveStatus(id) => {
+            let text = match renderer
+                .application
+                .request_persistence_status(id, crate::host_time::sample())
+            {
+                Ok(()) => "save status requested".to_owned(),
+                Err(error) => format!("server.persistence.status: {error}"),
+            };
+            output.push_line(text);
+        }
         FrontendAction::ImpactStatus { world, id } => {
             let text = match renderer.application.request_impact_receipt_status(
                 world,
