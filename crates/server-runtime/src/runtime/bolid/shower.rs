@@ -1,5 +1,5 @@
 //! One bounded, transient administrative shower; no timer thread or saved state.
-use super::{mix, CommandReply, Duration, Instant, ServerRuntime};
+use super::{mix, CommandReply, Duration, ServerRuntime};
 use crate::commands::CommandPayload;
 use minimium_core::ids::PlayerId;
 use minimium_protocol::WorldContext;
@@ -7,8 +7,8 @@ use minimium_protocol::WorldContext;
 pub(crate) struct Shower {
     pub observer: Option<(PlayerId, WorldContext)>,
     remaining: u16,
-    next_at: Instant,
-    expires_at: Instant,
+    next_at: Duration,
+    expires_at: Duration,
 }
 
 fn delay(seed: u64) -> Duration {
@@ -34,12 +34,12 @@ impl ServerRuntime {
                 "server.bolid.shower_busy",
             );
         }
-        let now = self.now;
+        let now = Duration::from_millis(self.step_boundary().simulation_ms());
         if count > 1 {
             self.bolid_shower = Some(Shower {
                 observer: None,
                 remaining: count - 1,
-                next_at: now + delay(self.next_bolid_id ^ self.scheduler.simulation_tick),
+                next_at: now + delay(self.next_bolid_id ^ self.step_boundary().tick()),
                 expires_at: now + Duration::from_secs(600),
             });
         }
@@ -54,7 +54,7 @@ impl ServerRuntime {
         reply
     }
 
-    pub(in crate::runtime) fn update_bolid_shower(&mut self, now: Instant) {
+    pub(in crate::runtime) fn update_bolid_shower(&mut self, now: Duration) {
         let Some(shower) = self.bolid_shower.as_ref() else {
             return;
         };
@@ -80,12 +80,13 @@ impl ServerRuntime {
             );
             return;
         }
+        let tick = self.step_boundary().tick();
         if let Some(shower) = &mut self.bolid_shower {
             shower.remaining -= 1;
             if shower.remaining == 0 {
                 self.bolid_shower = None;
             } else {
-                shower.next_at = now + delay(self.next_bolid_id ^ self.scheduler.simulation_tick);
+                shower.next_at = now + delay(self.next_bolid_id ^ tick);
             }
         }
     }

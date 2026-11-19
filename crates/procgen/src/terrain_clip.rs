@@ -56,6 +56,19 @@ fn subtract_box(polygon: Polygon, bounds: Box3) -> Vec<Polygon> {
     outside
 }
 
+/// Retains the closed polygon inside a box, including coplanar face polygons.
+pub(crate) fn clip_inside_box(mut polygon: Polygon, bounds: Box3) -> Polygon {
+    for axis in 0..3 {
+        for (bound, keep_le) in [(bounds.minimum[axis], false), (bounds.maximum[axis], true)] {
+            polygon = split(polygon, axis, bound, keep_le).0;
+            if polygon.len() < 3 {
+                return Vec::new();
+            }
+        }
+    }
+    polygon
+}
+
 fn split(polygon: Polygon, axis: usize, bound: f64, keep_le: bool) -> (Polygon, Polygon) {
     let inside = |point: Point| {
         if keep_le {

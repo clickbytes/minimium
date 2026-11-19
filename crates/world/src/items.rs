@@ -79,6 +79,7 @@ pub enum ActionRejection {
     OutOfReach,
     Obstructed,
     UnsafeGeometry,
+    Paused,
     WrongMaterial,
     Busy,
     RateLimited,

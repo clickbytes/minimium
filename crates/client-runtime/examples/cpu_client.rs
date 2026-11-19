@@ -128,7 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         context,
         manifest,
         transition_id: None,
-        clock_sample: clock_sample()?,
+        clock_sample: clock_sample(1)?,
         environment: environment(),
     })?;
     let mut time_index = 1;
@@ -218,8 +218,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut readiness = WorldReadiness::new()?;
     let mut latest_motion = None;
-    for _ in 0..8 {
+    for frame in 0..12 {
         time_index += 17;
+        if frame % 3 == 0 {
+            peer.try_send_server(ServerMessage::EnvironmentSync {
+                context,
+                clock_sample: clock_sample(2 + frame / 3)?,
+                environment: environment(),
+            })?;
+        }
         let output = core.step(
             ClientStepInput {
                 now: time_at(base, time_index),
@@ -268,8 +275,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let motion = latest_motion.ok_or("no typed motion sample reached the local peer")?;
     peer.try_send_server(ServerMessage::Snapshot {
-        server_time_ms: 100,
-        server_tick: motion.target_tick.max(2),
+        server_time_ms: motion.target_tick.max(5) * 50,
+        server_tick: motion.target_tick.max(5),
+        applied_input: (motion.input_seq, motion.target_tick.max(5)),
         resolved_input_seq: motion.input_seq,
         context,
         full_snapshot: true,
@@ -343,17 +351,21 @@ fn time_at(base: Instant, milliseconds: u64) -> minimium_client_runtime::ClientT
     minimium_client_runtime::ClientTime::new(base + Duration::from_millis(milliseconds))
 }
 
-fn clock_sample() -> Result<ClockSample, Box<dyn std::error::Error>> {
+fn clock_sample(tick: u64) -> Result<ClockSample, Box<dyn std::error::Error>> {
     Ok(ClockSample::new(
         ClockId::MVP,
         ClockRevision::INITIAL,
         SessionNonce::new([0x31; 16]),
-        MonotonicMs::new(0),
-        WorldTimeMs::new(1_800_000_000_000)?,
+        MonotonicMs::new(tick * 50),
+        WorldTimeMs::new(1_800_000_000_000 + (tick * 50) as i64)?,
         ClockMode::RealTime,
         TimeScalePpm::ONE_X,
         OfflinePolicy::Pause,
-    )?)
+    )?
+    .with_boundary(minimium_environment::time::SimulationBoundary::new(
+        tick,
+        ClockRevision::INITIAL,
+    )?))
 }
 
 fn environment() -> EnvironmentDescriptor {

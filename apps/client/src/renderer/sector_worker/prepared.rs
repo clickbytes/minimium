@@ -13,7 +13,7 @@ impl PreparedScene {
         view: minimium_renderer::terrain_view::TerrainView,
         origin: [f32; 3],
         origin_generation: u64,
-        water_level_revision: u64,
+        water_level_revision: Option<u64>,
         fluid_revision: u64,
         material_profile: Option<minimium_procgen::ResolvedTerrainMaterialProfile>,
         resolved_relief_policy: Option<minimium_procgen::ResolvedPlanetReliefPolicy>,

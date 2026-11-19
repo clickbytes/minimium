@@ -244,7 +244,7 @@ fn encode_snapshot(
             write_saved_world(writer, world)?;
             writeln!(writer)?;
         }
-        write_saved_clock(writer, snapshot.saved_clock)?;
+        write_saved_clock(writer, snapshot.saved_clock, snapshot.excavation_revision)?;
         writeln!(writer)?;
         for (instance, state) in &snapshot.sector_states {
             write_saved_sector(writer, *instance, state)?;
@@ -346,7 +346,11 @@ fn validate_metadata_reservation(snapshot: &SaveSnapshot) -> io::Result<()> {
     )?;
     write_manifest(&mut fixed, snapshot.manifest)?;
     writeln!(&mut fixed)?;
-    write_saved_clock(&mut fixed, snapshot.saved_clock)?;
+    write_saved_clock(
+        &mut fixed,
+        snapshot.saved_clock,
+        snapshot.excavation_revision,
+    )?;
     writeln!(&mut fixed)?;
     if fixed.0 > crate::budget::FIXED_SNAPSHOT_HEADER_RESERVE_BYTES {
         return Err(crate::snapshot_limit_exceeded());

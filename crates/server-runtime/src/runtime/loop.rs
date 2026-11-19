@@ -63,12 +63,32 @@ impl ServerRuntime {
             );
         }
         self.operations.transport.stop_admission();
+        while self.scheduler.pending.is_some() && Instant::now() < persistence_deadline {
+            self.poll_impact_journal();
+            self.update_excavation();
+            if self.finish_pending_step()
+                || self.excavation.failed()
+                || !self.impact_status_snapshot().ready
+            {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let mut capture_allowed = self.scheduler.pending.is_none();
+        if !capture_allowed {
+            runtime_error = Some(io::Error::other("incomplete simulation step at shutdown"));
+        }
         if let Err(error) = self.shutdown_excavation(persistence_deadline) {
+            capture_allowed = false;
             runtime_error = Some(error);
         }
         if let Err(error) = self.shutdown_impacts(persistence_deadline) {
+            capture_allowed = false;
             runtime_error = Some(error);
         }
+        self.operations
+            .player_store
+            .set_excavation_revision(self.excavation.journal_revision());
         let process_lifecycle = self
             .process_lifecycle
             .as_mut()
@@ -76,6 +96,7 @@ impl ServerRuntime {
         let result = lifecycle::shutdown(lifecycle::ShutdownContext {
             deadline: persistence_deadline,
             snapshot_at: self.now,
+            capture_allowed,
             transport: &mut *self.operations.transport,
             player_store: &mut self.operations.player_store,
             persistence: &mut *self.operations.persistence,

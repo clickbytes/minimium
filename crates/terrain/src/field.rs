@@ -134,14 +134,19 @@ pub struct TerrainView<'a> {
 }
 
 impl TerrainView<'_> {
-    pub fn lattice_sample(&self, coordinate: [i32; 3]) -> Option<TerrainSample> {
+    fn stored_sample(&self, coordinate: [i32; 3]) -> Option<TerrainSample> {
         let key = TerrainChunkKey {
             world: self.store.world,
             coordinates: coordinate.map(|v| v.div_euclid(TERRAIN_CHUNK_CELLS)),
         };
-        if let Some(chunk) = self.store.chunks.get(&key) {
-            let [x, y, z] = coordinate.map(|v| v.rem_euclid(TERRAIN_CHUNK_CELLS) as usize);
-            return Some(chunk.samples[x + 32 * (y + 32 * z)]);
+        let chunk = self.store.chunk(key)?;
+        let [x, y, z] = coordinate.map(|v| v.rem_euclid(TERRAIN_CHUNK_CELLS) as usize);
+        Some(chunk.samples[x + 32 * (y + 32 * z)])
+    }
+
+    pub fn lattice_sample(&self, coordinate: [i32; 3]) -> Option<TerrainSample> {
+        if let Some(sample) = self.stored_sample(coordinate) {
+            return Some(sample);
         }
         let sample = self
             .base
@@ -150,29 +155,13 @@ impl TerrainView<'_> {
     }
 
     pub fn interpolated(&self, position: [f64; 3]) -> Option<TerrainSample> {
-        if !valid_position(position) {
-            return None;
-        }
-        let grid = position.map(|v| v / TERRAIN_CELL_M);
-        let lower = grid.map(|v| v.floor() as i32);
-        let fraction: [f64; 3] = std::array::from_fn(|i| grid[i] - f64::from(lower[i]));
         let mut result = TerrainSample {
             distance_m: 0.0,
             material: TerrainMaterial::Empty,
             revision: TerrainRevision(0),
         };
         let mut material_weight = -1.0;
-        for corner in 0..8 {
-            let coordinate = std::array::from_fn(|i| lower[i] + ((corner >> i) & 1));
-            let weight: f64 = (0..3)
-                .map(|i| {
-                    if corner & (1 << i) == 0 {
-                        1.0 - fraction[i]
-                    } else {
-                        fraction[i]
-                    }
-                })
-                .product();
+        for (coordinate, weight) in lattice_corners(position)? {
             let sample = self.lattice_sample(coordinate)?;
             result.distance_m += weight * sample.distance_m;
             result.revision = result.revision.max(sample.revision);
@@ -182,6 +171,27 @@ impl TerrainView<'_> {
             }
         }
         Some(result)
+    }
+
+    /// Increase in signed distance (metres) from removing material relative
+    /// to this snapshot's base, interpolated on the same lattice as the mesh.
+    pub fn excavated_depth_m(&self, position: [f64; 3]) -> Option<f64> {
+        let mut delta = 0.0;
+        for (coordinate, weight) in lattice_corners(position)? {
+            if weight == 0.0 {
+                continue;
+            }
+            if let Some(stored) = self.stored_sample(coordinate) {
+                let base = self
+                    .base
+                    .sample(coordinate.map(|v| f64::from(v) * TERRAIN_CELL_M))?;
+                if !base.distance_m.is_finite() {
+                    return None;
+                }
+                delta += weight * (stored.distance_m - base.distance_m);
+            }
+        }
+        delta.is_finite().then(|| delta.max(0.0))
     }
 
     pub fn normal(&self, point: [f64; 3]) -> Option<[f64; 3]> {
@@ -196,4 +206,26 @@ impl TerrainView<'_> {
         let length = gradient.iter().map(|v| v * v).sum::<f64>().sqrt();
         (length > 1.0e-12).then(|| gradient.map(|v| v / length))
     }
+}
+
+fn lattice_corners(position: [f64; 3]) -> Option<impl Iterator<Item = ([i32; 3], f64)>> {
+    if !valid_position(position) {
+        return None;
+    }
+    let grid = position.map(|v| v / TERRAIN_CELL_M);
+    let lower = grid.map(|v| v.floor() as i32);
+    let fraction: [f64; 3] = std::array::from_fn(|i| grid[i] - f64::from(lower[i]));
+    Some((0..8).map(move |corner| {
+        let coordinate = std::array::from_fn(|i| lower[i] + ((corner >> i) & 1));
+        let weight = (0..3)
+            .map(|i| {
+                if corner & (1 << i) == 0 {
+                    1.0 - fraction[i]
+                } else {
+                    fraction[i]
+                }
+            })
+            .product();
+        (coordinate, weight)
+    }))
 }

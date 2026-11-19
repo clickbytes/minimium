@@ -56,10 +56,12 @@ pub struct PlayerStore {
     pub(super) sector_states: Vec<(WorldInstanceId, WorldSectorState)>,
     pub(super) snapshot_budget: SnapshotBudget,
     pub(super) snapshot_revision: u64,
+    pub(super) excavation_revision: u64,
 }
 
 pub struct SaveSnapshot {
     pub(super) saved_clock: SavedClockState,
+    pub(super) excavation_revision: u64,
     pub(super) primary_instance: WorldInstanceId,
     pub(super) map_fingerprint: u64,
     pub(super) manifest: WorldManifest,
@@ -89,11 +91,21 @@ impl Default for PlayerStore {
             sector_states: Vec::new(),
             snapshot_budget: SnapshotBudget::default(),
             snapshot_revision: 0,
+            excavation_revision: 0,
         }
     }
 }
 
 impl PlayerStore {
+    pub fn excavation_revision(&self) -> u64 {
+        self.excavation_revision
+    }
+
+    /// Binds the next snapshot to the journal actually published on the owner lane.
+    pub fn set_excavation_revision(&mut self, revision: u64) {
+        self.excavation_revision = revision;
+    }
+
     pub fn snapshot_budget_mut(&mut self) -> &mut SnapshotBudget {
         &mut self.snapshot_budget
     }

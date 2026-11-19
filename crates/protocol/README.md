@@ -6,13 +6,13 @@ Owns versioned network message models, byte codecs, validation and frame limits.
 
 ## Public API
 
-The only supported protocol version is 21. It uses a bounded provider credential message and requires every gameplay action to carry an explicit `WorldContext` through `WorldInput`. Uncontextual gameplay messages and parallel `Move`/`Motion` forms are not accepted. Presentation clients negotiate `ContentOffer`/`ContentReady`; the offer carries
+The only supported protocol version is 22. It uses a bounded provider credential message and requires every gameplay action to carry an explicit `WorldContext` through `WorldInput`. Uncontextual gameplay messages and parallel `Move`/`Motion` forms are not accepted. Presentation clients negotiate `ContentOffer`/`ContentReady`; the offer carries
 a required material manifest SHA-256 (zero selects base), separate HTTP port and
 bounded climate scenario; the ready message echoes the hash. Desktop admission
 waits for content readiness. Headless capabilities bypass material preparation.
-The in-development v21 tool-result codec reserves rejection tag 11 for an unsafe
+The in-development v22 tool-result codec reserves rejection tag 11 for an unsafe
 geometry join, separately from a blocking first hit (tag 4). Rebuild both endpoints
-when updating this codec; the save format is unchanged.
+when updating this codec; the matching save format is v12.
 The scenario is a validated binary record with at most 32 circular regions.
 
 `ClientMessage`, `ServerMessage`, `WorldContext`, protocol limits, encode/decode
@@ -20,12 +20,9 @@ functions and the shared `is_unit_direction`/`valid_chat` content validators are
 re-exported from `src/lib.rs`. The validators expose existing codec rules for
 owner-side checks without changing encoded frames or protocol version.
 
-Movement samples carry a nonzero sequence and target simulation tick. Welcome
-and snapshots report the server tick; snapshots also carry the active server
-movement intent and a safe resolved-sequence prefix. The server accepts at most
-eight ticks of future input, applies at most one sample per player per tick and
-resolves late or rejected samples without replaying historical physics. The ack
-cannot pass an earlier accepted sample that remains executable.
+World inputs carry a connection sequence, control revision and world context. Movement has a separate sequence and advisory target tick. The server coalesces held intentions at the next available step and acknowledges both a resolved sequence prefix and the last applied sequence/tick pair. Pause produces a typed rejection.
+
+Welcome, environment sync and transfer carry session nonce, control revision, calendar epoch, committed tick, UTC, requested and achieved rates, limiting reason and a monotonic observation timestamp. Elapsed game milliseconds equal 50 times the tick. A snapshot's elapsed time must match its tick. Sky observations include observer position, epoch, observed UTC and a bounded confirmed night interval. Bolid starts and impact samples use simulation milliseconds. RTT probes use host monotonic time.
 
 Protocol v19 also defines context-scoped entity synchronization begin, record,
 complete and acknowledgement messages. Records encode spawn, component upsert,
@@ -70,8 +67,7 @@ Protocol v19 adds contextual SkyView and Bolid event frames with bounded paths a
 
 `ImpactSync` (0x98) brackets the initial durable body image. `ImpactState` (0x97)
 carries WorldContext, server time, live-presentation flag and one validated
-162-byte BodyState. This stream was introduced in v20 and remains part of v21; the existing BolidEvent payload
-is unchanged. The initial image has a stable ID list, at most 16 records per
+162-byte BodyState. This stream was introduced in v20 and remains part of v22; bolids carry a simulation-time origin. The initial image has a stable ID list, at most 16 records per
 server tick and no historical explosion replay. Live changes follow over ordered
 TCP. A new membership receives a new full image. The stream covers the current
 world, bounded to 4096 bodies; it is not an unbounded global event history.

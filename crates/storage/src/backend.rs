@@ -54,6 +54,12 @@ impl FileStorageBackend {
 
     pub fn preflight_path(root: &Path) -> io::Result<()> {
         crate::preflight_snapshot_version(root)?;
+        if root.join("impacts.v1").try_exists()? || root.join("excavation.v1").try_exists()? {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "incompatible previous simulation journals; save v12 requires a fresh directory",
+            ));
+        }
         ExcavationJournal::preflight(&root.join(JOURNAL_FILE_NAME))
     }
 }
@@ -72,6 +78,7 @@ impl StorageBackend for FileStorageBackend {
     }
 
     fn open_services(&self) -> io::Result<StorageServices> {
+        self.preflight()?;
         let persistence = PersistenceWorker::spawn(self.root.clone(), self.logger.clone())?;
         let (excavation, excavation_restore) =
             ExcavationJournal::open(&self.root.join(JOURNAL_FILE_NAME))?;

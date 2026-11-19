@@ -295,7 +295,7 @@ fn parse_bolid(words: &[String]) -> Result<DeveloperOperation, ()> {
             };
             let event = minimium_protocol::BolidEvent {
                 id: path.id,
-                start_monotonic_ms: 0,
+                start_simulation_ms: 0,
                 seed: path.seed,
                 start_world_m: path.start_world_m,
                 end_world_m: path.end_world_m,

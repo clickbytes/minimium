@@ -10,7 +10,7 @@ pub enum CueKind {
 #[derive(Clone, Copy, Debug)]
 pub struct MeteorSoundCue {
     pub source_pos: [f64; 3],
-    pub onset_monotonic: f64,
+    pub onset_simulation_s: f64,
     pub relative_energy: f32,
     pub cue_kind: CueKind,
     pub seed: u64,
@@ -31,7 +31,7 @@ impl PendingCue {
         let distance = delta.length();
         // Homogeneous 15 C dry air: c ~=331.3+0.606*T; no refraction/wind solver.
         let delay = distance / (331.3 + 0.606 * 15.0);
-        if !delay.is_finite() || delay > MAX_DELAY_S || !cue.onset_monotonic.is_finite() {
+        if !delay.is_finite() || delay > MAX_DELAY_S || !cue.onset_simulation_s.is_finite() {
             return None;
         }
         let pan = delta
@@ -42,7 +42,7 @@ impl PendingCue {
             cue.relative_energy.clamp(0.0, 1.0) / (1.0 + (distance / 30_000.0).powi(2)) as f32;
         Some(Self {
             cue,
-            arrival_s: cue.onset_monotonic + delay,
+            arrival_s: cue.onset_simulation_s + delay,
             gain,
             pan,
         })

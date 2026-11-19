@@ -7,7 +7,7 @@ use minimium_environment::{
 use minimium_protocol::ServerMessage;
 use std::time::Instant;
 
-const ENVIRONMENT_SYNC_INTERVAL: Duration = Duration::from_secs(5);
+const ENVIRONMENT_SYNC_INTERVAL: Duration = Duration::from_millis(50);
 
 impl ServerRuntime {
     pub(super) fn environment_state_for_instance(

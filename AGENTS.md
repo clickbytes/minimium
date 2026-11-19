@@ -1,5 +1,9 @@
 # Project workflow policy
 
+## Working branch
+
+- Work directly on `main` in the primary checkout. Create a separate branch or worktree only when the user explicitly requests one.
+
 ## Tests
 
 - Unit, integration, and end-to-end tests are deferred until the project's final verification phase.

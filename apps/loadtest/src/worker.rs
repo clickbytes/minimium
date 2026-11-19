@@ -41,7 +41,6 @@ pub(super) struct LoadClient {
     pub(super) world_context: minimium_protocol::WorldContext,
     pub(super) server_tick: u64,
     pub(super) next_input_seq: u64,
-    pub(super) next_target_tick: u64,
     pub(super) stream: TcpStream,
     pub(super) receive_buffer: Vec<u8>,
     pub(super) next_ping_at: Instant,
@@ -49,7 +48,7 @@ pub(super) struct LoadClient {
     pub(super) next_movement_at: Instant,
     pub(super) pending_movement_index: Option<usize>,
     pub(super) pending_dispersed_movement: bool,
-    pub(super) pending_movement_frame: Option<Vec<u8>>,
+    pub(super) pending_world_frame: Option<Vec<u8>>,
     pub(super) dispersed_direction: [f32; 2],
     pub(super) next_fire_at: Instant,
     pub(super) pending_fire_index: Option<usize>,
@@ -63,8 +62,7 @@ pub(super) struct LoadClient {
     pub(super) movement_sequence: u64,
     pub(super) disconnected: bool,
     pub(super) movement_count: usize,
-    pub(super) fire_frames: Vec<Vec<u8>>,
-    pub(super) chat_frame: Vec<u8>,
+    pub(super) control_revision: u64,
     pub(super) disconnected_before_start: bool,
     pub(super) next_setup_ping_at: Instant,
     pub(super) setup_ping_offset: Option<usize>,
@@ -206,7 +204,7 @@ pub(super) fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> Worker
             if scenario.includes_combat() && now >= client.next_fire_at {
                 let direction_index = (client.movement_seed
                     + (client.movement_sequence / 60) as usize)
-                    % client.fire_frames.len();
+                    % MOVEMENT_DIRECTIONS.len();
                 client.pending_fire_index = Some(direction_index);
                 client.next_fire_at = now + FIRE_INTERVAL;
             }
@@ -255,47 +253,46 @@ pub(super) fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> Worker
                     OutboundKind::DispersedMovement => Some(client.dispersed_direction),
                     _ => None,
                 };
-                if let Some(direction) = movement_direction {
-                    if client.pending_movement_frame.is_none() {
-                        let sample = MovementSample {
-                            input_seq: client.next_input_seq,
-                            target_tick: client.next_target_tick,
-                            intent: minimium_simulation::MovementIntent {
-                                direction,
-                                ..Default::default()
-                            },
-                        };
-                        let message = ClientMessage::WorldInput {
-                            context: client.world_context,
-                            input: ClientWorldInput::Motion(sample),
-                        };
-                        match encode_client(&message) {
-                            Ok(frame) => {
-                                client.pending_movement_frame = Some(frame);
-                                let Some(next_seq) = client.next_input_seq.checked_add(1) else {
-                                    client.disconnected = true;
-                                    stats.errors = stats.errors.saturating_add(1);
-                                    continue;
-                                };
-                                client.next_input_seq = next_seq;
-                                client.next_target_tick = client.next_target_tick.saturating_add(1);
-                            }
-                            Err(_) => {
-                                client.disconnected = true;
-                                stats.errors = stats.errors.saturating_add(1);
-                                continue;
+                if !matches!(pending.kind, OutboundKind::Ping)
+                    && client.pending_world_frame.is_none()
+                {
+                    let input = match pending.kind {
+                        OutboundKind::Fire(index) => {
+                            let [x, z] = MOVEMENT_DIRECTIONS[index];
+                            ClientWorldInput::Fire {
+                                direction: [x, 0.0, z],
                             }
                         }
-                    }
+                        OutboundKind::Chat => ClientWorldInput::Chat("load test message".into()),
+                        _ => ClientWorldInput::Motion(MovementSample {
+                            input_seq: client.next_input_seq,
+                            target_tick: client.server_tick.saturating_add(1),
+                            intent: minimium_simulation::MovementIntent {
+                                direction: movement_direction.unwrap(),
+                                ..Default::default()
+                            },
+                        }),
+                    };
+                    let message = ClientMessage::WorldInput {
+                        sequence: client.next_input_seq,
+                        control_revision: client.control_revision,
+                        context: client.world_context,
+                        input,
+                    };
+                    let Ok(frame) = encode_client(&message) else {
+                        client.disconnected = true;
+                        stats.errors += 1;
+                        continue;
+                    };
+                    client.next_input_seq += 1;
+                    client.pending_world_frame = Some(frame);
                 }
                 let frame = match pending.kind {
                     OutboundKind::Ping => &ping_frame,
-                    OutboundKind::Movement(_) | OutboundKind::DispersedMovement => client
-                        .pending_movement_frame
+                    _ => client
+                        .pending_world_frame
                         .as_ref()
-                        .expect("movement output has a sequenced frame"),
-                    OutboundKind::Fire(index) => &client.fire_frames[index],
-                    OutboundKind::Chat => &client.chat_frame,
+                        .expect("sequenced world frame"),
                 };
                 match client.stream.write(&frame[pending.offset..]) {
                     Ok(0) => {
@@ -334,12 +331,7 @@ pub(super) fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> Worker
                                     stats.chat_sent = stats.chat_sent.saturating_add(1);
                                 }
                             }
-                            if matches!(
-                                pending.kind,
-                                OutboundKind::Movement(_) | OutboundKind::DispersedMovement
-                            ) {
-                                client.pending_movement_frame = None;
-                            }
+                            client.pending_world_frame = None;
                         }
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
@@ -397,9 +389,6 @@ pub(super) fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> Worker
                                         }
                                         ServerMessage::Snapshot { server_tick, .. } => {
                                             client.server_tick = server_tick;
-                                            client.next_target_tick = client
-                                                .next_target_tick
-                                                .max(server_tick.saturating_add(2));
                                             stats.snapshots_received =
                                                 stats.snapshots_received.saturating_add(1);
                                         }
@@ -417,8 +406,10 @@ pub(super) fn run_worker(client_ids: Vec<usize>, config: WorkerConfig) -> Worker
                                             stats.chat_received =
                                                 stats.chat_received.saturating_add(1);
                                         }
-                                        ServerMessage::EnvironmentSync { .. }
-                                        | ServerMessage::TimeProbeReply { .. } => {}
+                                        ServerMessage::EnvironmentSync { clock_sample, .. } => {
+                                            client.control_revision = clock_sample.revision().get()
+                                        }
+                                        ServerMessage::TimeProbeReply { .. } => {}
                                         _ => {}
                                     }
                                 }

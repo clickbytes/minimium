@@ -1,16 +1,17 @@
 use super::EnvironmentConfig;
 use super::{EnvironmentClockError, EnvironmentClockErrorKind};
+use minimium_environment::time::SimulationLimit;
 use minimium_environment::time::{
-    evaluate_clock, restore_clock_state, sample_clock, save_clock_state, set_clock_mode,
-    set_offline_policy, set_time_scale, set_world_time, ClockAnchor, ClockMode, ClockRevision,
-    ClockSample, MonotonicMs, OfflinePolicy, SavedClockState, SessionNonce, TimeError,
-    TimeScalePpm, WorldTimeMs,
+    restore_clock_state, set_clock_mode, set_offline_policy, set_time_scale, set_world_time,
+    ClockAnchor, ClockMode, ClockRevision, ClockSample, MonotonicMs, OfflinePolicy,
+    SavedClockState, SessionNonce, SimulationBoundary, TimeError, TimeScalePpm, WorldTimeMs,
 };
-
-const SYSTEM_CLOCK_CHECK_MS: i128 = 250;
 
 #[derive(Clone, Debug)]
 pub struct ClockPropertySnapshot {
+    pub(crate) tick: u64,
+    pub(crate) achieved_ppm: u64,
+    pub(crate) limit: &'static str,
     pub(crate) clock_id: u64,
     pub(crate) session_nonce: [u8; minimium_environment::time::SESSION_NONCE_BYTES],
     pub(crate) mode: &'static str,
@@ -23,6 +24,15 @@ pub struct ClockPropertySnapshot {
     pub(crate) dirty_revision: Option<u64>,
 }
 impl ClockPropertySnapshot {
+    pub fn tick(&self) -> u64 {
+        self.tick
+    }
+    pub fn achieved_ppm(&self) -> u64 {
+        self.achieved_ppm
+    }
+    pub fn limit(&self) -> &'static str {
+        self.limit
+    }
     pub fn clock_id(&self) -> u64 {
         self.clock_id
     }
@@ -74,8 +84,10 @@ pub(crate) struct EnvironmentClock {
     wall_utc: Result<WorldTimeMs, crate::RuntimeUtcError>,
     anchor: ClockAnchor,
     session_nonce: SessionNonce,
-    last_valid_world_time: WorldTimeMs,
-    last_correction_ms: Option<i128>,
+    boundary: SimulationBoundary,
+    input_floor: u64,
+    pub(crate) achieved_ppm: u64,
+    pub(crate) limit: SimulationLimit,
     fault: Option<ClockFault>,
     dirty_revision: Option<ClockRevision>,
 }
@@ -92,34 +104,74 @@ impl EnvironmentClock {
         logger: &minimium_diagnostics::DomainLogger,
     ) -> Result<Self, EnvironmentClockError> {
         let monotonic_ms = MonotonicMs::new(0);
+        let mut range_fault = false;
+        let mut boundary = saved_clock.map_or(SimulationBoundary::INITIAL, |s| s.boundary());
         let anchor = if let Some(saved) = saved_clock {
             let wall_utc_now = wall_utc.map_err(crate::RuntimeUtcError::environment_error)?;
-            let restored =
-                restore_clock_state(saved, wall_utc_now, monotonic_ms).map_err(|error| {
-                    EnvironmentClockError::caused_by(
+            match restore_clock_state(saved, wall_utc_now, monotonic_ms) {
+                Ok(restored) => {
+                    if restored.wall_clock_went_backwards()
+                        && saved.offline_policy() == OfflinePolicy::Advance
+                    {
+                        crate::diagnostics::emit(
+                            logger,
+                            minimium_diagnostics::Level::Warn,
+                            "environment.offline_advance_skipped",
+                            &[
+                                (
+                                    "saved_wall_utc_ms",
+                                    saved.saved_wall_utc_ms().get().to_string(),
+                                ),
+                                ("current_wall_utc_ms", wall_utc_now.get().to_string()),
+                            ],
+                        );
+                    }
+                    let restored = restored.anchor();
+                    if restored.world_utc_ms() != saved.saved_world_utc_ms() {
+                        let revision = restored
+                            .revision()
+                            .checked_next()
+                            .map_err(EnvironmentClockError::from_time)?;
+                        boundary = SimulationBoundary::new(boundary.tick(), revision)
+                            .map_err(EnvironmentClockError::from_time)?;
+                        ClockAnchor::new(
+                            restored.clock_id(),
+                            revision,
+                            restored.mode(),
+                            restored.world_utc_ms(),
+                            monotonic_ms,
+                            restored.rate_ppm(),
+                            restored.offline_policy(),
+                        )
+                        .map_err(EnvironmentClockError::from_time)?
+                    } else {
+                        restored
+                    }
+                }
+                Err(TimeError::OutOfSupportedRange(_)) => {
+                    range_fault = true;
+                    ClockAnchor::new(
+                        saved.clock_id(),
+                        saved
+                            .revision()
+                            .checked_next()
+                            .map_err(EnvironmentClockError::from_time)?,
+                        ClockMode::TimeScale,
+                        saved.saved_world_utc_ms(),
+                        monotonic_ms,
+                        TimeScalePpm::PAUSED,
+                        saved.offline_policy(),
+                    )
+                    .map_err(EnvironmentClockError::from_time)?
+                }
+                Err(error) => {
+                    return Err(EnvironmentClockError::caused_by(
                         EnvironmentClockErrorKind::InvalidSavedState,
                         "could not restore saved environment clock",
                         error,
-                    )
-                })?;
-            if saved.mode() == ClockMode::TimeScale
-                && saved.offline_policy() == OfflinePolicy::Advance
-                && restored.wall_clock_went_backwards()
-            {
-                crate::diagnostics::emit(
-                    logger,
-                    minimium_diagnostics::Level::Warn,
-                    "environment.offline_advance_skipped",
-                    &[
-                        (
-                            "saved_wall_utc_ms",
-                            saved.saved_wall_utc_ms().get().to_string(),
-                        ),
-                        ("current_wall_utc_ms", wall_utc_now.get().to_string()),
-                    ],
-                );
+                    ))
+                }
             }
-            restored.anchor()
         } else {
             let world_time = match (config.mode, config.initial_utc) {
                 (ClockMode::RealTime, _) => {
@@ -143,83 +195,65 @@ impl EnvironmentClock {
             wall_utc,
             anchor,
             session_nonce: nonce,
-            last_valid_world_time: anchor.world_utc_ms(),
-            last_correction_ms: None,
-            fault: None,
+            boundary,
+            input_floor: anchor.revision().get(),
+            achieved_ppm: 0,
+            limit: SimulationLimit::None,
+            fault: range_fault.then_some(ClockFault::TimeRangeExhausted),
             dirty_revision: None,
         })
     }
 
-    pub(crate) fn observe(
-        &mut self,
-        now: MonotonicMs,
-    ) -> Result<Option<ClockFault>, EnvironmentClockError> {
-        if self.fault == Some(ClockFault::RevisionExhausted) {
-            return Ok(None);
+    fn current_limit(&self) -> SimulationLimit {
+        if self.fault == Some(ClockFault::TimeRangeExhausted) {
+            SimulationLimit::UtcRange
+        } else {
+            self.limit
         }
-        match evaluate_clock(self.anchor, now) {
-            Ok(world_time) => {
-                self.last_valid_world_time = world_time;
-                Ok(None)
+    }
+    pub(crate) fn accepts_input(&self, revision: u64) -> bool {
+        (self.input_floor..=self.anchor.revision().get()).contains(&revision)
+            && self.rate().get() != 0
+    }
+    pub(crate) fn boundary(&self) -> SimulationBoundary {
+        self.boundary
+    }
+    pub(crate) fn rate(&self) -> TimeScalePpm {
+        self.anchor.rate_ppm()
+    }
+    pub(crate) fn utc(&self) -> WorldTimeMs {
+        self.anchor.world_utc_ms()
+    }
+
+    pub(crate) fn next_boundary(&mut self) -> Option<(SimulationBoundary, WorldTimeMs)> {
+        if self.fault.is_some() || self.rate() == TimeScalePpm::PAUSED {
+            return None;
+        }
+        let next =
+            SimulationBoundary::new(self.boundary.tick() + 1, self.boundary.calendar_epoch());
+        let utc = WorldTimeMs::new(self.utc().get() + SimulationBoundary::STEP_MS as i64);
+        match (next, utc) {
+            (Ok(next), Ok(utc)) => Some((next, utc)),
+            _ => {
+                self.pause_on_range_exhaustion(self.anchor.monotonic_ms());
+                self.limit = SimulationLimit::UtcRange;
+                None
             }
-            Err(TimeError::OutOfSupportedRange(_)) => Ok(Some(self.pause_on_range_exhaustion(now))),
-            Err(error) => Err(EnvironmentClockError::from_time(error)),
         }
     }
 
-    pub(crate) fn check_system_clock(
-        &mut self,
-        now: MonotonicMs,
-    ) -> Result<Option<i128>, EnvironmentClockError> {
-        if self.anchor.mode() != ClockMode::RealTime
-            || self.fault == Some(ClockFault::RevisionExhausted)
-        {
-            return Ok(None);
-        }
-        let utc_now = match self.wall_utc {
-            Ok(utc) => utc,
-            Err(error) => {
-                let fault = self.pause_on_range_exhaustion(now);
-                return Err(EnvironmentClockError::caused_by(
-                    EnvironmentClockErrorKind::SystemClock,
-                    fault.code(),
-                    error.environment_error(),
-                ));
-            }
-        };
-        let expected = match evaluate_clock(self.anchor, now) {
-            Ok(value) => value,
-            Err(TimeError::OutOfSupportedRange(_)) => {
-                let fault = self.pause_on_range_exhaustion(now);
-                return Err(EnvironmentClockError::fault(
-                    EnvironmentClockErrorKind::TimeRange,
-                    fault.code(),
-                ));
-            }
-            Err(error) => return Err(EnvironmentClockError::from_time(error)),
-        };
-        let correction_ms = i128::from(utc_now.get()) - i128::from(expected.get());
-        if correction_ms.abs() < SYSTEM_CLOCK_CHECK_MS {
-            self.last_valid_world_time = expected;
-            return Ok(None);
-        }
-        match set_clock_mode(self.anchor, now, ClockMode::RealTime, Some(utc_now)) {
-            Ok(anchor) => {
-                self.anchor = anchor;
-                self.last_valid_world_time = utc_now;
-                self.last_correction_ms = Some(correction_ms);
-                self.dirty_revision = Some(anchor.revision());
-                Ok(Some(correction_ms))
-            }
-            Err(TimeError::RevisionExhausted) => {
-                self.fault = Some(ClockFault::RevisionExhausted);
-                Err(EnvironmentClockError::fault(
-                    EnvironmentClockErrorKind::RevisionExhausted,
-                    ClockFault::RevisionExhausted.code(),
-                ))
-            }
-            Err(error) => Err(EnvironmentClockError::from_time(error)),
-        }
+    pub(crate) fn commit(&mut self, boundary: SimulationBoundary, utc: WorldTimeMs) {
+        self.boundary = boundary;
+        self.anchor = ClockAnchor::new(
+            self.anchor.clock_id(),
+            self.anchor.revision(),
+            self.anchor.mode(),
+            utc,
+            self.anchor.monotonic_ms(),
+            self.rate(),
+            self.anchor.offline_policy(),
+        )
+        .expect("validated clock configuration");
     }
 
     pub(crate) fn sample(&self, now: MonotonicMs) -> Result<ClockSample, EnvironmentClockError> {
@@ -229,7 +263,22 @@ impl EnvironmentClock {
                 ClockFault::RevisionExhausted.code(),
             ));
         }
-        sample_clock(self.anchor, self.session_nonce, now).map_err(EnvironmentClockError::from_time)
+        ClockSample::new(
+            self.anchor.clock_id(),
+            self.anchor.revision(),
+            self.session_nonce,
+            now,
+            self.utc(),
+            self.anchor.mode(),
+            self.rate(),
+            self.anchor.offline_policy(),
+        )
+        .map(|sample| {
+            sample
+                .with_boundary(self.boundary)
+                .with_progress(self.achieved_ppm, self.current_limit())
+        })
+        .map_err(EnvironmentClockError::from_time)
     }
 
     pub(crate) fn property_snapshot(
@@ -245,26 +294,23 @@ impl EnvironmentClock {
             offline_policy: policy_name(sample.offline_policy()),
             utc_ms: sample.world_utc_ms().get(),
             revision: sample.revision().get(),
-            fault: self.fault.map(ClockFault::code).unwrap_or_else(|| {
-                if matches!(
-                    evaluate_clock(self.anchor, now),
-                    Err(TimeError::OutOfSupportedRange(_))
-                ) {
-                    "time_range_exhausted_pending"
-                } else {
-                    "none"
-                }
-            }),
-            correction_ms: self.last_correction_ms,
+            fault: self.fault.map_or("none", ClockFault::code),
+            correction_ms: self
+                .wall_utc
+                .ok()
+                .filter(|_| self.anchor.mode() == ClockMode::RealTime)
+                .map(|wall| i128::from(wall.get()) - i128::from(self.utc().get())),
+            tick: self.boundary.tick(),
+            achieved_ppm: self.achieved_ppm,
+            limit: self.current_limit().label(),
             dirty_revision: self.dirty_revision.map(|revision| revision.get()),
         })
     }
 
     pub(crate) fn capture_saved_state(
         &mut self,
-        now: MonotonicMs,
+        _now: MonotonicMs,
     ) -> Result<SavedClockState, EnvironmentClockError> {
-        self.observe(now)?;
         if self.fault == Some(ClockFault::RevisionExhausted) {
             return Err(EnvironmentClockError::fault(
                 EnvironmentClockErrorKind::RevisionExhausted,
@@ -274,7 +320,17 @@ impl EnvironmentClock {
         let wall_utc = self
             .wall_utc
             .map_err(crate::RuntimeUtcError::environment_error)?;
-        save_clock_state(self.anchor, now, wall_utc).map_err(EnvironmentClockError::from_time)
+        SavedClockState::new(
+            self.anchor.clock_id(),
+            self.anchor.revision(),
+            self.anchor.mode(),
+            self.utc(),
+            wall_utc,
+            self.rate(),
+            self.anchor.offline_policy(),
+        )
+        .map(|saved| saved.with_boundary(self.boundary))
+        .map_err(EnvironmentClockError::from_time)
     }
 
     pub(crate) fn set_date(
@@ -283,7 +339,7 @@ impl EnvironmentClock {
         value: WorldTimeMs,
     ) -> Result<ClockRevision, EnvironmentClockError> {
         self.ensure_mutable(now, true)?;
-        let anchor = map_clock_error(set_world_time(self.anchor, now, value), &mut self.fault)?;
+        let anchor = map_clock_error(set_world_time(self.anchor, value), &mut self.fault)?;
         self.replace_anchor(anchor, true);
         Ok(anchor.revision())
     }
@@ -294,7 +350,7 @@ impl EnvironmentClock {
         value: TimeScalePpm,
     ) -> Result<ClockRevision, EnvironmentClockError> {
         self.ensure_mutable(now, false)?;
-        let anchor = map_clock_error(set_time_scale(self.anchor, now, value), &mut self.fault)?;
+        let anchor = map_clock_error(set_time_scale(self.anchor, value), &mut self.fault)?;
         self.replace_anchor(anchor, false);
         Ok(anchor.revision())
     }
@@ -314,10 +370,7 @@ impl EnvironmentClock {
         } else {
             None
         };
-        let anchor = map_clock_error(
-            set_clock_mode(self.anchor, now, value, utc_now),
-            &mut self.fault,
-        )?;
+        let anchor = map_clock_error(set_clock_mode(self.anchor, value, utc_now), &mut self.fault)?;
         self.replace_anchor(anchor, recover);
         Ok(anchor.revision())
     }
@@ -328,7 +381,7 @@ impl EnvironmentClock {
         value: OfflinePolicy,
     ) -> Result<ClockRevision, EnvironmentClockError> {
         self.ensure_mutable(now, false)?;
-        let anchor = map_clock_error(set_offline_policy(self.anchor, now, value), &mut self.fault)?;
+        let anchor = map_clock_error(set_offline_policy(self.anchor, value), &mut self.fault)?;
         self.replace_anchor(anchor, false);
         Ok(anchor.revision())
     }
@@ -339,10 +392,9 @@ impl EnvironmentClock {
 
     fn ensure_mutable(
         &mut self,
-        now: MonotonicMs,
+        _now: MonotonicMs,
         recovers_range_fault: bool,
     ) -> Result<(), EnvironmentClockError> {
-        self.observe(now)?;
         match self.fault {
             Some(ClockFault::RevisionExhausted) => {
                 Err(EnvironmentClockError::fault(EnvironmentClockErrorKind::RevisionExhausted, ClockFault::RevisionExhausted.code()))
@@ -353,8 +405,14 @@ impl EnvironmentClock {
     }
 
     fn replace_anchor(&mut self, anchor: ClockAnchor, clear_fault: bool) {
+        if self.rate() == TimeScalePpm::PAUSED && anchor.rate_ppm() != TimeScalePpm::PAUSED {
+            self.input_floor = anchor.revision().get();
+        }
         self.anchor = anchor;
-        self.last_valid_world_time = anchor.world_utc_ms();
+        if clear_fault {
+            self.boundary = SimulationBoundary::new(self.boundary.tick(), anchor.revision())
+                .expect("validated tick");
+        }
         if clear_fault {
             self.fault = None;
         }
@@ -376,7 +434,7 @@ impl EnvironmentClock {
             self.anchor.clock_id(),
             revision,
             ClockMode::TimeScale,
-            self.last_valid_world_time,
+            self.utc(),
             now,
             TimeScalePpm::PAUSED,
             self.anchor.offline_policy(),

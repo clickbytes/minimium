@@ -1,5 +1,7 @@
 # ADR 0013: Ambient cosmetic meteors — baseline, contract and domain boundaries
 
+**Time model amendment.** ADR 0016 supersedes this decision's clock progression, effect lifetime, persistence and host tick cadence rules. The original decision below records the earlier design. [ADR 0016](0016-committed-simulation-time.md)
+
 - Status: Accepted for the E047 design baseline; implementation follows E047-01..17
 - Date: 2026-11-08
 - Owners: E047-00 / Epic #366 ([EPIC E047](https://github.com/clickbytes/minimium/issues/366))

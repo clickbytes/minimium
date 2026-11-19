@@ -184,9 +184,6 @@ impl ClientSession {
                 ServerMessage::Welcome { server_tick, .. }
                 | ServerMessage::Snapshot { server_tick, .. } => {
                     self.server_tick = *server_tick;
-                    self.next_target_tick = self
-                        .next_target_tick
-                        .max(server_tick.saturating_add(2).max(1));
                 }
                 _ => {}
             }

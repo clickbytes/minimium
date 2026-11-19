@@ -14,6 +14,12 @@ impl DesktopHost {
         >,
     ) {
         match message {
+            ServerMessage::EnvironmentSync { clock_sample, .. }
+                if clock_sample.rate_ppm().get() == 0 =>
+            {
+                self.application.input.clear_held();
+                self.input.jump_pending = false;
+            }
             ServerMessage::Excavation { context, message } => {
                 self.observe_excavation(context, &message);
             }
@@ -21,25 +27,23 @@ impl DesktopHost {
                 context,
                 body,
                 live,
-                ..
+                server_time_ms,
             } => {
                 if Some(context) == self.application.core_view().context {
-                    self.impacts.observe(context, body, live);
+                    self.impacts
+                        .observe(context, body, live, server_time_ms as f64 / 1000.0);
                 }
             }
             ServerMessage::Bolid { context, event } => {
                 if Some(context) != self.application.core_view().context {
                     return;
                 }
-                self.bolids.retain(|(existing, bolid, at, _)| {
-                    *existing == context
-                        && *at + Duration::from_secs(150) > Instant::now()
-                        && bolid.id != event.id
-                });
+                self.bolids
+                    .retain(|(existing, bolid, _)| *existing == context && bolid.id != event.id);
                 if self.bolids.len() == minimium_renderer::milky_way_gpu::MAX_BOLIDS {
                     self.bolids.remove(0);
                 }
-                self.bolids.push((context, event, Instant::now(), None));
+                self.bolids.push((context, event, None));
             }
             message @ ServerMessage::Welcome { .. } => self.handle_welcome(message, update),
             ServerMessage::Pong if self.application.ui.console.open => {

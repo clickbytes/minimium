@@ -140,6 +140,15 @@ impl DesktopHost {
         self.renderer.held_tool_visible = self.application.core_view().sectors_ready
             && !self.application.ui.console.open
             && !self.application.overview().is_open();
+        self.renderer.held_tool_pose = self.held_tool_motion.pose(
+            render_view
+                .context
+                .zip(render_view.equipped_tool_model_index),
+            self.renderer.held_tool_visible
+                && self.renderer.scene_visible
+                && self.input.cursor_locked,
+            self.presentation_time(),
+        );
         self.update_render_origin();
         let visual_offset = self.camera_visual_offset;
         let render_origin = glam::Vec3::from_array(self.renderer.render_origin).as_dvec3();
@@ -292,7 +301,7 @@ impl DesktopHost {
                     self.render_environment_frame.clone(),
                     None,
                     meteors,
-                    self.cosmetic_epoch.elapsed(),
+                    self.presentation_time(),
                 )
             }
         };

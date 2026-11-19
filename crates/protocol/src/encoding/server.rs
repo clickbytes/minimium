@@ -51,7 +51,7 @@ pub fn encode_server_into(
                 }
                 write_world_context(*context, frame);
                 frame.extend_from_slice(&event.id.to_le_bytes());
-                frame.extend_from_slice(&event.start_monotonic_ms.to_le_bytes());
+                frame.extend_from_slice(&event.start_simulation_ms.to_le_bytes());
                 frame.extend_from_slice(&event.seed.to_le_bytes());
                 write_vector(event.start_world_m, frame)?;
                 write_vector(event.end_world_m, frame)?;
@@ -170,7 +170,7 @@ pub fn encode_server_into(
                 clock_sample,
                 environment,
             } => {
-                if *health > 100 {
+                if *health > 100 || *server_tick != clock_sample.boundary().tick() {
                     return Err(ProtocolError::InvalidPayload);
                 }
                 frame.extend_from_slice(&id.get().to_le_bytes());
@@ -252,6 +252,7 @@ pub fn encode_server_into(
                 server_time_ms,
                 server_tick,
                 resolved_input_seq,
+                applied_input,
                 context,
                 full_snapshot,
                 self_movement,
@@ -262,7 +263,11 @@ pub fn encode_server_into(
                 players,
                 removed_players,
             } => {
-                if (*full_snapshot && !removed_players.is_empty())
+                if server_tick.checked_mul(minimium_environment::time::SimulationBoundary::STEP_MS)
+                    != Some(*server_time_ms)
+                    || applied_input.0 > *resolved_input_seq
+                    || applied_input.1 > *server_tick
+                    || (*full_snapshot && !removed_players.is_empty())
                     || players
                         .iter()
                         .any(|player| removed_players.contains(player.id))
@@ -272,6 +277,8 @@ pub fn encode_server_into(
                 frame.extend_from_slice(&server_time_ms.to_le_bytes());
                 frame.extend_from_slice(&server_tick.to_le_bytes());
                 frame.extend_from_slice(&resolved_input_seq.to_le_bytes());
+                frame.extend_from_slice(&applied_input.0.to_le_bytes());
+                frame.extend_from_slice(&applied_input.1.to_le_bytes());
                 write_world_context(*context, frame);
                 crate::movement_codec::write(*self_movement, frame)?;
                 let _ = self_position;
@@ -324,7 +331,7 @@ pub fn encode_server_into(
                 clock_sample,
                 environment,
             } => {
-                if *health > 100 {
+                if *health > 100 || *server_tick != clock_sample.boundary().tick() {
                     return Err(ProtocolError::InvalidPayload);
                 }
                 frame.extend_from_slice(&transition_id.get().to_le_bytes());

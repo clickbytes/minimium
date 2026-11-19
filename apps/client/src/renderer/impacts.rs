@@ -10,19 +10,17 @@ use minimium_world::{
     impact::BodyState,
     terrain_edits::{length, project},
 };
-use std::{
-    collections::{BTreeMap, HashSet, VecDeque},
-    time::Instant,
-};
+use std::collections::{BTreeMap, HashSet, VecDeque};
 
 struct Track {
     body: BodyState,
-    received: Instant,
+    received: f64,
+    previous: (f64, [f64; 3]),
     history: VecDeque<[f64; 3]>,
 }
 struct Burst {
     body: BodyState,
-    at: Instant,
+    at: f64,
     sound: bool,
     started: bool,
 }
@@ -36,7 +34,13 @@ pub(super) struct TrackedImpacts {
 }
 
 impl TrackedImpacts {
-    pub(super) fn observe(&mut self, context: WorldContext, body: BodyState, live: bool) {
+    pub(super) fn observe(
+        &mut self,
+        context: WorldContext,
+        body: BodyState,
+        live: bool,
+        simulation_s: f64,
+    ) {
         if self.context != Some(context) {
             *self = Self {
                 context: Some(context),
@@ -49,15 +53,17 @@ impl TrackedImpacts {
             }
             let track = self.tracks.entry(body.id).or_insert_with(|| Track {
                 body,
-                received: Instant::now(),
+                received: simulation_s,
+                previous: (simulation_s, body.position),
                 history: VecDeque::with_capacity(8),
             });
             if track.history.len() == 8 {
                 track.history.pop_front();
             }
             track.history.push_back(body.position);
+            track.previous = (track.received, track.body.position);
             track.body = body;
-            track.received = Instant::now();
+            track.received = simulation_s;
         } else {
             self.tracks.remove(&body.id);
             if live && body.phase == 1 && !self.bursts.iter().any(|b| b.body.id == body.id) {
@@ -66,7 +72,7 @@ impl TrackedImpacts {
                 }
                 self.bursts.push_back(Burst {
                     body,
-                    at: Instant::now(),
+                    at: simulation_s,
                     sound: false,
                     started: false,
                 });
@@ -88,15 +94,19 @@ impl TrackedImpacts {
             };
             return;
         }
-        self.tracks
-            .retain(|_, t| t.received.elapsed().as_secs_f64() < 10.0);
-        self.bursts.retain(|b| b.at.elapsed().as_secs_f64() < 12.0);
+        self.tracks.retain(|_, t| (now_s - t.received) < 10.0);
+        self.bursts.retain(|b| (now_s - b.at) < 12.0);
         for track in self.tracks.values() {
             let body = track.body;
-            let dt = track.received.elapsed().as_secs_f64().min(0.08);
-            let position = std::array::from_fn(|i| {
-                body.position[i] + body.velocity[i] * body.metres_scale * dt
-            });
+            let (start, previous) = track.previous;
+            let span = track.received - start;
+            let fraction = if span > 0.0 {
+                ((now_s - start) / span).clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+            let position =
+                std::array::from_fn(|i| previous[i] + (body.position[i] - previous[i]) * fraction);
             let speed = length(body.velocity);
             let altitude = ((length(position) - body.planet_radius_m) / body.metres_scale).max(0.0);
             let density = 1.225 * (-altitude / 7800.0).exp();
@@ -142,6 +152,9 @@ impl TrackedImpacts {
             light(frame, id, position, rgb, power / 12.566, 15000.0);
         }
         for burst in &mut self.bursts {
+            if now_s < burst.at {
+                continue;
+            }
             if !burst.started {
                 if !self
                     .published_terrain
@@ -151,10 +164,9 @@ impl TrackedImpacts {
                     continue;
                 }
                 burst.started = true;
-                burst.at = Instant::now();
             }
             let body = burst.body;
-            let age = burst.at.elapsed().as_secs_f64();
+            let age = (now_s - burst.at).max(0.0);
             let up = project(body.position, 1.0);
             let center = std::array::from_fn(|i| body.position[i] + up[i] * 3.0);
             let id = (1_u64 << 60) | body.id * 16;
@@ -237,7 +249,7 @@ impl TrackedImpacts {
                 audio.enqueue(
                     crate::audio::meteors::MeteorSoundCue {
                         source_pos: physical(frame, center),
-                        onset_monotonic: now_s - age,
+                        onset_simulation_s: now_s - age,
                         relative_energy: (body.energy_j / 1e11).clamp(0.1, 1.0) as f32,
                         cue_kind: crate::audio::meteors::CueKind::Airburst,
                         seed: body.seed,

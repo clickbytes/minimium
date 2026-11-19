@@ -154,7 +154,7 @@ impl Renderer {
                 }),
                 origin: render_frame.view.render_origin_m,
                 revision: cloud_revision,
-                now: std::time::Instant::now(),
+                simulation_time: prepared.simulation_time,
                 eye: std::array::from_fn(|i| {
                     (render_frame.view.camera_eye_world_m[i] - render_frame.view.render_origin_m[i])
                         as f32
@@ -350,6 +350,11 @@ impl Renderer {
             environment: environment_flags,
         };
         let held_tool = if self.scene_visible && self.held_tool_visible {
+            self.held_tool.upload(
+                &self.queue,
+                self.held_tool_pose,
+                [self.size.width, self.size.height],
+            );
             self.held_tool_model_index
                 .map(|model_index| (&self.held_tool, model_index))
         } else {

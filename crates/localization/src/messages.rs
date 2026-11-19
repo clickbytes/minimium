@@ -236,6 +236,7 @@ impl UiMessage {
                     ServerErrorReason::Protocol => "protocol",
                     ServerErrorReason::Busy => "busy",
                     ServerErrorReason::Full => "full",
+                    ServerErrorReason::Paused => "paused",
                     ServerErrorReason::RateLimit => "rate_limit",
                     ServerErrorReason::Other => "other",
                 }),

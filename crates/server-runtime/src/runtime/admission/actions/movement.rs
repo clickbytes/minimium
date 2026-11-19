@@ -49,7 +49,7 @@ pub(in crate::runtime::admission) fn admit_motion(
             sample.intent.vertical = 0.0;
         }
     }
-    let current_tick = runtime.scheduler.simulation_tick;
+    let current_tick = runtime.environment_clock.boundary().tick();
     if sample.input_seq == 0
         || sample.input_seq
             <= runtime
@@ -58,23 +58,12 @@ pub(in crate::runtime::admission) fn admit_motion(
                 .get(&player)
                 .copied()
                 .unwrap_or(0)
-        || sample.target_tick <= current_tick
-        || sample.target_tick > current_tick.saturating_add(8)
     {
         runtime.metrics.rejected_inputs = runtime.metrics.rejected_inputs.saturating_add(1);
-        if sample.input_seq
-            > runtime
-                .game
-                .last_input_seq
-                .get(&player)
-                .copied()
-                .unwrap_or(0)
-        {
-            runtime.game.last_input_seq.insert(player, sample.input_seq);
-            runtime.resolve_movement_input(player, sample.input_seq);
-        }
         return;
     }
+    sample.target_tick = current_tick + 1;
+    runtime.game.input_last_received.insert(player, decoded_at);
     if !queue::try_queue(runtime, WorldInput::Move(player, sample), decoded_at) {
         runtime.game.last_input_seq.insert(player, sample.input_seq);
         runtime.resolve_movement_input(player, sample.input_seq);

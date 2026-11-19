@@ -123,7 +123,12 @@ pub fn encode_frame(encoder: &mut wgpu::CommandEncoder, frame: FramePasses<'_>) 
     }
     let held_tool = if frame.scene.scene_visible && !frame.scene.overview_active {
         frame.held_tool.map_or(0, |(gpu, model_index)| {
-            gpu.encode(encoder, frame.scene.color_view, model_index)
+            gpu.encode(
+                encoder,
+                frame.scene.color_view,
+                frame.scene.depth_view,
+                model_index,
+            )
         })
     } else {
         0

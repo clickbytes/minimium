@@ -14,7 +14,7 @@ use std::{
     time::Instant,
 };
 
-const MAGIC: &[u8; 8] = b"MIMPACT1";
+const MAGIC: &[u8; 8] = b"MIMPACT2";
 mod memory;
 pub(crate) use memory::MemoryImpacts;
 pub const MAX_BODIES: usize = 4096;
@@ -55,7 +55,7 @@ impl ImpactJournalPort for ImpactJournal {
 
 impl ImpactJournal {
     pub fn open(directory: &Path) -> io::Result<(Self, Vec<BodyState>)> {
-        let path = directory.join("impacts.v1");
+        let path = directory.join("impacts.v2");
         let (file, bodies) = load(&path)?;
         let restored = bodies.values().copied().collect();
         let (requests, receiver) = mpsc::sync_channel(16);
@@ -212,7 +212,7 @@ fn commit(
     writer.sync_all()?;
     *bodies = staged;
     if writer.metadata()?.len() > COMPACT_BYTES {
-        let temporary = path.with_extension("v1.tmp");
+        let temporary = path.with_extension("v2.tmp");
         drop(file.take());
         minimium_platform::files::atomic_write_with(&temporary, path, |out| {
             out.write_all(MAGIC)?;

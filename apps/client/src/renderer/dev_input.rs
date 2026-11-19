@@ -192,14 +192,14 @@ fn replay_bolid(
         .application
         .connection_view()
         .session()
-        .and_then(|session| session.server_monotonic_ms());
+        .and_then(|session| session.environment_frame().simulation_ms);
     let context = renderer.render_environment_frame.context;
-    let Some((event_context, event, received, cached)) =
+    let Some((event_context, event, cached)) =
         renderer
             .bolids
             .iter_mut()
             .rev()
-            .find(|(candidate_context, event, _, _)| {
+            .find(|(candidate_context, event, _)| {
                 Some(*candidate_context) == context && event_id.is_none_or(|id| event.id == id)
             })
     else {
@@ -211,9 +211,8 @@ fn replay_bolid(
         lines.push("dev: synchronized server time is too early for this replay age".to_owned());
         return;
     };
-    event.start_monotonic_ms = start;
+    event.start_simulation_ms = start;
     renderer.diagnostic_bolid_age = frozen.then_some((*event_context, event.id, age));
-    *received = std::time::Instant::now();
     if let Some(seed) = seed {
         event.seed = seed;
         *cached = None;
@@ -226,10 +225,10 @@ fn replay_bolid(
 
 fn bolid_status(renderer: &DesktopHost, lines: &mut Vec<String>) {
     let context = renderer.render_environment_frame.context;
-    for (_, event, _, model) in renderer
+    for (_, event, model) in renderer
         .bolids
         .iter()
-        .filter(|(event_context, _, _, _)| Some(*event_context) == context)
+        .filter(|(event_context, _, _)| Some(*event_context) == context)
     {
         if let Some(model) = model {
             lines.push(bolid_path::format(event));

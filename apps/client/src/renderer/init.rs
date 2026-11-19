@@ -221,6 +221,7 @@ impl DesktopHost {
                 hit_confirmation_until: None,
             },
             excavation_debug: Default::default(),
+            held_tool_motion: Default::default(),
             application: crate::application::ClientApplication::new(
                 crate::application::UiModel { console },
                 connection,

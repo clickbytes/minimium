@@ -362,17 +362,22 @@ fn dot_axes(a: [f64; 3], b: [i8; 3]) -> f64 {
 fn mesh_triangles(mesh: TerrainMesh) -> Vec<MapTriangle> {
     mesh.triangles
         .into_iter()
-        .map(|vertices| {
+        .filter_map(|vertices| {
             let points = vertices.map(|v| v.position_m.map(|c| (c * 1000.0).round() as i64));
+            // Quantization can collapse a fan triangle onto an edge/point.
+            // Exclude it from both the published mesh and boundary incidence.
+            if !crate::voxel_boundary::has_area(points) {
+                return None;
+            }
             let surface = vertices.map(volume_payload);
             let material = vertices[0].material;
-            MapTriangle {
+            Some(MapTriangle {
                 vertices: points.map(|p| p.map(|c| c as f32 / 1000.0)),
                 precise_vertices: Some(points),
                 color: material_color(material),
                 solid: true,
                 surface: Some(surface),
-            }
+            })
         })
         .collect()
 }

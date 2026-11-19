@@ -13,9 +13,9 @@ pub(super) fn keyboard(
 ) {
     if let PhysicalKey::Code(code) = event.physical_key {
         let control = crate::input::PhysicalControl::from_keyboard(code);
-        let context = input_context(renderer);
         let action = control.and_then(|control| match event.state {
-            ElementState::Pressed => renderer.application.input.press(control, context),
+            ElementState::Pressed if !event.repeat => press_control(renderer, control),
+            ElementState::Pressed => None,
             ElementState::Released => {
                 renderer.application.input.release(control);
                 None
@@ -127,6 +127,25 @@ fn apply_action(
     }
 }
 
+fn press_control(
+    renderer: &mut DesktopHost,
+    control: crate::input::PhysicalControl,
+) -> Option<crate::input::InputAction> {
+    let context = input_context(renderer);
+    let action = renderer.application.input.press(control, context)?;
+    use crate::input::InputAction::*;
+    if renderer.environment_frame.rate_ppm == Some(0)
+        && !matches!(
+            action,
+            Cancel | ToggleMap | ToggleConsole | ToggleFullscreen
+        )
+    {
+        renderer.application.input.release(control);
+        return None;
+    }
+    Some(action)
+}
+
 fn input_context(renderer: &DesktopHost) -> crate::input::InputContext {
     if renderer.application.ui.console.open {
         crate::input::InputContext::Console
@@ -207,8 +226,7 @@ pub(super) fn mouse_input(
         _ => {}
     }
     if let (ElementState::Pressed, Some(control)) = (state, control) {
-        let context = input_context(renderer);
-        if let Some(action) = renderer.application.input.press(control, context) {
+        if let Some(action) = press_control(renderer, control) {
             if action == crate::input::InputAction::Fire && !renderer.input.cursor_locked {
                 if window.set_cursor_grab(CursorGrabMode::Locked).is_ok()
                     || window.set_cursor_grab(CursorGrabMode::Confined).is_ok()
@@ -315,6 +333,7 @@ fn release_cursor(
     let _ = window.set_cursor_grab(CursorGrabMode::None);
     window.set_cursor_visible(true);
     renderer.input.cursor_locked = false;
+    renderer.cancel_tool_swing();
     if reset_cursor_position {
         renderer.input.last_cursor = None;
     }

@@ -106,7 +106,7 @@ pub(super) fn prepare_client(
             Err(_) => None,
         }
     };
-    let Some((welcome_context, server_tick)) = welcome else {
+    let Some((welcome_context, server_tick, control_revision)) = welcome else {
         stats.errors = stats.errors.saturating_add(1);
         stats.handshake_failures = stats.handshake_failures.saturating_add(1);
         if Instant::now() >= deadline {
@@ -117,6 +117,8 @@ pub(super) fn prepare_client(
     stats.connected = stats.connected.saturating_add(1);
 
     let name_frame = match encode_client(&ClientMessage::WorldInput {
+        sequence: 1,
+        control_revision,
         context: welcome_context,
         input: ClientWorldInput::SetName(format!("Bot{client_id}")),
     }) {
@@ -152,8 +154,8 @@ pub(super) fn prepare_client(
         client_id,
         world_context: welcome_context,
         server_tick,
-        next_input_seq: 1,
-        next_target_tick: server_tick.saturating_add(2).max(1),
+        next_input_seq: 2,
+        control_revision,
         stream,
         receive_buffer,
         next_ping_at: Instant::now(),
@@ -161,7 +163,7 @@ pub(super) fn prepare_client(
         next_movement_at: Instant::now(),
         pending_movement_index: None,
         pending_dispersed_movement: false,
-        pending_movement_frame: None,
+        pending_world_frame: None,
         dispersed_direction: {
             let angle = std::f64::consts::TAU * client_id as f64 / total_clients as f64;
             [angle.cos() as f32, angle.sin() as f32]
@@ -176,23 +178,7 @@ pub(super) fn prepare_client(
         measurement_bytes_received: 0,
         movement_seed: client_id % movement_directions.len(),
         movement_count: movement_directions.len(),
-        fire_frames: movement_directions
-            .iter()
-            .map(|direction| {
-                encode_world_input(
-                    welcome_context,
-                    ClientWorldInput::Fire {
-                        direction: [direction[0], 0.0, direction[1]],
-                    },
-                )
-                .expect("bounded fire input encodes")
-            })
-            .collect(),
-        chat_frame: encode_world_input(
-            welcome_context,
-            ClientWorldInput::Chat("load test message".to_owned()),
-        )
-        .expect("bounded chat input encodes"),
+
         movement_sequence: 0,
         disconnected: false,
         disconnected_before_start: false,
@@ -242,7 +228,7 @@ pub(super) fn wait_for_setup_message(
     existing_clients: &mut [LoadClient],
     ping_frame: &[u8],
     stats: &mut WorkerStats,
-) -> std::io::Result<Option<(WorldContext, u64)>> {
+) -> std::io::Result<Option<(WorldContext, u64, u64)>> {
     let mut chunk = [0u8; 4096];
     loop {
         service_setup_clients(existing_clients, ping_frame, None, stats);
@@ -256,9 +242,12 @@ pub(super) fn wait_for_setup_message(
                             ServerMessage::Welcome {
                                 context,
                                 server_tick,
+                                clock_sample,
                                 ..
                             },
-                        ) => return Ok(Some((context, server_tick))),
+                        ) => {
+                            return Ok(Some((context, server_tick, clock_sample.revision().get())))
+                        }
                         (SetupExpectation::Accepted, ServerMessage::Accepted) => return Ok(None),
                         (_, ServerMessage::Error(_)) => {
                             return Err(std::io::Error::new(
@@ -318,13 +307,6 @@ pub(super) fn wait_for_setup_message(
             Err(error) => return Err(error),
         }
     }
-}
-
-fn encode_world_input(
-    context: WorldContext,
-    input: ClientWorldInput,
-) -> Result<Vec<u8>, minimium_protocol::ProtocolError> {
-    encode_client(&ClientMessage::WorldInput { context, input })
 }
 
 pub(super) fn service_setup_clients(

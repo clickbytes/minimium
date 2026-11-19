@@ -19,6 +19,7 @@ pub(in crate::runtime::admission) fn admit_fire(
         ActorAction::Fire(direction),
         decoded_at,
         now,
+        runtime.environment_clock.boundary().simulation_ms(),
         reserved_transport_inputs,
     ) {
         ActorActionAdmission::Queued => {}

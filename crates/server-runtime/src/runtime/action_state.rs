@@ -9,7 +9,7 @@ const GLOBAL_CHAT_COOLDOWN: std::time::Duration = std::time::Duration::from_mill
 
 #[derive(Default)]
 pub(super) struct ActorActionCooldowns {
-    last_fire_at: Option<Instant>,
+    last_fire_at: Option<u64>,
     last_chat_at: Option<Instant>,
 }
 
@@ -49,6 +49,7 @@ impl GameState {
         action: ActorAction,
         decoded_at: Instant,
         now: Instant,
+        simulation_ms: u64,
         reserved_transport_inputs: usize,
     ) -> ActorActionAdmission {
         let valid = match &action {
@@ -65,9 +66,10 @@ impl GameState {
             return ActorActionAdmission::ActorUnavailable;
         }
         let rate_limited = match &action {
-            ActorAction::Fire(_) => cooldowns
-                .last_fire_at
-                .is_some_and(|last| now.saturating_duration_since(last) < self.fire_cooldown),
+            ActorAction::Fire(_) => cooldowns.last_fire_at.is_some_and(|last| {
+                std::time::Duration::from_millis(simulation_ms.saturating_sub(last))
+                    < self.fire_cooldown
+            }),
             ActorAction::Chat(_) => {
                 cooldowns
                     .last_chat_at
@@ -102,7 +104,7 @@ impl GameState {
             cooldowns.last_chat_at = Some(now);
             self.last_global_chat_at = Some(now);
         } else {
-            cooldowns.last_fire_at = Some(now);
+            cooldowns.last_fire_at = Some(simulation_ms);
         }
         ActorActionAdmission::Queued
     }

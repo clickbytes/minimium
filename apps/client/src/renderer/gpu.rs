@@ -327,6 +327,7 @@ impl Renderer {
             ui,
             held_tool,
             held_tool_model_index: None,
+            held_tool_pose: Default::default(),
             held_tool_visible: false,
             initial_world,
             remote_vertices,

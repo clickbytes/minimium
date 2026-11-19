@@ -41,18 +41,34 @@ impl ServerRuntime {
         let players = self.game.worlds.player_snapshots();
         let candidates: Vec<_> = players
             .iter()
-            .filter(|(id, _)| {
-                self.game
-                    .worlds
-                    .get(*id)
-                    .is_some_and(|w| w.manifest.planet().is_some())
+            .filter(|(id, player)| {
+                (manual
+                    || self.sky_views.get(&player.id).is_some_and(
+                        |(context, _, observation, at)| {
+                            self.game.worlds.context_matches(player.id, *context)
+                                && self.now.saturating_duration_since(*at)
+                                    <= Duration::from_secs(15)
+                                && observation.confirms(
+                                    self.scheduler
+                                        .pending
+                                        .map_or(self.environment_clock.utc(), |step| step.utc),
+                                    self.environment_clock.boundary().calendar_epoch(),
+                                    player.position,
+                                )
+                        },
+                    ))
+                    && self
+                        .game
+                        .worlds
+                        .get(*id)
+                        .is_some_and(|w| w.manifest.planet().is_some())
             })
             .collect();
         if candidates.is_empty() {
             return Err(io::Error::other("no active planet player"));
         }
         let &(world, ref player) =
-            candidates[self.scheduler.simulation_tick as usize % candidates.len()];
+            candidates[self.step_boundary().tick() as usize % candidates.len()];
         let owner = self.game.worlds.get(world).unwrap();
         let manifest = owner.manifest;
         let definition = manifest.planet().unwrap();
@@ -63,7 +79,7 @@ impl ServerRuntime {
         };
         let seed = mix(owner.entities.next_id()
             ^ manifest.generation().seed().get() as u64
-            ^ self.scheduler.simulation_tick);
+            ^ self.step_boundary().tick());
         let up = project(player.position.map(f64::from), 1.0);
         let axis = if up[1].abs() < 0.9 {
             [0.0, 1.0, 0.0]

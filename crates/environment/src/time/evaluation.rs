@@ -1,6 +1,6 @@
-use super::types::{
-    ClockAnchor, ClockMode, ClockSample, MonotonicMs, OfflinePolicy, SavedClockState, SessionNonce,
-    TimeError, TimeScalePpm, WorldTimeMs, MAX_WORLD_TIME_MS_EXCLUSIVE, MIN_WORLD_TIME_MS,
+use super::{
+    ClockAnchor, ClockMode, ClockSample, MonotonicMs, OfflinePolicy, SavedClockState, TimeError,
+    TimeScalePpm, WorldTimeMs, MAX_WORLD_TIME_MS_EXCLUSIVE, MIN_WORLD_TIME_MS,
 };
 
 const SCALE_DENOMINATOR: i128 = 1_000_000;
@@ -32,24 +32,6 @@ pub fn evaluate_clock(anchor: ClockAnchor, now: MonotonicMs) -> Result<WorldTime
     world_time_from_i128(result)
 }
 
-/// Build a sample whose UTC is evaluated for exactly its monotonic timestamp.
-pub fn sample_clock(
-    anchor: ClockAnchor,
-    session_nonce: SessionNonce,
-    at: MonotonicMs,
-) -> Result<ClockSample, TimeError> {
-    ClockSample::new(
-        anchor.clock_id(),
-        anchor.revision(),
-        session_nonce,
-        at,
-        evaluate_clock(anchor, at)?,
-        anchor.mode(),
-        anchor.rate_ppm(),
-        anchor.offline_policy(),
-    )
-}
-
 /// Monotonic timestamps are comparable only when both samples name one session.
 pub fn validate_sample_after(sample: ClockSample, previous: ClockSample) -> Result<(), TimeError> {
     if sample.session_nonce() == previous.session_nonce()
@@ -64,10 +46,8 @@ pub fn validate_sample_after(sample: ClockSample, previous: ClockSample) -> Resu
 /// Set a date and switch to TimeScale, preserving its current rate or using 1x.
 pub fn set_world_time(
     anchor: ClockAnchor,
-    at: MonotonicMs,
     world_utc_ms: WorldTimeMs,
 ) -> Result<ClockAnchor, TimeError> {
-    let _current_time = evaluate_clock(anchor, at)?;
     let rate = match anchor.mode() {
         ClockMode::RealTime => TimeScalePpm::ONE_X,
         ClockMode::TimeScale => anchor.rate_ppm(),
@@ -76,24 +56,22 @@ pub fn set_world_time(
         anchor,
         ClockMode::TimeScale,
         world_utc_ms,
-        at,
+        anchor.monotonic_ms(),
         rate,
         anchor.offline_policy(),
     )
 }
 
-/// Set a rate and switch to TimeScale while keeping the evaluated world date.
+/// Set a rate and switch to TimeScale while keeping the committed world date.
 pub fn set_time_scale(
     anchor: ClockAnchor,
-    at: MonotonicMs,
     rate_ppm: TimeScalePpm,
 ) -> Result<ClockAnchor, TimeError> {
-    let current_time = evaluate_clock(anchor, at)?;
     reanchor(
         anchor,
         ClockMode::TimeScale,
-        current_time,
-        at,
+        anchor.world_utc_ms(),
+        anchor.monotonic_ms(),
         rate_ppm,
         anchor.offline_policy(),
     )
@@ -102,11 +80,9 @@ pub fn set_time_scale(
 /// Change mode without a discontinuity; RealTime requires UTC from its adapter.
 pub fn set_clock_mode(
     anchor: ClockAnchor,
-    at: MonotonicMs,
     mode: ClockMode,
     current_utc: Option<WorldTimeMs>,
 ) -> Result<ClockAnchor, TimeError> {
-    let evaluated_time = evaluate_clock(anchor, at)?;
     let (world_time, rate) = match mode {
         ClockMode::RealTime => (
             current_utc.ok_or(TimeError::RealtimeUtcRequired)?,
@@ -117,43 +93,31 @@ pub fn set_clock_mode(
                 ClockMode::RealTime => TimeScalePpm::ONE_X,
                 ClockMode::TimeScale => anchor.rate_ppm(),
             };
-            (evaluated_time, rate)
+            (anchor.world_utc_ms(), rate)
         }
     };
-    reanchor(anchor, mode, world_time, at, rate, anchor.offline_policy())
-}
-
-/// Change only the restart policy, preserving evaluated date and clock mode.
-pub fn set_offline_policy(
-    anchor: ClockAnchor,
-    at: MonotonicMs,
-    offline_policy: OfflinePolicy,
-) -> Result<ClockAnchor, TimeError> {
-    let current_time = evaluate_clock(anchor, at)?;
     reanchor(
         anchor,
-        anchor.mode(),
-        current_time,
-        at,
-        anchor.rate_ppm(),
-        offline_policy,
+        mode,
+        world_time,
+        anchor.monotonic_ms(),
+        rate,
+        anchor.offline_policy(),
     )
 }
 
-/// Capture the clock at a save boundary without persisting process-local state.
-pub fn save_clock_state(
+/// Change only the restart policy, preserving committed date and clock mode.
+pub fn set_offline_policy(
     anchor: ClockAnchor,
-    at: MonotonicMs,
-    wall_utc_ms: WorldTimeMs,
-) -> Result<SavedClockState, TimeError> {
-    SavedClockState::new(
-        anchor.clock_id(),
-        anchor.revision(),
+    offline_policy: OfflinePolicy,
+) -> Result<ClockAnchor, TimeError> {
+    reanchor(
+        anchor,
         anchor.mode(),
-        evaluate_clock(anchor, at)?,
-        wall_utc_ms,
+        anchor.world_utc_ms(),
+        anchor.monotonic_ms(),
         anchor.rate_ppm(),
-        anchor.offline_policy(),
+        offline_policy,
     )
 }
 
@@ -166,12 +130,9 @@ pub fn restore_clock_state(
 ) -> Result<RestoredClock, TimeError> {
     let wall_clock_went_backwards = now_wall_utc_ms < saved.saved_wall_utc_ms();
     let world_time = match (saved.mode(), saved.offline_policy()) {
-        (ClockMode::RealTime, _) => now_wall_utc_ms,
-        (ClockMode::TimeScale, OfflinePolicy::Pause) => saved.saved_world_utc_ms(),
-        (ClockMode::TimeScale, OfflinePolicy::Advance) if wall_clock_went_backwards => {
-            saved.saved_world_utc_ms()
-        }
-        (ClockMode::TimeScale, OfflinePolicy::Advance) => {
+        (_, OfflinePolicy::Pause) => saved.saved_world_utc_ms(),
+        (_, OfflinePolicy::Advance) if wall_clock_went_backwards => saved.saved_world_utc_ms(),
+        (_, OfflinePolicy::Advance) => {
             let elapsed_ms = i128::from(now_wall_utc_ms.get())
                 .checked_sub(i128::from(saved.saved_wall_utc_ms().get()))
                 .ok_or(TimeError::ArithmeticOverflow)?;

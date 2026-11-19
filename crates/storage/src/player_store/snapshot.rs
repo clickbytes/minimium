@@ -36,6 +36,7 @@ pub(super) fn capture(
     Ok(SaveSnapshot {
         revision,
         saved_clock,
+        excavation_revision: store.excavation_revision(),
         primary_instance: input.primary_instance,
         map_fingerprint: input.primary_map_fingerprint,
         manifest: input.primary_manifest,

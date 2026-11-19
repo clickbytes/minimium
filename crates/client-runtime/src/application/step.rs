@@ -66,6 +66,17 @@ pub struct ClientStepDisconnect {
     pub session: Option<crate::ClientSession>,
 }
 
+#[derive(Default)]
+pub(super) struct MotionStream {
+    scope: Option<(
+        minimium_environment::time::SessionNonce,
+        minimium_protocol::WorldContext,
+    )>,
+    sent: Option<(minimium_simulation::MovementIntent, ClientTime)>,
+    previous_ms: Option<u64>,
+    local_jump: bool,
+}
+
 impl ClientApplicationCore {
     /// Advances application-owned time, prediction and session lifecycles once.
     /// Hosts may prepare presentation/readiness before this call and consume its
@@ -88,26 +99,6 @@ impl ClientApplicationCore {
     ) -> Result<ClientStepOutput, ClientTimeError> {
         self.accept_time(input.now)?;
         let elapsed = self.elapsed_since_step(input.now)?;
-        let (movement_queue_error, jump_consumed, candidate_scene_pending, candidate_scene_error) =
-            input
-                .prediction
-                .map_or((None, false, false, None::<String>), |prediction| {
-                    self.step_prediction(
-                        elapsed,
-                        prediction,
-                        &mut candidate_readiness,
-                        &mut presentation_ready,
-                        input.now,
-                    )
-                });
-        let visual_offset = if input.prediction.is_some() {
-            self.game
-                .gameplay
-                .prediction
-                .take_visual_offset(elapsed.as_secs_f32())
-        } else {
-            [0.0; 3]
-        };
         let admin_result = self.poll_admin_result(input.now)?;
         let connection = self.poll_connector(input.now)?;
         if matches!(connection, ConnectionEvent::SessionStarted) {
@@ -115,9 +106,7 @@ impl ClientApplicationCore {
             self.game.gameplay.clear_remote_players();
         }
         let mut polled_events = Vec::with_capacity(16);
-        if movement_queue_error.is_none() {
-            self.poll_session(&mut polled_events, input.now)?;
-        }
+        self.poll_session(&mut polled_events, input.now)?;
         let mut session_events = Vec::with_capacity(polled_events.len());
         let mut disconnect_requested = false;
         for event in polled_events {
@@ -147,6 +136,18 @@ impl ClientApplicationCore {
             None
         };
 
+        let (movement_queue_error, jump_consumed, candidate_scene_pending, candidate_scene_error) =
+            input
+                .prediction
+                .map_or((None, false, false, None::<String>), |prediction| {
+                    self.step_prediction(
+                        elapsed,
+                        prediction,
+                        &mut candidate_readiness,
+                        &mut presentation_ready,
+                        input.now,
+                    )
+                });
         Ok(ClientStepOutput {
             admin_result,
             connection,
@@ -156,7 +157,12 @@ impl ClientApplicationCore {
             movement_queue_error,
             jump_consumed,
             candidate_scene_pending,
-            visual_offset,
+            // Session events may have reconciled or reset the position this step.
+            visual_offset: if input.prediction.is_some() {
+                self.game.gameplay.prediction.visual_offset()
+            } else {
+                [0.0; 3]
+            },
         })
     }
 
@@ -179,9 +185,7 @@ impl ClientApplicationCore {
             now.checked_duration_since(previous)
         })?;
         self.last_step_at = Some(now);
-        Ok(elapsed.min(Duration::from_secs_f32(
-            minimium_simulation::SIMULATION_STEP_SECONDS,
-        )))
+        Ok(elapsed)
     }
 
     fn step_prediction(
@@ -202,12 +206,52 @@ impl ClientApplicationCore {
         >,
         now: ClientTime,
     ) -> (Option<crate::QueueError>, bool, bool, Option<String>) {
-        let delta_seconds = elapsed.as_secs_f32();
+        let session = self.connection.session();
+        let sample = session.and_then(|s| s.clock_sample());
+        let scope = sample
+            .map(|s| s.session_nonce())
+            .zip(self.game.session_context());
+        if scope != self.motion_stream.scope {
+            self.motion_stream = MotionStream {
+                scope,
+                ..Default::default()
+            };
+            self.game.gameplay.prediction.reset();
+        }
+        let presentation_ms = session.and_then(|s| s.environment_frame().simulation_ms);
+        let delta = match presentation_ms {
+            Some(ms) => Duration::from_millis(
+                ms.saturating_sub(self.motion_stream.previous_ms.replace(ms).unwrap_or(ms)),
+            ),
+            None if session.is_none() => elapsed.min(Duration::from_millis(50)),
+            None => Duration::ZERO,
+        };
+        if sample.is_some_and(|s| s.rate_ppm().get() == 0) {
+            self.motion_stream.sent = None;
+            self.motion_stream.local_jump = false;
+            self.game.gameplay.prediction.reset();
+            return (None, input.jump_pending, false, None);
+        }
+        // A long gap is reconciled from snapshots instead of an unbounded replay.
+        let delta_seconds = if delta > Duration::from_millis(400) {
+            self.game.gameplay.prediction.reset();
+            self.game
+                .gameplay
+                .prediction
+                .interpolate_authority(presentation_ms.unwrap_or(0));
+            0.0
+        } else {
+            delta.as_secs_f32()
+        };
         let water_read = self
             .connection
             .session()
             .and_then(|session| session.water_read());
         self.game.gameplay.prediction.set_water_read(water_read);
+        self.game
+            .gameplay
+            .prediction
+            .take_visual_offset(delta_seconds);
         self.game.accumulate_prediction_time(delta_seconds);
         let movement_policy = self.connection.movement;
         let can_fly = movement_policy.can_fly;
@@ -227,9 +271,12 @@ impl ClientApplicationCore {
         };
         let movement_enabled =
             (self.game.gameplay.sectors_ready || can_fly) && !input.suppress_horizontal;
-        let mut jump_pending = input.jump_pending;
-        let mut jump_consumed = false;
-        let mut queue_error = None;
+        let mut movement = minimium_simulation::MovementIntent {
+            direction,
+            vertical,
+            jump: input.jump_pending && movement_enabled,
+        };
+        self.motion_stream.local_jump |= movement.jump;
         let mut candidate_scene_pending = false;
         let mut candidate_scene_error = None;
 
@@ -255,10 +302,12 @@ impl ClientApplicationCore {
         };
         if !current_ready {
             candidate_scene_pending = true;
-            queue_error = readiness::skip_unready_steps(self, movement_policy, now);
+            self.game.gameplay.prediction.reset_time();
+            self.motion_stream.local_jump = false;
+            let error = self.transmit_motion(minimium_simulation::MovementIntent::default(), now);
             return (
-                queue_error,
-                jump_consumed,
+                error,
+                input.jump_pending,
                 candidate_scene_pending,
                 candidate_scene_error,
             );
@@ -271,14 +320,15 @@ impl ClientApplicationCore {
             direction,
             vertical,
             movement_policy,
-            jump_pending,
+            self.motion_stream.local_jump,
             movement_enabled,
             manifest,
             geography.clone(),
         ) {
-            jump_pending = false;
-            jump_consumed = input.jump_pending;
-            let mut movement = predicted.input;
+            self.motion_stream.local_jump = false;
+            if predicted.input.direction == [0.0; 2] {
+                movement.direction = [0.0; 2];
+            }
             let candidate_position = self.game.gameplay.prediction.character.position;
             let candidate_ready = match readiness::scene_ready(
                 self,
@@ -300,41 +350,57 @@ impl ClientApplicationCore {
                 self.game.gameplay.prediction.position_mm = predicted.previous_mm;
                 movement = minimium_simulation::MovementIntent::default();
             }
-            if self
-                .connection
-                .session()
-                .is_some_and(|session| session.state() == SessionState::Connected)
-            {
-                match self.action_executor.execute(
-                    &mut self.connection,
-                    super::ClientAction::Motion(movement),
-                    now,
-                ) {
-                    super::LocalActionOutcome::Rejected { error, .. } => {
-                        queue_error = Some(error);
-                        break;
-                    }
-                    super::LocalActionOutcome::Queued {
-                        movement: Some(sample),
-                        ..
-                    } => {
-                        let collision_revision = self.game.gameplay.collision_revision;
-                        self.game.gameplay.prediction.record_input(
-                            sample,
-                            movement_policy,
-                            collision_revision,
-                        );
-                    }
-                    _ => {}
-                }
-            }
         }
+        let queue_error = self.transmit_motion(movement, now);
+        let jump_consumed = input.jump_pending && queue_error.is_none();
         (
             queue_error,
             jump_consumed,
             candidate_scene_pending,
             candidate_scene_error,
         )
+    }
+
+    fn transmit_motion(
+        &mut self,
+        intent: minimium_simulation::MovementIntent,
+        now: ClientTime,
+    ) -> Option<crate::QueueError> {
+        if !self
+            .connection
+            .session()
+            .is_some_and(|s| s.state() == SessionState::Connected)
+        {
+            return None;
+        }
+        let held = intent.direction != [0.0; 2] || intent.vertical != 0.0;
+        if self.motion_stream.sent.is_some_and(|(old, at)| {
+            old == intent
+                && !intent.jump
+                && (!held || now.elapsed_since(at) < Duration::from_millis(100))
+        }) {
+            return None;
+        }
+        match self.action_executor.execute(
+            &mut self.connection,
+            super::ClientAction::Motion(intent),
+            now,
+        ) {
+            super::LocalActionOutcome::Rejected { error, .. } => Some(error),
+            super::LocalActionOutcome::Queued {
+                movement: Some(sample),
+                ..
+            } => {
+                self.motion_stream.sent = Some((intent, now));
+                self.game.gameplay.prediction.record_input(
+                    sample,
+                    self.connection.movement,
+                    self.game.gameplay.collision_revision,
+                );
+                None
+            }
+            _ => None,
+        }
     }
 
     fn apply_step_message(

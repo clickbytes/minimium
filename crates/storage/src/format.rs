@@ -19,7 +19,7 @@ use std::{
     sync::Arc,
 };
 
-pub const SAVE_VERSION: u8 = 11;
+pub const SAVE_VERSION: u8 = 12;
 pub(super) const MAX_STORED_PLAYERS: usize = 100_000;
 pub(super) const MAX_WORLD_SNAPSHOT_BYTES: usize = 128 * 1024 * 1024;
 pub(super) const MAX_SAVED_POSITION_MM: u64 = 7_000_000_000;

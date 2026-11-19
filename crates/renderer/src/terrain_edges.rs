@@ -27,9 +27,18 @@ struct Edge {
 #[derive(Default)]
 pub struct EdgeConformance {
     entries: HashMap<(SectorKey, u8), Entry>,
+    reservoir_water: bool,
 }
 
 impl EdgeConformance {
+    /// Reservoir snapshots can expose the bed or flood land above the static coast.
+    pub fn for_reservoirs() -> Self {
+        Self {
+            reservoir_water: true,
+            ..Self::default()
+        }
+    }
+
     pub fn ocean(&self, key: SectorKey, lod: u8) -> Option<&SectorGeometry> {
         self.entries.get(&(key, lod))?.ocean.as_deref()
     }
@@ -74,7 +83,11 @@ impl EdgeConformance {
                     let (ground, ocean) = if terrain.is_earth() {
                         let sphere = crate::ocean_geometry::sphere_patch(&source, terrain);
                         let sea = conform(&sphere, edges, steps, terrain, true)?;
-                        let (land, water) = crate::shoreline::partition(&ground, &sea);
+                        let (land, water) = if self.reservoir_water {
+                            (ground, sea)
+                        } else {
+                            crate::shoreline::partition(&ground, &sea)
+                        };
                         (land, Some(Arc::new(water)))
                     } else {
                         (ground, None)

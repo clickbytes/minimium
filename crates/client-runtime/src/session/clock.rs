@@ -2,18 +2,17 @@ use super::{ClientSession, QueueError, SessionState};
 use crate::environment::{EnvironmentFrameInput, SynchronizationQuality};
 use crate::{ClientTime, ClientTimeError};
 use diagnostics::clock_diagnostics;
-use estimate::{
-    estimate_key, estimate_welcome_time, estimate_world_time, rounded_time, EstimateKey,
-    OffsetSample,
-};
+#[derive(Clone, Copy, Debug)]
+struct OffsetSample {
+    offset_twice_ms: i128,
+    rtt_ms: u64,
+    received_at_ms: u64,
+}
 use minimium_environment::{time::ClockSample, EnvironmentDescriptor};
 use minimium_protocol::ClientMessage;
-use smoothing::SmoothInput;
 use std::collections::VecDeque;
 
 mod diagnostics;
-mod estimate;
-mod smoothing;
 mod time_input;
 
 impl ClientSession {
@@ -68,13 +67,7 @@ pub(super) struct ClientClock {
     rejected_probe_count: u64,
     last_valid_probe_at_ms: Option<u64>,
     offsets: VecDeque<OffsetSample>,
-    previous_input: Option<EstimateKey>,
-    previous_revision: Option<u64>,
-    previous_frame_at_ms: Option<u64>,
-    previous_render_world_ms: Option<f64>,
-    smoothing_bias_ms: f64,
-    smoothing_started_at_ms: Option<u64>,
-    resync_stale_until_ms: Option<u64>,
+    segment: Option<PresentationSegment>,
     last_diagnostic_at_ms: Option<u64>,
     frame: EnvironmentFrameInput,
 }
@@ -104,13 +97,7 @@ impl ClientClock {
             rejected_probe_count: 0,
             last_valid_probe_at_ms: None,
             offsets: VecDeque::with_capacity(MAX_OFFSET_SAMPLES),
-            previous_input: None,
-            previous_revision: None,
-            previous_frame_at_ms: None,
-            previous_render_world_ms: None,
-            smoothing_bias_ms: 0.0,
-            smoothing_started_at_ms: None,
-            resync_stale_until_ms: None,
+            segment: None,
             last_diagnostic_at_ms: None,
             frame: EnvironmentFrameInput::unavailable(),
         }
@@ -145,14 +132,46 @@ impl ClientClock {
         *self = Self::new(epoch, diagnostic_logger);
         self.now_ms = now_ms;
         self.session_nonce = Some(sample.session_nonce());
+        self.note_sample(sample);
         self.probe_baseline_at_ms = Some(now_ms);
         self.sample_received_at_ms = Some(now_ms);
         self.last_poll_at_ms = Some(now_ms);
         self.next_probe_at_ms = Some(now_ms);
     }
 
-    pub(super) fn note_sample(&mut self, _sample: ClockSample) {
-        self.sample_received_at_ms = Some(self.local_monotonic_ms());
+    pub(super) fn note_sample(&mut self, sample: ClockSample) {
+        let at = self.local_monotonic_ms();
+        self.sample_received_at_ms = Some(at);
+        let target = sample.boundary().simulation_ms();
+        let segment = match self.segment {
+            Some(old) if sample.rate_ppm().get() != 0 && !old.paused && target >= old.target => {
+                if old.target == target {
+                    return;
+                }
+                let span = sample
+                    .server_monotonic_ms()
+                    .get()
+                    .saturating_sub(old.server_at)
+                    .max(1);
+                PresentationSegment {
+                    start: old.at(at),
+                    target,
+                    span,
+                    received: at,
+                    server_at: sample.server_monotonic_ms().get(),
+                    paused: false,
+                }
+            }
+            _ => PresentationSegment {
+                start: target,
+                target,
+                span: 1,
+                received: at,
+                server_at: sample.server_monotonic_ms().get(),
+                paused: sample.rate_ppm().get() == 0,
+            },
+        };
+        self.segment = Some(segment);
     }
 
     pub(super) fn session_nonce_matches(
@@ -173,7 +192,7 @@ impl ClientClock {
             self.last_valid_probe_at_ms = None;
             self.probe_baseline_at_ms = Some(now_ms);
             self.next_probe_at_ms = Some(now_ms);
-            self.reset_smoothing();
+            self.segment = None;
             self.diagnostic(now_ms, "poll_gap_reset");
         }
         self.last_poll_at_ms = Some(now_ms);
@@ -301,121 +320,38 @@ impl ClientClock {
         };
         if sample.session_nonce() != nonce || descriptor.clock_id() != sample.clock_id() {
             self.frame = EnvironmentFrameInput::unavailable();
-            self.reset_smoothing();
+            self.segment = None;
             return;
         }
 
         self.prune_offsets(now_ms);
         let clock_diagnostics = Some(clock_diagnostics(self, sample, now_ms));
-        let offset = self.best_offset();
-        let mut quality = self.quality(sample, descriptor, now_ms);
-        if quality == SynchronizationQuality::Unavailable {
-            self.frame = EnvironmentFrameInput {
-                estimated_world_utc_ms: None,
-                render_world_utc_ms: None,
-                descriptor: Some(descriptor),
-                context,
-                revision: Some(sample.revision().get()),
-                rate_ppm: Some(sample.rate_ppm().get()),
-                quality,
-                clock_diagnostics,
-            };
-            self.reset_smoothing();
-            return;
-        }
-        let sample_received_at_ms = self.sample_received_at_ms.unwrap_or(now_ms);
-        let (raw_world_ms, before_anchor) = if let Some(offset) = offset {
-            match estimate_world_time(sample, now_ms, offset) {
-                Some(estimate) => estimate,
-                None => {
-                    self.frame = EnvironmentFrameInput {
-                        estimated_world_utc_ms: None,
-                        render_world_utc_ms: None,
-                        descriptor: Some(descriptor),
-                        context,
-                        revision: Some(sample.revision().get()),
-                        rate_ppm: Some(sample.rate_ppm().get()),
-                        quality: SynchronizationQuality::Unavailable,
-                        clock_diagnostics,
-                    };
-                    self.reset_smoothing();
-                    return;
-                }
-            }
-        } else if let Some(estimate) = estimate_welcome_time(sample, now_ms, sample_received_at_ms)
-        {
-            (estimate, false)
-        } else {
-            self.frame = EnvironmentFrameInput {
-                estimated_world_utc_ms: None,
-                render_world_utc_ms: None,
-                descriptor: Some(descriptor),
-                context,
-                revision: Some(sample.revision().get()),
-                rate_ppm: Some(sample.rate_ppm().get()),
-                quality: SynchronizationQuality::Unavailable,
-                clock_diagnostics,
-            };
-            self.reset_smoothing();
+        let quality = self.quality(sample, descriptor, now_ms);
+        let Some(segment) = self.segment else {
+            self.frame = EnvironmentFrameInput::unavailable();
             return;
         };
-        if before_anchor && quality != SynchronizationQuality::Stale {
-            quality = SynchronizationQuality::Initializing;
-        }
-
-        let revision = sample.revision().get();
-        let key = estimate_key(sample, offset);
-        let changed = self.previous_input != Some(key);
-        let is_new_revision = self
-            .previous_revision
-            .is_some_and(|previous| revision > previous);
-        if self
-            .previous_revision
-            .is_some_and(|previous| revision < previous)
-        {
-            self.diagnostic(now_ms, "stale_clock_revision");
-            self.frame = EnvironmentFrameInput::unavailable();
-            self.reset_smoothing();
-            return;
-        }
-        let dt_s = self.frame_delta_seconds(now_ms);
-        let rendered = self.smooth_date(SmoothInput {
-            raw_world_ms,
-            rate_ppm: sample.rate_ppm().get(),
-            revision,
-            changed,
-            is_new_revision,
-            before_anchor,
-            now_ms,
-            dt_s: if changed && !is_new_revision {
-                0.0
-            } else {
-                dt_s
-            },
-        });
-        if self
-            .resync_stale_until_ms
-            .is_some_and(|until| now_ms < until)
-        {
-            quality = SynchronizationQuality::Stale;
-        }
-        self.previous_input = Some(key);
-        self.previous_revision = Some(revision);
-        self.previous_frame_at_ms = Some(now_ms);
-        self.previous_render_world_ms = Some(rendered);
-        let (Some(estimated_world_utc_ms), Some(render_world_utc_ms)) =
-            (rounded_time(raw_world_ms), rounded_time(rendered))
-        else {
-            self.frame = EnvironmentFrameInput::unavailable();
-            self.reset_smoothing();
-            return;
-        };
+        let sim_ms = segment.at(now_ms);
+        let lag = segment.target - sim_ms;
         self.frame = EnvironmentFrameInput {
-            estimated_world_utc_ms: Some(estimated_world_utc_ms),
-            render_world_utc_ms: Some(render_world_utc_ms),
+            committed: Some(sample),
+            estimated_world_utc_ms: Some(sample.world_utc_ms().get()),
+            render_world_utc_ms: Some(
+                sample
+                    .world_utc_ms()
+                    .get()
+                    .saturating_sub(lag.try_into().unwrap_or(i64::MAX))
+                    .max(minimium_environment::time::MIN_WORLD_TIME_MS),
+            ),
+            simulation_ms: Some(sim_ms),
+            achieved_rate: if sim_ms < segment.target {
+                (segment.target - segment.start) as f64 / segment.span as f64
+            } else {
+                0.0
+            },
             descriptor: Some(descriptor),
             context,
-            revision: Some(revision),
+            revision: Some(sample.boundary().calendar_epoch().get()),
             rate_ppm: Some(sample.rate_ppm().get()),
             quality,
             clock_diagnostics,
@@ -491,6 +427,24 @@ impl ClientClock {
 
     fn reset_frame_only(&mut self) {
         self.frame = EnvironmentFrameInput::unavailable();
-        self.reset_smoothing();
+    }
+}
+
+#[derive(Clone, Copy)]
+struct PresentationSegment {
+    start: u64,
+    target: u64,
+    span: u64,
+    received: u64,
+    server_at: u64,
+    paused: bool,
+}
+
+impl PresentationSegment {
+    fn at(self, now: u64) -> u64 {
+        let elapsed = now.saturating_sub(self.received).min(self.span);
+        self.start
+            + (u128::from(self.target - self.start) * u128::from(elapsed) / u128::from(self.span))
+                as u64
     }
 }

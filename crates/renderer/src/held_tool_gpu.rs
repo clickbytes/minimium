@@ -1,10 +1,21 @@
 //! GPU pipeline for a camera-local handheld model overlay.
-use crate::held_tool::{HeldToolModel, HeldToolModelError, HeldToolVertex};
+use crate::held_tool::{HeldToolModel, HeldToolModelError, HeldToolPose, HeldToolVertex};
 use wgpu::util::DeviceExt;
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct HeldToolUniform {
+    transform: [[f32; 4]; 4],
+    projection: [f32; 4],
+}
+
+const _: () = assert!(std::mem::size_of::<HeldToolUniform>() == 80);
 
 pub struct HeldToolGpu {
     pipeline: wgpu::RenderPipeline,
     models: Vec<(wgpu::Buffer, u32)>,
+    uniform: wgpu::Buffer,
+    bind_group: wgpu::BindGroup,
 }
 
 impl HeldToolGpu {
@@ -26,9 +37,36 @@ impl HeldToolGpu {
         if total_vertices > crate::held_tool::MAX_HELD_TOOL_TOTAL_VERTICES {
             return Err(HeldToolModelError::Capacity);
         }
+        let uniform = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("held-tool-pose"),
+            size: 80,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let bindings = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("held-tool-pose-layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(80),
+                },
+                count: None,
+            }],
+        });
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("held-tool-pose-bind-group"),
+            layout: &bindings,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform.as_entire_binding(),
+            }],
+        });
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("held-tool-pipeline-layout"),
-            bind_group_layouts: &[],
+            bind_group_layouts: &[Some(&bindings)],
             immediate_size: 0,
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -63,7 +101,13 @@ impl HeldToolGpu {
                 cull_mode: None,
                 ..Default::default()
             },
-            depth_stencil: None,
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
             multisample: Default::default(),
             multiview_mask: None,
             cache: None,
@@ -73,13 +117,36 @@ impl HeldToolGpu {
             .enumerate()
             .map(|(index, model)| mesh_buffer(device, &format!("held-tool-{index}"), model))
             .collect();
-        Ok(Self { pipeline, models })
+        Ok(Self {
+            pipeline,
+            models,
+            uniform,
+            bind_group,
+        })
+    }
+
+    pub fn upload(&self, queue: &wgpu::Queue, pose: HeldToolPose, viewport: [u32; 2]) {
+        let aspect = viewport[0].max(1) as f32 / viewport[1].max(1) as f32;
+        let focal = 1.55;
+        let near = 0.05;
+        let far = 4.0;
+        let uniform = HeldToolUniform {
+            transform: pose.transform(),
+            projection: [
+                focal / aspect,
+                focal,
+                -far / (far - near),
+                -far * near / (far - near),
+            ],
+        };
+        queue.write_buffer(&self.uniform, 0, bytemuck::bytes_of(&uniform));
     }
 
     pub fn encode(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         target: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
         model_index: usize,
     ) -> u32 {
         let Some((buffer, count)) = self.models.get(model_index) else {
@@ -99,19 +166,34 @@ impl HeldToolGpu {
                     store: wgpu::StoreOp::Store,
                 },
             })],
-            depth_stencil_attachment: None,
+            // World depth is no longer consumed after cloud/dust composition.
+            // Reuse it for self-occlusion, independent of world occlusion.
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: depth,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Discard,
+                }),
+                stencil_ops: None,
+            }),
             timestamp_writes: None,
             occlusion_query_set: None,
             multiview_mask: None,
         });
         pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &self.bind_group, &[]);
         pass.set_vertex_buffer(0, buffer.slice(..));
         pass.draw(0..*count, 0..1);
         1
     }
 
     pub fn size_bytes(&self) -> u64 {
-        self.models.iter().map(|(buffer, _)| buffer.size()).sum()
+        self.uniform.size()
+            + self
+                .models
+                .iter()
+                .map(|(buffer, _)| buffer.size())
+                .sum::<u64>()
     }
 }
 

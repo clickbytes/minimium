@@ -45,7 +45,7 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
             let context = reader.world_context()?;
             let event = crate::BolidEvent {
                 id: reader.u64()?,
-                start_monotonic_ms: reader.u64()?,
+                start_simulation_ms: reader.u64()?,
                 seed: reader.u64()?,
                 start_world_m: reader.vector()?,
                 end_world_m: reader.vector()?,
@@ -163,6 +163,9 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
                 None
             };
             let (clock_sample, environment) = environment_codec::read_pair(&mut reader)?;
+            if clock_sample.boundary().tick() != server_tick {
+                return Err(ProtocolError::InvalidPayload);
+            }
             ServerMessage::Welcome {
                 server_tick,
                 id,
@@ -239,6 +242,14 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
             let server_time_ms = reader.u64()?;
             let server_tick = reader.u64()?;
             let resolved_input_seq = reader.u64()?;
+            let applied_input = (reader.u64()?, reader.u64()?);
+            if applied_input.0 > resolved_input_seq
+                || applied_input.1 > server_tick
+                || server_tick.checked_mul(minimium_environment::time::SimulationBoundary::STEP_MS)
+                    != Some(server_time_ms)
+            {
+                return Err(ProtocolError::InvalidPayload);
+            }
             let context = reader.world_context()?;
             let self_movement = crate::movement_codec::read(&mut reader)?;
             let self_position_mm = reader.position_mm()?;
@@ -286,6 +297,7 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
                 server_time_ms,
                 server_tick,
                 resolved_input_seq,
+                applied_input,
                 context,
                 full_snapshot,
                 self_movement,
@@ -334,6 +346,9 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
             }
             let manifest = reader.world_manifest()?;
             let (clock_sample, environment) = environment_codec::read_pair(&mut reader)?;
+            if clock_sample.boundary().tick() != server_tick {
+                return Err(ProtocolError::InvalidPayload);
+            }
             ServerMessage::TransitionCommitted {
                 transition_id,
                 server_tick,

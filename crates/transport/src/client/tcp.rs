@@ -12,6 +12,9 @@ use std::{
     time::Instant,
 };
 
+// A partial legal frame must always fit before the reader pauses for consumption.
+const _: () = assert!(MAX_FRAME_BYTES <= MAX_CLIENT_BUFFER_BYTES);
+
 /// The single TCP/framing implementation used by desktop and terminal clients.
 pub struct TcpClientTransport {
     stream: Option<TcpStream>,
@@ -64,7 +67,9 @@ impl ClientTransportPort for TcpClientTransport {
         let mut chunk = [0u8; 4096];
         let mut total_read = 0;
         loop {
-            let available = (MAX_CLIENT_READ_BYTES_PER_POLL - total_read).min(chunk.len());
+            let available = (MAX_CLIENT_READ_BYTES_PER_POLL - total_read)
+                .min(chunk.len())
+                .min(MAX_CLIENT_BUFFER_BYTES - self.receive_buffer.len());
             if available == 0 {
                 break;
             }
@@ -77,9 +82,6 @@ impl ClientTransportPort for TcpClientTransport {
                     total_read += count;
                     self.metrics.bytes_received =
                         self.metrics.bytes_received.saturating_add(count as u64);
-                    if self.receive_buffer.len().saturating_add(count) > MAX_CLIENT_BUFFER_BYTES {
-                        return Err(ClientTransportError::BufferLimit);
-                    }
                     self.receive_buffer.extend_from_slice(&chunk[..count]);
                 }
                 Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,

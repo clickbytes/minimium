@@ -19,6 +19,7 @@ pub(super) fn route_message(
         ClientMessage::WorldInput {
             context,
             input: ClientWorldInput::InteractEntity { entity },
+            ..
         } => {
             let Some(player) = player_id else {
                 disconnect_invalid_sequence(runtime, index);
@@ -43,6 +44,7 @@ pub(super) fn route_message(
         ClientMessage::WorldInput {
             context,
             input: ClientWorldInput::SetAltitude { km },
+            ..
         } => {
             if !super::identity::has_permission(
                 runtime,
@@ -73,6 +75,7 @@ pub(super) fn route_message(
         ClientMessage::WorldInput {
             context,
             input: ClientWorldInput::MapTeleport { direction },
+            ..
         } => {
             if !super::identity::has_permission(
                 runtime,
@@ -105,6 +108,7 @@ pub(super) fn route_message(
         ClientMessage::WorldInput {
             context,
             input: ClientWorldInput::SetMovementPolicy { speed, accel },
+            ..
         } => {
             let Some(player) = player_id else {
                 disconnect_invalid_sequence(runtime, index);
@@ -157,6 +161,7 @@ pub(super) fn route_message(
         ClientMessage::WorldInput {
             context,
             input: ClientWorldInput::SetFlightEnabled(enabled),
+            ..
         } => {
             let Some(player) = player_id else {
                 disconnect_invalid_sequence(runtime, index);

@@ -87,7 +87,7 @@ pub struct MeteorSample {
     pub id: MeteorId,
     /// Producer marker; authoritative bodies use `Tracked`.
     pub source: MeteorSource,
-    /// Client-monotonic birth in seconds (`ANIMATION_EPOCH` convention).
+    /// Birth in seconds on the presentation simulation timeline.
     pub started_mono_s: f64,
     /// World-aligned, planet-centred position in physical metres.
     pub position_phys_m: [f64; 3],

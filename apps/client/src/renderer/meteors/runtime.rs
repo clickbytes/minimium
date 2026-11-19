@@ -9,13 +9,14 @@ use minimium_renderer::meteors::{
 use minimium_renderer::planet_coordinates::PlanetSurfaceScale;
 
 impl MeteorRuntime {
-    /// Creates the runtime with its single monotonic datum.
+    /// Creates the runtime with an initial presentation time.
     pub(in crate::renderer) fn new() -> Self {
         Self {
             audio: crate::audio::MeteorAudio::default(),
             seed_override: None,
             quality: minimium_renderer::quality::SkyQuality::Standard,
-            epoch: std::time::Instant::now(),
+            simulation_s: 0.0,
+            paused: false,
             next_id: 1,
             active: Vec::with_capacity(super::MAX_ACTIVE_METEOR_EVENTS),
             spawned_total: 0,
@@ -32,9 +33,21 @@ impl MeteorRuntime {
         }
     }
 
-    /// Client-monotonic runtime time in seconds (ADR 0013 § 5).
+    /// Presentation time in seconds (ADR 0013 § 5).
     pub(in crate::renderer) fn now_s(&self) -> f64 {
-        self.epoch.elapsed().as_secs_f64()
+        self.simulation_s
+    }
+
+    pub(in crate::renderer) fn set_time(
+        &mut self,
+        elapsed: std::time::Duration,
+        rate: f64,
+        horizon: Option<std::time::Duration>,
+        paused: bool,
+    ) {
+        self.simulation_s = elapsed.as_secs_f64();
+        self.paused = paused;
+        self.audio.set_rate(rate as f32, horizon);
     }
 
     /// Spawns one deterministic manual event. Accepted only while the last
@@ -46,6 +59,9 @@ impl MeteorRuntime {
         preset: MeteorPreset,
         seed: Option<u64>,
     ) -> Result<String, String> {
+        if self.paused {
+            return Err("simulation paused".into());
+        }
         if !self.spawner.enabled {
             return Err("meteors: disabled by client.sky.meteors.enabled".into());
         }
@@ -268,7 +284,7 @@ impl MeteorRuntime {
         self.dismissed_total = self.dismissed_total.wrapping_add(1);
     }
 
-    /// Deterministic seed: monotonic birth microseconds mixed with the spawn
+    /// Deterministic seed: simulation birth microseconds mixed with the spawn
     /// counter; identical inputs regenerate identical tracks (no entropy).
     fn derive_seed(&self, now_s: f64) -> u64 {
         let micros = (now_s * 1.0e6).floor();

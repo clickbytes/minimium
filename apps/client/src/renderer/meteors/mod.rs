@@ -1,19 +1,11 @@
 //! Client-local ambient meteor runtime (ADR 0013 § 2, § 5; issue E047-02).
 //!
-//! The runtime owns the complete manual event lifecycle: identifiers, seeds,
-//! start times, durations, sources and the active limit. It runs on the client
-//! monotonic clock (one `Instant` epoch; no second clock, thread, queue or
-//! allocation on the render path), rebuilds one bounded
-//! [`MeteorFrame`](minimium_renderer::meteors::MeteorFrame) per frame, and
-//! never touches world, protocol, save, server or GPU state. Track derivation
-//! is deterministic: the same seed produces the same flight basis, and seeds
-//! mix only the monotonic birth time with the spawn counter. The automatic
-//! ambient generator is E047-04; visible sky integration is E047-03.
+//! The desktop frame supplies simulation time for births, flight, trails and acoustic cues.
+//! Context changes discard the bounded local event set. The server owns physical impacts.
 
 use crate::client_commands::MeteorPreset;
 use minimium_protocol::WorldContext;
 use minimium_renderer::meteors::model::{MeteorId, MeteorPhase};
-use std::time::Instant;
 
 mod evolution;
 mod presentation;
@@ -44,7 +36,7 @@ pub(crate) const TRAIL_SLOTS_PER_EVENT: usize =
 pub(crate) struct SpawnParams {
     /// Absolute track speed in physical m/s (contract cap 100 km/s).
     pub(super) speed_m_s: f64,
-    /// Planned client-monotonic lifetime in seconds (contract cap 300 s).
+    /// Planned simulation lifetime in seconds (contract cap 300 s).
     pub(super) duration_s: f64,
     /// Initial solid mass in kilograms.
     pub(super) mass_kg: f64,
@@ -87,7 +79,7 @@ pub(crate) struct ActiveEvent {
     pub(super) id: MeteorId,
     pub(super) preset: MeteorPreset,
     pub(super) seed: u64,
-    /// Client-monotonic birth time in seconds; lifetime and trail slots hang
+    /// Simulation birth time in seconds; lifetime and trail slots hang
     /// from this single datum so ages never drift between frames.
     pub(super) start_s: f64,
     pub(super) duration_s: f64,
@@ -136,9 +128,8 @@ pub(crate) struct MeteorRuntime {
     pub(in crate::renderer) seed_override: Option<u64>,
     pub(in crate::renderer) quality: minimium_renderer::quality::SkyQuality,
     pub(in crate::renderer) audio: crate::audio::MeteorAudio,
-    /// The single client monotonic datum (ADR 0013 § 5); every age derives
-    /// from `epoch.elapsed()`, so no second clock exists.
-    epoch: Instant,
+    paused: bool,
+    simulation_s: f64,
     next_id: MeteorId,
     active: Vec<ActiveEvent>,
     spawned_total: u64,

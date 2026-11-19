@@ -1,5 +1,7 @@
 # ADR 0006: World time and sky
 
+**Time model amendment.** ADR 0016 supersedes this decision's clock progression, effect lifetime, persistence and host tick cadence rules. The original decision below records the earlier design. [ADR 0016](0016-committed-simulation-time.md)
+
 - Status: Accepted for Epic 004 implementation
 - Date: 2026-10-30
 - Owners: Epic 004

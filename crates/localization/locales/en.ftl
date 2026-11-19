@@ -193,7 +193,7 @@ command-help = { $name ->
     [camera_fov] camera fov [30..110] (vertical field of view in degrees; default 70)
     [sky_names] sky names true|false
     [time_status] time status
-    [time_scale] time scale DECIMAL (alias timescale; owned local server; 0.1-1000000x or 0)
+    [time_scale] time scale DECIMAL (alias timescale; global simulation on owned server; 0.1-1000000x or 0 to pause)
     [spawn_random_bolid] spawn_random_bolid (owned local server)
     [help] help
     [config_save] config save PATH
@@ -260,6 +260,7 @@ tool-no-target = No surface in reach (3 m)
 tool-wrong-material = Rock requires the pickaxe [2]
 tool-not-equipped = Equip a shovel [1] or pickaxe [2]
 tool-obstructed = The first hit is an object or player, not diggable ground
+tool-paused = Simulation paused
 tool-unsafe-geometry = Refused: terrain could not be joined safely; see server geometry diagnostics
 tool-busy = The server is preparing another world change
 tool-rate-limited = Tool cooldown: at most 2 uses per second

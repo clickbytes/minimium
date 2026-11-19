@@ -66,7 +66,7 @@ impl ServerRuntime {
     }
 
     fn apply_scheduled_movement_inputs(&mut self) {
-        let tick = self.scheduler.simulation_tick;
+        let tick = self.step_boundary().tick();
         let players: Vec<_> = self.game.pending_movement_inputs.keys().copied().collect();
         for player in players {
             let (current, due_sequences, empty) = {
@@ -95,8 +95,10 @@ impl ServerRuntime {
                 self.game.pending_movement_inputs.remove(&player);
             }
             if let Some(sample) = current {
+                self.game
+                    .applied_input
+                    .insert(player, (sample.input_seq, tick));
                 self.game.active_inputs.insert(player, sample.intent);
-                self.game.input_last_received.insert(player, self.now);
             }
             for seq in due_sequences {
                 self.resolve_movement_input(player, seq);
@@ -104,7 +106,7 @@ impl ServerRuntime {
         }
     }
 
-    fn apply_input(
+    pub(super) fn apply_input(
         &mut self,
         input: WorldInput,
         teleported: &mut std::collections::HashSet<minimium_core::ids::PlayerId>,
@@ -171,11 +173,22 @@ impl ServerRuntime {
                 self.game.last_input_seq.remove(&id);
                 self.game.pending_input_seqs.remove(&id);
                 self.game.resolved_input_seq.remove(&id);
+                self.game.applied_input.remove(&id);
                 if let Some(profile) = self.operations.player_store.profile_for_player(id) {
                     self.game.pending_departures.remove(&profile);
                 }
             }
-            WorldInput::Move(id, sample) => {
+            WorldInput::Move(id, mut sample) => {
+                sample.target_tick = self.step_boundary().tick();
+                if self
+                    .game
+                    .pending_movement_inputs
+                    .get(&id)
+                    .and_then(|samples| samples.get(&sample.target_tick))
+                    .is_some_and(|old| old.intent.jump)
+                {
+                    sample.intent.jump = true;
+                }
                 let previous = self
                     .game
                     .pending_movement_inputs
@@ -252,30 +265,6 @@ impl ServerRuntime {
             }
         }
         None
-    }
-
-    fn publish_entity_interaction(
-        &mut self,
-        id: minimium_core::ids::PlayerId,
-        source_context: minimium_protocol::WorldContext,
-        entity: minimium_world::entity::EntityId,
-    ) {
-        if self.game.gameplay_events.len() < crate::MAX_PENDING_WORLD_INPUTS {
-            if let Some(position) = self
-                .game
-                .worlds
-                .player_position_in_context(id, source_context)
-            {
-                self.game.gameplay_events.push(
-                    crate::modules::GameplayEvent::EntityInteractionRequested {
-                        player: id,
-                        world: source_context.instance(),
-                        entity,
-                        position,
-                    },
-                );
-            }
-        }
     }
 
     pub(super) fn begin_entity_transfer(
@@ -428,6 +417,7 @@ impl ServerRuntime {
             .active_inputs
             .insert(id, minimium_simulation::MovementIntent::default());
         self.game.input_last_received.insert(id, self.now);
+        self.sky_views.remove(&id);
         self.scheduler.next_snapshot = self.now;
         Some(position_mm)
     }

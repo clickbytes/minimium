@@ -384,7 +384,7 @@ fn build_welcome_message(
     let (clock_sample, environment) = runtime.environment_state_for_instance(instance, now)?;
     let clock_revision = clock_sample.revision();
     let welcome = ServerMessage::Welcome {
-        server_tick: runtime.scheduler.simulation_tick,
+        server_tick: runtime.environment_clock.boundary().tick(),
         id: player.id,
         map_fingerprint: runtime
             .game

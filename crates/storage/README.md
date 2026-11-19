@@ -56,7 +56,7 @@ The snapshot adapter maps core `ProfileIdParseError` to `InvalidData` (public
 `world.snapshot` path. Profile-ID alphabet, length and snapshot encoding are
 unchanged; a rejected player record never publishes the staged loaded store.
 
-The file excavation journal is stored in `excavation.v1` beside `world.snapshot`; back
+The file excavation journal is stored in `excavation.v2` beside `world.snapshot`; back
 up and restore both files with the complete world directory. It fsyncs a result
 record before acknowledging it. Checkpoint compaction runs after that durable
 commit; a compaction error does not revoke the already durable result, but the
@@ -77,14 +77,14 @@ Change snapshot format and validation here. Build runtime `WorldSaveInput` value
 
 Run `rtk cargo check -p minimium-storage -p minimium-server` and architecture/file-length checks. Runtime acceptance is deferred.
 
-Save format v11 is the only accepted snapshot format. Older and unknown versions
+Save format v12 is the only accepted snapshot format. Older and unknown versions
 are rejected before startup creates a persistence worker or replaces a file;
-there is no migration path. Use a separate data directory when creating a v11
+there is no migration path. Use a separate data directory when creating a v12
 world from older data. A v6 planet manifest stores peak start/full metres,
 multiplier permille and exponent after its package digest. Parsing is gated by
 the manifest's generator revision, including embedded manifests; other
 generated revisions are rejected rather than reinterpreted. This is a generator
-contract, independent of save v11 and protocol v21.
+contract, independent of save v12 and protocol v22.
 
 ## Excavation journal
 
@@ -107,8 +107,8 @@ include these fields in both transactions and compacted checkpoints.
 
 ## Impact journal
 
-`impact_journal::ImpactJournal` owns `impacts.v1` beside `world.snapshot`.
-Its version-1 fixed records contain a count, up to two 162-byte bodies and a
+`impact_journal::ImpactJournal` owns `impacts.v2` beside `world.snapshot`.
+Its version-2 fixed records contain a count, up to two 162-byte bodies and a
 checksum. Parent/daughter creation is one record. Structural landing results,
 craters and displaced water commit through the excavation journal; flight
 checkpoints remain in this journal. A worker acknowledges only after `sync_all`; no filesystem
@@ -117,9 +117,13 @@ Replay rejects invalid identity/phase transitions and damaged complete records;
 only an incomplete trailing record is truncated. At 4 MiB, atomic compaction
 retains the latest state of all bodies, including collected crater owners.
 The log has an 8 MiB read bound and 4096-body cap. Shutdown errors/timeouts propagate.
-Save format 11 also stores the body component, while the two journals restore
+Save format 12 also stores the body component, while the two journals restore
 their authoritative flight and structural results. Back up/restore the entire
-world directory, including `impacts.v1` and `excavation.v1`.
+world directory, including `impacts.v2` and `excavation.v2`.
 Flight checkpoints occur at spawn, fragmentation, five-second boundaries and
 shutdown; a process crash may rewind an unfinished flight to its last checkpoint.
 Committed craters never rely on a later autosave.
+
+## Simulation boundary
+
+The v12 clock record binds tick, calendar epoch and UTC to the last published excavation transaction. Elapsed simulation milliseconds equal 50 times the tick. Restore checks the journal revision and the saved impact entity projections before exposing the world. A checkpoint set from different boundaries fails to open. Preserve the matching snapshot and both journals together. A v11 snapshot or a directory containing previous-generation journals fails the read-only compatibility preflight.

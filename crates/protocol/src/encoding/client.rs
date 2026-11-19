@@ -44,15 +44,36 @@ pub fn encode_client(message: &ClientMessage) -> Result<Vec<u8>, ProtocolError> 
         ClientMessage::SkyView {
             context,
             direction,
-            night,
+            observation,
         } => {
             write_world_context(*context, &mut payload);
             write_unit_direction(*direction, &mut payload)?;
-            payload.push(u8::from(*night));
+            if !observation.valid() {
+                return Err(ProtocolError::InvalidPayload);
+            }
+            super::server::write_position_mm(observation.position_mm, &mut payload);
+            payload.extend_from_slice(&observation.calendar_epoch.get().to_le_bytes());
+            payload.extend_from_slice(&observation.utc.get().to_le_bytes());
+            payload.extend_from_slice(
+                &observation
+                    .night_until
+                    .map_or(0, |end| end.get())
+                    .to_le_bytes(),
+            );
             ClientKind::SkyView
         }
-        ClientMessage::WorldInput { context, input } => {
+        ClientMessage::WorldInput {
+            sequence,
+            control_revision,
+            context,
+            input,
+        } => {
+            if *sequence == 0 || *control_revision == 0 {
+                return Err(ProtocolError::InvalidPayload);
+            }
             write_world_context(*context, &mut payload);
+            payload.extend_from_slice(&sequence.to_le_bytes());
+            payload.extend_from_slice(&control_revision.to_le_bytes());
             match input {
                 ClientWorldInput::Motion(sample) => {
                     payload.push(7);

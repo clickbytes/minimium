@@ -29,7 +29,7 @@ fn connected_session(context: WorldContext) -> ClientSession {
         world_context: Some(context),
         server_tick: 1,
         next_input_seq: 1,
-        next_target_tick: 3,
+        next_world_sequence: 1,
         content_jobs: crate::ContentJobsSession::new(
             std::num::NonZeroU64::new(1).unwrap(),
             Arc::new(local_content_jobs::LocalContentJobs::default()),
@@ -71,6 +71,8 @@ fn world_inputs_from_a_previous_membership_epoch_are_rejected() {
     let old = context(7);
     let mut session = connected_session(current);
     let input = ClientMessage::WorldInput {
+        sequence: 1,
+        control_revision: 1,
         context: old,
         input: ClientWorldInput::InteractEntity {
             entity: minimium_world::entity::EntityId::new(1).unwrap(),
@@ -82,6 +84,8 @@ fn world_inputs_from_a_previous_membership_epoch_are_rejected() {
     );
 
     let current_input = ClientMessage::WorldInput {
+        sequence: 1,
+        control_revision: 1,
         context: current,
         input: ClientWorldInput::InteractEntity {
             entity: minimium_world::entity::EntityId::new(1).unwrap(),

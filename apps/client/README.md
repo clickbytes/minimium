@@ -60,7 +60,7 @@ CPU preparation errors neither upload partial geometry nor synthesize heights.
 Cloud worker candidates replace the active CPU publication only after the whole
 cloud GPU upload is accepted. Cloud/morph count mismatches and upload-limit/index
 errors produce diagnostics while keeping the previous complete publication.
-Context changes still invalidate old clouds; stale worker results are discarded.
+Cloud meshes and local fallback have separate upload revisions. While the worker prepares the next interval, the fallback retains nearby regional clouds and reuses individual meshes that still cover the frame UTC. Context changes invalidate old clouds and stale worker results are discarded.
 
 Remote-player GPU geometry carries the exact active world context (including
 membership epoch) and full geometry publication stamp. Missing or mismatched
@@ -73,7 +73,14 @@ The desktop host reads the confirmed equipped tool from the active client
 session, supplies its selected `ToolDefinition` to the tool preview, and resolves
 its sample-owned model index for the first-person viewmodel pass. The application
 adapts the sample's CPU vertices to the renderer's bounded neutral model catalog;
-the renderer owns upload and draw only. Shovels and pickaxes are presentation-only;
+the renderer owns pose evaluation, upload and draw. The desktop host starts one
+480 ms model-independent swing when a ToolUse request is locally queued, for
+both initial press and held-repeat paths. Rejections/suppression before queueing
+do not start swings; a queued attempt is not an authoritative hit. Playback uses
+monotonic presentation time and retains at most one start time, bound to the
+world context and selected model. Tool/context changes, disconnect, console/map
+mode or loss of cursor control cancel it. There is no delayed-animation queue.
+Shovels and pickaxes are presentation-only;
 gameplay tool use continues through the existing authoritative session action.
 
 Camera and tool-preview rays use the shared world `CharacterGeometry` eye and
@@ -453,8 +460,10 @@ Runtime window/DPI acceptance remains pending.
 
 The terrain worker prepares paired Earth ground/ocean patches. Both are staged
 as one selection, including during transfers and render-origin changes.
-The worker now clips complementary shoreline polygons before preparing vertices;
-nearly coplanar land/water depth comparisons no longer choose the contour. LOD
+The worker clips complementary shoreline polygons for the static sea. With a
+reservoir snapshot it prepares the full bed and clips the water independently,
+so retreating water exposes terrain. Switching between these modes stages both
+channels together. LOD
 requests preserve camera radius after direction snapping, and walking detail has
 a bounded local guard. These changes use the existing terrain worker and caches.
 The terrain status command reports ocean triangles and includes ocean buffers
@@ -754,11 +763,11 @@ desktop share this contract, including content and transfer readiness.
 
 | Clock domain | Owner and purpose |
 | --- | --- |
-| Explicit host `ClientTime` | Application step, prediction elapsed input, actions, session/controller lifecycle, content acknowledgements and snapshot interpolation |
-| Fixed simulation step | Prediction accumulator and physics; elapsed input remains capped at the existing simulation step |
+| Explicit host `ClientTime` | Session/controller lifecycle, content acknowledgements and held-intent refresh |
+| Fixed simulation step | Prediction, replicas and world effects follow one interpolated game sample per frame, with an eight-step prediction budget |
 | UTC/world clock and time scale | Environment/astronomy samples and authoritative time commands; these never supply client lifecycle time |
 | Offline demo UTC (`environment/demo.rs`) | Host-only `LocalDemoEnvironment` anchors UTC once with `SystemTime::now()` and advances it with `Instant::elapsed()` for `EnvironmentFrameInput`; it supplies no session, timeout or cooldown decisions and is not a network-clock fallback |
-| OS resource/presentation time | Window redraw cadence, worker/shutdown drain bounds, frame/GPU/performance measurements, console blink/chat/status refresh, diagnostic filenames and visual effects |
+| OS resource/presentation time | Window redraw cadence, worker/shutdown drain bounds, frame/GPU/performance measurements, console blink/chat/status refresh, diagnostic filenames, camera input and eye adaptation |
 
 Resource and presentation clocks do not drive session timeouts or input cooldowns.
 The environment demo retains this independent UTC producer and its existing algorithm.
@@ -791,7 +800,7 @@ permanent collidable meteorite and geometric crater. Client presentation include
 seeded color/flicker, the separately moving fragment, a ground flash, dust/ejecta,
 point illumination and optional desktop-audio sound with propagation delay.
 There is no mining/inventory reward attached to the remnant. Restart both endpoints
-for protocol 21. `start-earth.ps1` rebuilds the matching release executables.
+for protocol 22. `start-earth.ps1` rebuilds the matching release executables.
 Tracked engine bodies arrive in typed `ImpactState` protocol messages and are
 decoded as `BodyState`; they are ServerOnly entity components, so client replica
 schema registration remains limited to components carried by entity replication.

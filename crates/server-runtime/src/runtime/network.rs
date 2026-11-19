@@ -181,7 +181,6 @@ impl ServerRuntime {
         }
         self.admit_messages();
         self.mark_timed_out_clients(self.now);
-        self.replicate_environment();
         for client in &mut self.connections.clients {
             if client.close_deadline().is_none() {
                 if let Some(health) = client.pending_health_update {

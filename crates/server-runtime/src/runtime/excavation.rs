@@ -40,7 +40,6 @@ struct ExcavationState {
     water_catalogs: HashMap<WorldInstanceId, [u8; 32]>,
     water_jobs: HashMap<WorldInstanceId, hydrology::WaterJob>,
     water_failures: HashMap<WorldInstanceId, hydrology::WaterFailure>,
-    next_water_step: Instant,
     water_checkpoint_due: HashMap<WorldInstanceId, Instant>,
 }
 
@@ -79,7 +78,7 @@ impl Excavation {
         restored: WorldChangeState,
         config: crate::composition::ExcavationConfig,
         async_work_policy: crate::AsyncWorkPolicy,
-        now: Instant,
+        _now: Instant,
     ) -> io::Result<Self> {
         if !config.valid() {
             return Err(io::Error::other("invalid excavation configuration"));
@@ -97,14 +96,21 @@ impl Excavation {
                 water_catalogs: HashMap::new(),
                 water_jobs: HashMap::new(),
                 water_failures: HashMap::new(),
-                next_water_step: now,
                 water_checkpoint_due: HashMap::new(),
             },
         })
     }
 
-    fn busy(&self) -> bool {
+    pub(super) fn journal_revision(&self) -> u64 {
+        self.coordinator.published_revision()
+    }
+
+    pub(super) fn busy(&self) -> bool {
         self.coordinator.busy()
+    }
+
+    pub(super) fn failed(&self) -> bool {
+        self.coordinator.failure().is_some()
     }
 
     fn allocate_id(&mut self) -> Option<u64> {
@@ -118,10 +124,6 @@ impl ServerRuntime {
         error: minimium_storage::excavation::PersistenceError,
     ) -> ActionRejection {
         self.excavation.coordinator.storage_rejection(error)
-    }
-
-    pub(super) fn excavation_reserves(&self, world: WorldInstanceId) -> bool {
-        self.excavation.coordinator.reserves(world)
     }
 
     fn excavation_inputs(&self, world: WorldInstanceId) -> Option<minimium_procgen::TerrainInputs> {

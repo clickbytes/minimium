@@ -50,6 +50,8 @@ impl GameplayState {
         )? {
             return Ok(false);
         }
+        self.prediction
+            .observe_authority(server_time_ms, self_position_mm);
         let precise_position = self
             .prediction
             .position_mm
@@ -75,6 +77,7 @@ impl GameplayState {
 
     pub(crate) fn clear_remote_players(&mut self) {
         self.reconciliation.clear();
+        self.prediction.clear_authority();
         self.remote_positions_mm.clear();
     }
 }

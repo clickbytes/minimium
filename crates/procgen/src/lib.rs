@@ -21,6 +21,9 @@ pub mod surface_habitat;
 pub mod terrain_clip;
 mod terrain_color;
 mod terrain_contours;
+mod terrain_edge_splits;
+mod terrain_face_edges;
+mod terrain_face_strip;
 mod terrain_material;
 mod terrain_overlay;
 mod terrain_seam;
@@ -28,6 +31,7 @@ pub mod terrain_surface;
 mod terrain_zipper;
 mod traversal;
 mod volume_base;
+mod voxel_boundary;
 mod water_catalog;
 pub use volume_base::PlanetVolumeBase;
 pub use water_catalog::{

@@ -31,6 +31,11 @@ Depends only on world contracts. Base generation is an immutable `BaseTerrain` p
 
 The owner supplies a store and base field. Preparation returns resulting chunk
 images and expected revisions. Mesh and spatial queries read the same field.
+`TerrainView::excavated_depth_m` interpolates the difference between the stored
+and base signed distances at the eight surrounding lattice samples, in metres.
+An unchanged sample contributes zero, including inside an edited chunk's guard
+region. A renderer can recover exposed cut surfaces from restored or replicated
+chunks without recording additional brush history.
 
 ## Ownership and execution
 

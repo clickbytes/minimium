@@ -356,6 +356,7 @@ pub(crate) fn replicate_snapshots(
     server_time_ms: u64,
     server_tick: u64,
     resolved_input_seq: &std::collections::HashMap<PlayerId, u64>,
+    applied_input: &std::collections::HashMap<PlayerId, (u64, u64)>,
     active_inputs: &std::collections::HashMap<PlayerId, minimium_simulation::MovementIntent>,
 ) {
     let mut recipients: BTreeMap<
@@ -429,6 +430,7 @@ pub(crate) fn replicate_snapshots(
                 let message = ServerMessage::Snapshot {
                     server_time_ms,
                     server_tick,
+                    applied_input: applied_input.get(&player_id).copied().unwrap_or_default(),
                     resolved_input_seq: resolved_input_seq.get(&player_id).copied().unwrap_or(0),
                     context,
                     full_snapshot,

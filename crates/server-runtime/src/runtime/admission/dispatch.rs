@@ -38,6 +38,58 @@ pub(super) fn dispatch_message(
         RoutingOutcome::Handled => return,
         RoutingOutcome::ContinueWith(message) => message,
     };
+    if let ClientMessage::WorldInput {
+        sequence,
+        control_revision,
+        context,
+        input,
+    } = &message
+    {
+        // TCP preserves order. Consume the id even if this action is refused or paused.
+        let client = &mut runtime.connections.clients[index];
+        if *sequence <= client.world_sequence {
+            return;
+        }
+        client.world_sequence = *sequence;
+        if !runtime.environment_clock.accepts_input(*control_revision)
+            && player_id.is_some()
+            && !matches!(
+                input,
+                ClientWorldInput::Chat(_)
+                    | ClientWorldInput::SetName(_)
+                    | ClientWorldInput::Excavation(
+                        minimium_protocol::ExcavationInput::Resync { .. }
+                    )
+            )
+        {
+            if let (
+                Some(player),
+                ClientWorldInput::Excavation(minimium_protocol::ExcavationInput::Use {
+                    action_id,
+                    ..
+                }),
+            ) = (player_id, input)
+            {
+                runtime.excavation_result(
+                    player,
+                    *context,
+                    minimium_world::items::ActionResult::Rejected {
+                        action_id: *action_id,
+                        reason: minimium_world::items::ActionRejection::Paused,
+                    },
+                );
+            } else {
+                crate::connection::queue_message(
+                    &mut runtime.connections.clients[index],
+                    &mut runtime.metrics,
+                    minimium_protocol::ServerMessage::Error(
+                        minimium_protocol::ServerErrorCode::Paused,
+                    ),
+                );
+            }
+            return;
+        }
+    }
     let message = match world_control::route_message(runtime, index, message, decoded_at, player_id)
     {
         RoutingOutcome::Handled => return,
@@ -65,8 +117,12 @@ fn handle_admitted_message(
         ClientMessage::Authenticate { .. } => {
             disconnect_invalid_sequence(runtime, index);
         }
-        ClientMessage::WorldInput { context, input } => match (player_id, input) {
+        ClientMessage::WorldInput { context, input, .. } => match (player_id, input) {
             (Some(player), ClientWorldInput::Excavation(input)) => {
+                if matches!(input, minimium_protocol::ExcavationInput::Resync { .. }) {
+                    runtime.apply_excavation(player, context, input);
+                    return;
+                }
                 if matches!(input, minimium_protocol::ExcavationInput::GrantTools)
                     && !identity::has_permission(
                         runtime,

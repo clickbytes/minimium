@@ -34,11 +34,39 @@ pub fn decode_client(input: &[u8]) -> Result<Option<(ClientMessage, usize)>, Pro
             ClientMessage::SkyView {
                 context,
                 direction,
-                night: reader.boolean()?,
+                observation: {
+                    use minimium_environment::time::{ClockRevision, WorldTimeMs};
+                    let position_mm = reader.position_mm()?;
+                    let calendar_epoch = ClockRevision::new(reader.u64()?)
+                        .map_err(|_| ProtocolError::InvalidPayload)?;
+                    let utc = WorldTimeMs::new(reader.i64()?)
+                        .map_err(|_| ProtocolError::InvalidPayload)?;
+                    let night_until = match reader.i64()? {
+                        0 => None,
+                        end => {
+                            Some(WorldTimeMs::new(end).map_err(|_| ProtocolError::InvalidPayload)?)
+                        }
+                    };
+                    let observation = crate::SkyObservation {
+                        position_mm,
+                        calendar_epoch,
+                        utc,
+                        night_until,
+                    };
+                    if !observation.valid() {
+                        return Err(ProtocolError::InvalidPayload);
+                    }
+                    observation
+                },
             }
         }
         ClientKind::WorldInput => {
             let context = reader.world_context()?;
+            let sequence = reader.u64()?;
+            let control_revision = reader.u64()?;
+            if sequence == 0 || control_revision == 0 {
+                return Err(ProtocolError::InvalidPayload);
+            }
             let input = match reader.byte()? {
                 1 => ClientWorldInput::SetName(reader.name()?),
                 3 => {
@@ -129,7 +157,12 @@ pub fn decode_client(input: &[u8]) -> Result<Option<(ClientMessage, usize)>, Pro
                 }
                 _ => return Err(ProtocolError::InvalidPayload),
             };
-            ClientMessage::WorldInput { context, input }
+            ClientMessage::WorldInput {
+                sequence,
+                control_revision,
+                context,
+                input,
+            }
         }
         ClientKind::TransitionReady => ClientMessage::TransitionReady {
             transition_id: reader.transition_id()?,

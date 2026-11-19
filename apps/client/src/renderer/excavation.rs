@@ -31,13 +31,18 @@ impl DesktopHost {
         )
         .normalize()
         .to_array();
-        if let crate::application::LocalActionOutcome::Rejected { error, .. } =
-            self.application.execute_action(
-                crate::application::ClientAction::UseEquipped { direction, trigger },
-                crate::host_time::sample(),
-            )
-        {
-            self.fail_connection(format!("Could not use tool: {error:?}"));
+        match self.application.execute_action(
+            crate::application::ClientAction::UseEquipped { direction, trigger },
+            crate::host_time::sample(),
+        ) {
+            crate::application::LocalActionOutcome::Queued {
+                kind: crate::application::QueuedActionKind::ToolUse,
+                ..
+            } => self.start_tool_swing(),
+            crate::application::LocalActionOutcome::Rejected { error, .. } => {
+                self.fail_connection(format!("Could not use tool: {error:?}"));
+            }
+            _ => {}
         }
     }
 

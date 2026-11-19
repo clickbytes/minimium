@@ -122,9 +122,7 @@ impl ServerRuntime {
                 direction: direction.map(f64::from),
             },
             &scene::FirstHit(hit),
-            self.now
-                .saturating_duration_since(self.scheduler.server_started)
-                .as_millis() as u64,
+            self.step_boundary().simulation_ms(),
         );
         let action = match action_result {
             Ok(action) => action,
@@ -194,6 +192,7 @@ impl ServerRuntime {
             .coordinator
             .prepare(
                 PreparationRequest {
+                    target_tick: self.step_boundary().tick(),
                     origin: Origin {
                         player: Some(player),
                         context: Some(context),

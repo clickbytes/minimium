@@ -27,7 +27,7 @@ pub use limits::{
 pub use models::{
     BolidEvent, ClientMessage, ClientWorldInput, EntityReplicationOperation, ExcavationInput,
     ExcavationMessage, MovementSample, ProtocolError, RemotePlayer, RemotePlayerIds, RemotePlayers,
-    ServerMessage,
+    ServerMessage, SkyObservation,
 };
 pub use validation::{is_unit_direction, valid_chat};
 pub use world_context::WorldContext;

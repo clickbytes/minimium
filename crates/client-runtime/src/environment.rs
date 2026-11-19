@@ -28,7 +28,10 @@ impl SynchronizationQuality {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EnvironmentFrameInput {
+    pub committed: Option<minimium_environment::time::ClockSample>,
     pub estimated_world_utc_ms: Option<i64>,
+    pub simulation_ms: Option<u64>,
+    pub achieved_rate: f64,
     pub render_world_utc_ms: Option<i64>,
     pub descriptor: Option<EnvironmentDescriptor>,
     pub context: Option<WorldContext>,
@@ -41,8 +44,11 @@ pub struct EnvironmentFrameInput {
 impl EnvironmentFrameInput {
     pub const fn unavailable() -> Self {
         Self {
+            committed: None,
             estimated_world_utc_ms: None,
             render_world_utc_ms: None,
+            simulation_ms: None,
+            achieved_rate: 0.0,
             descriptor: None,
             context: None,
             revision: None,
@@ -57,13 +63,25 @@ impl EnvironmentFrameInput {
     }
 
     pub fn time_status_line(self) -> String {
-        diagnostics::clock_status_line(
+        let status = diagnostics::clock_status_line(
             self.clock_diagnostics,
             self.quality,
-            self.revision,
-            self.render_world_utc_ms,
+            self.committed.map(|s| s.revision().get()).or(self.revision),
+            self.estimated_world_utc_ms,
             self.rate_ppm,
-        )
+        );
+        if let Some(s) = self.committed {
+            format!(
+                "{status} tick={} achieved_ppm={} paused={} limit={} calendar_epoch={}",
+                s.boundary().tick(),
+                s.achieved_ppm(),
+                s.rate_ppm().get() == 0,
+                s.limit().label(),
+                s.boundary().calendar_epoch().get()
+            )
+        } else {
+            status
+        }
     }
 }
 

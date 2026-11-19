@@ -261,6 +261,17 @@ impl ClientApplicationCore {
         delay: std::time::Duration,
     ) -> Result<bool, ClientTimeError> {
         self.accept_time(now)?;
+        if let Some(ms) = self
+            .connection
+            .session()
+            .and_then(|s| s.environment_frame().simulation_ms)
+        {
+            return self.game.gameplay.reconciliation.interpolate_at(
+                now,
+                ms,
+                &mut self.game.gameplay.remote_positions_mm,
+            );
+        }
         self.game.gameplay.reconciliation.interpolate_positions(
             now,
             delay,
@@ -299,7 +310,7 @@ impl ClientApplicationCore {
         &mut self,
         context: WorldContext,
         direction: [f32; 3],
-        night: bool,
+        observation: minimium_protocol::SkyObservation,
         now: ClientTime,
     ) -> Result<bool, ClientTimeError> {
         self.accept_time(now)?;
@@ -311,7 +322,7 @@ impl ClientApplicationCore {
                 &ClientMessage::SkyView {
                     context,
                     direction,
-                    night,
+                    observation,
                 },
                 now,
             )

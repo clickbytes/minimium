@@ -54,6 +54,7 @@ pub(super) fn encode(
                         ActionRejection::OutOfReach => 3,
                         ActionRejection::Obstructed => 4,
                         ActionRejection::WrongMaterial => 5,
+                        ActionRejection::Paused => 12,
                         ActionRejection::Busy => 6,
                         ActionRejection::RateLimited => 7,
                         ActionRejection::Stale => 8,

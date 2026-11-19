@@ -418,6 +418,7 @@ fn localized_server_error(code: ServerErrorCode) -> minimium_localization::Serve
     use minimium_localization::ServerErrorReason as Reason;
     match code {
         ServerErrorCode::Protocol => Reason::Protocol,
+        ServerErrorCode::Paused => Reason::Paused,
         ServerErrorCode::Busy => Reason::Busy,
         ServerErrorCode::ServerFull => Reason::Full,
         ServerErrorCode::RateLimit => Reason::RateLimit,

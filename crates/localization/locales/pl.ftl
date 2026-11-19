@@ -195,7 +195,7 @@ command-help = { $name ->
     [camera_fov] camera fov [30..110] (pionowe pole widzenia w stopniach; domyślnie 70)
     [sky_names] sky names true|false
     [time_status] time status
-    [time_scale] time scale DECIMAL (alias timescale; lokalny serwer hosta; 0.1-1000000x lub 0)
+    [time_scale] time scale DECIMAL (alias timescale; globalne tempo gry na lokalnym serwerze; 0.1-1000000x lub 0 aby wstrzymać)
     [spawn_random_bolid] spawn_random_bolid (lokalny serwer hosta)
     [help] help
     [config_save] config save PATH
@@ -262,6 +262,7 @@ tool-no-target = Brak powierzchni w zasięgu (3 m)
 tool-wrong-material = Skała wymaga kilofa [2]
 tool-not-equipped = Wyposaż łopatę [1] lub kilof [2]
 tool-obstructed = Pierwsze trafienie to obiekt lub gracz, a nie grunt do kopania
+tool-paused = Symulacja wstrzymana
 tool-unsafe-geometry = Odmowa: nie udało się bezpiecznie połączyć terenu; szczegóły w logu serwera
 tool-busy = Serwer przygotowuje inną zmianę świata
 tool-rate-limited = Odnowienie narzędzia: najwyżej 2 użycia na sekundę

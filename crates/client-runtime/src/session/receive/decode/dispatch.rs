@@ -304,7 +304,6 @@ fn handle_welcome(
     session.world_context = Some(context);
     session.clear_replicas();
     session.next_input_seq = 1;
-    session.next_target_tick = session.server_tick.saturating_add(2).max(1);
     session.clear_transfer_lifecycle();
     session.state = SessionState::Connected;
     session.state_since = session.now;

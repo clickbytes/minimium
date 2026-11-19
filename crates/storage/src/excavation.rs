@@ -24,9 +24,9 @@ use std::{
     time::Instant,
 };
 
-const MAGIC: &[u8; 8] = b"MEXCAV11";
-const CHECKPOINT: &[u8; 8] = b"MEXCHK11";
-pub const JOURNAL_FILE_NAME: &str = "excavation.v1";
+const MAGIC: &[u8; 8] = b"MEXCAV12";
+const CHECKPOINT: &[u8; 8] = b"MEXCHK12";
+pub const JOURNAL_FILE_NAME: &str = "excavation.v2";
 pub const MAX_MUTATION_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_JOURNAL_BYTES: u64 = 128 * 1024 * 1024;
 const QUEUE_CAPACITY: usize = 8;

@@ -14,6 +14,7 @@ use std::{
 pub(crate) struct ShutdownContext<'a> {
     pub deadline: Instant,
     pub snapshot_at: Instant,
+    pub capture_allowed: bool,
     pub transport: &'a mut dyn minimium_transport::TransportPort,
     pub player_store: &'a mut PlayerStore,
     pub persistence: &'a mut dyn PersistencePort,
@@ -42,16 +43,20 @@ pub(crate) fn shutdown(mut context: ShutdownContext<'_>) -> io::Result<()> {
         .shutdown(content_deadline.saturating_duration_since(Instant::now()));
     unfinished.extend(context.sector_workers.shutdown_until(deadline));
     unfinished.extend(context.executor.shutdown_until(deadline));
-    let snapshot = capture_final_snapshot(
-        context.snapshot_at,
-        context.server_started,
-        context.environment_clock,
-        context.worlds,
-        context.map_fingerprint,
-        context.player_store,
-        context.logger,
-        deadline,
-    );
+    let snapshot = if context.capture_allowed {
+        capture_final_snapshot(
+            context.snapshot_at,
+            context.server_started,
+            context.environment_clock,
+            context.worlds,
+            context.map_fingerprint,
+            context.player_store,
+            context.logger,
+            deadline,
+        )
+    } else {
+        Err(io::Error::other("incomplete simulation boundary"))
+    };
     let save_result =
         persist_final_snapshot(context.persistence, snapshot, deadline, context.logger);
     if !unfinished.is_empty() {

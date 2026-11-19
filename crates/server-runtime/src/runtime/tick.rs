@@ -1,43 +1,98 @@
 use super::*;
 use crate::{commands, replication, simulation};
+use minimium_environment::time::SimulationLimit;
 mod command_execution;
+mod dispatch_commands;
 mod properties;
 mod status;
 use minimium_telemetry::allocations::{self, Phase};
 
 impl ServerRuntime {
     pub(super) fn tick(&mut self) {
-        if self.now >= self.scheduler.next_tick {
-            let tick_started = Instant::now();
-            self.scheduler.simulation_tick = self.scheduler.simulation_tick.saturating_add(1);
-            let mut index = 0;
-            while let Some(step) = self.schedule.tick_step(index) {
-                match step {
-                    crate::runtime::schedule::RuntimeScheduleStep::Operation(operation) => {
-                        if !self.run_tick_operation(operation) {
-                            return;
-                        }
-                    }
-                    crate::runtime::schedule::RuntimeScheduleStep::Stage(stage) => {
-                        self.run_tick_system_stage(stage);
-                    }
+        let started = Instant::now();
+        for _ in 0..clock::MAX_STEPS {
+            if self.scheduler.pending.is_none() {
+                if !self.scheduler.demand.due() || self.shutdown_request.is_requested() {
+                    return;
                 }
-                index += 1;
+                if started.elapsed() >= Duration::from_millis(4) {
+                    self.environment_clock.limit = SimulationLimit::CpuBudget;
+                    return;
+                }
+                if self.worker_barrier() {
+                    self.environment_clock.limit =
+                        if self.impacts.failed() || self.excavation.failed() {
+                            SimulationLimit::WorkerFailed
+                        } else {
+                            SimulationLimit::Worker
+                        };
+                    return;
+                }
+                let Some((boundary, utc)) = self.environment_clock.next_boundary() else {
+                    self.scheduler
+                        .demand
+                        .control_changed(self.environment_clock.rate().get());
+                    self.service_inputs();
+                    return;
+                };
+                if !self.prepare_water_boundary(boundary.tick()) {
+                    self.environment_clock.limit = SimulationLimit::Water;
+                    return;
+                }
+                self.scheduler.demand.consume();
+                self.scheduler.pending = Some(clock::PendingStep {
+                    boundary,
+                    utc,
+                    operation: 0,
+                });
+            }
+            let tick_started = Instant::now();
+            if !self.finish_pending_step() {
+                return;
             }
             self.metrics.ticks = self.metrics.ticks.saturating_add(1);
             self.metrics.last_tick = tick_started.elapsed();
             self.metrics.tick.record(self.metrics.last_tick);
-            self.scheduler.next_tick += TICK;
-            let now = self.now;
-            if now > self.scheduler.next_tick + TICK {
-                let late_by = now.duration_since(self.scheduler.next_tick).as_nanos();
-                self.metrics.missed_ticks = self
-                    .metrics
-                    .missed_ticks
-                    .saturating_add((late_by / TICK.as_nanos()) as u64);
-                self.scheduler.next_tick = now + TICK;
+            // Deferred administration observes this exact boundary before more work.
+            if !self.operations.command_queue.is_empty() {
+                return;
             }
         }
+    }
+
+    pub(super) fn finish_pending_step(&mut self) -> bool {
+        while let Some(pending) = self.scheduler.pending {
+            if self.worker_barrier() {
+                self.environment_clock.limit = if self.impacts.failed() || self.excavation.failed()
+                {
+                    SimulationLimit::WorkerFailed
+                } else {
+                    SimulationLimit::Worker
+                };
+                return false;
+            }
+            match self.schedule.tick_step(pending.operation) {
+                Some(schedule::RuntimeScheduleStep::Operation(operation)) => {
+                    if !self.run_tick_operation(operation) {
+                        return false;
+                    }
+                }
+                Some(schedule::RuntimeScheduleStep::Stage(stage)) => {
+                    self.run_tick_system_stage(stage)
+                }
+                None => {
+                    self.environment_clock.commit(pending.boundary, pending.utc);
+                    self.scheduler.pending = None;
+                    for transfer in std::mem::take(&mut self.scheduler.transfers) {
+                        self.send_transition_committed(transfer);
+                    }
+                    self.scheduler.demand.finish();
+                    return true;
+                }
+            }
+            self.scheduler.pending.as_mut().unwrap().operation += 1;
+        }
+        true
     }
 
     fn run_tick_operation(
@@ -46,11 +101,9 @@ impl ServerRuntime {
     ) -> bool {
         use crate::runtime::schedule::BuiltinOperation as Op;
         match operation {
-            Op::Commands => self.apply_commands(),
             Op::Bolids => self.update_bolids(),
-            Op::Impacts => self.update_impacts(),
-            Op::Excavation => self.update_excavation(),
-            Op::ShutdownGate => return !self.shutdown_request.is_requested(),
+            Op::Impacts => return self.update_impacts(),
+
             Op::WorldInputs => self.apply_world_inputs(),
             Op::Simulation => self.simulate_tick(),
             Op::ClearEvents => self.game.gameplay_events.clear(),
@@ -71,152 +124,9 @@ impl ServerRuntime {
             );
         }
     }
-    fn apply_commands(&mut self) {
-        let game_address = self.game_address.clone();
-        let max_players = self.max_players;
-        let lanes = self.lanes;
-        let command_phase = allocations::enter(Phase::Commands);
-        for _ in 0..8 {
-            let Some((request_id, command)) = self.operations.command_queue.pop_front() else {
-                break;
-            };
-            if matches!(request_id, CommandOrigin::Admin(id) if {
-                !self
-                    .operations
-                    .transport
-                    .is_admin_pending(id, self.now)
-            }) {
-                continue;
-            }
-            let monotonic_ms = self.monotonic_ms(self.now);
-            let schedule_diagnostics = self.schedule.diagnostics();
-            let runtime_status = command
-                .is_status()
-                .then(|| self.runtime_status_snapshot(&game_address, max_players));
-            let client_traffic = if command.is_metrics() {
-                self.client_traffic_snapshot()
-            } else {
-                commands::ClientTrafficSnapshot::default()
-            };
-            let reply = match &command {
-                crate::server_command::ServerCommand::Registered {
-                    identity,
-                    arguments,
-                } => self.execute_module_command(Some(identity), &arguments),
-                crate::server_command::ServerCommand::UnresolvedModule(argv) => {
-                    self.execute_module_command(None, &argv)
-                }
-                crate::server_command::ServerCommand::SpawnRandomMeteorid => {
-                    self.spawn_meteorid(true)
-                }
-                crate::server_command::ServerCommand::Property(property) => {
-                    self.apply_property_command(property)
-                }
-                crate::server_command::ServerCommand::SpawnRandomBolid(count) => {
-                    self.start_bolid_shower(*count)
-                }
-                _ => match monotonic_ms {
-                    Ok(monotonic_ms) => commands::execute(
-                        &command,
-                        commands::OwnerCommandContext {
-                            worlds: &self.game.worlds,
-                            player_store: &mut self.operations.player_store,
-                            persistence: &mut *self.operations.persistence,
-                            map_fingerprint: self.map.fingerprint(),
-                            lanes,
-                            metrics: &self.metrics,
-                            environment_clock: &mut self.environment_clock,
-                            monotonic_ms,
-                            schedule_diagnostics,
-                            runtime_status,
-                            client_traffic,
-                        },
-                        &self.module_registry,
-                    ),
-                    Err(error) => commands::CommandReply::error(
-                        "server.monotonic_clock_failed",
-                        &format!("monotonic clock: {error}"),
-                    ),
-                },
-            };
-            self.environment_dirty_revision = self.environment_clock.dirty_revision();
-            if !reply.is_success() {
-                crate::diagnostics::emit(
-                    &self.server_logger,
-                    minimium_diagnostics::Level::Warn,
-                    "server.command_execution_failed",
-                    &[(
-                        "error_code",
-                        reply
-                            .error_code()
-                            .unwrap_or("server.command.failed")
-                            .to_owned(),
-                    )],
-                );
-            }
-            if let CommandOrigin::Admin(id) = request_id {
-                if let Err(error) = self
-                    .operations
-                    .transport
-                    .respond_admin(id, crate::admin::response(&reply))
-                {
-                    crate::diagnostics::emit(
-                        &self.server_logger,
-                        minimium_diagnostics::Level::Debug,
-                        "server.admin_response_dropped",
-                        &[("reason", error.to_string())],
-                    );
-                }
-            } else if matches!(request_id, CommandOrigin::Console) {
-                let prefix = match reply.error_code() {
-                    Some(code) => format!("ERR {code}"),
-                    None => String::from("ERR"),
-                };
-                let text = crate::command_output::render_reply(&reply);
-                println!(
-                    "{} {}",
-                    if reply.is_success() { "OK" } else { &prefix },
-                    text.as_str()
-                );
-            }
-            if command.is_save_or_stop() {
-                crate::diagnostics::emit(
-                    &self.server_logger,
-                    minimium_diagnostics::Level::Info,
-                    "server.admin_command_completed",
-                    &[
-                        (
-                            "action",
-                            (if matches!(command, crate::server_command::ServerCommand::Stop) {
-                                "stop"
-                            } else {
-                                "save"
-                            })
-                            .to_owned(),
-                        ),
-                        ("success", reply.is_success().to_string()),
-                    ],
-                );
-            }
-            if reply.should_stop() {
-                self.shutdown_request.request();
-            }
-            if let CommandOrigin::Host(id) = request_id {
-                self.operations
-                    .host_outcomes
-                    .push(crate::CommandExecution { id, reply });
-            }
-            if self.shutdown_request.is_requested() {
-                break;
-            }
-        }
-        drop(command_phase);
-    }
-
     fn apply_world_inputs(&mut self) {
         let input_phase = allocations::enter(Phase::Input);
         let input_apply_started = Instant::now();
-        self.expire_pending_transfers(self.now);
         self.apply_inputs();
         self.metrics
             .input_apply
@@ -247,7 +157,7 @@ impl ServerRuntime {
         }
         for transfer in committed {
             committed_players.insert(transfer.player);
-            self.send_transition_committed(transfer);
+            self.scheduler.transfers.push(transfer);
         }
         for cancelled in cancelled {
             self.finish_transfer_cancellation(cancelled);
@@ -273,6 +183,8 @@ impl ServerRuntime {
         self.game.pending_input_seqs.remove(&transfer.player);
         self.game.last_input_seq.insert(transfer.player, 0);
         self.game.resolved_input_seq.insert(transfer.player, 0);
+        self.game.applied_input.remove(&transfer.player);
+        self.sky_views.remove(&transfer.player);
         let Some(index) = self
             .connections
             .client_indices_by_player
@@ -316,7 +228,7 @@ impl ServerRuntime {
             &mut self.metrics,
             minimium_protocol::ServerMessage::TransitionCommitted {
                 transition_id: transfer.transition_id,
-                server_tick: self.scheduler.simulation_tick,
+                server_tick: clock_sample.boundary().tick(),
                 context: transfer.context,
                 map_fingerprint: transfer.map_fingerprint,
                 destination: transfer.destination,
@@ -440,11 +352,7 @@ impl ServerRuntime {
         if self.now >= self.scheduler.next_snapshot {
             let _snapshot_phase = allocations::enter(Phase::Snapshot);
             let snapshot_started = Instant::now();
-            let server_time_ms = self
-                .now
-                .saturating_duration_since(self.scheduler.server_started)
-                .as_millis()
-                .min(u64::MAX as u128) as u64;
+            let server_time_ms = self.environment_clock.boundary().simulation_ms();
             replication::replicate_entities(
                 &self.game.worlds,
                 &self.component_registry,
@@ -459,8 +367,9 @@ impl ServerRuntime {
                 &mut self.connections.clients,
                 &mut self.metrics,
                 server_time_ms,
-                self.scheduler.simulation_tick,
+                self.environment_clock.boundary().tick(),
                 &self.game.resolved_input_seq,
+                &self.game.applied_input,
                 &self.game.active_inputs,
             );
             self.metrics.snapshots = self.metrics.snapshots.saturating_add(1);

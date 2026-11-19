@@ -4,7 +4,12 @@ use crate::{terrain_contours::Point, ExcavationGeometryError};
 pub(crate) fn zipper(
     a: &[Point],
     b: &[Point],
+    base_cuts: &mut crate::terrain_edge_splits::Splits,
+    volume_cuts: &mut crate::terrain_edge_splits::Splits,
 ) -> Result<Vec<([Point; 3], [bool; 3])>, ExcavationGeometryError> {
+    if let Some(strip) = crate::terrain_face_strip::triangulate(a, b, base_cuts, volume_cuts)? {
+        return Ok(strip);
+    }
     let (a, b) = align(a, b)?;
     let mut triangles = Vec::with_capacity(a.points.len() + b.points.len());
     let (mut i, mut j) = (0, 0);

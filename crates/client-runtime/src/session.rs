@@ -140,7 +140,7 @@ pub struct ClientSession {
     world_context: Option<WorldContext>,
     server_tick: u64,
     next_input_seq: u64,
-    next_target_tick: u64,
+    next_world_sequence: u64,
     content_jobs: ContentJobsSession,
     world_content_job: Option<ContentJobHandle>,
     world_content_result: Option<Result<PreparedWorldContent, SessionFailure>>,
@@ -240,7 +240,7 @@ impl ClientSession {
             world_context: None,
             server_tick: 0,
             next_input_seq: 1,
-            next_target_tick: 2,
+            next_world_sequence: 1,
             content_jobs,
             world_content_job: None,
             world_content_result: None,
@@ -430,18 +430,28 @@ impl ClientSession {
                 .checked_add(1)
                 .ok_or(QueueError::InputSequenceExhausted)?;
             sample.input_seq = input_seq;
-            let target_tick = self
-                .next_target_tick
-                .max(self.server_tick.saturating_add(2).max(1));
-            sample.target_tick = target_tick;
-            let next_target_tick = target_tick.saturating_add(1);
-            motion_counters = Some((next_input_seq, next_target_tick));
+            sample.target_tick = self.server_tick.saturating_add(1);
+            motion_counters = Some(next_input_seq);
             queued_sample = Some(*sample);
         }
-        self.queue_current(&ClientMessage::WorldInput { context, input })?;
-        if let Some((next_input_seq, next_target_tick)) = motion_counters {
+        let sequence = self.next_world_sequence;
+        let next = sequence
+            .checked_add(1)
+            .ok_or(QueueError::InputSequenceExhausted)?;
+        let control_revision = self
+            .clock_sample
+            .ok_or(QueueError::AwaitingWelcome)?
+            .revision()
+            .get();
+        self.queue_current(&ClientMessage::WorldInput {
+            sequence,
+            control_revision,
+            context,
+            input,
+        })?;
+        self.next_world_sequence = next;
+        if let Some(next_input_seq) = motion_counters {
             self.next_input_seq = next_input_seq;
-            self.next_target_tick = next_target_tick;
         }
         Ok(queued_sample)
     }

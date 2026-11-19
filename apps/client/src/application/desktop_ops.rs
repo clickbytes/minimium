@@ -101,10 +101,11 @@ impl ClientApplication {
         &mut self,
         context: minimium_protocol::WorldContext,
         direction: [f32; 3],
-        night: bool,
+        observation: minimium_protocol::SkyObservation,
         now: ClientTime,
     ) -> Result<bool, ClientTimeError> {
-        self.core.report_sky_view(context, direction, night, now)
+        self.core
+            .report_sky_view(context, direction, observation, now)
     }
 
     pub(crate) fn cancel_transition_request(

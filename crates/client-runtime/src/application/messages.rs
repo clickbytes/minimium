@@ -97,6 +97,7 @@ impl ClientApplicationCore {
                 server_tick,
                 full_snapshot,
                 resolved_input_seq,
+                applied_input: _,
                 self_position,
                 self_position_mm,
                 self_velocity,

@@ -10,14 +10,14 @@ pub struct CloudLightQuery {
     pub origin: [f64; 3],
     pub revision: u64,
     pub standard: bool,
-    pub now: std::time::Instant,
+    pub simulation_time: std::time::Duration,
 }
 
 #[derive(Default)]
 pub struct CloudLightCache {
     ids: [u64; 4],
     indices: [[Option<usize>; OCCLUDERS_PER_LIGHT]; 4],
-    refreshed: Option<std::time::Instant>,
+    refreshed: Option<std::time::Duration>,
     origin: [f64; 3],
     eye: [f32; 3],
     revision: u64,
@@ -47,10 +47,10 @@ impl CloudLightCache {
         let mut current_ids = query.ids;
         previous_ids.sort_unstable();
         current_ids.sort_unstable();
-        let refresh = self
-            .refreshed
-            .is_none_or(|at| query.now.saturating_duration_since(at).as_secs_f32() >= 0.5)
-            || previous_ids != current_ids
+        let refresh = self.refreshed.is_none_or(|at| {
+            query.simulation_time < at
+                || query.simulation_time.saturating_sub(at) >= std::time::Duration::from_millis(500)
+        }) || previous_ids != current_ids
             || self.revision != query.revision
             || self.origin != query.origin
             || self.record_count != records.len()
@@ -65,7 +65,7 @@ impl CloudLightCache {
                 }
             }
             self.ids = query.ids;
-            self.refreshed = Some(query.now);
+            self.refreshed = Some(query.simulation_time);
             self.origin = query.origin;
             self.eye = query.eye;
             self.revision = query.revision;

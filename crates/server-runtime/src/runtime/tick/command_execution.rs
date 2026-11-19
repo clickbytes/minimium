@@ -18,6 +18,15 @@ impl ServerRuntime {
         if reply.handler_succeeded() {
             let batch = effects.into_batch();
             if !batch.effects().is_empty() || batch.rejected_pushes() > 0 {
+                if self.environment_clock.rate().get() == 0 {
+                    return commands::CommandReply::error("server.paused", "simulation paused");
+                }
+                if self.simulation_work_pending() {
+                    return commands::CommandReply::error(
+                        "server.busy",
+                        "simulation boundary pending",
+                    );
+                }
                 match self.commit_effect_batch(batch) {
                     Ok(outcome) => {
                         self.report_effect_batch_outcome("command", &outcome);

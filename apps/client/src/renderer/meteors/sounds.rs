@@ -56,7 +56,7 @@ pub(super) fn capture(
         audio.enqueue(
             MeteorSoundCue {
                 source_pos: body.position_m.to_array(),
-                onset_monotonic: event.start_s + fracture.at_s,
+                onset_simulation_s: event.start_s + fracture.at_s,
                 relative_energy: (energy / 1e11).clamp(0.0, 1.0) as f32,
                 cue_kind: CueKind::Airburst,
                 seed: event.seed ^ u64::from(fracture.slot),

@@ -18,13 +18,13 @@ pub(super) fn handle_message(
         ClientMessage::SkyView {
             context,
             direction,
-            night,
+            observation,
         } if player_id.is_some() => {
             let player = player_id.expect("guarded above");
             if runtime.game.worlds.context_matches(player, context) {
                 runtime
                     .sky_views
-                    .insert(player, (context, direction, night, decoded_at));
+                    .insert(player, (context, direction, observation, decoded_at));
             } else {
                 runtime.metrics.rejected_inputs = runtime.metrics.rejected_inputs.saturating_add(1);
             }

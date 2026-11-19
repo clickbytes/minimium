@@ -86,6 +86,7 @@ impl From<crate::ClientTimeError> for ClientApplicationCreateError {
 /// One GPU-independent owner for client session, world, prediction and actions.
 pub struct ClientApplicationCore {
     last_operation_at: crate::ClientTime,
+    motion_stream: step::MotionStream,
     last_step_at: Option<crate::ClientTime>,
     game: ClientGameState,
     connection: crate::ConnectionController,
@@ -150,6 +151,7 @@ impl ClientApplicationCore {
         }
         Ok(Self {
             last_operation_at: now,
+            motion_stream: Default::default(),
             last_step_at: None,
             game,
             connection,

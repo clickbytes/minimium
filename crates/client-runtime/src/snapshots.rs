@@ -136,10 +136,19 @@ impl SnapshotReconciler {
     ) -> Result<bool, ClientTimeError> {
         self.validate_time(now)?;
         let estimated_server_time_ms = self.estimated_server_time_ms(now)?;
-        self.last_operation_at = Some(now);
-        output.clear();
         let render_time_ms = estimated_server_time_ms
             .saturating_sub(u64::try_from(delay.as_millis()).unwrap_or(u64::MAX));
+        self.interpolate_at(now, render_time_ms, output)
+    }
+
+    pub(crate) fn interpolate_at(
+        &mut self,
+        now: ClientTime,
+        render_time_ms: u64,
+        output: &mut Vec<[i64; 3]>,
+    ) -> Result<bool, ClientTimeError> {
+        self.last_operation_at = Some(now);
+        output.clear();
         let mut moved = false;
         for track in self.tracks.iter_mut().flatten() {
             let interval_ms = track.current_time_ms.saturating_sub(track.previous_time_ms);

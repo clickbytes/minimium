@@ -32,6 +32,7 @@ impl CoverAddress {
     }
 }
 
+#[derive(Clone)]
 pub struct CoverGrid {
     pub address: CoverAddress,
     pub start_utc: f64,
@@ -51,6 +52,24 @@ impl CoverGrid {
         observer: DVec3,
         utc: f64,
     ) -> Result<Self, T::Error> {
+        Self::sample_grid(model, observer, utc, false)
+    }
+
+    /// One spatial column replicated across the local tile at both hourly endpoints.
+    pub fn local_column<T: TerrainSampler>(
+        model: &WeatherModel<T>,
+        observer: DVec3,
+        utc: f64,
+    ) -> Result<Self, T::Error> {
+        Self::sample_grid(model, observer, utc, true)
+    }
+
+    fn sample_grid<T: TerrainSampler>(
+        model: &WeatherModel<T>,
+        observer: DVec3,
+        utc: f64,
+        uniform: bool,
+    ) -> Result<Self, T::Error> {
         let address = CoverAddress::at(observer);
         let axis = address.axis;
         let axes = [DVec3::X, DVec3::Y, DVec3::Z];
@@ -69,11 +88,13 @@ impl CoverGrid {
         let mut atmosphere_weather = [[0.0; 4]; 2];
         let mut fog_pixels = vec![[half::f16::ZERO; 4]; cells * 2];
         let times = [start_utc, start_utc + 3600.0];
-        for y in 0..EDGE {
-            for x in 0..EDGE {
+        let edge = if uniform { 1 } else { EDGE };
+        for y in 0..edge {
+            for x in 0..edge {
                 let u = (f64::from(x) / f64::from(EDGE - 1) * 2.0 - 1.0) * EXTENT;
                 let v = (f64::from(y) / f64::from(EDGE - 1) * 2.0 - 1.0) * EXTENT;
                 let direction = (face + east * (u_center + u) + north * (v_center + v)).normalize();
+                let direction = if uniform { observer } else { direction };
                 let endpoints = model.ground_fog_endpoints(direction, times)?;
                 let site = crate::surface_atlas::direction(
                     start_lat + f64::from(y) * step,
@@ -89,7 +110,7 @@ impl CoverGrid {
                         fog.haze_m_inv,
                     ]
                     .map(half::f16::from_f32);
-                    if x == EDGE / 2 && y == EDGE / 2 {
+                    if uniform || x == EDGE / 2 && y == EDGE / 2 {
                         let state = model.surface_state(direction, time)?;
                         atmosphere_weather[hour] = [
                             state.climate.moisture as f32,
@@ -98,10 +119,22 @@ impl CoverGrid {
                             fog.ground_height_m,
                         ];
                     }
-                    let [cover, climate] = crate::surface_atlas::sample(model, site, time)?;
+                    let [cover, climate] = crate::surface_atlas::sample(
+                        model,
+                        if uniform { observer } else { site },
+                        time,
+                    )?;
                     pixels[hour * 2 * cells + index] = cover;
                     pixels[(hour * 2 + 1) * cells + index] = climate;
                 }
+            }
+        }
+        if uniform {
+            for layer in pixels
+                .chunks_exact_mut(cells)
+                .chain(fog_pixels.chunks_exact_mut(cells))
+            {
+                layer.fill(layer[0]);
             }
         }
         Ok(Self {

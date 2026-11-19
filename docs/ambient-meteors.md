@@ -9,7 +9,7 @@ nor its events enter world simulation, networking, saves or generation.
 The client captures one session seed at runtime creation (wall-clock nanoseconds
 mixed with process identity). `MINIMIUM_METEOR_SEED=<decimal u64>` overrides it
 for debugging; the world membership context is mixed into the seed when that
-scope becomes valid. Same seed, context, monotonic epoch and observer inputs
+scope becomes valid. Same seed, context, simulation start time and observer inputs
 reproduce the candidate sequence within this build. The context hash is not a
 persisted or cross-version contract. No per-frame entropy is consumed.
 
@@ -23,7 +23,7 @@ Every update computes the latest due slot in constant time. At most one
 candidate is considered per frame; older slots count as skipped and an already
 expired latest candidate is skipped too. Accepted events retain their scheduled
 birth time, so frame rate does not change their age. No backlog is allocated.
-UTC changes, pause and time scaling do not affect this monotonic schedule.
+The schedule follows presented game time. Calendar jumps preserve event age.
 Unavailable environments, interiors and world-scope changes invalidate events
 and reset the schedule; re-entry starts a new bounded delay. Manual spawn/clear
 does not consume, shift or reseed the automatic queue.
@@ -137,7 +137,7 @@ part of the explicitly gated final verification.
 ## Residual trains (E047-07)
 
 Fresh fragment wakes cover 0.6 real seconds. Separate f64 deposition rings keep
-64 points per solid branch (256 per event), sampled on a 200 ms monotonic grid.
+64 points per solid branch (256 per event), sampled on a 200 ms simulation grid.
 A bounded catch-up fills only the latest ring window after a frame gap. Each
 point stores time, physical position, direction, deposited optical energy and
 an approximate dust-density sample. Origin changes adapt the same world points;
@@ -355,7 +355,7 @@ shutdown latency depend on the OS backend; no runtime latency is claimed.
 Only Breakup events from >=20-kg initial bodies with >=10-GJ estimated fragment
 kinetic energy can queue an Airburst cue. Each fragment slot submits at most one,
 including when audio was disabled at the event time. Faint/bright presets are
-silent. The source position and breakup monotonic timestamp come from the same
+silent. The source position and breakup simulation timestamp come from the same
 physical history. Delay uses full 3D physical source-listener distance and
 c=331.3+0.606*15=340.39 m/s (uniform dry air at 15 C). A 50-km path is about147 s;
 100 km about294 s. Listener movement after scheduling is not re-integrated;

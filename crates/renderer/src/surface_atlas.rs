@@ -18,36 +18,68 @@ impl SurfaceAtlas {
         utc: f64,
         cancelled: impl Fn() -> bool,
     ) -> Result<Option<Self>, T::Error> {
-        let start_utc = (utc / 3600.0).floor() * 3600.0;
-        let cells = (WIDTH * HEIGHT) as usize;
-        let mut pixels = vec![[half::f16::ZERO; 4]; cells * LAYERS as usize];
-        for hour in 0..2 {
-            let time = start_utc + hour as f64 * 3600.0;
-            for y in 0..HEIGHT {
-                if cancelled() {
-                    return Ok(None);
-                }
-                let latitude = (0.5 - f64::from(y) / f64::from(HEIGHT - 1)) * std::f64::consts::PI;
-                for x in 0..WIDTH {
-                    let index = (y * WIDTH + x) as usize;
-                    // Reuse seam/pole samples exactly; no longitude-dependent polar cap.
-                    if x > 0 && (x == WIDTH - 1 || y == 0 || y == HEIGHT - 1) {
-                        for layer in 0..2 {
-                            pixels[(hour * 2 + layer) * cells + index] =
-                                pixels[(hour * 2 + layer) * cells + (y * WIDTH) as usize];
-                        }
-                        continue;
-                    }
-                    let longitude =
-                        (f64::from(x) / f64::from(WIDTH - 1) - 0.5) * std::f64::consts::TAU;
-                    let direction = direction(latitude, longitude);
-                    let [cover, climate] = sample(model, direction, time)?;
-                    pixels[hour * 2 * cells + index] = cover;
-                    pixels[(hour * 2 + 1) * cells + index] = climate;
-                }
+        let mut builder = SurfaceAtlasBuilder::new(utc);
+        while !cancelled() {
+            if builder.build_row(model)? {
+                return Ok(Some(builder.atlas));
             }
         }
-        Ok(Some(Self { start_utc, pixels }))
+        Ok(None)
+    }
+}
+
+/// A weather worker can service cloud requests between rows of the hourly atlas.
+pub struct SurfaceAtlasBuilder {
+    atlas: SurfaceAtlas,
+    row: u32,
+}
+
+impl SurfaceAtlasBuilder {
+    pub fn new(utc: f64) -> Self {
+        Self {
+            atlas: SurfaceAtlas {
+                start_utc: (utc / 3600.0).floor() * 3600.0,
+                pixels: vec![[half::f16::ZERO; 4]; (WIDTH * HEIGHT * LAYERS) as usize],
+            },
+            row: 0,
+        }
+    }
+
+    /// Returns true once both hourly endpoints are complete. A failed row can be retried.
+    pub fn build_row<T: TerrainSampler>(
+        &mut self,
+        model: &WeatherModel<T>,
+    ) -> Result<bool, T::Error> {
+        if self.row == HEIGHT * 2 {
+            return Ok(true);
+        }
+        let hour = (self.row / HEIGHT) as usize;
+        let y = self.row % HEIGHT;
+        let cells = (WIDTH * HEIGHT) as usize;
+        let time = self.atlas.start_utc + hour as f64 * 3600.0;
+        let latitude = (0.5 - f64::from(y) / f64::from(HEIGHT - 1)) * std::f64::consts::PI;
+        for x in 0..WIDTH {
+            let index = (y * WIDTH + x) as usize;
+            // Reuse seam/pole samples exactly; no longitude-dependent polar cap.
+            if x > 0 && (x == WIDTH - 1 || y == 0 || y == HEIGHT - 1) {
+                for layer in 0..2 {
+                    self.atlas.pixels[(hour * 2 + layer) * cells + index] =
+                        self.atlas.pixels[(hour * 2 + layer) * cells + (y * WIDTH) as usize];
+                }
+                continue;
+            }
+            let longitude = (f64::from(x) / f64::from(WIDTH - 1) - 0.5) * std::f64::consts::TAU;
+            let direction = direction(latitude, longitude);
+            let [cover, climate] = sample(model, direction, time)?;
+            self.atlas.pixels[hour * 2 * cells + index] = cover;
+            self.atlas.pixels[(hour * 2 + 1) * cells + index] = climate;
+        }
+        self.row += 1;
+        Ok(self.row == HEIGHT * 2)
+    }
+
+    pub fn finish(self) -> Option<SurfaceAtlas> {
+        (self.row == HEIGHT * 2).then_some(self.atlas)
     }
 }
 

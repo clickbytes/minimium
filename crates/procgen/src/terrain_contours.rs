@@ -76,7 +76,9 @@ pub(crate) fn validate_strip_intersections(
                     continue;
                 }
                 if triangles_intersect(strip[first].0, strip[second].0) {
-                    return Err(ExcavationGeometryError::TransitionSelfIntersection);
+                    return Err(ExcavationGeometryError::TransitionSelfIntersection {
+                        triangles_mm: Box::new([strip[first].0, strip[second].0]),
+                    });
                 }
             }
         }
@@ -89,7 +91,9 @@ pub(crate) fn validate_strip_intersections(
                         continue;
                     }
                     if triangles_intersect(*a, *b) {
-                        return Err(ExcavationGeometryError::TransitionStripIntersection);
+                        return Err(ExcavationGeometryError::TransitionStripIntersection {
+                            triangles_mm: Box::new([*a, *b]),
+                        });
                     }
                 }
             }

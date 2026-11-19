@@ -91,6 +91,8 @@ procedural planet, Earth, or dungeon algorithm explicitly.
 Source geography remains available for climate independently of shaped terrain.
 Height derivatives and both planet views follow the same mapped field.
 
+`WaterCatalog::reference_sea_radius_m` exposes the baseline water radius for
+scaling conformed render facets to a reservoir level.
 `WaterCatalog` samples a bounded canonical cube-face grid and flood-fills wet
 components across shared face-edge sample keys. Its largest connected component
 uses a stable ocean ID; finite components publish sampled level-volume curves
@@ -129,7 +131,19 @@ from the bound profile to `minimium-terrain`; consumers cannot override its soil
 depth per call. `validate_volume_geometry` preflights affected collision
 sectors: it clips old triangles from activated chunk boxes, extracts canonical
 box-face contours, zippers matching Marching Cubes loops and returns an error for
-open, unmatched or degenerate transitions. Render workers use
+open, unmatched or degenerate transitions. Voxel contours use
+the actual exposed edges of the quantized mesh, rather
+than intersecting all fan triangles with infinite chunk-face planes. Exactly
+zero-area triangles collapsed by millimetre rounding are omitted before both
+publication and edge-incidence counting. Two-triangle edges are internal;
+one-triangle edges must be fully contained on an exposed selected-chunk face.
+Incidence above two, interior holes and non-closing/branching contours still
+reject the candidate. Base-mesh coplanar polygons are clipped to the complete
+face rectangle before perimeter extraction, including full-rectangle coverage.
+The incidence map has at most three entries per input voxel triangle and is
+bootstrap/preparation-local, with no extra persistent owner or worker. The
+replacement is shared by collision preflight, render patches and teleport;
+failed candidates still cannot reach persistence/publication. Render workers use
 `integrate_volume_sector_with_contours` with their LOD mesh and neighboring face
 triangles. Transition strips are intersection-checked against other loop pairs
 before they can be returned for publication. `terrain_clip::clip_triangle_outside_boxes`
@@ -143,12 +157,26 @@ Teleport surface queries intersect the integrated mesh and choose the outermost
 exposed hit; the runtime applies its player clearance above that point. GPU
 runtime acceptance is pending.
 
-Transition alignment and zipper advancement use cumulative Euclidean arc length
-in canonical millimetres, normalized over the complete closed loop. Alignment
-scores both directions and all voxel-vertex rotations by integrated squared
-separation, so extra samples on one edge do not outweigh the rest of a contour.
-The zipper retains the original boundary vertices, surface provenance and area
-filter. It does not permit intersecting strips: `TransitionSelfIntersection`
+When both contours traverse the same exposed chunk faces, preparation pairs
+their runs at box edges and triangulates the area between the two paths on
+each face using the integer even-odd fill in `i_triangle`. Coincident paths
+cancel, including differently subdivided straight edges. Crossing paths use
+one canonical millimetre vertex on both source edges and the transition.
+Only affected source triangles are subdivided. A longer clipped base edge
+receives both ends of the face span and all its crossings. An unpaired
+intermediate clipped vertex rejects the candidate. Winding follows the
+outward source normals and vertex metadata uses the same interpolation as
+sector clipping. A guard triangle from another sector
+can supply a contour without being part of the current sector's output.
+Preparation checks each input path for self-intersection, certifies the
+triangulation's boundary against both input paths and rejects a missing split
+or inverted source triangle. All geometry is local to the current candidate.
+
+Loops with different face sequences or spans along ambiguous box edges use
+the checked spatial zipper. Its alignment and advancement use cumulative
+Euclidean arc length normalized over the complete loop, with both directions
+and all voxel vertex rotations scored by integrated squared separation.
+Both methods run the strip intersection checks. `TransitionSelfIntersection`
 and `TransitionStripIntersection` distinguish these refusals in existing server
 diagnostics; `InvalidTransitionContour` rejects invalid perimeter input, and
 `DegenerateTransition` remains the malformed face-intersection error. These

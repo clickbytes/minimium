@@ -91,12 +91,21 @@ with finite positions/colors, at most 512 vertices each. `HeldToolGpu` accepts
 1..=8 models and at most 4096 total vertices, checking catalog bounds before
 pipeline or buffer allocation. The application adapts sample model vertices and
 supplies the catalog. A model index selects one uploaded mesh; invalid indices
-draw nothing. The no-depth viewmodel
-pass remains after atmosphere and cloud composition and before UI/output. The
+draw nothing. `HeldToolPose::digging(Duration)` samples a model-independent
+480 ms wind-up/strike/recoil/recovery around the shared camera-local hand pivot
+`[0.34, -0.32, -0.55]` metres. The host owns playback and supplies the elapsed
+monotonic presentation time. A fixed 80-byte Rust/WGSL uniform carries the pose
+and aspect-correct viewmodel projection; static mesh buffers are never rewritten
+for animation. The viewmodel pass remains after atmosphere/cloud/dust composition
+and before UI/output. It clears and reuses the existing Depth32Float attachment
+for model self-occlusion after the final world-depth consumer, then discards it;
+no extra depth texture or render pass is allocated. The
 application chooses the index from confirmed inventory and sample content; no
 equipped model means no draw. Coordinates remain camera-relative screen geometry,
 so planet-origin rebasing and radial camera orientation do not move it or clip
-it against world depth.
+it against world depth. Rest is the identity pose; elapsed times at/after the
+cycle return exactly to rest. This cosmetic pose has no gameplay cooldown,
+tool-kind or authoritative hit/success logic.
 
 TerrainVertex (120 bytes) and TerrainGpu form the shared planet surface path
 for overview and FPP. Both cameras use TerrainView, planet_visibility and the
@@ -107,12 +116,16 @@ to cover both the eye-to-horizon distance and the visible relief beyond the
 horizon. Dense patch culling uses the same bound. The client supplies one
 world-space eye in double precision for the view, lighting and atmosphere.
 
-Excavation surfaces carry a typed presentation flag and cached sky visibility
-in a dedicated vertex channel. Their soil/rock weights bypass patch, snow,
-vegetation and weather-history overrides. Five bounded CPU rays sample the
-current signed terrain field (24 steps, 8 m maximum); the result attenuates
-indirect ambient only. Excavation triangles remain shadow casters even when
-their walls resemble radial LOD curtains.
+Volume mesh preparation derives exposed soil and rock from the committed
+signed-distance increase at each vertex. Coverage blends from the local biome
+to the exposed substrate over the first 10 cm of removal. Intact guard
+vertices retain the planet's material, habitat and smooth normal. The terrain
+shader interpolates exposure across the rim, using the existing triplanar
+material maps and their microheight to shade darker earth and brighter broken
+rock. Rebuilding from replicated or reloaded chunks reconstructs the texture.
+The 120-byte vertex carries exposure and sky visibility. Five bounded CPU rays
+per distinct exposed vertex sample up to 24 steps and 8 m to attenuate
+indirect ambient light. Excavation walls remain shadow casters.
 
 Static landform/coverage comes from procgen. Continuous planet-space GPU masks
 use retention, climate, slope and seeded noise to perturb substrate boundaries.
@@ -123,7 +136,7 @@ mipmaps, 4x anisotropy and at most 18 material texture reads per pixel.
 TerrainDebug includes habitat and source diagnostics in addition to color,
 normal, depth, shadow and coverage views.
 
-SurfaceAtlas prepares camera-independent 65x33 global history; CoverGrid prepares
+SurfaceAtlas prepares camera-independent 65x33 global history. Its row builder lets the weather worker yield to queued cloud geometry and resume the same hourly atlas; CoverGrid prepares
 anchored 9x9 local coverage and a separate cube-face fog grid. Both terrain history
 textures have four layers: cover/climate at two UTC-hour endpoints.
 TerrainCoverGpu owns their 71,232 bytes of GPU storage and upload lifetime;
@@ -280,10 +293,13 @@ Earth ocean is a separate opaque sphere mesh, approximated with the selected
 ground lattice. Both shells share LOD selection and canonical edge fractions;
 FPP coastal leaves receive twice the refinement priority within its 256-leaf cap.
 Overview prioritizes coasts 8x and inland terrain 2x within a 512-leaf cap.
-Ground retains signed bathymetry. After paired edge conformance, `shoreline`
-partitions land and water into complementary polygons using f64 signed offsets
-and shared millimetre intersections. Depth handles occlusion rather than deciding
-the coast between almost coplanar overlapping surfaces. Zero-height ties are land.
+Ground retains signed bathymetry. For static sea meshes, `shoreline` partitions
+land and water into complementary polygons after paired edge conformance, using
+f64 signed offsets and shared millimetre intersections. Reservoir snapshots use
+the full conformed bed for terrain and shadow casting. The wet side of the water
+mesh is clipped at the live level and then around local fluid interfaces.
+Scaling the conformed water facets preserves their common LOD edges at a shared
+level. Zero-depth ties belong to the bed.
 Binary water flags no longer blend water into terrain materials. A narrow damp
 band uses signed shore elevation. Procedural worlds retain their prior dry surface.
 
@@ -1227,3 +1243,5 @@ bounded neighboring coverage. Those bases share edge conformance before seam
 construction; the later pass preserves points shared with excavation faces.
 Only regions near stored chunks need the additional base cache and guard meshes.
 The preparation fails closed when its contour or memory bounds cannot be met.
+
+The desktop supplies presentation simulation time to star scintillation, meteors, bolid trails, impact dust and tool animation. Cloud geometry, lighting and finite-source occlusion consume the selected publication for the frame UTC. Sorted transparency uses the current camera and cloud positions. Camera input and eye adaptation use real frame time.

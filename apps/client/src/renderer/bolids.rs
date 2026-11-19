@@ -69,10 +69,37 @@ impl DesktopHost {
         )
         .normalize()
         .to_array();
-        let night = sky.sun.apparent_altitude_rad < (-6.0_f64).to_radians();
+        let Some(calendar_epoch) = self.render_environment_frame.clock_revision else {
+            return;
+        };
+        let Some(position_mm) = self.application.core_view().position_mm else {
+            return;
+        };
+        // Allow 0.01 degree/s (over twice the diurnal angular speed) and a
+        // 2 m position tolerance. Near twilight shorten the report to the margin.
+        let radius = self
+            .render_environment_frame
+            .render_view
+            .game_planet_radius_m;
+        let margin =
+            -6.0 - sky.sun.apparent_altitude_rad.to_degrees() - (2.0 / radius).to_degrees();
+        let night_until = (margin > 0.0).then(|| {
+            let span = (margin * 100_000.0).min(600_000.0) as i64;
+            minimium_environment::time::WorldTimeMs::new(
+                (sky.utc_ms.get() + span)
+                    .min(minimium_environment::time::WorldTimeMs::MAX_EXCLUSIVE - 1),
+            )
+            .expect("bounded solar interval")
+        });
+        let observation = minimium_protocol::SkyObservation {
+            position_mm,
+            calendar_epoch,
+            utc: sky.utc_ms,
+            night_until,
+        };
         if self
             .application
-            .report_sky_view(context, direction, night, crate::host_time::sample())
+            .report_sky_view(context, direction, observation, crate::host_time::sample())
             .unwrap_or(false)
         {
             self.last_sky_view_at = Some(now);
@@ -97,28 +124,23 @@ impl DesktopHost {
             // A late worker result cannot resurrect a removed/transferred event
             // or overwrite a diagnostic replay with a different path or seed.
             if Some(key.context) == context && key.radius == radius && key.scale == length_scale {
-                if let Some((_, _, _, cached)) = self
+                if let Some((_, _, cached)) = self
                     .bolids
                     .iter_mut()
-                    .find(|(c, e, _, _)| *c == key.context && *e == key.event)
+                    .find(|(c, e, _)| *c == key.context && *e == key.event)
                 {
                     *cached = Some(model);
                 }
             }
         }
-        let server_now = self
-            .application
-            .connection_view()
-            .session()
-            .and_then(|session| session.server_monotonic_ms());
-        for (event_context, event, received_at, cached) in &mut self.bolids {
+        let server_now = self.environment_frame.simulation_ms;
+        for (event_context, event, cached) in &mut self.bolids {
             if Some(*event_context) != context || frame.count[0] as usize >= MAX_BOLIDS {
                 continue;
             }
-            let live_age = server_now.map_or_else(
-                || received_at.elapsed().as_secs_f32(),
-                |now| (now as i128 - event.start_monotonic_ms as i128) as f32 / 1000.0,
-            );
+            let live_age = (server_now.unwrap_or(event.start_simulation_ms) as i128
+                - event.start_simulation_ms as i128) as f32
+                / 1000.0;
             let age = self
                 .diagnostic_bolid_age
                 .filter(|(c, id, _)| c == event_context && *id == event.id)
@@ -135,7 +157,7 @@ impl DesktopHost {
             } else {
                 3.5
             };
-            if age < -0.25 || age > 60.0 + lifetime {
+            if age < 0.0 || age > 60.0 + lifetime {
                 continue;
             }
             frame.events[frame.count[0] as usize] = BolidGpuEvent {

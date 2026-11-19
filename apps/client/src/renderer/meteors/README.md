@@ -1,6 +1,6 @@
 # Local meteor lifecycle
 
-The client owns monotonic event ages, bounded manual presets and world-scope
+The client owns simulation event ages, bounded manual presets and world-scope
 invalidation. `MeteorRuntime::build_frame` reconstructs a complete `MeteorFrame`
 on every frame; it is a snapshot, not an incremental event stream. Elapsed trail
 capture times must therefore be submitted on every frame, including after
@@ -16,7 +16,7 @@ radii are distinct. No per-frame integration or history allocation is needed.
 See `docs/ambient-meteors.md` for limits and physical approximations.
 
 `spawner::Spawner` supplies automatic candidates from counter-based, jittered
-monotonic slots, independently of manual requests and visibility. See
+simulation-time slots, independently of manual requests and visibility. See
 `docs/ambient-meteors.md` for seed, catch-up, interval and startup controls.
 The event vector is allocated once at the shared eight-event capacity.
 

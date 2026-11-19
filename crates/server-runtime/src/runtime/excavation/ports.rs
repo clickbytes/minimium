@@ -53,6 +53,7 @@ impl<'a> WorkSubmission<'a> {
 }
 
 pub(super) struct Publication<'a> {
+    tick: u64,
     state: &'a mut ExcavationState,
     equipment: &'a mut crate::runtime::equipment::Equipment,
     worlds: &'a mut WorldRegistry,
@@ -67,6 +68,7 @@ pub(super) struct Publication<'a> {
 
 impl<'a> Publication<'a> {
     pub(super) fn new(
+        tick: u64,
         state: &'a mut ExcavationState,
         equipment: &'a mut crate::runtime::equipment::Equipment,
         worlds: &'a mut WorldRegistry,
@@ -79,6 +81,7 @@ impl<'a> Publication<'a> {
         shutdown: &'a crate::composition::ShutdownRequest,
     ) -> Self {
         Self {
+            tick,
             state,
             equipment,
             worlds,
@@ -97,13 +100,14 @@ impl<'a> Publication<'a> {
     }
 
     pub(super) fn is_current(&self, request: &PreparationRequest) -> bool {
-        !request
-            .origin
-            .player
-            .zip(request.origin.context)
-            .is_some_and(|(player, context)| {
-                !self.worlds.world_input_context_is_current(player, context)
-            })
+        request.target_tick == self.tick
+            && !request
+                .origin
+                .player
+                .zip(request.origin.context)
+                .is_some_and(|(player, context)| {
+                    !self.worlds.world_input_context_is_current(player, context)
+                })
             && self
                 .inputs(request.world)
                 .is_some_and(|inputs| inputs.revision() == request.input_revision)
@@ -171,30 +175,44 @@ impl<'a> Publication<'a> {
     }
 
     pub(super) fn report_geometry(&self, request: &PreparationRequest, failure: GeometryFailure) {
+        use minimium_procgen::ExcavationGeometryError::*;
+        let (reason, conflict) = match &failure.reason {
+            TransitionSelfIntersection { triangles_mm } => {
+                ("TransitionSelfIntersection".to_owned(), Some(triangles_mm))
+            }
+            TransitionStripIntersection { triangles_mm } => {
+                ("TransitionStripIntersection".to_owned(), Some(triangles_mm))
+            }
+            other => (format!("{other:?}"), None),
+        };
+        let mut fields = vec![
+            ("reason", reason),
+            ("mutation_id", failure.mutation_id.to_string()),
+            (
+                "action_id",
+                request
+                    .origin
+                    .action_id
+                    .map_or_else(|| "none".to_owned(), |id| id.to_string()),
+            ),
+            (
+                "center_m",
+                format!(
+                    "{:.3},{:.3},{:.3}",
+                    failure.center_m[0], failure.center_m[1], failure.center_m[2]
+                ),
+            ),
+            ("chunks", format!("{:?}", failure.chunk_coordinates)),
+            ("world", request.world.to_string()),
+        ];
+        if let Some(triangles_mm) = conflict {
+            fields.push(("triangles_mm", format!("{triangles_mm:?}")));
+        }
         crate::diagnostics::emit(
             self.logger,
             minimium_diagnostics::Level::Warn,
             "world.excavation_geometry_rejected",
-            &[
-                ("reason", format!("{:?}", failure.reason)),
-                ("mutation_id", failure.mutation_id.to_string()),
-                (
-                    "action_id",
-                    request
-                        .origin
-                        .action_id
-                        .map_or_else(|| "none".to_owned(), |id| id.to_string()),
-                ),
-                (
-                    "center_m",
-                    format!(
-                        "{:.1},{:.1},{:.1}",
-                        failure.center_m[0], failure.center_m[1], failure.center_m[2]
-                    ),
-                ),
-                ("chunks", format!("{:?}", failure.chunk_coordinates)),
-                ("world", request.world.to_string()),
-            ],
+            &fields,
         );
     }
 }

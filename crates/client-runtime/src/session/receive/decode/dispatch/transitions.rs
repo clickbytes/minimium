@@ -165,7 +165,6 @@ pub(super) fn handle_transition_committed(
     session.clear_replicas();
     session.server_tick = server_tick;
     session.next_input_seq = 1;
-    session.next_target_tick = session.server_tick.saturating_add(2).max(1);
     session.clear_transfer_lifecycle();
     let pending = session
         .pending_world_content

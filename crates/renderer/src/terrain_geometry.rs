@@ -14,7 +14,7 @@ pub struct TerrainVertex {
     pub surface: [f32; 4],
     pub geometric_normal: [f32; 3],
     pub habitat: [f32; 3],
-    /// Typed excavation flag and cached signed-field sky visibility.
+    /// Exposed subsurface fraction and cached signed-field sky visibility.
     pub presentation: [f32; 2],
 }
 
@@ -46,14 +46,33 @@ pub fn vertices(
     origin: [f32; 3],
 ) -> Result<Vec<TerrainVertex>, minimium_procgen::GenerationError> {
     let mut samples = std::collections::HashMap::new();
-    let mut sky_visibility = std::collections::HashMap::<[i64; 3], f32>::new();
-    // Occlusion only consumes distance; material layers come from surface metadata.
+    let mut cuts = std::collections::HashMap::<[u64; 3], [f32; 2]>::new();
     let volume_base = terrain.volume_base();
     let volume_view = terrain
         .overlays()
         .volumes()
         .zip(volume_base.as_ref())
         .map(|(store, base)| store.view(base));
+    let sample_excavation = |point, normal| {
+        let view = volume_view.as_ref().ok_or_else(|| {
+            minimium_procgen::GenerationError::materialization("missing excavation volume")
+        })?;
+        let depth = view.excavated_depth_m(point).ok_or_else(|| {
+            minimium_procgen::GenerationError::materialization("missing excavation depth")
+        })?;
+        // Reach full substrate coverage after 10 cm of local removal.
+        let cut = (depth / 0.10).clamp(0.0, 1.0) as f32;
+        let sky = if cut > 0.0 {
+            crate::terrain_occlusion::sky_visibility(
+                |position| view.interpolated(position).map(|sample| sample.distance_m),
+                point,
+                normal,
+            )
+        } else {
+            1.0
+        };
+        Ok::<_, minimium_procgen::GenerationError>([cut, sky])
+    };
     let mut out = Vec::with_capacity(geometry.triangles.len() * 3);
     for triangle in &geometry.triangles {
         let points = triangle
@@ -84,47 +103,55 @@ pub fn vertices(
                 sample
             };
             let override_surface = triangle.surface.map(|vertices| vertices[index]);
-            let excavation = override_surface.is_some_and(|surface| {
+            let voxel_surface = override_surface.filter(|surface| {
                 matches!(
                     surface.kind,
                     minimium_world::world::MapSurfaceKind::Excavation
                 )
             });
-            let sky = if excavation {
-                let sky_key = point.map(|value| (value * 1000.0).round() as i64);
-                *sky_visibility.entry(sky_key).or_insert_with(|| {
-                    volume_view.as_ref().map_or(0.0, |view| {
-                        crate::terrain_occlusion::sky_visibility(
-                            |position| view.interpolated(position).map(|sample| sample.distance_m),
-                            point,
-                            override_surface.map_or(sample.normal, |surface| surface.normal),
-                        )
-                    })
-                })
-            } else {
-                1.0
-            };
+            // Volume meshes also cover intact ground in each edited chunk. Their
+            // payload describes subsurface soil/rock, not the original biome.
+            let ground = override_surface.filter(|_| voxel_surface.is_none());
+            let mut coverage = ground.map_or(sample.coverage, |surface| surface.coverage);
+            let mut normal = ground.map_or(sample.normal, |surface| surface.normal);
+            let mut presentation = [0.0, 1.0];
+            if let Some(voxel) = voxel_surface {
+                presentation = if let Some(cached) = cuts.get(&key) {
+                    *cached
+                } else {
+                    let channels = sample_excavation(point, voxel.normal)?;
+                    cuts.insert(key, channels);
+                    channels
+                };
+                let cut = presentation[0];
+                coverage =
+                    std::array::from_fn(|i| coverage[i] * (1.0 - cut) + voxel.coverage[i] * cut);
+                let voxel_normal = glam::Vec3::from_array(voxel.normal);
+                normal = glam::Vec3::from_array(normal)
+                    .lerp(voxel_normal, cut)
+                    .try_normalize()
+                    .unwrap_or(voxel_normal)
+                    .to_array();
+            }
             out.push(TerrainVertex {
                 position: std::array::from_fn(|i| (point[i] - f64::from(origin[i])) as f32),
                 // Curtains conceal cracks; lighting them as vertical cliffs
                 // exposes a dark grid over otherwise flat water/snow.
-                normal: override_surface.map_or(sample.normal, |v| v.normal),
+                normal,
                 planet_high: high.map(|v| v as f32),
                 planet_low: std::array::from_fn(|i| (point[i] - high[i]) as f32),
-                coverage_a: override_surface.map_or_else(
-                    || sample.coverage[..4].try_into().unwrap(),
-                    |v| v.coverage[..4].try_into().unwrap(),
-                ),
-                coverage_b: override_surface.map_or_else(
-                    || sample.coverage[4..].try_into().unwrap(),
-                    |v| v.coverage[4..].try_into().unwrap(),
-                ),
-                surface: override_surface.map_or(
+                coverage_a: coverage[..4].try_into().unwrap(),
+                coverage_b: coverage[4..].try_into().unwrap(),
+                surface: ground.map_or(
                     [
                         sample.source_elevation_m,
                         sample.slope,
                         sample.water,
-                        sample.elevation_m / terrain.presentation_height_scale(),
+                        if voxel_surface.is_some() {
+                            sample.elevation_m
+                        } else {
+                            sample.elevation_m / terrain.presentation_height_scale()
+                        },
                     ],
                     |v| {
                         [
@@ -136,7 +163,7 @@ pub fn vertices(
                     },
                 ),
                 geometric_normal: face_normal,
-                habitat: override_surface.map_or(
+                habitat: ground.map_or(
                     [
                         sample.landform.retention,
                         sample.landform.exposure,
@@ -144,7 +171,7 @@ pub fn vertices(
                     ],
                     |v| v.habitat,
                 ),
-                presentation: [if excavation { 1.0 } else { 0.0 }, sky],
+                presentation,
             });
         }
     }

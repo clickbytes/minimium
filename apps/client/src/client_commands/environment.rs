@@ -250,7 +250,7 @@ const COMMANDS: &[CommandSpec] = &[
             None,
             Some("0 or 0.1..=1000000"),
             Some("x"),
-            "world clock speed multiplier",
+            "requested global simulation speed (zero pauses gameplay)",
         )],
         parser: parse,
     },

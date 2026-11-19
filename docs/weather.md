@@ -91,7 +91,7 @@ octree leaves inside a cloud. Sparse 8 x 8 x 8 bricks store only occupied region
 
 Each cell stores two quantized coverage samples. Per-cloud windows are 12 seconds
 for convective forms, 18 for high filaments/cells, and 24 for other forms, with
-independent offsets. The GPU interpolates coverage from absolute cloud age every
+ID-based offsets on a common six-second UTC grid. The GPU interpolates coverage from absolute cloud age every
 frame. Faces store signed coverage differences between neighbours at both ends
 of the window, so a face can be revealed as its neighbour evaporates. Equal
 interior faces are removed; compatible external faces are greedily merged.
@@ -100,8 +100,7 @@ A bounded cache reuses meshes for unchanged cloud windows and resolution/face
 budgets. Face budgets are quantized to avoid invalidating all cached clouds when
 one candidate appears. Only expired or changed entries are rebuilt; this version
 caches whole cloud windows rather than maintaining incremental dirty-brick
-meshes across windows. If a publication is late, the previous morphology clamps
-at its endpoint while its spherical position continues to follow UTC.
+meshes across windows. The host prepares the next interval while the current mesh is visible. If it arrives late, the host carries forward surviving regional cloud IDs and each mesh whose samples still bracket the frame UTC. Clouds needing new samples temporarily use envelopes at their current positions.
 
 ## Rendering and budgets
 
@@ -132,10 +131,7 @@ coverage; it loses silhouette detail and is reported as simplified. Thus a hard
 budget can visibly reduce shape diversity, but cannot generate replacement IDs.
 
 One persistent worker has one replaceable pending request and one completed slot.
-It publishes complete snapshots at requests spaced at least 500 ms apart. World,
-manifest, clock revision and requested detail must match. Obsolete world/detail
-work is cancelled between clouds. Newer requests do not partially overwrite the
-visible snapshot. All publication and GPU buffers remain bounded.
+Detailed builds overlap their current validity window according to measured build time and achieved presentation speed. The worker publishes cloud meshes before computing ground cover. Planetary atlas construction yields between rows for queued cloud requests and resumes the same hourly atlas. The host checks calendar epoch, world, scenario, detail, observer and UTC before selecting a publication. On a miss it builds bounded current-date cloud envelopes and a local climate column. A pause or speed change retains valid publications. `weather status` reports frame UTC, cloud/ground/fog intervals, detail and expired publications.
 
 ## Diagnostics
 
@@ -211,7 +207,7 @@ CloudGpu retains one preallocated CPU copy of its published CloudRecords
 (max8192, 786432 bytes); invalidation clears it alongside faces. Per active light,
 a bounded scan selects the strongest eight relevant ellipsoids (none on low),
 with stable publication-order ties, within a 10-km receiver corridor around the
-camera-to-source segment. Selection is cached for 500 ms with source-set,
+camera-to-source segment. Selection is cached for 500 ms of simulation time with source-set,
 publication, origin and large observer-move invalidation. Selected transforms
 refresh every frame; moving sources can miss new clouds until reselection.
 No worker, mesh job or texture upload is triggered.

@@ -4,7 +4,7 @@ use minimium_environment::time::{
 };
 use std::{io, io::Write};
 
-pub(super) fn parse_saved_clock(line: &str) -> io::Result<SavedClockState> {
+pub(super) fn parse_saved_clock(line: &str) -> io::Result<(SavedClockState, u64)> {
     let mut fields = line.split('\t');
     if fields.next() != Some("CLOCK") {
         return Err(invalid_world_snapshot("invalid CLOCK record"));
@@ -51,6 +51,29 @@ pub(super) fn parse_saved_clock(line: &str) -> io::Result<SavedClockState> {
         "invalid offline policy",
     )?)
     .map_err(|_| invalid_world_snapshot("unsupported offline policy"))?;
+    let tick = parse_decimal(
+        fields.next(),
+        "missing committed tick",
+        "invalid committed tick",
+    )?;
+    let epoch = ClockRevision::new(parse_decimal(
+        fields.next(),
+        "missing calendar epoch",
+        "invalid calendar epoch",
+    )?)
+    .map_err(|_| invalid_world_snapshot("invalid calendar epoch"))?;
+    let boundary = minimium_environment::time::SimulationBoundary::new(tick, epoch)
+        .map_err(|_| invalid_world_snapshot("invalid simulation duration"))?;
+    let excavation_revision = parse_decimal(
+        fields.next(),
+        "missing journal boundary",
+        "invalid journal boundary",
+    )?;
+    if epoch > revision {
+        return Err(invalid_world_snapshot(
+            "calendar epoch exceeds clock revision",
+        ));
+    }
     if fields.next().is_some() {
         return Err(invalid_world_snapshot("CLOCK record has extra fields"));
     }
@@ -63,13 +86,18 @@ pub(super) fn parse_saved_clock(line: &str) -> io::Result<SavedClockState> {
         rate,
         offline_policy,
     )
+    .map(|state| (state.with_boundary(boundary), excavation_revision))
     .map_err(|_| invalid_world_snapshot("invalid saved clock state"))
 }
 
-pub(super) fn write_saved_clock(output: &mut impl Write, state: SavedClockState) -> io::Result<()> {
+pub(super) fn write_saved_clock(
+    output: &mut impl Write,
+    state: SavedClockState,
+    excavation_revision: u64,
+) -> io::Result<()> {
     write!(
         output,
-        "CLOCK\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
+        "CLOCK\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}",
         state.clock_id().get(),
         state.revision().get(),
         state.mode() as u8,
@@ -77,6 +105,9 @@ pub(super) fn write_saved_clock(output: &mut impl Write, state: SavedClockState)
         state.saved_wall_utc_ms().get(),
         state.rate_ppm().get(),
         state.offline_policy() as u8,
+        state.boundary().tick(),
+        state.boundary().calendar_epoch().get(),
+        excavation_revision,
     )
 }
 

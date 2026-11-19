@@ -99,36 +99,3 @@ pub(super) fn scene_ready(
         presentation.as_deref_mut().expect("checked above")(&snapshot, presentation_request)
     }
 }
-
-pub(super) fn skip_unready_steps(
-    application: &mut ClientApplicationCore,
-    movement: minimium_simulation::MovementPolicy,
-    now: crate::ClientTime,
-) -> Option<crate::QueueError> {
-    while application.game.gameplay.prediction.skip_unready_step() {
-        if !application
-            .connection
-            .session()
-            .is_some_and(|session| session.state() == crate::SessionState::Connected)
-        {
-            continue;
-        }
-        match application.action_executor.execute(
-            &mut application.connection,
-            super::super::ClientAction::Motion(minimium_simulation::MovementIntent::default()),
-            now,
-        ) {
-            super::super::LocalActionOutcome::Rejected { error, .. } => return Some(error),
-            super::super::LocalActionOutcome::Queued {
-                movement: Some(sample),
-                ..
-            } => application.game.gameplay.prediction.record_input(
-                sample,
-                movement,
-                application.game.gameplay.collision_revision,
-            ),
-            _ => {}
-        }
-    }
-    None
-}

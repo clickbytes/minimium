@@ -107,3 +107,5 @@ Cosmetic ambient meteors (`docs/adr/0013-ambient-meteors.md`) are outside this
 crate's responsibility. They add no weather, clock, observer or universe
 vocabulary here; hosts gate meteor exposure with the existing observer/UTC/terrain
 outputs, and the future tracked-object rendering adapter adds no domain state.
+
+`SimulationBoundary` binds a validated tick to a calendar epoch. Multiplying its tick by 50 yields elapsed game milliseconds. Calendar changes preserve that elapsed duration. `CloudSnapshot` carries a half-open population interval. The roster includes clouds whose lifetimes overlap the interval. Age controls their visibility at the frame UTC. The desktop host intersects that interval with staggered morph windows and retains surviving regional clouds during local fallback.

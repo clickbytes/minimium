@@ -10,6 +10,7 @@ pub(super) struct Origin {
 }
 
 pub(super) struct PreparationRequest {
+    pub target_tick: u64,
     pub origin: Origin,
     pub world: WorldInstanceId,
     pub impact_bodies: Vec<minimium_world::impact::BodyState>,
@@ -44,6 +45,7 @@ pub(super) struct ExcavationCoordinator {
     journal: Box<dyn minimium_storage::excavation::ExcavationJournalPort>,
     preparing: Option<Preparation>,
     pending: Option<Pending>,
+    last_ack: Option<WorldChangePlan>,
     next_id: u64,
     failure: Option<String>,
     shutting_down: bool,
@@ -58,24 +60,19 @@ impl ExcavationCoordinator {
             journal,
             preparing: None,
             pending: None,
+            last_ack: None,
             next_id: last_id,
             failure: None,
             shutting_down: false,
         }
     }
 
-    pub(super) fn busy(&self) -> bool {
-        self.preparing.is_some() || self.pending.is_some()
+    pub(super) fn published_revision(&self) -> u64 {
+        self.journal.counters().1
     }
 
-    pub(super) fn reserves(&self, world: WorldInstanceId) -> bool {
-        self.preparing
-            .as_ref()
-            .is_some_and(|p| p.request.world == world)
-            || self
-                .pending
-                .as_ref()
-                .is_some_and(|p| p.prepared.mutation.world() == world)
+    pub(super) fn busy(&self) -> bool {
+        self.preparing.is_some() || self.pending.is_some()
     }
 
     pub(super) fn contains_action(&self, player: PlayerId, context: WorldContext, id: u64) -> bool {

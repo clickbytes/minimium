@@ -24,7 +24,7 @@ struct Key {
     manifest: WorldManifest,
     origin: [f32; 3],
     origin_generation: u64,
-    water_level_revision: u64,
+    water_level_revision: Option<u64>,
     fluid_revision: u64,
     view: minimium_renderer::terrain_view::TerrainView,
 }
@@ -38,6 +38,7 @@ impl Key {
             && self.resolved_relief_policy == other.resolved_relief_policy
             && self.origin == other.origin
             && self.origin_generation == other.origin_generation
+            && self.water_level_revision.is_some() == other.water_level_revision.is_some()
             && self.view == other.view
     }
 }
@@ -143,8 +144,6 @@ impl SectorWorker {
                             .expect("queued scene request")
                     };
                     let started = std::time::Instant::now();
-                    let water_changed =
-                        prepared_water_revision != Some(request.key.water_level_revision);
                     let water_vertices = match (request.water.as_ref(), water_mesh_cache.as_ref()) {
                         (
                             Some(water),
@@ -178,10 +177,15 @@ impl SectorWorker {
                         request.key.world,
                         request.key.manifest,
                         request.key.map_fingerprint,
+                        request.water.is_some(),
                     );
                     if scope != Some(next_scope) {
                         geometry = RenderPatchCache::default();
-                        edges = Default::default();
+                        edges = if request.water.is_some() {
+                            minimium_renderer::terrain_edges::EdgeConformance::for_reservoirs()
+                        } else {
+                            Default::default()
+                        };
                         prepared.clear();
                         prepared_water_revision = None;
                         scope = Some(next_scope);
@@ -253,6 +257,11 @@ impl SectorWorker {
                     let required: std::collections::HashSet<_> =
                         meshes.iter().map(|(k, l, _)| (*k, *l)).collect();
                     prepared.retain(|k, _| required.contains(k));
+                    let water_changed = prepared_water_revision != request.key.water_level_revision;
+                    if water_changed {
+                        // A cancelled partial refresh cannot serve the previous revision.
+                        prepared_water_revision = None;
+                    }
                     let mut patches = Vec::with_capacity(meshes.len());
                     let mut cancelled = false;
                     for (key, lod, mesh) in meshes {
@@ -301,7 +310,7 @@ impl SectorWorker {
                         let item = prepared
                             .get_mut(&(key, lod))
                             .expect("prepared patch inserted");
-                        if water_changed || new_patch {
+                        if water_changed && !new_patch {
                             if let Some(ocean) = edges.ocean(key, lod) {
                                 Arc::make_mut(item).ocean = Arc::new(
                                     minimium_renderer::prepared_sector::clipped_ocean_vertices(
@@ -364,7 +373,7 @@ impl SectorWorker {
                                 cache_bytes: geometry.bytes(),
                             }),
                         );
-                        prepared_water_revision = Some(request.key.water_level_revision);
+                        prepared_water_revision = request.key.water_level_revision;
                     }
                 }
             })
@@ -396,7 +405,7 @@ impl SectorWorker {
             view,
             origin,
             origin_generation,
-            water_level_revision: water.as_ref().map_or(0, |water| water.level_revision),
+            water_level_revision: water.as_ref().map(|water| water.level_revision),
             fluid_revision: water.as_ref().map_or(0, |water| water.fluid_revision),
         };
         let mut s = self.state.0.lock().unwrap();

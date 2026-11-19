@@ -27,11 +27,8 @@ impl Cursor {
 }
 
 impl ServerRuntime {
-    pub(super) fn replicate_impacts(&mut self) {
-        let now = self
-            .now
-            .saturating_duration_since(self.scheduler.server_started)
-            .as_millis() as u64;
+    pub(in crate::runtime) fn replicate_impacts(&mut self) {
+        let now = self.environment_clock.boundary().simulation_ms();
         let bodies = &self.impacts.bodies;
         let cursors = &mut self.impacts.clients;
         let clients = &mut self.connections.clients;

@@ -10,6 +10,7 @@ use minimium_renderer::RenderFrame;
 pub(in crate::renderer) struct PreparedEnvironmentFrame {
     pub(in crate::renderer) frame: EnvironmentFrame,
     pub(in crate::renderer) render_frame: RenderFrame,
+    pub(in crate::renderer) simulation_time: std::time::Duration,
     stars: Option<PreparedStarUpload>,
 }
 
@@ -40,6 +41,7 @@ impl PreparedEnvironmentFrame {
         Self {
             frame,
             render_frame,
+            simulation_time: cosmetic_time,
             stars,
         }
     }

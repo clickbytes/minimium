@@ -5,19 +5,29 @@ pub(super) fn query<T: TerrainSampler>(
     observer: DVec3,
     utc: f64,
     revision: u64,
+    local: bool,
 ) -> Result<CloudSnapshot, T::Error> {
     // A cap expanded by lifetime * fastest wind includes every incoming source,
     // including paths across cube faces. Region size is never a weather boundary.
-    let sources = region::intersecting(
-        observer,
-        OUTER_ANGLE + WIND[2] * LIFETIME / EARTH_RADIUS + 0.006,
-    );
-    let epoch = (utc / POPULATION_SECONDS).floor() as i64;
+    let sources = if local {
+        vec![region::at(observer)]
+    } else {
+        region::intersecting(
+            observer,
+            OUTER_ANGLE + WIND[2] * LIFETIME / EARTH_RADIUS + 0.006,
+        )
+    };
+    let conditions = model.sample(observer, utc)?;
+    // Population and mesh windows have common boundaries. Include births and
+    // departures throughout the window; visibility fades at the actual cloud age.
+    let valid_from = (utc / 12.0).floor() * 12.0;
+    let valid_until = valid_from + 12.0;
+    let epoch = (valid_from / POPULATION_SECONDS).floor() as i64;
     model.cache.retain(|_, cloud| {
         utc >= cloud.birth_utc - POPULATION_SECONDS && utc <= cloud.birth_utc + LIFETIME
     });
     let mut clouds = std::collections::BTreeMap::new();
-    let mut limited = false;
+    let mut limited = local;
     for source in &sources {
         for layer in 0..3 {
             for population in epoch - 2..=epoch {
@@ -30,7 +40,7 @@ pub(super) fn query<T: TerrainSampler>(
                     );
                     let birth = population as f64 * POPULATION_SECONDS
                         + random(id ^ 1) * POPULATION_SECONDS;
-                    if utc < birth || utc > birth + LIFETIME {
+                    if birth >= valid_until || birth + LIFETIME <= valid_from {
                         continue;
                     }
                     let cloud = if let Some(cloud) = model.cache.get(&id) {
@@ -61,14 +71,13 @@ pub(super) fn query<T: TerrainSampler>(
                         } else {
                             cloud.opacity = 0.0;
                         }
-                        if model.cache.len() < MAX_CACHED_CLOUDS {
+                        if !local && model.cache.len() < MAX_CACHED_CLOUDS {
                             model.cache.insert(id, cloud);
                         }
                         cloud
                     };
                     if cloud.opacity > 0.005
-                        && cloud.direction_at(utc).dot(observer)
-                            >= (OUTER_ANGLE + cloud.extent_m() / model.radius).cos()
+                        && cloud.in_view_during(observer, model.radius, valid_from, valid_until)
                     {
                         if clouds.len() < MAX_CLOUDS {
                             clouds.insert(cloud.id, cloud);
@@ -90,12 +99,18 @@ pub(super) fn query<T: TerrainSampler>(
     // A fixed ID order makes budget degradation reproducible and independent of view.
     let clouds = clouds.into_values().collect();
     Ok(CloudSnapshot {
+        valid_from,
+        valid_until,
         utc,
         revision,
         observer,
-        conditions: model.sample(observer, utc)?,
+        conditions,
         region: region::at(observer),
-        regions: region::intersecting(observer, OUTER_ANGLE),
+        regions: if local {
+            sources
+        } else {
+            region::intersecting(observer, OUTER_ANGLE)
+        },
         clouds,
         limited,
     })

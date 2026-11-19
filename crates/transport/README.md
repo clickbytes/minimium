@@ -42,7 +42,10 @@ The process host binds listeners and creates `HostTransport`. The adapter owns e
 Game output preserves FIFO order, the 64 KiB/256-frame per-connection queue bounds, 1 KiB per-client read budget, 16 KiB per-client and 256 KiB total game write budgets, and bounded poll event batches. Admin transport preserves the 8-client cap, 4 accepts per poll, 512-byte request line, 2-second request/response deadlines, 1 KiB read and 4 KiB write budgets, and 64 KiB response cap. Partial writes and `WouldBlock` retain pending bytes and offsets; closed or stale connection IDs reject enqueue without creating orphaned queue entries.
 
 Client TCP preserves its distinct 64 KiB receive/send bounds and 16 KiB read
-budget per session poll, reading in at most 4096-byte chunks. Flush writes until
+budget per session poll, reading in at most 4096-byte chunks. Each read fits
+the remaining receive capacity. When content preparation defers the front
+message and the buffer fills, polling leaves further bytes in TCP until the
+session consumes buffered frames. Flush writes until
 blocked or the bounded queue empties; there is no new write quantum. The existing
 protocol codec handles its 4100-byte maximum frame. EOF retains complete messages
 for consumption before the logical owner closes; incomplete trailing data is

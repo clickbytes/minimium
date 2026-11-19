@@ -166,7 +166,7 @@ impl SectorPresentationCache {
                     view,
                     origin,
                     origin_generation,
-                    water.as_ref().map_or(0, |w| w.level_revision),
+                    water.as_ref().map(|w| w.level_revision),
                     water.as_ref().map_or(0, |w| w.fluid_revision),
                     material_profile,
                     resolved_relief_policy,

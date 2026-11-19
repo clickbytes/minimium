@@ -88,6 +88,7 @@ pub(crate) struct Client {
     pub(crate) pending_health_update: Option<u16>,
     time_probe_received_at: [Option<Instant>; 2],
     pub(crate) last_environment_sync_at: Option<Instant>,
+    pub(crate) world_sequence: u64,
     pub(crate) last_environment_context: Option<WorldContext>,
     pub(crate) last_environment_revision: Option<ClockRevision>,
     pub(crate) last_time_probe_rejection_at: Option<Instant>,
@@ -140,6 +141,7 @@ impl Client {
             time_probe_received_at: [None; 2],
             last_environment_sync_at: None,
             last_environment_context: None,
+            world_sequence: 0,
             last_environment_revision: None,
             last_time_probe_rejection_at: None,
         }

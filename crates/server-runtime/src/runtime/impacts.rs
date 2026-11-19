@@ -1,4 +1,5 @@
 //! Owner-lane impact lifecycle. Workers return immutable durable acknowledgements.
+mod checkpoints;
 mod owner;
 pub(super) mod projection;
 mod replication;
@@ -20,6 +21,7 @@ pub(super) struct Impacts {
     pending: BTreeMap<(WorldInstanceId, u64), BodyState>,
     pub(super) owner_ports: BTreeMap<WorldInstanceId, ComponentOwnerPort>,
     clients: HashMap<PlayerId, replication::Cursor>,
+    integration: Option<Vec<(WorldInstanceId, u64)>>,
     last_manual: Option<Instant>,
     failure: Option<String>,
 }
@@ -33,6 +35,10 @@ pub struct ImpactStatus {
 }
 
 impl Impacts {
+    pub(super) fn failed(&self) -> bool {
+        self.failure.is_some()
+    }
+
     pub(super) fn from_storage(
         journal: Box<dyn minimium_storage::ImpactJournalPort>,
         restored: Vec<BodyState>,
@@ -66,6 +72,7 @@ impl Impacts {
             pending: BTreeMap::new(),
             owner_ports: BTreeMap::new(),
             clients: HashMap::new(),
+            integration: None,
             last_manual: None,
             failure: None,
         })
@@ -87,12 +94,16 @@ impl ServerRuntime {
             for (id, kind, _) in owner.entities.iter_components() {
                 if kind == BODY_COMPONENT && !self.impacts.contains_body(&(world, id.get())) {
                     return Err(io::Error::other(
-                        "impact journal missing saved body; restore impacts.v1 with the world save",
+                        "impact journal missing saved body; restore impacts.v2 with the world save",
                     ));
                 }
             }
         }
         for body in self.impacts.bodies().copied().collect::<Vec<_>>() {
+            if !self.impact_projection_matches(body) {
+                return Err(io::Error::new(io::ErrorKind::InvalidData,
+                    "impact journal and saved component disagree; restore the matching simulation boundary"));
+            }
             self.reserve_body_budget(body)?;
             self.publish_impact_projection(body, true)?;
         }
@@ -132,48 +143,16 @@ impl ServerRuntime {
         Ok(())
     }
 
-    pub(super) fn update_impacts(&mut self) {
-        while let Some(result) = self.impacts.journal.poll() {
-            match result {
-                Ok(batch) => {
-                    if !self.impacts.checkpoints_match(&batch) {
-                        self.impact_failure(io::Error::other(
-                            "stale impact journal checkpoint batch acknowledgement",
-                        ));
-                        self.shutdown_request.request();
-                        return;
-                    }
-                    for body in batch {
-                        if let Err(error) = self.publish_impact_projection(body, false) {
-                            self.impact_failure(error);
-                            return;
-                        }
-                        if let Err(error) = self.impacts.acknowledge_checkpoint(body) {
-                            self.impact_failure(error);
-                            self.shutdown_request.request();
-                            return;
-                        }
-                    }
-                }
-                Err(error) => {
-                    self.impact_failure(error);
-                    return;
-                }
-            }
-        }
-        if self.impacts.failure.is_some() {
-            self.replicate_impacts();
-            return;
-        }
-        let keys: Vec<_> = self
-            .impacts
-            .bodies()
-            .map(|body| ((body.world, body.id), body))
-            .filter(|(k, b)| b.phase == 0 && !self.impacts.contains_pending(k))
-            .map(|(k, _)| k)
-            .collect();
-        for key in keys {
-            if self.excavation_reserves(key.0) {
+    pub(super) fn update_impacts(&mut self) -> bool {
+        let mut keys = self.impacts.integration.take().unwrap_or_else(|| {
+            self.impacts
+                .bodies()
+                .filter(|body| body.phase == 0)
+                .map(|body| (body.world, body.id))
+                .collect::<Vec<_>>()
+        });
+        while let Some(key) = keys.pop() {
+            if self.impacts.body(&key).is_none_or(|b| b.phase != 0) {
                 continue;
             }
             let mut body = *self
@@ -181,14 +160,16 @@ impl ServerRuntime {
                 .body(&key)
                 .expect("selected body remains owned");
             let Some(owner) = self.game.worlds.get(body.world) else {
-                continue;
+                self.impact_failure(io::Error::other("impact world or terrain unavailable"));
+                return false;
             };
             let Ok(geography) = self
                 .game
                 .worlds
                 .prepared_terrain_inputs(body.world, self.prepared_geography.as_ref())
             else {
-                continue;
+                self.impact_failure(io::Error::other("impact world or terrain unavailable"));
+                return false;
             };
             let environment = Surface {
                 can_fragment: self.active_body_count() < minimium_world::impact::MAX_ACTIVE_BODIES
@@ -212,13 +193,17 @@ impl ServerRuntime {
                 });
                 if let Err(error) = result {
                     self.impact_failure(error);
-                    return;
+                    return false;
                 }
             } else if result.contacted {
                 if let Err(error) = self.queue_impact_excavation(body) {
-                    if error.kind() != io::ErrorKind::WouldBlock {
+                    if error.kind() == io::ErrorKind::WouldBlock {
+                        keys.push(key);
+                        self.impacts.integration = Some(keys);
+                        return false;
+                    } else {
                         self.impact_failure(error);
-                        return;
+                        return false;
                     }
                 }
             } else if (body.age_s
@@ -242,16 +227,25 @@ impl ServerRuntime {
             {
                 if let Err(error) = self.queue_body(body) {
                     self.impact_failure(error);
-                    return;
+                    return false;
                 }
             } else {
                 if let Err(reason) = self.impacts.advance_live_body(body) {
                     self.impact_failure(io::Error::other(reason));
-                    return;
+                    return false;
                 }
             }
+            if self.worker_barrier() {
+                // Revisit an asynchronous contact after acknowledgement. A stale
+                // geometry result leaves the live body at its original age.
+                if result.contacted {
+                    keys.push(key);
+                }
+                self.impacts.integration = Some(keys);
+                return false;
+            }
         }
-        self.replicate_impacts();
+        true
     }
 
     fn queue_body(&mut self, body: BodyState) -> io::Result<()> {
@@ -410,27 +404,6 @@ impl ServerRuntime {
 
     pub(super) fn impact_failure(&mut self, error: io::Error) {
         self.impacts.fail(&self.world_logger, error);
-    }
-
-    pub(super) fn shutdown_impacts(&mut self, deadline: Instant) -> io::Result<()> {
-        for body in self
-            .impacts
-            .bodies()
-            .filter(|b| b.phase == 0)
-            .copied()
-            .collect::<Vec<_>>()
-        {
-            if !self.impacts.contains_pending(&(body.world, body.id))
-                && !self.impact_projection_matches(body)
-            {
-                self.impacts.journal.submit_batch(vec![body])?;
-            }
-        }
-        self.impacts.journal.shutdown_until(deadline)?;
-        if let Some(error) = &self.impacts.failure {
-            return Err(io::Error::other(error.clone()));
-        }
-        Ok(())
     }
 }
 

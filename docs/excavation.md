@@ -18,10 +18,16 @@ An authenticated developer can run `dev inventory tools` in the client console.
 The grant is idempotent and the two-slot inventory belongs to PlayerProfileId.
 The default bindings are `1` shovel, `2` pickaxe, `0` stow and left mouse
 button to use the equipped tool. Stowing restores the existing fire action.
-The confirmed equipped shovel/pickaxe has a small polygonal first-person model;
+The confirmed equipped shovel/pickaxe has a closed, shaded first-person model;
 it is hidden while stowed, loading, or viewing the console or overview map.
 Bindings remain configurable. Console, map, focus loss and world transfer stop
 continuous use. Tools have no drops, durability or stamina cost.
+Both models share a 480 ms digging swing: wind-up, downward/forward strike,
+short recoil and recovery. A queued local use starts the motion for click or
+held-repeat; server refusal can still follow that attempted swing. Tool changes
+and loss of control cancel playback. The shovel has a cupped steel blade and D
+grip; the pickaxe has a forged eye and curved tapered points. Their viewmodel
+depth is independent of the world and their projection follows window aspect.
 
 Confirmed tool inventory also enables a developer HUD: current tool, first-hit
 material/distance, a projected 0.6 m brush outline, and the last server result.
@@ -81,7 +87,7 @@ pending preparation/commit; this is deliberately stricter than the per-chunk
 limit. Independent water worlds can prepare in separate shared-pool tasks.
 Only affected terrain images and world state are copied.
 
-The `excavation.v1` journal persists chunks, inventories, fluid snapshots, independent
+The `excavation.v2` journal persists chunks, inventories, fluid snapshots, independent
 crater stamps, impact-body results and the catalog digest. Back up and restore it
 with `world.snapshot` and the rest of the world directory. It rejects complete
 corrupt records and truncates an incomplete final record. Checkpoints include
@@ -129,9 +135,12 @@ Rendering constructs its transition contours from the actual selected LOD bases,
 with edge conformance applied before joining and excavation seam points preserved
 afterward. The extra preparation and cache are restricted to edited regions and
 their neighboring coverage; unavailable or excessive coverage refuses preparation.
-Excavated faces retain their soil/rock material instead of receiving surface
-snow/vegetation coverage. They cast wall/ceiling shadows and carry bounded CPU
-sky-visibility samples; this is local occlusion, not global illumination.
+Successful digging exposes dark soil or freshly broken rock. The texture blends
+with the original ground at the rim. Its coverage comes from the difference
+between saved volume samples and the base field, so peers and returning players
+can see the same cut. Unmodified parts of activated chunks retain their surface
+cover. Excavated faces cast wall and ceiling shadows and carry bounded CPU
+sky-visibility samples for local occlusion.
 
 ## Water model and bounds
 

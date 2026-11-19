@@ -78,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         CatalogueSha256::new(identity.sha256),
     );
     peer.try_send_server(ServerMessage::Welcome {
-        server_tick: 1,
+        server_tick: clock_sample.boundary().tick(),
         id: minimium_core::ids::PlayerId::new(1),
         map_fingerprint: map.fingerprint(),
         health: 100,

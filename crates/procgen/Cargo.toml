@@ -8,6 +8,7 @@ license.workspace = true
 path = "src/lib.rs"
 
 [dependencies]
+i_triangle = "0.51.0"
 minimium-terrain = { path = "../terrain" }
 minimium-core = { path = "../core" }
 minimium-environment = { path = "../environment" }

@@ -43,6 +43,7 @@ pub enum ServerErrorReason {
     Busy,
     Full,
     RateLimit,
+    Paused,
     Other,
 }
 

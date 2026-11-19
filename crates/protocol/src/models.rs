@@ -6,6 +6,37 @@ use minimium_world::entity::{ComponentTypeId, EntityId, SchemaVersion};
 use minimium_world::world::{Position3Mm, TransitionId, WorldManifest};
 use std::{error::Error, fmt, sync::Arc};
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SkyObservation {
+    pub position_mm: Position3Mm,
+    pub calendar_epoch: minimium_environment::time::ClockRevision,
+    pub utc: minimium_environment::time::WorldTimeMs,
+    /// Last confirmed night instant, inclusive. Daytime reports omit it.
+    pub night_until: Option<minimium_environment::time::WorldTimeMs>,
+}
+impl SkyObservation {
+    pub fn valid(&self) -> bool {
+        self.night_until
+            .is_none_or(|end| (0..=600_000).contains(&(end.get() - self.utc.get())))
+    }
+    pub fn confirms(
+        &self,
+        utc: minimium_environment::time::WorldTimeMs,
+        epoch: minimium_environment::time::ClockRevision,
+        position: [f32; 3],
+    ) -> bool {
+        self.calendar_epoch == epoch
+            && self.utc <= utc
+            && self.night_until.is_some_and(|end| utc <= end)
+            && position
+                .iter()
+                .zip(self.position_mm.0)
+                .map(|(a, b)| (f64::from(*a) - b as f64 / 1000.0).powi(2))
+                .sum::<f64>()
+                <= 4.0
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClientMessage {
     /// None means no presentation; Some selects compressed or fallback textures.
@@ -19,9 +50,11 @@ pub enum ClientMessage {
     SkyView {
         context: WorldContext,
         direction: [f32; 3],
-        night: bool,
+        observation: SkyObservation,
     },
     WorldInput {
+        sequence: u64,
+        control_revision: u64,
         context: WorldContext,
         input: ClientWorldInput,
     },
@@ -271,6 +304,7 @@ pub enum ServerMessage {
         server_time_ms: u64,
         server_tick: u64,
         resolved_input_seq: u64,
+        applied_input: (u64, u64),
         context: WorldContext,
         full_snapshot: bool,
         self_movement: minimium_simulation::MovementIntent,
@@ -326,7 +360,7 @@ pub enum ServerMessage {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BolidEvent {
     pub id: u64,
-    pub start_monotonic_ms: u64,
+    pub start_simulation_ms: u64,
     pub seed: u64,
     pub start_world_m: [f32; 3],
     pub end_world_m: [f32; 3],

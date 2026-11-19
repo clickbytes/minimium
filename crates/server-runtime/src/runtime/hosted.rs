@@ -1,5 +1,6 @@
 use super::*;
 use crate::hosting::*;
+use minimium_environment::time::SimulationLimit;
 use minimium_gameplay::ModuleCommandReadView;
 
 #[derive(Clone, Copy)]
@@ -47,7 +48,7 @@ impl ServerRuntime {
         let view = crate::commands::RuntimeCommandReadView::new(&self.game.worlds);
         match query {
             RuntimeQuery::Status => RuntimeQueryResult::Status(RuntimeStatus {
-                simulation_tick: self.scheduler.simulation_tick,
+                simulation_tick: self.environment_clock.boundary().tick(),
                 world_count: view.world_count(),
                 queued_commands: self.operations.command_queue.len(),
                 stopping: self.shutdown_request.is_requested(),
@@ -104,8 +105,7 @@ impl ServerRuntime {
         }
     }
 
-    /// One bounded owner iteration; no sleeping. A call can execute at most one
-    /// fixed simulation tick, keeping the process driver's existing catch-up rule.
+    /// Services host deadlines, then runs a bounded batch of complete fixed steps.
     pub fn step(&mut self, time: RuntimeTime) -> io::Result<StepOutcome> {
         if time.monotonic < self.now
             || time
@@ -120,18 +120,53 @@ impl ServerRuntime {
         }
         self.now = time.monotonic;
         self.environment_clock.set_host_utc(time.utc);
-        let previous_tick = self.scheduler.simulation_tick;
+        let previous_tick = self.environment_clock.boundary().tick();
         if !self.shutdown_request.is_requested() {
             let result = (|| -> io::Result<()> {
+                let dropped = self
+                    .scheduler
+                    .demand
+                    .accrue(self.now, self.environment_clock.rate().get());
+                self.metrics.missed_ticks = self.metrics.missed_ticks.saturating_add(dropped);
+                if dropped > 0 {
+                    self.environment_clock.limit = SimulationLimit::Batch;
+                }
+                self.connections.disconnected.clear();
+                self.poll_impact_journal();
+                self.update_excavation();
+                if self.worker_barrier() {
+                    self.environment_clock.limit =
+                        if self.impacts.failed() || self.excavation.failed() {
+                            SimulationLimit::WorkerFailed
+                        } else {
+                            SimulationLimit::Worker
+                        };
+                }
                 let started = self.poll_operations()?;
                 if !self.shutdown_request.is_requested() {
                     self.poll_network()?;
                 }
                 if !self.shutdown_request.is_requested() {
-                    self.tick();
+                    self.apply_commands();
+                    self.expire_pending_transfers(self.now);
+                    self.service_inputs();
+                    if !self.shutdown_request.is_requested() {
+                        if dropped == 0 && !self.worker_barrier() {
+                            self.environment_clock.limit = SimulationLimit::None;
+                        }
+                        self.tick();
+                    }
+                    if let Some(rate) = self.scheduler.demand.measured_rate(self.now) {
+                        self.environment_clock.achieved_ppm = rate;
+                    }
                 }
                 if !self.shutdown_request.is_requested() {
-                    self.replicate();
+                    self.replicate_environment();
+                    if self.scheduler.pending.is_none() {
+                        self.replicate_impacts();
+                        self.publish_excavation_stream();
+                        self.replicate();
+                    }
                 }
                 self.metrics.loop_work.record(started.elapsed());
                 Ok(())
@@ -146,12 +181,23 @@ impl ServerRuntime {
             self.cancel_commands();
         }
         Ok(StepOutcome {
-            simulation_tick: self.scheduler.simulation_tick,
-            tick_executed: self.scheduler.simulation_tick != previous_tick,
+            simulation_tick: self.environment_clock.boundary().tick(),
+            tick_executed: self.environment_clock.boundary().tick() != previous_tick,
             stopping: self.shutdown_request.is_requested(),
             next_wake: self.next_wake(),
             commands: std::mem::take(&mut self.operations.host_outcomes),
         })
+    }
+
+    pub(super) fn simulation_work_pending(&self) -> bool {
+        self.scheduler.pending.is_some() || self.worker_barrier()
+    }
+
+    pub(super) fn worker_barrier(&self) -> bool {
+        self.excavation.busy()
+            || self.excavation.failed()
+            || self.impacts.pending_count() != 0
+            || self.impacts.failed()
     }
 
     pub(super) fn cancel_commands(&mut self) {

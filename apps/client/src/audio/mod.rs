@@ -52,6 +52,12 @@ impl MeteorAudio {
             self.backend = backend::Backend::spawn();
         }
     }
+    pub fn set_rate(&self, _rate: f32, _horizon: Option<std::time::Duration>) {
+        #[cfg(feature = "desktop-audio")]
+        if let Some(backend) = &self.backend {
+            backend.set_rate(_rate, _horizon);
+        }
+    }
     pub fn set_volume(&mut self, volume: f32) {
         self.volume = if volume.is_finite() {
             volume.clamp(0.0, 1.0)

@@ -213,8 +213,7 @@ fn encode_terrain<'a>(
                 stats.draws += 1;
             }
         }
-        // Ground/objects populate depth first, so inland sea facets do not shade.
-        // Fully submerged ground was already rejected during CPU preparation.
+        // The terrain depth includes the bed under live reservoirs.
         pass.set_pipeline(&frame.terrain_gpu.ocean_pipeline);
         pass.set_bind_group(1, &frame.terrain_gpu.bind_group, &[]);
         pass.set_bind_group(2, frame.shadow_sampling, &[]);

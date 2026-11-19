@@ -3,6 +3,7 @@
 pub enum ServerErrorCode {
     Protocol,
     Busy,
+    Paused,
     ServerFull,
     RateLimit,
     Unknown(u8),
@@ -12,6 +13,7 @@ impl From<u8> for ServerErrorCode {
     fn from(value: u8) -> Self {
         match value {
             1 => Self::Protocol,
+            5 => Self::Paused,
             2 => Self::Busy,
             3 => Self::ServerFull,
             4 => Self::RateLimit,
@@ -24,6 +26,7 @@ impl From<ServerErrorCode> for u8 {
     fn from(code: ServerErrorCode) -> Self {
         match code {
             ServerErrorCode::Protocol => 1,
+            ServerErrorCode::Paused => 5,
             ServerErrorCode::Busy => 2,
             ServerErrorCode::ServerFull => 3,
             ServerErrorCode::RateLimit => 4,

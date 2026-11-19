@@ -4,7 +4,6 @@ use minimium_protocol::{
 };
 use minimium_simulation::MovementIntent;
 use minimium_world::entity::EntityId;
-use std::time::Duration;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UseTrigger {
@@ -47,6 +46,7 @@ pub enum ClientAction {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SuppressionReason {
+    Paused,
     NoSession,
     SessionNotConnected,
     ToolUnavailable,
@@ -78,7 +78,7 @@ pub enum LocalActionOutcome {
 /// The single application-owned path for client-authored world actions.
 pub(crate) struct ClientActionExecutor {
     last_operation_at: ClientTime,
-    last_input_fire_at: Option<ClientTime>,
+    last_input_fire_at: Option<u64>,
 }
 
 impl ClientActionExecutor {
@@ -113,6 +113,16 @@ impl ClientActionExecutor {
             };
         }
         self.last_operation_at = now;
+        let sample = connection.session().and_then(|s| s.clock_sample());
+        if sample.is_some_and(|s| s.rate_ppm().get() == 0)
+            && !matches!(
+                action,
+                ClientAction::Ping | ClientAction::SetName(_) | ClientAction::Chat(_)
+            )
+        {
+            return LocalActionOutcome::Suppressed(SuppressionReason::Paused);
+        }
+        let game_ms = sample.map_or(0, |s| s.boundary().simulation_ms());
         match action {
             ClientAction::UseEquipped { direction, trigger } => {
                 let Some(session) = connection.session_mut() else {
@@ -139,10 +149,10 @@ impl ClientActionExecutor {
                 if session.state() != crate::SessionState::Connected {
                     return LocalActionOutcome::Suppressed(SuppressionReason::SessionNotConnected);
                 }
-                if self.last_input_fire_at.is_some_and(|last| {
-                    now.checked_duration_since(last)
-                        .is_ok_and(|elapsed| elapsed < Duration::from_millis(300))
-                }) {
+                if self
+                    .last_input_fire_at
+                    .is_some_and(|last| game_ms.saturating_sub(last) < 300)
+                {
                     return LocalActionOutcome::Suppressed(SuppressionReason::WeaponInputCooldown);
                 }
                 let outcome = Self::queue_world(
@@ -152,7 +162,7 @@ impl ClientActionExecutor {
                     now,
                 );
                 if matches!(outcome, LocalActionOutcome::Queued { .. }) {
-                    self.last_input_fire_at = Some(now);
+                    self.last_input_fire_at = Some(game_ms);
                 }
                 outcome
             }

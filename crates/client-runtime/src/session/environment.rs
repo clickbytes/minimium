@@ -111,6 +111,13 @@ impl ClientSession {
         };
         if sample.session_nonce() != previous.session_nonce()
             || sample.clock_id() != previous.clock_id()
+            || sample.boundary().tick() < previous.boundary().tick()
+            || sample.boundary().calendar_epoch() < previous.boundary().calendar_epoch()
+            || (sample.boundary().calendar_epoch() == previous.boundary().calendar_epoch()
+                && i128::from(sample.world_utc_ms().get())
+                    - i128::from(previous.world_utc_ms().get())
+                    != i128::from(sample.boundary().simulation_ms())
+                        - i128::from(previous.boundary().simulation_ms()))
             || sample.revision() < previous.revision()
             || (sample.revision() == previous.revision()
                 && (sample.mode() != previous.mode()

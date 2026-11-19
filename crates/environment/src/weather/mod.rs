@@ -18,6 +18,7 @@ pub const MAX_CLOUDS: usize = 8192;
 pub const MAX_CACHED_CLOUDS: usize = 16384;
 pub const CORE_ANGLE: f64 = 0.034;
 pub const OUTER_ANGLE: f64 = 0.055;
+pub const CLOUD_OBSERVER_MARGIN: f64 = 0.001;
 pub(crate) const LIFETIME: f64 = 3600.0;
 pub(crate) const POPULATION_SECONDS: f64 = 1800.0;
 pub(crate) const WIND: [f64; 3] = [5.0, 10.0, 20.0];
@@ -78,16 +79,29 @@ impl Cloud {
         self.size_m.x.hypot(self.size_m.z) * 0.5
     }
 
-    /// Per-cloud windows avoid a simultaneous whole-sky mesh transition.
+    /// Include every cloud that can enter the padded observer cap during this interval.
+    pub fn in_view_during(self, observer: DVec3, radius: f64, from: f64, until: f64) -> bool {
+        if self.birth_utc >= until || self.birth_utc + LIFETIME <= from {
+            return false;
+        }
+        let travel = (until - from) * WIND[self.layer] / EARTH_RADIUS;
+        let angle = OUTER_ANGLE + CLOUD_OBSERVER_MARGIN + self.extent_m() / radius + travel;
+        self.direction_at(from).dot(observer) >= angle.cos()
+    }
+
+    /// Stagger cloud families on a shared lattice so each publication spans at least six seconds.
     pub fn morph_window(self, utc: f64) -> (i64, f64, f64) {
         let step = self.kind.morph_seconds();
-        let phase = random(self.id ^ 0x37a4) * step;
-        let index = ((utc - self.birth_utc + phase) / step).floor() as i64;
-        (index, index as f64 * step - phase, step)
+        let group = hash(self.id ^ 0x37a4) % (step as u64 / 6);
+        let offset = group as f64 * 6.0;
+        let index = ((utc - offset) / step).floor() as i64;
+        (index, index as f64 * step + offset - self.birth_utc, step)
     }
 }
 
 pub struct CloudSnapshot {
+    pub valid_from: f64,
+    pub valid_until: f64,
     pub utc: f64,
     pub revision: u64,
     pub observer: DVec3,
@@ -264,13 +278,23 @@ impl<T: TerrainSampler> WeatherModel<T> {
         self.is_earth
     }
 
+    /// Bounded local fallback, using the observer region and the same birth conditions as regional detail.
+    pub fn query_local(
+        &mut self,
+        observer: DVec3,
+        utc: f64,
+        revision: u64,
+    ) -> Result<CloudSnapshot, T::Error> {
+        population::query(self, observer.normalize(), utc, revision, true)
+    }
+
     pub fn query(
         &mut self,
         observer: DVec3,
         utc: f64,
         revision: u64,
     ) -> Result<CloudSnapshot, T::Error> {
-        population::query(self, observer.normalize(), utc, revision)
+        population::query(self, observer.normalize(), utc, revision, false)
     }
 }
 

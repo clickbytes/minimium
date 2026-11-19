@@ -13,6 +13,13 @@ impl ExcavationCoordinator {
             }
         }
         while let Some(result) = self.journal.poll_acknowledged() {
+            if result.as_ref().is_ok_and(|ack| {
+                self.last_ack
+                    .as_ref()
+                    .is_some_and(|last| last.same_plan(&ack.plan))
+            }) {
+                continue;
+            }
             let Some(pending) = self.pending.take() else {
                 self.fail("unexpected durable excavation acknowledgement".into());
                 break;
@@ -35,6 +42,7 @@ impl ExcavationCoordinator {
                         port.request_shutdown();
                         break;
                     }
+                    self.last_ack = Some(ack.plan.clone());
                     port.record_persistence(pending.started.elapsed());
                     if let Err(error) = port.publish(DurablePublication {
                         prepared: pending.prepared,

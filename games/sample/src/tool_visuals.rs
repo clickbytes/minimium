@@ -1,6 +1,8 @@
-//! Sample-owned camera-local tool viewmodel geometry.
-
+//! Sample-owned, closed camera-local tool meshes in metres.
 use minimium_world::items::ToolKind;
+
+mod mesh;
+use mesh::{add, prism, scale, triangle};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ToolModelVertex {
@@ -17,7 +19,7 @@ pub struct ToolModelDefinition {
 
 pub const TOOL_MODEL_KINDS: [ToolKind; 2] = [ToolKind::Shovel, ToolKind::Pickaxe];
 
-/// Returns the sample's ordered model catalog in camera-local metres.
+/// Both tools share a hand pivot at [0.34, -0.32, -0.55] camera-local metres.
 pub fn tool_model_catalog() -> [ToolModelDefinition; 2] {
     TOOL_MODEL_KINDS.map(|kind| ToolModelDefinition {
         kind,
@@ -25,206 +27,142 @@ pub fn tool_model_catalog() -> [ToolModelDefinition; 2] {
     })
 }
 
-/// Returns the catalog index associated with one confirmed inventory tool.
 pub fn tool_model_index(kind: ToolKind) -> Option<usize> {
-    TOOL_MODEL_KINDS
-        .iter()
-        .position(|catalog_kind| *catalog_kind == kind)
+    TOOL_MODEL_KINDS.iter().position(|entry| *entry == kind)
 }
 
 fn vertices(kind: ToolKind) -> Vec<ToolModelVertex> {
-    let mut vertices = Vec::with_capacity(72);
-    let grip = [0.34, -0.24, -0.56];
-    let head = [0.035, -0.57, -0.94];
-    segment_prism(
-        &mut vertices,
-        [0.31, -0.20, -0.53],
-        [0.39, -0.29, -0.62],
-        0.042,
-        [0.27, 0.16, 0.10],
-        [0.47, 0.31, 0.20],
-    );
-    segment_prism(
-        &mut vertices,
-        grip,
-        head,
-        0.018,
-        [0.25, 0.105, 0.035],
-        [0.39, 0.19, 0.07],
-    );
+    let mut out = Vec::with_capacity(480);
     match kind {
-        ToolKind::Shovel => shovel_head(&mut vertices, head),
-        ToolKind::Pickaxe => pickaxe_head(&mut vertices, head),
+        ToolKind::Shovel => shovel(&mut out),
+        ToolKind::Pickaxe => pickaxe(&mut out),
     }
-    let mut triangles: Vec<_> = vertices
-        .chunks_exact(3)
-        .map(|triangle| {
-            let vertices = [triangle[0], triangle[1], triangle[2]];
-            let average_depth = vertices
-                .iter()
-                .map(|vertex| vertex.position[2])
-                .sum::<f32>()
-                / 3.0;
-            (average_depth, vertices)
-        })
-        .collect();
-    triangles.sort_by(|a, b| a.0.total_cmp(&b.0));
-    triangles
-        .into_iter()
-        .flat_map(|(_, triangle)| triangle)
-        .collect()
+    out
 }
 
-fn segment_prism(
-    out: &mut Vec<ToolModelVertex>,
-    start: [f32; 3],
-    end: [f32; 3],
-    radius: f32,
-    dark: [f32; 3],
-    light: [f32; 3],
-) {
-    let direction = normalize(sub(end, start));
-    let reference = if direction[2].abs() < 0.85 {
-        [0.0, 0.0, 1.0]
-    } else {
-        [0.0, 1.0, 0.0]
-    };
-    let side = scale(normalize(cross(direction, reference)), radius);
-    let other = scale(normalize(cross(direction, side)), radius);
-    let start_ring = ring(start, side, other);
-    let end_ring = ring(end, side, other);
-    for face in 0..4 {
-        let next = (face + 1) % 4;
-        quad(
-            out,
-            [
-                start_ring[face],
-                start_ring[next],
-                end_ring[next],
-                end_ring[face],
-            ],
-            if face % 2 == 0 { light } else { dark },
-        );
-    }
-    quad(out, start_ring, dark);
-    quad(
+const WOOD: [f32; 3] = [0.42, 0.22, 0.085];
+const GRIP: [f32; 3] = [0.075, 0.055, 0.038];
+const STEEL: [f32; 3] = [0.44, 0.49, 0.53];
+const EDGE: [f32; 3] = [0.67, 0.72, 0.75];
+
+fn shovel(out: &mut Vec<ToolModelVertex>) {
+    // Tapered wooden shaft, deep metal socket, and a three-sided D grip.
+    prism(
         out,
-        [end_ring[0], end_ring[3], end_ring[2], end_ring[1]],
-        light,
+        [0.35, -0.18, -0.66],
+        [0.155, 0.10, -0.94],
+        [0.020, 0.016],
+        6,
+        WOOD,
     );
+    prism(
+        out,
+        [0.18, 0.05, -0.89],
+        [0.14, 0.14, -0.98],
+        [0.026, 0.021],
+        6,
+        STEEL,
+    );
+    let root = [0.35, -0.18, -0.66];
+    let butt = [0.40, -0.30, -0.56];
+    let side = [0.060, 0.015, 0.0];
+    let left = add(butt, scale(side, -1.0));
+    let right = add(butt, side);
+    prism(
+        out,
+        add(root, scale(side, -0.25)),
+        left,
+        [0.014, 0.016],
+        4,
+        GRIP,
+    );
+    prism(
+        out,
+        add(root, scale(side, 0.25)),
+        right,
+        [0.014, 0.016],
+        4,
+        GRIP,
+    );
+    prism(out, left, right, [0.020, 0.020], 6, WOOD);
+    shovel_blade(out);
 }
 
-fn shovel_head(out: &mut Vec<ToolModelVertex>, center: [f32; 3]) {
+fn shovel_blade(out: &mut Vec<ToolModelVertex>) {
+    // A cupped blade, not an unclosed planar fan: front, back and bevels.
     let outline = [
-        [-0.060, 0.044],
-        [0.060, 0.044],
-        [0.073, 0.005],
-        [0.043, -0.078],
-        [0.0, -0.103],
-        [-0.043, -0.078],
-        [-0.073, 0.005],
+        [-0.055, -0.070],
+        [0.055, -0.070],
+        [0.105, 0.015],
+        [0.105, 0.180],
+        [0.065, 0.245],
+        [0.0, 0.270],
+        [-0.065, 0.245],
+        [-0.105, 0.180],
+        [-0.105, 0.015],
     ];
-    let front = outline.map(|point| [center[0] + point[0], center[1] + point[1], center[2]]);
-    let back = front.map(|point| [point[0], point[1], point[2] - 0.016]);
+    let center = [0.13, 0.13, -0.99];
+    let front = outline.map(|p| add(center, [p[0], p[1], 0.0]));
+    let back = front.map(|p| add(p, [0.0, 0.0, -0.012]));
+    let bowl_front = add(center, [0.0, 0.11, -0.030]);
+    let bowl_back = add(bowl_front, [0.0, 0.0, -0.012]);
     for index in 0..outline.len() {
         let next = (index + 1) % outline.len();
-        quad(
+        triangle(out, bowl_front, front[index], front[next], STEEL);
+        triangle(out, bowl_back, back[next], back[index], [0.27, 0.31, 0.34]);
+        mesh::quad(
             out,
-            [front[index], front[next], back[next], back[index]],
-            [0.22, 0.24, 0.25],
+            [front[index], back[index], back[next], front[next]],
+            EDGE,
         );
-        triangle(
+    }
+    // Stepping shoulders at the neck strengthen the blade silhouette.
+    for sign in [-1.0, 1.0] {
+        prism(
             out,
-            front[0],
-            front[index],
-            front[next],
-            if index % 2 == 0 {
-                [0.55, 0.58, 0.59]
-            } else {
-                [0.42, 0.45, 0.46]
-            },
+            add(center, [sign * 0.035, -0.060, 0.006]),
+            add(center, [sign * 0.090, -0.035, 0.006]),
+            [0.012, 0.012],
+            4,
+            STEEL,
         );
     }
 }
 
-fn pickaxe_head(out: &mut Vec<ToolModelVertex>, center: [f32; 3]) {
-    let left = [center[0] - 0.125, center[1] + 0.035, center[2]];
-    let right = [center[0] + 0.125, center[1] + 0.035, center[2] - 0.008];
-    segment_prism(
+fn pickaxe(out: &mut Vec<ToolModelVertex>) {
+    let foot = [0.41, -0.44, -0.43];
+    let head = [0.14, 0.16, -0.96];
+    prism(out, foot, head, [0.025, 0.019], 8, WOOD);
+    prism(
         out,
-        left,
-        right,
-        0.022,
-        [0.24, 0.27, 0.29],
-        [0.59, 0.63, 0.65],
+        [0.395, -0.405, -0.465],
+        [0.335, -0.275, -0.585],
+        [0.028, 0.025],
+        6,
+        GRIP,
     );
-    triangle(
+    prism(
         out,
-        [left[0] - 0.035, left[1] - 0.012, left[2]],
-        left,
-        [left[0] + 0.055, left[1] - 0.014, left[2]],
-        [0.44, 0.47, 0.49],
+        [0.151, 0.125, -0.925],
+        [0.123, 0.203, -1.003],
+        [0.042, 0.034],
+        6,
+        STEEL,
     );
-    triangle(
-        out,
-        [right[0] - 0.055, right[1] - 0.014, right[2]],
-        right,
-        [right[0] + 0.035, right[1] - 0.012, right[2]],
-        [0.49, 0.52, 0.54],
-    );
-}
-
-fn ring(center: [f32; 3], side: [f32; 3], other: [f32; 3]) -> [[f32; 3]; 4] {
-    [
-        add(add(center, side), other),
-        add(sub(center, side), other),
-        sub(sub(center, side), other),
-        add(sub(center, other), side),
-    ]
-}
-
-fn quad(out: &mut Vec<ToolModelVertex>, corners: [[f32; 3]; 4], color: [f32; 3]) {
-    triangle(out, corners[0], corners[1], corners[2], color);
-    triangle(out, corners[0], corners[2], corners[3], color);
-}
-
-fn triangle(
-    out: &mut Vec<ToolModelVertex>,
-    a: [f32; 3],
-    b: [f32; 3],
-    c: [f32; 3],
-    color: [f32; 3],
-) {
-    for position in [a, b, c] {
-        out.push(ToolModelVertex { position, color });
-    }
-}
-
-fn add(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    std::array::from_fn(|axis| a[axis] + b[axis])
-}
-
-fn sub(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    std::array::from_fn(|axis| a[axis] - b[axis])
-}
-
-fn scale(value: [f32; 3], amount: f32) -> [f32; 3] {
-    value.map(|component| component * amount)
-}
-
-fn cross(a: [f32; 3], b: [f32; 3]) -> [f32; 3] {
-    [
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    ]
-}
-
-fn normalize(value: [f32; 3]) -> [f32; 3] {
-    let length = value.iter().map(|part| part * part).sum::<f32>().sqrt();
-    if length <= f32::EPSILON {
-        [0.0, 0.0, 1.0]
-    } else {
-        value.map(|part| part / length)
+    // Forged arms curve away from the eye and taper to solid pointed tips.
+    for sign in [-1.0, 1.0] {
+        let shoulder = add(head, [sign * 0.090, 0.014, -0.005]);
+        let elbow = add(head, [sign * 0.185, -0.018, -0.026]);
+        let tip = add(head, [sign * 0.275, -0.090, -0.060]);
+        prism(
+            out,
+            add(head, [sign * 0.015, 0.0, 0.0]),
+            shoulder,
+            [0.032, 0.028],
+            4,
+            STEEL,
+        );
+        prism(out, shoulder, elbow, [0.028, 0.018], 4, STEEL);
+        prism(out, elbow, tip, [0.018, 0.0], 4, EDGE);
     }
 }

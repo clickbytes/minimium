@@ -162,6 +162,13 @@ viewmodel vertices and linear RGB colors. `tool_model_index()` binds confirmed
 inventory kinds to this ordered catalog. The client adapts these CPU values to
 the renderer's neutral bounded model input; no sample code depends on renderer
 or GPU packages.
+The closed meshes use a common camera-local grip/pivot convention. The shovel
+has a tapered wooden shaft, D grip, steel socket, stepping shoulders and a
+cupped blade with a back and bevelled edges (432 vertices). The pickaxe uses an
+octagonal shaft, dark grip, steel eye and curved tapered arms with solid tips
+(384 vertices). Face shading is baked in linear RGB. Both stay below the neutral
+512-vertex model cap and use the same renderer-owned digging pose. Model ordering,
+tool IDs, inventory slots, action parameters and collision geometry are unchanged.
 The two-entry grant, action profile and model list intentionally match the
 current fixed `ToolKind`/two-slot contract. AR18 is a deferred limitation, not
 an implemented catalog; see the [item catalog decision](../../docs/plan/epic-050/item-catalog-decision.md)

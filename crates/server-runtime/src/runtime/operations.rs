@@ -3,62 +3,11 @@ use super::*;
 impl ServerRuntime {
     pub(super) fn poll_operations(&mut self) -> std::io::Result<Instant> {
         self.operations.persistence.poll_completions();
-        let now = self.now;
-        let monotonic_ms = self.monotonic_ms(now)?;
-        match self.environment_clock.observe(monotonic_ms) {
-            Ok(Some(fault)) => crate::diagnostics::emit(
-                &self.environment_logger,
-                minimium_diagnostics::Level::Warn,
-                "environment.clock_fault",
-                &[("fault_code", fault.code().to_owned())],
-            ),
-            Ok(None) => {}
-            Err(error) => crate::diagnostics::emit(
-                &self.environment_logger,
-                minimium_diagnostics::Level::Error,
-                "environment.clock_observation_failed",
-                &[
-                    ("error_code", error.code().to_owned()),
-                    ("reason", error.to_string()),
-                ],
-            ),
-        }
-        if now >= self.scheduler.next_utc_check {
-            self.scheduler.next_utc_check = now + Duration::from_secs(5);
-            match self.environment_clock.check_system_clock(monotonic_ms) {
-                Ok(Some(offset_ms)) => crate::diagnostics::emit(
-                    &self.environment_logger,
-                    minimium_diagnostics::Level::Info,
-                    "environment.system_clock_correction",
-                    &[
-                        (
-                            "direction",
-                            (if offset_ms >= 0 {
-                                "forward"
-                            } else {
-                                "backward"
-                            })
-                            .to_owned(),
-                        ),
-                        ("offset_ms", offset_ms.to_string()),
-                    ],
-                ),
-                Ok(None) => {}
-                Err(error) => crate::diagnostics::emit(
-                    &self.environment_logger,
-                    minimium_diagnostics::Level::Error,
-                    "environment.system_clock_correction_failed",
-                    &[
-                        ("error_code", error.code().to_owned()),
-                        ("reason", error.to_string()),
-                    ],
-                ),
-            }
-        }
         self.environment_dirty_revision = self.environment_clock.dirty_revision();
-        self.poll_autosave()?;
+        if !self.simulation_work_pending() {
+            self.poll_autosave()?;
+        }
         self.connections.messages.clear();
-        self.connections.disconnected.clear();
         let loop_started = Instant::now();
         let admin_requests = self
             .connections
@@ -125,6 +74,19 @@ impl ServerRuntime {
         Ok(loop_started)
     }
 
+    pub(super) fn prepare_save_boundary(&mut self) -> io::Result<bool> {
+        if self.simulation_work_pending() {
+            return Ok(false);
+        }
+        if !self.checkpoint_next_water()? || !self.checkpoint_next_impact()? {
+            return Ok(false);
+        }
+        self.operations
+            .player_store
+            .set_excavation_revision(self.excavation.journal_revision());
+        Ok(true)
+    }
+
     fn poll_autosave(&mut self) -> std::io::Result<()> {
         let autosave_check_at = self.now;
         if self
@@ -132,6 +94,9 @@ impl ServerRuntime {
             .next_autosave
             .is_some_and(|deadline| autosave_check_at >= deadline)
         {
+            if !self.operations.persistence.has_pending_save() && !self.prepare_save_boundary()? {
+                return Ok(());
+            }
             self.scheduler.next_autosave =
                 Some(autosave_check_at + self.scheduler.autosave_interval);
             if !self.operations.persistence.has_pending_save() {

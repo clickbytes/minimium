@@ -125,7 +125,7 @@ CPU readiness can be reported. Construction or sampling failure becomes a typed
 bundle is published from that failed resolver result. Nonplanet content has no
 planetary catalog. Transfer ticket/context validation still rejects stale results.
 
-Presentation clients negotiate `ContentOffer` before `Welcome` under protocol v21.
+Presentation clients negotiate `ContentOffer` before `Welcome` under protocol v22.
 Content preparation has its own session-owned 300-second deadline. A bounded host worker fetches the
 required package over a separate HTTP endpoint at the game peer's IP and caches
 verified hash blobs. The host takes the complete package, installs GPU resources,
@@ -206,21 +206,16 @@ the operation. Invalid samples leave those logical owners unchanged.
 
 | Clock sites | Domain and preserved policy |
 | --- | --- |
-| Session state/Welcome, heartbeat/Ping, world/material preparation, transfer retry and tool use | Supplied `ClientTime`; existing 5s Welcome, 10s heartbeat cadence, 20s heartbeat timeout, 300s preparation and 500ms tool cooldown remain unchanged. Ping starts only when its tracked frame is completely written; queue acceptance commits tool timestamps/counters. |
+| Session state/Welcome, heartbeat/Ping, world/material preparation, transfer retry | Supplied `ClientTime`; existing 5s Welcome, 10s heartbeat cadence, 20s heartbeat timeout, 300s preparation remain unchanged. Ping starts only when its tracked frame is completely written; tool cooldowns advance on the game timeline. |
 | Session clock epoch/reset, probe enqueue/receive, stale age and estimates | The session converts the supplied sample to checked relative milliseconds. Read-only clock getters report the last admitted sample. |
 | Controller/connector starts, polls, cancellation and retry | Supplied sample is validated before lifecycle effects. Empty connector polls compare the logical attempt deadline against this sample. |
 | Connector worker DNS/socket/process startup and completion | Physical `Instant` budgets bound actual OS work. An already available result completed within that resource budget still wins a late logical poll, preserving prior behavior. Worker availability remains an external resource fact. |
-| Snapshot receipt/interpolation | Supplied sample, checked host elapsed conversion; server timestamp ordering and saturating interpolation arithmetic remain unchanged. |
-| Prediction and input tick IDs | Fixed simulation steps and server tick/sequence values; independent of monotonic lifecycle samples and environment `time_scale`. |
+| Snapshot receipt/interpolation | Committed simulation milliseconds from the current presentation frame. |
+| Prediction and input tick IDs | Fixed steps follow presented simulation time. Intent changes and held refreshes use the network clock. |
 | Bootstrap, worker/child drain and controller cleanup | Physical OS/resource deadlines, including the existing 28s default controller cleanup budget. Drop uses the last admitted session sample for logical teardown and reads physical time only to bound resource drain. |
 | Environment/astronomy | Authoritative UTC/world clock samples; never substituted for lifecycle time. |
 
-The render UTC estimate slews a same-revision correction over a two-second
-real-time constant, at up to 10% of clock speed. Its 30-second deadline tracks
-unresolved bias above half a UTC tick or half a monotonic timestamp tick,
-whichever spans more world time. At 1000× this band is 500 world milliseconds.
-Inside the band the residual drains at the same slew limit. Large corrections
-and expired corrections log their signed UTC displacement and configured rate.
+The session interpolates between distinct committed boundaries using their server observation interval. It holds the last available endpoint when samples stop and snaps to the acknowledged pause tick. The same segment supplies game duration, calendar UTC and playback speed. RTT samples retain their monotonic probe clock.
 
 The compile-only `host_clock` example drives the real injected session/transport
 and content adapters with controlled equal, advancing and backward samples and
@@ -240,7 +235,12 @@ to UTC before dispatch; server clock validation remains authoritative.
 
 Change connection/session lifecycle and clock synchronization behavior here. Keep presentation and user interaction in the application host.
 
-Movement snapshots replace predicted physics with the authoritative state and carry the server's active movement intent for replay's initial held input. The client discards only the server-resolved sequence prefix. Replay uses each later sample's target tick, captured movement policy and collision revision. The server ack is bounded below the earliest still-executable sequence, including samples waiting in either server queue; rejection, busy, replacement, application and lateness resolve through the same owner. Revision mismatch, stale samples or history overflow clears replay history, held input, fixed-step time and presentation offset. History is capped at 128 samples. Position correction is a decaying presentation offset; it does not alter simulation state. World installation and accepted teleports reset pending input history and the fixed-step accumulator.
+Movement snapshots replace predicted physics with the authoritative state and carry the server's active movement intent for replay's initial held input. The client discards only the server-resolved sequence prefix. Replay uses each later sample's target tick, captured movement policy and collision revision. The server ack is bounded below the earliest still-executable sequence, including samples waiting in either server queue; rejection, busy, replacement, application and lateness resolve through the same owner. Revision mismatch, stale samples or history overflow clears replay history, held input, fixed-step time and presentation offset. History is capped at 128 samples. World installation and accepted teleports reset pending input history and the fixed-step accumulator.
+
+The camera offset decays with elapsed monotonic time. Each accepted snapshot
+adds the difference between the pre- and post-replay positions to the remaining
+offset, using millimetre positions where available. The host receives the offset
+after all session events for that step, alongside the corresponding player state.
 
 ## Verification
 
@@ -301,7 +301,7 @@ a 35-second local connection attempt. Remote connection attempts retain their
 10-second deadline. Startup status and the attempt ID still determine whether
 the client connects or reports failure.
 
-The session accepts Bolid only for its active world context and discards it during transfer; server monotonic time is estimated from the existing probe clock.
+The session accepts Bolid only for its active world context and discards it during transfer; event age uses the presentation sample and authoritative simulation start time.
 
 `ConnectionController::request_random_bolid(count, now)` validates 1..64 and forwards
 the bounded count through the existing owned-server admin command channel. It

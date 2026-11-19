@@ -72,7 +72,6 @@ impl std::error::Error for AsyncWorkPolicyError {}
 
 impl AsyncWorkPolicy {
     const MAX_INTERVAL: Duration = Duration::from_secs(604_800);
-    const MAX_IMPACT_STEP: Duration = Duration::from_millis(100);
     const MAX_HYDROLOGY_STEP: Duration = Duration::from_secs(1);
 
     pub fn new(
@@ -93,10 +92,13 @@ impl AsyncWorkPolicy {
                 return Err(AsyncWorkPolicyError::InvalidInterval);
             }
         }
-        if impact_fixed_step.is_zero() || impact_fixed_step > Self::MAX_IMPACT_STEP {
+        if impact_fixed_step != Duration::from_millis(50) {
             return Err(AsyncWorkPolicyError::InvalidFixedStep);
         }
-        if hydrology_fixed_step.is_zero() || hydrology_fixed_step > Self::MAX_HYDROLOGY_STEP {
+        if hydrology_fixed_step != hydrology_cadence
+            || hydrology_fixed_step > Self::MAX_HYDROLOGY_STEP
+            || hydrology_fixed_step.as_nanos() % impact_fixed_step.as_nanos() != 0
+        {
             return Err(AsyncWorkPolicyError::InvalidFixedStep);
         }
         Ok(Self {

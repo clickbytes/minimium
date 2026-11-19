@@ -1,4 +1,8 @@
 //! UI-independent client session and environment synchronization runtime.
+// Shared example fixtures also compile inside the library test target.
+#[cfg(test)]
+extern crate self as minimium_client_runtime;
+
 mod application;
 mod authentication;
 pub mod bootstrap;

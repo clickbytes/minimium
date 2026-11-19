@@ -104,6 +104,7 @@ impl ServerRuntime {
             .min(self.excavation.state.config.fluids.max_active_cells);
         self.excavation.coordinator.prepare(
             PreparationRequest {
+                target_tick: self.step_boundary().tick(),
                 origin: Origin::default(),
                 world: body.world,
                 impact_bodies: vec![body],

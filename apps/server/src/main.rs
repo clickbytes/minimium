@@ -122,6 +122,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     &data_dir,
                     None,
                 );
+                minimium_server_runtime::preflight_persistent_formats(&paths.data_dir)?;
                 let failed = minimium_platform::startup_status::ServerStartupStatus::new(
                     attempt_id,
                     minimium_platform::startup_status::StartupState::Failed,

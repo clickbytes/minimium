@@ -34,9 +34,11 @@ impl ServerRuntime {
     }
 
     pub(in crate::runtime) fn update_excavation(&mut self) {
+        let target_tick = self.step_boundary().tick();
         self.excavation
             .coordinator
             .advance(&mut ports::Publication::new(
+                target_tick,
                 &mut self.excavation.state,
                 &mut self.equipment,
                 &mut self.game.worlds,
@@ -50,6 +52,9 @@ impl ServerRuntime {
             ));
         self.flush_inventory_request();
         self.update_water();
+    }
+
+    pub(in crate::runtime) fn publish_excavation_stream(&mut self) {
         self.stream_excavation();
         let active: HashSet<_> = self
             .connections

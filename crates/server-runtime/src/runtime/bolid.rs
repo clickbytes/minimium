@@ -3,25 +3,30 @@ pub(super) mod shower;
 use super::ServerRuntime;
 use crate::{commands::CommandReply, connection::queue_message};
 use minimium_protocol::{BolidEvent, ServerMessage};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 impl ServerRuntime {
-    pub(super) fn schedule_next_bolid(&mut self, now: Instant) {
+    pub(super) fn schedule_next_bolid(&mut self) {
         self.next_bolid_at = self.bolid_interval.map(|(minimum, maximum)| {
             let span = maximum - minimum + 1;
-            let jitter = mix(self.next_bolid_id ^ self.scheduler.simulation_tick) % span;
-            now + Duration::from_secs(minimum + jitter)
+            let jitter = mix(self.next_bolid_id ^ self.step_boundary().tick()) % span;
+            Duration::from_millis(self.step_boundary().simulation_ms())
+                + Duration::from_secs(minimum + jitter)
         });
     }
 
     pub(super) fn update_bolids(&mut self) {
         let now = self.now;
         let shower_active = self.bolid_shower.is_some();
-        self.update_bolid_shower(now);
-        if self.next_bolid_at.is_some_and(|deadline| now >= deadline) {
+        let game_time = Duration::from_millis(self.step_boundary().simulation_ms());
+        self.update_bolid_shower(game_time);
+        if self
+            .next_bolid_at
+            .is_some_and(|deadline| game_time >= deadline)
+        {
             if !shower_active {
                 let impact = self.impacts.profile.is_some_and(|p| {
-                    mix(self.next_bolid_id ^ self.scheduler.simulation_tick) % 10000
+                    mix(self.next_bolid_id ^ self.step_boundary().tick()) % 10000
                         < u64::from(p.chance_per_10000)
                 });
                 if impact {
@@ -30,7 +35,7 @@ impl ServerRuntime {
                     let _ = self.spawn_bolid(false, false);
                 }
             }
-            self.schedule_next_bolid(now);
+            self.schedule_next_bolid();
         }
         self.sky_views.retain(|player, (context, _, _, at)| {
             now.saturating_duration_since(*at) < Duration::from_secs(15)
@@ -56,7 +61,7 @@ impl ServerRuntime {
         let candidates: Vec<_> = players
             .iter()
             .filter_map(|(instance, player)| {
-                let (context, gaze, night, at) = *self.sky_views.get(&player.id)?;
+                let (context, gaze, observation, at) = *self.sky_views.get(&player.id)?;
                 if manual
                     && self
                         .bolid_shower
@@ -69,7 +74,14 @@ impl ServerRuntime {
                 let owner = self.game.worlds.iter().find(|(id, _)| id == instance)?.1;
                 if !self.game.worlds.context_matches(player.id, context)
                     || owner.manifest.planet().is_none()
-                    || (!manual && !night)
+                    || (!manual
+                        && !observation.confirms(
+                            self.scheduler
+                                .pending
+                                .map_or(self.environment_clock.utc(), |step| step.utc),
+                            self.environment_clock.boundary().calendar_epoch(),
+                            player.position,
+                        ))
                     || now.saturating_duration_since(at) > Duration::from_secs(15)
                 {
                     return None;
@@ -111,7 +123,7 @@ impl ServerRuntime {
         } else {
             gaze
         };
-        let seed = mix(self.next_bolid_id ^ self.scheduler.simulation_tick ^ player_id.get());
+        let seed = mix(self.next_bolid_id ^ self.step_boundary().tick() ^ player_id.get());
         let kind = if manual {
             // Manual requests are a bright specimen for visual inspection.
             // The seed still chooses trajectory, material and breakup family.
@@ -180,10 +192,10 @@ impl ServerRuntime {
         let path_length = length_squared(sub(end, start)).sqrt();
         let speed = [22_000.0, 35_000.0, 51_000.0][kind as usize]
             * (0.8 + ((seed >> 48) as u16 as f32 / u16::MAX as f32) * 0.4);
-        let start_monotonic_ms = self.monotonic_ms(now).map_or(0, |time| time.get());
+        let start_simulation_ms = self.step_boundary().simulation_ms();
         let event = BolidEvent {
             id: self.next_bolid_id,
-            start_monotonic_ms,
+            start_simulation_ms,
             seed,
             start_world_m: start,
             end_world_m: end,

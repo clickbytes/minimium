@@ -43,6 +43,7 @@ mod gameplay_presentation;
 mod gpu;
 mod gpu_scene;
 mod gpu_surface;
+mod held_tool;
 mod impacts;
 mod init;
 mod materials;
@@ -98,6 +99,7 @@ struct Renderer {
     ui: minimium_renderer::ui_pipeline::UiGpuResources,
     held_tool: minimium_renderer::held_tool_gpu::HeldToolGpu,
     held_tool_model_index: Option<usize>,
+    held_tool_pose: minimium_renderer::held_tool::HeldToolPose,
     held_tool_visible: bool,
     initial_world: minimium_renderer::geometry_gpu::StaticVertexBuffer,
     remote_vertices: minimium_renderer::geometry_gpu::DynamicVertexBuffer,
@@ -175,7 +177,6 @@ struct DesktopHost {
     bolids: Vec<(
         minimium_protocol::WorldContext,
         minimium_protocol::BolidEvent,
-        Instant,
         Option<minimium_renderer::milky_way_gpu::BolidEvolution>,
     )>,
     last_sky_view_at: Option<Instant>,
@@ -209,6 +210,7 @@ struct DesktopHost {
     application: crate::application::ClientApplication,
     pending_step_disconnect: Option<crate::application::ClientStepDisconnect>,
     gameplay_presentation: GameplayPresentation,
+    held_tool_motion: held_tool::HeldToolMotion,
     excavation_debug: excavation_debug::ExcavationDebug,
     sector_cache: sector_scene::ClientSectorCache,
     last_render_position: [f32; 3],

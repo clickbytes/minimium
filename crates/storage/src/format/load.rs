@@ -75,7 +75,9 @@ pub(crate) fn load_bytes(
                     "CLOCK record appears after state records",
                 ));
             }
-            saved_clock = Some(parse_saved_clock(line)?);
+            let (clock, revision) = parse_saved_clock(line)?;
+            store.set_excavation_revision(revision);
+            saved_clock = Some(clock);
             continue;
         }
         if line.starts_with("WORLD\t") {

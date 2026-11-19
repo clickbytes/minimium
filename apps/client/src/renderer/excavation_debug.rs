@@ -208,6 +208,7 @@ fn rejection_notice(reason: ActionRejection) -> ToolNotice {
         ActionRejection::Obstructed => ToolNotice::Obstructed,
         ActionRejection::UnsafeGeometry => ToolNotice::UnsafeGeometry,
         ActionRejection::WrongMaterial => ToolNotice::WrongMaterial,
+        ActionRejection::Paused => ToolNotice::Paused,
         ActionRejection::Busy => ToolNotice::Busy,
         ActionRejection::RateLimited => ToolNotice::RateLimited,
         ActionRejection::Stale => ToolNotice::Stale,

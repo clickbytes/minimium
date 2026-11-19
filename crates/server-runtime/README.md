@@ -59,8 +59,7 @@ from its arguments and does not invoke the text lexer.
 into the shared 64-command queue and returns a monotone `SubmissionId` or typed
 `SubmitError`. Acceptance is not execution. `step(RuntimeTime)` returns
 bounded command execution results, tick/stop state and the next recommended wake
-instant; it never sleeps. One step executes at most one due fixed tick and eight
-commands, preserving the existing missed-tick rule. Console/admin input uses the
+instant; it never sleeps. A host pass services up to eight commands and attempts up to eight due 50 ms ticks. It stops starting ticks after 4 ms of work. Integer demand retains fractions and drops excess whole steps. Console/admin input uses the
 same queue/executor. Host possession grants administration authority; gameplay
 principals still enter through the supplied typed transport port and existing
 admission/action validation. `query` is immutable and returns status or bounded
@@ -97,9 +96,7 @@ oversized-row errors. The existing `embedded_host` example also submits its save
 operation through the typed constructor.
 
 `RuntimeTime` carries a monotonic instant and either validated UTC or a typed UTC
-failure. `RuntimeTime::system_now` is an explicit process adapter. Owner deadlines,
-cooldowns and snapshot timestamps use the injected instant; only instrumentation
-and resource-drain budgets measure actual elapsed work. UTC failures retain clock
+failure. `RuntimeTime::system_now` is an explicit process adapter. Host deadlines use the injected instant. Character physics, tool and fire cooldowns, impacts and water integrate simulation time. Snapshots report the committed tick. UTC failures retain clock
 fault/save-error handling. Regressing monotonic input is rejected without advancing
 the owner. Final shutdown capture uses the host-supplied final time. The process
 wrapper prepares console/resources/randomness and drives this same constructor
@@ -432,7 +429,7 @@ speeds use the same Earth relief scale, so flight time remains physical seconds.
 
 `spawn_random_bolid [N]` accepts 1..64 (default 1). The owner lane stores at most
 one transient `bolid::shower::Shower`: remaining count, observer/context and two
-monotonic deadlines. One first event is immediate; remaining bright events use
+simulation-time deadlines. One first event is immediate; remaining bright events use
 seeded clustered 0.9..8-second gaps and wider framing. A busy shower rejects a
 second request; the existing five-second manual cooldown applies at admission.
 No tick catch-up burst or separate timer thread is used. Observer/context loss,
@@ -542,3 +539,9 @@ configuration checks every granted kind against the tool catalog before server
 startup.
 Unsafe geometry rejections retain their contour failure category in a bounded
 diagnostic with mutation/action IDs, brush center and at most eight chunk keys.
+For intersecting transitions, the event also records both offending triangles
+in world-space millimetres.
+
+## Global simulation rate
+
+A tick awaiting water, excavation or impact durability resumes at its saved operation. Module stages see the target tick once. The owner publishes the new boundary after all operations complete. Host services continue during a pause or pending step. Inputs carry connection sequences and clock revisions so a request crossing a pause cannot execute on resume. Save capture waits for dirty water and live bodies to reach their durable projections. The runtime returns a typed save failure when the boundary cannot be published. [ADR 0016](../../docs/adr/0016-committed-simulation-time.md)

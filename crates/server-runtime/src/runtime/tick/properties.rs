@@ -47,13 +47,13 @@ impl ServerRuntime {
             ServerPropertyCommand::SetBolidInterval(interval) => {
                 self.bolid_interval = *interval;
                 self.bolid_session_override = true;
-                self.schedule_next_bolid(self.now);
+                self.schedule_next_bolid();
                 report(self.property_report("server.sky.bolid_interval"))
             }
             ServerPropertyCommand::ResetBolidInterval => {
                 self.bolid_interval = self.startup_bolid_interval;
                 self.bolid_session_override = false;
-                self.schedule_next_bolid(self.now);
+                self.schedule_next_bolid();
                 report(self.property_report("server.sky.bolid_interval"))
             }
             ServerPropertyCommand::List(prefix) => {

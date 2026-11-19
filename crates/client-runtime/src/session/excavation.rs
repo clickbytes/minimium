@@ -6,7 +6,7 @@ use minimium_world::items::{ActionResult, Inventory};
 pub(super) struct ToolClientState {
     next_id: u64,
     pending: Option<(WorldContext, u64)>,
-    last_use: Option<ClientTime>,
+    last_use: Option<u64>,
 }
 
 impl ClientSession {
@@ -121,11 +121,15 @@ impl ClientSession {
         if self.tools.pending.is_some_and(|(c, _)| c != context) {
             self.tools.pending = None;
         }
-        if self.tools.pending.is_some()
+        let game_ms = self
+            .clock_sample
+            .map_or(0, |s| s.boundary().simulation_ms());
+        if self.clock_sample.is_some_and(|s| s.rate_ppm().get() == 0)
+            || self.tools.pending.is_some()
             || self
                 .tools
                 .last_use
-                .is_some_and(|t| self.now.elapsed_since(t) < Duration::from_millis(500))
+                .is_some_and(|t| game_ms.saturating_sub(t) < 500)
         {
             return Ok(false);
         }
@@ -143,7 +147,7 @@ impl ClientSession {
         )?;
         self.tools.next_id = action_id;
         self.tools.pending = Some((context, action_id));
-        self.tools.last_use = Some(now);
+        self.tools.last_use = Some(game_ms);
         Ok(true)
     }
 

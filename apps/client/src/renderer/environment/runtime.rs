@@ -18,9 +18,30 @@ impl DesktopHost {
         render_view: RenderViewFrame,
     ) -> PreparedEnvironmentFrame {
         let started = std::time::Instant::now();
+        let elapsed = self.presentation_time();
+        let frame = self.environment_frame;
+        let horizon = frame.committed.map(|sample| {
+            let remaining = sample
+                .boundary()
+                .simulation_ms()
+                .saturating_sub(elapsed.as_millis() as u64);
+            if frame.achieved_rate > 0.0 {
+                std::time::Duration::from_secs_f64(
+                    remaining as f64 / (1000.0 * frame.achieved_rate),
+                )
+            } else {
+                std::time::Duration::ZERO
+            }
+        });
+        self.meteors.set_time(
+            elapsed,
+            frame.achieved_rate,
+            horizon,
+            frame.rate_ppm == Some(0),
+        );
         let stars = self.update_render_environment_inner(render_view);
         // The client-local meteor runtime consumes the freshly rebuilt
-        // environment frame on the client monotonic clock and produces one
+        // environment frame at the shared simulation time and produces one
         // bounded, origin-relative `MeteorFrame` per frame (ADR 0013 § 5).
         let mut meteors = self
             .meteors
@@ -36,7 +57,7 @@ impl DesktopHost {
             self.render_environment_frame.clone(),
             stars,
             meteors,
-            self.cosmetic_epoch.elapsed(),
+            elapsed,
         );
         self.metrics
             .frame_stats

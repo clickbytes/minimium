@@ -362,6 +362,11 @@ impl WaterCatalog {
         Some(self)
     }
 
+    /// Undisplaced sea radius of the canonical ocean lattice, in world metres.
+    pub fn reference_sea_radius_m(&self) -> f64 {
+        (self.terrain.radius_mm() as i64 + self.terrain.sea_level_mm()).max(1) as f64 / 1000.0
+    }
+
     /// Resolves a radial world direction to the connected body sampled on its cube face.
     pub fn body_at_direction(&self, direction: [f64; 3]) -> Option<WaterBodyId> {
         let length = direction.iter().map(|v| v * v).sum::<f64>().sqrt();

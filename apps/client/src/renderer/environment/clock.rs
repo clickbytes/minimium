@@ -4,6 +4,18 @@ use minimium_protocol::WorldContext;
 use minimium_world::world::MembershipEpoch;
 
 impl DesktopHost {
+    pub(in crate::renderer) fn presentation_time(&self) -> std::time::Duration {
+        self.environment_frame
+            .simulation_ms
+            .map(std::time::Duration::from_millis)
+            .unwrap_or_else(|| {
+                if self.application.connection_view().session().is_some() {
+                    std::time::Duration::ZERO
+                } else {
+                    self.cosmetic_epoch.elapsed()
+                }
+            })
+    }
     /// Publish one immutable clock/context tuple for every consumer this frame.
     pub(in crate::renderer) fn update_environment_frame(&mut self) {
         if let Some(session) = self

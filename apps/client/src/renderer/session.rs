@@ -200,6 +200,7 @@ impl DesktopHost {
     }
 
     pub(super) fn clear_connection(&mut self) {
+        self.cancel_tool_swing();
         if let Err(error) = self.application.validate_time(crate::host_time::sample()) {
             self.application
                 .record_diagnostic_failure("client.invalid_time", &error);
@@ -442,6 +443,10 @@ impl DesktopHost {
                     );
                 }
             }
+            crate::application::LocalActionOutcome::Queued {
+                kind: crate::application::QueuedActionKind::ToolUse,
+                ..
+            } => self.start_tool_swing(),
             crate::application::LocalActionOutcome::Rejected {
                 kind: crate::application::QueuedActionKind::ToolUse,
                 error,

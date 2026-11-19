@@ -60,6 +60,7 @@ pub(super) fn decode(reader: &mut Reader<'_>) -> Result<ServerMessage, ProtocolE
                         3 => ActionRejection::OutOfReach,
                         4 => ActionRejection::Obstructed,
                         5 => ActionRejection::WrongMaterial,
+                        12 => ActionRejection::Paused,
                         6 => ActionRejection::Busy,
                         7 => ActionRejection::RateLimited,
                         8 => ActionRejection::Stale,

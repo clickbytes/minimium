@@ -16,11 +16,11 @@ pub(super) fn restore(
     path: crate::client_commands::BolidPath,
 ) -> Vec<String> {
     let mut output = Vec::new();
-    let Some(start_monotonic_ms) = renderer
+    let Some(start_simulation_ms) = renderer
         .application
         .connection_view()
         .session()
-        .and_then(|session| session.server_monotonic_ms())
+        .and_then(|session| session.environment_frame().simulation_ms)
     else {
         output.push("dev: synchronized server time is unavailable".to_owned());
         return output;
@@ -32,14 +32,14 @@ pub(super) fn restore(
         duration_ms: path.duration_ms,
         start_world_m: path.start_world_m,
         end_world_m: path.end_world_m,
-        start_monotonic_ms,
+        start_simulation_ms,
     };
     let context = renderer.render_environment_frame.context;
-    let Some((event_context, event, received, cached)) =
+    let Some((event_context, event, cached)) =
         renderer
             .bolids
             .iter_mut()
-            .find(|(candidate_context, event, _, _)| {
+            .find(|(candidate_context, event, _)| {
                 Some(*candidate_context) == context && event.id == candidate.id
             })
     else {
@@ -49,7 +49,6 @@ pub(super) fn restore(
         return output;
     };
     *event = candidate;
-    *received = std::time::Instant::now();
     *cached = None;
     renderer.diagnostic_bolid_age = Some((*event_context, event.id, 0.0));
     output.push(

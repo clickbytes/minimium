@@ -9,6 +9,7 @@ use std::sync::Arc;
 pub struct ClientPrediction {
     pub character: CharacterState,
     pub position_mm: Option<Position3Mm>,
+    authority: [Option<(u64, Position3Mm)>; 2],
     physics_accumulator: f32,
     pending_inputs: VecDeque<(u64, u64, MovementIntent, MovementPolicy, u64)>,
     resolved_intent: MovementIntent,
@@ -27,6 +28,7 @@ impl ClientPrediction {
         Self {
             character,
             position_mm,
+            authority: [None; 2],
             physics_accumulator: 0.0,
             pending_inputs: VecDeque::with_capacity(128),
             resolved_intent: MovementIntent::default(),
@@ -64,12 +66,16 @@ impl ClientPrediction {
             .map_or(0.0, |sample| sample.submerged_fraction as f32)
     }
 
-    fn sample_water(&self) -> Option<minimium_world::fluid::WaterSample> {
-        let reader = self.water_read.as_ref()?;
-        let feet = self.position_mm.map_or_else(
+    fn feet_m(&self) -> [f64; 3] {
+        self.position_mm.map_or_else(
             || self.character.position.map(f64::from),
             |position| position.0.map(|v| v as f64 / 1000.0),
-        );
+        )
+    }
+
+    fn sample_water(&self) -> Option<minimium_world::fluid::WaterSample> {
+        let reader = self.water_read.as_ref()?;
+        let feet = self.feet_m();
         let up = match self.character.gravity {
             minimium_world::world::CharacterGravity::FixedY => [0.0, 1.0, 0.0],
             minimium_world::world::CharacterGravity::Radial { center } => {
@@ -84,6 +90,39 @@ impl ClientPrediction {
             }
         };
         Some(reader.sample_capsule(feet, up, minimium_world::world::PLAYER_HEIGHT as f64))
+    }
+
+    pub(crate) fn clear_authority(&mut self) {
+        self.authority = [None; 2];
+    }
+
+    pub(crate) fn observe_authority(&mut self, ms: u64, position: Position3Mm) {
+        if self.authority[1].is_none_or(|(last, _)| last != ms) {
+            self.authority[0] = self.authority[1];
+        }
+        self.authority[1] = Some((ms, position));
+    }
+
+    pub(crate) fn interpolate_authority(&mut self, ms: u64) {
+        let Some((end, to)) = self.authority[1] else {
+            return;
+        };
+        let (start, from) = self.authority[0].unwrap_or((end, to));
+        let span = end.saturating_sub(start);
+        let distant = (0..3).any(|axis| from.0[axis].abs_diff(to.0[axis]) > 100_000);
+        let fraction = if span == 0 || distant {
+            1.0
+        } else {
+            ms.saturating_sub(start).min(span) as f64 / span as f64
+        };
+        let position = Position3Mm(std::array::from_fn(|axis| {
+            (from.0[axis] as f64 + (to.0[axis] as f64 - from.0[axis] as f64) * fraction).round()
+                as i64
+        }));
+        self.character.position = position.0.map(|v| (v as f64 / 1000.0) as f32);
+        if self.position_mm.is_some() {
+            self.position_mm = Some(position);
+        }
     }
 
     pub fn reset_time(&mut self) {
@@ -132,9 +171,22 @@ impl ClientPrediction {
     }
 
     pub fn take_visual_offset(&mut self, delta_seconds: f32) -> [f32; 3] {
-        let decay = (1.0 - delta_seconds.max(0.0) * 8.0).clamp(0.0, 1.0);
+        let decay = (-8.0 * delta_seconds.max(0.0)).exp();
         self.visual_offset = self.visual_offset.map(|value| value * decay);
         self.visual_offset
+    }
+
+    pub(crate) fn visual_offset(&self) -> [f32; 3] {
+        self.visual_offset
+    }
+
+    fn preserve_visual_position(&mut self, previous_feet: [f64; 3]) {
+        let feet = self.feet_m();
+        // Several snapshots can arrive before the next frame. Carry the remaining
+        // correction across all of them, subtracting positions at world precision.
+        for axis in 0..3 {
+            self.visual_offset[axis] += (previous_feet[axis] - feet[axis]) as f32;
+        }
     }
 
     pub fn reconcile_server(
@@ -153,7 +205,7 @@ impl ClientPrediction {
         manifest: Option<WorldManifest>,
         geography: Option<Arc<dyn minimium_procgen::PreparedGeography>>,
     ) {
-        let old = self.character.position;
+        let previous_feet = self.feet_m();
         if let Some(server_position_mm) = server_position_mm {
             self.position_mm = Some(server_position_mm);
             self.character.position = server_position_mm.0.map(|value| value as f32 / 1000.0);
@@ -180,10 +232,13 @@ impl ClientPrediction {
             return;
         }
         let Some((_, last_tick, _, _, _)) = replay.last().copied() else {
-            self.visual_offset =
-                std::array::from_fn(|axis| old[axis] - self.character.position[axis]);
+            self.preserve_visual_position(previous_feet);
             return;
         };
+        if last_tick.saturating_sub(server_tick) > 8 {
+            self.reset_history();
+            return;
+        }
         let mut next_sample = 0;
         let mut held_input = self.resolved_intent;
         let mut active_policy = replay[0].3;
@@ -197,7 +252,9 @@ impl ClientPrediction {
                 let sample = replay[next_sample];
                 held_input = sample.2;
                 active_policy = sample.3;
+                let jump = input.jump || sample.2.jump;
                 input = sample.2;
+                input.jump = jump;
                 next_sample += 1;
             }
             collision_query.fill_for_speed(
@@ -245,7 +302,7 @@ impl ClientPrediction {
                 return;
             }
         }
-        self.visual_offset = std::array::from_fn(|axis| old[axis] - self.character.position[axis]);
+        self.preserve_visual_position(previous_feet);
     }
 
     /// Applies one fixed step and restores a non-fly character that would leave land.

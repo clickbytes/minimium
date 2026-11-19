@@ -94,7 +94,7 @@ fn clip_plane(polygon: Vec<Vertex>, plane: [f64; 3]) -> Vec<Vertex> {
     result
 }
 
-fn interpolate(a: MapSurfaceVertex, b: MapSurfaceVertex, t: f32) -> MapSurfaceVertex {
+pub(crate) fn interpolate(a: MapSurfaceVertex, b: MapSurfaceVertex, t: f32) -> MapSurfaceVertex {
     let lerp = |x: f32, y: f32| x + (y - x) * t;
     let normal = std::array::from_fn(|i| lerp(a.normal[i], b.normal[i]));
     let length = normal.iter().map(|v| v * v).sum::<f32>().sqrt().max(1.0e-8);

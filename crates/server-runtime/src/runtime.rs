@@ -25,6 +25,7 @@ mod network;
 mod operations;
 mod outbound;
 pub mod schedule;
+mod service_inputs;
 mod tick;
 mod transfers;
 use diagnostics::emit_system_effect_diagnostic;
@@ -76,6 +77,7 @@ struct GameState {
         HashMap<PlayerId, std::collections::BTreeMap<u64, minimium_protocol::MovementSample>>,
     last_input_seq: HashMap<PlayerId, u64>,
     pending_input_seqs: HashMap<PlayerId, std::collections::BTreeSet<u64>>,
+    applied_input: HashMap<PlayerId, (u64, u64)>,
     resolved_input_seq: HashMap<PlayerId, u64>,
     actor_action_cooldowns: HashMap<PlayerId, action_state::ActorActionCooldowns>,
     fire_cooldown: Duration,
@@ -100,12 +102,12 @@ struct OperationsState {
 }
 struct Scheduler {
     server_started: Instant,
-    next_utc_check: Instant,
-    next_tick: Instant,
+    pending: Option<clock::PendingStep>,
+    transfers: Vec<crate::world_registry::CommittedTransfer>,
+    demand: clock::StepDemand,
     next_snapshot: Instant,
     next_autosave: Option<Instant>,
     autosave_interval: Duration,
-    simulation_tick: u64,
 }
 pub struct ServerRuntime {
     now: Instant,
@@ -155,9 +157,17 @@ pub struct ServerRuntime {
     bolid_interval: Option<(u64, u64)>,
     startup_bolid_interval: Option<(u64, u64)>,
     bolid_session_override: bool,
-    next_bolid_at: Option<Instant>,
+    next_bolid_at: Option<Duration>,
     next_bolid_id: u64,
-    sky_views: HashMap<PlayerId, (minimium_protocol::WorldContext, [f32; 3], bool, Instant)>,
+    sky_views: HashMap<
+        PlayerId,
+        (
+            minimium_protocol::WorldContext,
+            [f32; 3],
+            minimium_protocol::SkyObservation,
+            Instant,
+        ),
+    >,
     last_manual_bolid_at: Option<Instant>,
     bolid_shower: Option<bolid::shower::Shower>,
 }
@@ -243,6 +253,10 @@ impl ServerRuntime {
             saved_clock,
             prepared_geography,
         } = startup;
+        if player_store.excavation_revision() != excavation_restore.last_mutation_id {
+            return Err(io::Error::new(io::ErrorKind::InvalidData,
+                "excavation journal and world snapshot are from different simulation boundaries; restore the matching files"));
+        }
         let equipment = equipment::Equipment::from_restored(
             std::mem::take(&mut excavation_restore.inventories),
             config.max_players,
@@ -300,6 +314,7 @@ impl ServerRuntime {
             pending_movement_inputs: HashMap::with_capacity(config.max_players),
             last_input_seq: HashMap::with_capacity(config.max_players),
             pending_input_seqs: HashMap::with_capacity(config.max_players),
+            applied_input: HashMap::with_capacity(config.max_players),
             resolved_input_seq: HashMap::with_capacity(config.max_players),
             actor_action_cooldowns: HashMap::with_capacity(config.max_players),
             fire_cooldown: Duration::from_millis(combat.fire_cooldown_ms),
@@ -381,13 +396,13 @@ impl ServerRuntime {
             operations,
             scheduler: Scheduler {
                 server_started,
-                next_utc_check: server_started + Duration::from_secs(5),
-                next_tick: server_started + TICK,
+                pending: None,
+                transfers: Vec::new(),
+                demand: clock::StepDemand::new(server_started),
                 next_snapshot: server_started + SNAPSHOT_INTERVAL,
                 next_autosave: (!autosave_interval.is_zero())
                     .then_some(server_started + autosave_interval),
                 autosave_interval,
-                simulation_tick: 0,
             },
             metrics,
             executor,
@@ -408,9 +423,11 @@ impl ServerRuntime {
             bolid_interval: config.bolid_interval,
             startup_bolid_interval: config.bolid_interval,
             bolid_session_override: false,
-            next_bolid_at: config
-                .bolid_interval
-                .map(|(minimum, _)| server_started + Duration::from_secs(minimum)),
+            next_bolid_at: config.bolid_interval.map(|(minimum, _)| {
+                Duration::from_millis(
+                    saved_clock.map_or(0, |clock| clock.boundary().simulation_ms()),
+                ) + Duration::from_secs(minimum)
+            }),
             next_bolid_id: 1,
             sky_views: HashMap::new(),
             last_manual_bolid_at: None,
@@ -443,7 +460,7 @@ impl ServerRuntime {
                 let feedback_diagnostics = self.schedule.diagnostics();
                 let batch = self.schedule.run_stage(
                     stage,
-                    self.scheduler.simulation_tick,
+                    self.step_boundary().tick(),
                     &self.game.worlds,
                     self.prepared_geography.as_ref(),
                     &self.game.gameplay_events,
@@ -467,7 +484,7 @@ impl ServerRuntime {
         let feedback_diagnostics = self.schedule.diagnostics();
         let batch = self.schedule.run_stage(
             stage,
-            self.scheduler.simulation_tick,
+            self.step_boundary().tick(),
             &self.game.worlds,
             self.prepared_geography.as_ref(),
             &self.game.gameplay_events,

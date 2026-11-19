@@ -3,23 +3,17 @@ use crate::modules::{ScheduleError, Stage};
 /// Concrete owner operations are declared and dispatched only by this host crate.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum BuiltinOperation {
-    Commands,
     Bolids,
     Impacts,
-    Excavation,
-    ShutdownGate,
     WorldInputs,
     Simulation,
     ClearEvents,
 }
 
 impl BuiltinOperation {
-    const ALL: [Self; 8] = [
-        Self::Commands,
+    const ALL: [Self; 5] = [
         Self::Bolids,
         Self::Impacts,
-        Self::Excavation,
-        Self::ShutdownGate,
         Self::WorldInputs,
         Self::Simulation,
         Self::ClearEvents,
@@ -27,11 +21,8 @@ impl BuiltinOperation {
 
     const fn id(self) -> &'static str {
         match self {
-            Self::Commands => "engine commands",
             Self::Bolids => "engine bolids",
             Self::Impacts => "engine impacts",
-            Self::Excavation => "engine excavation",
-            Self::ShutdownGate => "engine shutdown gate",
             Self::WorldInputs => "engine world inputs",
             Self::Simulation => minimium_gameplay::SIMULATION_SCHEDULE_ANCHOR,
             Self::ClearEvents => "engine clear events",
@@ -57,16 +48,10 @@ pub(crate) const fn production_schedule() -> minimium_gameplay::ScheduleDefiniti
     use minimium_gameplay::{ScheduleNode as Node, ScheduleNodeKind as Kind};
     const OPS: &[Node] = &[
         Node {
-            id: "engine commands",
-            kind: Kind::Operation,
-            before: &[],
-            after: &[],
-        },
-        Node {
             id: "engine bolids",
             kind: Kind::Operation,
             before: &[],
-            after: &["engine commands"],
+            after: &[],
         },
         Node {
             id: "engine impacts",
@@ -75,22 +60,10 @@ pub(crate) const fn production_schedule() -> minimium_gameplay::ScheduleDefiniti
             after: &["engine bolids"],
         },
         Node {
-            id: "engine excavation",
-            kind: Kind::Operation,
-            before: &[],
-            after: &["engine impacts"],
-        },
-        Node {
-            id: "engine shutdown gate",
-            kind: Kind::Operation,
-            before: &[],
-            after: &["engine excavation"],
-        },
-        Node {
             id: "engine world inputs",
             kind: Kind::Operation,
             before: &[],
-            after: &["engine shutdown gate"],
+            after: &["engine impacts"],
         },
         Node {
             id: minimium_gameplay::FIXED_UPDATE_SCHEDULE_ANCHOR,

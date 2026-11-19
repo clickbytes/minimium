@@ -1,6 +1,8 @@
 //! Bounded cube meshes, worker publication and GPU transparency.
 mod cache;
 mod runtime;
+mod selection;
+mod status;
 mod worker;
 
 pub(super) use minimium_renderer::CloudGpu;
@@ -31,9 +33,8 @@ struct Request {
     climate: Arc<minimium_environment::climate::ClimateScenario>,
     stamp: Stamp,
     utc: f64,
+    cover_utc: f64,
     observer: DVec3,
-    eye: DVec3,
-    sort: bool,
     revision: u64,
     detail: u8,
     started: Instant,
@@ -48,4 +49,5 @@ struct Publication {
     stats: cache::MeshStats,
     limited: bool,
     build_ms: f64,
+    coarse: bool,
 }

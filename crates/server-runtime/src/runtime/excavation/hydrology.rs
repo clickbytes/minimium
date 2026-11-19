@@ -1,6 +1,8 @@
 use super::*;
 
 pub(super) struct WaterJob {
+    target_tick: u64,
+    ready: Option<(water::WaterWorld, Duration)>,
     input_revision: minimium_procgen::SectorContentVersion,
     water_revision: u64,
     receiver: Receiver<Result<(water::WaterWorld, Duration), minimium_fluids::FluidError>>,
@@ -126,29 +128,28 @@ impl ServerRuntime {
         Ok(())
     }
 
+    pub(in crate::runtime) fn checkpoint_next_water(&mut self) -> io::Result<bool> {
+        let next = self
+            .excavation
+            .state
+            .waters
+            .iter()
+            .filter_map(|(world, water)| water.dirty().then_some(*world))
+            .min();
+        if let Some(world) = next {
+            self.submit_water_checkpoint(world)?;
+            return Ok(false);
+        }
+        Ok(true)
+    }
+
     pub(super) fn update_water(&mut self) {
         if self.excavation.coordinator.shutting_down()
             || self.excavation.coordinator.failure().is_some()
         {
             return;
         }
-        self.publish_water_jobs();
-        if self.excavation.coordinator.failure().is_some() {
-            return;
-        }
         let now = self.now;
-        if now >= self.excavation.state.next_water_step {
-            self.excavation.state.next_water_step =
-                now + self.excavation.state.async_work_policy.hydrology_cadence();
-            let worlds: Vec<_> = self.excavation.state.waters.keys().copied().collect();
-            for world in worlds {
-                if !self.excavation_reserves(world)
-                    && !self.excavation.state.water_jobs.contains_key(&world)
-                {
-                    self.queue_water_step(world);
-                }
-            }
-        }
         if !self.excavation.busy() {
             // Select the oldest due world; a busy lake cannot starve the other
             // worlds by resetting a single server-wide checkpoint deadline.
@@ -179,47 +180,87 @@ impl ServerRuntime {
         }
     }
 
-    fn publish_water_jobs(&mut self) {
-        let jobs = std::mem::take(&mut self.excavation.state.water_jobs);
-        for (world, job) in jobs {
-            match job.receiver.try_recv() {
-                Ok(Ok((water, elapsed))) => {
-                    let current = self
-                        .excavation
-                        .state
-                        .waters
-                        .get(&world)
-                        .map(|w| w.snapshot().revision());
-                    if current == Some(job.water_revision)
+    pub(in crate::runtime) fn prepare_water_boundary(&mut self, tick: u64) -> bool {
+        let cadence = self
+            .excavation
+            .state
+            .async_work_policy
+            .hydrology_cadence()
+            .as_nanos();
+        if u128::from(tick) * TICK.as_nanos() / cadence
+            == u128::from(tick - 1) * TICK.as_nanos() / cadence
+        {
+            return true;
+        }
+        let worlds: Vec<_> = self
+            .excavation
+            .state
+            .waters
+            .iter()
+            .filter(|(_, water)| !water.snapshot().cells().is_empty() && !water.sleeping())
+            .map(|(&world, _)| world)
+            .collect();
+        let mut ready = true;
+        for &world in &worlds {
+            let mut job = match self.excavation.state.water_jobs.remove(&world) {
+                Some(job)
+                    if job.target_tick == tick
                         && self
                             .excavation_inputs(world)
                             .is_some_and(|inputs| inputs.revision() == job.input_revision)
-                    {
-                        self.game
-                            .worlds
-                            .get_mut(world)
-                            .unwrap()
-                            .world
-                            .set_water_read(Some(water.water_read()));
-                        self.excavation.state.waters.insert(world, water);
-                        self.excavation.state.water_failures.remove(&world);
-                        self.excavation.state.metrics.solver.record(elapsed);
+                        && job.water_revision
+                            == self.excavation.state.waters[&world].snapshot().revision() =>
+                {
+                    job
+                }
+                _ => {
+                    self.queue_water_step(world, tick);
+                    ready = false;
+                    continue;
+                }
+            };
+            if job.ready.is_none() {
+                match job.receiver.try_recv() {
+                    Ok(Ok(result)) => job.ready = Some(result),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => ready = false,
+                    result => {
+                        let error = match result {
+                            Ok(Err(e)) => e,
+                            _ => minimium_fluids::FluidError::Unavailable,
+                        };
+                        self.water_step_failure(world, error);
+                        ready = false;
+                        continue;
                     }
                 }
-                Ok(Err(error)) => {
-                    self.water_step_failure(world, error);
-                }
-                Err(std::sync::mpsc::TryRecvError::Empty) => {
-                    self.excavation.state.water_jobs.insert(world, job);
-                }
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    self.water_step_failure(world, minimium_fluids::FluidError::Unavailable);
-                }
             }
+            self.excavation.state.water_jobs.insert(world, job);
         }
+        if ready {
+            for world in worlds {
+                let (water, elapsed) = self
+                    .excavation
+                    .state
+                    .water_jobs
+                    .remove(&world)
+                    .and_then(|job| job.ready)
+                    .expect("all water results validated");
+                self.game
+                    .worlds
+                    .get_mut(world)
+                    .unwrap()
+                    .world
+                    .set_water_read(Some(water.water_read()));
+                self.excavation.state.waters.insert(world, water);
+                self.excavation.state.water_failures.remove(&world);
+                self.excavation.state.metrics.solver.record(elapsed);
+            }
+            self.excavation.state.water_jobs.clear();
+        }
+        ready
     }
 
-    fn queue_water_step(&mut self, world: WorldInstanceId) {
+    fn queue_water_step(&mut self, world: WorldInstanceId, target_tick: u64) {
         if self
             .excavation
             .state
@@ -271,6 +312,8 @@ impl ServerRuntime {
             self.excavation.state.water_jobs.insert(
                 world,
                 WaterJob {
+                    target_tick,
+                    ready: None,
                     input_revision,
                     water_revision: revision,
                     receiver,
@@ -299,6 +342,12 @@ impl ServerRuntime {
                     "world {world:?}: step refused ({error:?}); retaining complete water state"
                 ),
             );
+        }
+        if matches!(
+            error,
+            minimium_fluids::FluidError::Invalid | minimium_fluids::FluidError::RevisionExhausted
+        ) {
+            self.water_failure(format!("unrecoverable water step in {world:?}: {error:?}"));
         }
         self.excavation.state.water_failures.insert(
             world,

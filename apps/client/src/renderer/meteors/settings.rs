@@ -9,7 +9,7 @@ impl MeteorRuntime {
             kinematics::Body,
             MAX_METEOR_HISTORY_SAMPLES,
         };
-        let age = self.epoch.elapsed().as_secs_f64();
+        let age = self.now_s();
         let mut solids = 0;
         let mut grains = 0;
         for event in self.active.iter().filter(|event| event.basis.is_some()) {

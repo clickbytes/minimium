@@ -8,14 +8,22 @@ struct VertexOutput {
     @location(0) color: vec3<f32>,
 };
 
+struct HeldToolUniform {
+    transform: mat4x4<f32>,
+    projection: vec4<f32>,
+};
+
+@group(0) @binding(0) var<uniform> tool: HeldToolUniform;
+
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
-    let distance = max(-input.view_position.z, 0.1);
+    let position = tool.transform * vec4<f32>(input.view_position, 1.0);
     output.clip_position = vec4<f32>(
-        input.view_position.xy * 1.25 / distance,
-        0.5,
-        1.0,
+        position.x * tool.projection.x,
+        position.y * tool.projection.y,
+        position.z * tool.projection.z + tool.projection.w,
+        -position.z,
     );
     output.color = input.color;
     return output;

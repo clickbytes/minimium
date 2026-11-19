@@ -78,6 +78,9 @@ impl LocalDemoEnvironment {
             CatalogueSha256::new(identity.sha256),
         );
         EnvironmentFrameInput {
+            committed: None,
+            simulation_ms: Some((world_time - self.anchor.world_utc_ms().get()) as u64),
+            achieved_rate: self.anchor.rate_ppm().get() as f64 / 1_000_000.0,
             estimated_world_utc_ms: Some(world_time),
             render_world_utc_ms: Some(world_time),
             descriptor: Some(descriptor),

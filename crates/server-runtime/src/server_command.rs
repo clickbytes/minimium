@@ -139,7 +139,7 @@ const SERVER_SPECS: &[CommandSpec<ServerCommand, CommandError>] = &[
             None,
             Some("0 or 0.1..=1000000"),
             Some("x"),
-            "world clock speed multiplier",
+            "requested global simulation speed (zero pauses gameplay)",
         )],
         parser: parse_server_spec,
     },

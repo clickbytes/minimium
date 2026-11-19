@@ -11,6 +11,7 @@ struct Shared {
     generation: AtomicU64,
     status: AtomicU8,
     volume: AtomicU32,
+    transport: std::sync::Mutex<(f32, Option<std::time::Instant>)>,
 }
 pub struct Backend {
     shared: Arc<Shared>,
@@ -23,6 +24,7 @@ impl Backend {
             stop: AtomicBool::new(false),
             generation: AtomicU64::new(0),
             status: AtomicU8::new(1),
+            transport: std::sync::Mutex::new((0.0, None)),
             volume: AtomicU32::new(0.25f32.to_bits()),
         });
         let (sender, receiver) = mpsc::sync_channel::<(u64, PendingCue)>(8);
@@ -45,16 +47,16 @@ impl Backend {
                     }
                     voices.retain(|voice| !voice.empty());
                     for voice in &voices {
-                        voice.set_volume(f32::from_bits(state.volume.load(Ordering::Relaxed)));
+                        configure_voice(voice, &state);
                     }
-                    match receiver.recv_timeout(Duration::from_millis(25)) {
+                    match receiver.recv_timeout(Duration::from_millis(5)) {
                         Ok((stamp, cue)) if stamp == generation && voices.len() < 4 => {
                             let data = synthesize(cue);
                             if stamp != state.generation.load(Ordering::Acquire) {
                                 continue;
                             }
                             let voice = rodio::Player::connect_new(stream.mixer());
-                            voice.set_volume(f32::from_bits(state.volume.load(Ordering::Relaxed)));
+                            configure_voice(&voice, &state);
                             voice.append(rodio::buffer::SamplesBuffer::new(
                                 rodio::nz!(2),
                                 rodio::nz!(24000),
@@ -87,6 +89,10 @@ impl Backend {
     pub fn clear(&self) {
         self.shared.generation.fetch_add(1, Ordering::AcqRel);
     }
+    pub fn set_rate(&self, rate: f32, horizon: Option<Duration>) {
+        let deadline = horizon.and_then(|duration| std::time::Instant::now().checked_add(duration));
+        *self.shared.transport.lock().unwrap() = (rate, deadline);
+    }
     pub fn set_volume(&self, volume: f32) {
         self.shared
             .volume
@@ -107,6 +113,16 @@ impl Drop for Backend {
         if let Some(worker) = self.worker.take() {
             let _ = worker.join();
         }
+    }
+}
+fn configure_voice(voice: &rodio::Player, state: &Shared) {
+    let (rate, deadline) = *state.transport.lock().unwrap();
+    voice.set_volume(f32::from_bits(state.volume.load(Ordering::Relaxed)));
+    if rate > 0.0 && deadline.is_none_or(|end| std::time::Instant::now() < end) {
+        voice.set_speed(rate);
+        voice.play();
+    } else {
+        voice.pause();
     }
 }
 fn synthesize(cue: PendingCue) -> Vec<f32> {
