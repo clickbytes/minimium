@@ -61,6 +61,7 @@ pub(super) fn payload(
         Some(View::SaveStatus(status)) => {
             Some(crate::commands::persistence::project_status(status))
         }
+        Some(View::TimeDiagnostics(report)) => Some(report.value()),
         Some(View::EntityDespawn {
             world,
             entity,

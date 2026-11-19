@@ -44,7 +44,8 @@ impl DesktopHost {
             | Key::WorldTimeScale
             | Key::WorldTimeOfflinePolicy
             | Key::WorldTimeUtc
-            | Key::WorldTimeRevision => unreachable!("world clock value formatted above"),
+            | Key::WorldTimeRevision
+            | Key::WorldTimeAchievedScale => unreachable!("world clock value formatted above"),
         };
         let source = self.application.settings.source(key.key());
         let metadata = PropertyValue {

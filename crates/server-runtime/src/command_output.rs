@@ -13,6 +13,9 @@ pub(crate) fn render(payload: &CommandPayloadView<'_>) -> BoundedText {
             let value = crate::commands::persistence::project_status(status);
             let _ = write!(out, "{value:?}");
         }
+        CommandPayloadView::TimeDiagnostics(report) => {
+            out.push_str(&report.value().encode());
+        }
         CommandPayloadView::Stopping => out.push_str("stopping"),
         CommandPayloadView::Property(report) => property(&mut out, report),
         CommandPayloadView::PropertyHelp(spec) => {

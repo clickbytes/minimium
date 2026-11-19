@@ -225,4 +225,12 @@ pub(super) const SERVER_PROPERTIES: &[PropertySpec] = &[
         PropertyLifecycle::ReadOnly,
         false,
     ),
+    property(
+        "world.time.achieved_scale",
+        PropertyType::Integer,
+        "runtime",
+        "read-only measured progress in exact ppm",
+        PropertyLifecycle::ReadOnly,
+        false,
+    ),
 ];

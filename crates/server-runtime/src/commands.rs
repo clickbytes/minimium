@@ -198,6 +198,7 @@ pub(crate) enum CommandPayload {
     },
     SaveJob(crate::runtime::SaveJobRecord),
     SaveStatus(crate::runtime::SaveJobsStatus),
+    TimeDiagnostics(minimium_environment::console::values::TimeDiagnostics),
     Stopping,
     Time(crate::environment::ClockPropertySnapshot),
     ClockCommitted(crate::environment::ClockPropertySnapshot),
@@ -433,6 +434,12 @@ pub fn execute(
             "server.persistence.wrong_lane",
             "save status must execute on runtime owner lane",
         ),
+        ServerCommand::TimeDiagnostics => match environment_clock.property_snapshot(monotonic_ms) {
+            Ok(snapshot) => {
+                CommandReply::success(CommandPayload::TimeDiagnostics(snapshot.diagnostics()))
+            }
+            Err(error) => CommandReply::error(error.code(), &error.to_string()),
+        },
         ServerCommand::Stop => administration::stop(),
         ServerCommand::TimeOfDay {
             minute,

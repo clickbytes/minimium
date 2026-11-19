@@ -51,6 +51,7 @@ property_keys! {
     WorldTimeOfflinePolicy => "world.time.offline_policy",
     WorldTimeUtc => "world.time.utc",
     WorldTimeRevision => "world.time.revision",
+    WorldTimeAchievedScale => "world.time.achieved_scale",
 }
 
 #[derive(Clone, Debug, PartialEq)]

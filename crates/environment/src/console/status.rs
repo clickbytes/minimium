@@ -48,6 +48,7 @@ impl TimeStatus {
             ),
             "world.time.utc" => Value::InstantMs(sample.world_utc_ms().get()),
             "world.time.revision" => Value::U64(sample.revision().get()),
+            "world.time.achieved_scale" => Value::U64(self.achieved().0),
             _ => return None,
         })
     }

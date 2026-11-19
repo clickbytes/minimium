@@ -7,6 +7,8 @@ mod model;
 pub mod time;
 
 pub use commands::{parse_scale_ppm, parse_world_time_utc, TimeCommand, TIME_USAGE};
+pub use console::status::MeasuredRatePpm;
+pub use console::values::{OwnerTimeDiagnostics, TimeDiagnostics};
 pub use model::{
     AstronomyModelRevision, CatalogueId, CatalogueSha256, EnvironmentDescriptor, EnvironmentError,
     EnvironmentProfile,

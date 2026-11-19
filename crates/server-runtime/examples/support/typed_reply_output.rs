@@ -148,6 +148,9 @@ pub(super) fn inspect_reply(reply: CommandReplyView<'_>) {
         CommandPayloadView::SaveStatus(status) => {
             println!("save status: {status:?}");
         }
+        CommandPayloadView::TimeDiagnostics(report) => {
+            println!("time diagnostics: {:?}", report.value());
+        }
         CommandPayloadView::Stopping => println!("stopping"),
         CommandPayloadView::Time(clock) | CommandPayloadView::ClockCommitted(clock) => {
             println!(

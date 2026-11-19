@@ -13,6 +13,10 @@ impl EnvironmentFrameInput {
     }
 
     pub fn clock_property(self, path: &str) -> Option<V> {
+        if path == "world.time.achieved_scale" && self.quality == SynchronizationQuality::LocalDemo
+        {
+            return None;
+        }
         if let Some(status) = self.clock_status() {
             return status.property(path);
         }
@@ -74,5 +78,18 @@ impl EnvironmentFrameInput {
             ]
             .into(),
         ))
+    }
+
+    pub fn time_diagnostics_value(self) -> Option<V> {
+        if self.quality == SynchronizationQuality::LocalDemo {
+            return None;
+        }
+        Some(
+            minimium_environment::console::values::TimeDiagnostics {
+                status: self.clock_status()?,
+                owner: None,
+            }
+            .value(),
+        )
     }
 }

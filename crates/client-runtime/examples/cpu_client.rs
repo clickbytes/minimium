@@ -314,6 +314,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("server snapshot was not dispatched through the application step".into());
     }
     let current_view = core.view();
+    let _time_diagnostics = core
+        .session()
+        .and_then(|session| session.environment_frame().time_diagnostics_value());
     if current_view.context != Some(context) || current_view.character.position[0].abs() > 0.01 {
         return Err("read-only view did not reflect snapshot reconciliation".into());
     }

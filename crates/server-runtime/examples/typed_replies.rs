@@ -128,6 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "get server.autosave_interval",
         "world save",
         "server.persistence.status()",
+        "world.time.diagnostics()",
         "entity despawn 1 999",
         "stop",
     ] {

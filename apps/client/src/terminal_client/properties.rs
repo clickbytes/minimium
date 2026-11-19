@@ -138,7 +138,8 @@ impl TextProperties {
                 | Key::WorldTimeScale
                 | Key::WorldTimeOfflinePolicy
                 | Key::WorldTimeUtc
-                | Key::WorldTimeRevision => {
+                | Key::WorldTimeRevision
+                | Key::WorldTimeAchievedScale => {
                     let frame = connection
                         .session()
                         .map(|session| session.environment_frame())

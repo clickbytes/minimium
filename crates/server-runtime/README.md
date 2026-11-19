@@ -602,3 +602,5 @@ sets `should_stop`; process shutdown and save completion are separate results.
 The admin envelope rejects oversized typed results without claiming success.
 Rust hosts, ctl JSON output and owned-local client admin paths consume the same
 typed result.
+
+Batch #592 projects `world.time.achieved_scale` and `world.time.diagnostics()` from the same owner clock sample. The achieved value is measured tick progress in exact ppm, distinct from the requested scale. Calendar epoch comes from the committed boundary, and owner-only fault/correction/dirty fields are marked optional in the shared DTO. `time status` keeps its previous result.

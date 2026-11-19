@@ -2,6 +2,13 @@ use super::*;
 
 pub(super) const SERVER_SPECS: &[CommandSpec<ServerCommand, CommandError>] = &[
     CommandSpec {
+        name: "world.time.diagnostics",
+        alias: None,
+        usage: "world.time.diagnostics()",
+        arguments: &[],
+        parser: super::clock_diagnostics::parse,
+    },
+    CommandSpec {
         name: "spawn_random_meteorid",
         alias: None,
         usage: "spawn_random_meteorid",

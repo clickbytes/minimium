@@ -13,6 +13,7 @@ impl ServerCommand {
             Self::Metrics => "metrics show",
             Self::Save => "world save",
             Self::SaveStatus(_) => "server.persistence.status",
+            Self::TimeDiagnostics => "world.time.diagnostics",
             Self::Stop => "stop",
             Self::SpawnRandomBolid(_) => "spawn_random_bolid",
             Self::BolidStatus(_) => "bolids status",

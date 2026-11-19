@@ -5,6 +5,7 @@ use minimium_commands::operation::{
 use minimium_commands::operation::{ParameterSpec, ScalarType};
 
 pub mod status;
+pub mod values;
 
 pub fn live_clock_field(key: &str) -> bool {
     matches!(
@@ -14,6 +15,7 @@ pub fn live_clock_field(key: &str) -> bool {
             | "world.time.offline_policy"
             | "world.time.utc"
             | "world.time.revision"
+            | "world.time.achieved_scale"
     )
 }
 
@@ -98,6 +100,22 @@ pub fn clock_entry(name: &str, source: ClockReadBinding) -> Option<CatalogEntry>
             None,
             Query,
         ),
+        "world.time.achieved_scale" => binding.declaration(
+            "world.time.achieved_scale",
+            Property,
+            &[],
+            TypeRef::domain("PropertyValue<MeasuredRatePpm>"),
+            Some("exact observed ppm; display x"),
+            Query,
+        ),
+        "world.time.diagnostics" => binding.declaration(
+            "world.time.diagnostics",
+            Method,
+            &[],
+            TypeRef::domain("TimeDiagnostics"),
+            None,
+            Query,
+        ),
         "set_time" => binding.declaration(
             "world.time.set_utc_hhmm",
             Method,
@@ -159,4 +177,14 @@ pub fn clock_entry(name: &str, source: ClockReadBinding) -> Option<CatalogEntry>
         entry.fixed_arguments.insert(alias, value);
     }
     Some(entry)
+}
+
+/// Register new domain-owned methods once in each host catalog.
+pub fn register_operations(
+    package: &mut minimium_commands::operation::LegacyPackage,
+    source: ClockReadBinding,
+) -> Result<(), minimium_commands::operation::CatalogError> {
+    package.operation(
+        clock_entry("world.time.diagnostics", source).expect("environment diagnostics declaration"),
+    )
 }

@@ -65,6 +65,9 @@ pub(crate) fn from_prepared(
 
 fn lower(op: &PreparedOperation, entry: &CatalogEntry) -> Result<ServerCommand, CommandError> {
     let span = op.arguments.first().map_or(op.span, |arg| arg.span);
+    if op.path == "world.time.diagnostics" {
+        return Ok(ServerCommand::TimeDiagnostics);
+    }
     if op.path == "server.persistence.status" {
         let id = op
             .arguments

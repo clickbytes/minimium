@@ -14,6 +14,7 @@ use specs::SERVER_SPECS;
 static SERVER_REGISTRY: OnceLock<CommandRegistry<ServerCommand, CommandError>> = OnceLock::new();
 static PROPERTY_REGISTRY: OnceLock<PropertyRegistry> = OnceLock::new();
 mod catalog_config;
+mod clock_diagnostics;
 mod players;
 mod properties;
 mod property_parsing;
@@ -222,6 +223,7 @@ pub enum ServerCommand {
     Metrics,
     Save,
     SaveStatus(Option<minimium_storage::SaveJobId>),
+    TimeDiagnostics,
     Stop,
     SpawnRandomBolid(u16),
     BolidStatus(u64),

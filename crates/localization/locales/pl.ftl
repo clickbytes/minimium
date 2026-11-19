@@ -185,6 +185,7 @@ property-description = { $key ->
     [world_time_offline_policy] Zasada działania zegara świata poza grą.
     [world_time_utc] Data UTC świata zsynchronizowana z repliką klienta.
     [world_time_revision] Rewizja zegara odebrana z repliki klienta.
+    [world_time_achieved_scale] Dokładne zmierzone tempo zatwierdzonych kroków serwera w ppm; wyświetlane jako mnożnik.
    *[other] { $key }
 }
 no-property-matches = Brak właściwości klienta pasujących do { $prefix }
@@ -205,6 +206,7 @@ command-help = { $name ->
     [camera_fov] camera fov [30..110] (pionowe pole widzenia w stopniach; domyślnie 70)
     [sky_names] sky names true|false
     [time_status] time status (próbka sesji, wiek, zatwierdzony krok i zmierzone tempo)
+    [world_time_diagnostics] world.time.diagnostics() (jedna próbka: tempo żądane i osiągnięte, granica i źródło)
     [time_set] time set RFC3339_UTC (własny serwer)
     [time_scale] time scale DECIMAL (alias timescale; globalne tempo gry na lokalnym serwerze; 0.1-1000000x lub 0 aby wstrzymać)
     [spawn_random_bolid] spawn_random_bolid (lokalny serwer hosta)

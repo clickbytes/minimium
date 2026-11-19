@@ -183,6 +183,7 @@ property-description = { $key ->
     [world_time_offline_policy] Policy used when the world is offline.
     [world_time_utc] Synchronized world UTC date from the client replica.
     [world_time_revision] Clock revision from the client replica.
+    [world_time_achieved_scale] Exact measured committed server progress in ppm; displayed as a multiplier.
    *[other] { $key }
 }
 no-property-matches = No client properties match { $prefix }
@@ -203,6 +204,7 @@ command-help = { $name ->
     [camera_fov] camera fov [30..110] (vertical field of view in degrees; default 70)
     [sky_names] sky names true|false
     [time_status] time status (session sample, age, committed tick and measured progress)
+    [world_time_diagnostics] world.time.diagnostics() (one sample with requested and achieved rates, boundary and source)
     [time_set] time set RFC3339_UTC (owned server)
     [time_scale] time scale DECIMAL (alias timescale; global simulation on owned server; 0.1-1000000x or 0 to pause)
     [spawn_random_bolid] spawn_random_bolid (owned local server)

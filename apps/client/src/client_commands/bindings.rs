@@ -47,6 +47,9 @@ pub(super) fn lower(
     if op.path == "server.persistence.save" {
         return Ok(ClientCommand::SaveWorld);
     }
+    if op.path == "world.time.diagnostics" {
+        return Ok(ClientCommand::TimeStatus);
+    }
     if op.path == "server.persistence.status" {
         let id = op
             .arguments

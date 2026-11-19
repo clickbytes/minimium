@@ -187,6 +187,13 @@ impl ServerRuntime {
             };
             let current = if key == "world.time.scale" {
                 crate::command_output::format_clock_scale(snapshot.rate_ppm())
+            } else if key == "world.time.achieved_scale" {
+                format!(
+                    "{}.{:06}x ({} ppm)",
+                    snapshot.achieved_ppm() / 1_000_000,
+                    snapshot.achieved_ppm() % 1_000_000,
+                    snapshot.achieved_ppm()
+                )
             } else {
                 typed.encode()
             };
@@ -203,7 +210,7 @@ impl ServerRuntime {
                 read_source: ReadSource::OwnerSnapshot,
                 revision: Some(snapshot.revision),
                 freshness: Freshness::Current,
-                requested: Some(current.clone()),
+                requested: (key != "world.time.achieved_scale").then(|| current.clone()),
                 effective: Some(current),
                 default: None,
                 source: PropertySource::Runtime,

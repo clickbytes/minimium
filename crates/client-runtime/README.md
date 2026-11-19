@@ -354,3 +354,5 @@ After queuing a world input, the session exposes its sequence and a session-loca
 The session exposes whether the matching TransferReady request has been locally queued. The application projects preparation, local readiness, owner commitment or cancellation while retaining the source WorldContext until TransitionCommitted changes membership.
 
 Batch #591 adds typed owned-local admin intents for server persistence save and status. It forwards exact optional u128 job IDs and retains no snapshot or save ledger; acceptance and backend completion remain server-side results.
+
+Batch #592 projects exact achieved ppm and one-sample clock diagnostics from `EnvironmentFrameInput.committed`. The local interpolation segment rate is never used as authoritative achieved progress; missing committed samples are unavailable, and LocalDemo does not supply a measured server value.

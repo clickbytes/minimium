@@ -3,6 +3,15 @@ version = 1
 # Independently resolved production feature graphs and actual compile consumers.
 # These are complementary to the all-feature package rules below.
 [[feature_contract]]
+name = "environment-time-consumer"
+package = "minimium-environment"
+no_default_features = true
+features = []
+example = "time_catalog_consumer"
+forbidden_dependencies = ["minimium-client", "minimium-client-runtime", "minimium-server-runtime", "minimium-renderer", "minimium-game-sample", "wgpu", "winit"]
+forbidden_package_features = {}
+
+[[feature_contract]]
 name = "renderer-cpu"
 package = "minimium-renderer"
 no_default_features = true

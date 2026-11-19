@@ -136,6 +136,10 @@ impl RuntimeCommand {
         Self(ServerCommand::SaveStatus(id))
     }
 
+    pub fn time_diagnostics() -> Self {
+        Self(ServerCommand::TimeDiagnostics)
+    }
+
     pub fn stop() -> Self {
         Self(ServerCommand::Stop)
     }

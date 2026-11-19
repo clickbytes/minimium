@@ -6,6 +6,7 @@ use minimium_environment::time::{
     ClockAnchor, ClockMode, ClockRevision, ClockSample, MonotonicMs, OfflinePolicy,
     SavedClockState, SessionNonce, SimulationBoundary, TimeError, TimeScalePpm, WorldTimeMs,
 };
+mod diagnostics;
 
 #[derive(Clone, Debug)]
 pub struct ClockPropertySnapshot {

@@ -61,7 +61,7 @@ impl ClientApplication {
         let now = crate::host_time::sample();
         let result = match action {
             ClockAction::Read(_) | ClockAction::Status => {
-                if let Some(payload) = time_adapter::read(action, frame) {
+                if let Some(payload) = time_adapter::read(action, frame, &identity.operation.0) {
                     let mut receipt = OperationReceipt::at(Stage::Completed);
                     receipt.revision = frame
                         .committed
