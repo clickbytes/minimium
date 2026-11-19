@@ -52,6 +52,48 @@ pub(crate) fn format_status(
         get("calls"),
         get("mutations")
     )];
+    if let Some(V::Record(metrics)) = fields.get("metrics") {
+        let read = |key: &str| {
+            metrics
+                .get(key)
+                .map_or_else(|| "unavailable".into(), V::encode)
+        };
+        lines.push(format!(
+            "cache_hit={} source_bytes={} result_bytes={} termination={} current_phase={}",
+            read("cache_hit"),
+            read("source_bytes"),
+            read("result_bytes"),
+            read("termination_code"),
+            get("current_phase")
+        ));
+        for key in [
+            "load",
+            "worker_start",
+            "cache_lookup",
+            "adapter_setup",
+            "compile",
+            "evaluate",
+            "wait_for_owner",
+            "format",
+        ] {
+            if let Some(V::Record(phase)) = metrics.get(key) {
+                let field = |name: &str| {
+                    phase
+                        .get(name)
+                        .map_or_else(|| "unavailable".into(), V::encode)
+                };
+                lines.push(format!(
+                    "{key}: {} {} us={}",
+                    field("state"),
+                    field("source"),
+                    field("duration_us")
+                ));
+            }
+        }
+    }
+    if let Some(budget) = fields.get("budget") {
+        lines.push(format!("budget={}", budget.encode()));
+    }
     if let Some(V::Page { rows, .. }) = fields.get("operations") {
         for row in rows {
             if let V::Record(call) = row {

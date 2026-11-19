@@ -11,7 +11,7 @@ use std::sync::{
     mpsc::{self, SyncSender, TrySendError},
     Arc, Mutex,
 };
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[derive(Clone)]
 pub(super) struct Bridge {
@@ -206,6 +206,7 @@ impl Bridge {
                 ),
             }
         })?;
+        let _wait_clock = super::metrics::WaitClock::start(&self.ledger);
         let result = receiver.recv_timeout(wait).map_err(|_| {
             self.update_last("unknown_after_timeout", None, Some("wait_timeout"));
             values::error(
@@ -238,6 +239,7 @@ pub(super) fn run(
     calls: SyncSender<HostRequest>,
     cancel: Arc<AtomicBool>,
     ledger: Arc<Mutex<Ledger>>,
+    cache: &mut super::cache::AstCache,
 ) {
     let result = execute(
         run_id,
@@ -245,8 +247,10 @@ pub(super) fn run(
         calls,
         Arc::clone(&cancel),
         Arc::clone(&ledger),
+        cache,
     );
     if let Ok(mut state) = ledger.lock() {
+        state.current_phase = "finished";
         state.phase = if cancel.load(Ordering::Acquire) {
             "cancelled"
         } else if result.is_ok() {
@@ -255,8 +259,18 @@ pub(super) fn run(
             "failed"
         };
         match result {
-            Ok(value) => state.result = Some(value),
-            Err(error) => state.error = Some(error),
+            Ok(value) => {
+                state.metrics.termination_code = Some("completed".into());
+                state.result = Some(value);
+            }
+            Err(error) => {
+                state.metrics.termination_code = Some(if cancel.load(Ordering::Acquire) {
+                    "cancelled".into()
+                } else {
+                    error.split(':').next().unwrap_or("failed").into()
+                });
+                state.error = Some(error);
+            }
         }
     }
 }
@@ -267,20 +281,50 @@ fn execute(
     calls: SyncSender<HostRequest>,
     cancel: Arc<AtomicBool>,
     ledger: Arc<Mutex<Ledger>>,
+    cache: &mut super::cache::AstCache,
 ) -> Result<String, String> {
+    set_phase(&ledger, "load");
+    let started = Instant::now();
     let source = minimium_platform::files::read_bounded_file(&path, limits::SOURCE_BYTES)
-        .map_err(|e| format!("script_file: {e}"))?;
-    let source = std::str::from_utf8(&source).map_err(|e| format!("script_utf8: {e}"))?;
+        .map_err(|e| format!("script_file: {e}"));
+    if let Ok(mut state) = ledger.lock() {
+        state.metrics.load = Some(started.elapsed());
+        state.metrics.source_bytes = source.as_ref().ok().map(Vec::len);
+    }
+    let source = source?;
+    let source_text = std::str::from_utf8(&source).map_err(|e| format!("script_utf8: {e}"))?;
+    check_run(&cancel, &ledger)?;
+    set_phase(&ledger, "cache_lookup");
+    let started = Instant::now();
+    let key = super::cache::CacheKey::for_source(
+        &source,
+        crate::client_commands::catalog::catalog().fingerprint(),
+    );
+    let cached_ast = cache.get(&key, &source);
+    if let Ok(mut state) = ledger.lock() {
+        state.metrics.cache_lookup = Some(started.elapsed());
+        state.metrics.cache_hit = Some(cached_ast.is_some());
+        (
+            state.metrics.cache_entries,
+            state.metrics.cached_source_bytes,
+        ) = {
+            let (entries, bytes) = cache.occupancy();
+            (Some(entries), Some(bytes))
+        };
+    }
+    check_run(&cancel, &ledger)?;
+    set_phase(&ledger, "adapter_setup");
+    let started = Instant::now();
     let mut engine = Engine::new();
     engine
         .set_optimization_level(OptimizationLevel::None)
-        .set_max_operations(20_000)
-        .set_max_call_levels(16)
-        .set_max_expr_depths(32, 16)
-        .set_max_variables(256)
-        .set_max_string_size(8192)
-        .set_max_array_size(256)
-        .set_max_map_size(64);
+        .set_max_operations(limits::MAX_OPERATIONS)
+        .set_max_call_levels(limits::MAX_CALL_LEVELS)
+        .set_max_expr_depths(limits::MAX_EXPR_DEPTH, limits::MAX_FUNCTION_EXPR_DEPTH)
+        .set_max_variables(limits::MAX_VARIABLES)
+        .set_max_string_size(limits::MAX_STRING_BYTES)
+        .set_max_array_size(limits::MAX_ARRAY_SIZE)
+        .set_max_map_size(limits::MAX_MAP_SIZE);
     engine.disable_symbol("eval");
     let check_cancel = Arc::clone(&cancel);
     let check_ledger = Arc::clone(&ledger);
@@ -300,24 +344,79 @@ fn execute(
         Bridge {
             run_id,
             calls,
-            cancel,
+            cancel: Arc::clone(&cancel),
             ledger: Arc::clone(&ledger),
             mutation_pending: Arc::new(AtomicBool::new(false)),
         },
     );
-    let ast = engine
-        .compile(source)
-        .map_err(|e| format!("script_compile: {e}"))?;
+    if let Ok(mut state) = ledger.lock() {
+        state.metrics.adapter_setup = Some(started.elapsed());
+    }
+    check_run(&cancel, &ledger)?;
+    let ast = if let Some(ast) = cached_ast {
+        ast
+    } else {
+        set_phase(&ledger, "compile");
+        let started = Instant::now();
+        let compiled = engine
+            .compile(source_text)
+            .map_err(|e| format!("script_compile: {e}"));
+        if let Ok(mut state) = ledger.lock() {
+            state.metrics.compile = Some(started.elapsed());
+        }
+        let ast = compiled?;
+        check_run(&cancel, &ledger)?;
+        cache.insert(key, &source, ast.clone());
+        if let Ok(mut state) = ledger.lock() {
+            let (entries, bytes) = cache.occupancy();
+            state.metrics.cache_entries = Some(entries);
+            state.metrics.cached_source_bytes = Some(bytes);
+        }
+        ast
+    };
+    check_run(&cancel, &ledger)?;
+    set_phase(&ledger, "evaluate");
+    let started = Instant::now();
     let mut scope = Scope::new();
     let result = engine
         .eval_ast_with_scope::<Dynamic>(&mut scope, &ast)
-        .map_err(|e| format!("script_eval: {e}"))?;
+        .map_err(|e| format!("script_eval: {e}"));
+    if let Ok(mut state) = ledger.lock() {
+        state.metrics.evaluate = Some(started.elapsed());
+    }
+    let result = result?;
+    check_run(&cancel, &ledger)?;
+    set_phase(&ledger, "format");
+    let started = Instant::now();
     let text = result.to_string();
+    if let Ok(mut state) = ledger.lock() {
+        state.metrics.format = Some(started.elapsed());
+        state.metrics.result_bytes = Some(text.len());
+    }
     let output_len = ledger.lock().map_or(0, |state| state.output.len());
     if text.len().saturating_add(output_len) > limits::RESULT_BYTES {
         return Err("result_limit: aggregate script result exceeds 256 KiB".into());
     }
     Ok(text)
+}
+
+fn set_phase(ledger: &Arc<Mutex<Ledger>>, phase: &'static str) {
+    if let Ok(mut state) = ledger.lock() {
+        state.current_phase = phase;
+    }
+}
+
+fn check_run(cancel: &AtomicBool, ledger: &Arc<Mutex<Ledger>>) -> Result<(), String> {
+    if cancel.load(Ordering::Acquire) {
+        return Err("script_cancelled: cancellation requested".into());
+    }
+    if ledger
+        .lock()
+        .is_ok_and(|state| state.started.elapsed() >= Duration::from_secs(10))
+    {
+        return Err("script_deadline: ten-second run deadline exceeded".into());
+    }
+    Ok(())
 }
 
 fn append_output(ledger: &Arc<Mutex<Ledger>>, text: &str) {

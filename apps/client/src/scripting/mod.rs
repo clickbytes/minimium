@@ -1,8 +1,10 @@
 //! Opt-in client host for bounded local Rhai jobs.
 mod bindings;
 mod bridge;
+mod cache;
 mod errors;
 mod limits;
+mod metrics;
 mod registration;
 mod values;
 
@@ -15,7 +17,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    mpsc::{self, Receiver},
+    mpsc::{self, Receiver, SyncSender, TrySendError},
     Arc, Mutex,
 };
 use std::time::Instant;
@@ -30,6 +32,39 @@ pub(crate) struct ScriptingHost {
     runs: BTreeMap<u64, Run>,
     pending: Option<HostRequest>,
     receipts: Vec<PendingReceipt>,
+    worker: Option<SyncSender<WorkerJob>>,
+}
+
+struct WorkerJob {
+    id: u64,
+    path: PathBuf,
+    calls: SyncSender<HostRequest>,
+    cancel: Arc<AtomicBool>,
+    ledger: Arc<Mutex<Ledger>>,
+    worker_start: Option<Instant>,
+}
+
+fn worker_loop(receiver: Receiver<WorkerJob>) {
+    let mut cache = cache::AstCache::default();
+    while let Ok(job) = receiver.recv() {
+        if let Some(started) = job.worker_start {
+            if let Ok(mut ledger) = job.ledger.lock() {
+                ledger.metrics.worker_start = Some(started.elapsed());
+            }
+        }
+        bindings::run(
+            job.id, job.path, job.calls, job.cancel, job.ledger, &mut cache,
+        );
+    }
+}
+
+impl Drop for ScriptingHost {
+    fn drop(&mut self) {
+        for run in self.runs.values() {
+            run.cancel.store(true, Ordering::Release);
+        }
+        self.worker.take();
+    }
 }
 
 struct PendingReceipt {
@@ -48,12 +83,14 @@ struct Run {
 pub(crate) struct Ledger {
     pub(crate) started: Instant,
     pub(crate) phase: &'static str,
+    pub(crate) current_phase: &'static str,
     pub(crate) calls: u32,
     pub(crate) mutations: u32,
     pub(crate) output: String,
     pub(crate) result: Option<String>,
     pub(crate) error: Option<String>,
     pub(crate) operations: Vec<CallRecord>,
+    pub(crate) metrics: metrics::Metrics,
 }
 
 pub(crate) struct CallRecord {
@@ -193,24 +230,50 @@ impl ScriptingHost {
         let ledger = Arc::new(Mutex::new(Ledger {
             started: Instant::now(),
             phase: "running",
+            current_phase: "worker_start",
             calls: 0,
             mutations: 0,
             output: String::new(),
             result: None,
             error: None,
             operations: Vec::new(),
+            metrics: Default::default(),
         }));
         let cancel = Arc::new(AtomicBool::new(false));
         let (sender, calls) = mpsc::sync_channel(1);
-        let thread_ledger = Arc::clone(&ledger);
-        let thread_cancel = Arc::clone(&cancel);
-        std::thread::Builder::new()
-            .name(format!("script-{id}"))
-            .spawn(move || {
-                let path = cwd.join(PathBuf::from(path));
-                bindings::run(id, path, sender, thread_cancel, thread_ledger);
-            })
-            .map_err(|e| errors::ScriptError::new("worker_unavailable", e.to_string()))?;
+        let worker_start = if self.worker.is_none() {
+            Some(Instant::now())
+        } else {
+            None
+        };
+        if self.worker.is_none() {
+            let (jobs, receiver) = mpsc::sync_channel(1);
+            std::thread::Builder::new()
+                .name("script-worker".into())
+                .spawn(move || worker_loop(receiver))
+                .map_err(|e| errors::ScriptError::new("worker_unavailable", e.to_string()))?;
+            self.worker = Some(jobs);
+        }
+        let job = WorkerJob {
+            id,
+            path: cwd.join(PathBuf::from(path)),
+            calls: sender,
+            cancel: Arc::clone(&cancel),
+            ledger: Arc::clone(&ledger),
+            worker_start,
+        };
+        self.worker
+            .as_ref()
+            .expect("worker channel initialized")
+            .try_send(job)
+            .map_err(|error| match error {
+                TrySendError::Full(_) => {
+                    errors::ScriptError::new("worker_busy", "script worker queue is full")
+                }
+                TrySendError::Disconnected(_) => {
+                    errors::ScriptError::new("worker_unavailable", "script worker stopped")
+                }
+            })?;
         self.next_id = id;
         self.runs.insert(
             id,
@@ -237,6 +300,10 @@ impl ScriptingHost {
         let mut record = BTreeMap::from([
             ("run_id".into(), CommandValue::U64(id)),
             ("phase".into(), CommandValue::Enum(ledger.phase.into())),
+            (
+                "current_phase".into(),
+                CommandValue::Enum(ledger.current_phase.into()),
+            ),
             (
                 "elapsed_ms".into(),
                 CommandValue::U64(
@@ -313,6 +380,36 @@ impl ScriptingHost {
                         .collect(),
                     next_cursor: None,
                 },
+            ),
+            ("metrics".into(), ledger.metrics.report()),
+            (
+                "budget".into(),
+                CommandValue::Record(BTreeMap::from([
+                    (
+                        "owner_calls_limit".into(),
+                        CommandValue::U64(u64::from(limits::OWNER_CALLS)),
+                    ),
+                    (
+                        "owner_calls_remaining".into(),
+                        CommandValue::U64(u64::from(
+                            limits::OWNER_CALLS.saturating_sub(ledger.calls),
+                        )),
+                    ),
+                    (
+                        "mutations_limit".into(),
+                        CommandValue::U64(u64::from(limits::MUTATIONS)),
+                    ),
+                    (
+                        "mutations_remaining".into(),
+                        CommandValue::U64(u64::from(
+                            limits::MUTATIONS.saturating_sub(ledger.mutations),
+                        )),
+                    ),
+                    (
+                        "rhai_operations_limit".into(),
+                        CommandValue::U64(limits::MAX_OPERATIONS),
+                    ),
+                ])),
             ),
         ]);
         if let Some(value) = &ledger.result {

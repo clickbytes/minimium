@@ -7,7 +7,7 @@ and terminal graphs. The catalog always declares `client.scripting.run_file`,
 `client.scripting.status` and `client.scripting.cancel` with local-job/query
 effects. With the feature off, the host returns the typed
 `ConsoleScriptingDisabled` capability refusal. With it on, an explicit host
-invocation starts one Rhai worker; the worker reads one UTF-8 file of at most
+invocation starts a persistent Rhai worker; each run reads one UTF-8 file of at most
 16 KiB from a captured working directory. Script control entries are
 `scriptable=false`. `f1_get`, `f1_set` and `f1_call` resolve scriptable paths
 through catalog metadata and submit bounded typed values to the same owner
@@ -23,6 +23,21 @@ aggregate result; 32 KiB print/debug; 8 KiB strings; 256 array entries;
 per host wait. Eval and modules are disabled. Cancellation prevents new
 submissions and leaves committed effects intact. Compile and native filesystem
 read have no forced OS timeout. Runtime scenarios remain deferred.
+
+The worker keeps an LRU of at most 16 ASTs and 256 KiB of retained exact source
+bytes. The key combines a source hash with exact byte comparison, catalog
+schema fingerprint, adapter and Rhai versions, optimization mode and limits.
+A schema change evicts old entries. A compile error is never cached. Each run
+gets a fresh Engine registration, Scope, cancellation token and owner checks;
+the cache stores no session values, ACL decisions or operation results. The
+256 KiB source budget is not an AST heap limit. Dynamic AST heap and binary/RSS
+costs have not been measured. Shutdown drops the worker cache. The first
+explicit run pays worker startup and registration; a new program pays parsing
+and compilation; a hit evaluates its AST with a fresh scope. None of these
+costs occurs while merely typing in F1. `ScriptStatus` keeps bounded copies of
+source/result counts, budgets, termination and phase durations from a
+monotonic host clock. A missing phase is `not_measured` with source
+`unavailable`, distinct from a measured zero.
 
 E051 target contract. The [compatibility matrix](compatibility.md) records which spellings exist at the audited revision. An operation consists of an identity, the requested access and typed arguments. Metadata describes the operation to each host. Live state flows through its owner.
 
@@ -102,7 +117,14 @@ For portal transfers, Preparing identifies a server transition matched to the or
 
 Analyze partial input locally. Items carry kind, type, unit, availability, signature, full token range, caret target and buffer revision. Tab replaces that range as one undoable edit. Enter submits complete input. Popup navigation precedes history and Escape respects IME, then popup, then console. Preserve Unicode graphemes and selection. Use field/method/namespace labels with colors #7CC4FF, #D6A8FF and #C9D3DF. Verify rendered text contrast of 4.5:1 and focus contrast of 3:1 against #111923 and #26384A.
 
-The default-off Rhai worker calls typed bindings and creates a fresh scope for each run. Limit one script, 16 KiB source, 20,000 evaluated operations, 32 owner calls, 8 mutations and one pending mutation. Budget 64 KiB per reply, 256 KiB total, 32 KiB print/debug, 8 KiB strings, arrays of 256, maps of 64, stack depth 16, a cooperative 10 s deadline and waits up to 5 s. Restrict dynamic evaluation, imports and native access. Key the bounded 16-entry AST cache (256 KiB source) by source hash and schema/adapter/compiler configuration. Authorization is checked afresh. Cancellation preserves previously committed changes.
+The default-off Rhai worker calls typed bindings and creates a fresh scope for each run. Limit one script, 16 KiB source, 20,000 evaluated operations, 32 owner calls, 8 mutations and one pending mutation. Budget 64 KiB per reply, 256 KiB total, 32 KiB print/debug, 8 KiB strings, arrays of 256, maps of 64, stack depth 16, a cooperative 10 s deadline and waits up to 5 s. Restrict dynamic evaluation, imports and native access. The worker's 16-entry AST LRU retains at most 256 KiB of source bytes, keyed by exact source and schema/adapter/Rhai/compiler configuration. Authorization is checked afresh. Cancellation preserves previously committed changes.
+
+Maintenance cost grows from the declarative console's single parser, catalog
+and result model. A macro layer would additionally need sequence storage,
+parameters and an error policy. Rhai adds a versioned dependency, isolation,
+value conversion, budgets, AST cache and diagnostics. The two example
+workflows need conditions and result handling; this Epic does not add a
+separate macro language.
 
 The executable source examples are [camera-report.rhai](examples/camera-report.rhai) and [server-time-scale.rhai](examples/server-time-scale.rhai). Camera restore compares the captured settings base and the revision returned by the temporary write at the camera settings owner, including when the intervening report fails. A missing prior session override resets to that captured startup base. `f1_wait_committed` awaits a correlated owner result on the worker; timeout and disconnect retain uncertainty and do not retry. The clock example keeps the owner receipt and later session sample separate. Both examples await later runtime verification.
 

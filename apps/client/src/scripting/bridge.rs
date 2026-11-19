@@ -104,6 +104,7 @@ impl Waiter {
     }
 
     pub(crate) fn wait(&self, timeout: Duration) -> Result<OperationResult, &'static str> {
+        let _wait_clock = super::metrics::WaitClock::start(&self.ledger);
         let started = Instant::now();
         let mut slot = self.result.lock().map_err(|_| "host_failed")?;
         loop {

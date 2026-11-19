@@ -15,6 +15,20 @@ output and owner-call limits described in [the console contract](../../docs/cons
 Committed owner effects remain after cancellation; a submitted handle is not
 an owner commit.
 
+The first explicit run starts a persistent worker. Each run registers fresh
+bindings and uses a fresh Rhai scope, authorization context, budgets and
+cancellation token. A source cache on that worker retains at most 16 ASTs and
+256 KiB of exact source bytes; each script remains limited to 16 KiB. The LRU
+key includes exact bytes (checked after hashing), catalog schema fingerprint,
+adapter and Rhai versions, optimization setting and parser/runtime limits.
+Compilation failure adds no entry. Schema changes clear old entries; worker
+shutdown drops the cache. The 256 KiB limit applies to retained source bytes,
+not dynamic AST heap, which is unmeasured and has no hard byte limit. Neither
+ASTs nor the cache store session state, owner results or permission decisions.
+The status ledger reports cache hit, bounded counters, source/result bytes,
+termination reason and monotonic phase timings; absent measurements are marked
+`not_measured`/`unavailable`, including compilation on a cache hit.
+
 [Camera report](../../docs/console-api/examples/camera-report.rhai) requires a
 desktop renderer. It reads the FOV snapshot, performs a conditional owner write
 at the captured settings base and revision, reads camera status, then restores
