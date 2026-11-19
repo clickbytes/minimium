@@ -21,7 +21,7 @@ use minimium_world::world::{
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub(super) struct PlayerStepInput {
     pub(super) id: PlayerId,
     pub(super) state: CharacterState,
@@ -63,6 +63,8 @@ pub struct World {
     pub(super) precise_positions: bool,
     pub(super) movement_policy: super::MovementPolicy,
     pub(super) player_movement_policies: Arc<HashMap<PlayerId, super::MovementPolicy>>,
+    resting_steps: HashMap<PlayerId, (PlayerStepInput, f32)>,
+    resting_geometry: std::sync::Weak<CollisionIndex>,
     water_read: Option<Arc<dyn minimium_world::fluid::WaterRead>>,
     last_precise_batch_count: Option<usize>,
 }
@@ -195,6 +197,7 @@ impl World {
     }
 
     pub fn leave(&mut self, id: PlayerId) {
+        self.resting_steps.remove(&id);
         Arc::make_mut(&mut self.players).remove(&id);
         Arc::make_mut(&mut self.player_movement_policies).remove(&id);
         if let Some(cell) = Arc::make_mut(&mut self.player_cells).remove(&id) {
@@ -236,7 +239,16 @@ impl World {
                     .map(|sample| (*id, sample))
             })
             .collect();
+        // A weak reference keeps the identity unique even after a publication is replaced.
+        if !std::ptr::eq(
+            self.resting_geometry.as_ptr(),
+            Arc::as_ptr(&self.spatial_geometry.movement),
+        ) {
+            self.resting_steps.clear();
+            self.resting_geometry = Arc::downgrade(&self.spatial_geometry.movement);
+        }
         let Self {
+            resting_steps,
             players,
             cells,
             player_cells,
@@ -266,11 +278,23 @@ impl World {
                 .get(id)
                 .copied()
                 .unwrap_or(*movement_policy);
-            collision_stats.accumulate(collision_query.fill_for_speed(
+            let water = water_samples.get(id).copied();
+            let step = PlayerStepInput {
+                id: *id,
+                state,
+                position_mm: player.position_mm,
+                input,
+                movement_policy: policy,
+                water,
+            };
+            if resting_steps.get(id) == Some(&(step, delta_seconds)) {
+                continue;
+            }
+            collision_stats.accumulate(collision_query.fill_for_policy(
                 &spatial_geometry.movement,
                 state,
                 delta_seconds,
-                policy.speed,
+                policy,
             ));
             if let Some(position_mm) = &mut player.position_mm {
                 precise_step::step_character_mm_with_water(
@@ -281,7 +305,7 @@ impl World {
                     collision_query.candidates(),
                     collision_query.surface_candidates(),
                     delta_seconds,
-                    water_samples.get(id).copied(),
+                    water,
                 );
             } else {
                 super::step_character_with_water(
@@ -291,8 +315,13 @@ impl World {
                     collision_query.candidates(),
                     collision_query.surface_candidates(),
                     delta_seconds,
-                    water_samples.get(id).copied(),
+                    water,
                 );
+            }
+            if state == step.state && player.position_mm == step.position_mm {
+                resting_steps.insert(*id, (step, delta_seconds));
+            } else {
+                resting_steps.remove(id);
             }
             player.position = state.position;
             player.velocity = state.velocity;

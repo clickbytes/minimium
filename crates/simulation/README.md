@@ -6,7 +6,7 @@ Owns mutable player state, movement integration, collision indexing and queries,
 
 ## Public API
 
-`World` owns mutable simulation state; `MovementIntent`, `MovementPolicy` and `step_character` provide the shared server/prediction movement path. Intents contain direction, jump and vertical control only. The server owns movement limits and flight policy, which are copied into worker batches before parallel stepping. `step_batch` processes immutable batches, while `CollisionQueryStats` reports bounded query work.
+`World` owns mutable simulation state; `MovementIntent`, `MovementPolicy` and `step_character` provide the shared server/prediction movement path. Intents contain direction, jump and vertical control only. The server owns movement limits and flight policy, which are copied into worker batches before parallel stepping. `step_batch` processes immutable batches, while `CollisionQueryStats` reports bounded query work. Flight omits collision queries. The serial movement owner remembers a fixed point only after a full integration returns the identical character state and precise position. Reuse requires matching movement geometry, character state, input, policy, water sample and step duration.
 
 `SpatialGeometryPublication` atomically owns the movement collision index, the
 full-map combat baseline and exact-sector replacement indexes under one revision.

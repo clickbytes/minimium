@@ -10,7 +10,7 @@ use minimium_telemetry::allocations::{self, Phase};
 impl ServerRuntime {
     pub(super) fn tick(&mut self) {
         let started = Instant::now();
-        for _ in 0..clock::MAX_STEPS {
+        for _ in 0..self.scheduler.demand.batch_limit() {
             if self.scheduler.pending.is_none() {
                 if !self.scheduler.demand.due() || self.shutdown_request.is_requested() {
                     return;
@@ -138,6 +138,10 @@ impl ServerRuntime {
         &mut self,
         sector_ready: &HashSet<minimium_core::ids::PlayerId>,
     ) -> HashSet<minimium_core::ids::PlayerId> {
+        if sector_ready.is_empty() {
+            self.expire_pending_transfers(self.now);
+            return HashSet::new();
+        }
         let terrain =
             super::gameplay_terrain::build(&self.game.worlds, self.prepared_geography.as_ref());
         let reads: std::collections::HashMap<_, &dyn minimium_world::terrain::TerrainRead> =

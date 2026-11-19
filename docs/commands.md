@@ -181,7 +181,7 @@ The text client and in-window console use one startup command registry and parse
 `fps show` reports that frame statistics are unavailable in the text client.
 `sky info` and `sky quality` report that renderer diagnostics and quality controls require the desktop client. `time status` remains available and reports `Unavailable` when no server clock sample is present.
 
-`timescale` is the client alias for `time scale` on the owned local server. For a remote server use the authenticated `minimiumctl --data-dir PATH time scale DECIMAL` command. The accepted values are zero or 0.1 through 1,000,000 with up to six decimal places. A request for `1000` asks for one thousand game seconds per real second. Check `time status` for the rate the server actually achieves. At zero, world simulation and effects stop at the confirmed tick. Camera, UI, chat, joining, saving and administration remain available. If the next tick would exceed the UTC range, set a supported date and resume.
+`timescale` is the client alias for `time scale` on the owned local server. For a remote server use the authenticated `minimiumctl --data-dir PATH time scale DECIMAL` command. The accepted values are zero or 0.1 through 1,000,000 with up to six decimal places. A request for `1000` asks for one thousand game seconds per real second. In `time status`, `rate` gives the requested multiplier and `achieved_rate` gives the measured multiplier. At zero, world simulation and effects stop at the confirmed tick. Camera, UI, chat, joining, saving and administration remain available. If the next tick would exceed the UTC range, set a supported date and resume.
 
 ### In-window console commands
 

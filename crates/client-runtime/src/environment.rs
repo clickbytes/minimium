@@ -72,9 +72,10 @@ impl EnvironmentFrameInput {
         );
         if let Some(s) = self.committed {
             format!(
-                "{status} tick={} achieved_ppm={} paused={} limit={} calendar_epoch={}",
+                "{status} tick={} achieved_ppm={} achieved_rate={:.6}x paused={} limit={} calendar_epoch={}",
                 s.boundary().tick(),
                 s.achieved_ppm(),
+                s.achieved_ppm() as f64 / minimium_environment::time::ONE_X_PPM as f64,
                 s.rate_ppm().get() == 0,
                 s.limit().label(),
                 s.boundary().calendar_epoch().get()

@@ -56,7 +56,8 @@ impl ServerRuntime {
             .map_or(self.environment_clock.boundary(), |step| step.boundary)
     }
 }
-pub(super) const MAX_STEPS: u64 = 8;
+const NORMAL_BATCH: u64 = 8;
+const FAST_FORWARD_BATCH: u64 = 1024;
 const STEP_UNITS: u128 = TICK.as_nanos() * 1_000_000;
 
 pub(super) struct StepDemand {
@@ -77,6 +78,12 @@ impl StepDemand {
             completed: 0,
         }
     }
+    pub(super) fn batch_limit(&self) -> u64 {
+        // Keep at most one ordinary tick period of accelerated demand.
+        self.rate
+            .div_ceil(minimium_environment::time::ONE_X_PPM)
+            .clamp(NORMAL_BATCH, FAST_FORWARD_BATCH)
+    }
     pub(super) fn accrue(&mut self, now: Instant, rate: u64) -> u64 {
         let elapsed = now.duration_since(self.last);
         self.last = now;
@@ -85,7 +92,7 @@ impl StepDemand {
             .units
             .saturating_add(elapsed.as_nanos().saturating_mul(u128::from(rate)));
         let due = self.units / STEP_UNITS;
-        let excess = due.saturating_sub(u128::from(MAX_STEPS));
+        let excess = due.saturating_sub(u128::from(self.batch_limit()));
         self.units -= excess * STEP_UNITS;
         u64::try_from(excess).unwrap_or(u64::MAX)
     }

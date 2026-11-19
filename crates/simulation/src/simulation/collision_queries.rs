@@ -63,6 +63,22 @@ impl CollisionQuery {
         self.fill_for_speed(index, state, delta_seconds, PLAYER_MOVE_SPEED)
     }
 
+    /// Free flight integrates velocity without consulting collision geometry.
+    pub fn fill_for_policy(
+        &mut self,
+        index: &CollisionIndex,
+        state: CharacterState,
+        delta_seconds: f32,
+        policy: super::MovementPolicy,
+    ) -> CollisionQueryStats {
+        if policy.can_fly {
+            self.candidates.clear();
+            self.surface_candidates.clear();
+            return CollisionQueryStats::default();
+        }
+        self.fill_for_speed(index, state, delta_seconds, policy.speed)
+    }
+
     pub fn fill_for_speed(
         &mut self,
         index: &CollisionIndex,

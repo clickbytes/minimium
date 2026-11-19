@@ -257,11 +257,11 @@ impl ClientPrediction {
                 input.jump = jump;
                 next_sample += 1;
             }
-            collision_query.fill_for_speed(
+            collision_query.fill_for_policy(
                 collision_index,
                 self.character,
                 minimium_simulation::SIMULATION_STEP_SECONDS,
-                active_policy.speed,
+                active_policy,
             );
             let water_sample = self.sample_water();
             if let Some(position_mm) = &mut self.position_mm {
@@ -333,11 +333,11 @@ impl ClientPrediction {
         };
         let previous_state = self.character;
         let previous_mm = self.position_mm;
-        collision_query.fill_for_speed(
+        collision_query.fill_for_policy(
             collision_index,
             self.character,
             minimium_simulation::SIMULATION_STEP_SECONDS,
-            movement.speed,
+            movement,
         );
         let water_sample = self.sample_water();
         if let Some(position_mm) = &mut self.position_mm {

@@ -10,11 +10,11 @@ pub fn step_batch(
         let mut state = step.state;
         batch
             .collision_stats
-            .accumulate(batch.collision_query.fill_for_speed(
+            .accumulate(batch.collision_query.fill_for_policy(
                 collision_index,
                 state,
                 delta_seconds,
-                step.movement_policy.speed,
+                step.movement_policy,
             ));
         let mut position_mm = step.position_mm;
         if let Some(position_mm) = &mut position_mm {

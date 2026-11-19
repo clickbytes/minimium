@@ -59,7 +59,7 @@ from its arguments and does not invoke the text lexer.
 into the shared 64-command queue and returns a monotone `SubmissionId` or typed
 `SubmitError`. Acceptance is not execution. `step(RuntimeTime)` returns
 bounded command execution results, tick/stop state and the next recommended wake
-instant; it never sleeps. A host pass services up to eight commands and attempts up to eight due 50 ms ticks. It stops starting ticks after 4 ms of work. Integer demand retains fractions and drops excess whole steps. Console/admin input uses the
+instant; it never sleeps. A host pass services up to eight commands and attempts a bounded batch of due 50 ms ticks. The batch limit grows with the requested multiplier from eight to 1024 steps. It stops starting ticks after 4 ms of work. Integer demand retains fractions and drops excess whole steps. Console/admin input uses the
 same queue/executor. Host possession grants administration authority; gameplay
 principals still enter through the supplied typed transport port and existing
 admission/action validation. `query` is immutable and returns status or bounded

@@ -4,7 +4,7 @@ Accepted 2026-11-19. Supersedes the time model in ADRs 0006, 0013 and 0015.
 
 ## Decision
 
-The server owns one committed tick and UTC for all worlds. Each completed tick advances both by 50 ms. Requested scale converts monotonic nanoseconds into integer demand with a retained fractional remainder. Each host pass may start eight steps within a 4 ms budget. Excess demand is counted and discarded. Host services, journal acknowledgements, administration and connection deadlines continue independently.
+The server owns one committed tick and UTC for all worlds. Each completed tick advances both by 50 ms. Requested scale converts monotonic nanoseconds into integer demand with a retained fractional remainder. Each host pass starts steps within a 4 ms budget. At ordinary rates the batch holds eight steps. Fast-forward raises the cap to the requested multiplier rounded up, capped at 1024, so inexpensive steps can use the available work budget. Excess demand is counted and discarded. Host services, journal acknowledgements, administration and connection deadlines continue independently.
 
 Water normally advances every two ticks. An outstanding authoritative job holds its target boundary. Results must match the world and input revisions. An irreversible transaction completes before pause acknowledgement or snapshot capture. Resume discards old demand and earlier action revisions. The gameplay module stages keep their fixed ordering.
 
