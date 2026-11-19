@@ -87,6 +87,42 @@ pub enum ParsedLine {
     Legacy,
 }
 
+/// Bind machine values against the same catalog schema as canonical text.
+/// The caller supplies values, never a command line or localized output.
+pub fn bind_values(
+    catalog: &OperationCatalog,
+    path: &str,
+    access: AccessKind,
+    values: &[CommandValue],
+) -> Result<PreparedOperation, CommandError> {
+    let entry = catalog.resolve(path).ok_or_else(|| {
+        diagnostic(
+            Code::UnknownCommand,
+            path,
+            "unknown operation",
+            SourceSpan { start: 0, end: 0 },
+        )
+    })?;
+    let arguments = values
+        .iter()
+        .map(|value| Literal {
+            text: value.encode(),
+            quoted: matches!(value, CommandValue::Text(_) | CommandValue::Enum(_)),
+            span: SourceSpan { start: 0, end: 0 },
+        })
+        .collect();
+    prepare(
+        entry,
+        Statement {
+            name: path.to_owned(),
+            span: SourceSpan { start: 0, end: 0 },
+            access,
+            arguments,
+        },
+        false,
+    )
+}
+
 /// Match a registered word command without interpreting punctuation in its remaining text.
 pub fn legacy_prefix<'a>(
     catalog: &'a OperationCatalog,

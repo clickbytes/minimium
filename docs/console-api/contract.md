@@ -1,5 +1,29 @@
 # Operation syntax and ownership
 
+## Local scripting adapter
+
+`console-scripting` is an optional client application feature in both desktop
+and terminal graphs. The catalog always declares `client.scripting.run_file`,
+`client.scripting.status` and `client.scripting.cancel` with local-job/query
+effects. With the feature off, the host returns the typed
+`ConsoleScriptingDisabled` capability refusal. With it on, an explicit host
+invocation starts one Rhai worker; the worker reads one UTF-8 file of at most
+16 KiB from a captured working directory. Script control entries are
+`scriptable=false`. `f1_get`, `f1_set` and `f1_call` resolve scriptable paths
+through catalog metadata and submit bounded typed values to the same owner
+dispatch used by F1 and terminal input. The worker owns Engine, Scope and AST;
+the client application step pumps requests through a one-place channel. A
+submitted operation handle records a request, not an owner commit.
+
+The first-run limits are 20,000 Rhai operations; one run; 32 owner calls,
+including at most eight mutations and one pending mutation; a 64 KiB response
+ceiling (the current neutral result codec is stricter at 32 KiB); 256 KiB
+aggregate result; 32 KiB print/debug; 8 KiB strings; 256 array entries;
+64 map fields; 16 call levels; 10 s monotonic cooperative deadline and 5 s
+per host wait. Eval and modules are disabled. Cancellation prevents new
+submissions and leaves committed effects intact. Compile and native filesystem
+read have no forced OS timeout. Runtime scenarios remain deferred.
+
 E051 target contract. The [compatibility matrix](compatibility.md) records which spellings exist at the audited revision. An operation consists of an identity, the requested access and typed arguments. Metadata describes the operation to each host. Live state flows through its owner.
 
 ```mermaid

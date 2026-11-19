@@ -230,9 +230,32 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
             io::stdout().flush()?;
             prompt_needed = false;
         }
-        match receiver.recv_timeout(Duration::from_millis(25)) {
+        #[cfg(feature = "console-scripting")]
+        let script_request = application.take_script_request();
+        #[cfg(feature = "console-scripting")]
+        let received = if script_request.is_some() {
+            Ok(Ok(String::new()))
+        } else {
+            receiver.recv_timeout(Duration::from_millis(25))
+        };
+        #[cfg(not(feature = "console-scripting"))]
+        let received = receiver.recv_timeout(Duration::from_millis(25));
+        match received {
             Ok(line) => {
-                prompt_needed = true;
+                #[cfg(feature = "console-scripting")]
+                let result = if let Some(request) = script_request.as_ref() {
+                    application.prepare_script_request(request)
+                } else {
+                    prompt_needed = true;
+                    application.execute_text_command(
+                        line.as_deref().map_err(Clone::clone),
+                        CommandSource::Terminal,
+                        [1.0, 0.0, 0.0],
+                        application.replica_position(),
+                        crate::host_time::sample(),
+                    )
+                };
+                #[cfg(not(feature = "console-scripting"))]
                 let result = application.execute_text_command(
                     line.as_deref().map_err(Clone::clone),
                     CommandSource::Terminal,
@@ -241,6 +264,9 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                     crate::host_time::sample(),
                 );
                 let (should_exit, response) = dispatch::dispatch(result, |identity, action| {
+                    if let crate::client_commands::FrontendAction::Script(control) = action {
+                        return (false, application.script_operation(identity, control));
+                    }
                     if let crate::client_commands::FrontendAction::Player(intent) = &action {
                         let result = application.player_operation(
                             identity,
@@ -375,6 +401,15 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                         dispatch::legacy(identity, result, &localizer, options.locale),
                     )
                 });
+                #[cfg(feature = "console-scripting")]
+                if let Some(request) = script_request {
+                    let reply =
+                        crate::scripting::project(response.expect("script operation response"));
+                    let _ = request.reply.try_send(reply);
+                } else {
+                    output::display(response, &localizer, options.locale);
+                }
+                #[cfg(not(feature = "console-scripting"))]
                 output::display(response, &localizer, options.locale);
                 if should_exit {
                     break;

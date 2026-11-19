@@ -30,7 +30,7 @@ pub(super) fn parse(
     }
 }
 
-pub(super) fn lower(
+pub(crate) fn lower(
     op: &PreparedOperation,
     entry: &CatalogEntry,
 ) -> Result<ClientCommand, CommandError> {
@@ -46,6 +46,32 @@ pub(super) fn lower(
     };
     if op.path == "server.persistence.save" {
         return Ok(ClientCommand::SaveWorld);
+    }
+    if op.path == "client.scripting.run_file" {
+        let path = op
+            .arguments
+            .first()
+            .ok_or_else(|| invalid("expected local script path"))?;
+        return Ok(ClientCommand::Script(super::ScriptControl::RunFile(
+            path.text.clone(),
+        )));
+    }
+    if matches!(
+        op.path.as_str(),
+        "client.scripting.status" | "client.scripting.cancel"
+    ) {
+        let id = op
+            .arguments
+            .first()
+            .and_then(|arg| arg.text.parse::<u64>().ok())
+            .filter(|id| *id != 0)
+            .ok_or_else(|| invalid("expected exact positive ScriptRunId"))?;
+        let control = if op.path == "client.scripting.status" {
+            super::ScriptControl::Status(id)
+        } else {
+            super::ScriptControl::Cancel(id)
+        };
+        return Ok(ClientCommand::Script(control));
     }
     if op.path == "world.time.diagnostics" {
         return Ok(ClientCommand::TimeStatus);

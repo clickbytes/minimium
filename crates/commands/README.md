@@ -8,6 +8,13 @@ Owns generic command parsing, typed parse outcomes and errors, property metadata
 
 ## Public API
 
+`operation::Effect::LocalJob` declares a host-owned local worker effect. It
+does not authorize any domain mutation performed by that worker.
+`syntax::bind::bind_values` prepares typed machine arguments against the same
+catalog schema as canonical text, without constructing or parsing a command
+line. The owning host still checks `scriptable`, capability, permission and
+context before dispatch.
+
 `CommandRegistry<T, E>` and `CommandSpec<T, E>` provide longest-name/alias matching, atomic name registration, parser dispatch and declarative argument metadata. `CommandArgumentSpec` records each argument's name, type, optional/rest behavior, enum choices or constraints, unit and description. Hosts render command help from these descriptors with `write_command_help` into a bounded writer or `format_command_help` into a `String`. `CommandOutcome` distinguishes an unknown name from a recognized command with invalid arguments. `PropertyRegistry` validates and lists static property descriptors without owning values. `PropertyRequest` parses `get`, `set`, `reset`, `list` and `help`; the requesting host checks access and calls the domain handler. `CommandError` carries a stable code, subject, reason and usage.
 
 The public `operation` module composes `CatalogEntry` declarations through `CatalogBuilder`. A package registers atomically. The immutable catalog resolves exact paths and aliases, lists direct children and describes signatures, units, capability, access, persistence and source. The limits are 1024 operations, 2048 aliases, 128 bytes per name and 16 segments. Separate source bindings may share an identical schema. A collision identifies both owners and operation IDs. The [compiled example](examples/operation_catalog.rs) uses the production builder and help formatter.

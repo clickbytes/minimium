@@ -93,6 +93,10 @@ impl DesktopHost {
                 return;
             }
         };
+        #[cfg(feature = "console-scripting")]
+        if let Some(request) = self.application.take_script_request() {
+            super::controller::execute_script_request(self, request);
+        }
         if let Some(error) = output.candidate_scene_error.as_ref() {
             self.application
                 .record_diagnostic_failure("client_runtime.candidate_scene_failed", error);

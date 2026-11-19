@@ -1,5 +1,20 @@
 # minimium-client
 
+The optional `console-scripting` feature adds a local Rhai worker to the client
+host in both desktop and terminal builds. `client.scripting.run_file("path")`
+starts one explicit UTF-8 script from the captured working directory;
+`client.scripting.status(run_id)` reads its bounded ledger and
+`client.scripting.cancel(run_id)` requests cooperative cancellation. These
+three catalog methods remain visible when the feature is off and return
+`Unavailable(ConsoleScriptingDisabled)`. Script calls use catalog schemas and
+the same front-end owner dispatch as F1; the worker holds no runtime or renderer
+reference. The host pumps one bounded request per application step, and a
+script waiting for a reply never blocks that step. The worker reads at most
+16 KiB of source, has a 10 s monotonic deadline and the operation, memory,
+output and owner-call limits described in [the console contract](../../docs/console-api/contract.md).
+Committed owner effects remain after cancellation; a submitted handle is not
+an owner commit.
+
 `client.render.water.status()` is a local typed query over three independent stages: received fluid replica, last accepted scene-worker request and actually activated water geometry. Each retains its own world/context, fluid revision, terrain version, catalog digest and local region/key. The water-level value is a hash of nearby water presentation inputs, not a server revision; the builder uses a 96 m radius and at most 4096 nearby interface cells. Installed vertex and triangle counts describe local geometry, not water volume. An old installed key is marked retained/stale after context or origin change. Terminal builds expose the catalog method but return `Unavailable(renderer_missing)`; the server's `world.water.status(instance_id)` remains separate.
 
 The F1 console, terminal and developer input bind canonical fields, methods and longest registered legacy spellings through the shared command syntax. `ui.console.explain(text)` prints the prepared operation using the local immutable catalog and argument validators.

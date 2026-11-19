@@ -22,6 +22,7 @@ pub(super) fn handle(
     match action {
         FrontendAction::Print(text) => println!("{text}"),
         FrontendAction::Player(_) => unreachable!("shared player binding"),
+        FrontendAction::Script(_) => unreachable!("shared scripting binding"),
         FrontendAction::Help | FrontendAction::Clear => unreachable!("shared console operation"),
         FrontendAction::Connect(_)
         | FrontendAction::HostLocal(_)

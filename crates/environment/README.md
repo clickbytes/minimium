@@ -113,3 +113,9 @@ outputs, and the future tracked-object rendering adapter adds no domain state.
 The console status projection reads one ClockSample. MeasuredRatePpm represents observed progress independently of the validated configuration range. ClockWrite encodes field writes and UTC or solar HHMM methods. The CPU solar validator uses finite Earth-fixed coordinates in metres and rejects observers within one micrometre of the polar axis.
 
 Batch #592 adds read-only `world.time.achieved_scale` as exact `MeasuredRatePpm(u64)` and `world.time.diagnostics()` as a bounded one-sample `TimeDiagnostics` report. The former does not use the requested-scale setter range. Diagnostics report clock and session identity, committed tick, calendar epoch, clock revision, requested and achieved ppm, limit, source and sample age. Owner-only fault, correction and dirty revision are optional in the domain DTO. The shared `clock_entry` supplies schemas to the client and server command registries. `console::register_operations` is the public package registrar consumed by `examples/time_catalog_consumer.rs`, which compiles without either frontend.
+
+The clock catalog marks `world.time.scale`, `world.time.status`,
+`world.time.revision`, `world.time.achieved_scale` and
+`world.time.diagnostics` scriptable. This is neutral operation metadata;
+the environment package has no Rhai dependency or interpreter state. The
+client script adapter binds the same declarations and owner permissions.

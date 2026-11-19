@@ -48,7 +48,36 @@ pub(super) fn execute_input(
         Some(player_position),
         crate::host_time::sample(),
     );
+    execute_submission(renderer, result, source)
+}
+
+#[cfg(feature = "console-scripting")]
+pub(super) fn execute_script_request(
+    renderer: &mut DesktopHost,
+    request: crate::scripting::HostRequest,
+) {
+    let submission = renderer.application.prepare_script_request(&request);
+    let (_, result) = execute_submission(
+        renderer,
+        submission,
+        client_commands::CommandSource::Console,
+    );
+    let reply = crate::scripting::project(result.expect("script operation response"));
+    let _ = request.reply.try_send(reply);
+}
+
+fn execute_submission(
+    renderer: &mut DesktopHost,
+    result: dispatch::Submission,
+    source: client_commands::CommandSource,
+) -> (bool, Option<dispatch::ClientResult>) {
     dispatch::dispatch(result, |identity, action| {
+        if let FrontendAction::Script(control) = action {
+            return (
+                false,
+                renderer.application.script_operation(identity, control),
+            );
+        }
         if matches!(&action, FrontendAction::MapTeleport) {
             let unavailable = presentation::unavailable_for(
                 renderer,

@@ -9,9 +9,10 @@ mod console;
 mod movement;
 mod persistence;
 mod presentation;
+mod scripting;
 mod settings;
 
-pub(super) fn catalog() -> &'static OperationCatalog {
+pub(crate) fn catalog() -> &'static OperationCatalog {
     static CATALOG: OnceLock<OperationCatalog> = OnceLock::new();
     CATALOG.get_or_init(|| build().expect("invalid client operation declarations"))
 }
@@ -59,6 +60,13 @@ fn build() -> Result<OperationCatalog, CatalogError> {
     package.operation(resolve("server.persistence.status", false)?)?;
     package.alias("server.persistence.save", "world save", "world save", &[])?;
     package.operation(resolve("world.time.initial_config", false)?)?;
+    for name in [
+        "client.scripting.run_file",
+        "client.scripting.status",
+        "client.scripting.cancel",
+    ] {
+        package.operation(resolve(name, false)?)?;
+    }
     package.operation(minimium_commands::syntax::bind::explain_entry())?;
     package.finish()
 }
@@ -116,5 +124,6 @@ fn resolve(name: &str, persistent: bool) -> Result<CatalogEntry, CatalogError> {
         .or_else(|| actor::entry(name))
         .or_else(|| bolids::entry(name))
         .or_else(|| persistence::entry(name))
+        .or_else(|| scripting::entry(name))
         .ok_or_else(|| CatalogError::InvalidName(name.to_owned()))
 }

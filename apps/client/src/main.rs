@@ -188,6 +188,8 @@ mod environment;
 mod input;
 mod messages;
 mod options;
+#[cfg(feature = "console-scripting")]
+mod scripting;
 pub(crate) use minimium_client_runtime as session;
 #[cfg(feature = "desktop")]
 mod stats;

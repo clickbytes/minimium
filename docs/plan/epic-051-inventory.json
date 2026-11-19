@@ -3577,6 +3577,78 @@
       "read_source": "ClockPropertySnapshot and EnvironmentFrameInput.committed; proposed crates/environment/src/console.rs schema and typed bindings. Any unavailable diagnostic requires an explicit producer/DTO extension.",
       "commit_boundary": "Read-only projection at EnvironmentClock and client session replica read adapter",
       "migration_issue": 592
+    },
+    {
+      "id": "A002",
+      "catalog": "client",
+      "status": "implemented",
+      "legacy": null,
+      "aliases": [],
+      "canonical": "client.scripting.run_file",
+      "kind": "method",
+      "arguments": "path: LocalScriptPath",
+      "result": "ScriptRunReceipt",
+      "unit": "UTF-8 bytes and monotonic milliseconds",
+      "effect": "LocalJob",
+      "owner": "ClientScriptHost",
+      "scope": "local client",
+      "consumer": "desktop F1, developer stdin, terminal; host only, scriptable=false",
+      "permission": "Local; ConsoleScripting capability required",
+      "source": {
+        "path": "apps/client/src/scripting/mod.rs",
+        "symbol": "ScriptingHost::start"
+      },
+      "read_source": "bounded local worker ledger",
+      "commit_boundary": "client host local job coordinator; domain calls commit separately",
+      "migration_issue": 593
+    },
+    {
+      "id": "A003",
+      "catalog": "client",
+      "status": "implemented",
+      "legacy": null,
+      "aliases": [],
+      "canonical": "client.scripting.status",
+      "kind": "method",
+      "arguments": "run_id: ScriptRunId",
+      "result": "ScriptStatus",
+      "unit": "monotonic milliseconds",
+      "effect": "Query",
+      "owner": "ClientScriptHost",
+      "scope": "local client",
+      "consumer": "desktop F1, developer stdin, terminal; host only, scriptable=false",
+      "permission": "Local; ConsoleScripting capability required",
+      "source": {
+        "path": "apps/client/src/scripting/mod.rs",
+        "symbol": "ScriptingHost::status"
+      },
+      "read_source": "bounded local worker ledger",
+      "commit_boundary": "client host local job coordinator; domain calls commit separately",
+      "migration_issue": 593
+    },
+    {
+      "id": "A004",
+      "catalog": "client",
+      "status": "implemented",
+      "legacy": null,
+      "aliases": [],
+      "canonical": "client.scripting.cancel",
+      "kind": "method",
+      "arguments": "run_id: ScriptRunId",
+      "result": "CancelReceipt",
+      "unit": "monotonic milliseconds",
+      "effect": "LocalJob",
+      "owner": "ClientScriptHost",
+      "scope": "local client",
+      "consumer": "desktop F1, developer stdin, terminal; host only, scriptable=false",
+      "permission": "Local; ConsoleScripting capability required",
+      "source": {
+        "path": "apps/client/src/scripting/mod.rs",
+        "symbol": "ScriptingHost::cancel"
+      },
+      "read_source": "bounded local worker ledger",
+      "commit_boundary": "client host local job coordinator; domain calls commit separately",
+      "migration_issue": 593
     }
   ]
 }

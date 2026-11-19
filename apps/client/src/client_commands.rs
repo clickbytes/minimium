@@ -13,10 +13,10 @@ use minimium_commands::{
 use minimium_renderer::quality::SkyQuality;
 use std::sync::OnceLock;
 
-mod bindings;
+pub(crate) mod bindings;
 pub(crate) mod bolid_preview;
 pub(crate) mod camera;
-mod catalog;
+pub(crate) mod catalog;
 mod explain;
 #[cfg(feature = "desktop")]
 pub(crate) use explain::{analyze as analyze_console, validate_edit};
@@ -114,6 +114,7 @@ pub(crate) enum ClientCommand {
     BolidStatus(u64),
     SaveWorld,
     SaveStatus(Option<u128>),
+    Script(ScriptControl),
     ImpactStatus {
         world: minimium_world::world::WorldInstanceId,
         id: u64,
@@ -127,6 +128,13 @@ pub(crate) enum ClientCommand {
 }
 
 pub(crate) type CommandSpec = SharedCommandSpec<ClientCommand, ParseError>;
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum ScriptControl {
+    RunFile(String),
+    Status(u64),
+    Cancel(u64),
+}
 pub(super) type CommandRegistry = SharedCommandRegistry<ClientCommand, ParseError>;
 
 static REGISTRY: OnceLock<CommandRegistry> = OnceLock::new();
@@ -283,6 +291,7 @@ pub(crate) enum FrontendAction {
     BolidStatus(u64),
     SaveWorld,
     SaveStatus(Option<u128>),
+    Script(ScriptControl),
     ImpactStatus {
         world: minimium_world::world::WorldInstanceId,
         id: u64,
@@ -476,6 +485,9 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext) -> C
         ClientCommand::SaveWorld => return CommandResult::Action(FrontendAction::SaveWorld),
         ClientCommand::SaveStatus(id) => {
             return CommandResult::Action(FrontendAction::SaveStatus(id))
+        }
+        ClientCommand::Script(control) => {
+            return CommandResult::Action(FrontendAction::Script(control))
         }
         ClientCommand::ImpactStatus { world, id } => {
             return CommandResult::Action(FrontendAction::ImpactStatus { world, id })

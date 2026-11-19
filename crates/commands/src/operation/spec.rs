@@ -94,6 +94,7 @@ impl TypeRef {
 pub enum Effect {
     Query,
     LocalPresentation,
+    LocalJob,
     PlayerIntent,
     AuthoritativeMutation,
     PersistenceJob,

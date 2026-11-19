@@ -13,6 +13,7 @@ pub(super) fn execute(
             }
         }
         FrontendAction::Player(_) => unreachable!("shared player binding"),
+        FrontendAction::Script(_) => unreachable!("shared scripting binding"),
         FrontendAction::Help | FrontendAction::Clear => unreachable!("shared console operation"),
         FrontendAction::Connect(_)
         | FrontendAction::HostLocal(_)

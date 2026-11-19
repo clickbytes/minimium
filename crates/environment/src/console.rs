@@ -176,6 +176,14 @@ pub fn clock_entry(name: &str, source: ClockReadBinding) -> Option<CatalogEntry>
         };
         entry.fixed_arguments.insert(alias, value);
     }
+    entry.spec.scriptable = matches!(
+        entry.spec.path.as_str(),
+        "world.time.scale"
+            | "world.time.status"
+            | "world.time.diagnostics"
+            | "world.time.achieved_scale"
+            | "world.time.revision"
+    );
     Some(entry)
 }
 

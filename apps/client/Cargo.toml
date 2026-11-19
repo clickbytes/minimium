@@ -8,6 +8,7 @@ license.workspace = true
 default = ["desktop"]
 desktop-audio = ["desktop", "dep:rodio"]
 desktop = ["minimium-renderer/gpu", "dep:minimium-astronomy", "dep:wgpu", "dep:winit", "dep:pollster", "dep:arboard", "dep:fontdue", "dep:unicode-segmentation"]
+console-scripting = ["dep:rhai"]
 
 [dependencies]
 minimium-terrain = { path = "../../crates/terrain" }
@@ -40,3 +41,4 @@ arboard = { version = "3", optional = true }
 fontdue = { version = "0.9.5", optional = true }
 unicode-segmentation = { version = "1.13.3", optional = true }
 rodio = { version = "=0.22.2", optional = true, default-features = false, features = ["playback"] }
+rhai = { version = "=1.27.0", features = ["no_module"], optional = true }
