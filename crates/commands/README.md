@@ -45,3 +45,5 @@ Change registry matching and metadata behavior here. Change command values and v
 Run `rtk cargo check -p minimium-commands -p minimium-platform -p minimium-server -p minimiumctl -p minimium-client` plus architecture and file-length checks. Runtime acceptance is deferred.
 
 An administrative actor ID is an optional lossless u64 accompanying the expected world binding. A server operation decides whether that binding applies. InstantMs accepts integer milliseconds, with quoted calendar text available to domain parsers.
+
+A settings receipt can identify its configuration base as well as the property revision. The owner checks both identifiers for conditional changes and reports the conflicting dimension.

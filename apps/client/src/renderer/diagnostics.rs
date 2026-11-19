@@ -1,3 +1,4 @@
+mod camera;
 use super::DesktopHost;
 use crate::environment::{diagnostics::format_utc_millis, SkyDiagnosticsSnapshot};
 

@@ -16,6 +16,7 @@ use minimium_renderer::quality::SkyQuality;
 use std::sync::OnceLock;
 
 mod bindings;
+pub(crate) mod camera;
 mod catalog;
 mod connection;
 mod environment;
@@ -90,6 +91,8 @@ pub(crate) enum ClientCommand {
     SkyDemo(bool),
     Fov(Option<f32>),
     ShowCelestialNames(bool),
+    CameraLook { yaw: f32, pitch: f32 },
+    CameraStatus,
     InitialClockConfig,
     SetInstant(minimium_environment::time::WorldTimeMs),
     TimeStatus,
@@ -108,9 +111,7 @@ static REGISTRY: OnceLock<CommandRegistry> = OnceLock::new();
 
 pub(crate) fn parse_fov_degrees(value: &str) -> Result<f32, &'static str> {
     let degrees = value.parse::<f32>().map_err(|_| "expected a number")?;
-    if !degrees.is_finite() || !(30.0..=110.0).contains(&degrees) {
-        return Err("field of view must be finite and between 30 and 110 degrees");
-    }
+    camera::validate_fov(degrees)?;
     Ok(degrees)
 }
 
@@ -246,6 +247,8 @@ pub(crate) enum FrontendAction {
     Property(properties::ClientPropertyCommand),
     ConfigSave(std::path::PathBuf),
     Clock(ClockAction),
+    CameraLook { yaw: f32, pitch: f32 },
+    CameraStatus,
     SpawnRandomBolid(u16),
     SpawnRandomMeteorid,
 
@@ -394,6 +397,10 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
                 ClockWrite::Set(utc),
             )))
         }
+        ClientCommand::CameraLook { yaw, pitch } => {
+            return CommandResult::Action(FrontendAction::CameraLook { yaw, pitch })
+        }
+        ClientCommand::CameraStatus => return CommandResult::Action(FrontendAction::CameraStatus),
         ClientCommand::InitialClockConfig => {
             return CommandResult::Action(FrontendAction::Clock(ClockAction::InitialConfig))
         }

@@ -51,10 +51,6 @@ pub(crate) enum DeveloperOperation {
         latitude: f32,
         longitude: f32,
     },
-    Look {
-        yaw_degrees: f32,
-        pitch_degrees: f32,
-    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -190,7 +186,6 @@ impl PresentationOperation {
     pub(crate) fn requirement(&self) -> PresentationRequirement {
         match self {
             Self::Developer(DeveloperOperation::BolidTransmission(_))
-            | Self::Developer(DeveloperOperation::Look { .. })
             | Self::AtmosphereStatus
             | Self::WeatherStatus
             | Self::TerrainStatus
@@ -255,17 +250,6 @@ pub(super) fn parse_developer(words: &[String]) -> Result<PresentationOperation,
             DeveloperOperation::Goto {
                 latitude,
                 longitude,
-            }
-        }
-        Some("look") if words.len() == 4 => {
-            let yaw_degrees = parse_finite(&words[2]).ok_or_else(invalid)?;
-            let pitch_degrees = parse_finite(&words[3]).ok_or_else(invalid)?;
-            if !(-89.0..=89.0).contains(&pitch_degrees) {
-                return Err(invalid());
-            }
-            DeveloperOperation::Look {
-                yaw_degrees,
-                pitch_degrees,
             }
         }
         Some("bolid") => parse_bolid(&words[2..]).map_err(|_| invalid())?,

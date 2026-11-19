@@ -195,36 +195,9 @@ pub(super) fn handle(
                 crate::client_commands::command_error(&error, localizer, options.locale)
             ),
         },
-        FrontendAction::ConfigSave(path) => {
-            match crate::config::save_preferences(
-                &path,
-                &options.config_file_settings,
-                &text_properties.session_settings(),
-            ) {
-                Ok(()) => println!(
-                    "{}",
-                    localizer.format(
-                        options.locale,
-                        &minimium_localization::UiMessage::ConfigurationSaved(
-                            path.display().to_string()
-                        )
-                    )
-                ),
-                Err(error) => {
-                    application.record_diagnostic_failure(
-                        "storage.config_save_failed",
-                        &error.to_string(),
-                    );
-                    println!(
-                        "{}",
-                        localizer.format(
-                            options.locale,
-                            &minimium_localization::UiMessage::ConfigurationSaveFailed
-                        )
-                    );
-                }
-            }
-        }
+        FrontendAction::CameraStatus
+        | FrontendAction::CameraLook { .. }
+        | FrontendAction::ConfigSave(_) => unreachable!("shared preference operation"),
         FrontendAction::Clock(_) => unreachable!("clock actions use the shared time adapter"),
         FrontendAction::SpawnRandomBolid(count) => {
             match application.request_random_bolid(count, crate::host_time::sample()) {

@@ -183,6 +183,10 @@ pub(crate) fn display(
             text
         }
     };
+    let line = match result.receipt.settings_base {
+        Some(base) => format!("{line} settings_base={base}"),
+        None => line,
+    };
     let line = if let Some(nonce) = result.identity.correlation_nonce {
         format!(
             "request={} nonce={} {line}",

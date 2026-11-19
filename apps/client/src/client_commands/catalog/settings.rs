@@ -118,7 +118,23 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
             None,
             FilesystemWrite,
         ),
+        "client.camera.status" => {
+            binding.owner = "Camera";
+            binding.capability = Some("Renderer");
+            binding.context = "presentation";
+            binding.source = "PresentationSample";
+            binding.declaration(
+                "client.camera.status",
+                Method,
+                &[],
+                TypeRef::domain("CameraStatus"),
+                Some("degrees and world metres"),
+                Query,
+            )
+        }
         "dev look" => {
+            binding.owner = "Camera";
+            binding.context = "presentation";
             binding.capability = Some("Renderer");
             binding.declaration(
                 "client.camera.look",
@@ -134,6 +150,9 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
         }
         _ => return None,
     };
-    entry.spec.scriptable = name == "ui.locale";
+    entry.spec.scriptable = matches!(
+        name,
+        "ui.locale" | "client.camera.fov" | "camera fov" | "client.camera.status" | "dev look"
+    );
     Some(entry)
 }

@@ -10,7 +10,14 @@ impl DesktopHost {
             .to_owned();
         let (requested, effective, difference_reason) = match key {
             Key::Locale => self.stored_property(key),
-            Key::CameraFov => self.stored_property(key),
+            Key::CameraFov => {
+                return self
+                    .application
+                    .settings
+                    .values
+                    .fov_property()
+                    .format_with(minimium_commands::operation::CommandValue::encode)
+            }
             Key::MouseSensitivity => self.stored_property(key),
             Key::InputBindings => self.stored_property(key),
             Key::SkyQuality => self.stored_property(key),

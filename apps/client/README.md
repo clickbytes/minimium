@@ -834,3 +834,5 @@ reuse its CPU data. Regional weather remains on the cloud worker. A cover upload
 must match the active source, climate, clock, UTC hour and world-grid address.
 
 F1, developer stdin and the terminal dispatch clock reads and writes through the same adapter. A clock read carries the session sample revision or identifies a local demo. The submitting frontend receives the correlated owner receipt after a write.
+
+Camera operations share a CPU settings owner. Each store has a unique base ID for its lifetime and a monotonic FOV revision. The renderer confirms effective FOV against both. Terminal reads expose startup and requested values with camera availability recorded separately. Config save atomically replaces the preference file using its persistent file layer and session overrides.

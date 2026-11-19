@@ -181,7 +181,7 @@ forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-p
 [[package]]
 name = "minimium-platform"
 role = "adapter"
-responsibility = "Resolved process path values, durable files, process identity, locking and bounded local administration transport with versioned structured error decoding."
+responsibility = "Atomic preference replacement with staged I/O errors. Resolved process path values, durable files, process identity, locking and bounded local administration transport with versioned structured error decoding."
 forbidden_dependencies = ["minimium-world", "minimium-environment", "minimium-procgen", "minimium-sectors", "minimium-assets", "minimium-protocol", "minimium-telemetry"]
 
 [[package]]

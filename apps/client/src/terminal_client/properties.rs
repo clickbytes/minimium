@@ -25,10 +25,6 @@ impl TextProperties {
         Self { settings }
     }
 
-    pub fn session_settings(&self) -> std::collections::BTreeMap<String, String> {
-        self.settings.session_values()
-    }
-
     pub fn execute(
         &mut self,
         command: ClientPropertyCommand,

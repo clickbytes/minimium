@@ -58,6 +58,20 @@ fn lower(op: &PreparedOperation, entry: &CatalogEntry) -> Result<ClientCommand, 
         )
         .at(span)
     };
+    if op.path == "client.camera.look" {
+        use minimium_commands::operation::CommandValue;
+        let [yaw, pitch] = op.arguments.as_slice() else {
+            return Err(invalid("expected yaw and pitch in degrees"));
+        };
+        let (CommandValue::Finite(y), CommandValue::Finite(p)) = (&yaw.value, &pitch.value) else {
+            return Err(invalid("expected finite degrees"));
+        };
+        return super::camera::look(y.get() as f32, p.get() as f32)
+            .map_err(|reason| invalid(reason).at(pitch.span));
+    }
+    if op.path == "client.camera.status" {
+        return Ok(ClientCommand::CameraStatus);
+    }
     if op.path == "world.time.initial_config" {
         return Ok(ClientCommand::InitialClockConfig);
     }

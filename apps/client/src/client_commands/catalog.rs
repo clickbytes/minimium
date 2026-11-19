@@ -49,6 +49,7 @@ fn build() -> Result<OperationCatalog, CatalogError> {
             .arguments,
     )?;
     package.alias("client.quit", "quit", "quit", &[])?;
+    package.operation(resolve("client.camera.status", false)?)?;
     package.operation(resolve("world.time.initial_config", false)?)?;
     package.operation(minimium_commands::syntax::bind::explain_entry())?;
     package.finish()

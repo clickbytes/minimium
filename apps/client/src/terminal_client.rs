@@ -243,6 +243,19 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                     crate::host_time::sample(),
                 );
                 let (should_exit, response) = dispatch::dispatch(result, |identity, action| {
+                    use crate::client_commands::camera;
+                    if let Some(request) = camera::Request::from_action(&action) {
+                        return (
+                            false,
+                            camera::execute(
+                                identity,
+                                request,
+                                &mut text_properties.settings,
+                                &options.config_file_settings,
+                                None,
+                            ),
+                        );
+                    }
                     if let Some((result, changed)) = text_properties
                         .settings
                         .locale_operation(&identity, &action)

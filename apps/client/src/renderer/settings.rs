@@ -4,7 +4,6 @@ use crate::client_commands::{
     ClientPropertyCommand, ClientPropertyKey as Key, ClientPropertyValue as Value,
 };
 use minimium_commands::{PropertySource, PropertyValue};
-use std::collections::BTreeMap;
 
 impl DesktopHost {
     pub(super) fn apply_property(&mut self, command: ClientPropertyCommand) -> String {
@@ -48,10 +47,6 @@ impl DesktopHost {
         }
     }
 
-    pub(super) fn session_settings(&self) -> BTreeMap<String, String> {
-        self.application.settings.session_values()
-    }
-
     fn set_property(&mut self, value: Value) -> Key {
         let key = value.key();
         self.application.settings.set(value.clone());
@@ -75,8 +70,8 @@ impl DesktopHost {
                     .console
                     .refresh_suggestions(&self.localizer, value);
             }
-            Value::CameraFov(value) => {
-                self.fov_degrees = value;
+            Value::CameraFov(_) => {
+                unreachable!("camera settings are applied by the versioned camera adapter")
             }
             Value::MouseSensitivity(value) => {
                 self.mouse_sensitivity = value;

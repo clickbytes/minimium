@@ -79,19 +79,30 @@ pub fn atomic_write_with(
     destination: &Path,
     write_payload: impl FnOnce(&mut File) -> io::Result<()>,
 ) -> io::Result<()> {
+    atomic_write_with_stage(temporary_path, destination, write_payload).map_err(|(_, error)| error)
+}
+
+/// Like atomic_write_with, retaining the failing filesystem operation for an owner receipt.
+pub fn atomic_write_with_stage(
+    temporary_path: &Path,
+    destination: &Path,
+    write_payload: impl FnOnce(&mut File) -> io::Result<()>,
+) -> Result<(), (&'static str, io::Error)> {
     let result = (|| {
-        let mut file = File::create(temporary_path)?;
-        write_payload(&mut file)?;
-        file.sync_all()?;
-        atomic_replace_file(temporary_path, destination)?;
+        let mut file = File::create(temporary_path).map_err(|e| ("create_temporary", e))?;
+        write_payload(&mut file).map_err(|e| ("write", e))?;
+        file.sync_all().map_err(|e| ("sync_file", e))?;
+        atomic_replace_file(temporary_path, destination).map_err(|e| ("replace", e))?;
         #[cfg(unix)]
-        File::open(
-            destination
+        {
+            let parent = destination
                 .parent()
-                .filter(|parent| !parent.as_os_str().is_empty())
-                .unwrap_or_else(|| Path::new(".")),
-        )?
-        .sync_all()?;
+                .filter(|p| !p.as_os_str().is_empty())
+                .unwrap_or_else(|| Path::new("."));
+            File::open(parent)
+                .and_then(|file| file.sync_all())
+                .map_err(|e| ("sync_parent", e))?;
+        }
         Ok(())
     })();
     if result.is_err() {

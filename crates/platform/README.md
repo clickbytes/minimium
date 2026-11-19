@@ -46,3 +46,5 @@ Change OS-specific file or process behavior here. Move reusable command schema/p
 ## Verification
 
 Run `rtk cargo check -p minimium-platform` and `rtk python scripts/check_architecture.py`. Runtime acceptance is deferred.
+
+The atomic write adapter exposes the failing create, write, sync, replace or parent-sync stage to preference writers. Existing callers can continue to receive the underlying I/O error directly.

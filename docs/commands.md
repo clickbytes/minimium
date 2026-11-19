@@ -366,3 +366,7 @@ from a client or an existing authorized server admin endpoint/console.
 ## Shared simulation clock
 
 On an owned server, `world.time.scale = 1000` returns a submitted request ID. The matching owner_committed reply records the clock revision, requested 1000x scale, effective setting, tick and calendar epoch. `world.time.status()` reports the latest session sample, its age and the achieved ppm measured from completed ticks. Joining a running server, including localhost, returns client_runtime.admin_control_unavailable on a write. Administrative `get world.time.scale` reads the owner. `time set 2030-01-01T12:00:00.123Z` and `world.time.set(1893499200123)` commit through the same operation. `set_time_local 1200` uses the active Earth observer at execution. See [ADR 0016](adr/0016-committed-simulation-time.md).
+
+## Camera preferences
+
+The FOV factory default is 70 degrees. With 80 in the preferences file, setting FOV to 95 and resetting restores 80 from the file. If the command line selected 90 at startup, the same reset restores 90. Both operations report the settings base and revision. The renderer acknowledges that pair before publishing effective FOV. Use `client.camera.status()` for a presentation sample and `client.camera.look(45, -10)` to set yaw and pitch in degrees. `client.config.save("preferences.ron")` writes the persistent file layer and current session overrides.

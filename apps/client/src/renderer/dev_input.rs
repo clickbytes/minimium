@@ -86,14 +86,6 @@ pub(super) fn execute_developer(
             latitude,
             longitude,
         } => goto(renderer, latitude, longitude, &mut lines),
-        DeveloperOperation::Look {
-            yaw_degrees,
-            pitch_degrees,
-        } => {
-            renderer.input.yaw = yaw_degrees.to_radians();
-            renderer.input.pitch = pitch_degrees.to_radians();
-            lines.push("dev: view updated".to_owned());
-        }
     }
     lines
 }

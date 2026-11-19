@@ -216,11 +216,16 @@ pub(crate) fn handle_offline_command(args: &[String]) -> Result<Option<String>, 
     Ok(Some(output))
 }
 
+pub(crate) struct ConfigSaveReceipt {
+    pub path: std::path::PathBuf,
+    pub bytes: usize,
+}
+
 pub(crate) fn save_preferences(
     path: &Path,
     file_settings: &BTreeMap<String, String>,
     session_settings: &BTreeMap<String, String>,
-) -> Result<(), CommandError> {
+) -> Result<ConfigSaveReceipt, CommandError> {
     let mut settings = file_settings
         .iter()
         .filter(|(key, _)| persistent_keys().any(|allowed| allowed == key.as_str()))
@@ -245,13 +250,21 @@ pub(crate) fn save_preferences(
         ));
     }
     let temporary = temporary_path(path);
-    minimium_platform::files::atomic_write_file(&temporary, path, &bytes).map_err(|error| {
+    use std::io::Write;
+    minimium_platform::files::atomic_write_with_stage(&temporary, path, |file| {
+        file.write_all(&bytes)
+    })
+    .map_err(|(stage, error)| {
         CommandError::new(
-            CommandErrorCode::Io,
+            CommandErrorCode::StorageFailure,
             Some(path.display().to_string()),
-            format!("could not save configuration: {error}"),
+            format!("{stage}: {error}"),
             None::<String>,
         )
+    })?;
+    Ok(ConfigSaveReceipt {
+        path: path.to_owned(),
+        bytes: bytes.len(),
     })
 }
 

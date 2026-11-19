@@ -392,8 +392,15 @@ pub(super) fn prepare(
                 || {
                     diagnostic(
                         Code::InvalidValue,
-                        p.name,
-                        &format!("expected {}", p.value_type.0),
+                        entry.property.map_or(p.name, |field| field.key),
+                        &format!(
+                            "expected {}{}",
+                            p.value_type.0,
+                            entry
+                                .property
+                                .and_then(|field| field.constraints)
+                                .map_or_else(String::new, |range| format!(" ({range})"))
+                        ),
                         token.span,
                     )
                 },

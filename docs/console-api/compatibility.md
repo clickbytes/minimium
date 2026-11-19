@@ -59,3 +59,7 @@ Batch #572 adds an opt-in, authenticated administrative v1 envelope. Text-mode C
 ## Shared clock operations
 
 Batch #573 migrates the live `world.time` fields, startup configuration and clock methods to typed reads and mutations. F1 and developer stdin use the active session sample, with the terminal using the same executor. An explicit local demo reports its own source. The server returns its clock snapshot for live fields and its resolved startup settings for `world.time.initial_config`. A solar mutation requires an actor and a matching world instance, content revision and membership epoch at execution. The machine-readable inventory continues to identify baseline spellings and their declaring hosts.
+
+## Camera preferences
+
+The FOV property, camera fov and fov aliases share the finite 30–110 degree validator and the same startup, override and renderer-effective report. The look command consumes degrees through the camera adapter. Camera status exposes presentation coordinates and orientation. Config save returns the destination and byte count after replacement, or the failing I/O stage. Terminal hosts can save their preferences and read FOV provenance. Camera mutations and status require a renderer.

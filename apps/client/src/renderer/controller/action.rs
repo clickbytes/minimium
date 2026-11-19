@@ -112,27 +112,9 @@ pub(super) fn execute(
                 output.push_line(line);
             }
         }
-        FrontendAction::ConfigSave(path) => {
-            match crate::config::save_preferences(
-                &path,
-                &renderer.application.settings.config_file_settings,
-                &renderer.session_settings(),
-            ) {
-                Ok(()) => {
-                    output.push_ui_message(minimium_localization::UiMessage::ConfigurationSaved(
-                        path.display().to_string(),
-                    ))
-                }
-                Err(error) => {
-                    renderer
-                        .application
-                        .record_diagnostic_failure("storage.config_save_failed", &error);
-                    output.push_ui_error_message(
-                        minimium_localization::UiMessage::ConfigurationSaveFailed,
-                    );
-                }
-            }
-        }
+        FrontendAction::CameraStatus
+        | FrontendAction::CameraLook { .. }
+        | FrontendAction::ConfigSave(_) => unreachable!("shared preference operation"),
         FrontendAction::Clock(_) => unreachable!("clock actions use the shared time adapter"),
         FrontendAction::SpawnRandomBolid(count) => {
             if let Some(unavailable) = super::presentation::unavailable_for(

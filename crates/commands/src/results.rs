@@ -46,6 +46,12 @@ impl Stage {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OperationReceipt {
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "crate::admin::number::optional"
+    )]
+    pub settings_base: Option<u64>,
     pub stage: Stage,
     #[serde(with = "crate::admin::number::optional")]
     pub revision: Option<u64>,
@@ -58,6 +64,7 @@ impl OperationReceipt {
     pub fn at(stage: Stage) -> Self {
         Self {
             stage,
+            settings_base: None,
             revision: None,
             freshness: None,
             effects: Vec::new(),

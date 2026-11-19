@@ -1,4 +1,6 @@
 mod locale;
+mod revisions;
+pub(crate) use revisions::{PropertyRevision, SettingsBaseId};
 mod startup;
 use crate::client_commands::ClientPropertyValue;
 use minimium_commands::PropertySource;
@@ -62,12 +64,10 @@ impl ClientSettings {
     pub(crate) fn reset(&mut self, key: &str) -> Option<ClientPropertyValue> {
         self.values.reset(key)
     }
-    pub(crate) fn session_values(&self) -> BTreeMap<String, String> {
-        self.values.session_values()
-    }
 }
 
 pub(crate) struct SettingsStore {
+    fov_version: PropertyRevision,
     locale_revision: u64,
     startup: BTreeMap<String, SettingRecord>,
     records: BTreeMap<String, SettingRecord>,
@@ -123,6 +123,10 @@ impl SettingsStore {
     pub(crate) fn new(startup: &StartupSettings) -> Self {
         Self {
             locale_revision: 0,
+            fov_version: PropertyRevision {
+                base: SettingsBaseId::new(),
+                revision: 0,
+            },
             records: startup.records.clone(),
             startup: startup.records.clone(),
         }
