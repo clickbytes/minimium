@@ -9,6 +9,7 @@ use minimium_localization::{Locale, Localizer, UiMessage};
 
 pub(crate) enum ClientPayload {
     Native(Payload),
+    Connection(super::connection_adapter::ConnectionReport),
     CatalogHelp(super::help::CatalogHelp),
     Clear,
     // Preserve localization tokens, clear instructions and capability reports until display.
@@ -175,6 +176,9 @@ pub(crate) fn display(
     let stage = result.receipt.stage.label();
     let id = &result.identity.operation.0;
     let line = match result.outcome {
+        Ok(ClientPayload::Connection(report)) => {
+            format!("{id} {stage} {}", report.render(localizer, locale))
+        }
         Ok(ClientPayload::Clear) => {
             return CommandActionResult {
                 outputs: vec![CommandOutput::Clear],

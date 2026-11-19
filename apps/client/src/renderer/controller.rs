@@ -49,6 +49,32 @@ pub(super) fn execute_input(
         crate::host_time::sample(),
     );
     dispatch::dispatch(result, |identity, action| {
+        let local = &renderer.application.settings.local_server_config;
+        let config = matches!(action, FrontendAction::HostLocal(_)).then(|| local.clone());
+        if let Some((effect, result)) = renderer.application.connection_operation(
+            &identity,
+            &action,
+            source,
+            crate::host_time::sample(),
+            || Ok(config.expect("local launch")),
+        ) {
+            use crate::application::ConnectionEffect;
+            let exit = matches!(effect, ConnectionEffect::Quit(_));
+            match effect {
+                ConnectionEffect::Quit(pending) => {
+                    for (source, report) in pending {
+                        renderer.show_operation_result(Some(source), report);
+                    }
+                }
+                ConnectionEffect::Started => renderer.connection_attempt_started(),
+                ConnectionEffect::Disconnected(disconnect) => {
+                    renderer.pending_step_disconnect = Some(disconnect);
+                    renderer.clear_connection();
+                }
+                _ => {}
+            }
+            return (exit, result);
+        }
         if let Some(result) = renderer
             .application
             .policy_operation(&identity, &action, source)

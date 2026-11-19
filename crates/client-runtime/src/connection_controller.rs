@@ -3,8 +3,10 @@ mod jump;
 mod policy;
 pub(crate) use policy::patch_path;
 pub use policy::MovementField;
+mod diagnostics;
 mod prepared_session;
 mod shutdown;
+pub use diagnostics::{valid_endpoint, ConnectionStats, SessionTraffic};
 mod time;
 pub use prepared_session::PreparedSessionError;
 
@@ -42,6 +44,7 @@ pub enum ConnectionEvent {
 
 /// Owns the connector, session and any local process independently of a UI.
 pub struct ConnectionController {
+    closed_traffic: (u64, u64),
     now: ClientTime,
     presentation: Option<bool>,
     jumps: jump::JumpRequests,
@@ -71,6 +74,7 @@ impl ConnectionController {
     pub fn new(now: ClientTime) -> Result<Self, ClientTimeError> {
         now.validate_after(now)?;
         Ok(Self {
+            closed_traffic: (0, 0),
             now,
             presentation: None,
             jumps: Default::default(),
@@ -204,7 +208,7 @@ impl ConnectionController {
         self.cancel_unsent_admin();
         self.jumps.end_session();
         self.policy.end_session();
-        Ok(self.session.take())
+        Ok(self.retire_session())
     }
 
     /// Sends a server-authoritative time change without blocking the UI loop.
@@ -256,6 +260,9 @@ impl ConnectionController {
     }
 
     pub fn start_remote(&mut self, address: String, now: ClientTime) -> Result<(), StartError> {
+        if !valid_endpoint(&address) {
+            return Err(StartError::InvalidEndpoint);
+        }
         self.accept_time(now).map_err(StartError::Time)?;
         if self.busy() {
             return Err(StartError::Busy {

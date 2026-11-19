@@ -28,14 +28,15 @@ pub use application::{
     ApplicationMessageError, AppliedSessionEvent, ClientAction, ClientApplicationConfig,
     ClientApplicationCore, ClientApplicationCreateError, ClientReadinessError,
     ClientStepDisconnect, ClientStepInput, ClientStepOutput, LocalActionOutcome, PredictionInput,
-    PredictionPresentationRequest, PredictionSceneRequest, QueuedActionKind, SuppressionReason,
-    UseTrigger, WorldContextChange,
+    PredictionPresentationRequest, PredictionSceneRequest, QueuedActionKind, ReplicaPlayerSample,
+    SuppressionReason, UseTrigger, WorldContextChange,
 };
 pub use authentication::{ClientAuthentication, ClientAuthenticationError};
 pub use bootstrap::LocalServerLaunchConfig;
 pub use client_time::{ClientTime, ClientTimeError};
 pub use connection_controller::{
-    ConnectionController, ConnectionEvent, MovementField, PreparedSessionError,
+    valid_endpoint, ConnectionController, ConnectionEvent, ConnectionStats, MovementField,
+    PreparedSessionError, SessionTraffic,
 };
 pub use content_jobs::{
     ContentCancelStatus, ContentJobCompletion, ContentJobHandle, ContentJobPoll, ContentJobRequest,

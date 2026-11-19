@@ -1,4 +1,6 @@
 mod admin;
+mod connection_diagnostics;
+pub(crate) use connection_diagnostics::ConnectionEffect;
 #[cfg(feature = "desktop")]
 mod desktop_ops;
 #[cfg(feature = "desktop")]
@@ -46,6 +48,7 @@ pub(crate) use minimium_client_runtime::{
 pub(crate) struct ClientApplication {
     core: ClientApplicationCore,
     next_command_id: u64,
+    connection_requests: connection_diagnostics::Requests,
     policy_output_sources:
         std::collections::BTreeMap<(u64, u64), crate::client_commands::CommandSource>,
     admin_output_source: Option<(
@@ -113,6 +116,7 @@ impl ClientApplication {
         Ok(Self {
             core,
             next_command_id: 1,
+            connection_requests: Default::default(),
             policy_output_sources: Default::default(),
             admin_output_source: None,
             ui,
@@ -192,6 +196,7 @@ impl ClientApplication {
         Ok(Self {
             core,
             next_command_id: 1,
+            connection_requests: Default::default(),
             policy_output_sources: Default::default(),
             admin_output_source: None,
             #[cfg(feature = "desktop")]
@@ -215,10 +220,6 @@ impl ClientApplication {
 
     pub(crate) fn connection_view(&self) -> &ConnectionController {
         self.core.connection_view()
-    }
-
-    pub(crate) fn is_connection_busy(&self) -> bool {
-        self.core.is_connection_busy()
     }
 
     pub(crate) fn record_diagnostic_failure(

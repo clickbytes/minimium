@@ -11,6 +11,7 @@ use minimium_protocol::ServerErrorCode;
 #[derive(Clone, Debug, PartialEq)]
 pub enum ClientText {
     ConnectingTo(String),
+    #[cfg(feature = "desktop")]
     StartingLocalServer,
     BusyAttempt {
         attempt_id: u64,
@@ -23,9 +24,6 @@ pub enum ClientText {
     ConnectionSetupFailed(String),
     ConnectFailed(String),
     DisconnectOrWait,
-    Disconnected,
-    NotConnected,
-    NoServerResponse,
     #[cfg(feature = "desktop")]
     CouldNotQueueCommand(QueueProblem),
     #[cfg(feature = "desktop")]
@@ -67,12 +65,6 @@ pub enum ClientText {
         player_updates: usize,
         player_removals: usize,
     },
-    #[cfg(feature = "desktop")]
-    PlayerState {
-        position: [f32; 3],
-        health: u16,
-        nearby_players: usize,
-    },
     WelcomeTimeout,
     HeartbeatTimeout,
     PeerDisconnected,
@@ -94,12 +86,6 @@ pub enum ClientText {
     },
     Ping {
         milliseconds: u128,
-    },
-    NetworkStats {
-        bytes_sent: u64,
-        bytes_received: u64,
-        ping_milliseconds: Option<u128>,
-        nearby_players: Option<usize>,
     },
     Pong,
     Accepted,
@@ -186,22 +172,13 @@ impl ClientText {
                 locale,
                 &minimium_localization::UiMessage::ConnectingTo(address.clone()),
             ),
-            Self::Disconnected => localizer.format(
-                locale,
-                &minimium_localization::UiMessage::ServerDisconnected,
-            ),
+            #[cfg(feature = "desktop")]
             Self::StartingLocalServer => localizer.format(
                 locale,
                 &minimium_localization::UiMessage::StartingLocalServer,
             ),
             Self::AwaitingWelcome => {
                 localizer.format(locale, &minimium_localization::UiMessage::AwaitingWelcome)
-            }
-            Self::NotConnected => {
-                localizer.format(locale, &minimium_localization::UiMessage::NotConnected)
-            }
-            Self::NoServerResponse => {
-                localizer.format(locale, &minimium_localization::UiMessage::NoServerResponse)
             }
             Self::TerminalIntro => {
                 localizer.format(locale, &minimium_localization::UiMessage::TerminalIntro)
@@ -320,19 +297,6 @@ impl ClientText {
                     removals: *player_removals,
                 },
             ),
-            #[cfg(feature = "desktop")]
-            Self::PlayerState {
-                position,
-                health,
-                nearby_players,
-            } => localizer.format(
-                locale,
-                &UiMessage::PlayerState {
-                    position: format!("{:.2},{:.2},{:.2}", position[0], position[1], position[2]),
-                    health: *health,
-                    nearby: *nearby_players,
-                },
-            ),
             Self::WelcomeTimeout => localizer.format(locale, &UiMessage::WelcomeTimeout),
             Self::HeartbeatTimeout => localizer.format(locale, &UiMessage::HeartbeatTimeout),
             Self::PeerDisconnected => localizer.format(locale, &UiMessage::PeerDisconnected),
@@ -364,22 +328,6 @@ impl ClientText {
             Self::Ping { milliseconds } => {
                 localizer.format(locale, &UiMessage::Ping(*milliseconds))
             }
-            Self::NetworkStats {
-                bytes_sent,
-                bytes_received,
-                ping_milliseconds,
-                nearby_players,
-            } => localizer.format(
-                locale,
-                &UiMessage::NetworkStats {
-                    sent: *bytes_sent,
-                    received: *bytes_received,
-                    ping: ping_milliseconds
-                        .map_or_else(|| "n/a".to_owned(), |value| format!("{value} ms")),
-                    nearby: nearby_players.map_or_else(String::new, |value| value.to_string()),
-                    nearby_active: nearby_players.is_some(),
-                },
-            ),
             Self::Pong => localizer.format(locale, &UiMessage::Pong),
             Self::Accepted => localizer.format(locale, &UiMessage::Accepted),
             Self::Health { health } => localizer.format(locale, &UiMessage::Health(*health)),

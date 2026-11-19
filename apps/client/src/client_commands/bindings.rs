@@ -44,6 +44,17 @@ pub(super) fn lower(
         )
         .at(span)
     };
+    if op.path == "client.connection.connect"
+        && !minimium_client_runtime::valid_endpoint(&op.arguments[0].text)
+    {
+        return Err(CommandError::new(
+            Code::InvalidEndpoint,
+            Some("endpoint"),
+            "expected HOST:PORT",
+            None::<String>,
+        )
+        .at(span));
+    }
     if op.path == "client.camera.look" {
         use minimium_commands::operation::CommandValue;
         let [yaw, pitch] = op.arguments.as_slice() else {

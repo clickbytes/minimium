@@ -188,8 +188,6 @@ impl DesktopHost {
                 fps_frames: 0,
                 frame_stats,
                 last_redraw: Instant::now(),
-                previous_bytes_sent: 0,
-                previous_bytes_received: 0,
             },
             demo_universe_enabled: startup_settings.sky_demo(),
             fov_degrees: startup_settings.fov(),

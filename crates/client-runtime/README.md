@@ -342,3 +342,5 @@ EnvironmentFrameInput exposes the committed session sample for clock operations 
 ConnectionController and ClientApplicationCore accept typed movement patches. At most 32 pending or undelivered policy outcomes are retained. The application step returns correlated movement_results. The session sample supplies effective values, revision and monotonic sample age. Disconnection resolves pending requests as unknown and clears the sample.
 
 The CPU controller allows 32 outstanding console jumps. A prepared jump carries the active session and WorldContext and uses zero vertical flight input. OwnerAccepted, final physical decisions and disconnect outcomes share the movement result stream.
+
+ConnectionController accumulates closed wire byte counters when it takes the session slot and adds the current session when queried. Stats include session generation and measured ping age. The application core retains the accepted authoritative player position, server time and tick separately from predicted coordinates, and invalidates that sample on a context change.

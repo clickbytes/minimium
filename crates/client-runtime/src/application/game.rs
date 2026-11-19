@@ -2,7 +2,16 @@ use minimium_protocol::WorldContext;
 use minimium_world::world::{WorldInstanceId, WorldManifest};
 use std::collections::HashMap;
 
+#[derive(Clone, Copy, Debug)]
+pub struct ReplicaPlayerSample {
+    pub position: [f32; 3],
+    pub server_tick: u64,
+    pub server_time_ms: u64,
+    pub received_at: crate::ClientTime,
+}
+
 pub(crate) struct GameplayState {
+    pub(super) replica: Option<ReplicaPlayerSample>,
     pub(crate) reconciliation: crate::SnapshotReconciler,
     pub(crate) remote_positions_mm: Vec<[i64; 3]>,
     pub(crate) prediction: crate::ClientPrediction,
@@ -50,6 +59,12 @@ impl GameplayState {
         )? {
             return Ok(false);
         }
+        self.replica = Some(ReplicaPlayerSample {
+            position: self_position,
+            server_tick,
+            server_time_ms,
+            received_at: now,
+        });
         self.prediction
             .observe_authority(server_time_ms, self_position_mm);
         let precise_position = self
@@ -76,6 +91,7 @@ impl GameplayState {
     }
 
     pub(crate) fn clear_remote_players(&mut self) {
+        self.replica = None;
         self.reconciliation.clear();
         self.prediction.clear_authority();
         self.remote_positions_mm.clear();
@@ -98,6 +114,7 @@ impl ClientGameState {
             .unwrap_or_default();
         let character = minimium_simulation::CharacterState::at_spawn_with_gravity(spawn, gravity);
         let gameplay = GameplayState {
+            replica: None,
             reconciliation: crate::SnapshotReconciler::default(),
             remote_positions_mm: Vec::new(),
             prediction: crate::ClientPrediction::new(character, None),
@@ -128,6 +145,9 @@ impl ClientGameState {
     }
 
     pub(crate) fn set_session_context(&mut self, context: Option<WorldContext>) {
+        if self.session_context != context {
+            self.gameplay.replica = None;
+        }
         self.session_context = context;
     }
 

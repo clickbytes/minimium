@@ -34,7 +34,7 @@ impl ConnectionController {
         let mut unfinished = self.connector.finish_on_exit_until(deadline);
         self.jumps.end_session();
         self.policy.end_session();
-        if let Some(mut session) = self.session.take() {
+        if let Some(mut session) = self.retire_session() {
             session.close_resources();
         }
         if let Some(jobs) = self.content_jobs.as_ref() {

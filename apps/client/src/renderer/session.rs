@@ -66,7 +66,7 @@ impl DesktopHost {
         }
     }
 
-    fn connection_attempt_started(&mut self) {
+    pub(super) fn connection_attempt_started(&mut self) {
         self.demo_environment = None;
         self.environment_frame = crate::environment::EnvironmentFrameInput::unavailable();
         if self.application.settings.require_earth {
@@ -91,6 +91,7 @@ impl DesktopHost {
                 active_attempt: None,
             } => Text::DisconnectOrWait,
             StartError::AttemptIdsExhausted => Text::AttemptIdsExhausted,
+            StartError::InvalidEndpoint => Text::ConnectFailed("invalid_endpoint".into()),
             StartError::WorkerSpawn(error) => Text::WorkerStartFailed(error.to_string()),
             StartError::Time(error) => Text::WorkerStartFailed(error.to_string()),
         };
@@ -249,31 +250,21 @@ impl DesktopHost {
                 );
             }
         }
-        let session = step_disconnect
-            .and_then(|disconnect| disconnect.session)
-            .or_else(|| {
-                match self
-                    .application
-                    .disconnect_session(crate::host_time::sample())
-                {
-                    Ok(session) => session,
-                    Err(error) => {
-                        self.application
-                            .record_diagnostic_failure("client.invalid_time", &error);
-                        None
-                    }
+        let session = match step_disconnect {
+            Some(disconnect) => disconnect.session,
+            None => match self
+                .application
+                .disconnect_session(crate::host_time::sample())
+            {
+                Ok(session) => session,
+                Err(error) => {
+                    self.application
+                        .record_diagnostic_failure("client.invalid_time", &error);
+                    None
                 }
-            });
+            },
+        };
         if let Some(mut session) = session {
-            let metrics = session.metrics();
-            self.metrics.previous_bytes_sent = self
-                .metrics
-                .previous_bytes_sent
-                .saturating_add(metrics.bytes_sent);
-            self.metrics.previous_bytes_received = self
-                .metrics
-                .previous_bytes_received
-                .saturating_add(metrics.bytes_received);
             if let Err(error) = session.close(crate::host_time::sample()) {
                 self.application
                     .record_diagnostic_failure("client.invalid_time", &error);

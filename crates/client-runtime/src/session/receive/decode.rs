@@ -190,6 +190,7 @@ impl ClientSession {
             if matches!(&message, ServerMessage::Pong) {
                 if let Some(sent_at) = self.pending_ping_at.take() {
                     let rtt = self.now.elapsed_since(sent_at);
+                    self.metrics.ping_sample_at = Some(self.now);
                     self.metrics.ping_round_trip = Some(rtt);
                     events.push(SessionEvent::PingRoundTrip(rtt));
                     continue;

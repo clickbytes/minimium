@@ -1,5 +1,6 @@
 mod actions;
 mod game;
+pub use game::ReplicaPlayerSample;
 mod messages;
 mod movement_requests;
 mod ops;
@@ -164,6 +165,10 @@ impl ClientApplicationCore {
             require_earth: config.require_earth,
             map_teleport_pending: false,
         })
+    }
+
+    pub fn replica_player(&self) -> Option<ReplicaPlayerSample> {
+        self.game.gameplay.replica
     }
 
     pub fn view(&self) -> crate::ClientView<'_> {

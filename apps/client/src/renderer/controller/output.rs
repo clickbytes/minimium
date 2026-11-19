@@ -1,8 +1,5 @@
 use super::super::DesktopHost;
-use crate::{
-    client_commands::{self, CommandActionResult, CommandOutput},
-    messages::ClientText,
-};
+use crate::client_commands::{self, CommandActionResult, CommandOutput};
 
 #[derive(Default)]
 pub(super) struct CommandOutputCollector {
@@ -16,12 +13,6 @@ impl CommandOutputCollector {
 
     pub(super) fn push_ui_message(&mut self, message: minimium_localization::UiMessage) {
         self.result.outputs.push(CommandOutput::UiMessage(message));
-    }
-
-    pub(super) fn push_client_text(&mut self, message: ClientText, error: bool) {
-        self.result
-            .outputs
-            .push(CommandOutput::ClientText { message, error });
     }
 }
 

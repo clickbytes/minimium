@@ -1,6 +1,5 @@
 use super::output::CommandOutputCollector;
 use super::*;
-use crate::messages::ClientText as Text;
 
 pub(super) fn execute(
     renderer: &mut DesktopHost,
@@ -17,71 +16,14 @@ pub(super) fn execute(
             }
         }
         FrontendAction::Help | FrontendAction::Clear => unreachable!("shared console operation"),
-        FrontendAction::Connect(address) => {
-            if renderer.application.connection_view().busy() {
-                output.push_client_text(Text::DisconnectOrWait, true);
-            } else {
-                output
-                    .result
-                    .outputs
-                    .extend(renderer.start_remote_attempt(&address).outputs);
-            }
-        }
-        FrontendAction::HostLocal(lane) => {
-            if renderer.application.connection_view().busy() {
-                output.push_client_text(Text::DisconnectOrWait, true);
-            } else {
-                output
-                    .result
-                    .outputs
-                    .extend(renderer.start_local_attempt(lane).outputs);
-            }
-        }
-        FrontendAction::Disconnect => {
-            if let Err(error) = renderer
-                .application
-                .cancel_connection_attempt(crate::host_time::sample())
-            {
-                renderer
-                    .application
-                    .record_diagnostic_failure("client.invalid_time", &error);
-                return (false, output.result);
-            }
-            renderer.clear_connection();
-            output.push_client_text(Text::Disconnected, false);
-        }
+        FrontendAction::Connect(_)
+        | FrontendAction::HostLocal(_)
+        | FrontendAction::Disconnect
+        | FrontendAction::NetStats
+        | FrontendAction::State
+        | FrontendAction::Quit
+        | FrontendAction::Ping => unreachable!("shared connection binding"),
         FrontendAction::FpsShow => output.push_line(renderer.metrics.frame_stats.summary()),
-        FrontendAction::NetStats => {
-            let metrics = renderer
-                .application
-                .connection_view()
-                .session()
-                .map(ClientSession::metrics)
-                .unwrap_or_default();
-            output.push_client_text(
-                Text::NetworkStats {
-                    bytes_sent: renderer
-                        .metrics
-                        .previous_bytes_sent
-                        .saturating_add(metrics.bytes_sent),
-                    bytes_received: renderer
-                        .metrics
-                        .previous_bytes_received
-                        .saturating_add(metrics.bytes_received),
-                    ping_milliseconds: metrics.ping_round_trip.map(|duration| duration.as_millis()),
-                    nearby_players: Some(renderer.application.core_view().remote_player_count),
-                },
-                false,
-            );
-        }
-        FrontendAction::State => output.push_client_text(
-            Text::PlayerState {
-                position: renderer.application.core_view().character.position,
-                health: renderer.application.core_view().health,
-                nearby_players: renderer.application.core_view().remote_player_count,
-            },
-            false,
-        ),
         FrontendAction::MapTeleport => {
             if let Some(unavailable) = super::presentation::unavailable_for(
                 renderer,
@@ -149,7 +91,6 @@ pub(super) fn execute(
                 .outputs
                 .push(client_commands::CommandOutput::Presentation(result));
         }
-        FrontendAction::Quit => return (true, output.result),
     }
     (false, output.result)
 }

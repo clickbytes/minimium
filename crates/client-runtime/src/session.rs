@@ -112,6 +112,7 @@ impl TransferTicket {
 pub struct SessionMetrics {
     pub bytes_sent: u64,
     pub bytes_received: u64,
+    pub ping_sample_at: Option<ClientTime>,
     pub ping_round_trip: Option<Duration>,
 }
 
@@ -309,6 +310,10 @@ impl ClientSession {
 
     pub fn state(&self) -> SessionState {
         self.state
+    }
+
+    pub fn ping_pending(&self) -> bool {
+        self.pending_ping_at.is_some() || self.pending_ping_frame.is_some()
     }
 
     pub fn metrics(&self) -> SessionMetrics {

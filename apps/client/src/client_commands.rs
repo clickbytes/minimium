@@ -22,6 +22,7 @@ mod explain;
 #[cfg(feature = "desktop")]
 pub(crate) use explain::{analyze as analyze_console, validate_edit};
 mod connection;
+pub(crate) mod connection_adapter;
 mod environment;
 mod gameplay;
 mod help;
@@ -239,6 +240,7 @@ pub(crate) enum FrontendAction {
     HostLocal(Option<ThreadLane>),
     Disconnect,
     FpsShow,
+    Ping,
     NetStats,
     State,
     MapTeleport,
@@ -313,7 +315,7 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
                 ClientPropertyValue::CloudDetail(level),
             )))
         }
-        ClientCommand::Ping => ClientAction::Ping,
+        ClientCommand::Ping => return CommandResult::Action(FrontendAction::Ping),
         ClientCommand::Move(direction) => {
             ClientAction::Motion(minimium_simulation::MovementIntent {
                 direction,

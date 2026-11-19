@@ -3,7 +3,7 @@ use crate::{
     client_commands::{self, FrontendAction},
     console::Console,
     environment::{EnvironmentFrameInput, LocalDemoEnvironment},
-    session::{ClientSession, DisconnectReason, SessionEvent, SessionState},
+    session::{DisconnectReason, SessionEvent, SessionState},
 };
 use minimium_client_runtime::{connector::StartError, ConnectionEvent};
 use minimium_protocol::{ServerMessage, MAX_VISIBLE_PLAYERS};
@@ -163,8 +163,6 @@ struct FrameMetrics {
     fps_frames: u32,
     frame_stats: crate::stats::FrameStats,
     last_redraw: Instant,
-    previous_bytes_sent: u64,
-    previous_bytes_received: u64,
 }
 
 /// Desktop event-loop owner that composes the CPU application and GPU renderer.

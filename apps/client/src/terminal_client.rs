@@ -5,7 +5,6 @@ use crate::{
     session::{SessionEvent, SessionState},
 };
 use minimium_client_runtime::{connector::StartError, ConnectionEvent};
-use minimium_protocol::ServerMessage;
 use std::{
     error::Error,
     io::{self, Write},
@@ -74,7 +73,6 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
         crate::host_time::sample(),
     )?;
     let mut prompt_needed = true;
-    let mut last_snapshot: Option<ServerMessage> = None;
     let mut last_environment_status = None;
     let mut last_environment_status_at = None;
     let mut cpu_readiness = minimium_client_runtime::world_readiness::WorldReadiness::new()?;
@@ -98,6 +96,13 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                 application.ensure_active_collision(&mut cpu_readiness, crate::host_time::sample())
             {
                 application.record_diagnostic_failure("client.collision_readiness_failed", &error);
+            }
+        }
+        for (_, result) in application.connection_receipts(&step) {
+            for item in dispatch::display(Some(result), &localizer, options.locale).outputs {
+                if let crate::client_commands::CommandOutput::Line(line) = item {
+                    println!("{line}");
+                }
             }
         }
         for outcome in step.movement_results {
@@ -157,9 +162,6 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                             println!("Client state update failed: {error:?}");
                         }
                     }
-                    if applied.update.is_ok() && matches!(message, ServerMessage::Snapshot { .. }) {
-                        last_snapshot = Some(message.clone());
-                    }
                     events::print_session_event(
                         SessionEvent::Message(message),
                         false,
@@ -192,7 +194,6 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
             if let Some(mut session) = disconnect.session.take() {
                 session.close(crate::host_time::sample())?;
             }
-            last_snapshot = None;
         }
         if let Some(frame) = application
             .session()
@@ -244,13 +245,52 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                     line.as_deref().map_err(Clone::clone),
                     CommandSource::Terminal,
                     [1.0, 0.0, 0.0],
-                    last_snapshot.as_ref().and_then(|message| match message {
-                        ServerMessage::Snapshot { self_position, .. } => Some(*self_position),
-                        _ => None,
-                    }),
+                    application.replica_position(),
                     crate::host_time::sample(),
                 );
                 let (should_exit, response) = dispatch::dispatch(result, |identity, action| {
+                    if let Some((mut effect, result)) = application.connection_operation(
+                        &identity,
+                        &action,
+                        CommandSource::Terminal,
+                        crate::host_time::sample(),
+                        || {
+                            options
+                                .local_server_launch_config(
+                                    data_dir.clone(),
+                                    log_dir.clone(),
+                                    parent_run_id.clone(),
+                                    None,
+                                )
+                                .map_err(|e| e.to_string())
+                        },
+                    ) {
+                        let exit = matches!(effect, crate::application::ConnectionEffect::Quit(_));
+                        if let crate::application::ConnectionEffect::Quit(ref mut pending) = effect
+                        {
+                            for (_, result) in pending.drain(..) {
+                                for output in
+                                    dispatch::display(Some(result), &localizer, options.locale)
+                                        .outputs
+                                {
+                                    if let crate::client_commands::CommandOutput::Line(line) =
+                                        output
+                                    {
+                                        println!("{line}");
+                                    }
+                                }
+                            }
+                        }
+                        if let crate::application::ConnectionEffect::Disconnected(mut d) = effect {
+                            if let Some(mut s) = d.session.take() {
+                                if let Err(e) = s.close(crate::host_time::sample()) {
+                                    application
+                                        .record_diagnostic_failure("client.invalid_time", &e);
+                                }
+                            }
+                        }
+                        return (exit, result);
+                    }
                     if let Some(result) =
                         application.policy_operation(&identity, &action, CommandSource::Terminal)
                     {
@@ -303,11 +343,7 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                         action,
                         &mut options,
                         &mut application,
-                        &mut last_snapshot,
                         &localizer,
-                        &data_dir,
-                        &log_dir,
-                        &parent_run_id,
                         &mut text_properties,
                     );
                     if let Some(result) =
@@ -441,6 +477,7 @@ pub(super) fn start_error_output(error: StartError) -> crate::client_commands::C
             active_attempt: None,
         } => Text::DisconnectOrWait,
         StartError::AttemptIdsExhausted => Text::AttemptIdsExhausted,
+        StartError::InvalidEndpoint => Text::ConnectFailed("invalid_endpoint".into()),
         StartError::WorkerSpawn(error) => Text::WorkerStartFailed(error.to_string()),
         StartError::Time(error) => Text::WorkerStartFailed(error.to_string()),
     };

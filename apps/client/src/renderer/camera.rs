@@ -98,6 +98,9 @@ impl DesktopHost {
                 .record_diagnostic_failure("client_runtime.candidate_scene_failed", error);
         }
         self.camera_visual_offset = output.visual_offset;
+        for (source, result) in self.application.connection_receipts(&output) {
+            self.show_operation_result(Some(source), result);
+        }
         self.pending_step_disconnect = output.disconnect;
         if output.jump_consumed {
             self.input.jump_pending = false;

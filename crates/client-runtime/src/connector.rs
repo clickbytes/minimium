@@ -35,6 +35,7 @@ impl AttemptId {
 /// Why an attempt could not be started.
 #[derive(Debug)]
 pub enum StartError {
+    InvalidEndpoint,
     /// A session, attempt or cleanup still owns the connection lifecycle.
     /// Session and cleanup rejection need not have an active attempt ID.
     Busy {
@@ -53,6 +54,7 @@ impl StartError {
             Self::Time(error) => error.code(),
             Self::Busy { .. } => "client_runtime.connection_busy",
             Self::AttemptIdsExhausted => "client_runtime.attempt_ids_exhausted",
+            Self::InvalidEndpoint => "invalid_endpoint",
             Self::WorkerSpawn(_) => "client_runtime.worker_spawn_failed",
         }
     }
@@ -73,7 +75,7 @@ impl std::fmt::Display for StartError {
             Self::Busy {
                 active_attempt: None,
             } => write!(formatter, "{}: session or cleanup is active", self.code()),
-            Self::AttemptIdsExhausted => formatter.write_str(self.code()),
+            Self::AttemptIdsExhausted | Self::InvalidEndpoint => formatter.write_str(self.code()),
             Self::WorkerSpawn(error) => write!(formatter, "{}: {error}", self.code()),
         }
     }
@@ -84,7 +86,7 @@ impl std::error::Error for StartError {
         match self {
             Self::WorkerSpawn(error) => Some(error),
             Self::Time(error) => Some(error),
-            Self::Busy { .. } | Self::AttemptIdsExhausted => None,
+            Self::Busy { .. } | Self::AttemptIdsExhausted | Self::InvalidEndpoint => None,
         }
     }
 }
