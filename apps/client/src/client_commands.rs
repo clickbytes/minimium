@@ -18,6 +18,9 @@ use std::sync::OnceLock;
 mod bindings;
 pub(crate) mod camera;
 mod catalog;
+mod explain;
+#[cfg(feature = "desktop")]
+pub(crate) use explain::analyze as analyze_console;
 mod connection;
 mod environment;
 mod gameplay;
@@ -49,8 +52,6 @@ pub(crate) use presentation::{
     PresentationUnavailableReason,
 };
 pub(crate) use properties::local_setting_specs;
-#[cfg(feature = "desktop")]
-pub(crate) use properties::property_specs;
 pub(crate) use properties::{
     format_property_help_localized, format_property_list_localized, format_time_value,
     parse_setting_value, property_spec, ClientPropertyCommand, ClientPropertyKey,

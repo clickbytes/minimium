@@ -39,6 +39,10 @@ pub(super) fn diagnostic(
     .at(span)
 }
 
+fn path_char(c: char) -> bool {
+    c.is_ascii_lowercase() || c.is_ascii_digit() || "._-".contains(c)
+}
+
 struct Cursor<'a> {
     line: &'a str,
     at: usize,
@@ -161,10 +165,7 @@ pub fn parse_statement(line: &str) -> Result<Statement, CommandError> {
     let mut cur = Cursor { line, at: 0 };
     cur.spaces();
     let start = cur.at;
-    while cur
-        .peek()
-        .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || "._-".contains(c))
-    {
+    while cur.peek().is_some_and(path_char) {
         cur.next();
     }
     let name = &line[start..cur.at];
@@ -209,4 +210,30 @@ pub fn parse_statement(line: &str) -> Result<Statement, CommandError> {
         access,
         arguments,
     })
+}
+
+/// Retain tokens while editing using the execution cursor's path and literal grammar.
+pub(crate) fn edit_tokens(line: &str) -> Vec<crate::CommandToken> {
+    let mut cur = Cursor { line, at: 0 };
+    cur.spaces();
+    let mut tokens = Vec::new();
+    while cur.at < line.len() {
+        let start = cur.at;
+        if tokens.is_empty() && cur.peek().is_some_and(path_char) {
+            while cur.peek().is_some_and(path_char) {
+                cur.next();
+            }
+        } else if !cur.peek().is_some_and(|c| "(),=".contains(c)) {
+            let _ = cur.literal();
+        }
+        if cur.at == start {
+            cur.next();
+        }
+        tokens.push(crate::CommandToken {
+            value: line[start..cur.at].to_owned(),
+            span: cur.span(start),
+        });
+        cur.spaces();
+    }
+    tokens
 }

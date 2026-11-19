@@ -175,7 +175,7 @@ forbidden_dependencies = ["minimium-server", "minimium-client", "minimium-render
 [[package]]
 name = "minimium-commands"
 role = "engine-domain"
-responsibility = "Immutable public operation catalogs, typed schemas, alias and namespace validation, canonical and legacy operation binding with UTF-8 byte spans, typed explanations, versioned administrative DTOs and codec, bounded operation results, property provenance and errors, property descriptors, and immutable layered configuration resolution with no domain-specific vocabulary."
+responsibility = "Immutable public operation catalogs, typed schemas, alias and namespace validation, canonical and legacy operation binding with UTF-8 byte spans, bounded partial input analysis and signature help, typed explanations, versioned administrative DTOs and codec, bounded operation results, property provenance and errors, property descriptors, and immutable layered configuration resolution with no domain-specific vocabulary."
 forbidden_dependencies = ["minimium-astronomy", "minimium-protocol", "minimium-platform", "minimium-assets", "minimium-procgen", "minimium-sectors", "minimium-telemetry", "minimium-server", "minimium-client", "minimiumctl", "minimium-loadtest", "minimium-renderer", "minimium-game-sample"]
 
 [[package]]

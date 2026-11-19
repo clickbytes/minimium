@@ -128,6 +128,15 @@ pub fn legacy_prefix<'a>(
     best
 }
 
+pub(crate) fn canonical_input(line: &str) -> bool {
+    let input = line.trim();
+    input
+        .split_whitespace()
+        .next()
+        .is_some_and(|first| first.contains('.'))
+        || input.contains(['(', '='])
+}
+
 pub fn bind_line(catalog: &OperationCatalog, line: &str) -> Result<ParsedLine, CommandError> {
     let trimmed = line.trim();
     if trimmed.is_empty() {
@@ -295,7 +304,7 @@ pub fn bind_line(catalog: &OperationCatalog, line: &str) -> Result<ParsedLine, C
         )
         .map(ParsedLine::Operation);
     }
-    if !first.contains(['.', '(', '=']) && !trimmed.contains(['(', '=']) {
+    if !canonical_input(trimmed) {
         if !catalog.children(trimmed).is_empty() {
             return Ok(ParsedLine::Namespace(trimmed.into()));
         }

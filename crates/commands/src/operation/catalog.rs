@@ -26,6 +26,7 @@ impl std::error::Error for CatalogError {}
 
 #[derive(Clone, Default)]
 pub struct OperationCatalog {
+    revision: u64,
     entries: BTreeMap<OperationId, CatalogEntry>,
     names: BTreeMap<String, OperationId>,
     namespaces: BTreeMap<String, OperationId>,
@@ -38,6 +39,16 @@ impl OperationCatalog {
 
     pub fn entries(&self) -> impl Iterator<Item = &CatalogEntry> {
         self.entries.values()
+    }
+
+    pub(crate) fn spellings<'a>(
+        &'a self,
+        prefix: &'a str,
+    ) -> impl Iterator<Item = (&'a str, &'a CatalogEntry)> + 'a {
+        self.names
+            .range(prefix.to_owned()..)
+            .take_while(move |(name, _)| name.starts_with(prefix))
+            .map(|(name, id)| (name.as_str(), &self.entries[id]))
     }
 
     pub fn children<'a>(&'a self, path: &str) -> BTreeSet<&'a str> {
@@ -54,6 +65,10 @@ impl OperationCatalog {
 
     /// Deterministic schema fingerprint for the current catalog format.
     pub fn fingerprint(&self) -> u64 {
+        self.revision
+    }
+
+    fn schema_hash(&self) -> u64 {
         let mut hash = 0xcbf29ce484222325_u64;
         for entry in self.entries.values() {
             let schema = ron::to_string(&(
@@ -215,6 +230,7 @@ impl CatalogBuilder {
         for entry in self.0.entries.values_mut() {
             entry.aliases.sort_by_key(|alias| alias.name);
         }
+        self.0.revision = self.0.schema_hash();
         self.0
     }
 }

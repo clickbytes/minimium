@@ -376,3 +376,5 @@ The FOV factory default is 70 degrees. With 80 in the preferences file, setting 
 Speed, acceleration and flight are scoped to the session actor and current world. Each write sends only its field. The reply carries the original request sequence and context, and the approved policy revision or reason for refusal. Reads show the confirmed effective value and sample age, with pending requests reported separately. A paused client suppresses the request. Disconnecting before acknowledgement leaves the outcome unknown.
 
 Jump admission reserves one console intent. Its final receipt carries the physical decision at the resolved tick. Multiple requests in a tick share one impulse decision. Device flight ascent remains a separate input.
+
+Partial input uses the operation catalog. For example, completing `get ui.lo` edits only `lo`, and choosing a value in `set ui.locale p` preserves the key. Completing `client.cam|ra.fov = 90` at the marked caret preserves `.fov = 90`. An open call displays its registered argument types. Terminal and developer stdin can inspect this same analysis with `ui.console.explain("world.time.")`.

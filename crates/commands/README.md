@@ -49,3 +49,5 @@ An administrative actor ID is an optional lossless u64 accompanying the expected
 A settings receipt can identify its configuration base as well as the property revision. The owner checks both identifiers for conditional changes and reports the conflicting dimension.
 
 Operation receipts can carry sample age in real milliseconds alongside freshness and revision. An actor-scoped result preserves its session identity and original world binding.
+
+The pure completion analyzer accepts UTF-8 byte positions, a selection and a buffer revision. It uses the immutable catalog spelling index, shared literal and word tokenizers, and execution binder. Up to 64 ordered edits carry complete replacement spans and catalog metadata. Signatures identify the active argument. The catalog schema fingerprint is calculated at registration.

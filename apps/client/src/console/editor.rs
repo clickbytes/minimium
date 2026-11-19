@@ -11,6 +11,7 @@ struct Snapshot {
 }
 
 pub(crate) struct Editor {
+    pub revision: u64,
     pub text: String,
     pub preedit: String,
     composing: bool,
@@ -26,6 +27,7 @@ pub(crate) struct Editor {
 impl Editor {
     pub fn new() -> Self {
         Self {
+            revision: 0,
             text: String::with_capacity(MAX_INPUT),
             preedit: String::new(),
             composing: false,
@@ -65,6 +67,7 @@ impl Editor {
 
     pub fn set_text(&mut self, text: &str) {
         self.clear_preedit();
+        self.revision = self.revision.wrapping_add(1);
         self.undo.clear();
         self.redo.clear();
         self.text.clear();
@@ -82,6 +85,7 @@ impl Editor {
         self.scroll = 0;
         self.cursor = 0;
         self.anchor = 0;
+        self.revision = self.revision.wrapping_add(1);
         std::mem::take(&mut self.text)
     }
 
@@ -101,6 +105,7 @@ impl Editor {
             return;
         }
         self.record();
+        self.revision = self.revision.wrapping_add(1);
         self.text.replace_range(range.clone(), &clean);
         self.cursor = self.next_grapheme_boundary(range.start + clean.len());
         self.anchor = self.cursor;
@@ -118,6 +123,7 @@ impl Editor {
             return;
         }
         self.record();
+        self.revision = self.revision.wrapping_add(1);
         self.text.replace_range(range.clone(), replacement);
         self.cursor = self.next_grapheme_boundary(range.start + replacement.len());
         self.anchor = self.cursor;
@@ -299,6 +305,7 @@ impl Editor {
     }
 
     fn restore(&mut self, snapshot: Snapshot) {
+        self.revision = self.revision.wrapping_add(1);
         self.text = snapshot.text;
         self.cursor = snapshot.cursor;
         self.anchor = snapshot.anchor;

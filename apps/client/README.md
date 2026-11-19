@@ -840,3 +840,5 @@ Camera operations share a CPU settings owner. Each store has a unique base ID fo
 Movement commands carry one field to the authoritative actor policy. F1, developer stdin and terminal display submission and the eventual owner decision using the same session, context and request sequence.
 
 The jump command and its alias use the CPU application path and the ordinary gameplay permission. F1, developer stdin and terminal display both admission and the physics result.
+
+F1 suggestions and the CPU explain adapter share partial input analysis. Each edit carries a buffer revision, full replacement range and caret offset. Explain projects prepared arguments or reports incomplete input through terminal, developer stdin and F1.

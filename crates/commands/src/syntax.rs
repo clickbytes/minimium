@@ -28,6 +28,10 @@ pub fn lex_command_line(line: &str) -> Result<Vec<String>, CommandError> {
 /// Tokenizes command text while retaining source byte ranges for raw-tail consumers.
 /// Single quotes are literal; double quotes only escape `\\` and `\"`.
 pub fn lex_command_line_with_spans(line: &str) -> Result<Vec<CommandToken>, CommandError> {
+    lex_words(line, false)
+}
+
+pub(crate) fn lex_words(line: &str, partial: bool) -> Result<Vec<CommandToken>, CommandError> {
     let mut words = Vec::new();
     let mut word = String::new();
     let mut quote = None;
@@ -82,7 +86,7 @@ pub fn lex_command_line_with_spans(line: &str) -> Result<Vec<CommandToken>, Comm
             started = true;
         }
     }
-    if quote.is_some() {
+    if quote.is_some() && !partial {
         return Err(syntax_error("command has an unclosed quoted value")
             .at(SourceSpan { start, end: index }));
     }

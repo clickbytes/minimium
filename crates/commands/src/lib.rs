@@ -2,6 +2,7 @@
 
 pub mod admin;
 mod cli;
+pub mod completion;
 mod config;
 mod error;
 pub mod operation;

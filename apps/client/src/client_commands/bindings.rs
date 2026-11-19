@@ -22,32 +22,18 @@ pub(super) fn parse(
             identity.operation = op.id.clone();
             identity.scope = entry.spec.scope.to_owned();
             if op.path == "ui.console.explain" {
-                return explain(&op.arguments[0].text).map(|s| Some(ClientCommand::Print(s)));
+                return super::explain::describe(&op.arguments[0].text)
+                    .map(|s| Some(ClientCommand::Print(s)));
             }
             lower(&op, entry).map(Some)
         }
     }
 }
 
-fn explain(input: &str) -> Result<String, CommandError> {
-    match bind_line(catalog(), input)? {
-        ParsedLine::Operation(op) => {
-            let entry = catalog().resolve(&op.path).expect("bound operation");
-            if op.path != "ui.console.explain" {
-                let _ = lower(&op, entry)?;
-            }
-            Ok(op.explanation(entry).to_string())
-        }
-        ParsedLine::Namespace(path) => Ok(format!("namespace {path}")),
-        ParsedLine::Legacy => {
-            // Legacy help/list may still have dedicated display requests.
-            let parsed = super::text::legacy(input)?;
-            Ok(format!("catalog query {parsed:?}"))
-        }
-    }
-}
-
-fn lower(op: &PreparedOperation, entry: &CatalogEntry) -> Result<ClientCommand, CommandError> {
+pub(super) fn lower(
+    op: &PreparedOperation,
+    entry: &CatalogEntry,
+) -> Result<ClientCommand, CommandError> {
     let span = op.arguments.first().map_or(op.span, |a| a.span);
     let invalid = |reason: &str| {
         CommandError::new(
