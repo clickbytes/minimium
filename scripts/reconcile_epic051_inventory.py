@@ -25,6 +25,8 @@ def registration_path(row, files):
 
     def rank(path):
         s = path.as_posix()
+        if row["id"] in ("N006", "N007"):
+            return (0 if s.endswith("crates/environment/src/console.rs") else 1, s)
         if catalog in ("client", "pre-parser presentation") or row["id"].startswith("A"):
             return (0 if "apps/client/src/client_commands/catalog" in s else 1 if "apps/client/src/client_commands" in s else 2, s)
         if catalog == "proposed" and name.startswith("client."):

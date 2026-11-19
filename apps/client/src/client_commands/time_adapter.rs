@@ -1,4 +1,4 @@
-use super::{property_spec, ClientPropertyCommand, ClientPropertyKey, ClientPropertyValue};
+use super::{ClientPropertyCommand, ClientPropertyValue};
 use crate::environment::EnvironmentFrameInput;
 use minimium_commands::{
     results::{
@@ -9,17 +9,10 @@ use minimium_commands::{
 };
 use minimium_environment::clock_command::ClockWrite;
 
-pub(super) fn parse_diagnostics(words: &[&str]) -> Result<super::ClientCommand, super::ParseError> {
-    if matches!(words, ["world.time.diagnostics", ""]) {
-        Ok(super::ClientCommand::TimeStatus)
-    } else {
-        Err(super::ParseError::Usage("world.time.diagnostics()"))
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum ClockAction {
-    Read(ClientPropertyKey),
+    Read(String),
+    Query(String),
     Status,
     InitialConfig,
     Write(ClockWrite),
@@ -33,7 +26,7 @@ impl ClockAction {
             ClientPropertyCommand::Get(key)
                 if minimium_environment::console::live_clock_field(key.key()) =>
             {
-                Self::Read(*key)
+                Self::Read(key.key().into())
             }
             ClientPropertyCommand::Set(Value::WorldTimeScale(value)) => Self::Scale(value.clone()),
             ClientPropertyCommand::Set(Value::WorldTimeMode(mode)) => {
@@ -48,13 +41,13 @@ impl ClockAction {
 }
 
 pub(crate) fn property(
-    key: ClientPropertyKey,
+    key: &str,
     frame: EnvironmentFrameInput,
 ) -> Option<PropertyValue<minimium_commands::operation::CommandValue>> {
-    if !minimium_environment::console::live_clock_field(key.key()) {
+    if !minimium_environment::console::live_clock_field(key) {
         return None;
     }
-    let value = frame.clock_property(key.key());
+    let value = frame.clock_property(key);
     let demo =
         frame.quality == minimium_client_runtime::environment::SynchronizationQuality::LocalDemo;
     let (source, read_source, reason) = if value.is_none() {
@@ -72,7 +65,7 @@ pub(crate) fn property(
             frame.quality.label(),
         )
     };
-    let reason = if key == ClientPropertyKey::WorldTimeAchievedScale {
+    let reason = if key == "world.time.achieved_scale" {
         match &value {
             Some(minimium_commands::operation::CommandValue::U64(ppm)) => format!(
                 "{}; measured {}.{:06}x",
@@ -86,7 +79,7 @@ pub(crate) fn property(
         reason.to_owned()
     };
     Some(PropertyValue {
-        lifecycle: property_spec(key.key())?.lifecycle,
+        lifecycle: super::catalog::catalog().resolve(key)?.property?.lifecycle,
         startup: None,
         session_override: None,
         revision: frame
@@ -98,7 +91,7 @@ pub(crate) fn property(
         } else {
             Freshness::Unknown
         },
-        requested: (key != ClientPropertyKey::WorldTimeAchievedScale)
+        requested: (key != "world.time.achieved_scale")
             .then(|| value.clone())
             .flatten(),
         effective: value,
@@ -109,18 +102,18 @@ pub(crate) fn property(
     })
 }
 
-pub(crate) fn read(
-    action: &ClockAction,
-    frame: EnvironmentFrameInput,
-    path: &str,
-) -> Option<Payload> {
+pub(crate) fn read(action: &ClockAction, frame: EnvironmentFrameInput) -> Option<Payload> {
     match action {
-        ClockAction::Read(key) => property(*key, frame)
+        ClockAction::Read(key) => property(key, frame)
             .filter(|p| p.effective.is_some())
             .map(Payload::Property),
-        ClockAction::Status if path == "world.time.diagnostics" => {
+        ClockAction::Query(query) if query == "world.time.diagnostics" => {
             frame.time_diagnostics_value().map(Payload::Value)
         }
+        ClockAction::Query(query) if query == "world.time.status" => {
+            frame.clock_status_value().map(Payload::Value)
+        }
+        ClockAction::Query(_) => None,
         ClockAction::Status => frame.clock_status_value().map(Payload::Value),
         _ => None,
     }

@@ -9,13 +9,6 @@ use super::MeteorPreset;
 
 const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
-        name: "world.time.diagnostics",
-        alias: None,
-        usage: "world.time.diagnostics()",
-        arguments: &[],
-        parser: super::time_adapter::parse_diagnostics,
-    },
-    CommandSpec {
         name: "sky meteors debug",
         alias: None,
         usage: "sky meteors debug off|light|occlusion|paths|budget",

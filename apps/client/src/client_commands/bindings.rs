@@ -73,8 +73,22 @@ pub(crate) fn lower(
         };
         return Ok(ClientCommand::Script(control));
     }
-    if op.path == "world.time.diagnostics" {
-        return Ok(ClientCommand::TimeStatus);
+    if entry.spec.owner == "EnvironmentClock" {
+        use minimium_commands::operation::OperationKind;
+        use minimium_commands::syntax::canonical::AccessKind;
+        match (entry.spec.kind, op.kind) {
+            (OperationKind::Property, AccessKind::Read) => {
+                return Ok(ClientCommand::ClockRead(op.path.clone()));
+            }
+            (OperationKind::Method, AccessKind::Invoke)
+                if entry.spec.invoke.is_some_and(|access| {
+                    access.effect == minimium_commands::operation::Effect::Query
+                }) =>
+            {
+                return Ok(ClientCommand::ClockQuery(op.path.clone()));
+            }
+            _ => {}
+        }
     }
     if op.path == "server.persistence.status" {
         let id = op

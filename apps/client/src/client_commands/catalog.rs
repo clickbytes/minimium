@@ -43,6 +43,10 @@ fn build() -> Result<OperationCatalog, CatalogError> {
     for &(name, usage) in super::presentation::COMMAND_FORMS {
         package.command(resolve(name, false)?, name, [], usage, &[])?;
     }
+    minimium_environment::console::register_operations(
+        &mut package,
+        ClockReadBinding::SessionSample,
+    )?;
     package.alias(
         "player.chat.send",
         "say",

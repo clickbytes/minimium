@@ -113,8 +113,8 @@ impl ClientApplication {
         use minimium_client_runtime::ControllerError;
         let now = crate::host_time::sample();
         let result = match action {
-            ClockAction::Read(_) | ClockAction::Status => {
-                if let Some(payload) = time_adapter::read(action, frame, &identity.operation.0) {
+            ClockAction::Read(_) | ClockAction::Query(_) | ClockAction::Status => {
+                if let Some(payload) = time_adapter::read(action, frame) {
                     let mut receipt = OperationReceipt::at(Stage::Completed);
                     receipt.revision = frame
                         .committed

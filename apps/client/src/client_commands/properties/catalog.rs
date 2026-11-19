@@ -289,14 +289,6 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
         false,
         false,
     ),
-    PropertySpec::new(
-        Key::WorldTimeAchievedScale.key(),
-        PropertyType::Integer,
-        Some("ppm"),
-        "Observed committed server tick progress, exact ppm from the session sample.",
-        None, None, "crates/environment::MeasuredRatePpm",
-        PropertyPermission::Local, PropertyLifecycle::ReadOnly, false, false,
-    ),
 ];
 
 static REGISTRY: OnceLock<PropertyRegistry> = OnceLock::new();

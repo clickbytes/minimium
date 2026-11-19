@@ -1957,7 +1957,7 @@
         "issue": 580,
         "commit": "ea14a795de1778664ad08f4d3c7906b1489bd91e",
         "registration": "apps/client/src/client_commands/catalog.rs",
-        "line": 56
+        "line": 60
       }
     },
     {
@@ -2318,7 +2318,7 @@
         "issue": 581,
         "commit": "59864795a4aab7b99c6b258c89035ce5c80940ac",
         "registration": "apps/client/src/client_commands/catalog.rs",
-        "line": 47
+        "line": 51
       }
     },
     {
@@ -2509,7 +2509,7 @@
         "issue": 584,
         "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
         "registration": "apps/client/src/client_commands/catalog.rs",
-        "line": 77
+        "line": 81
       }
     },
     {
@@ -2819,7 +2819,7 @@
         "issue": 584,
         "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
         "registration": "apps/client/src/client_commands/catalog.rs",
-        "line": 90
+        "line": 94
       }
     },
     {
@@ -2946,8 +2946,8 @@
         "status": "integrated",
         "issue": 573,
         "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
-        "registration": "crates/environment/src/console.rs",
-        "line": 136
+        "registration": "apps/client/src/client_commands/time_adapter.rs",
+        "line": 113
       }
     },
     {
@@ -3972,7 +3972,7 @@
         "issue": 584,
         "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
         "registration": "apps/client/src/client_commands/catalog.rs",
-        "line": 103
+        "line": 107
       }
     },
     {
@@ -4383,7 +4383,7 @@
         "issue": 574,
         "commit": "32cc54418b8b19b23ba15cf5f39993c26488da40",
         "registration": "apps/client/src/client_commands/catalog.rs",
-        "line": 57
+        "line": 61
       }
     },
     {
@@ -4445,7 +4445,7 @@
         "issue": 590,
         "commit": "073aa34f04a42857121094690982b7563e2946e0",
         "registration": "apps/client/src/client_commands/catalog.rs",
-        "line": 58
+        "line": 62
       }
     },
     {
@@ -4537,8 +4537,8 @@
         "status": "integrated",
         "issue": 592,
         "commit": "e5e7c7a5426993cb65b5af8c865405555182a466",
-        "registration": "crates/server-runtime/src/server_command/properties.rs",
-        "line": 229
+        "registration": "crates/environment/src/console.rs",
+        "line": 19
       }
     },
     {
@@ -4568,8 +4568,8 @@
         "status": "integrated",
         "issue": 592,
         "commit": "e5e7c7a5426993cb65b5af8c865405555182a466",
-        "registration": "crates/server-runtime/src/server_command/bindings.rs",
-        "line": 68
+        "registration": "crates/environment/src/console.rs",
+        "line": 140
       }
     },
     {
@@ -4631,7 +4631,7 @@
         "issue": 593,
         "commit": "6245fc93ef171d6bce6194c61e2294cb0c51a899",
         "registration": "apps/client/src/client_commands/catalog.rs",
-        "line": 64
+        "line": 68
       }
     },
     {
@@ -4662,7 +4662,7 @@
         "issue": 593,
         "commit": "6245fc93ef171d6bce6194c61e2294cb0c51a899",
         "registration": "apps/client/src/client_commands/catalog.rs",
-        "line": 65
+        "line": 69
       }
     },
     {
@@ -4693,7 +4693,7 @@
         "issue": 593,
         "commit": "6245fc93ef171d6bce6194c61e2294cb0c51a899",
         "registration": "apps/client/src/client_commands/catalog.rs",
-        "line": 66
+        "line": 70
       }
     },
     {

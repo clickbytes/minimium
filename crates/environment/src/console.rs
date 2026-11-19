@@ -3,6 +3,7 @@ use minimium_commands::operation::{
     CatalogEntry, DomainBinding, Effect::*, OperationKind::*, PersistenceKind, TypeRef,
 };
 use minimium_commands::operation::{ParameterSpec, ScalarType};
+use minimium_commands::{PropertyLifecycle, PropertyPermission, PropertySpec, PropertyType};
 
 pub mod status;
 pub mod values;
@@ -24,6 +25,34 @@ pub enum ClockReadBinding {
     SessionSample,
     OwnerSnapshot,
 }
+
+static ACHIEVED_CLIENT: PropertySpec = PropertySpec::new(
+    "world.time.achieved_scale",
+    PropertyType::Integer,
+    Some("ppm"),
+    "Observed committed server tick progress, exact ppm from the session sample.",
+    None,
+    None,
+    "EnvironmentClock",
+    PropertyPermission::Local,
+    PropertyLifecycle::ReadOnly,
+    false,
+    false,
+);
+
+static ACHIEVED_OWNER: PropertySpec = PropertySpec::new(
+    "world.time.achieved_scale",
+    PropertyType::Integer,
+    Some("ppm"),
+    "Observed committed server tick progress, exact ppm from the owner snapshot.",
+    None,
+    None,
+    "EnvironmentClock",
+    PropertyPermission::ServerAdmin,
+    PropertyLifecycle::ReadOnly,
+    false,
+    false,
+);
 
 pub fn clock_entry(name: &str, source: ClockReadBinding) -> Option<CatalogEntry> {
     let binding = DomainBinding {
@@ -192,6 +221,15 @@ pub fn register_operations(
     package: &mut minimium_commands::operation::LegacyPackage,
     source: ClockReadBinding,
 ) -> Result<(), minimium_commands::operation::CatalogError> {
+    let property = match source {
+        ClockReadBinding::SessionSample => &ACHIEVED_CLIENT,
+        ClockReadBinding::OwnerSnapshot => &ACHIEVED_OWNER,
+    };
+    package.property(
+        clock_entry("world.time.achieved_scale", source)
+            .expect("environment achieved scale declaration"),
+        property,
+    )?;
     package.operation(
         clock_entry("world.time.diagnostics", source).expect("environment diagnostics declaration"),
     )
