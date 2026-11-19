@@ -247,7 +247,14 @@ pub(crate) enum FrontendAction {
     Property(properties::ClientPropertyCommand),
     ConfigSave(std::path::PathBuf),
     Clock(ClockAction),
-    CameraLook { yaw: f32, pitch: f32 },
+    Movement(
+        minimium_client_runtime::MovementField,
+        Option<minimium_protocol::MovementPatch>,
+    ),
+    CameraLook {
+        yaw: f32,
+        pitch: f32,
+    },
     CameraStatus,
     SpawnRandomBolid(u16),
     SpawnRandomMeteorid,
@@ -374,7 +381,7 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
             if let Some(clock) = ClockAction::from_property(&command) {
                 return CommandResult::Action(FrontendAction::Clock(clock));
             }
-            if let Some(result) = movement::handle_property(command.clone(), context) {
+            if let Some(result) = movement::handle_property(&command) {
                 return result;
             }
             return CommandResult::Action(FrontendAction::Property(command));

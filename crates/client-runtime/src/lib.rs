@@ -34,7 +34,9 @@ pub use application::{
 pub use authentication::{ClientAuthentication, ClientAuthenticationError};
 pub use bootstrap::LocalServerLaunchConfig;
 pub use client_time::{ClientTime, ClientTimeError};
-pub use connection_controller::{ConnectionController, ConnectionEvent, PreparedSessionError};
+pub use connection_controller::{
+    ConnectionController, ConnectionEvent, MovementField, PreparedSessionError,
+};
 pub use content_jobs::{
     ContentCancelStatus, ContentJobCompletion, ContentJobHandle, ContentJobPoll, ContentJobRequest,
     ContentJobResult, ContentJobTicket, ContentJobsPort, ContentJobsSession, ContentShutdownStatus,

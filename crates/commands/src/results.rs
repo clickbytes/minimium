@@ -51,6 +51,12 @@ pub struct OperationReceipt {
         skip_serializing_if = "Option::is_none",
         with = "crate::admin::number::optional"
     )]
+    pub sample_age_ms: Option<u64>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "crate::admin::number::optional"
+    )]
     pub settings_base: Option<u64>,
     pub stage: Stage,
     #[serde(with = "crate::admin::number::optional")]
@@ -65,6 +71,7 @@ impl OperationReceipt {
         Self {
             stage,
             settings_base: None,
+            sample_age_ms: None,
             revision: None,
             freshness: None,
             effects: Vec::new(),

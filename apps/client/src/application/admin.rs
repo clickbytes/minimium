@@ -7,6 +7,42 @@ use minimium_commands::results::{
 };
 
 impl ClientApplication {
+    pub(crate) fn policy_operation(
+        &mut self,
+        identity: &OperationContext,
+        action: &FrontendAction,
+        source: CommandSource,
+    ) -> Option<output::ClientResult> {
+        let FrontendAction::Movement(field, patch) = action else {
+            return None;
+        };
+        let now = crate::host_time::sample();
+        let result = match patch {
+            Some(patch) => self.core.request_movement_policy(*patch, None, now),
+            None => self
+                .core
+                .connection_view()
+                .movement_property(*field, identity.request_id, now),
+        };
+        if result.receipt.stage == Stage::Submitted {
+            if let Some(session) = result.identity.session {
+                self.policy_output_sources
+                    .insert((session, result.identity.request_id), source);
+            }
+        }
+        Some(output::native(result))
+    }
+    pub(crate) fn finish_policy(
+        &mut self,
+        result: OperationResult,
+    ) -> (Option<CommandSource>, output::ClientResult) {
+        let source = result.identity.session.and_then(|session| {
+            self.policy_output_sources
+                .remove(&(session, result.identity.request_id))
+        });
+        (source, output::native(result))
+    }
+
     pub(crate) fn clock_operation(
         &mut self,
         identity: OperationContext,

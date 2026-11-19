@@ -198,6 +198,7 @@ pub(super) fn handle(
         FrontendAction::CameraStatus
         | FrontendAction::CameraLook { .. }
         | FrontendAction::ConfigSave(_) => unreachable!("shared preference operation"),
+        FrontendAction::Movement(..) => unreachable!("shared policy operations"),
         FrontendAction::Clock(_) => unreachable!("clock actions use the shared time adapter"),
         FrontendAction::SpawnRandomBolid(count) => {
             match application.request_random_bolid(count, crate::host_time::sample()) {

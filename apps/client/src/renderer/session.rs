@@ -105,6 +105,22 @@ impl DesktopHost {
         }
     }
 
+    pub(super) fn show_operation_result(
+        &mut self,
+        source: Option<crate::client_commands::CommandSource>,
+        result: crate::client_commands::output::ClientResult,
+    ) {
+        if source == Some(crate::client_commands::CommandSource::DeveloperStdin) {
+            super::dev_input::format_output(self, Some(result));
+        } else {
+            let output = crate::client_commands::output::display(
+                Some(result),
+                &self.localizer,
+                self.application.settings.locale,
+            );
+            super::controller::format_console_output(self, output);
+        }
+    }
     pub(super) fn handle_step_connector(
         &mut self,
         admin_result: Option<minimium_commands::admin::AdminReplyV1>,
@@ -112,16 +128,7 @@ impl DesktopHost {
     ) {
         if let Some(reply) = admin_result {
             let (source, result) = self.application.finish_admin(reply);
-            if source == Some(crate::client_commands::CommandSource::DeveloperStdin) {
-                super::dev_input::format_output(self, Some(result));
-            } else {
-                let output = crate::client_commands::output::display(
-                    Some(result),
-                    &self.localizer,
-                    self.application.settings.locale,
-                );
-                super::controller::format_console_output(self, output);
-            }
+            self.show_operation_result(source, result);
         }
         match connection {
             ConnectionEvent::TimedOut => {

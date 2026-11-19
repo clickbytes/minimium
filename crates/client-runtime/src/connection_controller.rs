@@ -1,4 +1,6 @@
 mod admin;
+mod policy;
+pub use policy::MovementField;
 mod prepared_session;
 mod shutdown;
 mod time;
@@ -40,6 +42,7 @@ pub enum ConnectionEvent {
 pub struct ConnectionController {
     now: ClientTime,
     presentation: Option<bool>,
+    policy: policy::Requests,
     pub movement: minimium_simulation::MovementPolicy,
     pub flight_enabled: bool,
     connector: Connector,
@@ -67,6 +70,7 @@ impl ConnectionController {
         Ok(Self {
             now,
             presentation: None,
+            policy: Default::default(),
             movement: Default::default(),
             flight_enabled: false,
             connector: Connector::new(now)?,
@@ -194,6 +198,7 @@ impl ConnectionController {
         self.accept_time(now)?;
         self.session_owns_server = false;
         self.cancel_unsent_admin();
+        self.policy.end_session();
         Ok(self.session.take())
     }
 
@@ -405,12 +410,7 @@ impl ConnectionController {
             session.poll(events, now)?;
         }
         for event in &events[first_new_event..] {
-            if let SessionEvent::Message(minimium_protocol::ServerMessage::MovementPolicy(policy)) =
-                event
-            {
-                self.movement = *policy;
-                self.flight_enabled = policy.can_fly;
-            }
+            self.observe_policy(event, now);
         }
         Ok(())
     }

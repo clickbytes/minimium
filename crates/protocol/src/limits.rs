@@ -1,4 +1,4 @@
-pub const PROTOCOL_VERSION: u8 = 22;
+pub const PROTOCOL_VERSION: u8 = 23;
 pub use minimium_core::identity::MAX_PLAYER_NAME_BYTES;
 pub const HEADER_BYTES: usize = 4;
 pub const MAX_PAYLOAD_BYTES: usize = 4096;

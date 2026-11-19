@@ -59,6 +59,11 @@ pub fn encode_server_into(
                 frame.push(event.kind);
                 ServerKind::Bolid
             }
+            ServerMessage::PolicyReply(ack) => {
+                write_world_context(ack.context, frame);
+                crate::policy::write_reply(frame, ack)?;
+                ServerKind::PolicyReply
+            }
             ServerMessage::MovementPolicy(policy) => {
                 if !policy.valid() {
                     return Err(ProtocolError::InvalidPayload);

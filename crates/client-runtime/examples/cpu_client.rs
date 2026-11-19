@@ -315,6 +315,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         current_view.player_position_m
     );
 
+    // The injected peer can send the same correlated receipt as the live server.
+    let patch = minimium_protocol::MovementPatch::Speed(20.0);
+    let submission = core.request_movement_policy(patch, None, time_at(base, time_index));
+    if submission.receipt.stage != minimium_commands::results::Stage::Submitted {
+        return Err("policy patch was not submitted".into());
+    }
+    let mut policy = patch
+        .apply(minimium_simulation::MovementPolicy::default())
+        .ok_or("invalid policy")?;
+    policy.revision += 1;
+    peer.try_send_server(ServerMessage::PolicyReply(minimium_protocol::PolicyReply {
+        request_id: submission.identity.request_id,
+        context,
+        result: Ok(policy),
+    }))?;
+    time_index += 1;
+    let acknowledged = core.step(
+        ClientStepInput {
+            now: time_at(base, time_index),
+            prediction: None,
+        },
+        |_| Ok(None),
+        None,
+    )?;
+    if !acknowledged.movement_results.iter().any(|r| {
+        r.identity == submission.identity
+            && r.receipt.stage == minimium_commands::results::Stage::OwnerCommitted
+    }) {
+        return Err("policy acknowledgement missing".into());
+    }
+
     readiness.shutdown_until(Instant::now() + Duration::from_secs(2));
     let _ = core.finish_until(
         Instant::now() + Duration::from_secs(2),

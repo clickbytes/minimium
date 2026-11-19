@@ -47,3 +47,5 @@ Run `rtk cargo check -p minimium-commands -p minimium-platform -p minimium-serve
 An administrative actor ID is an optional lossless u64 accompanying the expected world binding. A server operation decides whether that binding applies. InstantMs accepts integer milliseconds, with quoted calendar text available to domain parsers.
 
 A settings receipt can identify its configuration base as well as the property revision. The owner checks both identifiers for conditional changes and reports the conflicting dimension.
+
+Operation receipts can carry sample age in real milliseconds alongside freshness and revision. An actor-scoped result preserves its session identity and original world binding.

@@ -190,16 +190,16 @@ impl ClientActionExecutor {
                 QueuedActionKind::Other,
                 now,
             ),
-            ClientAction::SetMovementPolicy { speed, accel } => Self::queue_world(
+            ClientAction::SetMovementPolicy { speed, accel } => {
+                super::movement_requests::queue_policy(
+                    connection,
+                    minimium_protocol::MovementPatch::SetBoth { speed, accel },
+                    now,
+                )
+            }
+            ClientAction::SetFlightEnabled(enabled) => super::movement_requests::queue_policy(
                 connection,
-                ClientWorldInput::SetMovementPolicy { speed, accel },
-                QueuedActionKind::Other,
-                now,
-            ),
-            ClientAction::SetFlightEnabled(value) => Self::queue_world(
-                connection,
-                ClientWorldInput::SetFlightEnabled(value),
-                QueuedActionKind::Other,
+                minimium_protocol::MovementPatch::FlightEnabled(enabled),
                 now,
             ),
             ClientAction::InteractEntity { entity } => Self::queue_world(

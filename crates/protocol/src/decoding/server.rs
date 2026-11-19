@@ -57,6 +57,9 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
             }
             ServerMessage::Bolid { context, event }
         }
+        ServerKind::PolicyReply => {
+            ServerMessage::PolicyReply(crate::policy::read_reply(&mut reader)?)
+        }
         ServerKind::MovementPolicy => {
             let policy = minimium_simulation::MovementPolicy {
                 can_fly: reader.boolean()?,

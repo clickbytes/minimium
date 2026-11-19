@@ -33,58 +33,46 @@ impl TextProperties {
         localizer: &minimium_localization::Localizer,
     ) -> Result<String, CommandError> {
         match command {
-            ClientPropertyCommand::Get(key) => {
-                match key {
-                    Key::WorldTimeMode
-                    | Key::WorldTimeScale
-                    | Key::WorldTimeOfflinePolicy
-                    | Key::WorldTimeUtc
-                    | Key::WorldTimeRevision => {
-                        let frame = connection
-                            .session()
-                            .map(|session| session.environment_frame())
-                            .unwrap_or_else(crate::environment::EnvironmentFrameInput::unavailable);
-                        Ok(format_time_value(key, frame).unwrap_or_else(|| {
+            ClientPropertyCommand::Get(key) => match key {
+                Key::WorldTimeMode
+                | Key::WorldTimeScale
+                | Key::WorldTimeOfflinePolicy
+                | Key::WorldTimeUtc
+                | Key::WorldTimeRevision => {
+                    let frame = connection
+                        .session()
+                        .map(|session| session.environment_frame())
+                        .unwrap_or_else(crate::environment::EnvironmentFrameInput::unavailable);
+                    Ok(format_time_value(key, frame).unwrap_or_else(|| {
                             format!(
                                 "{} requested=unavailable effective=unavailable default=n/a source=unavailable reason=time property data unavailable",
                                 key.key()
                             )
                         }))
-                    }
-                    Key::MovementFly | Key::MovementSpeed | Key::MovementAccel => {
-                        let policy = connection.movement;
-                        let value = match key {
-                            Key::MovementFly => connection.flight_enabled.to_string(),
-                            Key::MovementSpeed => policy.speed.to_string(),
-                            Key::MovementAccel => policy.accel.to_string(),
-                            _ => unreachable!("movement property key was matched"),
-                        };
-                        Ok(format!(
-                            "{} requested={} effective={} default=n/a source=server_policy revision={}",
-                            key.key(), value, value, policy.revision
-                        ))
-                    }
-                    Key::Locale
-                    | Key::InputBindings
-                    | Key::CameraFov
-                    | Key::MouseSensitivity
-                    | Key::SkyQuality
-                    | Key::SkyNames
-                    | Key::MeteorEnabled
-                    | Key::MeteorRate
-                    | Key::MeteorQuality
-                    | Key::MeteorSeed
-                    | Key::MeteorAudio
-                    | Key::MeteorVolume
-                    | Key::CloudDetail
-                    | Key::AtmosphereDebug
-                    | Key::MoonFlux
-                    | Key::ExposureEv
-                    | Key::TerrainDebug
-                    | Key::CloudDebug
-                    | Key::SkyDemo => Ok(self.get(key, options)),
                 }
-            }
+                Key::MovementFly | Key::MovementSpeed | Key::MovementAccel => {
+                    unreachable!("shared movement operation")
+                }
+                Key::Locale
+                | Key::InputBindings
+                | Key::CameraFov
+                | Key::MouseSensitivity
+                | Key::SkyQuality
+                | Key::SkyNames
+                | Key::MeteorEnabled
+                | Key::MeteorRate
+                | Key::MeteorQuality
+                | Key::MeteorSeed
+                | Key::MeteorAudio
+                | Key::MeteorVolume
+                | Key::CloudDetail
+                | Key::AtmosphereDebug
+                | Key::MoonFlux
+                | Key::ExposureEv
+                | Key::TerrainDebug
+                | Key::CloudDebug
+                | Key::SkyDemo => Ok(self.get(key, options)),
+            },
             ClientPropertyCommand::Set(value) => match value {
                 crate::client_commands::ClientPropertyValue::InputBindings(bindings) => {
                     options.input_bindings = bindings.clone();

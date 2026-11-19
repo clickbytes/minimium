@@ -193,6 +193,9 @@ struct PendingWorldContent {
 }
 
 impl ClientSession {
+    pub(crate) fn next_world_request_id(&self) -> u64 {
+        self.next_world_sequence
+    }
     /// Host-local session identity shared by content jobs and correlated operation results.
     pub fn content_jobs_session_id(&self) -> u64 {
         self.content_jobs.session_id()

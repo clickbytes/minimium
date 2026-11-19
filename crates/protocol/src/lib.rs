@@ -7,6 +7,8 @@ mod framing;
 mod kinds;
 mod limits;
 mod models;
+mod policy;
+pub use policy::{MovementPatch, PolicyRejection, PolicyReply};
 mod movement_codec;
 mod reading;
 mod validation;

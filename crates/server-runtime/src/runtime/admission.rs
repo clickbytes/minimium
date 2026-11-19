@@ -1,6 +1,7 @@
 mod actions;
 mod dispatch;
 mod identity;
+mod movement_policy;
 mod placement;
 mod queue;
 mod routing;

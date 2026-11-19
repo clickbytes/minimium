@@ -103,6 +103,13 @@ pub fn encode_client(message: &ClientMessage) -> Result<Vec<u8>, ProtocolError> 
                     payload.push(8);
                     payload.extend_from_slice(&km.to_le_bytes());
                 }
+                ClientWorldInput::MovementPatch {
+                    patch,
+                    expected_revision,
+                } => {
+                    payload.push(13);
+                    crate::policy::write_patch(&mut payload, *patch, *expected_revision)?;
+                }
                 ClientWorldInput::SetMovementPolicy { speed, accel } => {
                     let policy = minimium_simulation::MovementPolicy {
                         speed: *speed,

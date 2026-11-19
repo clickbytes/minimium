@@ -46,6 +46,8 @@ pub(crate) use minimium_client_runtime::{
 pub(crate) struct ClientApplication {
     core: ClientApplicationCore,
     next_command_id: u64,
+    policy_output_sources:
+        std::collections::BTreeMap<(u64, u64), crate::client_commands::CommandSource>,
     admin_output_source: Option<(
         minimium_commands::admin::Correlation,
         crate::client_commands::CommandSource,
@@ -111,6 +113,7 @@ impl ClientApplication {
         Ok(Self {
             core,
             next_command_id: 1,
+            policy_output_sources: Default::default(),
             admin_output_source: None,
             ui,
             settings,
@@ -189,6 +192,7 @@ impl ClientApplication {
         Ok(Self {
             core,
             next_command_id: 1,
+            policy_output_sources: Default::default(),
             admin_output_source: None,
             #[cfg(feature = "desktop")]
             ui,

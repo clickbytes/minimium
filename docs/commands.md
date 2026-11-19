@@ -370,3 +370,7 @@ On an owned server, `world.time.scale = 1000` returns a submitted request ID. Th
 ## Camera preferences
 
 The FOV factory default is 70 degrees. With 80 in the preferences file, setting FOV to 95 and resetting restores 80 from the file. If the command line selected 90 at startup, the same reset restores 90. Both operations report the settings base and revision. The renderer acknowledges that pair before publishing effective FOV. Use `client.camera.status()` for a presentation sample and `client.camera.look(45, -10)` to set yaw and pitch in degrees. `client.config.save("preferences.ron")` writes the persistent file layer and current session overrides.
+
+## Movement policy
+
+Speed, acceleration and flight are scoped to the session actor and current world. Each write sends only its field. The reply carries the original request sequence and context, and the approved policy revision or reason for refusal. Reads show the confirmed effective value and sample age, with pending requests reported separately. A paused client suppresses the request. Disconnecting before acknowledgement leaves the outcome unknown.

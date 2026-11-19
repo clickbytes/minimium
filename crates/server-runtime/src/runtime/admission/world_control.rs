@@ -107,103 +107,14 @@ pub(super) fn route_message(
         }
         ClientMessage::WorldInput {
             context,
-            input: ClientWorldInput::SetMovementPolicy { speed, accel },
+            sequence,
+            input,
             ..
-        } => {
-            let Some(player) = player_id else {
-                disconnect_invalid_sequence(runtime, index);
-                return RoutingOutcome::Handled;
-            };
-            if !runtime
-                .game
-                .worlds
-                .world_input_context_is_current(player, context)
-            {
-                reject_input(runtime);
-                return RoutingOutcome::Handled;
-            }
-            if !super::identity::has_permission(
-                runtime,
-                index,
-                minimium_core::identity::ServerPermission::DeveloperMovementPolicy,
-                "movement_policy",
-            ) {
-                return RoutingOutcome::Handled;
-            }
-            let Some(previous) = runtime.game.player_movement_policies.get(&player).copied() else {
-                reject_input(runtime);
-                return RoutingOutcome::Handled;
-            };
-            let Some(revision) = previous.revision.checked_add(1) else {
-                reject_input(runtime);
-                return RoutingOutcome::Handled;
-            };
-            let policy = minimium_simulation::MovementPolicy {
-                speed,
-                accel,
-                revision,
-                ..previous
-            };
-            if !policy.valid() {
-                reject_input(runtime);
-                return RoutingOutcome::Handled;
-            }
-            runtime.game.player_movement_policies.insert(player, policy);
-            if !queue_message(
-                &mut runtime.connections.clients[index],
-                &mut runtime.metrics,
-                ServerMessage::MovementPolicy(policy),
-            ) {
-                disconnect_backpressure(runtime, index);
-            }
-            RoutingOutcome::Handled
-        }
-        ClientMessage::WorldInput {
-            context,
-            input: ClientWorldInput::SetFlightEnabled(enabled),
-            ..
-        } => {
-            let Some(player) = player_id else {
-                disconnect_invalid_sequence(runtime, index);
-                return RoutingOutcome::Handled;
-            };
-            if !runtime
-                .game
-                .worlds
-                .world_input_context_is_current(player, context)
-            {
-                reject_input(runtime);
-                return RoutingOutcome::Handled;
-            }
-            if !super::identity::has_permission(
-                runtime,
-                index,
-                minimium_core::identity::ServerPermission::DeveloperFly,
-                "fly",
-            ) {
-                return RoutingOutcome::Handled;
-            }
-            let Some(previous) = runtime.game.player_movement_policies.get(&player).copied() else {
-                reject_input(runtime);
-                return RoutingOutcome::Handled;
-            };
-            let Some(revision) = previous.revision.checked_add(1) else {
-                reject_input(runtime);
-                return RoutingOutcome::Handled;
-            };
-            let policy = minimium_simulation::MovementPolicy {
-                can_fly: enabled,
-                revision,
-                ..previous
-            };
-            runtime.game.player_movement_policies.insert(player, policy);
-            if !queue_message(
-                &mut runtime.connections.clients[index],
-                &mut runtime.metrics,
-                ServerMessage::MovementPolicy(policy),
-            ) {
-                disconnect_backpressure(runtime, index);
-            }
+        } if input.policy_change().is_some() => {
+            let (patch, expected) = input.policy_change().expect("matched policy input");
+            super::movement_policy::apply(
+                runtime, index, player_id, context, sequence, patch, expected,
+            );
             RoutingOutcome::Handled
         }
         ClientMessage::TransitionReady {

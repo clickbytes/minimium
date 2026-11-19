@@ -107,6 +107,7 @@ pub fn decode_client(input: &[u8]) -> Result<Option<(ClientMessage, usize)>, Pro
                     }
                     ClientWorldInput::SetMovementPolicy { speed, accel }
                 }
+                13 => crate::policy::read_patch(&mut reader)?,
                 10 => ClientWorldInput::SetFlightEnabled(reader.boolean()?),
                 12 => ClientWorldInput::Excavation(match reader.byte()? {
                     1 => ExcavationInput::GrantTools,

@@ -1,6 +1,7 @@
 mod actions;
 mod game;
 mod messages;
+mod movement_requests;
 mod ops;
 mod readiness;
 mod step;

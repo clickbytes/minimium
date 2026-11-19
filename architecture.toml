@@ -199,7 +199,7 @@ forbidden_dependencies = ["minimium-astronomy", "minimium-procgen", "minimium-se
 [[package]]
 name = "minimium-protocol"
 role = "engine-domain"
-responsibility = "Protocol-22 message models, bounded terrain/fluid/crater image parts, contextual revisions, resynchronization, codecs, validation and wire limits."
+responsibility = "Correlated movement policy patch and owner reply codecs. Protocol-22 message models, bounded terrain/fluid/crater image parts, contextual revisions, resynchronization, codecs, validation and wire limits."
 forbidden_dependencies = ["minimium-renderer", "minimium-game-sample"]
 
 [[package]]

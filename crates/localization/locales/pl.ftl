@@ -167,9 +167,9 @@ property-description = { $key ->
     [client_debug_terrain] Diagnostyczny widok terenu.
     [client_debug_clouds] Diagnostyczna nakładka chmur.
     [client_sky_demo] Włącza lokalną prezentację ciał niebieskich.
-    [player_movement_fly] Lokalny stan lotu/noclip; przyjęcie do kolejki nie potwierdza go przez serwer.
-    [player_movement_speed] Lokalna prędkość ruchu; przyjęcie do kolejki nie potwierdza jej przez serwer.
-    [player_movement_accel] Lokalne przyspieszenie ruchu; przyjęcie do kolejki nie potwierdza go przez serwer.
+    [player_movement_fly] Potwierdzona polityka lotu gracza w bieżącym świecie.
+    [player_movement_speed] Potwierdzona prędkość w m/s. Zmiana wymaga uprawnienia do polityki ruchu.
+    [player_movement_accel] Potwierdzone przyspieszenie w m/s². Zmiana wymaga uprawnienia do polityki ruchu.
     [world_time_mode] Tryb zegara świata; zmiana wymaga kanału administracyjnego lokalnego serwera.
     [world_time_scale] Tempo zegara świata; zmiana wymaga kanału administracyjnego lokalnego serwera.
     [world_time_offline_policy] Zasada działania zegara świata poza grą.

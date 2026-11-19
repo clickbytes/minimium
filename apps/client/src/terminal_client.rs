@@ -100,6 +100,14 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                 application.record_diagnostic_failure("client.collision_readiness_failed", &error);
             }
         }
+        for outcome in step.movement_results {
+            let (_, result) = application.finish_policy(outcome);
+            for output in dispatch::display(Some(result), &localizer, options.locale).outputs {
+                if let crate::client_commands::CommandOutput::Line(line) = output {
+                    println!("{line}");
+                }
+            }
+        }
         if let Some(reply) = step.admin_result {
             let (_, result) = application.finish_admin(reply);
             for output in dispatch::display(Some(result), &localizer, options.locale).outputs {
@@ -243,6 +251,11 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                     crate::host_time::sample(),
                 );
                 let (should_exit, response) = dispatch::dispatch(result, |identity, action| {
+                    if let Some(result) =
+                        application.policy_operation(&identity, &action, CommandSource::Terminal)
+                    {
+                        return (false, result);
+                    }
                     use crate::client_commands::camera;
                     if let Some(request) = camera::Request::from_action(&action) {
                         return (

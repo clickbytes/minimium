@@ -83,3 +83,5 @@ parts and publish only after the complete image validates.
 Reservoir quantities include their compensated volume residuals. Cells are a
 replacement image for the announced region; the paired reservoir balances remain
 complete. A structural batch installs its terrain and captured water together.
+
+Wire v23 adds single-field movement patches with optional policy revision checks and correlated PolicyReply messages. Speed and acceleration use metres per second and metres per second squared. The sequence and world context travel back to the requesting session.

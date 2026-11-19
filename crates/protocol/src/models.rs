@@ -80,13 +80,28 @@ pub enum ClientMessage {
 pub enum ClientWorldInput {
     SetName(String),
     Motion(MovementSample),
-    Fire { direction: [f32; 3] },
-    MapTeleport { direction: [f32; 3] },
-    SetAltitude { km: f32 },
-    SetMovementPolicy { speed: f32, accel: f32 },
+    Fire {
+        direction: [f32; 3],
+    },
+    MapTeleport {
+        direction: [f32; 3],
+    },
+    SetAltitude {
+        km: f32,
+    },
+    MovementPatch {
+        patch: crate::MovementPatch,
+        expected_revision: Option<u64>,
+    },
+    SetMovementPolicy {
+        speed: f32,
+        accel: f32,
+    },
     SetFlightEnabled(bool),
     Chat(String),
-    InteractEntity { entity: EntityId },
+    InteractEntity {
+        entity: EntityId,
+    },
     Excavation(ExcavationInput),
 }
 
@@ -241,6 +256,7 @@ pub enum ServerMessage {
         context: WorldContext,
         event: BolidEvent,
     },
+    PolicyReply(crate::PolicyReply),
     MovementPolicy(minimium_simulation::MovementPolicy),
     EntitySyncBegin {
         context: WorldContext,

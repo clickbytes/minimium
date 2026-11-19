@@ -30,6 +30,23 @@ pub(super) fn dispatch_message(
             "gameplay",
         )
     {
+        if let ClientMessage::WorldInput {
+            sequence,
+            context,
+            input,
+            ..
+        } = &message
+        {
+            if input.policy_change().is_some() {
+                super::movement_policy::reply(
+                    runtime,
+                    index,
+                    *context,
+                    *sequence,
+                    Err(minimium_protocol::PolicyRejection::Forbidden),
+                );
+            }
+        }
         return;
     }
     // Routing preserves wrapper conversion and pre-dispatch effects; only continued messages reach admission below.
@@ -77,6 +94,14 @@ pub(super) fn dispatch_message(
                         action_id: *action_id,
                         reason: minimium_world::items::ActionRejection::Paused,
                     },
+                );
+            } else if input.policy_change().is_some() {
+                super::movement_policy::reply(
+                    runtime,
+                    index,
+                    *context,
+                    *sequence,
+                    Err(minimium_protocol::PolicyRejection::Paused),
                 );
             } else {
                 crate::connection::queue_message(
@@ -171,6 +196,7 @@ fn handle_admitted_message(
                 ClientWorldInput::InteractEntity { .. }
                 | ClientWorldInput::SetAltitude { .. }
                 | ClientWorldInput::MapTeleport { .. }
+                | ClientWorldInput::MovementPatch { .. }
                 | ClientWorldInput::SetMovementPolicy { .. }
                 | ClientWorldInput::SetFlightEnabled(_),
             ) => disconnect_invalid_sequence(runtime, index),

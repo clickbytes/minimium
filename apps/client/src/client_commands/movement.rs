@@ -1,7 +1,7 @@
 use super::{
     ArgumentSpec as Arg, ArgumentType as ArgType, ClientCommand, ClientPropertyCommand,
-    ClientPropertyKey as Key, ClientPropertyValue as Value, CommandContext, CommandRegistry,
-    CommandResult, FrontendAction, ParseError,
+    ClientPropertyKey as Key, ClientPropertyValue as Value, CommandRegistry, CommandResult,
+    FrontendAction, ParseError,
 };
 
 const COMMANDS: &[super::CommandSpec] = &[
@@ -80,124 +80,36 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
     }
 }
 
-pub(super) fn handle_property(
-    command: ClientPropertyCommand,
-    context: &mut CommandContext<'_>,
-) -> Option<CommandResult> {
-    let setting = match command {
-        ClientPropertyCommand::Get(Key::MovementFly) => {
-            return Some(report(Key::MovementFly, context))
+pub(super) fn handle_property(command: &ClientPropertyCommand) -> Option<CommandResult> {
+    use minimium_client_runtime::MovementField as Field;
+    use minimium_protocol::MovementPatch as Patch;
+    let defaults = minimium_simulation::MovementPolicy::default();
+    let (field, patch) = match command {
+        ClientPropertyCommand::Get(Key::MovementSpeed) => (Field::Speed, None),
+        ClientPropertyCommand::Get(Key::MovementAccel) => (Field::Acceleration, None),
+        ClientPropertyCommand::Get(Key::MovementFly) => (Field::Flight, None),
+        ClientPropertyCommand::Set(Value::MovementSpeed(v)) => {
+            (Field::Speed, Some(Patch::Speed(*v)))
         }
-        ClientPropertyCommand::Get(Key::MovementSpeed) => {
-            return Some(report(Key::MovementSpeed, context))
+        ClientPropertyCommand::Set(Value::MovementAccel(v)) => {
+            (Field::Acceleration, Some(Patch::Acceleration(*v)))
         }
-        ClientPropertyCommand::Get(Key::MovementAccel) => {
-            return Some(report(Key::MovementAccel, context))
+        ClientPropertyCommand::Set(Value::MovementFly(v)) => {
+            (Field::Flight, Some(Patch::FlightEnabled(*v)))
         }
-        ClientPropertyCommand::Set(Value::MovementFly(value)) => Setting::Fly(Some(value)),
-        ClientPropertyCommand::Set(Value::MovementSpeed(value)) => Setting::Speed(Some(value)),
-        ClientPropertyCommand::Set(Value::MovementAccel(value)) => Setting::Accel(Some(value)),
-        ClientPropertyCommand::Reset(Key::MovementFly) => Setting::Fly(Some(false)),
-        ClientPropertyCommand::Reset(Key::MovementSpeed) => Setting::Speed(Some(5.0)),
-        ClientPropertyCommand::Reset(Key::MovementAccel) => Setting::Accel(Some(30.0)),
+        ClientPropertyCommand::Reset(Key::MovementSpeed) => {
+            (Field::Speed, Some(Patch::Speed(defaults.speed)))
+        }
+        ClientPropertyCommand::Reset(Key::MovementAccel) => (
+            Field::Acceleration,
+            Some(Patch::Acceleration(defaults.accel)),
+        ),
+        ClientPropertyCommand::Reset(Key::MovementFly) => {
+            (Field::Flight, Some(Patch::FlightEnabled(false)))
+        }
         _ => return None,
     };
-    Some(apply(setting, context))
-}
-
-#[derive(Clone, Copy)]
-enum Setting {
-    Fly(Option<bool>),
-    Speed(Option<f32>),
-    Accel(Option<f32>),
-}
-
-fn apply(setting: Setting, context: &mut CommandContext<'_>) -> CommandResult {
-    let mut settings = context.movement;
-    let change = match setting {
-        Setting::Fly(value) => {
-            if let Some(value) = value {
-                if let crate::application::LocalActionOutcome::Rejected { error, .. } = (context
-                    .execute_action)(
-                    crate::application::ClientAction::SetFlightEnabled(value),
-                ) {
-                    return CommandResult::QueueRejected {
-                        kind: crate::application::QueuedActionKind::Other,
-                        error,
-                    };
-                }
-                return CommandResult::Action(FrontendAction::Print(format_movement(
-                    settings,
-                    context.flight_enabled,
-                    true,
-                )));
-            }
-            false
-        }
-        Setting::Speed(value) => {
-            if let Some(value) = value {
-                settings.speed = value;
-            }
-            value.is_some()
-        }
-        Setting::Accel(value) => {
-            if let Some(value) = value {
-                settings.accel = value;
-            }
-            value.is_some()
-        }
-    };
-    let queued = if change {
-        if let crate::application::LocalActionOutcome::Rejected { error, .. } =
-            (context.execute_action)(crate::application::ClientAction::SetMovementPolicy {
-                speed: settings.speed,
-                accel: settings.accel,
-            })
-        {
-            return CommandResult::QueueRejected {
-                kind: crate::application::QueuedActionKind::Other,
-                error,
-            };
-        }
-        true
-    } else {
-        false
-    };
-    CommandResult::Action(FrontendAction::Print(format_movement(
-        settings,
-        context.flight_enabled,
-        queued,
+    Some(CommandResult::Action(FrontendAction::Movement(
+        field, patch,
     )))
-}
-
-fn report(key: Key, context: &CommandContext<'_>) -> CommandResult {
-    let settings = context.movement;
-    let value = match key {
-        Key::MovementFly => context.flight_enabled.to_string(),
-        Key::MovementSpeed => settings.speed.to_string(),
-        Key::MovementAccel => settings.accel.to_string(),
-        _ => unreachable!("movement property key was matched"),
-    };
-    CommandResult::Action(FrontendAction::Print(format!(
-        "{} requested={} effective={} source=server_policy revision={}",
-        key.key(),
-        value,
-        value,
-        settings.revision
-    )))
-}
-
-fn format_movement(
-    settings: minimium_simulation::MovementPolicy,
-    flight_enabled: bool,
-    queued: bool,
-) -> String {
-    format!(
-        "movement: fly={} (noclip), speed={} m/s, accel={} m/s² source=server_policy revision={} request={}",
-        flight_enabled && settings.can_fly,
-        settings.speed,
-        settings.accel,
-        settings.revision,
-        if queued { "accepted" } else { "unchanged" }
-    )
 }

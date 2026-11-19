@@ -109,6 +109,7 @@ pub(super) fn print_session_event(
             }
             ServerMessage::Snapshot { .. }
             | ServerMessage::Bolid { .. }
+            | ServerMessage::PolicyReply(_)
             | ServerMessage::MovementPolicy(_)
             | ServerMessage::EnvironmentSync { .. }
             | ServerMessage::TimeProbeReply { .. }

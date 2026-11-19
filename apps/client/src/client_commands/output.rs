@@ -183,6 +183,21 @@ pub(crate) fn display(
             text
         }
     };
+    let line = match result.receipt.sample_age_ms {
+        Some(age) => format!("{line} sample_age_ms={age}"),
+        None => line,
+    };
+    let line = match (&result.identity.session, &result.identity.context) {
+        (Some(session), Some(context)) => format!(
+            "request={} session={} world={} content_revision={} membership_epoch={} {line}",
+            result.identity.request_id,
+            session,
+            context.instance,
+            context.content_revision,
+            context.membership_epoch
+        ),
+        _ => line,
+    };
     let line = match result.receipt.settings_base {
         Some(base) => format!("{line} settings_base={base}"),
         None => line,

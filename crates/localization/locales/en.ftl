@@ -165,9 +165,9 @@ property-description = { $key ->
     [client_debug_terrain] Terrain diagnostic view.
     [client_debug_clouds] Cloud diagnostic overlay.
     [client_sky_demo] Enable the local celestial demonstration.
-    [player_movement_fly] Local fly/noclip input state; queue acceptance is not server confirmation.
-    [player_movement_speed] Local walk/fly speed input; queue acceptance is not server confirmation.
-    [player_movement_accel] Local walk/fly acceleration input; queue acceptance is not server confirmation.
+    [player_movement_fly] Confirmed flight policy for the current actor and world.
+    [player_movement_speed] Confirmed speed in metres per second. Changes require movement-policy permission.
+    [player_movement_accel] Confirmed acceleration in metres per second squared. Changes require movement-policy permission.
     [world_time_mode] World clock mode; changes require the owned local server admin channel.
     [world_time_scale] World clock rate; changes require the owned local server admin channel.
     [world_time_offline_policy] Policy used when the world is offline.

@@ -243,6 +243,18 @@ impl ServerRuntime {
                 environment,
             },
         );
+        let queued = queued
+            && self
+                .game
+                .player_movement_policies
+                .get(&transfer.player)
+                .is_some_and(|policy| {
+                    crate::connection::queue_message(
+                        client,
+                        &mut self.metrics,
+                        minimium_protocol::ServerMessage::MovementPolicy(*policy),
+                    )
+                });
         if !queued {
             self.metrics.dropped_messages = self.metrics.dropped_messages.saturating_add(1);
             client.disconnect_reason = Some(crate::connection::CloseReason::Backpressure);

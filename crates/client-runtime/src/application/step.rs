@@ -49,6 +49,7 @@ pub struct AppliedSessionEvent {
 }
 
 pub struct ClientStepOutput {
+    pub movement_results: Vec<minimium_commands::results::OperationResult>,
     pub admin_result: Option<minimium_commands::admin::AdminReplyV1>,
     pub connection: ConnectionEvent,
     pub session_events: Vec<AppliedSessionEvent>,
@@ -149,6 +150,7 @@ impl ClientApplicationCore {
                     )
                 });
         Ok(ClientStepOutput {
+            movement_results: self.connection.take_movement_results(),
             admin_result,
             connection,
             session_events,

@@ -102,6 +102,10 @@ impl DesktopHost {
         if output.jump_consumed {
             self.input.jump_pending = false;
         }
+        for outcome in output.movement_results {
+            let (source, result) = self.application.finish_policy(outcome);
+            self.show_operation_result(source, result);
+        }
         self.handle_step_connector(output.admin_result, output.connection);
         let disconnecting = self.pending_step_disconnect.is_some();
         self.handle_step_session_events(output.session_events, disconnecting);

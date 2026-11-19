@@ -42,6 +42,12 @@ pub(super) fn execute_input(
         crate::host_time::sample(),
     );
     dispatch::dispatch(result, |identity, action| {
+        if let Some(result) = renderer
+            .application
+            .policy_operation(&identity, &action, source)
+        {
+            return (false, result);
+        }
         if let Some(result) = renderer.camera_operation(&identity, &action) {
             return (false, result);
         }

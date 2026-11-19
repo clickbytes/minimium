@@ -94,6 +94,10 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
         }
         _ => return None,
     };
+    entry.spec.scriptable = matches!(
+        entry.spec.path.as_str(),
+        "player.movement.speed" | "player.movement.accel" | "player.movement.fly"
+    );
     if let Some(read) = &mut entry.spec.read {
         read.permission = "OwnSession";
     }

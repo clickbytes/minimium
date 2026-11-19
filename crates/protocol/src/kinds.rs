@@ -40,5 +40,5 @@ kinds!(ServerKind {
     MovementPolicy = 0x92, EntitySyncBegin = 0x93,
     EntitySyncRecord = 0x94, EntitySyncComplete = 0x95,
     Bolid = 0x96,
-    ImpactState = 0x97, ImpactSync = 0x98, Excavation = 0x99,
+    ImpactState = 0x97, ImpactSync = 0x98, Excavation = 0x99, PolicyReply = 0x9a,
 });

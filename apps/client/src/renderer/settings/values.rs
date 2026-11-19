@@ -59,57 +59,16 @@ impl DesktopHost {
             Key::TerrainDebug => self.stored_property(key),
             Key::CloudDebug => self.stored_property(key),
             Key::SkyDemo => self.stored_property(key),
-            Key::MovementFly => (
-                self.application
-                    .connection_view()
-                    .flight_enabled
-                    .to_string(),
-                self.application
-                    .connection_view()
-                    .flight_enabled
-                    .to_string(),
-                Some("local queued input; server confirmation is unavailable".to_owned()),
-            ),
-            Key::MovementSpeed => (
-                self.application
-                    .connection_view()
-                    .movement
-                    .speed
-                    .to_string(),
-                self.application
-                    .connection_view()
-                    .movement
-                    .speed
-                    .to_string(),
-                Some("local queued input; server confirmation is unavailable".to_owned()),
-            ),
-            Key::MovementAccel => (
-                self.application
-                    .connection_view()
-                    .movement
-                    .accel
-                    .to_string(),
-                self.application
-                    .connection_view()
-                    .movement
-                    .accel
-                    .to_string(),
-                Some("local queued input; server confirmation is unavailable".to_owned()),
-            ),
+            Key::MovementFly | Key::MovementSpeed | Key::MovementAccel => {
+                unreachable!("shared movement operation")
+            }
             Key::WorldTimeMode
             | Key::WorldTimeScale
             | Key::WorldTimeOfflinePolicy
             | Key::WorldTimeUtc
             | Key::WorldTimeRevision => unreachable!("world clock value formatted above"),
         };
-        let source = if matches!(
-            key,
-            Key::MovementFly | Key::MovementSpeed | Key::MovementAccel
-        ) {
-            PropertySource::Runtime
-        } else {
-            self.application.settings.source(key.key())
-        };
+        let source = self.application.settings.source(key.key());
         let metadata = PropertyValue {
             lifecycle: crate::client_commands::property_spec(key.key())
                 .expect("registered property")
