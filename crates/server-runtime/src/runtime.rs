@@ -17,7 +17,10 @@ mod impacts;
 pub(crate) use component_ownership::ComponentOwnerAuthority;
 pub use component_ownership::{ComponentOwnerError, ComponentOwnerPort};
 pub use effect_receipts::StartupEffectFailure;
-pub use excavation::ExcavationStatus;
+pub use excavation::{
+    ExcavationStatus, WaterJobState, WaterJobStatus, WaterStatus, WaterStatusError,
+    WaterStatusState,
+};
 pub use impacts::{ImpactReceipt, ImpactReceiptStage, ImpactStatus};
 mod hosted;
 mod input_movement;

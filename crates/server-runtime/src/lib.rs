@@ -55,7 +55,8 @@ pub use runtime::ServerRuntime;
 pub use runtime::StartupEffectFailure;
 pub use runtime::{
     BolidShowerStatus, ComponentOwnerError, ComponentOwnerPort, ExcavationStatus, ImpactReceipt,
-    ImpactReceiptStage, ImpactStatus, ShowerState,
+    ImpactReceiptStage, ImpactStatus, ShowerState, WaterJobState, WaterJobStatus, WaterStatus,
+    WaterStatusError, WaterStatusState,
 };
 pub use startup::PreparedRuntime;
 

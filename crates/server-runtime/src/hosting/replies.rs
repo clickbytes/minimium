@@ -90,6 +90,7 @@ pub enum CommandPayloadView<'a> {
     },
     BolidStatus(&'a crate::runtime::BolidShowerStatus),
     ImpactReceipt(&'a crate::runtime::ImpactReceipt),
+    WaterStatus(&'a crate::runtime::WaterStatus),
     ImpactSpawn {
         id: u64,
         world: minimium_world::world::WorldInstanceId,
@@ -218,6 +219,7 @@ impl CommandReply {
             },
             CommandPayload::BolidStatus(status) => CommandPayloadView::BolidStatus(status),
             CommandPayload::ImpactReceipt(receipt) => CommandPayloadView::ImpactReceipt(receipt),
+            CommandPayload::WaterStatus(status) => CommandPayloadView::WaterStatus(status),
             CommandPayload::ImpactSpawn {
                 id,
                 world,

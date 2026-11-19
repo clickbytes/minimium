@@ -16,6 +16,7 @@ impl ServerCommand {
             Self::SpawnRandomBolid(_) => "spawn_random_bolid",
             Self::BolidStatus(_) => "bolids status",
             Self::ImpactReceiptStatus { .. } => "impacts status",
+            Self::WaterStatus(_) => "water status",
             Self::SpawnRandomMeteorid => "spawn_random_meteorid",
             Self::TimeOfDay { solar: true, .. } => "world.time.set_solar_hhmm",
             Self::TimeOfDay { .. } => "world.time.set_utc_hhmm",

@@ -1,6 +1,10 @@
 //! Bounded owner-lane coordinator: prepare, persist, then publish at a tick boundary.
 mod admission;
 mod coordinator;
+mod diagnostics;
+pub use diagnostics::{
+    WaterJobState, WaterJobStatus, WaterStatus, WaterStatusError, WaterStatusState,
+};
 mod ports;
 use coordinator::{ExcavationCoordinator, Origin, PreparationRequest};
 mod hydrology;
@@ -47,6 +51,7 @@ struct ExcavationState {
     water_jobs: HashMap<WorldInstanceId, hydrology::WaterJob>,
     water_failures: HashMap<WorldInstanceId, hydrology::WaterFailure>,
     water_checkpoint_due: HashMap<WorldInstanceId, Instant>,
+    water_capture_sequence: std::sync::atomic::AtomicU64,
 }
 
 #[derive(Debug)]
@@ -103,6 +108,7 @@ impl Excavation {
                 water_jobs: HashMap::new(),
                 water_failures: HashMap::new(),
                 water_checkpoint_due: HashMap::new(),
+                water_capture_sequence: std::sync::atomic::AtomicU64::new(1),
             },
         })
     }

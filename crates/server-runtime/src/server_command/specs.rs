@@ -120,6 +120,22 @@ pub(super) const SERVER_SPECS: &[CommandSpec<ServerCommand, CommandError>] = &[
         parser: parse_server_spec,
     },
     CommandSpec {
+        name: "water status",
+        alias: None,
+        usage: "water status WORLD",
+        arguments: &[CommandArgumentSpec::new(
+            "world",
+            CommandArgumentType::Integer,
+            false,
+            false,
+            None,
+            Some("positive u128"),
+            None,
+            "world instance identifier",
+        )],
+        parser: parse_server_spec,
+    },
+    CommandSpec {
         name: "time",
         alias: None,
         usage: TIME_USAGE,

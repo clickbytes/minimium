@@ -122,6 +122,10 @@ impl WaterWorld {
         self.last_persisted_revision != self.snapshot.revision()
     }
 
+    pub(super) fn persisted_revision(&self) -> u64 {
+        self.last_persisted_revision
+    }
+
     pub(super) fn reserve_cell_limit(&mut self, limit: usize) -> Result<(), FluidError> {
         if limit > self.snapshot.config().max_active_cells || limit < self.snapshot.cells().len() {
             return Err(FluidError::Capacity);

@@ -128,6 +128,7 @@ fn resolve(name: &str, _persistent: bool) -> Result<CatalogEntry, CatalogError> 
         .or_else(|| primary::entry(name))
         .or_else(|| clock_entry(name, ClockReadBinding::OwnerSnapshot))
         .or_else(|| bolids::entry(name))
+        .or_else(|| crate::commands::water::entry(name))
         .or_else(|| console::entry(name))
         .or_else(|| admin::entry(name))
         .or_else(|| persistence::entry(name))

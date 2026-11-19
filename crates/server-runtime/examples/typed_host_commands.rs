@@ -140,6 +140,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         RuntimeCommand::spawn_random_bolids(2)?,
         RuntimeCommand::spawn_random_meteorite(),
         RuntimeCommand::impact_receipt_status(instance, 1)?,
+        RuntimeCommand::water_status(instance),
     ];
     for command in commands {
         match runtime.submit(command) {
@@ -184,6 +185,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!(
             "status: tick {}, worlds {}, persistence {:?}",
             status.simulation_tick, status.world_count, status.persistence.last_save
+        );
+    }
+    if let RuntimeQueryResult::WaterStatus(status) =
+        runtime.query(RuntimeQuery::WaterStatus(instance))
+    {
+        println!(
+            "water owner capture: {:?}",
+            status.map(|s| (s.state, s.committed_tick, s.pending_target_tick))
         );
     }
     let shutdown = runtime.shutdown(time, std::time::Instant::now() + Duration::from_secs(2));

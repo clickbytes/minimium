@@ -169,6 +169,10 @@ impl RuntimeCommand {
         Ok(Self(ServerCommand::ImpactReceiptStatus { world, id }))
     }
 
+    pub fn water_status(instance: WorldInstanceId) -> Self {
+        Self(ServerCommand::WaterStatus(instance))
+    }
+
     pub fn spawn_random_meteorite() -> Self {
         Self(ServerCommand::SpawnRandomMeteorid)
     }
@@ -359,6 +363,7 @@ impl CommandExecution {
 #[derive(Clone, Debug)]
 pub enum RuntimeQuery {
     Status,
+    WaterStatus(WorldInstanceId),
     Worlds,
     WorldsPage(CommandViewRequest),
     World(WorldInstanceId),
@@ -379,6 +384,7 @@ pub enum RuntimeQuery {
 }
 pub enum RuntimeQueryResult {
     Status(RuntimeStatus),
+    WaterStatus(Result<crate::runtime::WaterStatus, crate::runtime::WaterStatusError>),
     Worlds(CommandViewPage<CommandWorldView>),
     WorldsPage(Result<CommandViewPage<CommandWorldView>, CommandViewError>),
     World(Result<CommandWorldView, CommandViewError>),

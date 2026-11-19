@@ -110,6 +110,17 @@ impl ServerRuntime {
                         ),
                     }
                 }
+                crate::server_command::ServerCommand::WaterStatus(instance) => {
+                    match self.water_status_snapshot(*instance) {
+                        Some(status) => commands::CommandReply::success(
+                            commands::CommandPayload::WaterStatus(status),
+                        ),
+                        None => commands::CommandReply::error(
+                            "server.water.unknown_instance",
+                            "world instance not found",
+                        ),
+                    }
+                }
                 _ => match monotonic_ms {
                     Ok(monotonic_ms) => commands::execute(
                         &command,

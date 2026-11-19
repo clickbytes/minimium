@@ -54,6 +54,10 @@ impl ServerRuntime {
                 stopping: self.shutdown_request.is_requested(),
                 persistence: self.operations.persistence.status(),
             }),
+            RuntimeQuery::WaterStatus(instance) => RuntimeQueryResult::WaterStatus(
+                self.water_status_snapshot(instance)
+                    .ok_or(crate::runtime::WaterStatusError::UnknownInstance),
+            ),
             RuntimeQuery::Worlds => RuntimeQueryResult::Worlds(
                 view.worlds(
                     &crate::CommandViewRequest::new(

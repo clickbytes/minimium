@@ -247,6 +247,9 @@ pub(crate) fn render(payload: &CommandPayloadView<'_>) -> BoundedText {
                 let _ = write!(out, " reason={reason}");
             }
         }
+        CommandPayloadView::WaterStatus(status) => {
+            out.push_str(&crate::commands::water::format(status));
+        }
         CommandPayloadView::Help {
             builtins,
             modules,

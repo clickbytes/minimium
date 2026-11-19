@@ -8,9 +8,33 @@ pub(super) struct WaterJob {
     receiver: Receiver<Result<(water::WaterWorld, Duration), minimium_fluids::FluidError>>,
 }
 
+impl WaterJob {
+    pub(super) fn status(&self) -> super::WaterJobStatus {
+        super::WaterJobStatus {
+            state: if self.ready.is_some() {
+                super::diagnostics::WaterJobState::Ready
+            } else {
+                super::diagnostics::WaterJobState::WorkerPending
+            },
+            target_tick: self.target_tick,
+            input_terrain_version: self.input_revision,
+            input_fluid_revision: self.water_revision,
+        }
+    }
+}
+
 pub(super) struct WaterFailure {
     pub error: minimium_fluids::FluidError,
     retry_at: Instant,
+}
+
+impl WaterFailure {
+    pub(super) fn retry_after_ms(&self, now: Instant) -> u64 {
+        self.retry_at
+            .saturating_duration_since(now)
+            .as_millis()
+            .min(u128::from(u64::MAX)) as u64
+    }
 }
 
 impl ServerRuntime {

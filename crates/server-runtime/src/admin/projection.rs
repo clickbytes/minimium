@@ -56,6 +56,7 @@ pub(super) fn payload(
             .into(),
         )),
         Some(View::Property(r)) => return Payload::Property(r.typed_value()),
+        Some(View::WaterStatus(status)) => Some(crate::commands::water::project(status)),
         Some(View::EntityDespawn {
             world,
             entity,

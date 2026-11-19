@@ -328,6 +328,12 @@ pub(super) fn inspect_reply(reply: CommandReplyView<'_>) {
                 receipt.journal_revision()
             );
         }
+        CommandPayloadView::WaterStatus(status) => {
+            println!(
+                "{}",
+                minimium_server_runtime::WaterStatusState::label(status.state)
+            );
+        }
         CommandPayloadView::ModuleText { text, truncated } => {
             println!("module text truncated={truncated}: {text}");
         }

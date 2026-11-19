@@ -1,6 +1,7 @@
 mod administration;
 pub(crate) mod bolids;
 mod generation;
+pub(crate) mod water;
 pub(crate) use generation::{encode as encode_generation, project as project_generation};
 mod configuration;
 mod owner_context;
@@ -244,6 +245,7 @@ pub(crate) enum CommandPayload {
     },
     BolidStatus(crate::runtime::BolidShowerStatus),
     ImpactReceipt(crate::runtime::ImpactReceipt),
+    WaterStatus(crate::runtime::WaterStatus),
     ImpactSpawn {
         id: u64,
         world: minimium_world::world::WorldInstanceId,
@@ -466,7 +468,8 @@ pub fn execute(
         ServerCommand::SpawnRandomBolid(_)
         | ServerCommand::SpawnRandomMeteorid
         | ServerCommand::BolidStatus(_)
-        | ServerCommand::ImpactReceiptStatus { .. } => CommandReply::error(
+        | ServerCommand::ImpactReceiptStatus { .. }
+        | ServerCommand::WaterStatus(_) => CommandReply::error(
             "server.bolid.wrong_lane",
             "bolid command must execute on the server owner lane",
         ),

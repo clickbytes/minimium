@@ -139,6 +139,29 @@ fn parse_server_arguments(command: &str, values: &[&str]) -> Result<ServerComman
             )),
         };
     }
+    if command == "water status" {
+        return match values {
+            [world] => world
+                .parse::<u128>()
+                .ok()
+                .and_then(minimium_world::world::WorldInstanceId::new)
+                .map(ServerCommand::WaterStatus)
+                .ok_or_else(|| {
+                    parse_error(
+                        CommandErrorCode::InvalidArguments,
+                        command,
+                        "world ID must be a positive u128",
+                        "water status WORLD",
+                    )
+                }),
+            _ => Err(parse_error(
+                CommandErrorCode::InvalidArguments,
+                command,
+                "expected one world ID",
+                "water status WORLD",
+            )),
+        };
+    }
     if command == "players list" {
         if values.is_empty() {
             return Ok(ServerCommand::Players {
@@ -205,6 +228,7 @@ pub enum ServerCommand {
         world: minimium_world::world::WorldInstanceId,
         id: u64,
     },
+    WaterStatus(minimium_world::world::WorldInstanceId),
     SpawnRandomMeteorid,
     Time(TimeCommand),
     TimeOfDay {
