@@ -263,7 +263,7 @@ pub(crate) fn render(payload: &CommandPayloadView<'_>) -> BoundedText {
                 out.push_str(" [truncated]");
             }
         }
-        CommandPayloadView::Time(snapshot) => {
+        CommandPayloadView::ClockCommitted(snapshot) | CommandPayloadView::Time(snapshot) => {
             let nonce: String = snapshot
                 .session_nonce
                 .iter()
@@ -277,7 +277,7 @@ pub(crate) fn render(payload: &CommandPayloadView<'_>) -> BoundedText {
                 .dirty_revision
                 .map(|value| value.to_string())
                 .unwrap_or_else(|| "none".to_owned());
-            let _ = write!(out, "clock_id={} revision={} session_nonce={} mode={} world_utc_ms={} rate_ppm={} rate={} offline_policy={} fault={} wall_drift_ms={} sync_dirty_revision={} tick={} achieved_ppm={} achieved_rate={} paused={} limit={}", snapshot.clock_id, snapshot.revision, nonce, snapshot.mode, snapshot.utc_ms, snapshot.rate_ppm, format_clock_scale(snapshot.rate_ppm), snapshot.offline_policy, snapshot.fault, correction, dirty, snapshot.tick, snapshot.achieved_ppm, format_clock_scale(snapshot.achieved_ppm), snapshot.rate_ppm == 0, snapshot.limit);
+            let _ = write!(out, "clock_id={} revision={} session_nonce={} mode={} world_utc_ms={} rate_ppm={} rate={} offline_policy={} fault={} wall_drift_ms={} sync_dirty_revision={} tick={} achieved_ppm={} achieved_rate={} paused={} limit={} calendar_epoch={}", snapshot.clock_id, snapshot.revision, nonce, snapshot.mode, snapshot.utc_ms, snapshot.rate_ppm, format_clock_scale(snapshot.rate_ppm), snapshot.offline_policy, snapshot.fault, correction, dirty, snapshot.tick, snapshot.achieved_ppm, format_clock_scale(snapshot.achieved_ppm), snapshot.rate_ppm == 0, snapshot.limit, snapshot.calendar_epoch());
         }
     }
     out

@@ -362,3 +362,7 @@ remaining members. Completed events remain subject to existing renderer caps.
 This extends the existing server bolid demonstration, independently of E047
 client-local `sky meteors spawn PRESET [seed]`. It requires an owned local server
 from a client or an existing authorized server admin endpoint/console.
+
+## Shared simulation clock
+
+On an owned server, `world.time.scale = 1000` returns a submitted request ID. The matching owner_committed reply records the clock revision, requested 1000x scale, effective setting, tick and calendar epoch. `world.time.status()` reports the latest session sample, its age and the achieved ppm measured from completed ticks. Joining a running server, including localhost, returns client_runtime.admin_control_unavailable on a write. Administrative `get world.time.scale` reads the owner. `time set 2030-01-01T12:00:00.123Z` and `world.time.set(1893499200123)` commit through the same operation. `set_time_local 1200` uses the active Earth observer at execution. See [ADR 0016](adr/0016-committed-simulation-time.md).

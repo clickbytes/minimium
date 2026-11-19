@@ -832,3 +832,5 @@ The sector worker also prepares the exterior fog height tile for an Earth scene.
 Publishing the selected terrain installs its matching tile. Water-only refreshes
 reuse its CPU data. Regional weather remains on the cloud worker. A cover upload
 must match the active source, climate, clock, UTC hour and world-grid address.
+
+F1, developer stdin and the terminal dispatch clock reads and writes through the same adapter. A clock read carries the session sample revision or identifies a local demo. The submitting frontend receives the correlated owner receipt after a write.

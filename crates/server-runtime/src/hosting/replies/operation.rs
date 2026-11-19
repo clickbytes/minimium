@@ -22,7 +22,10 @@ impl CommandReplyView<'_> {
                     | CommandPayloadView::Bolid { .. }
                     | CommandPayloadView::ImpactSpawn { .. },
                 ) => Stage::OwnerAccepted,
-                Some(CommandPayloadView::EntityDespawn { .. }) => Stage::OwnerCommitted,
+                Some(
+                    CommandPayloadView::ClockCommitted(_)
+                    | CommandPayloadView::EntityDespawn { .. },
+                ) => Stage::OwnerCommitted,
                 _ => Stage::Completed,
             },
         }
@@ -35,6 +38,12 @@ impl CommandReplyView<'_> {
         if let Some(CommandPayloadView::Property(report)) = &self.payload {
             receipt.revision = report.value().revision;
             receipt.freshness = Some(report.value().freshness);
+        }
+        if let Some(CommandPayloadView::Time(clock) | CommandPayloadView::ClockCommitted(clock)) =
+            &self.payload
+        {
+            receipt.revision = Some(clock.revision());
+            receipt.freshness = Some(minimium_commands::results::property::Freshness::Current);
         }
         if let Some(outcome) = self.effects {
             receipt.effects = effects(outcome);

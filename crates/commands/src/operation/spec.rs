@@ -27,6 +27,7 @@ pub enum ScalarType {
     Text,
     Bool,
     Integer,
+    InstantMs,
     U8,
     U16,
     U64,

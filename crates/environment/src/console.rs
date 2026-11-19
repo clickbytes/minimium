@@ -4,6 +4,19 @@ use minimium_commands::operation::{
 };
 use minimium_commands::operation::{ParameterSpec, ScalarType};
 
+pub mod status;
+
+pub fn live_clock_field(key: &str) -> bool {
+    matches!(
+        key,
+        "world.time.mode"
+            | "world.time.scale"
+            | "world.time.offline_policy"
+            | "world.time.utc"
+            | "world.time.revision"
+    )
+}
+
 #[derive(Clone, Copy)]
 pub enum ClockReadBinding {
     SessionSample,
@@ -23,6 +36,26 @@ pub fn clock_entry(name: &str, source: ClockReadBinding) -> Option<CatalogEntry>
         },
         persistence: PersistenceKind::WorldSnapshot,
     };
+    if name == "world.time.initial_config" {
+        let mut entry = DomainBinding {
+            owner: "ServerRuntime",
+            scope: "Server",
+            context: "resolved startup configuration",
+            source: "OwnerSnapshot",
+            persistence: PersistenceKind::ServerConfig,
+            ..binding
+        }
+        .declaration(
+            "world.time.initial_config",
+            Property,
+            &[],
+            TypeRef::domain("ConfigurationValue<Path>"),
+            None,
+            Query,
+        );
+        entry.spec.lifecycle = minimium_commands::PropertyLifecycle::CreationOnly;
+        return Some(entry);
+    }
     let mut entry = match name {
         "world.time.mode" | "time mode real_time" | "time mode time_scale" => binding.declaration(
             "world.time.mode",
@@ -92,13 +125,16 @@ pub fn clock_entry(name: &str, source: ClockReadBinding) -> Option<CatalogEntry>
         "time set" => binding.declaration(
             "world.time.set",
             Method,
-            &[ParameterSpec::required("utc", "WorldTimeMs").scalar(ScalarType::Text)],
+            &[ParameterSpec::required("utc", "WorldTimeMs").scalar(ScalarType::InstantMs)],
             TypeRef::domain("ClockMutationReceipt"),
             None,
             AuthoritativeMutation,
         ),
         _ => return None,
     };
+    if name == "set_time_local" {
+        entry.spec.context = "actor and expected active WorldContext";
+    }
     if let Some(read) = &mut entry.spec.read {
         read.permission = "SessionSample or ServerAdmin";
     }

@@ -45,20 +45,34 @@ pub(crate) fn parse(
     let parsed = match input {
         AdminInput::Legacy(line) => crate::server_command::bindings::parse(line, catalog),
         AdminInput::Typed(request) => request.encode().and_then(|_| {
-            if request.expected_context.is_some() {
-                return Err(CommandError::new(
-                    CommandErrorCode::StaleContext,
-                    Some("expected_context"),
-                    "server administration has no implicit actor binding",
-                    None::<String>,
-                ));
-            }
-            match &request.payload {
+            let command = match &request.payload {
                 AdminPayload::Text { text } => {
                     crate::server_command::bindings::parse(text, catalog)
                 }
                 payload => minimium_commands::syntax::typed::bind_operation(catalog, payload)
                     .and_then(|op| crate::server_command::bindings::from_prepared(op, catalog)),
+            }?;
+            match (command, request.actor, request.expected_context.as_ref()) {
+                (
+                    ServerCommand::TimeOfDay {
+                        minute,
+                        solar: true,
+                        ..
+                    },
+                    Some(actor),
+                    Some(context),
+                ) => Ok(ServerCommand::TimeOfDay {
+                    minute,
+                    solar: true,
+                    observer: Some((minimium_core::ids::PlayerId::new(actor), context.clone())),
+                }),
+                (command, None, None) => Ok(command),
+                _ => Err(CommandError::new(
+                    CommandErrorCode::StaleContext,
+                    Some("expected_context"),
+                    "expected an observer and world context for a solar clock request",
+                    None::<String>,
+                )),
             }
         }),
     };

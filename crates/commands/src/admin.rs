@@ -26,6 +26,12 @@ pub struct Correlation {
 pub struct AdminRequestV1 {
     pub schema_version: u16,
     pub correlation: Correlation,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "number::optional"
+    )]
+    pub actor: Option<u64>,
     pub expected_context: Option<WorldBinding>,
     pub payload: AdminPayload,
 }
@@ -103,6 +109,7 @@ impl AdminRequestV1 {
         Self {
             schema_version: 1,
             correlation,
+            actor: None,
             expected_context: None,
             payload,
         }

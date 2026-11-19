@@ -1,6 +1,9 @@
 use super::*;
 
 impl ClientSession {
+    pub fn observer(&self) -> Option<(minimium_core::ids::PlayerId, WorldContext)> {
+        Some((self.actor?, self.active_world_context()?))
+    }
     pub fn active_world_context(&self) -> Option<WorldContext> {
         self.world_context
     }

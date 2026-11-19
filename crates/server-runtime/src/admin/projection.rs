@@ -13,6 +13,8 @@ pub(super) fn payload(
         next_cursor,
     };
     let value = match view.payload.as_ref() {
+        Some(View::Time(clock)) => Some(clock.status().value()),
+        Some(View::ClockCommitted(clock)) => Some(clock_receipt(clock, command)),
         Some(View::PropertyHelp(spec)) => catalog
             .resolve(spec.key)
             .map(minimium_commands::admin::metadata::describe),
@@ -53,7 +55,7 @@ pub(super) fn payload(
             ]
             .into(),
         )),
-        Some(View::Property(r)) => return Payload::Property(r.value().clone().map(V::Text)),
+        Some(View::Property(r)) => return Payload::Property(r.typed_value()),
         other => other.and_then(super::pages::project),
     };
     value.map(Payload::Value).unwrap_or_else(|| {
@@ -63,4 +65,54 @@ pub(super) fn payload(
                 .into(),
         )
     })
+}
+
+fn clock_receipt(clock: &crate::ClockPropertySnapshot, command: &ServerCommand) -> V {
+    use minimium_environment::{
+        time::{ClockMode, OfflinePolicy},
+        TimeCommand,
+    };
+    let status = clock.status();
+    let (requested, path) = match command {
+        ServerCommand::Time(TimeCommand::Scale(rate)) => {
+            (V::decimal(i128::from(rate.get()), 6), "world.time.scale")
+        }
+        ServerCommand::Time(TimeCommand::Mode(mode)) => (
+            V::Enum(
+                match mode {
+                    ClockMode::TimeScale => "time_scale",
+                    ClockMode::RealTime => "real_time",
+                }
+                .into(),
+            ),
+            "world.time.mode",
+        ),
+        ServerCommand::Time(TimeCommand::Offline(policy)) => (
+            V::Enum(
+                match policy {
+                    OfflinePolicy::Pause => "pause",
+                    OfflinePolicy::Advance => "advance",
+                }
+                .into(),
+            ),
+            "world.time.offline_policy",
+        ),
+        ServerCommand::Time(TimeCommand::Set(instant)) => {
+            (V::InstantMs(instant.get()), "world.time.utc")
+        }
+        ServerCommand::TimeOfDay { minute, .. } => (
+            V::Enum(format!("{:02}{:02}", minute / 60, minute % 60)),
+            "world.time.utc",
+        ),
+        _ => return status.value(),
+    };
+    let V::Record(mut fields) = status.value() else {
+        unreachable!("clock status record")
+    };
+    fields.insert("requested".into(), requested);
+    fields.insert(
+        "effective".into(),
+        status.property(path).expect("clock property"),
+    );
+    V::Record(fields)
 }

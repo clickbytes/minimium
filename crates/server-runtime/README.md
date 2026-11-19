@@ -553,3 +553,5 @@ in world-space millimetres.
 ## Global simulation rate
 
 A tick awaiting water, excavation or impact durability resumes at its saved operation. Module stages see the target tick once. The owner publishes the new boundary after all operations complete. Host services continue during a pause or pending step. Inputs carry connection sequences and clock revisions so a request crossing a pause cannot execute on resume. Save capture waits for dirty water and live bodies to reach their durable projections. The runtime returns a typed save failure when the boundary cannot be published. [ADR 0016](../../docs/adr/0016-committed-simulation-time.md)
+
+ClockPropertySnapshot::status projects the shared committed boundary, revision, calendar epoch, configured rate and measured progress. Mutations return ClockCommitted after the owner applies them. Solar HHMM checks the expected actor membership and reads the current authoritative position in millimetres. Startup clock configuration is read through resolved settings.

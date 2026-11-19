@@ -43,6 +43,7 @@ pub enum CommandPayloadView<'a> {
     SaveQueued,
     Stopping,
     Time(&'a crate::ClockPropertySnapshot),
+    ClockCommitted(&'a crate::ClockPropertySnapshot),
     Property(&'a crate::commands::PropertyReport),
     PropertyHelp(&'a minimium_commands::PropertySpec),
     PropertyCommandsHelp {
@@ -125,6 +126,7 @@ impl CommandReply {
             },
             CommandPayload::SaveQueued => CommandPayloadView::SaveQueued,
             CommandPayload::Stopping => CommandPayloadView::Stopping,
+            CommandPayload::ClockCommitted(value) => CommandPayloadView::ClockCommitted(value),
             CommandPayload::Time(value) => CommandPayloadView::Time(value),
             CommandPayload::Property(value) => CommandPayloadView::Property(value),
             CommandPayload::PropertyHelp(value, _) => CommandPayloadView::PropertyHelp(value),

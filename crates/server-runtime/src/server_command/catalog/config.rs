@@ -118,14 +118,6 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
             None,
             Query,
         ),
-        "world.time.initial_config" => binding.declaration(
-            "world.time.initial_config",
-            Property,
-            &[],
-            TypeRef::domain("ConfigurationValue<Path>"),
-            None,
-            Query,
-        ),
         "world.climate.initial_scenario" => binding.declaration(
             "world.climate.initial_scenario",
             Property,

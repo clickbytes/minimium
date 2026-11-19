@@ -209,6 +209,22 @@ const COMMANDS: &[CommandSpec] = &[
         parser: parse,
     },
     CommandSpec {
+        name: "time set",
+        alias: None,
+        usage: "time set RFC3339_UTC",
+        arguments: &[Arg::new(
+            "utc",
+            ArgType::Rfc3339Utc,
+            false,
+            false,
+            None,
+            None,
+            Some("UTC"),
+            "world time",
+        )],
+        parser: parse,
+    },
+    CommandSpec {
         name: "time status",
         alias: None,
         usage: "time status",
@@ -342,6 +358,12 @@ fn parse(words: &[&str]) -> Result<ClientCommand, ParseError> {
             })
         }
         ("set_time" | "set_time_local", _) => Err(ParseError::SetTimeUsage),
+        ("time set", [utc]) => match minimium_environment::TimeCommand::parse(&["set", utc]) {
+            Ok(minimium_environment::TimeCommand::Set(instant)) => {
+                Ok(ClientCommand::SetInstant(instant))
+            }
+            _ => Err(ParseError::Usage("time set RFC3339_UTC")),
+        },
         ("time status", []) => Ok(ClientCommand::TimeStatus),
         ("spawn_random_bolid", []) => Ok(ClientCommand::SpawnRandomBolid(1)),
         ("spawn_random_meteorid", []) => Ok(ClientCommand::SpawnRandomMeteorid),

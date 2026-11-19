@@ -330,6 +330,14 @@ impl ClientApplicationCore {
         }))
     }
 
+    pub fn request_clock(
+        &mut self,
+        change: minimium_environment::clock_command::ClockWrite,
+        now: ClientTime,
+    ) -> Result<minimium_commands::admin::Correlation, ControllerError> {
+        self.accept_controller_time(now)?;
+        self.connection.request_clock(change, now)
+    }
     pub fn request_set_time(
         &mut self,
         minute: u16,
@@ -338,6 +346,13 @@ impl ClientApplicationCore {
     ) -> Result<(), ControllerError> {
         self.accept_controller_time(now)?;
         self.connection.request_set_time(minute, longitude, now)
+    }
+    pub fn request_initial_clock_config(
+        &mut self,
+        now: ClientTime,
+    ) -> Result<minimium_commands::admin::Correlation, ControllerError> {
+        self.accept_controller_time(now)?;
+        self.connection.request_initial_clock_config(now)
     }
     pub fn request_admin_help(
         &mut self,

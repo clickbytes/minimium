@@ -407,35 +407,6 @@ impl ClientApplication {
         self.core.report_transfer_host_ready(ticket, snapshot, now)
     }
 
-    pub(crate) fn request_set_time(
-        &mut self,
-        minute: u16,
-        longitude: f64,
-        now: ClientTime,
-    ) -> Result<(), minimium_client_runtime::ControllerError> {
-        self.core.request_set_time(minute, longitude, now)
-    }
-    pub(crate) fn request_time_scale(
-        &mut self,
-        value: String,
-        now: ClientTime,
-    ) -> Result<(), minimium_client_runtime::ControllerError> {
-        self.core.request_time_scale(value, now)
-    }
-    pub(crate) fn request_time_mode(
-        &mut self,
-        mode: &str,
-        now: ClientTime,
-    ) -> Result<(), minimium_client_runtime::ControllerError> {
-        self.core.request_time_mode(mode, now)
-    }
-    pub(crate) fn request_time_offline_policy(
-        &mut self,
-        policy: &str,
-        now: ClientTime,
-    ) -> Result<(), minimium_client_runtime::ControllerError> {
-        self.core.request_time_offline_policy(policy, now)
-    }
     pub(crate) fn request_random_bolid(
         &mut self,
         count: u16,

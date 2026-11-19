@@ -1,4 +1,5 @@
 //! Immutable environment state prepared by the client session for presentation.
+mod console;
 pub mod diagnostics;
 pub use diagnostics::{ClockDiagnostics, ClockSource, SkyDiagnosticsSnapshot};
 

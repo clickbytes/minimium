@@ -292,6 +292,14 @@ pub enum ServerCommand {
     SpawnRandomBolid(u16),
     SpawnRandomMeteorid,
     Time(TimeCommand),
+    TimeOfDay {
+        minute: u16,
+        solar: bool,
+        observer: Option<(
+            minimium_core::ids::PlayerId,
+            minimium_commands::results::WorldBinding,
+        )>,
+    },
     Property(ServerPropertyCommand),
     /// A validated administrative line owned by its registering server module.
     Registered {

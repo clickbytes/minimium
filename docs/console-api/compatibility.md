@@ -55,3 +55,7 @@ P008 (`ui.locale`) has a typed read and owner-confirmed set/reset. F1, developer
 Submitted reports client queue admission. OwnerAccepted covers reservations and queued work. Durable requires a storage guarantee. A disconnection after submission leaves the outcome unknown until an authoritative report arrives. For a local camera reset, a file-selected 80° is the startup value. A command-line selection of 90° over that file becomes the startup value instead. Reset clears the session override and restores that value with its original configuration source.
 
 Batch #572 adds an opt-in, authenticated administrative v1 envelope. Text-mode CLI retains its legacy protocol and shutdown verification. [Wire contract](admin-v1.md)
+
+## Shared clock operations
+
+Batch #573 migrates the live `world.time` fields, startup configuration and clock methods to typed reads and mutations. F1 and developer stdin use the active session sample, with the terminal using the same executor. An explicit local demo reports its own source. The server returns its clock snapshot for live fields and its resolved startup settings for `world.time.initial_config`. A solar mutation requires an actor and a matching world instance, content revision and membership epoch at execution. The machine-readable inventory continues to identify baseline spellings and their declaring hosts.

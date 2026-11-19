@@ -38,6 +38,18 @@ impl ConnectionController {
             .map(|_| ())
     }
 
+    pub fn request_initial_clock_config(
+        &mut self,
+        now: ClientTime,
+    ) -> Result<Correlation, ControllerError> {
+        self.accept_time(now).map_err(ControllerError::from_time)?;
+        self.submit_admin(AdminPayload::Operation {
+            operation_id: OperationId("world.time.initial_config".into()),
+            access: minimium_commands::syntax::canonical::AccessKind::Read,
+            arguments: vec![],
+            value: None,
+        })
+    }
     pub fn request_admin_help(
         &mut self,
         target: &str,
@@ -52,6 +64,13 @@ impl ConnectionController {
         })
     }
     fn submit_admin(&mut self, payload: AdminPayload) -> Result<Correlation, ControllerError> {
+        self.submit_contextual_admin(payload, false)
+    }
+    pub(super) fn submit_contextual_admin(
+        &mut self,
+        payload: AdminPayload,
+        needs_observer: bool,
+    ) -> Result<Correlation, ControllerError> {
         if !self
             .session
             .as_ref()
@@ -117,7 +136,25 @@ impl ConnectionController {
             nonce,
             request_id: id,
         };
-        let request = AdminRequestV1::new(correlation, payload);
+        let mut request = AdminRequestV1::new(correlation, payload);
+        if needs_observer {
+            let (actor, context) = self
+                .session
+                .as_ref()
+                .and_then(|s| s.observer())
+                .ok_or_else(|| {
+                    ControllerError::new(
+                        "context_required",
+                        "solar time requires an active observer",
+                    )
+                })?;
+            request.actor = Some(actor.get());
+            request.expected_context = Some(minimium_commands::results::WorldBinding {
+                instance: context.instance().get(),
+                content_revision: context.content_revision().get(),
+                membership_epoch: context.membership_epoch().get(),
+            });
+        }
         request.encode().map_err(|e| {
             ControllerError::new("client_runtime.admin_invalid_request", e.to_string())
         })?;

@@ -136,6 +136,7 @@ pub struct ClientSession {
     diagnostic_logger: Option<minimium_diagnostics::DomainLogger>,
     content: content::ContentPreparation,
     transport: Option<Box<dyn ClientTransportPort>>,
+    actor: Option<minimium_core::ids::PlayerId>,
     state: SessionState,
     world_context: Option<WorldContext>,
     server_tick: u64,
@@ -237,6 +238,7 @@ impl ClientSession {
             diagnostic_logger: None,
             content,
             transport: Some(transport),
+            actor: None,
             state: SessionState::AwaitingWelcome,
             world_context: None,
             server_tick: 0,
@@ -359,6 +361,7 @@ impl ClientSession {
         if let Some(mut transport) = self.transport.take() {
             transport.close();
         }
+        self.actor = None;
         self.state = SessionState::Disconnected;
         self.pending_ping_at = None;
         self.pending_ping_frame = None;

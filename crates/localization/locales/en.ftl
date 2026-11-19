@@ -192,7 +192,8 @@ command-help = { $name ->
     [sky_demo] sky demo on|off (local rendering demo)
     [camera_fov] camera fov [30..110] (vertical field of view in degrees; default 70)
     [sky_names] sky names true|false
-    [time_status] time status
+    [time_status] time status (session sample, age, committed tick and measured progress)
+    [time_set] time set RFC3339_UTC (owned server)
     [time_scale] time scale DECIMAL (alias timescale; global simulation on owned server; 0.1-1000000x or 0 to pause)
     [spawn_random_bolid] spawn_random_bolid (owned local server)
     [help] help

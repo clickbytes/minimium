@@ -68,6 +68,20 @@ fn lower(op: &PreparedOperation, entry: &CatalogEntry) -> Result<ServerCommand, 
     if let Some(request) = op.property_request(entry) {
         return validate_property_request(request).map_err(|err| err.at(span));
     }
+    if matches!(
+        op.path.as_str(),
+        "world.time.set_utc_hhmm" | "world.time.set_solar_hhmm"
+    ) {
+        let minute = minimium_environment::clock_command::parse_hhmm(&op.arguments[0].text)
+            .map_err(|reason| {
+                CommandError::new(Code::InvalidValue, Some("hhmm"), reason, None::<String>).at(span)
+            })?;
+        return Ok(ServerCommand::TimeOfDay {
+            minute,
+            solar: op.path == "world.time.set_solar_hhmm",
+            observer: None,
+        });
+    }
     let name = entry.command.ok_or_else(|| {
         CommandError::new(
             Code::UnsupportedContext,

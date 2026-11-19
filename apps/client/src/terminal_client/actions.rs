@@ -225,81 +225,7 @@ pub(super) fn handle(
                 }
             }
         }
-        FrontendAction::SetTime { minute, local } => {
-            let longitude = match last_snapshot.as_ref() {
-                Some(ServerMessage::Snapshot {
-                    self_position_mm, ..
-                }) if local => {
-                    let [x, _, z] = self_position_mm.0.map(|value| value as f64);
-                    (x.hypot(z) > 0.0).then(|| z.atan2(x))
-                }
-                _ if !local => Some(0.0),
-                _ => None,
-            };
-            let result = longitude
-                .ok_or_else(|| "player longitude is unavailable".to_owned())
-                .and_then(|longitude| {
-                    application
-                        .request_set_time(minute, longitude, crate::host_time::sample())
-                        .map_err(|error| error.to_string())
-                });
-            match result {
-                Ok(()) => println!(
-                    "{}",
-                    localizer.format(
-                        options.locale,
-                        &minimium_localization::UiMessage::Notice(
-                            minimium_localization::UiNotice::TimeRequestSent
-                        )
-                    )
-                ),
-                Err(error) => {
-                    application.record_diagnostic_failure("client.time_request_failed", &error);
-                    println!(
-                        "{}",
-                        localizer.format(
-                            options.locale,
-                            &minimium_localization::UiMessage::Notice(
-                                minimium_localization::UiNotice::TimeRequestFailed
-                            )
-                        )
-                    );
-                }
-            }
-        }
-        FrontendAction::TimeStatus => {
-            let unavailable = crate::environment::EnvironmentFrameInput::unavailable();
-            let status = application
-                .session()
-                .map(|session| session.environment_frame().time_status_line())
-                .unwrap_or_else(|| unavailable.time_status_line());
-            println!("{status}");
-        }
-        FrontendAction::TimeScale(value) => match application
-            .request_time_scale(value, crate::host_time::sample())
-        {
-            Ok(()) => println!(
-                "{}",
-                localizer.format(
-                    options.locale,
-                    &minimium_localization::UiMessage::Notice(
-                        minimium_localization::UiNotice::TimeScaleRequestSent
-                    )
-                )
-            ),
-            Err(error) => {
-                application.record_diagnostic_failure("client.time_scale_request_failed", &error);
-                println!(
-                    "{}",
-                    localizer.format(
-                        options.locale,
-                        &minimium_localization::UiMessage::Notice(
-                            minimium_localization::UiNotice::TimeScaleRequestFailed
-                        )
-                    )
-                );
-            }
-        },
+        FrontendAction::Clock(_) => unreachable!("clock actions use the shared time adapter"),
         FrontendAction::SpawnRandomBolid(count) => {
             match application.request_random_bolid(count, crate::host_time::sample()) {
                 Ok(()) => println!(
@@ -318,57 +244,6 @@ pub(super) fn handle(
             match application.request_random_meteorid(crate::host_time::sample()) {
                 Ok(()) => println!("Meteorite request sent"),
                 Err(error) => println!("spawn_random_meteorid: {error}"),
-            }
-        }
-        FrontendAction::TimeMode(mode) => match application
-            .request_time_mode(&mode, crate::host_time::sample())
-        {
-            Ok(()) => println!(
-                "{}",
-                localizer.format(
-                    options.locale,
-                    &minimium_localization::UiMessage::Notice(
-                        minimium_localization::UiNotice::TimeModeRequestSent
-                    )
-                )
-            ),
-            Err(error) => {
-                application.record_diagnostic_failure("client.time_mode_request_failed", &error);
-                println!(
-                    "{}",
-                    localizer.format(
-                        options.locale,
-                        &minimium_localization::UiMessage::Notice(
-                            minimium_localization::UiNotice::TimeModeRequestFailed
-                        )
-                    )
-                );
-            }
-        },
-        FrontendAction::TimeOfflinePolicy(policy) => {
-            match application.request_time_offline_policy(&policy, crate::host_time::sample()) {
-                Ok(()) => println!(
-                    "{}",
-                    localizer.format(
-                        options.locale,
-                        &minimium_localization::UiMessage::Notice(
-                            minimium_localization::UiNotice::TimeOfflinePolicyRequestSent
-                        )
-                    )
-                ),
-                Err(error) => {
-                    application
-                        .record_diagnostic_failure("client.time_policy_request_failed", &error);
-                    println!(
-                        "{}",
-                        localizer.format(
-                            options.locale,
-                            &minimium_localization::UiMessage::Notice(
-                                minimium_localization::UiNotice::TimeOfflinePolicyRequestFailed
-                            )
-                        )
-                    );
-                }
             }
         }
         FrontendAction::Presentation(operation) => {

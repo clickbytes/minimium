@@ -133,53 +133,7 @@ pub(super) fn execute(
                 }
             }
         }
-        FrontendAction::SetTime { minute, local } => {
-            let [x, _, z] = renderer.application.core_view().player_position_m;
-            let result = if local && (!renderer.is_earth_world() || x.hypot(z) < 1.0e-6) {
-                Err(minimium_client_runtime::ControllerError::new(
-                    "client.local_time_unavailable",
-                    "local solar time requires an Earth observer away from the poles",
-                ))
-            } else {
-                renderer.application.request_set_time(
-                    minute,
-                    if local { z.atan2(x) } else { 0.0 },
-                    crate::host_time::sample(),
-                )
-            };
-            match result {
-                Ok(()) => output.push_ui_message(minimium_localization::UiMessage::Notice(
-                    minimium_localization::UiNotice::TimeRequestSent,
-                )),
-                Err(error) => {
-                    renderer
-                        .application
-                        .record_diagnostic_failure("client.time_request_failed", &error);
-                    output.push_ui_error_message(minimium_localization::UiMessage::Notice(
-                        minimium_localization::UiNotice::TimeRequestFailed,
-                    ));
-                }
-            }
-        }
-        FrontendAction::TimeStatus => {
-            output.push_line(renderer.environment_frame.time_status_line())
-        }
-        FrontendAction::TimeScale(value) => match renderer
-            .application
-            .request_time_scale(value, crate::host_time::sample())
-        {
-            Ok(()) => output.push_ui_message(minimium_localization::UiMessage::Notice(
-                minimium_localization::UiNotice::TimeScaleRequestSent,
-            )),
-            Err(error) => {
-                renderer
-                    .application
-                    .record_diagnostic_failure("client.time_scale_request_failed", &error);
-                output.push_ui_error_message(minimium_localization::UiMessage::Notice(
-                    minimium_localization::UiNotice::TimeScaleRequestFailed,
-                ));
-            }
-        },
+        FrontendAction::Clock(_) => unreachable!("clock actions use the shared time adapter"),
         FrontendAction::SpawnRandomBolid(count) => {
             if let Some(unavailable) = super::presentation::unavailable_for(
                 renderer,
@@ -211,40 +165,6 @@ pub(super) fn execute(
                 Err(error) => format!("spawn_random_meteorid: {error}"),
             };
             output.push_line(text);
-        }
-        FrontendAction::TimeMode(mode) => match renderer
-            .application
-            .request_time_mode(&mode, crate::host_time::sample())
-        {
-            Ok(()) => output.push_ui_message(minimium_localization::UiMessage::Notice(
-                minimium_localization::UiNotice::TimeModeRequestSent,
-            )),
-            Err(error) => {
-                renderer
-                    .application
-                    .record_diagnostic_failure("client.time_mode_request_failed", &error);
-                output.push_ui_error_message(minimium_localization::UiMessage::Notice(
-                    minimium_localization::UiNotice::TimeModeRequestFailed,
-                ));
-            }
-        },
-        FrontendAction::TimeOfflinePolicy(policy) => {
-            match renderer
-                .application
-                .request_time_offline_policy(&policy, crate::host_time::sample())
-            {
-                Ok(()) => output.push_ui_message(minimium_localization::UiMessage::Notice(
-                    minimium_localization::UiNotice::TimeOfflinePolicyRequestSent,
-                )),
-                Err(error) => {
-                    renderer
-                        .application
-                        .record_diagnostic_failure("client.time_policy_request_failed", &error);
-                    output.push_ui_error_message(minimium_localization::UiMessage::Notice(
-                        minimium_localization::UiNotice::TimeOfflinePolicyRequestFailed,
-                    ));
-                }
-            }
         }
         FrontendAction::Presentation(operation) => {
             let result = super::presentation::execute(renderer, operation);

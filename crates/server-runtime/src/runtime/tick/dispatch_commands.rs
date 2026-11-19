@@ -22,7 +22,11 @@ impl ServerRuntime {
             let failed = self.excavation.failed() || self.impacts.failed();
             let boundary_command = matches!(
                 command,
-                Cmd::Time(_) | Cmd::Save | Cmd::SpawnRandomMeteorid | Cmd::SpawnRandomBolid(_)
+                Cmd::Time(_)
+                    | Cmd::TimeOfDay { .. }
+                    | Cmd::Save
+                    | Cmd::SpawnRandomMeteorid
+                    | Cmd::SpawnRandomBolid(_)
             ) && !matches!(
                 command,
                 Cmd::Time(minimium_environment::TimeCommand::Status)

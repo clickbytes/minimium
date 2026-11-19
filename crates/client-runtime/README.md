@@ -336,3 +336,5 @@ bound to those same identities. `ResolvedWorldContent::matches` rejects absent o
 mismatched generated-planet policy before it can become active or pending;
 `terrain_inputs_for_context` forwards the policy to terrain, collision and
 render workers. This runtime binding adds no protocol, save or manifest field.
+
+EnvironmentFrameInput exposes the committed session sample for clock operations and labels a local preview LocalDemo. ConnectionController::request_clock sends a correlated typed mutation only to the owned administrative endpoint of a connected session. A solar request captures the player from Welcome and the active WorldContext. The server resolves the position when the request executes.

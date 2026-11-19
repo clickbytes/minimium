@@ -119,10 +119,20 @@ pub(crate) enum EntityKind {
 }
 #[derive(Clone, Debug)]
 pub struct PropertyReport {
+    pub(crate) clock_value: Option<minimium_commands::operation::CommandValue>,
     pub(crate) key: String,
     pub(crate) value: minimium_commands::PropertyValue<String>,
 }
 impl PropertyReport {
+    pub fn typed_value(
+        &self,
+    ) -> minimium_commands::PropertyValue<minimium_commands::operation::CommandValue> {
+        self.value.clone().map(|text| {
+            self.clock_value
+                .clone()
+                .unwrap_or(minimium_commands::operation::CommandValue::Text(text))
+        })
+    }
     pub fn key(&self) -> &str {
         &self.key
     }

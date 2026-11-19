@@ -25,16 +25,8 @@ fn decimal_parts(text: &str) -> Option<(&str, &str)> {
 
 fn decimal(text: &str) -> Option<Value> {
     let (whole, frac) = decimal_parts(text)?;
-    let mut coefficient = format!("{whole}{frac}").parse::<i128>().ok()?;
-    let mut fractional_digits = u8::try_from(frac.len()).ok()?;
-    while fractional_digits > 0 && coefficient % 10 == 0 {
-        coefficient /= 10;
-        fractional_digits -= 1;
-    }
-    Some(Value::Decimal {
-        coefficient,
-        fractional_digits,
-    })
+    let coefficient = format!("{whole}{frac}").parse::<i128>().ok()?;
+    Some(Value::decimal(coefficient, u8::try_from(frac.len()).ok()?))
 }
 
 pub(super) fn bind_value(
@@ -60,6 +52,7 @@ pub(super) fn bind_value(
             FiniteF32 | FiniteF64 | Decimal => decimal_parts(t).is_some(),
             AutoOrFiniteF32 => t == "auto" || decimal_parts(t).is_some(),
             OptionalU64 => t == "none" || integer_digits(t),
+            InstantMs => quoted || integer_digits(t.strip_prefix('-').unwrap_or(t)),
             Text | Bool => true,
             Token => {
                 quoted
@@ -79,6 +72,11 @@ pub(super) fn bind_value(
             }
             Value::Text(t.into())
         }
+        InstantMs => match t.parse::<i64>() {
+            Ok(ms) => Value::InstantMs(ms),
+            Err(_) if quoted || legacy => Value::Text(t.into()),
+            Err(_) => return None,
+        },
         Integer => Value::I64(t.parse().ok()?),
         NonzeroU128 | NonzeroU64 => {
             let id = integer(t)?;

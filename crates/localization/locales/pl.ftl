@@ -194,7 +194,8 @@ command-help = { $name ->
     [sky_demo] sky demo on|off (lokalny pokaz renderowania)
     [camera_fov] camera fov [30..110] (pionowe pole widzenia w stopniach; domyślnie 70)
     [sky_names] sky names true|false
-    [time_status] time status
+    [time_status] time status (próbka sesji, wiek, zatwierdzony krok i zmierzone tempo)
+    [time_set] time set RFC3339_UTC (własny serwer)
     [time_scale] time scale DECIMAL (alias timescale; globalne tempo gry na lokalnym serwerze; 0.1-1000000x lub 0 aby wstrzymać)
     [spawn_random_bolid] spawn_random_bolid (lokalny serwer hosta)
     [help] help

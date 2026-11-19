@@ -109,3 +109,5 @@ vocabulary here; hosts gate meteor exposure with the existing observer/UTC/terra
 outputs, and the future tracked-object rendering adapter adds no domain state.
 
 `SimulationBoundary` binds a validated tick to a calendar epoch. Multiplying its tick by 50 yields elapsed game milliseconds. Calendar changes preserve that elapsed duration. `CloudSnapshot` carries a half-open population interval. The roster includes clouds whose lifetimes overlap the interval. Age controls their visibility at the frame UTC. The desktop host intersects that interval with staggered morph windows and retains surviving regional clouds during local fallback.
+
+The console status projection reads one ClockSample. MeasuredRatePpm represents observed progress independently of the validated configuration range. ClockWrite encodes field writes and UTC or solar HHMM methods. The CPU solar validator uses finite Earth-fixed coordinates in metres and rejects observers within one micrometre of the polar axis.

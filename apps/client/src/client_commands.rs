@@ -28,6 +28,9 @@ pub(crate) mod output;
 mod presentation;
 mod properties;
 mod text;
+pub(crate) mod time_adapter;
+use minimium_environment::clock_command::ClockWrite;
+use time_adapter::ClockAction;
 mod weather;
 
 pub(crate) use gameplay::nearest_portal_entity;
@@ -87,6 +90,8 @@ pub(crate) enum ClientCommand {
     SkyDemo(bool),
     Fov(Option<f32>),
     ShowCelestialNames(bool),
+    InitialClockConfig,
+    SetInstant(minimium_environment::time::WorldTimeMs),
     TimeStatus,
     TimeScale(String),
     SpawnRandomBolid(u16),
@@ -240,13 +245,10 @@ pub(crate) enum FrontendAction {
     Quit,
     Property(properties::ClientPropertyCommand),
     ConfigSave(std::path::PathBuf),
-    TimeStatus,
-    TimeScale(String),
+    Clock(ClockAction),
     SpawnRandomBolid(u16),
     SpawnRandomMeteorid,
-    TimeMode(String),
-    TimeOfflinePolicy(String),
-    SetTime { minute: u16, local: bool },
+
     Presentation(PresentationOperation),
 }
 
@@ -366,31 +368,8 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
             )))
         }
         ClientCommand::Property(command) => {
-            if let ClientPropertyCommand::Set(value) = &command {
-                match value {
-                    ClientPropertyValue::WorldTimeMode(mode) => {
-                        return CommandResult::Action(FrontendAction::TimeMode(
-                            match mode {
-                                minimium_environment::time::ClockMode::RealTime => "real_time",
-                                minimium_environment::time::ClockMode::TimeScale => "time_scale",
-                            }
-                            .to_owned(),
-                        ))
-                    }
-                    ClientPropertyValue::WorldTimeScale(value) => {
-                        return CommandResult::Action(FrontendAction::TimeScale(value.clone()))
-                    }
-                    ClientPropertyValue::WorldTimeOfflinePolicy(policy) => {
-                        return CommandResult::Action(FrontendAction::TimeOfflinePolicy(
-                            match policy {
-                                minimium_environment::time::OfflinePolicy::Pause => "pause",
-                                minimium_environment::time::OfflinePolicy::Advance => "advance",
-                            }
-                            .to_owned(),
-                        ))
-                    }
-                    _ => {}
-                }
+            if let Some(clock) = ClockAction::from_property(&command) {
+                return CommandResult::Action(FrontendAction::Clock(clock));
             }
             if let Some(result) = movement::handle_property(command.clone(), context) {
                 return result;
@@ -403,11 +382,26 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
             )))
         }
         ClientCommand::SetTime { minute, local } => {
-            return CommandResult::Action(FrontendAction::SetTime { minute, local })
+            return CommandResult::Action(FrontendAction::Clock(ClockAction::Write(
+                ClockWrite::HourMinute {
+                    minute,
+                    solar: local,
+                },
+            )))
         }
-        ClientCommand::TimeStatus => return CommandResult::Action(FrontendAction::TimeStatus),
+        ClientCommand::SetInstant(utc) => {
+            return CommandResult::Action(FrontendAction::Clock(ClockAction::Write(
+                ClockWrite::Set(utc),
+            )))
+        }
+        ClientCommand::InitialClockConfig => {
+            return CommandResult::Action(FrontendAction::Clock(ClockAction::InitialConfig))
+        }
+        ClientCommand::TimeStatus => {
+            return CommandResult::Action(FrontendAction::Clock(ClockAction::Status))
+        }
         ClientCommand::TimeScale(value) => {
-            return CommandResult::Action(FrontendAction::TimeScale(value))
+            return CommandResult::Action(FrontendAction::Clock(ClockAction::Scale(value)))
         }
         ClientCommand::SpawnRandomBolid(count) => {
             return CommandResult::Action(FrontendAction::SpawnRandomBolid(count))

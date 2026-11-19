@@ -58,6 +58,9 @@ fn lower(op: &PreparedOperation, entry: &CatalogEntry) -> Result<ClientCommand, 
         )
         .at(span)
     };
+    if op.path == "world.time.initial_config" {
+        return Ok(ClientCommand::InitialClockConfig);
+    }
     if let Some(request) = op.property_request(entry) {
         return super::properties::parse_request(request)
             .map_err(|e| e.at(span))?

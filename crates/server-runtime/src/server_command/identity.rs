@@ -15,6 +15,8 @@ impl ServerCommand {
             Self::Stop => "stop",
             Self::SpawnRandomBolid(_) => "spawn_random_bolid",
             Self::SpawnRandomMeteorid => "spawn_random_meteorid",
+            Self::TimeOfDay { solar: true, .. } => "world.time.set_solar_hhmm",
+            Self::TimeOfDay { .. } => "world.time.set_utc_hhmm",
             Self::Time(command) => match command {
                 TimeCommand::Status => "time status",
                 TimeCommand::Mode(_) => "world.time.mode",
@@ -43,10 +45,18 @@ impl ServerCommand {
                     })
             }
         };
-        catalog
+        let mut identity = catalog
             .resolve(name)
             .map(|entry| context(request_id, entry.spec.id.clone(), entry.spec.scope))
-            .unwrap_or_else(|| context(request_id, OperationId(name.into()), "Server"))
+            .unwrap_or_else(|| context(request_id, OperationId(name.into()), "Server"));
+        if let Self::TimeOfDay {
+            observer: Some((_, context)),
+            ..
+        } = self
+        {
+            identity.context = Some(context.clone());
+        }
+        identity
     }
 }
 

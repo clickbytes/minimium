@@ -322,9 +322,9 @@ fn inspect_reply(reply: CommandReplyView<'_>) {
             println!("save queued; status reports pending/completed state");
         }
         CommandPayloadView::Stopping => println!("stopping"),
-        CommandPayloadView::Time(clock) => {
+        CommandPayloadView::Time(clock) | CommandPayloadView::ClockCommitted(clock) => {
             println!(
-                "clock id={} nonce={:?} mode={} rate={} offline={} utc={} revision={} fault={} correction={:?} dirty={:?}",
+                "clock id={} nonce={:?} mode={} rate={} offline={} utc={} revision={} fault={} correction={:?} dirty={:?} tick={} epoch={} achieved_ppm={}",
                 clock.clock_id(),
                 clock.session_nonce(),
                 clock.mode(),
@@ -334,7 +334,7 @@ fn inspect_reply(reply: CommandReplyView<'_>) {
                 clock.revision(),
                 clock.fault(),
                 clock.correction_ms(),
-                clock.dirty_revision()
+                clock.dirty_revision(), clock.tick(), clock.calendar_epoch(), clock.achieved_ppm()
             );
         }
         CommandPayloadView::Property(report) => {

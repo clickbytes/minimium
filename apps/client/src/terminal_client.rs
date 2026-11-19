@@ -252,6 +252,21 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                         }
                         return (false, dispatch::native(result));
                     }
+                    if let crate::client_commands::FrontendAction::Clock(clock) = &action {
+                        let frame = application
+                            .session()
+                            .map(|s| s.environment_frame())
+                            .unwrap_or_else(crate::environment::EnvironmentFrameInput::unavailable);
+                        return (
+                            false,
+                            application.clock_operation(
+                                identity,
+                                clock,
+                                frame,
+                                CommandSource::Terminal,
+                            ),
+                        );
+                    }
                     if let Some(result) =
                         application.admin_help(&identity, &action, CommandSource::Terminal)
                     {

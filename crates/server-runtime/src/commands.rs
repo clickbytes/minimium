@@ -188,6 +188,7 @@ pub(crate) enum CommandPayload {
     SaveQueued,
     Stopping,
     Time(crate::environment::ClockPropertySnapshot),
+    ClockCommitted(crate::environment::ClockPropertySnapshot),
     Property(PropertyReport),
     PropertyHelp(minimium_commands::PropertySpec, String),
     PropertyCommandsHelp {
@@ -466,6 +467,18 @@ pub fn execute(
             }
         }
         ServerCommand::Stop => CommandReply::stopping(CommandPayload::Stopping),
+        ServerCommand::TimeOfDay {
+            minute,
+            solar,
+            observer,
+        } => time::set_day(
+            *minute,
+            *solar,
+            observer.as_ref(),
+            worlds,
+            environment_clock,
+            monotonic_ms,
+        ),
         ServerCommand::Time(command) => time::execute(*command, environment_clock, monotonic_ms),
         ServerCommand::Property(_) => CommandReply::error(
             "server.property.wrong_lane",

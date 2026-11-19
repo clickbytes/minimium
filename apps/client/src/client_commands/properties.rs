@@ -84,74 +84,13 @@ pub(crate) fn format_time_value(
     key: ClientPropertyKey,
     frame: crate::environment::EnvironmentFrameInput,
 ) -> Option<String> {
-    use minimium_commands::{PropertySource, PropertyValue};
-    let requested = match key {
-        ClientPropertyKey::WorldTimeMode => frame
-            .clock_diagnostics
-            .and_then(|clock| clock.mode)
-            .map(|mode| match mode {
-                ClockMode::RealTime => "real_time".to_owned(),
-                ClockMode::TimeScale => "time_scale".to_owned(),
-            }),
-        ClientPropertyKey::WorldTimeScale => frame
-            .rate_ppm
-            .map(|ppm| format!("{:.6}", ppm as f64 / 1_000_000.0)),
-        ClientPropertyKey::WorldTimeOfflinePolicy => frame
-            .clock_diagnostics
-            .and_then(|clock| clock.offline_policy)
-            .map(|policy| match policy {
-                OfflinePolicy::Pause => "pause".to_owned(),
-                OfflinePolicy::Advance => "advance".to_owned(),
-            }),
-        ClientPropertyKey::WorldTimeUtc => frame
-            .render_world_utc_ms
-            .map(minimium_client_runtime::environment::format_utc),
-        ClientPropertyKey::WorldTimeRevision => frame.revision.map(|revision| revision.to_string()),
-        _ => return None,
-    };
-    let source = if requested.is_none() {
-        PropertySource::Unavailable
-    } else if frame.clock_diagnostics.is_some_and(|clock| {
-        clock.source == minimium_client_runtime::environment::ClockSource::Demo
-    }) {
-        PropertySource::Runtime
-    } else {
-        PropertySource::Replica
-    };
-    use minimium_commands::results::property::{Freshness, ReadSource};
-    let metadata = PropertyValue {
-        lifecycle: property_spec(key.key()).expect("clock property").lifecycle,
-        startup: None,
-        session_override: None,
-        revision: frame.revision,
-        freshness: if requested.is_some() {
-            Freshness::Sampled
-        } else {
-            Freshness::Unknown
-        },
-        read_source: match source {
-            PropertySource::Unavailable => ReadSource::Unavailable,
-            PropertySource::Replica => ReadSource::Replica,
-            _ => ReadSource::LocalOwner,
-        },
-        requested: requested.clone(),
-        effective: requested,
-        default: None,
-        source,
-        difference_reason: Some(if source == PropertySource::Unavailable {
-            "clock replica unavailable".to_owned()
-        } else {
-            "client replica; administrative state may differ until synchronized".to_owned()
-        }),
-    };
-    Some(format!(
-        "{} requested={} effective={} default=n/a source={} reason={}",
-        key.key(),
-        metadata.requested.as_deref().unwrap_or("unavailable"),
-        metadata.effective.as_deref().unwrap_or("unavailable"),
-        metadata.source.as_str(),
-        metadata.difference_reason.as_deref().unwrap_or("none"),
-    ))
+    super::time_adapter::property(key, frame).map(|p| {
+        format!(
+            "{} {}",
+            key.key(),
+            p.format_with(minimium_commands::operation::CommandValue::encode)
+        )
+    })
 }
 
 pub(crate) fn parse_setting_value(

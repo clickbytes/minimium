@@ -119,6 +119,7 @@ impl ServerRuntime {
     }
 
     pub(super) fn property_report(&self, key: &str) -> commands::PropertyReportOutcome {
+        let mut clock_value = None;
         let value = if key == "server.sky.bolid_interval" {
             let effective = self
                 .bolid_interval
@@ -208,7 +209,7 @@ impl ServerRuntime {
                     request_source.as_str()
                 )),
             }
-        } else if key.starts_with("world.time.") {
+        } else if minimium_environment::console::live_clock_field(key) {
             let clock = match self.monotonic_ms(self.now) {
                 Ok(clock) => clock,
                 Err(error) => {
@@ -227,21 +228,15 @@ impl ServerRuntime {
                     }
                 }
             };
-            let current = match key {
-                "world.time.mode" => snapshot.mode.to_owned(),
-                "world.time.scale" => crate::command_output::format_clock_scale(snapshot.rate_ppm),
-                "world.time.offline_policy" => snapshot.offline_policy.to_owned(),
-                "world.time.utc" => snapshot.utc_ms.to_string(),
-                "world.time.revision" => snapshot.revision.to_string(),
-                "world.time.initial_config" => {
-                    return commands::PropertyReportOutcome::Unavailable {
-                        key: key.to_owned(),
-                        reason: "startup clock configuration is unavailable from the running clock"
-                            .into(),
-                    }
-                }
-                _ => return commands::PropertyReportOutcome::Unknown(key.to_owned()),
+            let Some(typed) = snapshot.status().property(key) else {
+                return commands::PropertyReportOutcome::Unknown(key.to_owned());
             };
+            let current = if key == "world.time.scale" {
+                crate::command_output::format_clock_scale(snapshot.rate_ppm())
+            } else {
+                typed.encode()
+            };
+            clock_value = Some(typed);
             PropertyValue {
                 lifecycle: self
                     .operation_catalog
@@ -333,6 +328,7 @@ impl ServerRuntime {
             }
         };
         commands::PropertyReportOutcome::Value(commands::PropertyReport {
+            clock_value,
             key: key.to_owned(),
             value,
         })

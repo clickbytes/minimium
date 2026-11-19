@@ -15,7 +15,12 @@ impl TimeCommand {
             ["status"] => Ok(Self::Status),
             ["mode", "real_time"] => Ok(Self::Mode(ClockMode::RealTime)),
             ["mode", "time_scale"] => Ok(Self::Mode(ClockMode::TimeScale)),
-            ["set", value] => parse_world_time_utc(value).map(Self::Set),
+            ["set", value] => match value.parse::<i64>() {
+                Ok(ms) => WorldTimeMs::new(ms)
+                    .map(Self::Set)
+                    .map_err(|_| "UTC milliseconds outside supported range".into()),
+                Err(_) => parse_world_time_utc(value).map(Self::Set),
+            },
             ["scale", value] => parse_scale_ppm(value).map(Self::Scale),
             ["offline", "pause"] => Ok(Self::Offline(OfflinePolicy::Pause)),
             ["offline", "advance"] => Ok(Self::Offline(OfflinePolicy::Advance)),

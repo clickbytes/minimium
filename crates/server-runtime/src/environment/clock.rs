@@ -9,6 +9,7 @@ use minimium_environment::time::{
 
 #[derive(Clone, Debug)]
 pub struct ClockPropertySnapshot {
+    sample: ClockSample,
     pub(crate) tick: u64,
     pub(crate) achieved_ppm: u64,
     pub(crate) limit: &'static str,
@@ -24,6 +25,18 @@ pub struct ClockPropertySnapshot {
     pub(crate) dirty_revision: Option<u64>,
 }
 impl ClockPropertySnapshot {
+    pub fn calendar_epoch(&self) -> u64 {
+        self.sample.boundary().calendar_epoch().get()
+    }
+    pub fn status(&self) -> minimium_environment::console::status::TimeStatus {
+        use minimium_environment::console::status::{ClockSource, TimeStatus};
+        TimeStatus {
+            sample: self.sample,
+            source: ClockSource::OwnerSnapshot,
+            quality: "Current",
+            age_ms: Some(0),
+        }
+    }
     pub fn tick(&self) -> u64 {
         self.tick
     }
@@ -287,6 +300,7 @@ impl EnvironmentClock {
     ) -> Result<ClockPropertySnapshot, EnvironmentClockError> {
         let sample = self.sample(now)?;
         Ok(ClockPropertySnapshot {
+            sample,
             clock_id: sample.clock_id().get(),
             session_nonce: *self.session_nonce.as_bytes(),
             mode: mode_name(sample.mode()),

@@ -53,6 +53,20 @@ pub(super) fn execute_input(
             }
             return (false, dispatch::native(result));
         }
+        if let client_commands::FrontendAction::Clock(clock) = &action {
+            let frame = renderer
+                .application
+                .session()
+                .map_or(renderer.environment_frame, |session| {
+                    session.environment_frame()
+                });
+            return (
+                false,
+                renderer
+                    .application
+                    .clock_operation(identity, clock, frame, source),
+            );
+        }
         if let Some(result) = renderer.application.admin_help(&identity, &action, source) {
             return (false, result);
         }

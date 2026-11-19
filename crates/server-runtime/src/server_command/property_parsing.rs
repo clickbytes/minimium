@@ -34,7 +34,7 @@ pub(super) fn validate_property_request(
         }
         PropertyRequest::Set { key, value } => {
             let spec = require_property(&key, usage)?;
-            if key.starts_with("world.time.") {
+            if minimium_environment::console::live_clock_field(&key) {
                 let command = match key.as_str() {
                     "world.time.mode" => TimeCommand::parse(&["mode", value.as_str()]),
                     "world.time.scale" => TimeCommand::parse(&["scale", value.as_str()]),

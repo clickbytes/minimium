@@ -177,9 +177,11 @@ pub(super) fn dispatch_message(
             manifest,
             clock_sample,
             environment,
+            id,
             ..
         } => handle_welcome(
             session,
+            *id,
             *map_fingerprint,
             *context,
             manifest,
@@ -265,6 +267,7 @@ pub(super) fn dispatch_message(
 
 fn handle_welcome(
     session: &mut ClientSession,
+    actor: minimium_core::ids::PlayerId,
     map_fingerprint: u64,
     context: WorldContext,
     manifest: &minimium_world::world::WorldManifest,
@@ -301,6 +304,7 @@ fn handle_welcome(
         session.disconnect(reason, events);
         return DispatchResult::Stop;
     }
+    session.actor = Some(actor);
     session.world_context = Some(context);
     session.clear_replicas();
     session.next_input_seq = 1;

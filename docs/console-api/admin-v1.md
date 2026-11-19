@@ -23,3 +23,5 @@ Wide integers, request IDs, nonces and exact decimal coefficients use JSON strin
 The client allows one pending administrative worker. Cancellation before sending is definitive. A failure after a complete request line was sent leaves the outcome unknown unless a correlated reply arrives. The client never resends an operation automatically. The game protocol is version 22 and the save format is version 12.
 
 `minimiumctl --format=json help world.time.scale` writes a machine reply to stdout. Plain `minimiumctl help world.time.scale` uses the legacy display mode. A failed operation exits with status 1 in both modes. With an owned local server, F1, developer stdin and terminal help for a shared world property receive the server's catalog metadata. Offline help uses the local catalog.
+
+A solar HHMM invocation includes the actor as a decimal string and expected_context with decimal-string instance, content_revision and membership_epoch. The owner rejects a missing observer with context_required and changed membership with stale_context. A clock write returns owner_committed with revision, tick, calendar epoch, requested and effective values and measured progress.

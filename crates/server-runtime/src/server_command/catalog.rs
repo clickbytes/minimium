@@ -70,6 +70,13 @@ pub(crate) fn build(
             def.arguments,
         )?;
     }
+    for (name, usage) in [
+        ("set_time", "set_time HHMM"),
+        ("set_time_local", "set_time_local HHMM"),
+    ] {
+        package.command(resolve(name, false)?, name, [], usage, &[])?;
+    }
+    package.alias("world.time.status", "time", "time", &[])?;
     package.operation(minimium_commands::syntax::bind::explain_entry())?;
     package.finish()
 }

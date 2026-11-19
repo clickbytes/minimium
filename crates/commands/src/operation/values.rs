@@ -46,6 +46,16 @@ pub enum CommandValue {
 }
 
 impl CommandValue {
+    pub fn decimal(mut coefficient: i128, mut fractional_digits: u8) -> Self {
+        while fractional_digits > 0 && coefficient % 10 == 0 {
+            coefficient /= 10;
+            fractional_digits -= 1;
+        }
+        Self::Decimal {
+            coefficient,
+            fractional_digits,
+        }
+    }
     /// Display scalars in their public encoding; compound values use the stable RON codec.
     pub fn encode(&self) -> String {
         match self {
