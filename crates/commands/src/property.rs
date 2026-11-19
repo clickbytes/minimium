@@ -17,7 +17,7 @@ pub enum PropertyPermission {
     ServerAdmin,
 }
 
-#[derive(serde::Serialize, Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PropertyLifecycle {
     Live,
     RestartRequired,
@@ -224,7 +224,7 @@ fn valid_property_key(key: &str) -> bool {
     }) && key.contains('.')
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PropertySource {
     Default,
     File,
@@ -251,8 +251,14 @@ impl PropertySource {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
 pub struct PropertyValue<T> {
+    pub lifecycle: PropertyLifecycle,
+    pub startup: Option<crate::results::property::StartupValue<T>>,
+    pub session_override: Option<T>,
+    pub read_source: crate::results::property::ReadSource,
+    pub revision: Option<u64>,
+    pub freshness: crate::results::property::Freshness,
     pub requested: Option<T>,
     pub effective: Option<T>,
     pub default: Option<T>,

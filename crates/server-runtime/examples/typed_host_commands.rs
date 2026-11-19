@@ -140,7 +140,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         time.monotonic += Duration::from_millis(50);
         let outcome = runtime.step(time)?;
         for result in outcome.commands {
-            let reply = result.reply.view();
+            let operation = result.operation_result();
+            println!(
+                "{} request={} stage={} stop={}",
+                operation.identity.operation.0,
+                operation.identity.request_id,
+                operation.receipt.stage.label(),
+                operation.receipt.should_stop
+            );
+            let reply = match operation.outcome {
+                Ok(reply) => reply,
+                Err(error) => {
+                    println!("{} {}", error.code, error.reason);
+                    continue;
+                }
+            };
             match reply.payload {
                 Some(CommandPayloadView::SaveQueued) => {
                     println!("submission {} queued a save", result.id.get());

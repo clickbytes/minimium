@@ -10,7 +10,7 @@ use minimium_client_runtime::ConnectionController;
 use minimium_commands::{CommandError, CommandErrorCode};
 
 pub(super) struct TextProperties {
-    settings: SettingsStore,
+    pub(super) settings: SettingsStore,
 }
 
 impl TextProperties {
@@ -90,11 +90,6 @@ impl TextProperties {
                 }
             }
             ClientPropertyCommand::Set(value) => match value {
-                crate::client_commands::ClientPropertyValue::Locale(locale) => {
-                    options.locale = locale;
-                    self.settings.set(Value::Locale(locale));
-                    Ok(self.get(Key::Locale, options))
-                }
                 crate::client_commands::ClientPropertyValue::InputBindings(bindings) => {
                     options.input_bindings = bindings.clone();
                     self.settings.set(Value::InputBindings(bindings));
@@ -103,11 +98,10 @@ impl TextProperties {
                 other => Err(unsupported_context(other.key().key())),
             },
             ClientPropertyCommand::Reset(key) => {
-                if !matches!(key, Key::Locale | Key::InputBindings) {
+                if key != Key::InputBindings {
                     return Err(unsupported_context(key.key()));
                 }
                 match self.settings.reset(key.key()) {
-                    Some(Value::Locale(locale)) => options.locale = locale,
                     Some(Value::InputBindings(bindings)) => options.input_bindings = bindings,
                     _ => unreachable!("local startup setting is validated"),
                 }
@@ -159,20 +153,6 @@ impl TextProperties {
             source.as_str(),
             reason
         )
-    }
-}
-
-pub(super) fn print_result(
-    result: Result<String, CommandError>,
-    localizer: &minimium_localization::Localizer,
-    locale: minimium_localization::Locale,
-) {
-    match result {
-        Ok(result) => println!("{result}"),
-        Err(error) => println!(
-            "{}",
-            crate::client_commands::command_error(&error, localizer, locale)
-        ),
     }
 }
 

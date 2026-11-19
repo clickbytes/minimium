@@ -1,5 +1,6 @@
 use super::output::CommandOutputCollector;
 use super::*;
+use crate::messages::ClientText as Text;
 
 pub(super) fn execute(
     renderer: &mut DesktopHost,
@@ -147,16 +148,9 @@ pub(super) fn execute(
                 )
             };
             match result {
-                Ok(()) => renderer
-                    .application
-                    .ui
-                    .console
-                    .push_line(renderer.localizer.format(
-                        renderer.application.settings.locale,
-                        &minimium_localization::UiMessage::Notice(
-                            minimium_localization::UiNotice::TimeRequestSent,
-                        ),
-                    )),
+                Ok(()) => output.push_ui_message(minimium_localization::UiMessage::Notice(
+                    minimium_localization::UiNotice::TimeRequestSent,
+                )),
                 Err(error) => {
                     renderer
                         .application
@@ -174,16 +168,9 @@ pub(super) fn execute(
             .application
             .request_time_scale(value, crate::host_time::sample())
         {
-            Ok(()) => renderer
-                .application
-                .ui
-                .console
-                .push_line(renderer.localizer.format(
-                    renderer.application.settings.locale,
-                    &minimium_localization::UiMessage::Notice(
-                        minimium_localization::UiNotice::TimeScaleRequestSent,
-                    ),
-                )),
+            Ok(()) => output.push_ui_message(minimium_localization::UiMessage::Notice(
+                minimium_localization::UiNotice::TimeScaleRequestSent,
+            )),
             Err(error) => {
                 renderer
                     .application
@@ -229,16 +216,9 @@ pub(super) fn execute(
             .application
             .request_time_mode(&mode, crate::host_time::sample())
         {
-            Ok(()) => renderer
-                .application
-                .ui
-                .console
-                .push_line(renderer.localizer.format(
-                    renderer.application.settings.locale,
-                    &minimium_localization::UiMessage::Notice(
-                        minimium_localization::UiNotice::TimeModeRequestSent,
-                    ),
-                )),
+            Ok(()) => output.push_ui_message(minimium_localization::UiMessage::Notice(
+                minimium_localization::UiNotice::TimeModeRequestSent,
+            )),
             Err(error) => {
                 renderer
                     .application
@@ -253,16 +233,9 @@ pub(super) fn execute(
                 .application
                 .request_time_offline_policy(&policy, crate::host_time::sample())
             {
-                Ok(()) => renderer
-                    .application
-                    .ui
-                    .console
-                    .push_line(renderer.localizer.format(
-                        renderer.application.settings.locale,
-                        &minimium_localization::UiMessage::Notice(
-                            minimium_localization::UiNotice::TimeOfflinePolicyRequestSent,
-                        ),
-                    )),
+                Ok(()) => output.push_ui_message(minimium_localization::UiMessage::Notice(
+                    minimium_localization::UiNotice::TimeOfflinePolicyRequestSent,
+                )),
                 Err(error) => {
                     renderer
                         .application

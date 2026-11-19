@@ -168,6 +168,7 @@ use property_parsing::parse_property;
 
 pub(crate) mod bindings;
 pub(crate) mod catalog;
+mod identity;
 
 pub(crate) fn reserved_command_names() -> Vec<&'static str> {
     server_registry()
@@ -263,7 +264,10 @@ fn parse_server_spec(arguments: &[&str]) -> Result<ServerCommand, CommandError> 
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServerCommand {
-    CatalogOutput(String),
+    CatalogOutput {
+        operation: &'static str,
+        text: String,
+    },
     Help,
     Status,
     Players(Option<String>),

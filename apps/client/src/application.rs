@@ -44,6 +44,7 @@ pub(crate) use minimium_client_runtime::{
 /// Host facade: one runtime core plus UI, input and presentation state.
 pub(crate) struct ClientApplication {
     core: ClientApplicationCore,
+    next_command_id: u64,
     #[cfg(feature = "desktop")]
     pub(crate) ui: UiModel,
     #[cfg(feature = "desktop")]
@@ -104,6 +105,7 @@ impl ClientApplication {
         }
         Ok(Self {
             core,
+            next_command_id: 1,
             ui,
             settings,
             input,
@@ -180,6 +182,7 @@ impl ClientApplication {
         let _ = (&core, now);
         Ok(Self {
             core,
+            next_command_id: 1,
             #[cfg(feature = "desktop")]
             ui,
             #[cfg(feature = "desktop")]
@@ -264,12 +267,43 @@ impl ClientApplication {
         fire_direction: [f32; 3],
         player_position: Option<[f32; 3]>,
         now: ClientTime,
-    ) -> crate::client_commands::TextCommandResult {
+    ) -> crate::client_commands::output::Submission {
+        let mut identity = minimium_commands::results::OperationContext {
+            request_id: self.next_command_id,
+            operation: minimium_commands::operation::OperationId("ui.console.input".into()),
+            scope: "Client".into(),
+            session: self.core.session().map(|s| s.content_jobs_session_id()),
+            context: self
+                .core
+                .session()
+                .and_then(|s| s.active_world_context())
+                .map(|c| minimium_commands::results::WorldBinding {
+                    instance: c.instance().get(),
+                    content_revision: c.content_revision().get(),
+                    membership_epoch: c.membership_epoch().get(),
+                }),
+        };
+        let Some(next_id) = self.next_command_id.checked_add(1) else {
+            let error = minimium_commands::CommandError::new(
+                minimium_commands::CommandErrorCode::ResultLimit,
+                Some("request_id"),
+                "command request identifiers exhausted",
+                None::<String>,
+            );
+            return (
+                identity,
+                crate::client_commands::TextCommandResult::Rejected(error),
+            );
+        };
+        self.next_command_id = next_id;
         if let Err(error) = self.core.validate_time(now) {
-            return crate::client_commands::TextCommandResult::QueueRejected {
-                kind: QueuedActionKind::Other,
-                error: crate::session::QueueError::Time(error),
-            };
+            return (
+                identity,
+                crate::client_commands::TextCommandResult::QueueRejected {
+                    kind: QueuedActionKind::Other,
+                    error: crate::session::QueueError::Time(error),
+                },
+            );
         }
         let movement = self.core.connection_view().movement;
         let flight_enabled = self.core.connection_view().flight_enabled;
@@ -290,7 +324,9 @@ impl ClientApplication {
             fire_direction,
             player_position,
         };
-        crate::client_commands::execute_text(input, source, &mut context)
+        let result =
+            crate::client_commands::execute_text(input, source, &mut context, &mut identity);
+        (identity, result)
     }
 
     pub(crate) fn step(

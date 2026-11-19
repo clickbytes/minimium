@@ -47,3 +47,9 @@ Batch 02 indexes registered commands, properties, the ten concrete presentation 
 Additional E051 descriptors outside the frozen 142 rows include shower status (A001), script run/status/cancel (A002–A004) and the later script diagnostics. Reconcile them separately at closeout. [Bolid operations](https://github.com/clickbytes/minimium/issues/587) · [Script operations](https://github.com/clickbytes/minimium/issues/593) · [Diagnostics](https://github.com/clickbytes/minimium/issues/595)
 
 The client now registers `say` and `quit`, routes `dev inventory tools` to gameplay and passes quoted FOV values through the property validator. A canonical call, a property verb or a registered word command resolves through the host catalog. Client and administrative hosts expose the pure `ui.console.explain(text)` query.
+
+## Result migration after #571
+
+P008 (`ui.locale`) has a typed read and owner-confirmed set/reset. F1, developer stdin and the terminal share its settings executor and formatter. P001–P007, P009–P028, C001–C048 and the ten presentation forms C070–C079 retain the client display adapter (85 baseline declarations). Server P029–P052 and C049–C069 retain their typed runtime reply views (45 baseline declarations). Their scriptable flags remain false pending their family migrations. Startup-only and proposed rows are tracked separately in the inventory. Batch #596 reconciles these ranges against the final catalog.
+
+Submitted reports client queue admission. OwnerAccepted covers reservations and queued work. Durable requires a storage guarantee. A disconnection after submission leaves the outcome unknown until an authoritative report arrives. For a local camera reset, a file-selected 80° is the startup value. A command-line selection of 90° over that file becomes the startup value instead. Reset clears the session override and restores that value with its original configuration source.

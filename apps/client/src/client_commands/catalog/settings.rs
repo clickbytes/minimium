@@ -17,7 +17,7 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
             PersistenceKind::Transient
         },
     };
-    Some(match name {
+    let mut entry = match name {
         "client.audio.meteor_volume" => binding.declaration(
             "client.audio.meteor_volume",
             Property,
@@ -133,5 +133,7 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
             )
         }
         _ => return None,
-    })
+    };
+    entry.spec.scriptable = name == "ui.locale";
+    Some(entry)
 }

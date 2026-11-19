@@ -134,7 +134,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         time.monotonic += Duration::from_millis(50);
         let outcome = runtime.step(time)?;
         for result in outcome.commands {
-            let reply = result.reply.view();
+            let operation = result.operation_result();
+            println!(
+                "{} request={} stage={} stop={}",
+                operation.identity.operation.0,
+                operation.identity.request_id,
+                operation.receipt.stage.label(),
+                operation.receipt.should_stop
+            );
+            let reply = match operation.outcome {
+                Ok(reply) => reply,
+                Err(error) => {
+                    println!("{} {}", error.code, error.reason);
+                    continue;
+                }
+            };
             println!(
                 "command {}: {:?}, stopping={}",
                 result.id.get(),
@@ -333,10 +347,6 @@ fn inspect_reply(reply: CommandReplyView<'_>) {
                 report.value().source.as_str(),
                 report.value().difference_reason
             );
-        }
-        CommandPayloadView::UnknownProperty(key) => println!("unknown property {key}"),
-        CommandPayloadView::UnavailableProperty { key, reason } => {
-            println!("property {key} unavailable: {reason}");
         }
         CommandPayloadView::PropertyHelp(spec) => {
             println!(

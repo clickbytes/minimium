@@ -1,5 +1,5 @@
 use crate::{
-    client_commands::{help_lines, CommandSource, TextCommandResult},
+    client_commands::{help_lines, output as dispatch, CommandSource},
     messages::ClientText as Text,
     options::ClientOptions,
     session::{SessionEvent, SessionState},
@@ -243,72 +243,67 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                     }),
                     crate::host_time::sample(),
                 );
-                match result {
-                    TextCommandResult::Empty => {}
-                    TextCommandResult::Rejected(error) => println!(
-                        "{}",
-                        crate::client_commands::command_error(&error, &localizer, options.locale)
-                    ),
-                    TextCommandResult::Queued { .. } => {}
-                    TextCommandResult::QueueRejected { error, .. } => {
-                        println!(
-                            "{}",
-                            Text::CouldNotQueueCommand(error.into())
-                                .localized(&localizer, options.locale)
-                        )
+                let (should_exit, response) = dispatch::dispatch(result, |identity, action| {
+                    if let Some((result, changed)) = text_properties
+                        .settings
+                        .locale_operation(&identity, &action)
+                    {
+                        if let Some(locale) = changed {
+                            options.locale = locale;
+                        }
+                        return (false, dispatch::native(result));
                     }
-                    TextCommandResult::Suppressed(_) => {}
-                    TextCommandResult::Action(action) => {
-                        let (should_exit, result) = actions::handle(
-                            action,
-                            &mut options,
-                            &mut application,
-                            &mut last_snapshot,
-                            &localizer,
-                            &data_dir,
-                            &log_dir,
-                            &parent_run_id,
-                            &mut text_properties,
-                        );
-                        for output in result.outputs {
-                            match output {
-                                crate::client_commands::CommandOutput::Line(line) => {
-                                    println!("{line}")
+                    let (should_exit, result) = actions::handle(
+                        action,
+                        &mut options,
+                        &mut application,
+                        &mut last_snapshot,
+                        &localizer,
+                        &data_dir,
+                        &log_dir,
+                        &parent_run_id,
+                        &mut text_properties,
+                    );
+                    (
+                        should_exit,
+                        dispatch::legacy(identity, result, &localizer, options.locale),
+                    )
+                });
+                let result = dispatch::display(response, &localizer, options.locale);
+                for output in result.outputs {
+                    match output {
+                        crate::client_commands::CommandOutput::Line(line) => {
+                            println!("{line}")
+                        }
+                        #[cfg(feature = "desktop")]
+                        crate::client_commands::CommandOutput::UiMessage(message)
+                        | crate::client_commands::CommandOutput::UiError(message) => {
+                            println!("{}", localizer.format(options.locale, &message))
+                        }
+                        crate::client_commands::CommandOutput::ClientText { message, .. } => {
+                            println!("{}", message.localized(&localizer, options.locale));
+                        }
+                        crate::client_commands::CommandOutput::Clear => {
+                            print!("\x1B[2J\x1B[H")
+                        }
+                        crate::client_commands::CommandOutput::Presentation(result) => match result
+                        {
+                            #[cfg(feature = "desktop")]
+                            crate::client_commands::PresentationResult::Output(lines) => {
+                                for line in lines {
+                                    println!("{line}");
                                 }
-                                #[cfg(feature = "desktop")]
-                                crate::client_commands::CommandOutput::UiMessage(message)
-                                | crate::client_commands::CommandOutput::UiError(message) => {
-                                    println!("{}", localizer.format(options.locale, &message))
-                                }
-                                crate::client_commands::CommandOutput::ClientText {
-                                    message,
-                                    ..
-                                } => {
-                                    println!("{}", message.localized(&localizer, options.locale));
-                                }
-                                crate::client_commands::CommandOutput::Clear => {
-                                    print!("\x1B[2J\x1B[H")
-                                }
-                                crate::client_commands::CommandOutput::Presentation(result) => {
-                                    match result {
-                                        #[cfg(feature = "desktop")]
-                                        crate::client_commands::PresentationResult::Output(
-                                            lines,
-                                        ) => {
-                                            for line in lines {
-                                                println!("{line}");
-                                            }
-                                        }
-                                        crate::client_commands::PresentationResult::Unavailable(
-                                            unavailable,
-                                        ) => {
-                                            if unavailable.reason
+                            }
+                            crate::client_commands::PresentationResult::Unavailable(
+                                unavailable,
+                            ) => {
+                                if unavailable.reason
                                                 != crate::client_commands::PresentationUnavailableReason::UnsupportedHost
                                             {
                                                 println!("{}", unavailable.message());
                                                 continue;
                                             }
-                                            let notice = match unavailable.capability {
+                                let notice = match unavailable.capability {
                                             crate::client_commands::PresentationCapability::DeveloperRenderer
                                             | crate::client_commands::PresentationCapability::WeatherDiagnostics => minimium_localization::UiNotice::WeatherRequiresDesktop,
                                             #[cfg(feature = "desktop")]
@@ -316,24 +311,19 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                                             crate::client_commands::PresentationCapability::SkyDiagnostics => minimium_localization::UiNotice::SkyInfoDesktopOnly,
                                             crate::client_commands::PresentationCapability::MeteorDiagnostics => minimium_localization::UiNotice::MeteorsRequireDesktop,
                                         };
-                                            println!(
-                                                "{}",
-                                                localizer.format(
-                                                    options.locale,
-                                                    &minimium_localization::UiMessage::Notice(
-                                                        notice
-                                                    )
-                                                )
-                                            );
-                                        }
-                                    }
-                                }
+                                println!(
+                                    "{}",
+                                    localizer.format(
+                                        options.locale,
+                                        &minimium_localization::UiMessage::Notice(notice)
+                                    )
+                                );
                             }
-                        }
-                        if should_exit {
-                            break;
-                        }
+                        },
                     }
+                }
+                if should_exit {
+                    break;
                 }
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}

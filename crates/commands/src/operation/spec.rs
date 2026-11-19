@@ -1,7 +1,9 @@
 use crate::{CommandArgumentSpec, PropertyLifecycle, PropertySpec};
 use std::collections::BTreeSet;
 
-#[derive(serde::Serialize, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[derive(
+    serde::Serialize, serde::Deserialize, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash,
+)]
 pub struct OperationId(pub String);
 
 #[derive(serde::Serialize, Clone, Copy, Debug, Eq, PartialEq)]

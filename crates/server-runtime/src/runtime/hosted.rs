@@ -201,16 +201,17 @@ impl ServerRuntime {
     }
 
     pub(super) fn cancel_commands(&mut self) {
-        for (origin, _) in self.operations.command_queue.drain(..) {
+        for (origin, command) in self.operations.command_queue.drain(..) {
             let reply = crate::commands::CommandReply::error(
                 "server.stopping",
                 "server stopping before command execution",
             );
             match origin {
-                CommandOrigin::Host(id) => self
-                    .operations
-                    .host_outcomes
-                    .push(CommandExecution { id, reply }),
+                CommandOrigin::Host(id) => self.operations.host_outcomes.push(CommandExecution {
+                    id,
+                    identity: command.identity(id.get(), &self.operation_catalog),
+                    reply,
+                }),
                 CommandOrigin::Admin(id) => {
                     let _ = self
                         .operations

@@ -24,6 +24,7 @@ mod help;
 mod interface;
 mod meteors;
 mod movement;
+pub(crate) mod output;
 mod presentation;
 mod properties;
 mod text;

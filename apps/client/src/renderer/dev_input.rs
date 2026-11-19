@@ -1,12 +1,15 @@
 //! Desktop execution and formatting for typed local developer presentation commands.
 use super::DesktopHost;
 use crate::client_commands::{
-    CommandActionResult, CommandOutput, DeveloperOperation, PresentationResult,
+    output as dispatch, CommandOutput, DeveloperOperation, PresentationResult,
 };
 
 mod bolid_path;
 
-pub(super) fn execute(renderer: &mut DesktopHost, line: &str) -> (bool, CommandActionResult) {
+pub(super) fn execute(
+    renderer: &mut DesktopHost,
+    line: &str,
+) -> (bool, Option<dispatch::ClientResult>) {
     super::controller::execute_input(
         renderer,
         line,
@@ -14,7 +17,12 @@ pub(super) fn execute(renderer: &mut DesktopHost, line: &str) -> (bool, CommandA
     )
 }
 
-pub(super) fn format_output(renderer: &DesktopHost, result: CommandActionResult) {
+pub(super) fn format_output(renderer: &DesktopHost, result: Option<dispatch::ClientResult>) {
+    let result = dispatch::display(
+        result,
+        &renderer.localizer,
+        renderer.application.settings.locale,
+    );
     for output in result.outputs {
         match output {
             CommandOutput::Line(line) => println!("{line}"),

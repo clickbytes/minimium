@@ -16,7 +16,7 @@ impl ServerRuntime {
             .collect::<Vec<_>>();
         for (id, line) in admin_requests {
             let command = match crate::admin::parse(&line, &self.operation_catalog) {
-                Ok(crate::server_command::ServerCommand::CatalogOutput(text)) => {
+                Ok(crate::server_command::ServerCommand::CatalogOutput { text, .. }) => {
                     let reply = crate::commands::CommandReply::module_text(
                         crate::commands::BoundedText::new(&text),
                     );

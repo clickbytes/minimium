@@ -222,6 +222,11 @@ command-help = { $name ->
    *[other] { $name }
 }
 command-rejected = { $code ->
+    [unavailable] Brak wartości dla { $subject }.
+    [conflict] Konflikt rewizji dla { $subject }.
+    [stale_context] Zmiana kontekstu dla { $subject }.
+    [result_limit] Przekroczono limit wyniku dla { $subject }.
+    [unknown_after_disconnect] Utrata połączenia przed potwierdzeniem dla { $subject }.
     [unknown_command] Nieznane polecenie { $subject }.
     [invalid_arguments] Nieprawidłowe argumenty dla { $subject }.
     [unknown_key] Nieznana właściwość lub opcja { $subject }.

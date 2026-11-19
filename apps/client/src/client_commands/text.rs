@@ -69,6 +69,7 @@ pub(crate) fn execute_text(
     input: &str,
     source: CommandSource,
     context: &mut CommandContext<'_>,
+    identity: &mut minimium_commands::results::OperationContext,
 ) -> TextCommandResult {
     let input = input.trim();
     if input.is_empty() {
@@ -89,7 +90,7 @@ pub(crate) fn execute_text(
             None::<String>,
         ));
     }
-    let command = match super::bindings::parse(input) {
+    let command = match super::bindings::parse(input, identity) {
         Ok(Some(command)) => command,
         Ok(None) => return TextCommandResult::Empty,
         Err(error) => return TextCommandResult::Rejected(error),

@@ -104,6 +104,14 @@ impl DesktopHost {
             self.application.settings.source(key.key())
         };
         let metadata = PropertyValue {
+            lifecycle: crate::client_commands::property_spec(key.key())
+                .expect("registered property")
+                .lifecycle,
+            startup: self.application.settings.startup_projection(key.key()),
+            session_override: (source == PropertySource::Session).then(|| requested.clone()),
+            revision: None,
+            freshness: minimium_commands::results::property::Freshness::Current,
+            read_source: minimium_commands::results::property::ReadSource::LocalOwner,
             requested: Some(requested.clone()),
             effective: Some(effective.clone()),
             default: Some(default.clone()),

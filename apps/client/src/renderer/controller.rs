@@ -2,9 +2,8 @@ mod action;
 mod output;
 mod presentation;
 use super::*;
-use crate::messages::ClientText as Text;
+use crate::client_commands::output as dispatch;
 pub(super) use output::format_console_output;
-use output::CommandOutputCollector;
 
 pub(super) fn execute_console_input(renderer: &mut DesktopHost) -> bool {
     let input = renderer
@@ -13,7 +12,12 @@ pub(super) fn execute_console_input(renderer: &mut DesktopHost) -> bool {
         .console
         .take_input(&renderer.localizer, renderer.application.settings.locale);
     let (exit, result) = execute_input(renderer, &input, client_commands::CommandSource::Console);
-    format_console_output(renderer, result);
+    let output = dispatch::display(
+        result,
+        &renderer.localizer,
+        renderer.application.settings.locale,
+    );
+    format_console_output(renderer, output);
     exit
 }
 
@@ -21,7 +25,7 @@ pub(super) fn execute_input(
     renderer: &mut DesktopHost,
     input: &str,
     source: client_commands::CommandSource,
-) -> (bool, client_commands::CommandActionResult) {
+) -> (bool, Option<dispatch::ClientResult>) {
     let direction = super::camera::camera_direction(
         renderer.application.core_view().character,
         renderer.input.yaw,
@@ -37,29 +41,27 @@ pub(super) fn execute_input(
         Some(player_position),
         crate::host_time::sample(),
     );
-    let mut output = CommandOutputCollector::default();
-    let action = match result {
-        client_commands::TextCommandResult::Empty => return (false, output.result),
-        client_commands::TextCommandResult::Rejected(error) => {
-            output.push_ui_error_message(minimium_localization::UiMessage::CommandRejected {
-                code: error.code.as_str().to_owned(),
-                subject: error.subject.clone().unwrap_or_default(),
-            });
-            if let Some(usage) = error.usage.as_deref() {
-                output.push_line(format!("Usage: {usage}"));
+    dispatch::dispatch(result, |identity, action| {
+        if let Some((result, changed)) = renderer
+            .application
+            .settings
+            .values
+            .locale_operation(&identity, &action)
+        {
+            if let Some(locale) = changed {
+                renderer.apply_property_value(client_commands::ClientPropertyValue::Locale(locale));
             }
-            return (false, output.result);
+            return (false, dispatch::native(result));
         }
-        client_commands::TextCommandResult::Queued { .. } => {
-            output.push_client_text(Text::CommandQueued, false);
-            return (false, output.result);
-        }
-        client_commands::TextCommandResult::QueueRejected { error, .. } => {
-            output.push_client_text(Text::CouldNotQueueCommand(error.into()), true);
-            return (false, output.result);
-        }
-        client_commands::TextCommandResult::Suppressed(_) => return (false, output.result),
-        client_commands::TextCommandResult::Action(action) => action,
-    };
-    action::execute(renderer, action)
+        let (exit, output) = action::execute(renderer, action);
+        (
+            exit,
+            dispatch::legacy(
+                identity,
+                output,
+                &renderer.localizer,
+                renderer.application.settings.locale,
+            ),
+        )
+    })
 }

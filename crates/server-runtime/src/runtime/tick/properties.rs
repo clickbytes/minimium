@@ -1,5 +1,8 @@
 use super::super::ServerRuntime;
 use crate::{commands, server_command::ServerPropertyCommand};
+use minimium_commands::results::property::{
+    ConfigurationSource, Freshness, ReadSource, StartupValue,
+};
 use minimium_commands::{PropertySource, PropertyValue};
 use std::time::Duration;
 
@@ -13,13 +16,10 @@ impl ServerRuntime {
                 commands::CommandReply::success(commands::CommandPayload::Property(value))
             }
             commands::PropertyReportOutcome::Unknown(key) => {
-                commands::CommandReply::success(commands::CommandPayload::UnknownProperty(key))
+                commands::CommandReply::property_error("unknown_key", &key, "unknown property")
             }
             commands::PropertyReportOutcome::Unavailable { key, reason } => {
-                commands::CommandReply::success(commands::CommandPayload::UnavailableProperty {
-                    key,
-                    reason,
-                })
+                commands::CommandReply::property_error("unavailable", &key, &reason)
             }
         };
         match command {
@@ -124,6 +124,23 @@ impl ServerRuntime {
                 .bolid_interval
                 .map_or_else(|| "off".to_owned(), |(a, b)| format!("{a}..{b}"));
             PropertyValue {
+                lifecycle: self
+                    .operation_catalog
+                    .resolve(key)
+                    .and_then(|e| e.property)
+                    .expect("registered property")
+                    .lifecycle,
+                startup: Some(StartupValue {
+                    value: self
+                        .startup_bolid_interval
+                        .map_or_else(|| "off".into(), |(a, b)| format!("{a}..{b}")),
+                    source: ConfigurationSource::from_source(self.resolved_settings[key].source)
+                        .expect("startup source"),
+                }),
+                session_override: self.bolid_session_override.then(|| effective.clone()),
+                read_source: ReadSource::OwnerSnapshot,
+                revision: None,
+                freshness: Freshness::Current,
                 requested: Some(effective.clone()),
                 effective: Some(effective),
                 default: Some("120..300".to_owned()),
@@ -166,6 +183,22 @@ impl ServerRuntime {
                 (actual.clone(), None, PropertySource::Runtime)
             };
             PropertyValue {
+                lifecycle: self
+                    .operation_catalog
+                    .resolve(key)
+                    .and_then(|e| e.property)
+                    .expect("registered property")
+                    .lifecycle,
+                startup: ConfigurationSource::from_source(request_source).map(|source| {
+                    StartupValue {
+                        value: requested.clone(),
+                        source,
+                    }
+                }),
+                session_override: None,
+                read_source: ReadSource::OwnerSnapshot,
+                revision: None,
+                freshness: Freshness::Current,
                 requested: Some(requested),
                 effective: Some(actual),
                 default,
@@ -200,9 +233,27 @@ impl ServerRuntime {
                 "world.time.offline_policy" => snapshot.offline_policy.to_owned(),
                 "world.time.utc" => snapshot.utc_ms.to_string(),
                 "world.time.revision" => snapshot.revision.to_string(),
+                "world.time.initial_config" => {
+                    return commands::PropertyReportOutcome::Unavailable {
+                        key: key.to_owned(),
+                        reason: "startup clock configuration is unavailable from the running clock"
+                            .into(),
+                    }
+                }
                 _ => return commands::PropertyReportOutcome::Unknown(key.to_owned()),
             };
             PropertyValue {
+                lifecycle: self
+                    .operation_catalog
+                    .resolve(key)
+                    .and_then(|e| e.property)
+                    .expect("registered property")
+                    .lifecycle,
+                startup: None,
+                session_override: None,
+                read_source: ReadSource::OwnerSnapshot,
+                revision: Some(snapshot.revision),
+                freshness: Freshness::Current,
                 requested: Some(current.clone()),
                 effective: Some(current),
                 default: None,
@@ -258,6 +309,22 @@ impl ServerRuntime {
                 )
             };
             PropertyValue {
+                lifecycle: self
+                    .operation_catalog
+                    .resolve(key)
+                    .and_then(|e| e.property)
+                    .expect("registered property")
+                    .lifecycle,
+                startup: ConfigurationSource::from_source(configured_source).map(|source| {
+                    StartupValue {
+                        value: configured.to_owned(),
+                        source,
+                    }
+                }),
+                session_override: (source == PropertySource::Session).then(|| requested.clone()),
+                read_source: ReadSource::OwnerSnapshot,
+                revision: None,
+                freshness: Freshness::Current,
                 requested: Some(requested),
                 effective: Some(effective),
                 default: default.map(str::to_owned),

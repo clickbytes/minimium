@@ -220,6 +220,11 @@ command-help = { $name ->
    *[other] { $name }
 }
 command-rejected = { $code ->
+    [unavailable] No value is available for { $subject }.
+    [conflict] Conflicting revision for { $subject }.
+    [stale_context] Context has changed for { $subject }.
+    [result_limit] Result limit exceeded for { $subject }.
+    [unknown_after_disconnect] Connection lost before confirmation for { $subject }.
     [unknown_command] Unknown command { $subject }.
     [invalid_arguments] Invalid arguments for { $subject }.
     [unknown_key] Unknown property or setting { $subject }.

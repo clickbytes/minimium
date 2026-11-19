@@ -6,13 +6,17 @@ pub(crate) fn command_error(
     localizer: &minimium_localization::Localizer,
     locale: minimium_localization::Locale,
 ) -> String {
-    localizer.format(
+    let header = localizer.format(
         locale,
         &minimium_localization::UiMessage::CommandRejected {
             code: error.code.as_str().to_owned(),
             subject: error.subject.clone().unwrap_or_default(),
         },
-    )
+    );
+    match &error.usage {
+        Some(usage) => format!("{header}: {}\n{usage}", error.reason),
+        None => format!("{header}: {}", error.reason),
+    }
 }
 
 pub(crate) fn command_help(

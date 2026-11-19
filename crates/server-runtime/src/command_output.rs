@@ -11,12 +11,6 @@ pub(crate) fn render(payload: &CommandPayloadView<'_>) -> BoundedText {
         }
         CommandPayloadView::Stopping => out.push_str("stopping"),
         CommandPayloadView::Property(report) => property(&mut out, report),
-        CommandPayloadView::UnknownProperty(key) => {
-            let _ = write!(out, "unknown server property `{key}`");
-        }
-        CommandPayloadView::UnavailableProperty { key, reason } => {
-            let _ = write!(out, "{key} requested=unavailable effective=unavailable default=n/a source=unavailable reason={reason}");
-        }
         CommandPayloadView::PropertyHelp(spec) => {
             let _ = write!(out, "{}: {:?}; default {}; constraints {}; owner {}; permission {:?}; lifecycle {:?}; persistent {}; resettable {}\n{}", spec.key, spec.value_type, spec.default.unwrap_or("n/a"), spec.constraints.unwrap_or("none"), spec.owner, spec.permission, spec.lifecycle, spec.persistent, spec.resettable, spec.description);
         }
@@ -355,14 +349,16 @@ pub(crate) fn render_reply_view(view: &CommandReplyView<'_>) -> BoundedText {
     out
 }
 
-fn entity_rejection_label(reason: crate::modules::EntityEffectRejection) -> &'static str {
+pub(crate) fn entity_rejection_label(
+    reason: crate::modules::EntityEffectRejection,
+) -> &'static str {
     match reason {
         crate::modules::EntityEffectRejection::Validation => "validation",
         crate::modules::EntityEffectRejection::StorageBudget => "storage_budget",
     }
 }
 
-fn transfer_rejection_label(reason: crate::modules::TransferRejection) -> &'static str {
+pub(crate) fn transfer_rejection_label(reason: crate::modules::TransferRejection) -> &'static str {
     match reason {
         crate::modules::TransferRejection::Validation => "validation",
         crate::modules::TransferRejection::AlreadyPending => "already_pending",
@@ -378,16 +374,11 @@ pub(crate) fn format_clock_scale(rate: u64) -> String {
 }
 
 fn property(out: &mut BoundedText, report: &PropertyReport) {
-    let value = &report.value;
     let _ = write!(
         out,
-        "{} requested={} effective={} default={} source={} reason={}",
+        "{} {}",
         report.key,
-        value.requested.as_deref().unwrap_or("unavailable"),
-        value.effective.as_deref().unwrap_or("unavailable"),
-        value.default.as_deref().unwrap_or("n/a"),
-        value.source.as_str(),
-        value.difference_reason.as_deref().unwrap_or("none")
+        report.value.format_with(String::clone)
     );
 }
 

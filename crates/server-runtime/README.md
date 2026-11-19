@@ -159,7 +159,7 @@ or committed.
 
 Rendered command text, module text and failure details are capped at 8 KiB with a UTF-8-safe `[truncated]` marker. The admin adapter bounds the aggregate response fields before serialization and checks the final JSON against the existing 64 KiB reply cap. List snapshots have separate row caps and report truncation explicitly; metrics client rows are capped at 512.
 
-Property reads preserve their existing successful response for unknown keys and unavailable clock properties through typed `UnknownProperty` and `UnavailableProperty` query results. Mutation validation failures continue to use the established typed error codes.
+Property reads return typed failures for unknown keys and unavailable values. Hosted completions expose the operation ID, request ID, stage, original payload, per-effect outcomes and independent shutdown flag through `CommandExecution::operation_result`. A queued save reports owner acceptance.
 The world registry validates every composed manifest before publishing an instance:
 generated content requires revision 6 and the matching generator digest; authored
 content must additionally match the materialized map fingerprint.

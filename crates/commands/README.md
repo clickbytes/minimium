@@ -12,6 +12,8 @@ The public `operation` module composes `CatalogEntry` declarations through `Cata
 
 The public syntax binder returns a prepared operation with its ID, requested access, typed arguments and source spans. Hosts validate these arguments through their existing domain constructors. Formatting an operation explanation requires only catalog metadata. The canonical parser also exposes incomplete input for editors. [Compiled syntax example](examples/operation_syntax.rs)
 
+The `results` module carries operation identity, request, session and world binding, stage, effect receipts and typed outcome. A property report keeps startup provenance, session override, requested/effective values, owner read source, revision and freshness. Its configuration projection borrows the startup data. Machine payloads allow 32 KiB, eight levels and 1024 value nodes. The complete administrative envelope has a 64 KiB budget.
+
 ## Dependencies
 
 Depends on minimium-core, ron and serde. The [public operation contract](../../docs/console-api/contract.md) defines the shared catalog and its owner bindings.

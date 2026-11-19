@@ -2,6 +2,8 @@
 
 The F1 console, terminal and developer input bind canonical fields, methods and longest registered legacy spellings through the shared command syntax. `ui.console.explain(text)` prints the prepared operation using the local immutable catalog and argument validators.
 
+Console input receives a host request ID. All three text inputs dispatch through the same result adapter. The settings owner returns the typed `ui.locale` read, set or reset with revision and startup provenance. Localized display consumes this receipt. The remaining legacy actions retain their localized display output and carry the `legacy_reported` stage.
+
 ## Collision and presentation readiness
 
 The runtime `WorldReadiness` provider owns CPU sector materialization and collision

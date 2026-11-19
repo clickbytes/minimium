@@ -4,7 +4,10 @@ use minimium_commands::operation::CatalogEntry;
 use minimium_commands::syntax::bind::{bind_line, ParsedLine, PreparedOperation};
 use minimium_commands::{CommandError, CommandErrorCode as Code, PropertyRequest};
 
-pub(super) fn parse(input: &str) -> Result<Option<ClientCommand>, CommandError> {
+pub(super) fn parse(
+    input: &str,
+    identity: &mut minimium_commands::results::OperationContext,
+) -> Result<Option<ClientCommand>, CommandError> {
     match bind_line(catalog(), input)? {
         ParsedLine::Namespace(path) => Ok(Some(ClientCommand::Print(
             catalog()
@@ -16,6 +19,8 @@ pub(super) fn parse(input: &str) -> Result<Option<ClientCommand>, CommandError> 
         ParsedLine::Legacy => super::text::legacy(input),
         ParsedLine::Operation(op) => {
             let entry = catalog().resolve(&op.path).expect("bound operation");
+            identity.operation = op.id.clone();
+            identity.scope = entry.spec.scope.to_owned();
             if op.path == "ui.console.explain" {
                 return explain(&op.arguments[0].text).map(|s| Some(ClientCommand::Print(s)));
             }

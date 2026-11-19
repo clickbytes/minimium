@@ -2,6 +2,8 @@
 
 E051 distinguishes a session sample and a submitted intent from a server commit. [Public operation contract](../../docs/console-api/contract.md)
 
+A host can correlate a local command with the session identity already used by content jobs and the current active world context.
+
 ## CPU world and collision readiness
 
 `world_readiness::WorldReadiness` owns the client sector manager, immutable

@@ -118,7 +118,22 @@ pub(crate) fn format_time_value(
     } else {
         PropertySource::Replica
     };
+    use minimium_commands::results::property::{Freshness, ReadSource};
     let metadata = PropertyValue {
+        lifecycle: property_spec(key.key()).expect("clock property").lifecycle,
+        startup: None,
+        session_override: None,
+        revision: frame.revision,
+        freshness: if requested.is_some() {
+            Freshness::Sampled
+        } else {
+            Freshness::Unknown
+        },
+        read_source: match source {
+            PropertySource::Unavailable => ReadSource::Unavailable,
+            PropertySource::Replica => ReadSource::Replica,
+            _ => ReadSource::LocalOwner,
+        },
         requested: requested.clone(),
         effective: requested,
         default: None,

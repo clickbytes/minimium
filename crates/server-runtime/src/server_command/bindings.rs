@@ -14,13 +14,14 @@ pub(crate) fn parse(line: &str, catalog: &OperationCatalog) -> Result<ServerComm
     }
     match bind_line(catalog, line)? {
         ParsedLine::Legacy => ServerCommand::parse_legacy(line),
-        ParsedLine::Namespace(name) => Ok(ServerCommand::CatalogOutput(
-            catalog
+        ParsedLine::Namespace(name) => Ok(ServerCommand::CatalogOutput {
+            operation: "ui.console.help",
+            text: catalog
                 .children(&name)
                 .into_iter()
                 .collect::<Vec<_>>()
                 .join(" "),
-        )),
+        }),
         ParsedLine::Operation(op) => {
             let entry = catalog.resolve(&op.path).expect("catalog binding");
             if op.path == "ui.console.explain" {
@@ -47,7 +48,10 @@ pub(crate) fn parse(line: &str, catalog: &OperationCatalog) -> Result<ServerComm
                         inner.explanation(spec).to_string()
                     }
                 };
-                Ok(ServerCommand::CatalogOutput(report))
+                Ok(ServerCommand::CatalogOutput {
+                    operation: "ui.console.explain",
+                    text: report,
+                })
             } else {
                 lower(&op, entry)
             }

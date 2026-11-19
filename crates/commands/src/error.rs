@@ -3,6 +3,11 @@ use std::fmt;
 /// Stable categories shared by command-line, console, and administrative adapters.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CommandErrorCode {
+    Unavailable,
+    StaleContext,
+    Conflict,
+    UnknownAfterDisconnect,
+    ResultLimit,
     UnknownCommand,
     NotCallable,
     NotAssignable,
@@ -27,6 +32,11 @@ pub enum CommandErrorCode {
 impl CommandErrorCode {
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::Unavailable => "unavailable",
+            Self::StaleContext => "stale_context",
+            Self::Conflict => "conflict",
+            Self::UnknownAfterDisconnect => "unknown_after_disconnect",
+            Self::ResultLimit => "result_limit",
             Self::NotCallable => "not_callable",
             Self::NotAssignable => "not_assignable",
             Self::MissingArgument => "missing_argument",

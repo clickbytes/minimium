@@ -189,11 +189,6 @@ pub(crate) enum CommandPayload {
     Stopping,
     Time(crate::environment::ClockPropertySnapshot),
     Property(PropertyReport),
-    UnknownProperty(String),
-    UnavailableProperty {
-        key: String,
-        reason: String,
-    },
     PropertyHelp(minimium_commands::PropertySpec, String),
     PropertyCommandsHelp {
         builtins: Vec<&'static str>,
@@ -240,6 +235,7 @@ pub(crate) enum CommandPayload {
 
 #[derive(Clone, Debug)]
 struct CommandFailure {
+    subject: Option<BoundedText>,
     pub code: &'static str,
     pub detail: BoundedText,
 }
@@ -271,12 +267,28 @@ impl CommandReply {
         };
         Self {
             outcome: Err(CommandFailure {
+                subject: None,
                 code,
                 detail: BoundedText::new(detail),
             }),
             action: CommandAction::Continue,
             effects: None,
         }
+    }
+    pub(crate) fn property_error(code: &'static str, key: &str, reason: &str) -> Self {
+        let mut reply = Self::error(code, reason);
+        if let Err(error) = &mut reply.outcome {
+            error.subject = Some(BoundedText::new(key));
+        }
+        reply
+    }
+    pub fn error_subject(&self) -> Option<&str> {
+        self.outcome
+            .as_ref()
+            .err()?
+            .subject
+            .as_ref()
+            .map(BoundedText::as_str)
     }
     pub fn is_success(&self) -> bool {
         self.outcome.is_ok()
@@ -351,7 +363,9 @@ pub fn execute(
         client_traffic,
     } = context;
     match command {
-        ServerCommand::CatalogOutput(text) => CommandReply::module_text(BoundedText::new(text)),
+        ServerCommand::CatalogOutput { text, .. } => {
+            CommandReply::module_text(BoundedText::new(text))
+        }
         ServerCommand::Help => CommandReply::success(CommandPayload::Help {
             builtins: crate::server_command::catalog::builtin_usages(catalog),
             modules: registry

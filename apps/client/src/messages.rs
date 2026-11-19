@@ -1,7 +1,11 @@
 //! Shared English display messages for the terminal and rendered clients.
-use crate::session::{DisconnectReason, QueueError};
+use crate::session::DisconnectReason;
+#[cfg(feature = "desktop")]
+use crate::session::QueueError;
 use minimium_localization::UiMessage;
-use minimium_protocol::{ProtocolError, ServerErrorCode};
+#[cfg(feature = "desktop")]
+use minimium_protocol::ProtocolError;
+use minimium_protocol::ServerErrorCode;
 
 /// A display message with typed values supplied by the client event.
 #[derive(Clone, Debug, PartialEq)]
@@ -23,7 +27,6 @@ pub enum ClientText {
     NotConnected,
     NoServerResponse,
     #[cfg(feature = "desktop")]
-    CommandQueued,
     CouldNotQueueCommand(QueueProblem),
     #[cfg(feature = "desktop")]
     CouldNotFire(QueueProblem),
@@ -123,6 +126,7 @@ pub enum ClientText {
 
 /// Display-safe categories for session queue failures.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg(feature = "desktop")]
 pub enum QueueProblem {
     Time(minimium_client_runtime::ClientTimeError),
     Disconnected,
@@ -134,6 +138,7 @@ pub enum QueueProblem {
     Protocol(ProtocolError),
 }
 
+#[cfg(feature = "desktop")]
 impl From<QueueError> for QueueProblem {
     fn from(error: QueueError) -> Self {
         match error {
@@ -234,7 +239,6 @@ impl ClientText {
             }
             Self::DisconnectOrWait => localizer.format(locale, &UiMessage::DisconnectOrWait),
             #[cfg(feature = "desktop")]
-            Self::CommandQueued => localizer.format(locale, &UiMessage::CommandQueued),
             Self::CouldNotQueueCommand(value) => localize_queue(
                 localizer,
                 locale,
@@ -426,6 +430,7 @@ fn localized_server_error(code: ServerErrorCode) -> minimium_localization::Serve
     }
 }
 
+#[cfg(feature = "desktop")]
 fn localize_queue(
     localizer: &minimium_localization::Localizer,
     locale: minimium_localization::Locale,

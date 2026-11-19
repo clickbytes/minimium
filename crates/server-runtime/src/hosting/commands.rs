@@ -229,8 +229,18 @@ impl std::fmt::Display for SubmitError {
 }
 impl std::error::Error for SubmitError {}
 pub struct CommandExecution {
+    pub identity: minimium_commands::results::OperationContext,
     pub id: SubmissionId,
     pub reply: crate::ModuleCommandReply,
+}
+
+impl CommandExecution {
+    pub fn operation_result(
+        &self,
+    ) -> minimium_commands::results::OperationResult<crate::hosting::replies::CommandReplyView<'_>>
+    {
+        self.reply.view().operation_result(self.identity.clone())
+    }
 }
 
 #[derive(Clone, Debug)]

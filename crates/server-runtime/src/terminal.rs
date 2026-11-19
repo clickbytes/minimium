@@ -106,7 +106,7 @@ fn submit_line(
         return;
     }
     match crate::server_command::bindings::parse(command_line, catalog) {
-        Ok(ServerCommand::CatalogOutput(text)) => emit(
+        Ok(ServerCommand::CatalogOutput { text, .. }) => emit(
             logger,
             minimium_diagnostics::Level::Info,
             "server.console_catalog",

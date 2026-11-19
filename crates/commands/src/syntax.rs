@@ -4,7 +4,7 @@ mod values;
 
 use crate::{CommandError, CommandErrorCode};
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SourceSpan {
     pub start: usize,
     pub end: usize,

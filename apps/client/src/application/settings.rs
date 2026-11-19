@@ -1,3 +1,4 @@
+mod locale;
 mod startup;
 use crate::client_commands::ClientPropertyValue;
 use minimium_commands::PropertySource;
@@ -11,7 +12,7 @@ pub(crate) struct ClientSettings {
     pub(crate) require_earth: bool,
     pub(crate) demo: bool,
     pub(crate) config_file_settings: BTreeMap<String, String>,
-    values: SettingsStore,
+    pub(crate) values: SettingsStore,
 }
 
 #[cfg(feature = "desktop")]
@@ -34,6 +35,12 @@ impl ClientSettings {
         }
     }
 
+    pub(crate) fn startup_projection(
+        &self,
+        key: &str,
+    ) -> Option<minimium_commands::results::property::StartupValue<String>> {
+        self.values.startup_projection(key)
+    }
     pub(crate) fn requested(&self, key: &str) -> Option<&str> {
         self.values.requested(key)
     }
@@ -61,6 +68,7 @@ impl ClientSettings {
 }
 
 pub(crate) struct SettingsStore {
+    locale_revision: u64,
     startup: BTreeMap<String, SettingRecord>,
     records: BTreeMap<String, SettingRecord>,
 }
@@ -101,8 +109,20 @@ impl SettingRecord {
 }
 
 impl SettingsStore {
+    pub(crate) fn startup_projection(
+        &self,
+        key: &str,
+    ) -> Option<minimium_commands::results::property::StartupValue<String>> {
+        use minimium_commands::results::property::{ConfigurationSource, StartupValue};
+        let r = self.startup.get(key)?;
+        Some(StartupValue {
+            value: r.requested.encoded.clone(),
+            source: ConfigurationSource::from_source(r.source)?,
+        })
+    }
     pub(crate) fn new(startup: &StartupSettings) -> Self {
         Self {
+            locale_revision: 0,
             records: startup.records.clone(),
             startup: startup.records.clone(),
         }

@@ -178,9 +178,11 @@ impl ServerRuntime {
                 self.shutdown_request.request();
             }
             if let CommandOrigin::Host(id) = request_id {
-                self.operations
-                    .host_outcomes
-                    .push(crate::CommandExecution { id, reply });
+                self.operations.host_outcomes.push(crate::CommandExecution {
+                    id,
+                    identity: command.identity(id.get(), &self.operation_catalog),
+                    reply,
+                });
             }
             if self.shutdown_request.is_requested() {
                 break;

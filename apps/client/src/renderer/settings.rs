@@ -59,7 +59,7 @@ impl DesktopHost {
         key
     }
 
-    fn apply_property_value(&mut self, value: Value) {
+    pub(super) fn apply_property_value(&mut self, value: Value) {
         if self.meteors.apply_setting(&value) {
             return;
         }

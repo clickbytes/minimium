@@ -183,11 +183,18 @@ pub(super) fn handle(
                 )
             );
         }
-        FrontendAction::Property(command) => properties::print_result(
-            text_properties.execute(command, options, application.connection_view(), &localizer),
-            &localizer,
-            options.locale,
-        ),
+        FrontendAction::Property(command) => match text_properties.execute(
+            command,
+            options,
+            application.connection_view(),
+            localizer,
+        ) {
+            Ok(line) => println!("{line}"),
+            Err(error) => println!(
+                "{}",
+                crate::client_commands::command_error(&error, localizer, options.locale)
+            ),
+        },
         FrontendAction::ConfigSave(path) => {
             match crate::config::save_preferences(
                 &path,

@@ -1,4 +1,5 @@
 //! Read-only, bounded command reply data for runtime hosts.
+mod operation;
 use crate::commands::{CommandPayload, CommandReply};
 
 /// Execution state visible to an embedded host.
@@ -14,6 +15,7 @@ pub struct CommandReplyView<'a> {
     pub state: ReplyState,
     pub should_stop: bool,
     pub error_code: Option<&'static str>,
+    pub error_subject: Option<&'a str>,
     pub detail: Option<&'a str>,
     pub catalog_help: Option<&'a str>,
     pub payload: Option<CommandPayloadView<'a>>,
@@ -42,11 +44,6 @@ pub enum CommandPayloadView<'a> {
     Stopping,
     Time(&'a crate::ClockPropertySnapshot),
     Property(&'a crate::commands::PropertyReport),
-    UnknownProperty(&'a str),
-    UnavailableProperty {
-        key: &'a str,
-        reason: &'a str,
-    },
     PropertyHelp(&'a minimium_commands::PropertySpec),
     PropertyCommandsHelp {
         builtins: &'a [&'static str],
@@ -130,10 +127,6 @@ impl CommandReply {
             CommandPayload::Stopping => CommandPayloadView::Stopping,
             CommandPayload::Time(value) => CommandPayloadView::Time(value),
             CommandPayload::Property(value) => CommandPayloadView::Property(value),
-            CommandPayload::UnknownProperty(key) => CommandPayloadView::UnknownProperty(key),
-            CommandPayload::UnavailableProperty { key, reason } => {
-                CommandPayloadView::UnavailableProperty { key, reason }
-            }
             CommandPayload::PropertyHelp(value, _) => CommandPayloadView::PropertyHelp(value),
             CommandPayload::PropertyCommandsHelp { builtins } => {
                 CommandPayloadView::PropertyCommandsHelp { builtins }
@@ -223,6 +216,7 @@ impl CommandReply {
             should_stop: self.should_stop(),
             error_code: self.error_code(),
             detail: self.detail(),
+            error_subject: self.error_subject(),
             catalog_help: match self.payload() {
                 Some(CommandPayload::PropertyHelp(_, description)) => Some(description),
                 _ => None,
