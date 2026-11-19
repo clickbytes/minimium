@@ -1,4 +1,4 @@
-use super::{events, help_lines, properties, start_error_output, start_remote, ClientOptions};
+use super::{events, properties, start_error_output, start_remote, ClientOptions};
 use crate::application::ClientApplication;
 use crate::client_commands::{CommandActionResult, CommandOutput, FrontendAction};
 use crate::messages::ClientText as Text;
@@ -35,15 +35,7 @@ pub(super) fn handle(
             )
         ),
         FrontendAction::Print(text) => println!("{text}"),
-        FrontendAction::Help => {
-            for line in help_lines() {
-                println!("{line}");
-            }
-            println!(
-                "{}",
-                Text::FpsUnavailable.localized(&localizer, options.locale)
-            );
-        }
+        FrontendAction::Help | FrontendAction::Clear => unreachable!("shared console operation"),
         FrontendAction::HostLocal(requested_lanes) => {
             if application.is_connection_busy() {
                 println!(
@@ -168,9 +160,6 @@ pub(super) fn handle(
                 Text::NotConnected.localized(&localizer, options.locale)
             ),
         },
-        FrontendAction::Clear => {
-            result.outputs.push(CommandOutput::Clear);
-        }
         FrontendAction::Quit => return (true, result),
         FrontendAction::MapTeleport => {
             println!(
@@ -183,18 +172,20 @@ pub(super) fn handle(
                 )
             );
         }
-        FrontendAction::Property(command) => match text_properties.execute(
-            command,
-            options,
-            application.connection_view(),
-            localizer,
-        ) {
-            Ok(line) => println!("{line}"),
-            Err(error) => println!(
-                "{}",
-                crate::client_commands::command_error(&error, localizer, options.locale)
-            ),
-        },
+        FrontendAction::Property(command) => {
+            match text_properties.execute(command, options, application.connection_view()) {
+                Ok(line) => result.outputs.push(CommandOutput::Line(line)),
+                Err(error) => {
+                    result
+                        .outputs
+                        .push(CommandOutput::Line(crate::client_commands::command_error(
+                            &error,
+                            localizer,
+                            options.locale,
+                        )))
+                }
+            }
+        }
         FrontendAction::CameraStatus
         | FrontendAction::CameraLook { .. }
         | FrontendAction::ConfigSave(_) => unreachable!("shared preference operation"),

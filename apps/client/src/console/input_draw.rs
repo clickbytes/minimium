@@ -34,27 +34,29 @@ pub(super) fn draw(
     let display_text = format!("{prefix}{}{suffix}", editor.preedit);
     let chars: Vec<&str> = display_text.graphemes(true).collect();
     let range = editor.selection();
-    let mut byte = 0;
-    for (index, grapheme) in chars.iter().enumerate() {
-        if editor.preedit.is_empty()
-            && index >= editor.scroll
-            && index < editor.scroll + columns
-            && byte >= range.start
-            && byte < range.end
-        {
+    if editor.preedit.is_empty() && !range.is_empty() {
+        let column = |at| {
+            editor.text[..at]
+                .graphemes(true)
+                .count()
+                .saturating_sub(editor.scroll)
+                .min(columns)
+        };
+        let first = column(range.start);
+        let end = column(range.end);
+        if end > first {
             text::append_quad(
                 vertices,
                 context,
                 QuadDraw::solid(
-                    X + (index - editor.scroll) as f32 * advance,
+                    X + first as f32 * advance,
                     y - 2.0,
-                    advance,
+                    (end - first) as f32 * advance,
                     24.0,
                     [0.22, 0.37, 0.52],
                 ),
             );
         }
-        byte += grapheme.len();
     }
     let visible = chars
         .iter()

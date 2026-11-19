@@ -38,7 +38,7 @@ use time_adapter::ClockAction;
 mod weather;
 
 pub(crate) use gameplay::nearest_portal_entity;
-pub(crate) use help::{command_error, command_help, command_help_group, help_lines};
+pub(crate) use help::command_error;
 pub(crate) use meteors::{MeteorDebug, MeteorLightDebug, MeteorPreset};
 pub(crate) use minimium_commands::{
     CommandArgumentSpec as ArgumentSpec, CommandArgumentType as ArgumentType,
@@ -53,9 +53,8 @@ pub(crate) use presentation::{
 };
 pub(crate) use properties::local_setting_specs;
 pub(crate) use properties::{
-    format_property_help_localized, format_property_list_localized, format_time_value,
-    parse_setting_value, property_spec, ClientPropertyCommand, ClientPropertyKey,
-    ClientPropertyValue,
+    format_property_help_localized, format_time_value, parse_setting_value, property_spec,
+    ClientPropertyCommand, ClientPropertyKey, ClientPropertyValue,
 };
 pub(crate) use text::{
     execute_text, CommandActionResult, CommandOutput, CommandSource, TextCommandResult,

@@ -844,3 +844,5 @@ The jump command and its alias use the CPU application path and the ordinary gam
 F1 suggestions and the CPU explain adapter share partial input analysis. Each edit carries a buffer revision, full replacement range and caret offset. Explain projects prepared arguments or reports incomplete input through terminal, developer stdin and F1.
 
 The F1 popup displays eight catalog candidates with Polish or English role labels, a focus indicator and the active argument. Up and Down select an open candidate. Tab applies its complete byte-range edit as one undo step. Escape dismisses composition, then the popup, then the console. Enter checks the complete input before storing history or clearing the editor. Diagnostics mark the source span.
+
+F1, developer stdin and the terminal accept up to 512 UTF-8 bytes before normalization. A larger paste, IME commit or stdin line reports input_too_long and cannot submit a truncated command. History retains 128 accepted source lines. The overlay prepares its input and popup geometry before budgeting the remaining 8192 vertices for HUD and history.

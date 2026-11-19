@@ -11,6 +11,7 @@ struct Snapshot {
 }
 
 pub(crate) struct Editor {
+    pub rejected_bytes: Option<usize>,
     pub revision: u64,
     pub text: String,
     pub preedit: String,
@@ -27,6 +28,7 @@ pub(crate) struct Editor {
 impl Editor {
     pub fn new() -> Self {
         Self {
+            rejected_bytes: None,
             revision: 0,
             text: String::with_capacity(MAX_INPUT),
             preedit: String::new(),
@@ -66,6 +68,7 @@ impl Editor {
     }
 
     pub fn set_text(&mut self, text: &str) {
+        self.rejected_bytes = None;
         self.clear_preedit();
         self.revision = self.revision.wrapping_add(1);
         self.undo.clear();
@@ -79,6 +82,7 @@ impl Editor {
     }
 
     pub fn clear(&mut self) -> String {
+        self.rejected_bytes = None;
         self.clear_preedit();
         self.undo.clear();
         self.redo.clear();
@@ -92,15 +96,17 @@ impl Editor {
     pub fn replace_selection(&mut self, input: &str) {
         self.clear_preedit();
         let range = self.selection();
-        let capacity = MAX_INPUT - (self.text.len() - range.len());
-        let filtered: String = input.chars().filter(|ch| !ch.is_control()).collect();
-        let mut clean = String::new();
-        for grapheme in filtered.graphemes(true) {
-            if clean.len() + grapheme.len() > capacity {
-                break;
-            }
-            clean.push_str(grapheme);
+        let bytes = self
+            .text
+            .len()
+            .saturating_sub(range.len())
+            .saturating_add(input.len());
+        if bytes > MAX_INPUT {
+            self.rejected_bytes = Some(bytes);
+            return;
         }
+        self.rejected_bytes = None;
+        let clean: String = input.chars().filter(|ch| !ch.is_control()).collect();
         if range.is_empty() && clean.is_empty() {
             return;
         }
@@ -137,6 +143,7 @@ impl Editor {
         }
         self.record();
         self.revision = self.revision.wrapping_add(1);
+        self.rejected_bytes = None;
         self.text = next;
         self.cursor = caret;
         self.anchor = caret;
@@ -319,6 +326,7 @@ impl Editor {
     }
 
     fn restore(&mut self, snapshot: Snapshot) {
+        self.rejected_bytes = None;
         self.revision = self.revision.wrapping_add(1);
         self.text = snapshot.text;
         self.cursor = snapshot.cursor;

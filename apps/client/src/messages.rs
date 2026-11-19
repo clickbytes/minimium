@@ -55,8 +55,6 @@ pub enum ClientText {
     CouldNotQueueMovement(QueueProblem),
     FpsUnavailable,
     #[cfg(feature = "desktop")]
-    ConsoleHistoryHelp,
-    #[cfg(feature = "desktop")]
     ShotFired,
     #[cfg(feature = "desktop")]
     VisiblePlayerLimitExceeded,
@@ -290,8 +288,6 @@ impl ClientText {
                 },
             ),
             Self::FpsUnavailable => localizer.format(locale, &UiMessage::FpsUnavailable),
-            #[cfg(feature = "desktop")]
-            Self::ConsoleHistoryHelp => localizer.format(locale, &UiMessage::ConsoleHistoryHelp),
             #[cfg(feature = "desktop")]
             Self::ShotFired => localizer.format(locale, &UiMessage::ShotFired),
             #[cfg(feature = "desktop")]

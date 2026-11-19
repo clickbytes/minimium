@@ -9,6 +9,8 @@ use minimium_localization::{Locale, Localizer, UiMessage};
 
 pub(crate) enum ClientPayload {
     Native(Payload),
+    CatalogHelp(super::help::CatalogHelp),
+    Clear,
     // Preserve localization tokens, clear instructions and capability reports until display.
     LegacyText(CommandActionResult),
 }
@@ -103,6 +105,21 @@ pub(crate) fn dispatch(
     let result = match outcome {
         TextCommandResult::Empty => return (false, None),
         TextCommandResult::Action(action) => {
+            let console = if matches!(action, FrontendAction::Clear) {
+                Some(ClientPayload::Clear)
+            } else {
+                super::help::CatalogHelp::for_action(&action).map(ClientPayload::CatalogHelp)
+            };
+            if let Some(payload) = console {
+                return (
+                    false,
+                    Some(OperationResult::new(
+                        identity,
+                        OperationReceipt::at(Stage::Completed),
+                        Ok(payload),
+                    )),
+                );
+            }
             let (exit, result) = handle(identity, action);
             return (exit, Some(result));
         }
@@ -158,6 +175,20 @@ pub(crate) fn display(
     let stage = result.receipt.stage.label();
     let id = &result.identity.operation.0;
     let line = match result.outcome {
+        Ok(ClientPayload::Clear) => {
+            return CommandActionResult {
+                outputs: vec![CommandOutput::Clear],
+            }
+        }
+        Ok(ClientPayload::CatalogHelp(report)) => {
+            return CommandActionResult {
+                outputs: report
+                    .format(localizer, locale)
+                    .into_iter()
+                    .map(CommandOutput::Line)
+                    .collect(),
+            }
+        }
         Ok(ClientPayload::LegacyText(output)) => return output,
         Ok(ClientPayload::Native(Payload::Property(value))) => {
             format!("{id} {stage} {}", value.format_with(CommandValue::encode))
@@ -175,7 +206,12 @@ pub(crate) fn display(
                     subject: error.subject.unwrap_or_else(|| id.clone()),
                 },
             );
-            let mut text = format!("{stage} {} {header}: {}", error.code, error.reason);
+            let reason = if error.code == CommandErrorCode::InputTooLong.as_str() {
+                super::help::input_length_error(error.span, localizer, locale)
+            } else {
+                error.reason
+            };
+            let mut text = format!("{stage} {} {header}: {reason}", error.code);
             if let Some(usage) = error.usage {
                 text.push('\n');
                 text.push_str(&usage)

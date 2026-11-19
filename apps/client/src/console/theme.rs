@@ -13,7 +13,7 @@ pub(super) const MAX_ATLAS_BYTES: usize = 1024 * 1024;
 pub(super) const MAX_LINES: usize = 128;
 pub(super) const MAX_CHAT_LINES: usize = 8;
 pub(super) const CHAT_VISIBLE_DURATION: Duration = Duration::from_secs(6);
-pub(super) const MAX_INPUT: usize = 128;
+pub(super) const MAX_INPUT: usize = minimium_commands::MAX_INPUT_BYTES;
 pub(super) const MAX_VERTICES: usize = 8192;
 
 pub(super) const CONSOLE_TEXT: [f32; 3] = [0.78, 0.86, 0.92];

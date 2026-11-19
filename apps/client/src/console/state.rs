@@ -49,6 +49,7 @@ pub struct Console {
     scroll_offset: usize,
     pub(super) chat_lines: VecDeque<ChatLine>,
     vertices: Vec<UiVertex>,
+    input_vertices: Vec<UiVertex>,
     dpi_scale: f32,
 }
 
@@ -65,6 +66,7 @@ impl Console {
             scroll_offset: 0,
             chat_lines: VecDeque::with_capacity(MAX_CHAT_LINES),
             vertices: Vec::with_capacity(MAX_VERTICES),
+            input_vertices: Vec::new(),
             dpi_scale: 1.0,
         }
     }
@@ -377,6 +379,15 @@ impl Console {
     }
 
     fn append_console(&mut self, context: DrawContext) {
+        self.input_vertices.clear();
+        input_draw::draw(
+            &mut self.input_vertices,
+            context,
+            &mut self.editor,
+            &self.suggestions,
+        );
+        let background_budget = super::draw_budget::background(self.input_vertices.len());
+        self.vertices.truncate(background_budget.saturating_sub(36));
         let panel_height = 500.0f32.min(context.height - 20.0);
         let panel_top = context.height - panel_height - 10.0;
         text::append_quad(
@@ -446,12 +457,8 @@ impl Console {
                 },
             );
         }
-        input_draw::draw(
-            &mut self.vertices,
-            context,
-            &mut self.editor,
-            &self.suggestions,
-        );
+        self.vertices.truncate(background_budget);
+        self.vertices.extend_from_slice(&self.input_vertices);
     }
 }
 

@@ -51,35 +51,6 @@ pub(crate) fn format_property_help_localized(
     )
 }
 
-pub(crate) fn format_property_list_localized(
-    prefix: Option<&str>,
-    localizer: &minimium_localization::Localizer,
-    locale: minimium_localization::Locale,
-) -> String {
-    let items = catalog()
-        .entries()
-        .filter_map(|entry| entry.property)
-        .filter(|p| prefix.is_none_or(|prefix| p.key.starts_with(prefix)))
-        .collect::<Vec<_>>();
-    if items.is_empty() {
-        return localizer.format(
-            locale,
-            &minimium_localization::UiMessage::NoPropertyMatches(prefix.unwrap_or("*").to_owned()),
-        );
-    }
-    items
-        .into_iter()
-        .map(|spec| {
-            let description = localizer.format(
-                locale,
-                &minimium_localization::UiMessage::PropertyDescription(spec.key.to_owned()),
-            );
-            format!("{} — {}", spec.key, description)
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
 pub(crate) fn format_time_value(
     key: ClientPropertyKey,
     frame: crate::environment::EnvironmentFrameInput,

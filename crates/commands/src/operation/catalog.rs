@@ -37,6 +37,10 @@ impl OperationCatalog {
         self.entries.get(self.names.get(name)?)
     }
 
+    pub fn by_id(&self, id: &OperationId) -> Option<&CatalogEntry> {
+        self.entries.get(id)
+    }
+
     pub fn entries(&self) -> impl Iterator<Item = &CatalogEntry> {
         self.entries.values()
     }

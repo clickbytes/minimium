@@ -8,16 +8,16 @@ mod bolid_path;
 
 pub(super) fn execute(
     renderer: &mut DesktopHost,
-    line: &str,
+    line: &crate::ConsoleInput,
 ) -> (bool, Option<dispatch::ClientResult>) {
     super::controller::execute_input(
         renderer,
-        line,
+        line.as_deref().map_err(Clone::clone),
         crate::client_commands::CommandSource::DeveloperStdin,
     )
 }
 
-pub(super) fn format_output(renderer: &DesktopHost, result: Option<dispatch::ClientResult>) {
+pub(super) fn format_output(renderer: &mut DesktopHost, result: Option<dispatch::ClientResult>) {
     let result = dispatch::display(
         result,
         &renderer.localizer,
@@ -44,7 +44,10 @@ pub(super) fn format_output(renderer: &DesktopHost, result: Option<dispatch::Cli
             CommandOutput::Presentation(PresentationResult::Unavailable(unavailable)) => {
                 println!("dev: {}", unavailable.message());
             }
-            CommandOutput::Clear => {}
+            CommandOutput::Clear => {
+                renderer.application.ui.console.clear_lines();
+                print!("\x1b[2J\x1b[H");
+            }
         }
     }
 }

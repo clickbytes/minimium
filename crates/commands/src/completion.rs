@@ -79,7 +79,11 @@ pub fn analyze_partial(
         buffer_revision,
         catalog_revision: catalog.fingerprint(),
     };
-    if line.len() > 512 || !line.is_char_boundary(cursor) || line.get(selection.clone()).is_none() {
+    if line.len() > crate::MAX_INPUT_BYTES {
+        result.state = AnalysisState::Invalid(crate::input_too_long(line.len()));
+        return result;
+    }
+    if !line.is_char_boundary(cursor) || line.get(selection.clone()).is_none() {
         result.state = AnalysisState::Invalid(CommandError::new(
             Code::InvalidArguments,
             Some("input"),

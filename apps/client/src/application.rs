@@ -273,7 +273,7 @@ impl ClientApplication {
 
     pub(crate) fn execute_text_command(
         &mut self,
-        input: &str,
+        input: Result<&str, minimium_commands::CommandError>,
         source: crate::client_commands::CommandSource,
         fire_direction: [f32; 3],
         player_position: Option<[f32; 3]>,
@@ -308,6 +308,15 @@ impl ClientApplication {
             );
         };
         self.next_command_id = next_id;
+        let input = match input {
+            Ok(line) => line,
+            Err(error) => {
+                return (
+                    identity,
+                    crate::client_commands::TextCommandResult::Rejected(error),
+                )
+            }
+        };
         if let Err(error) = self.core.validate_time(now) {
             return (
                 identity,

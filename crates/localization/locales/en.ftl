@@ -24,7 +24,7 @@ graphics-init-failed = Graphics initialization failed: { $detail }
 renderer-already-initialized = Renderer can only initialize once
 render-failed = Render error: { $detail }
 fps-unavailable = FPS display is unavailable in the terminal client
-console-history-help = F1 closes the console. Arrow keys browse command history.
+console-history-help = Up/Down selects a suggestion or browses history. Tab completes. Enter runs complete input. Escape dismisses the list. F1 closes the console.
 shot-fired = Shot fired
 visible-player-limit-exceeded = Server exceeded the visible-player snapshot limit
 welcome-timeout = Server welcome timed out; you can reconnect
@@ -287,3 +287,5 @@ tool-preview = Local preview: green = material matches, red = blocked; server co
 tool-heading = DIG DEBUG | { $tool } | radius 0.6 m / reach 3 m
 tool-target = Target: { $material } | distance { $distance } m
 tool-result = Last action #{ $action }: { $outcome }
+
+input-too-long = Input contains { $received } bytes. The limit is { $limit } bytes.

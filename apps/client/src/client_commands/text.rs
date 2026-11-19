@@ -67,28 +67,16 @@ pub(crate) enum TextCommandResult {
 
 pub(crate) fn execute_text(
     input: &str,
-    source: CommandSource,
+    _source: CommandSource,
     context: &mut CommandContext<'_>,
     identity: &mut minimium_commands::results::OperationContext,
 ) -> TextCommandResult {
+    if input.len() > minimium_commands::MAX_INPUT_BYTES {
+        return TextCommandResult::Rejected(minimium_commands::input_too_long(input.len()));
+    }
     let input = input.trim();
     if input.is_empty() {
         return TextCommandResult::Empty;
-    }
-    let limit = match source {
-        CommandSource::Terminal => 512,
-        #[cfg(feature = "desktop")]
-        CommandSource::DeveloperStdin if super::presentation::is_developer_family(input) => 512,
-        #[cfg(feature = "desktop")]
-        CommandSource::Console | CommandSource::DeveloperStdin => 128,
-    };
-    if input.len() > limit {
-        return TextCommandResult::Rejected(CommandError::new(
-            CommandErrorCode::InvalidArguments,
-            None::<String>,
-            format!("command exceeds {limit} bytes"),
-            None::<String>,
-        ));
     }
     let command = match super::bindings::parse(input, identity) {
         Ok(Some(command)) => command,

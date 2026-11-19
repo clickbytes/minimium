@@ -69,7 +69,7 @@ pub(super) fn draw(
     let available = ((bottom - 4.0) / row_height).floor().max(1.0) as usize;
     let rows = available.min(popup.row_count());
     let y = bottom - rows as f32 * row_height;
-    let columns = ((width - 12.0) / advance) as usize;
+    let columns = (((width - 12.0) / advance) as usize).min(super::draw_budget::POPUP_COLUMNS);
     let mut row = |i: usize, label: &str, color: [f32; 3], selected: bool| {
         let top = y + i as f32 * row_height;
         text::append_quad(
@@ -130,7 +130,18 @@ pub(super) fn draw(
             ItemKind::Method => POPUP_METHOD,
             _ => POPUP_SCOPE,
         };
-        row(i - first, &popup.labels[i], color, i == popup.selected);
+        if i == popup.selected && (result.items.len() > visible || result.truncated) {
+            let label = format!(
+                "[{}/{}{}] {}",
+                i + 1,
+                result.items.len(),
+                if result.truncated { "+" } else { "" },
+                popup.labels[i]
+            );
+            row(i - first, &label, color, true);
+        } else {
+            row(i - first, &popup.labels[i], color, i == popup.selected);
+        }
     }
     if signature_rows == 1 {
         row(

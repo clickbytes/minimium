@@ -23,10 +23,6 @@ impl CommandOutputCollector {
             .outputs
             .push(CommandOutput::ClientText { message, error });
     }
-
-    pub(super) fn clear_lines(&mut self) {
-        self.result.outputs.push(CommandOutput::Clear);
-    }
 }
 
 pub(in crate::renderer) fn format_console_output(

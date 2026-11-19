@@ -17,33 +17,10 @@ impl DesktopHost {
                 self.reset_property(key);
                 self.property_line(key, true)
             }
-            ClientPropertyCommand::Help(key) => {
-                crate::client_commands::format_property_help_localized(
-                    crate::client_commands::property_spec(key.key())
-                        .expect("parsed property key exists"),
-                    &self.localizer,
-                    self.application.settings.locale,
-                )
-            }
-            ClientPropertyCommand::List(prefix) => {
-                crate::client_commands::format_property_list_localized(
-                    prefix.as_deref(),
-                    &self.localizer,
-                    self.application.settings.locale,
-                )
-            }
-            ClientPropertyCommand::CommandHelp(name) => crate::client_commands::command_help(
-                &name,
-                &self.localizer,
-                self.application.settings.locale,
-            ),
-            ClientPropertyCommand::CommandHelpGroup(prefix) => {
-                crate::client_commands::command_help_group(
-                    &prefix,
-                    &self.localizer,
-                    self.application.settings.locale,
-                )
-            }
+            ClientPropertyCommand::Help(_)
+            | ClientPropertyCommand::List(_)
+            | ClientPropertyCommand::CommandHelp(_)
+            | ClientPropertyCommand::CommandHelpGroup(_) => unreachable!("shared catalog query"),
         }
     }
 

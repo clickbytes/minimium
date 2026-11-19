@@ -16,15 +16,7 @@ pub(super) fn execute(
                 output.push_line(line);
             }
         }
-        FrontendAction::Help => {
-            output.push_ui_message(minimium_localization::UiMessage::Notice(
-                minimium_localization::UiNotice::CommandsHeader,
-            ));
-            for line in client_commands::help_lines() {
-                output.push_line(line);
-            }
-            output.push_client_text(Text::ConsoleHistoryHelp, false);
-        }
+        FrontendAction::Help | FrontendAction::Clear => unreachable!("shared console operation"),
         FrontendAction::Connect(address) => {
             if renderer.application.connection_view().busy() {
                 output.push_client_text(Text::DisconnectOrWait, true);
@@ -106,7 +98,6 @@ pub(super) fn execute(
                 renderer.arm_map_teleport();
             }
         }
-        FrontendAction::Clear => output.clear_lines(),
         FrontendAction::Property(command) => {
             for line in renderer.apply_property(command).lines() {
                 output.push_line(line);

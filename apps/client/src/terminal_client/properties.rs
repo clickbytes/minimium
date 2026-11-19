@@ -30,7 +30,6 @@ impl TextProperties {
         command: ClientPropertyCommand,
         options: &mut ClientOptions,
         connection: &ConnectionController,
-        localizer: &minimium_localization::Localizer,
     ) -> Result<String, CommandError> {
         match command {
             ClientPropertyCommand::Get(key) => match key {
@@ -91,28 +90,10 @@ impl TextProperties {
                 }
                 Ok(self.get(key, options))
             }
-            ClientPropertyCommand::Help(key) => {
-                Ok(crate::client_commands::format_property_help_localized(
-                    property_spec(key.key()).expect("parsed property key exists"),
-                    localizer,
-                    options.locale,
-                ))
-            }
-            ClientPropertyCommand::List(prefix) => {
-                Ok(crate::client_commands::format_property_list_localized(
-                    prefix.as_deref(),
-                    localizer,
-                    options.locale,
-                ))
-            }
-            ClientPropertyCommand::CommandHelp(name) => Ok(crate::client_commands::command_help(
-                &name,
-                localizer,
-                options.locale,
-            )),
-            ClientPropertyCommand::CommandHelpGroup(prefix) => Ok(
-                crate::client_commands::command_help_group(&prefix, localizer, options.locale),
-            ),
+            ClientPropertyCommand::Help(_)
+            | ClientPropertyCommand::List(_)
+            | ClientPropertyCommand::CommandHelp(_)
+            | ClientPropertyCommand::CommandHelpGroup(_) => unreachable!("shared catalog query"),
         }
     }
 

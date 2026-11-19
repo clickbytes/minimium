@@ -14,7 +14,11 @@ pub(super) fn execute_console_input(renderer: &mut DesktopHost) -> bool {
     else {
         return false;
     };
-    let (exit, result) = execute_input(renderer, &input, client_commands::CommandSource::Console);
+    let (exit, result) = execute_input(
+        renderer,
+        Ok(&input),
+        client_commands::CommandSource::Console,
+    );
     let output = dispatch::display(
         result,
         &renderer.localizer,
@@ -26,7 +30,7 @@ pub(super) fn execute_console_input(renderer: &mut DesktopHost) -> bool {
 
 pub(super) fn execute_input(
     renderer: &mut DesktopHost,
-    input: &str,
+    input: Result<&str, minimium_commands::CommandError>,
     source: client_commands::CommandSource,
 ) -> (bool, Option<dispatch::ClientResult>) {
     let direction = super::camera::camera_direction(

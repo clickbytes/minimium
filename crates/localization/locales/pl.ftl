@@ -24,7 +24,7 @@ graphics-init-failed = Inicjalizacja grafiki nie powiodła się: { $detail }
 renderer-already-initialized = Renderer można zainicjalizować tylko raz
 render-failed = Błąd renderowania: { $detail }
 fps-unavailable = Podgląd FPS nie jest dostępny w kliencie terminalowym
-console-history-help = F1 zamyka konsolę. Strzałki przewijają historię poleceń.
+console-history-help = Strzałki wybierają podpowiedź lub wpis historii. Tab uzupełnia. Enter wykonuje pełne polecenie. Escape zamyka listę. F1 zamyka konsolę.
 shot-fired = Oddano strzał
 visible-player-limit-exceeded = Serwer przekroczył limit widocznych graczy w migawce
 welcome-timeout = Przekroczono czas oczekiwania na powitanie serwera; możesz połączyć się ponownie
@@ -289,3 +289,5 @@ tool-preview = Podgląd lokalny: zielony = zgodny materiał, czerwony = blokada;
 tool-heading = DEBUG KOPANIA | { $tool } | promień 0,6 m / zasięg 3 m
 tool-target = Cel: { $material } | odległość { $distance } m
 tool-result = Ostatnia akcja #{ $action }: { $outcome }
+
+input-too-long = Polecenie zawiera { $received } bajtów. Limit wynosi { $limit } bajtów.

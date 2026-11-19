@@ -1,5 +1,3 @@
-#[cfg(feature = "desktop")]
-use minimium_commands::lex_command_line_with_spans;
 use minimium_commands::{CommandError, CommandErrorCode};
 
 pub(super) const COMMAND_FORMS: &[(&str, &str)] = &[
@@ -213,28 +211,6 @@ impl PresentationOperation {
             }
         }
     }
-}
-
-#[cfg(feature = "desktop")]
-pub(super) fn is_developer_family(input: &str) -> bool {
-    let Ok(tokens) = lex_command_line_with_spans(input.trim()) else {
-        return false;
-    };
-    let words = tokens
-        .iter()
-        .map(|token| token.value.as_str())
-        .collect::<Vec<_>>();
-    matches!(
-        words.as_slice(),
-        ["dev", "clouds", ..] | ["dev", "goto", ..] | ["dev", "look", ..]
-    ) || (words.first() == Some(&"dev")
-        && words.get(1) == Some(&"bolid")
-        && words.get(2).is_some_and(|subcommand| {
-            matches!(
-                *subcommand,
-                "transmission" | "path" | "fragments" | "lighting" | "status" | "replay" | "freeze"
-            )
-        }))
 }
 
 pub(super) fn parse_developer(words: &[String]) -> Result<PresentationOperation, CommandError> {

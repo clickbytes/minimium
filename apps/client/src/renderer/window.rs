@@ -16,7 +16,7 @@ struct App {
     _diagnostics: minimium_telemetry::logging::DiagnosticsRuntime,
     startup_error: Option<String>,
     modifiers: winit::keyboard::ModifiersState,
-    dev_input: Option<std::sync::mpsc::Receiver<String>>,
+    dev_input: Option<std::sync::mpsc::Receiver<crate::ConsoleInput>>,
 }
 
 impl ApplicationHandler for App {

@@ -378,3 +378,5 @@ Speed, acceleration and flight are scoped to the session actor and current world
 Jump admission reserves one console intent. Its final receipt carries the physical decision at the resolved tick. Multiple requests in a tick share one impulse decision. Device flight ascent remains a separate input.
 
 Partial input uses the operation catalog. For example, completing `get ui.lo` edits only `lo`, and choosing a value in `set ui.locale p` preserves the key. Completing `client.cam|ra.fov = 90` at the marked caret preserves `.fov = 90`. An open call displays its registered argument types. Terminal and developer stdin can inspect this same analysis with `ui.console.explain("world.time.")`.
+
+F1, developer stdin and terminal accept 512 UTF-8 bytes per line before trimming. Oversize lines report input_too_long. Tab applies a suggestion, Enter submits a complete line, and Escape dismisses suggestions before closing F1. Up/Down selects candidates or browses the 128-entry command history. Clear preserves command history. Use help NAME to inspect a field, method or its registered alias.

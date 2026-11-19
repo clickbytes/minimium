@@ -29,3 +29,18 @@ pub use syntax::{
     format_command_arguments, lex_command_line, lex_command_line_with_spans, CommandToken,
     SourceSpan,
 };
+
+/// Public client command-line budget, before trimming or decoding values.
+pub const MAX_INPUT_BYTES: usize = 512;
+pub fn input_too_long(bytes: usize) -> CommandError {
+    CommandError::new(
+        CommandErrorCode::InputTooLong,
+        Some("input"),
+        format!("input exceeds {MAX_INPUT_BYTES} bytes ({bytes} received)"),
+        None::<String>,
+    )
+    .at(SourceSpan {
+        start: 0,
+        end: bytes,
+    })
+}

@@ -27,6 +27,19 @@ impl Suggestions {
             editor.revision,
         );
         self.diagnostic = None;
+        if let Some(bytes) = editor.rejected_bytes {
+            let error = minimium_commands::input_too_long(bytes);
+            self.diagnostic = Some((
+                crate::client_commands::command_error(&error, localizer, locale),
+                minimium_commands::SourceSpan {
+                    start: editor.cursor,
+                    end: editor.cursor,
+                },
+            ));
+            self.open = false;
+            self.result = Some(result);
+            return;
+        }
         self.selected = 0;
         self.labels = result
             .items
@@ -135,6 +148,9 @@ impl Suggestions {
             return false;
         }
         self.edited(editor, localizer, locale);
+        if editor.rejected_bytes.is_some() {
+            return false;
+        }
         let result = self.result.as_ref().expect("current analysis");
         let Err(error) = validate_edit(&editor.text, result) else {
             return true;

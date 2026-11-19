@@ -1,5 +1,6 @@
 mod atlas;
 mod completion_popup;
+mod draw_budget;
 mod editor;
 mod glyph_atlas;
 mod history;

@@ -109,6 +109,10 @@ pub enum UiMessage {
     PropertyDescription(String),
     NoPropertyMatches(String),
     CommandHelp(String),
+    InputTooLong {
+        limit: usize,
+        received: usize,
+    },
     CommandRejected {
         code: String,
         subject: String,
@@ -195,6 +199,7 @@ impl UiMessage {
             Self::PropertyDescription(_) => "property-description",
             Self::NoPropertyMatches(_) => "no-property-matches",
             Self::CommandHelp(_) => "command-help",
+            Self::InputTooLong { .. } => "input-too-long",
             Self::CommandRejected { .. } => "command-rejected",
             Self::MapTeleportResult(_) => "map-teleport-result",
             Self::ContentUnavailable => "content-unavailable",
@@ -420,6 +425,10 @@ impl UiMessage {
                 "name",
                 FluentValue::from(name.replace(' ', "_").replace('.', "_")),
             ),
+            Self::InputTooLong { limit, received } => {
+                args.set("limit", limit.to_string());
+                args.set("received", received.to_string());
+            }
             Self::CommandRejected { code, subject } => {
                 args.set("code", FluentValue::from(code.clone()));
                 args.set("subject", FluentValue::from(subject.clone()));

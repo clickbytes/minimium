@@ -1,5 +1,5 @@
 use crate::{
-    client_commands::{help_lines, output as dispatch, CommandSource},
+    client_commands::{output as dispatch, CommandSource},
     messages::ClientText as Text,
     options::ClientOptions,
     session::{SessionEvent, SessionState},
@@ -241,7 +241,7 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
             Ok(line) => {
                 prompt_needed = true;
                 let result = application.execute_text_command(
-                    &line,
+                    line.as_deref().map_err(Clone::clone),
                     CommandSource::Terminal,
                     [1.0, 0.0, 0.0],
                     last_snapshot.as_ref().and_then(|message| match message {

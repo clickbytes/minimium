@@ -6,14 +6,14 @@ use std::{
     thread,
 };
 
-const MAX_CONSOLE_LINE_BYTES: usize = 512;
+use minimium_commands::MAX_INPUT_BYTES;
+type ConsoleInput = Result<String, minimium_commands::CommandError>;
 
 fn queue_console_input(
-    sender: &mpsc::SyncSender<String>,
-    bytes: &[u8],
+    sender: &mpsc::SyncSender<ConsoleInput>,
+    line: ConsoleInput,
     logger: &minimium_diagnostics::DomainLogger,
 ) -> bool {
-    let line = String::from_utf8_lossy(bytes).into_owned();
     match sender.try_send(line) {
         Ok(()) => true,
         Err(mpsc::TrySendError::Full(_)) => {
@@ -30,14 +30,15 @@ fn queue_console_input(
 }
 
 pub(crate) fn spawn_console_input_reader(
-    sender: mpsc::SyncSender<String>,
+    sender: mpsc::SyncSender<ConsoleInput>,
     logger: minimium_diagnostics::DomainLogger,
 ) {
     thread::spawn(move || {
         let stdin = io::stdin();
         let mut stdin = stdin.lock();
-        let mut line = Vec::with_capacity(MAX_CONSOLE_LINE_BYTES);
-        let mut overlong = false;
+        let mut line = Vec::with_capacity(MAX_INPUT_BYTES + 1);
+        let mut length = 0usize;
+        let mut last = None;
 
         loop {
             let mut consumed = 0;
@@ -62,55 +63,43 @@ pub(crate) fn spawn_console_input_reader(
                     let newline = available.iter().position(|byte| *byte == b'\n');
                     consumed = newline.map_or(available.len(), |index| index + 1);
                     let content_bytes = newline.unwrap_or(consumed);
-                    if !overlong {
-                        if line.len().saturating_add(content_bytes) <= MAX_CONSOLE_LINE_BYTES {
-                            line.extend_from_slice(&available[..content_bytes]);
-                        } else {
-                            overlong = true;
-                            line.clear();
-                        }
+                    let chunk = &available[..content_bytes];
+                    if let Some(byte) = chunk.last() {
+                        last = Some(*byte);
+                    }
+                    length = length.saturating_add(content_bytes);
+                    if length <= MAX_INPUT_BYTES + 1 {
+                        line.extend_from_slice(chunk);
                     }
                     complete = newline.is_some();
                 }
             }
 
+            stdin.consume(consumed);
+            if complete || (eof && length > 0) {
+                let bytes = length - usize::from(complete && last == Some(b'\r'));
+                let input = if bytes > MAX_INPUT_BYTES {
+                    Err(minimium_commands::input_too_long(bytes))
+                } else {
+                    String::from_utf8(line[..bytes].to_vec()).map_err(|_| {
+                        minimium_commands::CommandError::new(
+                            minimium_commands::CommandErrorCode::InvalidValue,
+                            Some("input"),
+                            "invalid UTF-8",
+                            None::<String>,
+                        )
+                    })
+                };
+                if !queue_console_input(&sender, input, &logger) {
+                    break;
+                }
+                line.clear();
+                length = 0;
+                last = None;
+            }
             if eof {
                 break;
             }
-            stdin.consume(consumed);
-            if complete {
-                if overlong {
-                    emit_console_diagnostic(
-                        &logger,
-                        "client_runtime.console_input_too_long",
-                        minimium_diagnostics::Level::Warn,
-                        None,
-                    );
-                } else {
-                    if line.last() == Some(&b'\r') {
-                        line.pop();
-                    }
-                    if !queue_console_input(&sender, &line, &logger) {
-                        break;
-                    }
-                }
-                line.clear();
-                overlong = false;
-            }
-        }
-
-        if overlong {
-            emit_console_diagnostic(
-                &logger,
-                "client_runtime.console_input_too_long",
-                minimium_diagnostics::Level::Warn,
-                None,
-            );
-        } else if !line.is_empty() {
-            if line.last() == Some(&b'\r') {
-                line.pop();
-            }
-            let _ = queue_console_input(&sender, &line, &logger);
         }
     });
 }

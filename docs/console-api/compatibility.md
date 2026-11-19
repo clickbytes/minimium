@@ -67,3 +67,5 @@ The FOV property, camera fov and fov aliases share the finite 30–110 degree va
 The three player.movement fields and their word aliases read the confirmed session sample. Set and reset use a single-field wire v23 patch. The correlated decision returns to the submitting frontend. Reset requests 5 m/s, 30 m/s² or flight disabled.
 
 The movement jump and jump spellings invoke player.movement.jump(). The request uses the gameplay permission. Queueing and server admission have distinct stages. The final receipt records the physical impulse decision or a coalesced result at the resolved tick.
+
+Batch #579 covers P008, C001, C006 and C050. Client help returns bounded operation IDs with alias and signature metadata from the active catalog. Clear is local to the output view. Locale uses SettingsStore. The admin help route retains its typed built-in and module reports. Client history preserves accepted source spellings, and all three client readers enforce 512 UTF-8 bytes before trimming.
