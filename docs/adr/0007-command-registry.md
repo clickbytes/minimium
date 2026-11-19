@@ -1,5 +1,7 @@
 # ADR 0007: Static command registry ownership
 
+E051 extends registry metadata with stable public identities and owner bindings. [Public operation contract](0017-public-console-contract.md)
+
 Status: accepted.
 
 Shared command metadata and parsing live in `minimium-commands`, which depends only on platform-neutral values. Each feature owner declares its own typed command, positional argument descriptors and parser. Argument descriptors carry type, optional/rest behavior, choices or constraints, unit and description; hosts derive help and completion from those descriptors. Atomic registry installation checks names and aliases together, and a parse outcome distinguishes an unknown name from invalid arguments. The crate also defines neutral property descriptors, property request syntax and structured error fields. It does not centralize domain keys, hold live setting values or validate domain-specific values. Hosts route parsed requests to each owner's typed handler and map results to UI, protocol messages or server actions. Platform adapters may validate administrative input before I/O, but they do not define command semantics.

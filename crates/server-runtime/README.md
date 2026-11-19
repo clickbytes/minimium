@@ -1,5 +1,7 @@
 # minimium-server-runtime
 
+E051 assigns administrative validation, instance selection and commit receipts to the server owner. [Public operation contract](../../docs/console-api/contract.md)
+
 ## Registered effect receipts
 
 The runtime binds each ordinary system writer to its registered module and

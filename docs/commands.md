@@ -1,6 +1,6 @@
 # Command and option reference
 
-This page documents the current parsers and dispatchers. For operational sequences, see [prototype procedures](prototype.md); for metric meaning and limitations, see [performance policy](performance.md).
+This page documents the current parsers and dispatchers. The [E051 compatibility matrix](console-api/compatibility.md) maps these spellings to the planned public operations. For operational sequences, see [prototype procedures](prototype.md); for metric meaning and limitations, see [performance policy](performance.md).
 
 | Program | Options and commands | Defaults and parsing |
 | --- | --- | --- |
@@ -54,7 +54,7 @@ For full resolution, download the GEBCO ice-surface netCDF archive, extract
 uses that package automatically; a client elsewhere sets
 `MINIMIUM_EARTH_PACKAGE` to its local copy of the selected package.
 
-The shared server command parser is owned by `minimium-platform`; terminal and admin control use the same schema.
+The shared server command parser is owned by `minimium-server-runtime`; terminal and admin control use the same schema.
 
 Server extensions use `EngineModule` registration in the compiled server. Each command declares a `CommandScope` (`ServerAdmin` for the built-in world diagnostics); the host selects the matching handler and context. The current `world` module registers `world list`, `world inspect ID`, and `entity list`, plus a startup diagnostic system. This is source-level registration, not a command that loads modules at runtime. Client commands use a separate parser registry whose connection, gameplay, interface and environment modules own their command specs and parsing.
 
@@ -70,7 +70,7 @@ cargo run -p minimium-server --features allocation-metrics -- run --data-dir .mi
 
 ## Developer digging
 
-In the desktop F1 console, `dev inventory tools` idempotently grants a shovel and
+The presentation parser currently intercepts `dev inventory tools` before gameplay dispatch ([C01](console-api/discrepancies.md)). The registered gameplay operation idempotently grants a shovel and
 pickaxe when the server allows developer actions. Keys `1` and `2` equip them;
 `0` stows the tool and restores shooting. Left mouse digs within 3 m with a 0.6 m
 brush, up to twice per second. Shovels remove soil; pickaxes also remove rock.
@@ -176,7 +176,7 @@ Both frontends use one connection controller. It starts a background connector w
 
 ### Text-client commands
 
-The text client and in-window console use one startup command registry and parser. The interface, connection, gameplay, and environment modules each register their own commands. Both accept `help`, `host local [--threads 1|2|auto]`, `connect HOST:PORT`, `disconnect`, `fps show`, `net stats`, `time status`, `time scale DECIMAL`, `sky info`, `sky quality low|standard`, `ping`, `move X Z`, `jump`, `portal`, `map_telepo`, `fire`, `say TEXT` (alias `chat`), `name NAME`, `state`, `clear`, and `quit` (alias `exit`). `help` lists every registered command, and tab completion uses the same registry. `portal` requests a transfer when the player is near a portal; the desktop client also binds this action to E. `host local` starts or attaches to the local server configured by startup paths. It stores an owned server guard before later connection setup; only an owned child is stopped on exit. An attached server is left running. The terminal frontend renders state/events as text; the desktop frontend provides F1 console history and tab completion.
+The text client and in-window console use one startup command registry and parser. The interface, connection, gameplay, and environment modules each register their own commands. Both accept `help`, `host local [--threads 1|2|auto]`, `connect HOST:PORT`, `disconnect`, `fps show`, `net stats`, `time status`, `time scale DECIMAL`, `sky info`, `sky quality low|standard`, `ping`, `move X Z`, `jump`, `portal`, `map_telepo`, `fire`, `social say TEXT` (alias `chat`), `name NAME`, `state`, `clear`, and `console quit` (alias `exit`). `help` lists every registered command, and tab completion uses the same registry. `portal` requests a transfer when the player is near a portal; the desktop client also binds this action to E. `host local` starts or attaches to the local server configured by startup paths. It stores an owned server guard before later connection setup; only an owned child is stopped on exit. An attached server is left running. The terminal frontend renders state/events as text; the desktop frontend provides F1 console history and tab completion.
 
 `fps show` reports that frame statistics are unavailable in the text client.
 `sky info` and `sky quality` report that renderer diagnostics and quality controls require the desktop client. `time status` remains available and reports `Unavailable` when no server clock sample is present.

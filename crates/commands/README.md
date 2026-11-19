@@ -10,7 +10,7 @@ Owns generic command parsing, typed parse outcomes and errors, property metadata
 
 ## Dependencies
 
-Has no project dependencies. It does not depend on platform adapters, runtime, protocol or renderer.
+Depends on minimium-core, ron and serde. The E051 [public operation contract](../../docs/console-api/contract.md) describes the planned catalog built from these registries.
 
 ## Data flow
 

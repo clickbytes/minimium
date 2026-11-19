@@ -1,5 +1,7 @@
 # minimium-client-runtime
 
+E051 distinguishes a session sample and a submitted intent from a server commit. [Public operation contract](../../docs/console-api/contract.md)
+
 ## CPU world and collision readiness
 
 `world_readiness::WorldReadiness` owns the client sector manager, immutable
