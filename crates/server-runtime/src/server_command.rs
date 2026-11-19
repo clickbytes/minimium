@@ -166,6 +166,7 @@ mod property_parsing;
 use properties::SERVER_PROPERTIES;
 use property_parsing::parse_property;
 
+pub(crate) mod bindings;
 pub(crate) mod catalog;
 
 pub(crate) fn reserved_command_names() -> Vec<&'static str> {
@@ -262,6 +263,7 @@ fn parse_server_spec(arguments: &[&str]) -> Result<ServerCommand, CommandError> 
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServerCommand {
+    CatalogOutput(String),
     Help,
     Status,
     Players(Option<String>),
@@ -374,6 +376,10 @@ pub(crate) fn validate_time_command(command: TimeCommand) -> Result<TimeCommand,
 
 impl ServerCommand {
     pub fn parse(line: &str) -> Result<Self, CommandError> {
+        bindings::standalone(line)
+    }
+
+    fn parse_legacy(line: &str) -> Result<Self, CommandError> {
         let owned_words = lex_command_line(line)?;
         let words: Vec<_> = owned_words.iter().map(String::as_str).collect();
         if words.is_empty() {

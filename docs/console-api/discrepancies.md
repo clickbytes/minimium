@@ -31,3 +31,5 @@ Static observations from the [inventory](../plan/epic-051-inventory.json). The f
 Rendering the same UTC instant as a date in F1 and integer milliseconds in admin output is a permitted presentation difference. An admin owner snapshot and a session sample can also differ in age. Each must identify its source. A terminal can lack renderer diagnostics. A joined client can lack the admin control needed to change the clock. Report a missing capability and a permission denial distinctly.
 
 Three further integration checks protect existing state. Reserve the actual built-in `time` during module registration ([#569](https://github.com/clickbytes/minimium/issues/569)). Patch only the selected movement field to avoid overwriting a newer replica value ([#575](https://github.com/clickbytes/minimium/issues/575)). Treat impact reservation and queueing as pending until the target journal commits ([#587](https://github.com/clickbytes/minimium/issues/587)).
+
+Batch #570 repaired the C01 dispatch and registered the missing C02 aliases. The findings above describe the audit commit. Quoted FOV values now use the same typed property validation for both spellings.

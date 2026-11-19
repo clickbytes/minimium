@@ -9,15 +9,22 @@ const TERMINAL_QUEUE_CAPACITY: usize = 64;
 const MAX_TERMINAL_LINE_BYTES: usize = 512;
 const READ_BUFFER_BYTES: usize = 256;
 
-pub fn spawn(logger: minimium_diagnostics::DomainLogger) -> io::Result<Receiver<ServerCommand>> {
+pub fn spawn(
+    logger: minimium_diagnostics::DomainLogger,
+    catalog: std::sync::Arc<minimium_commands::operation::OperationCatalog>,
+) -> io::Result<Receiver<ServerCommand>> {
     let (sender, receiver) = mpsc::sync_channel(TERMINAL_QUEUE_CAPACITY);
     thread::Builder::new()
         .name("minimium-console-input".to_owned())
-        .spawn(move || read_commands(sender, logger))?;
+        .spawn(move || read_commands(sender, logger, &catalog))?;
     Ok(receiver)
 }
 
-fn read_commands(sender: SyncSender<ServerCommand>, logger: minimium_diagnostics::DomainLogger) {
+fn read_commands(
+    sender: SyncSender<ServerCommand>,
+    logger: minimium_diagnostics::DomainLogger,
+    catalog: &minimium_commands::operation::OperationCatalog,
+) {
     let stdin = io::stdin();
     let mut input = stdin.lock();
     let mut buffer = [0u8; READ_BUFFER_BYTES];
@@ -28,7 +35,7 @@ fn read_commands(sender: SyncSender<ServerCommand>, logger: minimium_diagnostics
         let count = match input.read(&mut buffer) {
             Ok(0) => {
                 if !line.is_empty() || overlong {
-                    submit_line(&sender, &mut line, &mut overlong, &logger);
+                    submit_line(&sender, &mut line, &mut overlong, &logger, catalog);
                 }
                 return;
             }
@@ -47,7 +54,7 @@ fn read_commands(sender: SyncSender<ServerCommand>, logger: minimium_diagnostics
 
         for byte in buffer[..count].iter().copied() {
             if byte == b'\n' {
-                submit_line(&sender, &mut line, &mut overlong, &logger);
+                submit_line(&sender, &mut line, &mut overlong, &logger, catalog);
             } else if !overlong {
                 if line.len() == MAX_TERMINAL_LINE_BYTES {
                     line.clear();
@@ -65,6 +72,7 @@ fn submit_line(
     line: &mut Vec<u8>,
     overlong: &mut bool,
     logger: &minimium_diagnostics::DomainLogger,
+    catalog: &minimium_commands::operation::OperationCatalog,
 ) {
     if *overlong {
         emit(
@@ -97,7 +105,13 @@ fn submit_line(
         line.clear();
         return;
     }
-    match ServerCommand::parse(command_line) {
+    match crate::server_command::bindings::parse(command_line, catalog) {
+        Ok(ServerCommand::CatalogOutput(text)) => emit(
+            logger,
+            minimium_diagnostics::Level::Info,
+            "server.console_catalog",
+            Some(text),
+        ),
         Ok(command) => match sender.try_send(command) {
             Ok(()) => {}
             Err(TrySendError::Full(_)) => emit(

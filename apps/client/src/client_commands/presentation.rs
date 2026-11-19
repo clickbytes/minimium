@@ -1,4 +1,6 @@
-use minimium_commands::{lex_command_line_with_spans, CommandError, CommandErrorCode};
+#[cfg(feature = "desktop")]
+use minimium_commands::lex_command_line_with_spans;
+use minimium_commands::{CommandError, CommandErrorCode};
 
 pub(super) const COMMAND_FORMS: &[(&str, &str)] = &[
     ("dev clouds", "dev clouds"),
@@ -218,19 +220,6 @@ impl PresentationOperation {
     }
 }
 
-pub(super) fn parse(input: &str) -> Option<Result<PresentationOperation, CommandError>> {
-    let tokens = lex_command_line_with_spans(input.trim()).ok()?;
-    let words = tokens
-        .into_iter()
-        .map(|token| token.value)
-        .collect::<Vec<_>>();
-    if words.first().map(String::as_str) == Some("dev") {
-        Some(parse_developer(&words))
-    } else {
-        None
-    }
-}
-
 #[cfg(feature = "desktop")]
 pub(super) fn is_developer_family(input: &str) -> bool {
     let Ok(tokens) = lex_command_line_with_spans(input.trim()) else {
@@ -253,7 +242,7 @@ pub(super) fn is_developer_family(input: &str) -> bool {
         }))
 }
 
-fn parse_developer(words: &[String]) -> Result<PresentationOperation, CommandError> {
+pub(super) fn parse_developer(words: &[String]) -> Result<PresentationOperation, CommandError> {
     let invalid = invalid_dev;
     let op = match words.get(1).map(String::as_str) {
         Some("clouds") if words.len() == 2 => DeveloperOperation::Clouds,
@@ -362,7 +351,7 @@ fn invalid_dev() -> CommandError {
     )
 }
 
-fn unknown_dev(input: &str) -> CommandError {
+pub(super) fn unknown_dev(input: &str) -> CommandError {
     CommandError::new(
         CommandErrorCode::UnknownCommand,
         Some("dev"),

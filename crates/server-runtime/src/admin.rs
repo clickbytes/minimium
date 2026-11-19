@@ -15,8 +15,11 @@ pub(crate) fn response(reply: &crate::commands::CommandReply) -> AdminResponse {
     }
 }
 
-pub(crate) fn parse(line: &str) -> Result<crate::server_command::ServerCommand, AdminResponse> {
-    crate::server_command::ServerCommand::parse(line).map_err(|error| AdminResponse {
+pub(crate) fn parse(
+    line: &str,
+    catalog: &minimium_commands::operation::OperationCatalog,
+) -> Result<crate::server_command::ServerCommand, AdminResponse> {
+    crate::server_command::bindings::parse(line, catalog).map_err(|error| AdminResponse {
         success: false,
         error_code: Some(error.code.as_str().to_owned()),
         key: error.subject,

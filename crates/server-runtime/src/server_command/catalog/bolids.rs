@@ -1,7 +1,7 @@
-use minimium_commands::operation::ParameterSpec;
 use minimium_commands::operation::{
     CatalogEntry, DomainBinding, Effect::*, OperationKind::*, PersistenceKind, TypeRef,
 };
+use minimium_commands::operation::{ParameterSpec, ScalarType};
 
 pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
     let binding = DomainBinding {
@@ -25,7 +25,7 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
         "spawn_random_bolid" => binding.declaration(
             "server.sky.bolids.spawn",
             Method,
-            &[ParameterSpec::optional("count", "U16", Some("1"))],
+            &[ParameterSpec::optional("count", "U16", Some("1")).scalar(ScalarType::U16)],
             TypeRef::domain("BolidShowerReceipt"),
             Some("count of bolids"),
             AuthoritativeMutation,

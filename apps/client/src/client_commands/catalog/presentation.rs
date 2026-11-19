@@ -1,7 +1,7 @@
-use minimium_commands::operation::ParameterSpec;
 use minimium_commands::operation::{
     CatalogEntry, DomainBinding, Effect::*, OperationKind::*, PersistenceKind, TypeRef,
 };
+use minimium_commands::operation::{ParameterSpec, ScalarType};
 
 pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
     let mut binding = DomainBinding {
@@ -21,7 +21,7 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
         "client.sky.meteors.enabled" => binding.declaration(
             "client.sky.meteors.enabled",
             Property,
-            &[ParameterSpec::required("value", "Bool")],
+            &[ParameterSpec::required("value", "Bool").scalar(ScalarType::Bool)],
             TypeRef::domain("PropertyValue<Bool>"),
             None,
             LocalPresentation,
@@ -29,7 +29,7 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
         "client.sky.meteors.rate" => binding.declaration(
             "client.sky.meteors.rate",
             Property,
-            &[ParameterSpec::required("value", "FiniteF64")],
+            &[ParameterSpec::required("value", "FiniteF64").scalar(ScalarType::FiniteF64)],
             TypeRef::domain("PropertyValue<FiniteF64>"),
             Some("multiplier x"),
             LocalPresentation,
@@ -45,7 +45,7 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
         "client.sky.meteors.seed_override" | "sky meteors seed" => binding.declaration(
             "client.sky.meteors.seed_override",
             Property,
-            &[ParameterSpec::required("value", "Option<U64>")],
+            &[ParameterSpec::required("value", "Option<U64>").scalar(ScalarType::OptionalU64)],
             TypeRef::domain("PropertyValue<Option<U64>>"),
             None,
             LocalPresentation,
@@ -53,7 +53,7 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
         "client.sky.meteors.sound" => binding.declaration(
             "client.sky.meteors.sound",
             Property,
-            &[ParameterSpec::required("value", "Bool")],
+            &[ParameterSpec::required("value", "Bool").scalar(ScalarType::Bool)],
             TypeRef::domain("PropertyValue<Bool>"),
             None,
             LocalPresentation,
@@ -61,7 +61,7 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
         "client.sky.names" | "sky names" => binding.declaration(
             "client.sky.names",
             Property,
-            &[ParameterSpec::required("value", "Bool")],
+            &[ParameterSpec::required("value", "Bool").scalar(ScalarType::Bool)],
             TypeRef::domain("PropertyValue<Bool>"),
             None,
             LocalPresentation,
@@ -69,7 +69,7 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
         "client.weather.cloud_detail" | "weather clouds detail" => binding.declaration(
             "client.weather.cloud_detail",
             Property,
-            &[ParameterSpec::required("value", "U8")],
+            &[ParameterSpec::required("value", "U8").scalar(ScalarType::U8)],
             TypeRef::domain("PropertyValue<U8>"),
             Some("depth"),
             LocalPresentation,
@@ -77,7 +77,7 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
         "client.sky.demo" | "sky demo" => binding.declaration(
             "client.sky.demo",
             Property,
-            &[ParameterSpec::required("value", "Bool")],
+            &[ParameterSpec::required("value", "Bool").scalar(ScalarType::Bool)],
             TypeRef::domain("PropertyValue<Bool>"),
             None,
             LocalPresentation,
@@ -152,7 +152,7 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
                 Method,
                 &[
                     ParameterSpec::required("preset", "MeteorPreset"),
-                    ParameterSpec::optional("seed", "U64", None),
+                    ParameterSpec::optional("seed", "U64", None).scalar(ScalarType::U64),
                 ],
                 TypeRef::domain("LocalMeteorReceipt"),
                 None,
@@ -225,7 +225,7 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
         "dev bolid transmission" => binding.declaration(
             "client.render.bolids.transmission",
             Property,
-            &[ParameterSpec::required("value", "Bool")],
+            &[ParameterSpec::required("value", "Bool").scalar(ScalarType::Bool)],
             TypeRef::domain("PropertyValue<Bool>"),
             None,
             LocalPresentation,
@@ -236,16 +236,16 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
                 "client.render.bolids.restore_path",
                 Method,
                 &[
-                    ParameterSpec::required("id", "U64"),
-                    ParameterSpec::required("kind", "U8"),
-                    ParameterSpec::required("seed", "U64"),
-                    ParameterSpec::required("duration_ms", "U16"),
-                    ParameterSpec::required("x0", "FiniteF32"),
-                    ParameterSpec::required("y0", "FiniteF32"),
-                    ParameterSpec::required("z0", "FiniteF32"),
-                    ParameterSpec::required("x1", "FiniteF32"),
-                    ParameterSpec::required("y1", "FiniteF32"),
-                    ParameterSpec::required("z1", "FiniteF32"),
+                    ParameterSpec::required("id", "U64").scalar(ScalarType::U64),
+                    ParameterSpec::required("kind", "U8").scalar(ScalarType::U8),
+                    ParameterSpec::required("seed", "U64").scalar(ScalarType::U64),
+                    ParameterSpec::required("duration_ms", "U16").scalar(ScalarType::U16),
+                    ParameterSpec::required("x0", "FiniteF32").scalar(ScalarType::FiniteF32),
+                    ParameterSpec::required("y0", "FiniteF32").scalar(ScalarType::FiniteF32),
+                    ParameterSpec::required("z0", "FiniteF32").scalar(ScalarType::FiniteF32),
+                    ParameterSpec::required("x1", "FiniteF32").scalar(ScalarType::FiniteF32),
+                    ParameterSpec::required("y1", "FiniteF32").scalar(ScalarType::FiniteF32),
+                    ParameterSpec::required("z1", "FiniteF32").scalar(ScalarType::FiniteF32),
                 ],
                 TypeRef::domain("PreviewReceipt"),
                 Some("duration ms; world positions m"),
@@ -291,9 +291,10 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
                 "client.render.bolids.replay",
                 Method,
                 &[
-                    ParameterSpec::required("age_seconds", "FiniteF32"),
-                    ParameterSpec::optional("seed", "U64", None),
-                    ParameterSpec::optional("event_id", "U64", None),
+                    ParameterSpec::required("age_seconds", "FiniteF32")
+                        .scalar(ScalarType::FiniteF32),
+                    ParameterSpec::optional("seed", "U64", None).scalar(ScalarType::U64),
+                    ParameterSpec::optional("event_id", "U64", None).scalar(ScalarType::U64),
                 ],
                 TypeRef::domain("PreviewReceipt"),
                 Some("simulation/presentation seconds; exact U64 IDs/seeds"),
@@ -306,9 +307,10 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
                 "client.render.bolids.freeze",
                 Method,
                 &[
-                    ParameterSpec::required("age_seconds", "FiniteF32"),
-                    ParameterSpec::optional("seed", "U64", None),
-                    ParameterSpec::optional("event_id", "U64", None),
+                    ParameterSpec::required("age_seconds", "FiniteF32")
+                        .scalar(ScalarType::FiniteF32),
+                    ParameterSpec::optional("seed", "U64", None).scalar(ScalarType::U64),
+                    ParameterSpec::optional("event_id", "U64", None).scalar(ScalarType::U64),
                 ],
                 TypeRef::domain("PreviewReceipt"),
                 Some("simulation/presentation seconds; exact U64 IDs/seeds"),

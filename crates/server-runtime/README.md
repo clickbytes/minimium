@@ -2,6 +2,8 @@
 
 E051 assigns administrative validation, instance selection and commit receipts to the server owner. [Public operation contract](../../docs/console-api/contract.md)
 
+The administrative parser and server terminal bind operation syntax against the installed module catalog. Namespace output and `ui.console.explain(text)` are rendered at these input adapters before command admission. Domain mutations retain their owner-side checks and tick ordering.
+
 ## Registered effect receipts
 
 The runtime binds each ordinary system writer to its registered module and

@@ -1,3 +1,7 @@
+pub mod bind;
+pub mod canonical;
+mod values;
+
 use crate::{CommandError, CommandErrorCode};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -33,7 +37,12 @@ pub fn lex_command_line_with_spans(line: &str) -> Result<Vec<CommandToken>, Comm
     while let Some((offset, character)) = characters.next() {
         index = offset + character.len_utf8();
         if character.is_control() {
-            return Err(syntax_error("command contains a control character"));
+            return Err(
+                syntax_error("command contains a control character").at(SourceSpan {
+                    start: offset,
+                    end: index,
+                }),
+            );
         }
         if let Some(delimiter) = quote {
             if character == delimiter {
@@ -73,7 +82,8 @@ pub fn lex_command_line_with_spans(line: &str) -> Result<Vec<CommandToken>, Comm
         }
     }
     if quote.is_some() {
-        return Err(syntax_error("command has an unclosed quoted value"));
+        return Err(syntax_error("command has an unclosed quoted value")
+            .at(SourceSpan { start, end: index }));
     }
     if started {
         words.push(CommandToken {
@@ -90,7 +100,17 @@ pub fn format_command_arguments(arguments: &[String]) -> Result<String, CommandE
     if arguments.is_empty() {
         return Err(syntax_error("a server command is required"));
     }
-    let line = if arguments.len() == 1 && arguments[0].chars().any(char::is_whitespace) {
+    let single_expression = arguments.len() == 1
+        && arguments[0].split(['(', '=']).next().is_some_and(|path| {
+            path.contains('.')
+                && path
+                    .trim()
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+        });
+    let line = if arguments.len() == 1
+        && (single_expression || arguments[0].chars().any(char::is_whitespace))
+    {
         let raw = arguments[0].trim().to_owned();
         lex_command_line(&raw)?;
         raw

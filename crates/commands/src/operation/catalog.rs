@@ -56,8 +56,16 @@ impl OperationCatalog {
     pub fn fingerprint(&self) -> u64 {
         let mut hash = 0xcbf29ce484222325_u64;
         for entry in self.entries.values() {
-            let schema = ron::to_string(&(1u8, &entry.spec, &entry.bindings, &entry.aliases))
-                .expect("operation descriptors contain only serializable metadata");
+            let schema = ron::to_string(&(
+                2u8,
+                &entry.spec,
+                &entry.bindings,
+                &entry.aliases,
+                entry.command,
+                &entry.fixed_arguments,
+                entry.legacy_option,
+            ))
+            .expect("operation descriptors contain only serializable metadata");
             for byte in schema.bytes() {
                 hash = (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3);
             }

@@ -15,7 +15,25 @@ impl ServerRuntime {
             .drain(..)
             .collect::<Vec<_>>();
         for (id, line) in admin_requests {
-            let command = match crate::admin::parse(&line) {
+            let command = match crate::admin::parse(&line, &self.operation_catalog) {
+                Ok(crate::server_command::ServerCommand::CatalogOutput(text)) => {
+                    let reply = crate::commands::CommandReply::module_text(
+                        crate::commands::BoundedText::new(&text),
+                    );
+                    if let Err(error) = self
+                        .operations
+                        .transport
+                        .respond_admin(id, crate::admin::response(&reply))
+                    {
+                        crate::diagnostics::emit(
+                            &self.server_logger,
+                            minimium_diagnostics::Level::Debug,
+                            "server.admin_response_dropped",
+                            &[("reason", error.to_string())],
+                        );
+                    }
+                    continue;
+                }
                 Ok(command) => command,
                 Err(response) => {
                     if let Err(error) = self.operations.transport.respond_admin(id, response) {

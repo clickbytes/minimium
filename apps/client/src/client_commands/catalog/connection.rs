@@ -1,7 +1,7 @@
-use minimium_commands::operation::ParameterSpec;
 use minimium_commands::operation::{
     CatalogEntry, DomainBinding, Effect::*, OperationKind::*, PersistenceKind, TypeRef,
 };
+use minimium_commands::operation::{ParameterSpec, ScalarType};
 
 pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
     let binding = DomainBinding {
@@ -13,7 +13,7 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
         source: "ClientHost",
         persistence: PersistenceKind::Transient,
     };
-    Some(match name {
+    let mut entry = match name {
         "network stats" => binding.declaration(
             "client.connection.stats",
             Method,
@@ -41,7 +41,7 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
         "network connect" => binding.declaration(
             "client.connection.connect",
             Method,
-            &[ParameterSpec::required("endpoint", "Endpoint")],
+            &[ParameterSpec::required("endpoint", "Endpoint").scalar(ScalarType::Text)],
             TypeRef::domain("ConnectionAttempt"),
             None,
             NetworkLifecycle,
@@ -63,5 +63,9 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
             NetworkRequest,
         ),
         _ => return None,
-    })
+    };
+    if name == "network host local" {
+        entry.legacy_option = Some("--threads");
+    }
+    Some(entry)
 }

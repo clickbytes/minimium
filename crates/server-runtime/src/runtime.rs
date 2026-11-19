@@ -110,7 +110,7 @@ struct Scheduler {
     autosave_interval: Duration,
 }
 pub struct ServerRuntime {
-    operation_catalog: minimium_commands::operation::OperationCatalog,
+    operation_catalog: Arc<minimium_commands::operation::OperationCatalog>,
     now: Instant,
     equipment: equipment::Equipment,
     excavation: excavation::Excavation,

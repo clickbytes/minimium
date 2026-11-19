@@ -7,9 +7,9 @@ use crate::application::SuppressionReason;
 use crate::session::QueueError;
 use minimium_commands::{CommandError, CommandErrorCode};
 
-fn parse_command_typed(input: &str) -> Result<Option<ClientCommand>, CommandError> {
-    if let Some(command) = super::presentation::parse(input) {
-        return command.map(ClientCommand::Presentation).map(Some);
+pub(super) fn legacy(input: &str) -> Result<Option<ClientCommand>, CommandError> {
+    if input.split_whitespace().next() == Some("dev") {
+        return Err(super::presentation::unknown_dev(input));
     }
     parse_command(input).map_err(|error| match error {
         ParseError::Structured(error) => error,
@@ -89,7 +89,7 @@ pub(crate) fn execute_text(
             None::<String>,
         ));
     }
-    let command = match parse_command_typed(input) {
+    let command = match super::bindings::parse(input) {
         Ok(Some(command)) => command,
         Ok(None) => return TextCommandResult::Empty,
         Err(error) => return TextCommandResult::Rejected(error),

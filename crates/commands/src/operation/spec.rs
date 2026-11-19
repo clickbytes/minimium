@@ -20,7 +20,27 @@ pub enum PersistenceKind {
 }
 
 #[derive(serde::Serialize, Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScalarType {
+    Token,
+    Text,
+    Bool,
+    Integer,
+    U8,
+    U16,
+    U64,
+    U128,
+    NonzeroU64,
+    NonzeroU128,
+    Decimal,
+    FiniteF32,
+    FiniteF64,
+    OptionalU64,
+    AutoOrFiniteF32,
+}
+
+#[derive(serde::Serialize, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ParameterSpec {
+    pub scalar: ScalarType,
     pub name: &'static str,
     pub value_type: TypeRef,
     pub optional: bool,
@@ -28,10 +48,16 @@ pub struct ParameterSpec {
 }
 
 impl ParameterSpec {
+    pub const fn scalar(mut self, scalar: ScalarType) -> Self {
+        self.scalar = scalar;
+        self
+    }
+
     pub const fn required(name: &'static str, schema: &'static str) -> Self {
         Self {
             name,
             value_type: TypeRef(schema),
+            scalar: ScalarType::Token,
             optional: false,
             default: None,
         }
@@ -45,6 +71,7 @@ impl ParameterSpec {
         Self {
             name,
             value_type: TypeRef(schema),
+            scalar: ScalarType::Token,
             optional: true,
             default,
         }
@@ -114,6 +141,10 @@ pub struct CatalogEntry {
     pub spec: OperationSpec,
     pub aliases: Vec<AliasSpec>,
     pub bindings: BTreeSet<&'static str>,
+    /// Primary legacy parser name. Alternate spellings bind to this same handler.
+    pub command: Option<&'static str>,
+    pub fixed_arguments: std::collections::BTreeMap<&'static str, &'static str>,
+    pub legacy_option: Option<&'static str>,
     pub property: Option<&'static PropertySpec>,
 }
 
@@ -123,6 +154,9 @@ impl CatalogEntry {
             spec,
             aliases: Vec::new(),
             bindings: [binding].into(),
+            command: None,
+            fixed_arguments: Default::default(),
+            legacy_option: None,
             property: None,
         }
     }
@@ -163,9 +197,14 @@ impl CatalogEntry {
             }
         }
         let sources = self.bindings.iter().copied().collect::<Vec<_>>().join(", ");
+        let backend = if self.command.is_some() || self.property.is_some() {
+            "legacy"
+        } else {
+            "catalog"
+        };
         let _ = write!(
             output,
-            "\nsource={sources} backend=legacy scriptable={}",
+            "\nsource={sources} backend={backend} scriptable={}",
             s.scriptable
         );
         for alias in &self.aliases {

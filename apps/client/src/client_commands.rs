@@ -15,6 +15,7 @@ use minimium_commands::{
 use minimium_renderer::quality::SkyQuality;
 use std::sync::OnceLock;
 
+mod bindings;
 mod catalog;
 mod connection;
 mod environment;

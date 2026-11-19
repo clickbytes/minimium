@@ -70,6 +70,7 @@ pub(crate) fn build(
             def.arguments,
         )?;
     }
+    package.operation(minimium_commands::syntax::bind::explain_entry())?;
     package.finish()
 }
 
@@ -95,7 +96,8 @@ pub(crate) fn command_help(catalog: &OperationCatalog, target: &str) -> Option<C
     Some(CommandHelp {
         usage: legacy
             .map(|a| a.usage)
-            .or_else(|| entry.property.map(|p| p.key))?,
+            .or_else(|| entry.property.map(|p| p.key))
+            .unwrap_or("help OPERATION"),
         arguments: legacy.map_or(&[], |a| a.arguments),
         description: entry.describe(),
     })

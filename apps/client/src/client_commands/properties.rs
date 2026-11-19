@@ -159,7 +159,9 @@ pub(super) fn parse(input: &str) -> Result<Option<ClientCommand>, ParseError> {
         .map_err(ParseError::Structured)
 }
 
-fn parse_request(request: PropertyRequest) -> Result<Option<ClientPropertyCommand>, CommandError> {
+pub(super) fn parse_request(
+    request: PropertyRequest,
+) -> Result<Option<ClientPropertyCommand>, CommandError> {
     match request {
         PropertyRequest::Get { key } => Ok(Some(ClientPropertyCommand::Get(require_key(&key)?))),
         PropertyRequest::Set { key, value } => {

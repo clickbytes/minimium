@@ -1,8 +1,8 @@
 //! Shared clock operation schemas for the client sample and server owner binding.
-use minimium_commands::operation::ParameterSpec;
 use minimium_commands::operation::{
     CatalogEntry, DomainBinding, Effect::*, OperationKind::*, PersistenceKind, TypeRef,
 };
+use minimium_commands::operation::{ParameterSpec, ScalarType};
 
 #[derive(Clone, Copy)]
 pub enum ClockReadBinding {
@@ -35,7 +35,7 @@ pub fn clock_entry(name: &str, source: ClockReadBinding) -> Option<CatalogEntry>
         "world.time.scale" | "time scale" => binding.declaration(
             "world.time.scale",
             Property,
-            &[ParameterSpec::required("value", "TimeScalePpm")],
+            &[ParameterSpec::required("value", "TimeScalePpm").scalar(ScalarType::Decimal)],
             TypeRef::domain("PropertyValue<TimeScalePpm>"),
             Some("x; exact ppm"),
             AuthoritativeMutation,
@@ -92,7 +92,7 @@ pub fn clock_entry(name: &str, source: ClockReadBinding) -> Option<CatalogEntry>
         "time set" => binding.declaration(
             "world.time.set",
             Method,
-            &[ParameterSpec::required("utc", "WorldTimeMs")],
+            &[ParameterSpec::required("utc", "WorldTimeMs").scalar(ScalarType::Text)],
             TypeRef::domain("ClockMutationReceipt"),
             None,
             AuthoritativeMutation,
@@ -106,6 +106,21 @@ pub fn clock_entry(name: &str, source: ClockReadBinding) -> Option<CatalogEntry>
         if invoke.effect == Query {
             invoke.permission = "SessionSample or ServerAdmin";
         }
+    }
+    if matches!(
+        name,
+        "time mode real_time"
+            | "time mode time_scale"
+            | "time offline pause"
+            | "time offline advance"
+    ) {
+        let (alias, value) = match name {
+            "time mode real_time" => ("time mode real_time", "real_time"),
+            "time mode time_scale" => ("time mode time_scale", "time_scale"),
+            "time offline pause" => ("time offline pause", "pause"),
+            _ => ("time offline advance", "advance"),
+        };
+        entry.fixed_arguments.insert(alias, value);
     }
     Some(entry)
 }

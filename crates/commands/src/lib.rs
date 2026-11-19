@@ -6,7 +6,7 @@ mod error;
 pub mod operation;
 mod property;
 mod registry;
-mod syntax;
+pub mod syntax;
 
 pub use cli::{format_cli_help, parse_cli, CliOptionSpec, CliParseOutcome, CliValues};
 pub use config::{

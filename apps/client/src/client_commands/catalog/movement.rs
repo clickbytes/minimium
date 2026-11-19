@@ -1,7 +1,7 @@
-use minimium_commands::operation::ParameterSpec;
 use minimium_commands::operation::{
     CatalogEntry, DomainBinding, Effect::*, OperationKind::*, PersistenceKind, TypeRef,
 };
+use minimium_commands::operation::{ParameterSpec, ScalarType};
 
 pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
     let mut binding = DomainBinding {
@@ -19,7 +19,7 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
             binding.declaration(
                 "player.movement.fly",
                 Property,
-                &[ParameterSpec::required("value", "Bool")],
+                &[ParameterSpec::required("value", "Bool").scalar(ScalarType::Bool)],
                 TypeRef::domain("PropertyValue<Bool>"),
                 None,
                 PlayerIntent,
@@ -30,7 +30,7 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
             binding.declaration(
                 "player.movement.speed",
                 Property,
-                &[ParameterSpec::required("value", "FiniteF32")],
+                &[ParameterSpec::required("value", "FiniteF32").scalar(ScalarType::FiniteF32)],
                 TypeRef::domain("PropertyValue<FiniteF32>"),
                 Some("m/s"),
                 PlayerIntent,
@@ -41,7 +41,7 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
             binding.declaration(
                 "player.movement.accel",
                 Property,
-                &[ParameterSpec::required("value", "FiniteF32")],
+                &[ParameterSpec::required("value", "FiniteF32").scalar(ScalarType::FiniteF32)],
                 TypeRef::domain("PropertyValue<FiniteF32>"),
                 Some("m/s²"),
                 PlayerIntent,
@@ -51,8 +51,8 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
             "player.movement.move",
             Method,
             &[
-                ParameterSpec::required("x", "FiniteF32"),
-                ParameterSpec::required("z", "FiniteF32"),
+                ParameterSpec::required("x", "FiniteF32").scalar(ScalarType::FiniteF32),
+                ParameterSpec::required("z", "FiniteF32").scalar(ScalarType::FiniteF32),
             ],
             TypeRef::domain("MovementReceipt"),
             Some("dimensionless tangent direction -1..1"),
@@ -72,7 +72,7 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
             binding.declaration(
                 "player.movement.set_altitude",
                 Method,
-                &[ParameterSpec::required("km", "FiniteF32")],
+                &[ParameterSpec::required("km", "FiniteF32").scalar(ScalarType::FiniteF32)],
                 TypeRef::domain("AltitudeReceipt"),
                 Some("km"),
                 PlayerIntent,
@@ -84,8 +84,8 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
                 "player.movement.goto",
                 Method,
                 &[
-                    ParameterSpec::required("latitude", "FiniteF32"),
-                    ParameterSpec::required("longitude", "FiniteF32"),
+                    ParameterSpec::required("latitude", "FiniteF32").scalar(ScalarType::FiniteF32),
+                    ParameterSpec::required("longitude", "FiniteF32").scalar(ScalarType::FiniteF32),
                 ],
                 TypeRef::domain("TeleportReceipt"),
                 Some("degrees"),

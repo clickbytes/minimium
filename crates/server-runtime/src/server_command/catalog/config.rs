@@ -1,7 +1,7 @@
-use minimium_commands::operation::ParameterSpec;
 use minimium_commands::operation::{
     CatalogEntry, DomainBinding, Effect::*, OperationKind::*, PersistenceKind, TypeRef,
 };
+use minimium_commands::operation::{ParameterSpec, ScalarType};
 
 pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
     let binding = DomainBinding {
@@ -57,7 +57,7 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
         "server.autosave_interval" => binding.declaration(
             "server.autosave_interval",
             Property,
-            &[ParameterSpec::required("value", "U64")],
+            &[ParameterSpec::required("value", "U64").scalar(ScalarType::U64)],
             TypeRef::domain("PropertyValue<U64>"),
             Some("real monotonic seconds"),
             AuthoritativeMutation,

@@ -11,6 +11,12 @@ This page documents the current parsers and dispatchers. The [E051 compatibility
 
 Lane types remain application-owned: the server accepts `1..=64` or `auto`, the client accepts `1`, `2` or `auto` for a locally started server, and the generator accepts `1`, `2` or `auto` with at most two workers. Their different meanings and limits do not justify a shared policy type. Server CLI and help report the accepted `1..=64|auto` range.
 
+## Operation syntax
+
+Read a field with `world.time.scale`, assign with `world.time.scale = 1000`, or call a method with `world.time.status()`. A namespace lists its direct children. To inspect how the current host resolves a command, enter `ui.console.explain("timescale 1000")` in the client. The report contains the operation ID, normalized values, effect, required permission, source and recognized alias. It uses the host catalog without running the inspected command.
+
+Use double quotes around text in canonical calls. Commas, parentheses, periods and equals signs inside that text are ordinary characters. Legacy chat retains its raw tail, including the equals sign in `say temperatura=20`. The F1 input limit is 128 UTF-8 bytes. The text terminal and developer presentation input accept 512 bytes.
+
 ## Server
 
 ~~~text
@@ -70,7 +76,7 @@ cargo run -p minimium-server --features allocation-metrics -- run --data-dir .mi
 
 ## Developer digging
 
-The presentation parser currently intercepts `dev inventory tools` before gameplay dispatch ([C01](console-api/discrepancies.md)). The registered gameplay operation idempotently grants a shovel and
+The catalog routes `dev inventory tools` to gameplay. This operation idempotently grants a shovel and
 pickaxe when the server allows developer actions. Keys `1` and `2` equip them;
 `0` stows the tool and restores shooting. Left mouse digs within 3 m with a 0.6 m
 brush, up to twice per second. Shovels remove soil; pickaxes also remove rock.
@@ -176,7 +182,7 @@ Both frontends use one connection controller. It starts a background connector w
 
 ### Text-client commands
 
-The text client and in-window console use one startup command registry and parser. The interface, connection, gameplay, and environment modules each register their own commands. Both accept `help`, `host local [--threads 1|2|auto]`, `connect HOST:PORT`, `disconnect`, `fps show`, `net stats`, `time status`, `time scale DECIMAL`, `sky info`, `sky quality low|standard`, `ping`, `move X Z`, `jump`, `portal`, `map_telepo`, `fire`, `social say TEXT` (alias `chat`), `name NAME`, `state`, `clear`, and `console quit` (alias `exit`). `help` lists every registered command, and tab completion uses the same registry. `portal` requests a transfer when the player is near a portal; the desktop client also binds this action to E. `host local` starts or attaches to the local server configured by startup paths. It stores an owned server guard before later connection setup; only an owned child is stopped on exit. An attached server is left running. The terminal frontend renders state/events as text; the desktop frontend provides F1 console history and tab completion.
+The text client and in-window console use one startup command registry and parser. The interface, connection, gameplay, and environment modules each register their own commands. Both accept `help`, `host local [--threads 1|2|auto]`, `connect HOST:PORT`, `disconnect`, `fps show`, `net stats`, `time status`, `time scale DECIMAL`, `sky info`, `sky quality low|standard`, `ping`, `move X Z`, `jump`, `portal`, `map_telepo`, `fire`, `social say TEXT` (aliases `chat` and `say`), `name NAME`, `state`, `clear`, and `console quit` (aliases `exit` and `quit`). `help` lists every registered command, and tab completion uses the same registry. `portal` requests a transfer when the player is near a portal; the desktop client also binds this action to E. `host local` starts or attaches to the local server configured by startup paths. It stores an owned server guard before later connection setup; only an owned child is stopped on exit. An attached server is left running. The terminal frontend renders state/events as text; the desktop frontend provides F1 console history and tab completion.
 
 `fps show` reports that frame statistics are unavailable in the text client.
 `sky info` and `sky quality` report that renderer diagnostics and quality controls require the desktop client. `time status` remains available and reports `Unavailable` when no server clock sample is present.

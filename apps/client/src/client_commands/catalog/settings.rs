@@ -1,7 +1,7 @@
-use minimium_commands::operation::ParameterSpec;
 use minimium_commands::operation::{
     CatalogEntry, DomainBinding, Effect::*, OperationKind::*, PersistenceKind, TypeRef,
 };
+use minimium_commands::operation::{ParameterSpec, ScalarType};
 
 pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
     let mut binding = DomainBinding {
@@ -21,7 +21,7 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
         "client.audio.meteor_volume" => binding.declaration(
             "client.audio.meteor_volume",
             Property,
-            &[ParameterSpec::required("value", "FiniteF32")],
+            &[ParameterSpec::required("value", "FiniteF32").scalar(ScalarType::FiniteF32)],
             TypeRef::domain("PropertyValue<FiniteF32>"),
             Some("gain 0..1"),
             LocalPresentation,
@@ -39,7 +39,7 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
             binding.declaration(
                 "client.camera.fov",
                 Property,
-                &[ParameterSpec::required("value", "FiniteF32")],
+                &[ParameterSpec::required("value", "FiniteF32").scalar(ScalarType::FiniteF32)],
                 TypeRef::domain("PropertyValue<FiniteF32>"),
                 Some("deg vertical"),
                 LocalPresentation,
@@ -48,7 +48,7 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
         "client.input.mouse_sensitivity" => binding.declaration(
             "client.input.mouse_sensitivity",
             Property,
-            &[ParameterSpec::required("value", "FiniteF32")],
+            &[ParameterSpec::required("value", "FiniteF32").scalar(ScalarType::FiniteF32)],
             TypeRef::domain("PropertyValue<FiniteF32>"),
             Some("rad/pixel"),
             LocalPresentation,
@@ -56,7 +56,7 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
         "client.input.bindings" => binding.declaration(
             "client.input.bindings",
             Property,
-            &[ParameterSpec::required("value", "InputBindings")],
+            &[ParameterSpec::required("value", "InputBindings").scalar(ScalarType::Text)],
             TypeRef::domain("PropertyValue<InputBindings>"),
             None,
             LocalPresentation,
@@ -80,7 +80,7 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
         "client.debug.moon_flux" => binding.declaration(
             "client.debug.moon_flux",
             Property,
-            &[ParameterSpec::required("value", "Bool")],
+            &[ParameterSpec::required("value", "Bool").scalar(ScalarType::Bool)],
             TypeRef::domain("PropertyValue<Bool>"),
             None,
             LocalPresentation,
@@ -88,7 +88,8 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
         "client.debug.exposure_ev" => binding.declaration(
             "client.debug.exposure_ev",
             Property,
-            &[ParameterSpec::required("value", "AutoOr<FiniteF32>")],
+            &[ParameterSpec::required("value", "AutoOr<FiniteF32>")
+                .scalar(ScalarType::AutoOrFiniteF32)],
             TypeRef::domain("PropertyValue<AutoOr<FiniteF32>>"),
             Some("EV"),
             LocalPresentation,
@@ -112,7 +113,7 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
         "config save" => binding.declaration(
             "client.config.save",
             Method,
-            &[ParameterSpec::required("path", "Path")],
+            &[ParameterSpec::required("path", "Path").scalar(ScalarType::Text)],
             TypeRef::domain("ConfigSaveReceipt"),
             None,
             FilesystemWrite,
@@ -123,8 +124,8 @@ pub(super) fn entry(name: &str, persistent: bool) -> Option<CatalogEntry> {
                 "client.camera.look",
                 Method,
                 &[
-                    ParameterSpec::required("yaw", "FiniteF32"),
-                    ParameterSpec::required("pitch", "FiniteF32"),
+                    ParameterSpec::required("yaw", "FiniteF32").scalar(ScalarType::FiniteF32),
+                    ParameterSpec::required("pitch", "FiniteF32").scalar(ScalarType::FiniteF32),
                 ],
                 TypeRef::domain("Unit"),
                 Some("degrees"),

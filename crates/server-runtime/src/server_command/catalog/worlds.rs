@@ -1,7 +1,7 @@
-use minimium_commands::operation::ParameterSpec;
 use minimium_commands::operation::{
     CatalogEntry, DomainBinding, Effect::*, OperationKind::*, PersistenceKind, TypeRef,
 };
+use minimium_commands::operation::{ParameterSpec, ScalarType};
 
 pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
     let binding = DomainBinding {
@@ -18,8 +18,8 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
             "world.instances.list",
             Method,
             &[
-                ParameterSpec::optional("cursor", "Cursor", None),
-                ParameterSpec::optional("limit", "U16", Some("64")),
+                ParameterSpec::optional("cursor", "Cursor", None).scalar(ScalarType::Text),
+                ParameterSpec::optional("limit", "U16", Some("64")).scalar(ScalarType::U16),
             ],
             TypeRef::domain("Page<WorldRow>"),
             None,
@@ -28,7 +28,8 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
         "world inspect" => binding.declaration(
             "world.instances.inspect",
             Method,
-            &[ParameterSpec::required("instance_id", "WorldInstanceId")],
+            &[ParameterSpec::required("instance_id", "WorldInstanceId")
+                .scalar(ScalarType::NonzeroU128)],
             TypeRef::domain("WorldInspect"),
             None,
             Query,
@@ -37,8 +38,8 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
             "world.objects.list",
             Method,
             &[
-                ParameterSpec::optional("cursor", "Cursor", None),
-                ParameterSpec::optional("limit", "U16", Some("64")),
+                ParameterSpec::optional("cursor", "Cursor", None).scalar(ScalarType::Text),
+                ParameterSpec::optional("limit", "U16", Some("64")).scalar(ScalarType::U16),
             ],
             TypeRef::domain("Page<EntityOrPlayerRow>"),
             None,
@@ -48,10 +49,11 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
             "world.entities.inspect",
             Method,
             &[
-                ParameterSpec::required("instance_id", "WorldInstanceId"),
-                ParameterSpec::required("entity_id", "EntityId"),
-                ParameterSpec::optional("cursor", "Cursor", None),
-                ParameterSpec::optional("limit", "U16", Some("64")),
+                ParameterSpec::required("instance_id", "WorldInstanceId")
+                    .scalar(ScalarType::NonzeroU128),
+                ParameterSpec::required("entity_id", "EntityId").scalar(ScalarType::NonzeroU64),
+                ParameterSpec::optional("cursor", "Cursor", None).scalar(ScalarType::Text),
+                ParameterSpec::optional("limit", "U16", Some("64")).scalar(ScalarType::U16),
             ],
             TypeRef::domain("Page<ComponentMetadata>"),
             None,
@@ -61,8 +63,9 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
             "world.entities.despawn",
             Method,
             &[
-                ParameterSpec::required("instance_id", "WorldInstanceId"),
-                ParameterSpec::required("entity_id", "EntityId"),
+                ParameterSpec::required("instance_id", "WorldInstanceId")
+                    .scalar(ScalarType::NonzeroU128),
+                ParameterSpec::required("entity_id", "EntityId").scalar(ScalarType::NonzeroU64),
             ],
             TypeRef::domain("EffectReceipt"),
             None,

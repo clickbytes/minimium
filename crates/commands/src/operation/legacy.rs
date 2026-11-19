@@ -119,6 +119,7 @@ impl LegacyPackage {
         usage: &'static str,
         arguments: &'static [CommandArgumentSpec],
     ) -> Result<(), CatalogError> {
+        entry.command = Some(name);
         let path = entry.spec.path.clone();
         if let Some(existing) = self.0.get(&path) {
             // Persistence and lifecycle come from the registered property; the
@@ -135,12 +136,28 @@ impl LegacyPackage {
                     incoming: (entry.spec.id, entry.spec.owner),
                 });
             }
+            let current = self.0.get_mut(&path).expect("existing field");
+            current.fixed_arguments.extend(entry.fixed_arguments);
+            current.command.get_or_insert(name);
         } else {
             self.0.insert(path.clone(), entry);
         }
         for spelling in std::iter::once(name).chain(aliases) {
             self.alias(&path, spelling, usage, arguments)?;
         }
+        Ok(())
+    }
+
+    pub fn operation(&mut self, entry: CatalogEntry) -> Result<(), CatalogError> {
+        let path = entry.spec.path.clone();
+        if let Some(existing) = self.0.get(&path) {
+            return Err(CatalogError::Collision {
+                name: path,
+                existing: (existing.spec.id.clone(), existing.spec.owner),
+                incoming: (entry.spec.id, entry.spec.owner),
+            });
+        }
+        self.0.insert(path, entry);
         Ok(())
     }
 
@@ -154,17 +171,18 @@ impl LegacyPackage {
 impl From<&CommandArgumentSpec> for ParameterSpec {
     fn from(arg: &CommandArgumentSpec) -> Self {
         use crate::CommandArgumentType::*;
-        let schema = match arg.value_type {
-            Text => "String",
-            Boolean => "Bool",
-            Integer => "Integer",
-            Decimal => "Decimal",
-            Enumeration => "Enum",
-            Path => "Path",
-            Rfc3339Utc => "WorldTimeMs",
+        let (schema, scalar) = match arg.value_type {
+            Text => ("String", ScalarType::Text),
+            Boolean => ("Bool", ScalarType::Bool),
+            Integer => ("Integer", ScalarType::Integer),
+            Decimal => ("Decimal", ScalarType::Decimal),
+            Enumeration => ("Enum", ScalarType::Token),
+            Path => ("Path", ScalarType::Text),
+            Rfc3339Utc => ("WorldTimeMs", ScalarType::Text),
         };
         Self {
             name: arg.name,
+            scalar,
             value_type: TypeRef(schema),
             optional: arg.optional,
             default: None,

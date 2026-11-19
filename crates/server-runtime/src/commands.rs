@@ -351,6 +351,7 @@ pub fn execute(
         client_traffic,
     } = context;
     match command {
+        ServerCommand::CatalogOutput(text) => CommandReply::module_text(BoundedText::new(text)),
         ServerCommand::Help => CommandReply::success(CommandPayload::Help {
             builtins: crate::server_command::catalog::builtin_usages(catalog),
             modules: registry

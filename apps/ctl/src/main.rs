@@ -113,7 +113,13 @@ fn run() -> Result<(), CtlError> {
 
     // Endpoint state is read only after every local option and command boundary is parsed.
     let endpoint = ServerEndpoint::read(&data_dir).map_err(CtlError::runtime)?;
-    if command.trim() == "stop" {
+    let stop = command.trim() == "stop"
+        || minimium_commands::syntax::canonical::parse_statement(&command).is_ok_and(|statement| {
+            statement.name == "server.stop"
+                && statement.access == minimium_commands::syntax::canonical::AccessKind::Invoke
+                && statement.arguments.is_empty()
+        });
+    if stop {
         admin_client::stop_and_wait(&data_dir, &endpoint).map_err(CtlError::runtime)?;
         println!("server stopped cleanly");
     } else {

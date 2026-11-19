@@ -1,7 +1,7 @@
-use minimium_commands::operation::ParameterSpec;
 use minimium_commands::operation::{
     CatalogEntry, DomainBinding, Effect::*, OperationKind::*, PersistenceKind, TypeRef,
 };
+use minimium_commands::operation::{ParameterSpec, ScalarType};
 
 pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
     let mut binding = DomainBinding {
@@ -52,7 +52,7 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
         "social say" => binding.declaration(
             "player.chat.send",
             Method,
-            &[ParameterSpec::required("text", "String")],
+            &[ParameterSpec::required("text", "String").scalar(ScalarType::Text)],
             TypeRef::domain("ChatReceipt"),
             None,
             PlayerIntent,
@@ -60,7 +60,7 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
         "social name" => binding.declaration(
             "player.identity.set_name",
             Method,
-            &[ParameterSpec::required("name", "PlayerName")],
+            &[ParameterSpec::required("name", "PlayerName").scalar(ScalarType::Text)],
             TypeRef::domain("NameReceipt"),
             Some("1..24 ASCII bytes; [A-Za-z0-9_]"),
             PlayerIntent,

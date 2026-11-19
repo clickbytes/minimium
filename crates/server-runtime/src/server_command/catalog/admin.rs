@@ -1,7 +1,7 @@
-use minimium_commands::operation::ParameterSpec;
 use minimium_commands::operation::{
     CatalogEntry, DomainBinding, Effect::*, OperationKind::*, PersistenceKind, TypeRef,
 };
+use minimium_commands::operation::{ParameterSpec, ScalarType};
 
 pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
     let binding = DomainBinding {
@@ -26,8 +26,8 @@ pub(super) fn entry(name: &str) -> Option<CatalogEntry> {
             "server.players.list",
             Method,
             &[
-                ParameterSpec::optional("cursor", "Cursor", None),
-                ParameterSpec::optional("limit", "U16", Some("64")),
+                ParameterSpec::optional("cursor", "Cursor", None).scalar(ScalarType::Text),
+                ParameterSpec::optional("limit", "U16", Some("64")).scalar(ScalarType::U16),
             ],
             TypeRef::domain("Page<PlayerRow>"),
             None,

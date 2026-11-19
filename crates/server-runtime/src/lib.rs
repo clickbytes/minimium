@@ -166,9 +166,11 @@ pub fn run_with_config(
         })?;
     if config.console_enabled {
         println!("Type `help` for server commands.");
-        execution.console = Some(terminal::spawn(composition.server_logger.clone()).map_err(
-            |error| ServerProcessError::caused_by(ServerProcessErrorKind::RuntimeSetup, error),
-        )?);
+        execution.console = Some(
+            terminal::spawn(composition.server_logger.clone(), modules.catalog.clone()).map_err(
+                |error| ServerProcessError::caused_by(ServerProcessErrorKind::RuntimeSetup, error),
+            )?,
+        );
     }
     let session_nonce = minimium_platform::endpoint::new_random_bytes::<16>()
         .map(minimium_environment::time::SessionNonce::new)

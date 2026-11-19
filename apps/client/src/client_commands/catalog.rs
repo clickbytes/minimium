@@ -38,6 +38,18 @@ fn build() -> Result<OperationCatalog, CatalogError> {
     for &(name, usage) in super::presentation::COMMAND_FORMS {
         package.command(resolve(name, false)?, name, [], usage, &[])?;
     }
+    package.alias(
+        "player.chat.send",
+        "say",
+        "say TEXT",
+        super::command_specs()
+            .iter()
+            .find(|spec| spec.name == "social say")
+            .expect("registered chat command")
+            .arguments,
+    )?;
+    package.alias("client.quit", "quit", "quit", &[])?;
+    package.operation(minimium_commands::syntax::bind::explain_entry())?;
     package.finish()
 }
 

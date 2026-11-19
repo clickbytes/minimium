@@ -1,5 +1,7 @@
 # minimium-client
 
+The F1 console, terminal and developer input bind canonical fields, methods and longest registered legacy spellings through the shared command syntax. `ui.console.explain(text)` prints the prepared operation using the local immutable catalog and argument validators.
+
 ## Collision and presentation readiness
 
 The runtime `WorldReadiness` provider owns CPU sector materialization and collision

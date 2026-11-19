@@ -4,6 +4,9 @@ use std::fmt;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CommandErrorCode {
     UnknownCommand,
+    NotCallable,
+    NotAssignable,
+    MissingArgument,
     InvalidArguments,
     UnknownKey,
     UnknownProperty,
@@ -24,6 +27,9 @@ pub enum CommandErrorCode {
 impl CommandErrorCode {
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::NotCallable => "not_callable",
+            Self::NotAssignable => "not_assignable",
+            Self::MissingArgument => "missing_argument",
             Self::UnknownCommand => "unknown_command",
             Self::InvalidArguments => "invalid_arguments",
             Self::UnknownKey | Self::UnknownProperty => "unknown_key",
@@ -49,9 +55,15 @@ pub struct CommandError {
     pub subject: Option<String>,
     pub reason: String,
     pub usage: Option<String>,
+    pub span: Option<crate::SourceSpan>,
 }
 
 impl CommandError {
+    pub fn at(mut self, span: crate::SourceSpan) -> Self {
+        self.span = Some(span);
+        self
+    }
+
     pub fn new(
         code: CommandErrorCode,
         subject: Option<impl Into<String>>,
@@ -63,6 +75,7 @@ impl CommandError {
             subject: subject.map(Into::into),
             reason: reason.into(),
             usage: usage.map(Into::into),
+            span: None,
         }
     }
 }
