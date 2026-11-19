@@ -11,3 +11,69 @@ impl ScriptError {
         }
     }
 }
+
+pub(crate) fn format_status(
+    value: &minimium_commands::operation::CommandValue,
+    locale: minimium_localization::Locale,
+) -> String {
+    use minimium_commands::operation::CommandValue as V;
+    let V::Record(fields) = value else {
+        return value.encode();
+    };
+    let get = |key: &str| {
+        fields
+            .get(key)
+            .map_or_else(|| "unavailable".into(), V::encode)
+    };
+    let (run, phase, calls, mutations, output, error, operation) = match locale {
+        minimium_localization::Locale::Polish => (
+            "uruchomienie",
+            "faza",
+            "wywołania",
+            "zmiany",
+            "wyjście",
+            "błąd",
+            "operacja",
+        ),
+        minimium_localization::Locale::English => (
+            "run",
+            "phase",
+            "calls",
+            "mutations",
+            "output",
+            "error",
+            "operation",
+        ),
+    };
+    let mut lines = vec![format!(
+        "{run}={} {phase}={} {calls}={} {mutations}={}",
+        get("run_id"),
+        get("phase"),
+        get("calls"),
+        get("mutations")
+    )];
+    if let Some(V::Page { rows, .. }) = fields.get("operations") {
+        for row in rows {
+            if let V::Record(call) = row {
+                let item = |key: &str| call.get(key).map_or_else(|| "none".into(), V::encode);
+                lines.push(format!(
+                    "{operation}={} stage={} request={} nonce={} error={}",
+                    item("path"),
+                    item("stage"),
+                    item("request_id"),
+                    item("nonce"),
+                    item("error_code")
+                ));
+            }
+        }
+    }
+    if let Some(V::Text(text)) = fields.get("output_preview") {
+        if !text.is_empty() {
+            lines.push(format!("{output}: {text}"));
+        }
+    }
+    if let Some(V::Text(text)) = fields.get("error") {
+        lines.push(format!("{error}: {text}"));
+    }
+    lines.join("\n")
+}

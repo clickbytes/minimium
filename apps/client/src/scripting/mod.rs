@@ -3,6 +3,7 @@ mod bindings;
 mod bridge;
 mod errors;
 mod limits;
+mod registration;
 mod values;
 
 use crate::client_commands::ScriptControl;
@@ -21,12 +22,21 @@ use std::time::Instant;
 
 pub(crate) use bridge::project;
 pub(crate) use bridge::HostRequest;
+pub(crate) use errors::format_status;
 
 #[derive(Default)]
 pub(crate) struct ScriptingHost {
     next_id: u64,
     runs: BTreeMap<u64, Run>,
     pending: Option<HostRequest>,
+    receipts: Vec<PendingReceipt>,
+}
+
+struct PendingReceipt {
+    run_id: u64,
+    identity: OperationContext,
+    waiter: Arc<bridge::Waiter>,
+    disconnected: bool,
 }
 
 struct Run {
@@ -51,9 +61,60 @@ pub(crate) struct CallRecord {
     pub(crate) stage: String,
     pub(crate) request_id: Option<u64>,
     pub(crate) error_code: Option<String>,
+    pub(crate) session: Option<u64>,
+    pub(crate) context: Option<minimium_commands::results::WorldBinding>,
+    pub(crate) nonce: Option<u64>,
 }
 
 impl ScriptingHost {
+    pub(crate) fn register_submission(&mut self, request: &HostRequest, result: &OperationResult) {
+        request.waiter.record_submission(&result.identity);
+        if !self.runs.contains_key(&request.run_id) {
+            request
+                .waiter
+                .complete(unknown_after_disconnect(&result.identity));
+            return;
+        }
+        if result.receipt.stage == Stage::Submitted && result.outcome.is_ok() {
+            if self.receipts.len() >= 16 {
+                request
+                    .waiter
+                    .complete(unknown_after_disconnect(&result.identity));
+                return;
+            }
+            self.receipts.push(PendingReceipt {
+                run_id: request.run_id,
+                identity: result.identity.clone(),
+                waiter: Arc::clone(&request.waiter),
+                disconnected: false,
+            });
+        } else {
+            request.waiter.complete(result.clone());
+        }
+    }
+
+    pub(crate) fn record_owner_result(&mut self, result: OperationResult) {
+        let Some(index) = self.receipts.iter().position(|pending| {
+            pending.identity.request_id == result.identity.request_id
+                && pending.identity.correlation_nonce == result.identity.correlation_nonce
+                && pending.identity.operation == result.identity.operation
+        }) else {
+            return;
+        };
+        let pending = self.receipts.remove(index);
+        pending.waiter.complete(result);
+    }
+
+    pub(crate) fn observe_session(&mut self, session: Option<u64>) {
+        for pending in &mut self.receipts {
+            if !pending.disconnected && pending.identity.session != session {
+                pending
+                    .waiter
+                    .complete(unknown_after_disconnect(&pending.identity));
+                pending.disconnected = true;
+            }
+        }
+    }
     pub(crate) fn operate(
         &mut self,
         identity: OperationContext,
@@ -108,6 +169,22 @@ impl ScriptingHost {
                 "expected a local path",
             ));
         }
+        if self.runs.len() >= 16 {
+            let retired = self.runs.iter().find_map(|(&id, run)| {
+                let active = run
+                    .ledger
+                    .lock()
+                    .is_ok_and(|ledger| ledger.phase == "running");
+                (!active && !self.receipts.iter().any(|pending| pending.run_id == id)).then_some(id)
+            });
+            let id = retired.ok_or_else(|| {
+                errors::ScriptError::new(
+                    "ledger_full",
+                    "script run ledger has unresolved submissions",
+                )
+            })?;
+            self.runs.remove(&id);
+        }
         let cwd = std::env::current_dir()
             .map_err(|e| errors::ScriptError::new("host_io", e.to_string()))?;
         let id = self.next_id.checked_add(1).ok_or_else(|| {
@@ -131,7 +208,7 @@ impl ScriptingHost {
             .name(format!("script-{id}"))
             .spawn(move || {
                 let path = cwd.join(PathBuf::from(path));
-                bindings::run(path, sender, thread_cancel, thread_ledger);
+                bindings::run(id, path, sender, thread_cancel, thread_ledger);
             })
             .map_err(|e| errors::ScriptError::new("worker_unavailable", e.to_string()))?;
         self.next_id = id;
@@ -143,19 +220,6 @@ impl ScriptingHost {
                 calls,
             },
         );
-        while self.runs.len() > 16 {
-            let Some((&old, _)) = self.runs.iter().next() else {
-                break;
-            };
-            if self
-                .runs
-                .get(&old)
-                .is_some_and(|r| r.ledger.lock().is_ok_and(|l| l.phase == "running"))
-            {
-                break;
-            }
-            self.runs.remove(&old);
-        }
         Ok(CommandValue::Record(BTreeMap::from([
             ("run_id".into(), CommandValue::U64(id)),
             ("phase".into(), CommandValue::Enum("running".into())),
@@ -217,6 +281,33 @@ impl ScriptingHost {
                                         CommandValue::Enum(code.clone())
                                     }),
                                 ),
+                                (
+                                    "session".into(),
+                                    call.session.map_or(CommandValue::Unit, CommandValue::U64),
+                                ),
+                                (
+                                    "nonce".into(),
+                                    call.nonce.map_or(CommandValue::Unit, CommandValue::U64),
+                                ),
+                                (
+                                    "context".into(),
+                                    call.context.as_ref().map_or(CommandValue::Unit, |context| {
+                                        CommandValue::Record(BTreeMap::from([
+                                            (
+                                                "instance".into(),
+                                                CommandValue::U128(context.instance),
+                                            ),
+                                            (
+                                                "content_revision".into(),
+                                                CommandValue::U64(context.content_revision),
+                                            ),
+                                            (
+                                                "membership_epoch".into(),
+                                                CommandValue::U64(context.membership_epoch),
+                                            ),
+                                        ]))
+                                    }),
+                                ),
                             ]))
                         })
                         .collect(),
@@ -266,4 +357,20 @@ impl ScriptingHost {
     pub(crate) fn take_request(&mut self) -> Option<HostRequest> {
         self.pending.take()
     }
+}
+
+fn unknown_after_disconnect(identity: &OperationContext) -> OperationResult {
+    OperationResult::new(
+        identity.clone(),
+        OperationReceipt::at(Stage::UnknownAfterDisconnect),
+        Err(minimium_commands::results::OperationFailure {
+            code: "unknown_after_disconnect".into(),
+            subject: Some(identity.operation.0.clone()),
+            reason: "session generation changed after submission; owner outcome is uncertain"
+                .into(),
+            usage: None,
+            span: None,
+            origin: "client_scripting".into(),
+        }),
+    )
 }

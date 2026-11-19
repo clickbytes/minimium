@@ -3,7 +3,7 @@ use minimium_commands::results::{OperationResult, Payload};
 use rhai::{Dynamic, EvalAltResult, ImmutableString, Map, Position};
 
 #[derive(Clone)]
-pub(crate) struct Revision(pub(crate) u64);
+pub(crate) struct Revision(pub(crate) u64, pub(crate) Option<u64>);
 #[derive(Clone)]
 pub(crate) struct InstanceId(pub(crate) u128);
 #[derive(Clone)]
@@ -13,9 +13,18 @@ pub(crate) struct ScriptRunId(pub(crate) u64);
 #[derive(Clone)]
 pub(crate) struct ExactScale(pub(crate) CommandValue);
 #[derive(Clone)]
-pub(crate) struct OperationHandle(pub(crate) OperationResult);
+pub(crate) struct OperationHandle {
+    pub(crate) submitted: OperationResult,
+    pub(crate) waiter: std::sync::Arc<super::bridge::Waiter>,
+}
 #[derive(Clone)]
-pub(crate) struct PropertySnapshot(pub(crate) minimium_commands::PropertyValue<CommandValue>);
+pub(crate) struct ScriptReceipt(pub(crate) OperationResult);
+#[derive(Clone)]
+pub(crate) struct PropertySnapshot {
+    pub(crate) value: minimium_commands::PropertyValue<CommandValue>,
+    pub(crate) operation: minimium_commands::operation::OperationId,
+    pub(crate) settings_base: Option<u64>,
+}
 
 pub(crate) fn error(
     code: &str,
@@ -24,6 +33,11 @@ pub(crate) fn error(
     cause: &str,
     correlation: u64,
 ) -> Box<EvalAltResult> {
+    let code = match code {
+        "client_runtime.admin_control_unavailable" => "AdminControlUnavailable",
+        "conflict" | "revision_conflict" | "settings_base_changed" => "Conflict",
+        other => other,
+    };
     let mut map = Map::new();
     for (key, value) in [
         ("code", code),
@@ -137,7 +151,7 @@ pub(crate) fn to_dynamic(value: CommandValue) -> Dynamic {
         CommandValue::Unit => Dynamic::UNIT,
         CommandValue::Bool(v) => Dynamic::from(v),
         CommandValue::I64(v) | CommandValue::InstantMs(v) => Dynamic::from(v),
-        CommandValue::U64(v) => Dynamic::from(Revision(v)),
+        CommandValue::U64(v) => Dynamic::from(Revision(v, None)),
         CommandValue::U128(v) => Dynamic::from(InstanceId(v)),
         CommandValue::Finite(v) => Dynamic::from(v.get()),
         CommandValue::Decimal {
@@ -175,7 +189,9 @@ pub(crate) fn to_dynamic(value: CommandValue) -> Dynamic {
 
 pub(crate) fn result_value(result: OperationResult) -> Result<Dynamic, Box<EvalAltResult>> {
     let operation = result.identity.operation.0.clone();
+    let operation_id = result.identity.operation.clone();
     let correlation = result.identity.request_id;
+    let settings_base = result.receipt.settings_base;
     match result.outcome {
         Err(failure) => Err(error(
             &failure.code,
@@ -185,7 +201,11 @@ pub(crate) fn result_value(result: OperationResult) -> Result<Dynamic, Box<EvalA
             correlation,
         )),
         Ok(Payload::Value(value)) => Ok(to_dynamic(value)),
-        Ok(Payload::Property(value)) => Ok(Dynamic::from(PropertySnapshot(value))),
+        Ok(Payload::Property(value)) => Ok(Dynamic::from(PropertySnapshot {
+            value,
+            operation: operation_id,
+            settings_base,
+        })),
         Ok(Payload::LegacyText(_)) => Err(error(
             "untyped_result",
             &operation,

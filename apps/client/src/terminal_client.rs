@@ -405,6 +405,7 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                 if let Some(request) = script_request {
                     let reply =
                         crate::scripting::project(response.expect("script operation response"));
+                    application.track_script_submission(&request, &reply);
                     let _ = request.reply.try_send(reply);
                 } else {
                     output::display(response, &localizer, options.locale);

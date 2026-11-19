@@ -15,6 +15,20 @@ output and owner-call limits described in [the console contract](../../docs/cons
 Committed owner effects remain after cancellation; a submitted handle is not
 an owner commit.
 
+[Camera report](../../docs/console-api/examples/camera-report.rhai) requires a
+desktop renderer. It reads the FOV snapshot, performs a conditional owner write
+at the captured settings base and revision, reads camera status, then restores
+the captured override state with CAS. A missing prior override resets to the
+same startup base. A concurrent edit yields `Conflict` and remains untouched.
+[Server time scale](../../docs/console-api/examples/server-time-scale.rhai)
+requires a connected server started and administratively controlled by this
+client. `f1_wait_committed` blocks only the worker for at most five seconds and
+returns the correlated `OwnerCommitted` receipt; a later session sample can
+still be stale. A joined server returns `AdminControlUnavailable`. Timeout or
+disconnect after submission leaves the owner outcome uncertain, and neither
+helper retries it. Use `client.scripting.status(run_id)` to inspect the bounded
+call ledger; runtime execution of these examples is deferred.
+
 `client.render.water.status()` is a local typed query over three independent stages: received fluid replica, last accepted scene-worker request and actually activated water geometry. Each retains its own world/context, fluid revision, terrain version, catalog digest and local region/key. The water-level value is a hash of nearby water presentation inputs, not a server revision; the builder uses a 96 m radius and at most 4096 nearby interface cells. Installed vertex and triangle counts describe local geometry, not water volume. An old installed key is marked retained/stale after context or origin change. Terminal builds expose the catalog method but return `Unavailable(renderer_missing)`; the server's `world.water.status(instance_id)` remains separate.
 
 The F1 console, terminal and developer input bind canonical fields, methods and longest registered legacy spellings through the shared command syntax. `ui.console.explain(text)` prints the prepared operation using the local immutable catalog and argument validators.

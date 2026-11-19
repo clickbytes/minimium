@@ -18,6 +18,12 @@ pub(crate) fn validate_fov(value: f32) -> Result<(), &'static str> {
     }
 }
 
+pub(crate) fn parse_fov_degrees(value: &str) -> Result<f32, &'static str> {
+    let degrees = value.parse::<f32>().map_err(|_| "expected a number")?;
+    validate_fov(degrees)?;
+    Ok(degrees)
+}
+
 pub(super) fn look(yaw: f32, pitch: f32) -> Result<ClientCommand, &'static str> {
     if yaw.is_finite() && (-89.0..=89.0).contains(&pitch) {
         Ok(ClientCommand::CameraLook { yaw, pitch })
@@ -38,6 +44,12 @@ pub(crate) struct Camera<'a> {
 pub(crate) enum Request<'a> {
     Fov,
     Change(Option<f32>),
+    #[cfg(feature = "console-scripting")]
+    ConditionalChange {
+        value: Option<f32>,
+        expected_base: u64,
+        expected_revision: u64,
+    },
     Status,
     Look(f32, f32),
     Save(&'a Path),
@@ -53,6 +65,16 @@ impl<'a> Request<'a> {
                 Self::Change(Some(*degrees))
             }
             FrontendAction::Property(Command::Reset(Key::CameraFov)) => Self::Change(None),
+            #[cfg(feature = "console-scripting")]
+            FrontendAction::CameraCas {
+                value,
+                expected_base,
+                expected_revision,
+            } => Self::ConditionalChange {
+                value: *value,
+                expected_base: *expected_base,
+                expected_revision: *expected_revision,
+            },
             FrontendAction::ConfigSave(path) => Self::Save(path),
             _ => return None,
         })
@@ -114,6 +136,20 @@ fn apply(
         Request::Change(value) => {
             snapshot.session_override = value;
             let (version, effective) = settings.restore_fov(snapshot, snapshot.version)?;
+            settings.confirm_fov(version, effective)?;
+            *camera.fov = effective;
+            receipt.revision = Some(version.revision);
+            receipt.stage = Stage::OwnerCommitted;
+            Ok(Payload::Property(settings.fov_property()))
+        }
+        #[cfg(feature = "console-scripting")]
+        Request::ConditionalChange {
+            value,
+            expected_base,
+            expected_revision,
+        } => {
+            let (version, effective) =
+                settings.change_fov_if(value, expected_base, expected_revision)?;
             settings.confirm_fov(version, effective)?;
             *camera.fov = effective;
             receipt.revision = Some(version.revision);

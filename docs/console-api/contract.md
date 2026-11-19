@@ -104,7 +104,7 @@ Analyze partial input locally. Items carry kind, type, unit, availability, signa
 
 The default-off Rhai worker calls typed bindings and creates a fresh scope for each run. Limit one script, 16 KiB source, 20,000 evaluated operations, 32 owner calls, 8 mutations and one pending mutation. Budget 64 KiB per reply, 256 KiB total, 32 KiB print/debug, 8 KiB strings, arrays of 256, maps of 64, stack depth 16, a cooperative 10 s deadline and waits up to 5 s. Restrict dynamic evaluation, imports and native access. Key the bounded 16-entry AST cache (256 KiB source) by source hash and schema/adapter/compiler configuration. Authorization is checked afresh. Cancellation preserves previously committed changes.
 
-The following are target scripts for [#594](https://github.com/clickbytes/minimium/issues/594). Camera restore checks the revision returned by the temporary write, including when the intervening report fails. The clock example keeps the owner receipt and session sample separately.
+The executable source examples are [camera-report.rhai](examples/camera-report.rhai) and [server-time-scale.rhai](examples/server-time-scale.rhai). Camera restore compares the captured settings base and the revision returned by the temporary write at the camera settings owner, including when the intervening report fails. A missing prior session override resets to that captured startup base. `f1_wait_committed` awaits a correlated owner result on the worker; timeout and disconnect retain uncertainty and do not retry. The clock example keeps the owner receipt and later session sample separate. Both examples await later runtime verification.
 
 ```rhai
 let path = "client.camera.fov";

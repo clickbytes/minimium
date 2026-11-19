@@ -35,6 +35,23 @@ impl ClientApplication {
     }
 
     #[cfg(feature = "console-scripting")]
+    pub(crate) fn track_script_submission(
+        &mut self,
+        request: &crate::scripting::HostRequest,
+        result: &minimium_commands::results::OperationResult,
+    ) {
+        self.scripting.register_submission(request, result);
+    }
+
+    #[cfg(feature = "console-scripting")]
+    pub(crate) fn script_owner_result(
+        &mut self,
+        result: &minimium_commands::results::OperationResult,
+    ) {
+        self.scripting.record_owner_result(result.clone());
+    }
+
+    #[cfg(feature = "console-scripting")]
     pub(crate) fn prepare_script_request(
         &mut self,
         request: &crate::scripting::HostRequest,
@@ -91,12 +108,44 @@ impl ClientApplication {
                 fire_direction: [1.0, 0.0, 0.0],
                 player_position: None,
             };
-            Ok(
-                match crate::client_commands::execute(command, &mut context) {
-                    CommandResult::Action(action) => TextCommandResult::Action(action),
-                    CommandResult::Rejected(error) => TextCommandResult::Rejected(error),
-                },
-            )
+            let outcome = match crate::client_commands::execute(command, &mut context) {
+                CommandResult::Action(action) => TextCommandResult::Action(action),
+                CommandResult::Rejected(error) => TextCommandResult::Rejected(error),
+            };
+            if let Some(condition) = request.camera_condition {
+                let value = match outcome {
+                    TextCommandResult::Action(
+                        crate::client_commands::FrontendAction::Property(
+                            crate::client_commands::ClientPropertyCommand::Set(
+                                crate::client_commands::ClientPropertyValue::CameraFov(value),
+                            ),
+                        ),
+                    ) if prepared.path == "client.camera.fov" => Some(value),
+                    TextCommandResult::Action(
+                        crate::client_commands::FrontendAction::Property(
+                            crate::client_commands::ClientPropertyCommand::Reset(
+                                crate::client_commands::ClientPropertyKey::CameraFov,
+                            ),
+                        ),
+                    ) if prepared.path == "client.camera.fov" => None,
+                    _ => {
+                        return Err(minimium_commands::CommandError::new(
+                            minimium_commands::CommandErrorCode::UnsupportedContext,
+                            Some(&request.path),
+                            "conditional change is supported by the camera FOV owner",
+                            None::<String>,
+                        ))
+                    }
+                };
+                return Ok(TextCommandResult::Action(
+                    crate::client_commands::FrontendAction::CameraCas {
+                        value,
+                        expected_base: condition.expected_base,
+                        expected_revision: condition.expected_revision,
+                    },
+                ));
+            }
+            Ok(outcome)
         })();
         (
             identity,

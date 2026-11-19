@@ -306,6 +306,11 @@ impl ClientApplication {
         let output = self
             .core
             .step(input, candidate_readiness, presentation_ready)?;
+        #[cfg(feature = "console-scripting")]
+        if output.admin_result.is_none() && output.movement_results.is_empty() {
+            self.scripting
+                .observe_session(self.core.session().map(|s| s.content_jobs_session_id()));
+        }
         if output.disconnect.is_some() {
             #[cfg(feature = "desktop")]
             self.transitions.reset();

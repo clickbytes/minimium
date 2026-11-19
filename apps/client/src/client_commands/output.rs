@@ -223,6 +223,13 @@ pub(crate) fn display(
             line
         }
         Ok(ClientPayload::Native(Payload::Value(CommandValue::Unit))) => format!("{id} {stage}"),
+        #[cfg(feature = "console-scripting")]
+        Ok(ClientPayload::Native(Payload::Value(value))) if id == "client.scripting.status" => {
+            format!(
+                "{id} {stage} {}",
+                crate::scripting::format_status(&value, locale)
+            )
+        }
         Ok(ClientPayload::Native(Payload::Value(value))) => {
             format!("{id} {stage} {}", value.encode())
         }

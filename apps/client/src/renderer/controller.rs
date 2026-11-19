@@ -63,6 +63,9 @@ pub(super) fn execute_script_request(
         client_commands::CommandSource::Console,
     );
     let reply = crate::scripting::project(result.expect("script operation response"));
+    renderer
+        .application
+        .track_script_submission(&request, &reply);
     let _ = request.reply.try_send(reply);
 }
 

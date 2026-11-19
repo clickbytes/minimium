@@ -36,12 +36,15 @@ pub(crate) mod player_actions;
 mod presentation;
 mod properties;
 pub(crate) mod render_queries;
+mod scripting;
+pub(crate) use scripting::ScriptControl;
 mod text;
 pub(crate) mod time_adapter;
 use minimium_environment::clock_command::ClockWrite;
 use time_adapter::ClockAction;
 mod weather;
 
+pub(crate) use camera::parse_fov_degrees;
 pub(crate) use help::command_error;
 pub(crate) use meteors::{MeteorDebug, MeteorLightDebug, MeteorPreset};
 pub(crate) use minimium_commands::{
@@ -129,21 +132,9 @@ pub(crate) enum ClientCommand {
 
 pub(crate) type CommandSpec = SharedCommandSpec<ClientCommand, ParseError>;
 
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) enum ScriptControl {
-    RunFile(String),
-    Status(u64),
-    Cancel(u64),
-}
 pub(super) type CommandRegistry = SharedCommandRegistry<ClientCommand, ParseError>;
 
 static REGISTRY: OnceLock<CommandRegistry> = OnceLock::new();
-
-pub(crate) fn parse_fov_degrees(value: &str) -> Result<f32, &'static str> {
-    let degrees = value.parse::<f32>().map_err(|_| "expected a number")?;
-    camera::validate_fov(degrees)?;
-    Ok(degrees)
-}
 
 pub(crate) fn initialize_registry() {
     let _ = catalog::catalog();
@@ -286,6 +277,12 @@ pub(crate) enum FrontendAction {
         pitch: f32,
     },
     CameraStatus,
+    #[cfg(feature = "console-scripting")]
+    CameraCas {
+        value: Option<f32>,
+        expected_base: u64,
+        expected_revision: u64,
+    },
     SpawnRandomBolid(u16),
     SpawnRandomMeteorid,
     BolidStatus(u64),

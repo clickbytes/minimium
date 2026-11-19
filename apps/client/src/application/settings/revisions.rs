@@ -113,6 +113,27 @@ impl SettingsStore {
         self.fov_version.revision = revision;
         Ok((self.fov_version, fov))
     }
+    /// Compare the current owner revision and base, then apply one requested
+    /// override state. A missing override resets to this owner's startup layer.
+    #[cfg(feature = "console-scripting")]
+    pub(crate) fn change_fov_if(
+        &mut self,
+        session_override: Option<f32>,
+        expected_base: u64,
+        expected_revision: u64,
+    ) -> Result<(PropertyRevision, f32), CommandError> {
+        let expected = PropertyRevision {
+            base: SettingsBaseId(expected_base),
+            revision: expected_revision,
+        };
+        self.restore_fov(
+            FovSnapshot {
+                version: expected,
+                session_override,
+            },
+            expected,
+        )
+    }
     pub(crate) fn confirm_fov(
         &mut self,
         expected: PropertyRevision,

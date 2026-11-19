@@ -38,6 +38,8 @@ impl ClientApplication {
         &mut self,
         result: OperationResult,
     ) -> (Option<CommandSource>, output::ClientResult) {
+        #[cfg(feature = "console-scripting")]
+        self.script_owner_result(&result);
         let source = result.identity.session.and_then(|session| {
             let key = (session, result.identity.request_id);
             if result.receipt.stage == Stage::OwnerAccepted {
@@ -173,6 +175,8 @@ impl ClientApplication {
         &mut self,
         reply: AdminReplyV1,
     ) -> (Option<CommandSource>, output::ClientResult) {
+        #[cfg(feature = "console-scripting")]
+        self.script_owner_result(&reply.result);
         let correlation = Correlation {
             nonce: reply.nonce,
             request_id: reply.result.identity.request_id,

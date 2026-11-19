@@ -1,8 +1,10 @@
-use super::{bridge::HostRequest, limits, values, CallRecord, Ledger};
-use minimium_commands::operation::{CommandValue, Effect};
-use minimium_commands::results::Payload;
+use super::{
+    bridge::{CameraCondition, HostRequest, Waiter},
+    limits, values, CallRecord, Ledger,
+};
+use minimium_commands::operation::Effect;
 use minimium_commands::syntax::canonical::AccessKind;
-use rhai::{Array, Dynamic, Engine, EvalAltResult, ImmutableString, OptimizationLevel, Scope};
+use rhai::{Dynamic, Engine, EvalAltResult, OptimizationLevel, Scope};
 use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -12,11 +14,17 @@ use std::sync::{
 use std::time::Duration;
 
 #[derive(Clone)]
-struct Bridge {
+pub(super) struct Bridge {
+    run_id: u64,
     calls: SyncSender<HostRequest>,
     cancel: Arc<AtomicBool>,
     ledger: Arc<Mutex<Ledger>>,
     mutation_pending: Arc<AtomicBool>,
+}
+
+pub(super) struct CallOutcome {
+    pub(super) result: minimium_commands::results::OperationResult,
+    pub(super) waiter: Arc<Waiter>,
 }
 
 impl Bridge {
@@ -30,12 +38,13 @@ impl Bridge {
         }
     }
 
-    fn call(
+    pub(super) fn call(
         &self,
         path: &str,
         access: AccessKind,
         args: &[Dynamic],
-    ) -> Result<minimium_commands::results::OperationResult, Box<EvalAltResult>> {
+        camera_condition: Option<CameraCondition>,
+    ) -> Result<CallOutcome, Box<EvalAltResult>> {
         let catalog = crate::client_commands::catalog::catalog();
         let entry = catalog.resolve(path).ok_or_else(|| {
             values::error(
@@ -117,7 +126,12 @@ impl Bridge {
                 0,
             ));
         }
-        if args.len() != entry.spec.arguments.len() && access != AccessKind::Read {
+        let expected_arguments = if matches!(access, AccessKind::Read | AccessKind::Reset) {
+            0
+        } else {
+            entry.spec.arguments.len()
+        };
+        if args.len() != expected_arguments {
             return Err(values::error(
                 "invalid_arguments",
                 path,
@@ -140,7 +154,11 @@ impl Bridge {
             stage: "awaiting_host".into(),
             request_id: None,
             error_code: None,
+            session: None,
+            context: None,
+            nonce: None,
         });
+        let operation_index = ledger.operations.len() - 1;
         if mutation {
             ledger.mutations += 1;
             self.mutation_pending.store(true, Ordering::Release);
@@ -149,12 +167,22 @@ impl Bridge {
             .saturating_sub(ledger.started.elapsed())
             .min(Duration::from_secs(5));
         drop(ledger);
+        let waiter = Arc::new(Waiter::new(
+            Arc::clone(&self.ledger),
+            operation_index,
+            Arc::clone(&self.cancel),
+            Arc::clone(&self.mutation_pending),
+            mutation,
+        ));
         let (reply, receiver) = mpsc::sync_channel(1);
         let request = HostRequest {
+            run_id: self.run_id,
             path: prepared.path,
             access: prepared.kind,
             arguments: prepared.arguments.into_iter().map(|a| a.value).collect(),
+            camera_condition,
             reply,
+            waiter: Arc::clone(&waiter),
         };
         self.calls.try_send(request).map_err(|e| {
             if mutation {
@@ -200,17 +228,24 @@ impl Bridge {
         if result.receipt.stage != minimium_commands::results::Stage::Submitted && mutation {
             self.mutation_pending.store(false, Ordering::Release);
         }
-        Ok(result)
+        Ok(CallOutcome { result, waiter })
     }
 }
 
 pub(super) fn run(
+    run_id: u64,
     path: PathBuf,
     calls: SyncSender<HostRequest>,
     cancel: Arc<AtomicBool>,
     ledger: Arc<Mutex<Ledger>>,
 ) {
-    let result = execute(path, calls, Arc::clone(&cancel), Arc::clone(&ledger));
+    let result = execute(
+        run_id,
+        path,
+        calls,
+        Arc::clone(&cancel),
+        Arc::clone(&ledger),
+    );
     if let Ok(mut state) = ledger.lock() {
         state.phase = if cancel.load(Ordering::Acquire) {
             "cancelled"
@@ -227,6 +262,7 @@ pub(super) fn run(
 }
 
 fn execute(
+    run_id: u64,
     path: PathBuf,
     calls: SyncSender<HostRequest>,
     cancel: Arc<AtomicBool>,
@@ -259,9 +295,10 @@ fn execute(
     engine.on_print(move |text| append_output(&print_ledger, text));
     let debug_ledger = Arc::clone(&ledger);
     engine.on_debug(move |text, _, _| append_output(&debug_ledger, text));
-    register(
+    super::registration::register(
         &mut engine,
         Bridge {
+            run_id,
             calls,
             cancel,
             ledger: Arc::clone(&ledger),
@@ -294,183 +331,4 @@ fn append_output(ledger: &Arc<Mutex<Ledger>>, text: &str) {
             .unwrap_or(0);
         state.output.push_str(&text[..end]);
     }
-}
-
-fn register(engine: &mut Engine, bridge: Bridge) {
-    use values::{
-        EntityId, ExactScale, InstanceId, OperationHandle, PropertySnapshot, Revision, ScriptRunId,
-    };
-    engine.register_type_with_name::<PropertySnapshot>("PropertySnapshot");
-    engine.register_type_with_name::<OperationHandle>("OperationHandle");
-    engine.register_type_with_name::<Revision>("Revision");
-    engine.register_type_with_name::<InstanceId>("InstanceId");
-    engine.register_type_with_name::<EntityId>("EntityId");
-    engine.register_type_with_name::<ExactScale>("ExactScale");
-    engine.register_type_with_name::<ScriptRunId>("ScriptRunId");
-    engine.register_fn(
-        "revision",
-        |text: ImmutableString| -> Result<Revision, Box<EvalAltResult>> {
-            text.parse::<u64>().map(Revision).map_err(|_| {
-                values::error(
-                    "invalid_value",
-                    "revision",
-                    "binding",
-                    "expected exact u64",
-                    0,
-                )
-            })
-        },
-    );
-    engine.register_fn(
-        "instance_id",
-        |text: ImmutableString| -> Result<InstanceId, Box<EvalAltResult>> {
-            text.parse::<u128>().map(InstanceId).map_err(|_| {
-                values::error(
-                    "invalid_value",
-                    "instance_id",
-                    "binding",
-                    "expected exact u128",
-                    0,
-                )
-            })
-        },
-    );
-    engine.register_fn(
-        "entity_id",
-        |text: ImmutableString| -> Result<EntityId, Box<EvalAltResult>> {
-            text.parse::<u64>().map(EntityId).map_err(|_| {
-                values::error(
-                    "invalid_value",
-                    "entity_id",
-                    "binding",
-                    "expected exact u64",
-                    0,
-                )
-            })
-        },
-    );
-    engine.register_fn(
-        "script_run_id",
-        |text: ImmutableString| -> Result<ScriptRunId, Box<EvalAltResult>> {
-            text.parse::<u64>().map(ScriptRunId).map_err(|_| {
-                values::error(
-                    "invalid_value",
-                    "script_run_id",
-                    "binding",
-                    "expected exact u64",
-                    0,
-                )
-            })
-        },
-    );
-    engine.register_get("decimal", |id: &mut Revision| id.0.to_string());
-    engine.register_get("decimal", |id: &mut InstanceId| id.0.to_string());
-    engine.register_get("decimal", |id: &mut EntityId| id.0.to_string());
-    engine.register_get("decimal", |id: &mut ScriptRunId| id.0.to_string());
-    engine.register_get("revision", |s: &mut PropertySnapshot| {
-        s.0.revision
-            .map_or(Dynamic::UNIT, |v| Dynamic::from(Revision(v)))
-    });
-    engine.register_get("effective_available", |s: &mut PropertySnapshot| {
-        s.0.effective.is_some()
-    });
-    engine.register_get("effective", |s: &mut PropertySnapshot| {
-        s.0.effective
-            .clone()
-            .map_or(Dynamic::UNIT, values::to_dynamic)
-    });
-    engine.register_get("requested", |s: &mut PropertySnapshot| {
-        s.0.requested
-            .clone()
-            .map_or(Dynamic::UNIT, values::to_dynamic)
-    });
-    engine.register_get("session_override", |s: &mut PropertySnapshot| {
-        s.0.session_override
-            .clone()
-            .map_or(Dynamic::UNIT, values::to_dynamic)
-    });
-    engine.register_get("stage", |h: &mut OperationHandle| {
-        h.0.receipt.stage.label().to_owned()
-    });
-    engine.register_get("request_id", |h: &mut OperationHandle| {
-        ScriptRunId(h.0.identity.request_id)
-    });
-    engine.register_fn(
-        "scale",
-        |text: ImmutableString| -> Result<ExactScale, Box<EvalAltResult>> {
-            let scale = minimium_environment::parse_scale_ppm(text.as_str())
-                .map_err(|e| values::error("invalid_scale", "scale", "binding", &e, 0))?;
-            let ppm = scale.get();
-            Ok(ExactScale(CommandValue::Decimal {
-                coefficient: i128::from(ppm),
-                fractional_digits: 6,
-            }))
-        },
-    );
-    let get = bridge.clone();
-    engine.register_fn(
-        "f1_get",
-        move |path: ImmutableString| -> Result<PropertySnapshot, Box<EvalAltResult>> {
-            let result = get.call(path.as_str(), AccessKind::Read, &[])?;
-            match result.outcome {
-                Ok(Payload::Property(value)) => Ok(PropertySnapshot(value)),
-                Err(error) => Err(values::error(
-                    &error.code,
-                    path.as_str(),
-                    result.receipt.stage.label(),
-                    &error.reason,
-                    result.identity.request_id,
-                )),
-                _ => Err(values::error(
-                    "untyped_result",
-                    path.as_str(),
-                    result.receipt.stage.label(),
-                    "expected PropertySnapshot",
-                    result.identity.request_id,
-                )),
-            }
-        },
-    );
-    let set = bridge.clone();
-    engine.register_fn(
-        "f1_set",
-        move |path: ImmutableString,
-              value: Dynamic|
-              -> Result<OperationHandle, Box<EvalAltResult>> {
-            let result = set.call(path.as_str(), AccessKind::Write, &[value])?;
-            if let Err(failure) = &result.outcome {
-                return Err(values::error(
-                    &failure.code,
-                    path.as_str(),
-                    result.receipt.stage.label(),
-                    &failure.reason,
-                    result.identity.request_id,
-                ));
-            }
-            Ok(OperationHandle(result))
-        },
-    );
-    engine.register_fn(
-        "f1_call",
-        move |path: ImmutableString, args: Array| -> Result<Dynamic, Box<EvalAltResult>> {
-            let result = bridge.call(path.as_str(), AccessKind::Invoke, &args)?;
-            if let Err(failure) = &result.outcome {
-                return Err(values::error(
-                    &failure.code,
-                    path.as_str(),
-                    result.receipt.stage.label(),
-                    &failure.reason,
-                    result.identity.request_id,
-                ));
-            }
-            let entry = crate::client_commands::catalog::catalog()
-                .resolve(path.as_str())
-                .expect("bound script operation");
-            if matches!(entry.spec.invoke.map(|a| a.effect), Some(Effect::Query)) {
-                values::result_value(result)
-            } else {
-                Ok(Dynamic::from(OperationHandle(result)))
-            }
-        },
-    );
 }

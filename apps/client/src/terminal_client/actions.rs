@@ -65,6 +65,8 @@ pub(super) fn handle(
         FrontendAction::CameraStatus
         | FrontendAction::CameraLook { .. }
         | FrontendAction::ConfigSave(_) => unreachable!("shared preference operation"),
+        #[cfg(feature = "console-scripting")]
+        FrontendAction::CameraCas { .. } => unreachable!("shared preference operation"),
         FrontendAction::Jump | FrontendAction::Movement(..) => {
             unreachable!("shared policy operations")
         }
