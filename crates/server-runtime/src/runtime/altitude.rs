@@ -6,8 +6,9 @@ impl ServerRuntime {
         id: PlayerId,
         context: minimium_protocol::WorldContext,
         km: f32,
-    ) {
+    ) -> bool {
         let position_mm = self.altitude_destination(id, context, km);
+        let committed = position_mm.is_some();
         if let Some(index) = self.connections.client_indices_by_player.get(&id).copied() {
             if let Some(client) = self.connections.clients.get_mut(index) {
                 if !queue_message(
@@ -23,6 +24,7 @@ impl ServerRuntime {
                 }
             }
         }
+        committed
     }
     fn altitude_destination(
         &mut self,

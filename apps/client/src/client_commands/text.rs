@@ -3,7 +3,6 @@ use super::{
     ParseError, PresentationResult,
 };
 use crate::application::QueuedActionKind;
-use crate::application::SuppressionReason;
 use crate::session::QueueError;
 use minimium_commands::{CommandError, CommandErrorCode};
 
@@ -54,21 +53,17 @@ pub(crate) enum CommandSource {
 pub(crate) enum TextCommandResult {
     Empty,
     Rejected(CommandError),
-    Queued {
-        kind: QueuedActionKind,
-    },
     QueueRejected {
         kind: QueuedActionKind,
         error: QueueError,
     },
-    Suppressed(SuppressionReason),
     Action(FrontendAction),
 }
 
 pub(crate) fn execute_text(
     input: &str,
     _source: CommandSource,
-    context: &mut CommandContext<'_>,
+    context: &mut CommandContext,
     identity: &mut minimium_commands::results::OperationContext,
 ) -> TextCommandResult {
     if input.len() > minimium_commands::MAX_INPUT_BYTES {
@@ -84,12 +79,8 @@ pub(crate) fn execute_text(
         Err(error) => return TextCommandResult::Rejected(error),
     };
     match execute(command, context) {
-        CommandResult::Queued { kind } => TextCommandResult::Queued { kind },
-        CommandResult::QueueRejected { kind, error } => {
-            TextCommandResult::QueueRejected { kind, error }
-        }
-        CommandResult::Suppressed(reason) => TextCommandResult::Suppressed(reason),
         CommandResult::Action(action) => TextCommandResult::Action(action),
+        CommandResult::Rejected(error) => TextCommandResult::Rejected(error),
     }
 }
 

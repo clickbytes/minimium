@@ -47,7 +47,7 @@ Codec calls are synchronous and own no connection or mutable session state.
 
 ## Invariants and errors
 
-Every wire version other than 25 is rejected; no compatibility decoder is provided. Preserve framing, field limits and explicit malformed-message errors.
+Every wire version other than 26 is rejected; no compatibility decoder is provided. Preserve framing, field limits and explicit malformed-message errors.
 
 ## Commands
 
@@ -89,5 +89,7 @@ Wire v23 adds single-field movement patches with optional policy revision checks
 Wire v24 adds an explicit jump request and an intent-tagged MovementReceipt for admission, final physical resolution, coalescing or rejection. Ordinary device motion keeps its existing bounded stream.
 
 Wire v25 adds a correlated PlayerActionReceipt for move, chat, name, fire and tool grants. Acceptance means the owner admitted the request; commitment follows execution or durable inventory publication. A rejection carries a reason code: 1 permission, 2 busy, 3 invalid, 4 rate limit, 5 unavailable, 6 stale world, 7 paused, 8 superseded. Disconnection leaves any unconfirmed request outcome unknown.
+
+Wire v26 extends the correlated receipt with portal interaction, geographic goto and altitude action kinds. Portal preparation carries the matching transition ID. Reason 9 means an Earth world is required, 10 means flight is required, and 11 means another transfer is pending. The established TransitionPrepare, TransitionReady, TransitionCommitted and TransitionCancelled messages still own transfer content and membership changes; a portal receipt follows their final owner decision.
 
 Client operation binding and the wire codec share valid_name and valid_chat. The name predicate accepts 1 through 24 ASCII letters, digits or underscores. Chat accepts 1 through 128 UTF-8 bytes and rejects control characters.

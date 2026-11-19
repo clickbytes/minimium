@@ -14,6 +14,10 @@ pub(super) struct PrepareIdentity {
 }
 
 impl ClientSession {
+    pub fn transition_ready_queued(&self, ticket: TransferTicket) -> bool {
+        self.ready_transition == Some((ticket.transition_id(), ticket.context()))
+    }
+
     pub(super) fn validate_prepare_identity(&self, identity: PrepareIdentity) -> bool {
         if self
             .highest_terminated_transition_id

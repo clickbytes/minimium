@@ -73,3 +73,5 @@ Batch #579 covers P008, C001, C006 and C050. Client help returns bounded operati
 Batch #580 migrates client.connection host_local, connect, disconnect, ping, stats, player.state and client.quit together with their registered aliases. Both hosts use the same process totals, optional session sample, prediction and authoritative player-state projection. An owned process remains distinguishable from a joined endpoint.
 
 Player action bindings preserve raw chat tails, validate decoded chat and player names with the wire predicates, and distinguish queue acceptance from a complete frame write. Fire reports the actual camera or terminal compatibility direction. Owner inventory snapshots and untagged shot events retain their independent identities.
+
+Batch #582 routes `world portal`/`portal`, `dev goto`, and `set_altitude` through actor intents. `dev goto` uses a CPU geographic conversion in every host; `world teleport`/`map_telepo` arms a desktop map click and never means immediate teleport. Active source membership, pending destination and owner commit remain separate. Wire v26 adds correlated portal, goto and altitude results; map selection itself stays local.

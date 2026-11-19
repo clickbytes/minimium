@@ -19,6 +19,7 @@ pub use effect_receipts::StartupEffectFailure;
 pub use excavation::ExcavationStatus;
 pub use impacts::ImpactStatus;
 mod hosted;
+mod input_movement;
 mod input_receipts;
 mod input_transfer;
 mod inputs;
@@ -78,7 +79,7 @@ struct GameState {
     active_inputs: HashMap<PlayerId, MovementIntent>,
     player_movement_policies: HashMap<PlayerId, minimium_simulation::MovementPolicy>,
     input_last_received: HashMap<PlayerId, Instant>,
-    pending_movement_inputs: HashMap<PlayerId, inputs::ScheduledMotion>,
+    pending_movement_inputs: HashMap<PlayerId, input_movement::ScheduledMotion>,
     pending_grant_receipts: HashMap<
         PlayerId,
         (
@@ -87,6 +88,8 @@ struct GameState {
             minimium_world::items::Inventory,
         ),
     >,
+    pending_portal_receipts: HashMap<PlayerId, (minimium_protocol::WorldContext, u64)>,
+    pending_portal_transitions: HashMap<PlayerId, minimium_world::world::TransitionId>,
     last_input_seq: HashMap<PlayerId, u64>,
     pending_input_seqs: HashMap<PlayerId, std::collections::BTreeSet<u64>>,
     applied_input: HashMap<PlayerId, (u64, u64)>,
@@ -322,6 +325,8 @@ impl ServerRuntime {
             input_last_received: HashMap::with_capacity(config.max_players),
             pending_movement_inputs: HashMap::with_capacity(config.max_players),
             pending_grant_receipts: HashMap::with_capacity(config.max_players),
+            pending_portal_receipts: HashMap::with_capacity(config.max_players),
+            pending_portal_transitions: HashMap::with_capacity(config.max_players),
             last_input_seq: HashMap::with_capacity(config.max_players),
             pending_input_seqs: HashMap::with_capacity(config.max_players),
             applied_input: HashMap::with_capacity(config.max_players),

@@ -331,8 +331,6 @@ impl ClientApplication {
                 },
             );
         }
-        let movement = self.core.connection_view().movement;
-        let flight_enabled = self.core.connection_view().flight_enabled;
         let portal_entity = player_position.and_then(|position| {
             self.core
                 .session()
@@ -341,12 +339,8 @@ impl ClientApplication {
                     crate::client_commands::nearest_portal_entity(replicas, position)
                 })
         });
-        let mut execute_action = |action| self.core.execute_action(action, now);
         let mut context = crate::client_commands::CommandContext {
-            movement,
-            flight_enabled,
             portal_entity,
-            execute_action: &mut execute_action,
             fire_direction,
             player_position,
         };

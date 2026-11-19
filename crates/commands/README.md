@@ -16,6 +16,8 @@ The public syntax binder returns a prepared operation with its ID, requested acc
 
 The `results` module carries operation identity, request, session and world binding, stage, effect receipts and typed outcome. A property report keeps startup provenance, session override, requested/effective values, owner read source, revision and freshness. Its configuration projection borrows the startup data. Machine payloads allow 32 KiB, eight levels and 1024 value nodes. The complete administrative envelope has a 64 KiB budget.
 
+Navigation receipts may pass through Preparing after a matching owner transfer ID is reported and Ready after the client queues readiness for that ID. These stages precede the owner's membership commitment; Ready does not claim server acceptance of the readiness frame.
+
 ## Dependencies
 
 Depends on minimium-core, ron and serde. The [public operation contract](../../docs/console-api/contract.md) defines the shared catalog and its owner bindings.

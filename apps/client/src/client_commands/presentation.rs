@@ -12,7 +12,6 @@ pub(super) const COMMAND_FORMS: &[(&str, &str)] = &[
     ("dev bolid status", "dev bolid status"),
     ("dev bolid replay", "dev bolid replay AGE [SEED [EVENT_ID]]"),
     ("dev bolid freeze", "dev bolid freeze AGE [SEED [EVENT_ID]]"),
-    ("dev goto", "dev goto LATITUDE LONGITUDE"),
     ("dev look", "dev look YAW_DEG PITCH_DEG"),
 ];
 
@@ -45,10 +44,6 @@ pub(crate) enum DeveloperOperation {
         frozen: bool,
     },
     BolidStatus,
-    Goto {
-        latitude: f32,
-        longitude: f32,
-    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -76,6 +71,7 @@ pub(crate) enum PresentationRequirement {
     HostOnly,
     ReadyPresentation,
     ActiveWorldPresentation,
+    #[cfg(feature = "desktop")]
     ActiveEarthWorld,
 }
 
@@ -122,6 +118,7 @@ impl PresentationRequirement {
             Self::HostOnly => "an initialized host",
             Self::ReadyPresentation => "a ready presentation matching the current context",
             Self::ActiveWorldPresentation => "an active world with ready presentation",
+            #[cfg(feature = "desktop")]
             Self::ActiveEarthWorld => "an active, ready Earth world",
         }
     }
@@ -194,9 +191,6 @@ impl PresentationOperation {
             Self::Developer(DeveloperOperation::BolidStatus) => {
                 PresentationRequirement::ActiveWorldPresentation
             }
-            Self::Developer(DeveloperOperation::Goto { .. }) => {
-                PresentationRequirement::ActiveEarthWorld
-            }
             Self::Developer(DeveloperOperation::BolidReplay { .. }) => {
                 PresentationRequirement::ActiveWorldPresentation
             }
@@ -217,17 +211,6 @@ pub(super) fn parse_developer(words: &[String]) -> Result<PresentationOperation,
     let invalid = invalid_dev;
     let op = match words.get(1).map(String::as_str) {
         Some("clouds") if words.len() == 2 => DeveloperOperation::Clouds,
-        Some("goto") if words.len() == 4 => {
-            let latitude = parse_finite(&words[2]).ok_or_else(invalid)?;
-            let longitude = parse_finite(&words[3]).ok_or_else(invalid)?;
-            if !(-90.0..=90.0).contains(&latitude) || !(-180.0..=180.0).contains(&longitude) {
-                return Err(invalid());
-            }
-            DeveloperOperation::Goto {
-                latitude,
-                longitude,
-            }
-        }
         Some("bolid") => parse_bolid(&words[2..]).map_err(|_| invalid())?,
         _ => return Err(unknown_dev(&words.join(" "))),
     };
@@ -307,7 +290,7 @@ fn invalid_dev() -> CommandError {
         CommandErrorCode::InvalidArguments,
         Some("dev"),
         "invalid developer presentation arguments",
-        Some("dev clouds | dev bolid transmission on|off | dev bolid path ID KIND SEED DURATION_MS X0 Y0 Z0 X1 Y1 Z1 | dev bolid fragments|lighting|status | dev bolid replay|freeze AGE [SEED [EVENT_ID]] | dev goto LATITUDE LONGITUDE | dev look YAW_DEG PITCH_DEG"),
+        Some("dev clouds | dev bolid transmission on|off | dev bolid path ID KIND SEED DURATION_MS X0 Y0 Z0 X1 Y1 Z1 | dev bolid fragments|lighting|status | dev bolid replay|freeze AGE [SEED [EVENT_ID]] | dev look YAW_DEG PITCH_DEG"),
     )
 }
 

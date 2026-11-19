@@ -63,6 +63,8 @@ A property report includes factory default, resolved startup value/source, sessi
 
 A receipt identifies request, context and stage. Submitted means transport acceptance. OwnerAccepted covers validation or reservation. OwnerCommitted names the exact effect, revision or tick. Suppressed and Rejected carry a reason. Partial reports committed parts and pending work. A timeout or disconnect after send may leave the outcome unknown. Never replay such a mutation implicitly. A new read can observe state independently of the receipt.
 
+For portal transfers, Preparing identifies a server transition matched to the original request; Ready means the client queued readiness for that transition. The active world remains the source until the owner commits membership. A cancellation or failed interaction ends the request with an explicit refusal.
+
 ## Player and administrator examples
 
 - A joined player reads `world.time.scale` from the committed session sample. Assignment returns AdminControlUnavailable unless the client possesses the admin port. An owned server returns a correlated commit for the requested rate. Report achieved ppm separately from requested ppm and the local interpolation rate.

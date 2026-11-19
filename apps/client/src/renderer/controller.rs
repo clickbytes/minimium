@@ -49,6 +49,41 @@ pub(super) fn execute_input(
         crate::host_time::sample(),
     );
     dispatch::dispatch(result, |identity, action| {
+        if matches!(&action, FrontendAction::MapTeleport) {
+            let unavailable = presentation::unavailable_for(
+                renderer,
+                client_commands::PresentationCapability::EarthMapTeleport,
+                client_commands::PresentationRequirement::ActiveEarthWorld,
+            );
+            let armed = unavailable.is_none() && renderer.arm_map_teleport();
+            let result = if armed {
+                dispatch::native(minimium_commands::results::OperationResult::new(
+                    identity,
+                    minimium_commands::results::OperationReceipt::at(
+                        minimium_commands::results::Stage::Completed,
+                    ),
+                    Ok(minimium_commands::results::Payload::Value(
+                        minimium_commands::operation::CommandValue::Unit,
+                    )),
+                ))
+            } else {
+                dispatch::failure(
+                    identity,
+                    minimium_commands::results::Stage::Rejected,
+                    "map_selection",
+                    minimium_commands::CommandError::new(
+                        minimium_commands::CommandErrorCode::Unavailable,
+                        Some("ui.map.teleport.arm"),
+                        unavailable.map_or_else(
+                            || "map selection unavailable".to_owned(),
+                            |u| u.message(),
+                        ),
+                        None::<String>,
+                    ),
+                )
+            };
+            return (false, result);
+        }
         if let FrontendAction::Player(intent) = &action {
             let result = renderer.application.player_operation(
                 identity,

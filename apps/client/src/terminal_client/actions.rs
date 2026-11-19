@@ -20,13 +20,6 @@ pub(super) fn handle(
         };
     }
     match action {
-        FrontendAction::Notice(notice) => println!(
-            "{}",
-            localizer.format(
-                options.locale,
-                &minimium_localization::UiMessage::Notice(notice),
-            )
-        ),
         FrontendAction::Print(text) => println!("{text}"),
         FrontendAction::Player(_) => unreachable!("shared player binding"),
         FrontendAction::Help | FrontendAction::Clear => unreachable!("shared console operation"),

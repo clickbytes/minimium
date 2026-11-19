@@ -1,5 +1,4 @@
 use super::{CommandActionResult, CommandOutput, FrontendAction, TextCommandResult};
-use crate::application::SuppressionReason;
 use minimium_commands::operation::CommandValue;
 use minimium_commands::results::{
     OperationContext, OperationFailure, OperationReceipt, OperationResult, Payload, Stage,
@@ -126,11 +125,6 @@ pub(crate) fn dispatch(
             return (exit, Some(result));
         }
         TextCommandResult::Rejected(error) => failure(identity, Stage::Rejected, "input", error),
-        TextCommandResult::Queued { .. } => native(OperationResult::new(
-            identity,
-            OperationReceipt::at(Stage::Submitted),
-            Ok(Payload::Value(CommandValue::Unit)),
-        )),
         TextCommandResult::QueueRejected { error, .. } => {
             let code = match error {
                 crate::session::QueueError::StaleWorldContext => CommandErrorCode::StaleContext,
@@ -143,24 +137,6 @@ pub(crate) fn dispatch(
                 None::<String>,
             );
             failure(identity, Stage::Rejected, "client_queue", error)
-        }
-        TextCommandResult::Suppressed(reason) => {
-            let reason = match reason {
-                SuppressionReason::Paused => "paused",
-                SuppressionReason::NoSession => "no session",
-                SuppressionReason::SessionNotConnected => "session not connected",
-                SuppressionReason::ToolUnavailable => "tool unavailable",
-                SuppressionReason::ToolPendingOrCoolingDown => "tool pending or cooling down",
-                SuppressionReason::WeaponInputCooldown => "weapon input cooldown",
-                SuppressionReason::MapTeleportPending => "map teleport pending",
-            };
-            let error = CommandError::new(
-                CommandErrorCode::Unavailable,
-                Some(&identity.operation.0),
-                reason,
-                None::<String>,
-            );
-            failure(identity, Stage::Suppressed, "client", error)
         }
     };
     (false, Some(result))

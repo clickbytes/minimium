@@ -5,9 +5,7 @@
 //! sends world-action intents through the application executor and reports UI/process work as a typed
 //! [`FrontendAction`], leaving each front end in control of its own event loop.
 
-use crate::application::SuppressionReason;
-use crate::application::{ClientAction, LocalActionOutcome, QueuedActionKind};
-use crate::{options::ThreadLane, session::QueueError};
+use crate::options::ThreadLane;
 use minimium_commands::{
     lex_command_line_with_spans, CommandError, CommandErrorCode, CommandOutcome,
     CommandRegistry as SharedCommandRegistry, CommandSpec as SharedCommandSpec,
@@ -29,6 +27,7 @@ mod help;
 mod interface;
 mod meteors;
 mod movement;
+pub(crate) mod navigation;
 pub(crate) mod output;
 pub(crate) mod player_actions;
 mod presentation;
@@ -39,12 +38,12 @@ use minimium_environment::clock_command::ClockWrite;
 use time_adapter::ClockAction;
 mod weather;
 
-pub(crate) use gameplay::nearest_portal_entity;
 pub(crate) use help::command_error;
 pub(crate) use meteors::{MeteorDebug, MeteorLightDebug, MeteorPreset};
 pub(crate) use minimium_commands::{
     CommandArgumentSpec as ArgumentSpec, CommandArgumentType as ArgumentType,
 };
+pub(crate) use navigation::nearest_portal_entity;
 #[cfg(feature = "desktop")]
 pub(crate) use presentation::PresentationRequirement;
 #[cfg(feature = "desktop")]
@@ -69,6 +68,7 @@ pub(crate) enum ClientCommand {
     TerrainDebug(minimium_renderer::terrain_debug::TerrainDebug),
     Property(properties::ClientPropertyCommand),
     SetAltitude(f32),
+    Goto { latitude: f32, longitude: f32 },
     ConfigSave(std::path::PathBuf),
     Help,
     Print(String),
@@ -128,6 +128,7 @@ fn registry() -> &'static CommandRegistry {
         connection::register(&mut registry);
         gameplay::register(&mut registry);
         movement::register(&mut registry);
+        navigation::register(&mut registry);
         environment::register(&mut registry);
         weather::register(&mut registry);
         registry
@@ -222,11 +223,8 @@ pub(crate) fn parse_command(input: &str) -> Result<Option<ClientCommand>, ParseE
     }
 }
 
-pub(crate) struct CommandContext<'a> {
-    pub movement: minimium_simulation::MovementPolicy,
-    pub flight_enabled: bool,
+pub(crate) struct CommandContext {
     pub portal_entity: Option<minimium_world::entity::EntityId>,
-    pub execute_action: &'a mut dyn FnMut(ClientAction) -> LocalActionOutcome,
     /// Direction used for `fire`; terminal callers pass [1, 0, 0].
     pub fire_direction: [f32; 3],
     pub player_position: Option<[f32; 3]>,
@@ -234,7 +232,6 @@ pub(crate) struct CommandContext<'a> {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum FrontendAction {
-    Notice(minimium_localization::UiNotice),
     Help,
     Print(String),
     Connect(String),
@@ -269,19 +266,12 @@ pub(crate) enum FrontendAction {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum CommandResult {
-    Queued {
-        kind: QueuedActionKind,
-    },
-    QueueRejected {
-        kind: QueuedActionKind,
-        error: QueueError,
-    },
-    Suppressed(SuppressionReason),
     Action(FrontendAction),
+    Rejected(CommandError),
 }
 
-pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) -> CommandResult {
-    let action = match command {
+pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext) -> CommandResult {
+    match command {
         ClientCommand::Presentation(operation) => {
             return CommandResult::Action(FrontendAction::Presentation(operation));
         }
@@ -291,12 +281,20 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
             )))
         }
         ClientCommand::SetAltitude(km) => {
-            if !context.flight_enabled || !context.movement.can_fly {
-                return CommandResult::Action(FrontendAction::Notice(
-                    minimium_localization::UiNotice::AltitudeRequiresFlight,
-                ));
-            }
-            ClientAction::SetAltitude { km }
+            return CommandResult::Action(FrontendAction::Player(
+                player_actions::PlayerIntent::Altitude(km),
+            ))
+        }
+        ClientCommand::Goto {
+            latitude,
+            longitude,
+        } => {
+            return CommandResult::Action(FrontendAction::Player(
+                player_actions::PlayerIntent::Goto {
+                    latitude,
+                    longitude,
+                },
+            ))
         }
         ClientCommand::ConfigSave(path) => {
             return CommandResult::Action(FrontendAction::ConfigSave(path))
@@ -326,16 +324,24 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
         ClientCommand::Jump => return CommandResult::Action(FrontendAction::Jump),
         ClientCommand::InteractPortal => {
             if context.player_position.is_none() {
-                return CommandResult::Action(FrontendAction::Notice(
-                    minimium_localization::UiNotice::PortalSnapshotUnavailable,
+                return CommandResult::Rejected(CommandError::new(
+                    CommandErrorCode::Unavailable,
+                    Some("player.interaction.portal"),
+                    "snapshot unavailable",
+                    None::<String>,
                 ));
             }
             let Some(entity) = context.portal_entity else {
-                return CommandResult::Action(FrontendAction::Notice(
-                    minimium_localization::UiNotice::PortalUnavailable,
+                return CommandResult::Rejected(CommandError::new(
+                    CommandErrorCode::Unavailable,
+                    Some("player.interaction.portal"),
+                    "portal unavailable",
+                    None::<String>,
                 ));
             };
-            ClientAction::InteractEntity { entity }
+            return CommandResult::Action(FrontendAction::Player(
+                player_actions::PlayerIntent::Portal(entity),
+            ));
         }
         ClientCommand::MapTeleport => return CommandResult::Action(FrontendAction::MapTeleport),
         ClientCommand::Fire => {
@@ -437,14 +443,6 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
         ClientCommand::SpawnRandomMeteorid => {
             return CommandResult::Action(FrontendAction::SpawnRandomMeteorid)
         }
-    };
-    let result = (context.execute_action)(action);
-    match result {
-        LocalActionOutcome::Queued { kind, .. } => CommandResult::Queued { kind },
-        LocalActionOutcome::Rejected { kind, error } => {
-            CommandResult::QueueRejected { kind, error }
-        }
-        LocalActionOutcome::Suppressed(reason) => CommandResult::Suppressed(reason),
     }
 }
 

@@ -290,6 +290,10 @@ impl WorldRegistry {
         self.context_matches(id, context) && !self.transfers.contains_key(&id)
     }
 
+    pub(crate) fn has_pending_transfer(&self, id: PlayerId) -> bool {
+        self.transfers.contains_key(&id)
+    }
+
     #[cfg(test)]
     pub(crate) fn commit_ready_transfers(
         &mut self,

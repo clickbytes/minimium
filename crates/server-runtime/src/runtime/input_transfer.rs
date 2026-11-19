@@ -82,6 +82,22 @@ impl ServerRuntime {
                 environment,
             },
         ) {
+            if self.game.pending_portal_receipts.contains_key(&id) {
+                self.game
+                    .pending_portal_transitions
+                    .insert(id, offer.transition_id);
+                if let Some((source_context, sequence)) =
+                    self.game.pending_portal_receipts.get(&id).copied()
+                {
+                    self.send_player_action_receipt(
+                        id,
+                        sequence,
+                        source_context,
+                        minimium_protocol::PlayerActionKind::Portal,
+                        minimium_protocol::PlayerActionDecision::Preparing(offer.transition_id),
+                    );
+                }
+            }
             TransferOutcome::Started
         } else {
             self.game.worlds.cancel_transfer(id, offer.transition_id);

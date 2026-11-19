@@ -106,7 +106,10 @@ impl ServerRuntime {
 
             Op::WorldInputs => self.apply_world_inputs(),
             Op::Simulation => self.simulate_tick(),
-            Op::ClearEvents => self.game.gameplay_events.clear(),
+            Op::ClearEvents => {
+                self.game.gameplay_events.clear();
+                self.reject_unhandled_portal_requests();
+            }
         }
         true
     }
@@ -170,6 +173,28 @@ impl ServerRuntime {
     }
 
     fn send_transition_committed(&mut self, transfer: crate::world_registry::CommittedTransfer) {
+        if self
+            .game
+            .pending_portal_transitions
+            .get(&transfer.player)
+            .copied()
+            == Some(transfer.transition_id)
+        {
+            self.game
+                .pending_portal_transitions
+                .remove(&transfer.player);
+            if let Some((source_context, sequence)) =
+                self.game.pending_portal_receipts.remove(&transfer.player)
+            {
+                self.send_player_action_receipt(
+                    transfer.player,
+                    sequence,
+                    source_context,
+                    minimium_protocol::PlayerActionKind::Portal,
+                    minimium_protocol::PlayerActionDecision::Committed,
+                );
+            }
+        }
         self.operations
             .player_store
             .set_return_location(transfer.player, transfer.source_location);

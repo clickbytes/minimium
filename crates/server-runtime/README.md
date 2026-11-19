@@ -563,3 +563,5 @@ Jump admission, per-tick movement aggregation and the applied simulation batch s
 Queued actor movement, fire, chat and rename retain their admission world context. Execution checks that context and the current principal before applying them. Tool grants also recheck DeveloperTeleport. Movement samples scheduled for the simulation tick retain their context through final selection.
 
 Wire v25 owner receipts identify the request sequence, world context and action family. Queued admission reports Accepted; the execution lane reports Committed or a specific refusal. Tool grant commitment is emitted only after the equipment owner exposes the durably published inventory candidate.
+
+Wire v26 adds portal, goto and altitude receipts. Navigation admission and execution recheck the actor's current world context and principal. Portal receipts stay tied to the source context and transfer ID; the owner reports commitment only after membership commits, cancellation after the matching transfer is cancelled, and refusal when a gameplay interaction produces no transfer.

@@ -18,6 +18,9 @@ struct Pending {
     receipt: PlayerReceipt,
     submitted: ClientTime,
     sent: bool,
+    candidate_transfer: Option<minimium_client_runtime::TransferTicket>,
+    transfer: Option<minimium_client_runtime::TransferTicket>,
+    ready_reported: bool,
 }
 
 #[derive(Default)]
@@ -122,6 +125,7 @@ impl ClientApplication {
         let receipt = PlayerReceipt {
             sequence: frame.sequence,
             aim,
+            navigation: intent.navigation_detail(),
         };
         let result = receipt.result(id.clone(), Stage::Submitted);
         self.action_receipts.0.push(Pending {
@@ -131,6 +135,9 @@ impl ClientApplication {
             receipt,
             submitted: now,
             sent: false,
+            candidate_transfer: None,
+            transfer: None,
+            ready_reported: false,
         });
         result
     }
@@ -160,6 +167,32 @@ impl ClientApplication {
         let mut outputs = Vec::new();
         let current = self.core.session();
         for applied in &step.session_events {
+            if let minimium_client_runtime::SessionEvent::Message(
+                minimium_protocol::ServerMessage::TransitionPrepare {
+                    transition_id,
+                    source_context,
+                    target_context,
+                    ..
+                },
+            ) = &applied.event
+            {
+                let event_session = current
+                    .or_else(|| step.disconnect.as_ref().and_then(|d| d.session.as_ref()))
+                    .map(|s| s.content_jobs_session_id());
+                if let Some(pending) = self.action_receipts.0.iter_mut().find(|p| {
+                    p.identity.operation.0 == "player.interaction.portal"
+                        && p.identity.session == event_session
+                        && p.identity.context.as_ref() == Some(&binding(*source_context))
+                        && p.candidate_transfer.is_none()
+                        && applied.update.is_ok()
+                }) {
+                    pending.candidate_transfer =
+                        Some(minimium_client_runtime::TransferTicket::new(
+                            *transition_id,
+                            *target_context,
+                        ));
+                }
+            }
             let minimium_client_runtime::SessionEvent::Message(
                 minimium_protocol::ServerMessage::PlayerActionReceipt(receipt),
             ) = &applied.event
@@ -176,21 +209,39 @@ impl ClientApplication {
             }) else {
                 continue;
             };
-            let pending = &self.action_receipts.0[index];
-            let expected = match pending.identity.operation.0.as_str() {
+            let expected = match self.action_receipts.0[index].identity.operation.0.as_str() {
                 "player.movement.move" => minimium_protocol::PlayerActionKind::Move,
                 "player.chat.send" => minimium_protocol::PlayerActionKind::Chat,
                 "player.identity.set_name" => minimium_protocol::PlayerActionKind::Name,
                 "player.combat.fire" => minimium_protocol::PlayerActionKind::Fire,
                 "player.inventory.grant_tools" => minimium_protocol::PlayerActionKind::GrantTools,
+                "player.interaction.portal" => minimium_protocol::PlayerActionKind::Portal,
+                "player.movement.goto" => minimium_protocol::PlayerActionKind::Goto,
+                "player.movement.set_altitude" => minimium_protocol::PlayerActionKind::Altitude,
                 _ => continue,
             };
             if receipt.kind != expected {
                 continue;
             }
+            if let minimium_protocol::PlayerActionDecision::Preparing(transition_id) =
+                receipt.decision
+            {
+                let candidate = self.action_receipts.0[index].candidate_transfer;
+                if candidate.is_none_or(|ticket| ticket.transition_id() != transition_id) {
+                    continue;
+                }
+                self.action_receipts.0[index].transfer = candidate;
+            }
+            let pending = &self.action_receipts.0[index];
             let stage = match receipt.decision {
                 minimium_protocol::PlayerActionDecision::Accepted => Stage::OwnerAccepted,
+                minimium_protocol::PlayerActionDecision::Preparing(_) => Stage::Preparing,
                 minimium_protocol::PlayerActionDecision::Committed => Stage::OwnerCommitted,
+                minimium_protocol::PlayerActionDecision::Rejected(8)
+                    if receipt.kind == minimium_protocol::PlayerActionKind::Portal =>
+                {
+                    Stage::Cancelled
+                }
                 minimium_protocol::PlayerActionDecision::Rejected(_) => Stage::Rejected,
             };
             let result = match receipt.decision {
@@ -204,19 +255,45 @@ impl ClientApplication {
                         4 => Code::Busy,
                         6 => Code::StaleContext,
                         8 => Code::Conflict,
+                        9 => Code::UnsupportedContext,
+                        10 => Code::Unavailable,
+                        11 => Code::Busy,
                         _ => Code::Unavailable,
                     },
-                    &format!("owner rejection {reason}"),
+                    &format!(
+                        "owner rejection: {}",
+                        match reason {
+                            1 => "permission denied",
+                            2 => "busy",
+                            3 => "invalid intent",
+                            4 => "rate limit",
+                            5 => "unavailable",
+                            6 => "stale world context",
+                            7 => "paused",
+                            8 => "superseded or cancelled",
+                            9 => "Earth world required",
+                            10 => "flight required",
+                            11 => "transfer pending",
+                            _ => "unavailable",
+                        }
+                    ),
                 ),
                 _ => pending.receipt.result(pending.identity.clone(), stage),
             };
             outputs.push((pending.source, result));
-            if stage != Stage::OwnerAccepted {
+            if !matches!(stage, Stage::OwnerAccepted | Stage::Preparing) {
                 self.action_receipts.0.remove(index);
             }
         }
         self.action_receipts.0.retain_mut(|p| {
             let same = current.filter(|s| p.identity.session == Some(s.content_jobs_session_id()));
+            if !p.ready_reported
+                && p.transfer
+                    .is_some_and(|ticket| same.is_some_and(|s| s.transition_ready_queued(ticket)))
+            {
+                p.ready_reported = true;
+                outputs.push((p.source, p.receipt.result(p.identity.clone(), Stage::Ready)));
+            }
             let retired = step
                 .disconnect
                 .as_ref()

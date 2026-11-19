@@ -346,3 +346,5 @@ The CPU controller allows 32 outstanding console jumps. A prepared jump carries 
 ConnectionController accumulates closed wire byte counters when it takes the session slot and adds the current session when queried. Stats include session generation and measured ping age. The application core retains the accepted authoritative player position, server time and tick separately from predicted coordinates, and invalidates that sample on a context change.
 
 After queuing a world input, the session exposes its sequence and a session-local transport token. A transport supporting frame completion can report when the complete frame was written. A completed write provides transport evidence only.
+
+The session exposes whether the matching TransferReady request has been locally queued. The application projects preparation, local readiness, owner commitment or cancellation while retaining the source WorldContext until TransitionCommitted changes membership.

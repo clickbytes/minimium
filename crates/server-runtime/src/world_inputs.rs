@@ -22,11 +22,16 @@ pub(crate) enum WorldInput {
     Fire(PlayerId, WorldContext, u64, [f32; 3]),
     Excavation(PlayerId, WorldContext, minimium_protocol::ExcavationInput),
     GrantTools(PlayerId, WorldContext, u64),
-    MapTeleport(PlayerId, WorldContext, [f32; 3]),
-    SetAltitude(PlayerId, WorldContext, f32),
+    MapTeleport(PlayerId, WorldContext, u64, [f32; 3]),
+    SetAltitude(PlayerId, WorldContext, u64, f32),
     Chat(PlayerId, WorldContext, u64, String),
     Rename(PlayerId, WorldContext, u64, String),
-    InteractEntity(PlayerId, WorldContext, minimium_world::entity::EntityId),
+    InteractEntity(
+        PlayerId,
+        WorldContext,
+        u64,
+        minimium_world::entity::EntityId,
+    ),
 }
 
 pub(crate) enum WorldEvent {

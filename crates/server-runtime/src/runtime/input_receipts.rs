@@ -3,6 +3,26 @@ use crate::world_inputs::WorldInput;
 use minimium_protocol::{PlayerActionDecision, PlayerActionKind};
 
 impl ServerRuntime {
+    pub(super) fn reject_unhandled_portal_requests(&mut self) {
+        let unhandled: Vec<_> = self
+            .game
+            .pending_portal_receipts
+            .iter()
+            .filter(|(player, _)| !self.game.pending_portal_transitions.contains_key(player))
+            .map(|(player, (context, sequence))| (*player, *context, *sequence))
+            .collect();
+        for (player, context, sequence) in unhandled {
+            self.game.pending_portal_receipts.remove(&player);
+            self.send_player_action_receipt(
+                player,
+                sequence,
+                context,
+                PlayerActionKind::Portal,
+                PlayerActionDecision::Rejected(5),
+            );
+        }
+    }
+
     pub(super) fn resolve_grant_receipts(&mut self) {
         let pending = std::mem::take(&mut self.game.pending_grant_receipts);
         for (player, (context, sequence, target)) in pending {
@@ -52,6 +72,10 @@ impl ServerRuntime {
                 (*id, *ctx, Some(Permission::DeveloperTeleport))
             }
             WorldInput::GrantTools(id, ctx, _) => (*id, *ctx, Some(Permission::DeveloperTeleport)),
+            WorldInput::MapTeleport(id, ctx, _, _) | WorldInput::SetAltitude(id, ctx, _, _) => {
+                (*id, *ctx, Some(Permission::DeveloperTeleport))
+            }
+            WorldInput::InteractEntity(id, ctx, _, _) => (*id, *ctx, None),
             _ => return true,
         };
         if !self

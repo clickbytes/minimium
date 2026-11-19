@@ -6,6 +6,14 @@ use minimium_commands::results::{OperationContext, OperationReceipt, OperationRe
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum PlayerIntent {
     Move([f32; 2]),
+    Portal(minimium_world::entity::EntityId),
+    Goto {
+        latitude: f32,
+        longitude: f32,
+    },
+    #[cfg(feature = "desktop")]
+    MapSelection([f32; 3]),
+    Altitude(f32),
     Chat(String),
     Name(String),
     Fire([f32; 3]),
@@ -23,9 +31,22 @@ pub(crate) enum AimSource {
 pub(crate) struct PlayerReceipt {
     pub sequence: u64,
     pub aim: Option<([f32; 3], AimSource)>,
+    pub navigation: Option<String>,
 }
 
 impl PlayerIntent {
+    pub(crate) fn navigation_detail(&self) -> Option<String> {
+        match self {
+            Self::Portal(entity) => Some(format!("portal_entity={entity:?}")),
+            Self::Goto {
+                latitude,
+                longitude,
+            } => Some(format!("latitude_deg={latitude} longitude_deg={longitude}")),
+            Self::Altitude(km) => Some(format!("altitude_km={km}")),
+            _ => None,
+        }
+    }
+
     pub(crate) fn prepare(
         &self,
         source: CommandSource,
@@ -35,6 +56,18 @@ impl PlayerIntent {
                 direction: *direction,
                 ..Default::default()
             }),
+            Self::Portal(entity) => ClientAction::InteractEntity { entity: *entity },
+            Self::Goto {
+                latitude,
+                longitude,
+            } => ClientAction::MapTeleport {
+                direction: super::navigation::direction(*latitude, *longitude),
+            },
+            #[cfg(feature = "desktop")]
+            Self::MapSelection(direction) => ClientAction::MapTeleport {
+                direction: *direction,
+            },
+            Self::Altitude(km) => ClientAction::SetAltitude { km: *km },
             Self::Chat(text) => ClientAction::Chat(text.clone()),
             Self::Name(name) => ClientAction::SetName(name.clone()),
             Self::GrantTools => ClientAction::GrantTools,
@@ -77,6 +110,10 @@ impl PlayerReceipt {
         let aim = self.aim.map_or_else(String::new, |(dir, src)| {
             format!(" direction={dir:?} aim_source={src:?}")
         });
-        format!("{label} world_input={}{aim}", self.sequence)
+        let navigation = self
+            .navigation
+            .as_deref()
+            .map_or_else(String::new, |detail| format!(" {detail}"));
+        format!("{label} world_input={}{aim}{navigation}", self.sequence)
     }
 }

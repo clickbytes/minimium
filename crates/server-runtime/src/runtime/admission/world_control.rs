@@ -18,6 +18,7 @@ pub(super) fn route_message(
     match message {
         ClientMessage::WorldInput {
             context,
+            sequence,
             input: ClientWorldInput::InteractEntity { entity },
             ..
         } => {
@@ -25,16 +26,30 @@ pub(super) fn route_message(
                 disconnect_invalid_sequence(runtime, index);
                 return RoutingOutcome::Handled;
             };
-            if runtime
+            let current_context = runtime
                 .game
                 .worlds
-                .world_input_context_is_current(player, context)
+                .world_input_context_is_current(player, context);
+            let accepted = current_context
                 && queue::try_queue(
                     runtime,
-                    WorldInput::InteractEntity(player, context, entity),
+                    WorldInput::InteractEntity(player, context, sequence, entity),
                     decoded_at,
-                )
-            {
+                );
+            runtime.send_player_action_receipt(
+                player,
+                sequence,
+                context,
+                minimium_protocol::PlayerActionKind::Portal,
+                if accepted {
+                    minimium_protocol::PlayerActionDecision::Accepted
+                } else if !current_context {
+                    minimium_protocol::PlayerActionDecision::Rejected(6)
+                } else {
+                    minimium_protocol::PlayerActionDecision::Rejected(2)
+                },
+            );
+            if accepted {
                 // The game module validates entity type and interaction range on the owner lane.
             } else {
                 reject_input(runtime);
@@ -43,6 +58,7 @@ pub(super) fn route_message(
         }
         ClientMessage::WorldInput {
             context,
+            sequence,
             input: ClientWorldInput::SetAltitude { km },
             ..
         } => {
@@ -52,28 +68,52 @@ pub(super) fn route_message(
                 minimium_core::identity::ServerPermission::DeveloperTeleport,
                 "set_altitude",
             ) {
+                if let Some(player) = player_id {
+                    runtime.send_player_action_receipt(
+                        player,
+                        sequence,
+                        context,
+                        minimium_protocol::PlayerActionKind::Altitude,
+                        minimium_protocol::PlayerActionDecision::Rejected(1),
+                    );
+                }
                 return RoutingOutcome::Handled;
             }
             let Some(player) = player_id else {
                 disconnect_invalid_sequence(runtime, index);
                 return RoutingOutcome::Handled;
             };
-            if !runtime
+            let current_context = runtime
                 .game
                 .worlds
-                .world_input_context_is_current(player, context)
-                || !queue::try_queue(
+                .world_input_context_is_current(player, context);
+            let accepted = current_context
+                && queue::try_queue(
                     runtime,
-                    WorldInput::SetAltitude(player, context, km),
+                    WorldInput::SetAltitude(player, context, sequence, km),
                     decoded_at,
-                )
-            {
+                );
+            runtime.send_player_action_receipt(
+                player,
+                sequence,
+                context,
+                minimium_protocol::PlayerActionKind::Altitude,
+                if accepted {
+                    minimium_protocol::PlayerActionDecision::Accepted
+                } else if !current_context {
+                    minimium_protocol::PlayerActionDecision::Rejected(6)
+                } else {
+                    minimium_protocol::PlayerActionDecision::Rejected(2)
+                },
+            );
+            if !accepted {
                 reject_input(runtime);
             }
             RoutingOutcome::Handled
         }
         ClientMessage::WorldInput {
             context,
+            sequence,
             input: ClientWorldInput::MapTeleport { direction },
             ..
         } => {
@@ -83,6 +123,15 @@ pub(super) fn route_message(
                 minimium_core::identity::ServerPermission::DeveloperTeleport,
                 "map_teleport",
             ) {
+                if let Some(player) = player_id {
+                    runtime.send_player_action_receipt(
+                        player,
+                        sequence,
+                        context,
+                        minimium_protocol::PlayerActionKind::Goto,
+                        minimium_protocol::PlayerActionDecision::Rejected(1),
+                    );
+                }
                 reject_map_teleport(runtime, index);
                 return RoutingOutcome::Handled;
             }
@@ -90,16 +139,30 @@ pub(super) fn route_message(
                 disconnect_invalid_sequence(runtime, index);
                 return RoutingOutcome::Handled;
             };
-            if !runtime
+            let current_context = runtime
                 .game
                 .worlds
-                .world_input_context_is_current(player, context)
-                || !queue::try_queue(
+                .world_input_context_is_current(player, context);
+            let accepted = current_context
+                && queue::try_queue(
                     runtime,
-                    WorldInput::MapTeleport(player, context, direction),
+                    WorldInput::MapTeleport(player, context, sequence, direction),
                     decoded_at,
-                )
-            {
+                );
+            runtime.send_player_action_receipt(
+                player,
+                sequence,
+                context,
+                minimium_protocol::PlayerActionKind::Goto,
+                if accepted {
+                    minimium_protocol::PlayerActionDecision::Accepted
+                } else if !current_context {
+                    minimium_protocol::PlayerActionDecision::Rejected(6)
+                } else {
+                    minimium_protocol::PlayerActionDecision::Rejected(2)
+                },
+            );
+            if !accepted {
                 reject_input(runtime);
                 reject_map_teleport(runtime, index);
             }

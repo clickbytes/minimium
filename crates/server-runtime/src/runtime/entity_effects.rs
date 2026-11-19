@@ -146,6 +146,20 @@ impl ServerRuntime {
                         ),
                         None => TransferOutcome::Rejected(TransferRejection::Validation),
                     };
+                    if matches!(transfer, TransferOutcome::Rejected(_)) {
+                        self.game.pending_portal_transitions.remove(player);
+                        if let Some((source_context, sequence)) =
+                            self.game.pending_portal_receipts.remove(player)
+                        {
+                            self.send_player_action_receipt(
+                                *player,
+                                sequence,
+                                source_context,
+                                minimium_protocol::PlayerActionKind::Portal,
+                                minimium_protocol::PlayerActionDecision::Rejected(5),
+                            );
+                        }
+                    }
                     results[index] = WorldEffectOutcome::Transfer(transfer);
                 }
             }

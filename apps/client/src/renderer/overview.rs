@@ -141,7 +141,7 @@ impl DesktopHost {
         );
     }
 
-    pub(super) fn arm_map_teleport(&mut self) {
+    pub(super) fn arm_map_teleport(&mut self) -> bool {
         if self.application.map_teleport_pending() {
             self.application.ui.console.push_ui_error_message(
                 minimium_localization::UiMessage::Notice(
@@ -150,7 +150,7 @@ impl DesktopHost {
                 &self.localizer,
                 self.application.settings.locale,
             );
-            return;
+            return false;
         }
         let manifest = self
             .application
@@ -169,7 +169,7 @@ impl DesktopHost {
                 &self.localizer,
                 self.application.settings.locale,
             );
-            return;
+            return false;
         }
         let earth = manifest
             .is_some_and(|manifest| manifest.planet().is_some_and(|planet| planet.mode == 1));
@@ -181,7 +181,7 @@ impl DesktopHost {
                 &self.localizer,
                 self.application.settings.locale,
             );
-            return;
+            return false;
         }
         if !self.renderer.scene_visible || !self.application.core_view().sectors_ready {
             self.application.status = crate::application::ClientStatus::Status(
@@ -194,7 +194,7 @@ impl DesktopHost {
                 &self.localizer,
                 self.application.settings.locale,
             );
-            return;
+            return false;
         }
         if !self.application.overview().is_open() {
             self.toggle_overview();
@@ -202,11 +202,12 @@ impl DesktopHost {
         self.application.ui.console.open = false;
         self.application.input.clear_held();
         if !self.application.arm_map_teleport() {
-            return;
+            return false;
         }
         self.application.status = crate::application::ClientStatus::Status(
             minimium_localization::UiStatus::EarthClickLand,
         );
+        true
     }
 
     pub(super) fn click_map_teleport(&mut self) {
@@ -253,7 +254,9 @@ impl DesktopHost {
         }
         let direction = (eye + ray * distance).normalize().to_array();
         match self.application.execute_action(
-            crate::application::ClientAction::MapTeleport { direction },
+            crate::client_commands::player_actions::PlayerIntent::MapSelection(direction)
+                .prepare(crate::client_commands::CommandSource::Console)
+                .0,
             crate::host_time::sample(),
         ) {
             crate::application::LocalActionOutcome::Queued { .. } => {

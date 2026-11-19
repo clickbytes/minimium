@@ -7,9 +7,6 @@ pub(super) fn execute(
 ) -> (bool, client_commands::CommandActionResult) {
     let mut output = CommandOutputCollector::default();
     match action {
-        FrontendAction::Notice(notice) => {
-            output.push_ui_message(minimium_localization::UiMessage::Notice(notice))
-        }
         FrontendAction::Print(text) => {
             for line in text.lines() {
                 output.push_line(line);
@@ -26,20 +23,7 @@ pub(super) fn execute(
         | FrontendAction::Ping => unreachable!("shared connection binding"),
         FrontendAction::FpsShow => output.push_line(renderer.metrics.frame_stats.summary()),
         FrontendAction::MapTeleport => {
-            if let Some(unavailable) = super::presentation::unavailable_for(
-                renderer,
-                client_commands::PresentationCapability::EarthMapTeleport,
-                client_commands::PresentationRequirement::ActiveEarthWorld,
-            ) {
-                output
-                    .result
-                    .outputs
-                    .push(client_commands::CommandOutput::Presentation(
-                        client_commands::PresentationResult::Unavailable(unavailable),
-                    ));
-            } else {
-                renderer.arm_map_teleport();
-            }
+            unreachable!("map selection uses the typed controller result")
         }
         FrontendAction::Property(command) => {
             for line in renderer.apply_property(command).lines() {

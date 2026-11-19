@@ -24,6 +24,9 @@ pub(super) fn send(
         ClientWorldInput::Chat(_) => PlayerActionKind::Chat,
         ClientWorldInput::SetName(_) => PlayerActionKind::Name,
         ClientWorldInput::Fire { .. } => PlayerActionKind::Fire,
+        ClientWorldInput::InteractEntity { .. } => PlayerActionKind::Portal,
+        ClientWorldInput::MapTeleport { .. } => PlayerActionKind::Goto,
+        ClientWorldInput::SetAltitude { .. } => PlayerActionKind::Altitude,
         ClientWorldInput::Excavation(minimium_protocol::ExcavationInput::GrantTools) => {
             PlayerActionKind::GrantTools
         }

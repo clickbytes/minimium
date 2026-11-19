@@ -45,6 +45,33 @@ impl ServerRuntime {
                         minimium_protocol::PlayerActionDecision::Rejected(7),
                     );
                 }
+                WorldInput::InteractEntity(player, context, sequence, _) => {
+                    self.send_player_action_receipt(
+                        player,
+                        sequence,
+                        context,
+                        minimium_protocol::PlayerActionKind::Portal,
+                        minimium_protocol::PlayerActionDecision::Rejected(7),
+                    );
+                }
+                WorldInput::MapTeleport(player, context, sequence, _) => {
+                    self.send_player_action_receipt(
+                        player,
+                        sequence,
+                        context,
+                        minimium_protocol::PlayerActionKind::Goto,
+                        minimium_protocol::PlayerActionDecision::Rejected(7),
+                    );
+                }
+                WorldInput::SetAltitude(player, context, sequence, _) => {
+                    self.send_player_action_receipt(
+                        player,
+                        sequence,
+                        context,
+                        minimium_protocol::PlayerActionKind::Altitude,
+                        minimium_protocol::PlayerActionDecision::Rejected(7),
+                    );
+                }
                 WorldInput::Excavation(
                     player,
                     context,
@@ -59,10 +86,7 @@ impl ServerRuntime {
                         },
                     );
                 }
-                WorldInput::InteractEntity(player, ..)
-                | WorldInput::MapTeleport(player, ..)
-                | WorldInput::SetAltitude(player, ..)
-                | WorldInput::Excavation(player, ..) => {
+                WorldInput::Excavation(player, ..) => {
                     if let Some(&index) = self.connections.client_indices_by_player.get(&player) {
                         crate::connection::queue_message(
                             &mut self.connections.clients[index],
@@ -97,7 +121,7 @@ impl ServerRuntime {
         id: minimium_core::ids::PlayerId,
         source_context: minimium_protocol::WorldContext,
         entity: minimium_world::entity::EntityId,
-    ) {
+    ) -> bool {
         if self.game.gameplay_events.len() < crate::MAX_PENDING_WORLD_INPUTS {
             if let Some(position) = self
                 .game
@@ -112,7 +136,9 @@ impl ServerRuntime {
                         position,
                     },
                 );
+                return true;
             }
         }
+        false
     }
 }

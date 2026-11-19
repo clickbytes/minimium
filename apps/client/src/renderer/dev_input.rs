@@ -85,10 +85,6 @@ pub(super) fn execute_developer(
             frozen,
         } => replay_bolid(renderer, age_seconds, seed, event_id, frozen, &mut lines),
         DeveloperOperation::BolidStatus => bolid_status(renderer, &mut lines),
-        DeveloperOperation::Goto {
-            latitude,
-            longitude,
-        } => goto(renderer, latitude, longitude, &mut lines),
     }
     lines
 }
@@ -258,27 +254,5 @@ fn bolid_status(renderer: &DesktopHost, lines: &mut Vec<String>) {
                 ));
             }
         }
-    }
-}
-
-fn goto(renderer: &mut DesktopHost, latitude: f32, longitude: f32, lines: &mut Vec<String>) {
-    let latitude = latitude.to_radians();
-    let longitude = longitude.to_radians();
-    let direction = [
-        latitude.cos() * longitude.cos(),
-        latitude.sin(),
-        latitude.cos() * longitude.sin(),
-    ];
-    match renderer.application.execute_action(
-        crate::application::ClientAction::MapTeleport { direction },
-        crate::host_time::sample(),
-    ) {
-        crate::application::LocalActionOutcome::Queued { .. } => {
-            lines.push("dev: Earth move requested".to_owned());
-        }
-        crate::application::LocalActionOutcome::Rejected { error, .. } => {
-            lines.push(format!("dev: Earth move rejected: {error:?}"));
-        }
-        crate::application::LocalActionOutcome::Suppressed(_) => {}
     }
 }
