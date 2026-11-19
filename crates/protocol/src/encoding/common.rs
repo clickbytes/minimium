@@ -12,7 +12,7 @@ pub(crate) fn write_name(name: &str, output: &mut Vec<u8>) -> Result<(), Protoco
     Ok(())
 }
 
-pub(super) fn write_world_context(
+pub(crate) fn write_world_context(
     context: crate::world_context::WorldContext,
     output: &mut Vec<u8>,
 ) {

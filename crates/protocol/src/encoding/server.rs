@@ -21,6 +21,10 @@ pub fn encode_server_into(
     let payload_start = frame.len();
     let encoded = (|| {
         let kind = match message {
+            ServerMessage::PlayerActionReceipt(receipt) => {
+                receipt.write(frame)?;
+                ServerKind::PlayerActionReceipt
+            }
             ServerMessage::Excavation { context, message } => {
                 super::excavation::encode(*context, message, frame)?;
                 ServerKind::Excavation

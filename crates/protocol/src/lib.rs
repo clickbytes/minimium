@@ -11,7 +11,9 @@ mod policy;
 pub use policy::{MovementPatch, PolicyRejection, PolicyReply};
 mod movement_codec;
 mod movement_receipt;
+mod player_receipt;
 pub use movement_receipt::{JumpOutcome, MotionRejection, MovementOutcome, MovementReceipt};
+pub use player_receipt::{PlayerActionDecision, PlayerActionKind, PlayerActionReceipt};
 mod reading;
 mod validation;
 mod world_context;
@@ -33,6 +35,6 @@ pub use models::{
     ExcavationMessage, MovementSample, ProtocolError, RemotePlayer, RemotePlayerIds, RemotePlayers,
     ServerMessage, SkyObservation,
 };
-pub use validation::{is_unit_direction, valid_chat};
+pub use validation::{is_unit_direction, valid_chat, valid_name};
 pub use world_context::WorldContext;
 mod content_codec;

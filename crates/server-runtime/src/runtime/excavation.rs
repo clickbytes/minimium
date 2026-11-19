@@ -29,6 +29,12 @@ pub(super) struct Excavation {
     state: ExcavationState,
 }
 
+impl Excavation {
+    pub(in crate::runtime) fn storage_failed(&self) -> bool {
+        self.coordinator.failure().is_some()
+    }
+}
+
 struct ExcavationState {
     config: crate::composition::ExcavationConfig,
     async_work_policy: crate::AsyncWorkPolicy,

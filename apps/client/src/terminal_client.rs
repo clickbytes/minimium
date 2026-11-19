@@ -14,6 +14,7 @@ use std::{
 
 mod actions;
 mod events;
+mod output;
 mod properties;
 
 const INPUT_QUEUE_CAPACITY: usize = 64;
@@ -98,28 +99,18 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                 application.record_diagnostic_failure("client.collision_readiness_failed", &error);
             }
         }
-        for (_, result) in application.connection_receipts(&step) {
-            for item in dispatch::display(Some(result), &localizer, options.locale).outputs {
-                if let crate::client_commands::CommandOutput::Line(line) = item {
-                    println!("{line}");
-                }
-            }
+        let mut receipts = application.connection_receipts(&step);
+        receipts.extend(application.player_receipts(&step, crate::host_time::sample()));
+        for (_, result) in receipts {
+            output::display(Some(result), &localizer, options.locale);
         }
         for outcome in step.movement_results {
             let (_, result) = application.finish_policy(outcome);
-            for output in dispatch::display(Some(result), &localizer, options.locale).outputs {
-                if let crate::client_commands::CommandOutput::Line(line) = output {
-                    println!("{line}");
-                }
-            }
+            output::display(Some(result), &localizer, options.locale);
         }
         if let Some(reply) = step.admin_result {
             let (_, result) = application.finish_admin(reply);
-            for output in dispatch::display(Some(result), &localizer, options.locale).outputs {
-                if let crate::client_commands::CommandOutput::Line(line) = output {
-                    println!("{line}");
-                }
-            }
+            output::display(Some(result), &localizer, options.locale);
         }
         match step.connection {
             ConnectionEvent::InProgress {
@@ -249,6 +240,18 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                     crate::host_time::sample(),
                 );
                 let (should_exit, response) = dispatch::dispatch(result, |identity, action| {
+                    if let crate::client_commands::FrontendAction::Player(intent) = &action {
+                        let result = application.player_operation(
+                            identity,
+                            intent,
+                            CommandSource::Terminal,
+                            crate::host_time::sample(),
+                        );
+                        if let Some((_, old)) = application.retire_player_receipt() {
+                            output::display(Some(old), &localizer, options.locale);
+                        }
+                        return (false, result);
+                    }
                     if let Some((mut effect, result)) = application.connection_operation(
                         &identity,
                         &action,
@@ -356,59 +359,7 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                         dispatch::legacy(identity, result, &localizer, options.locale),
                     )
                 });
-                let result = dispatch::display(response, &localizer, options.locale);
-                for output in result.outputs {
-                    match output {
-                        crate::client_commands::CommandOutput::Line(line) => {
-                            println!("{line}")
-                        }
-                        #[cfg(feature = "desktop")]
-                        crate::client_commands::CommandOutput::UiMessage(message)
-                        | crate::client_commands::CommandOutput::UiError(message) => {
-                            println!("{}", localizer.format(options.locale, &message))
-                        }
-                        crate::client_commands::CommandOutput::ClientText { message, .. } => {
-                            println!("{}", message.localized(&localizer, options.locale));
-                        }
-                        crate::client_commands::CommandOutput::Clear => {
-                            print!("\x1B[2J\x1B[H")
-                        }
-                        crate::client_commands::CommandOutput::Presentation(result) => match result
-                        {
-                            #[cfg(feature = "desktop")]
-                            crate::client_commands::PresentationResult::Output(lines) => {
-                                for line in lines {
-                                    println!("{line}");
-                                }
-                            }
-                            crate::client_commands::PresentationResult::Unavailable(
-                                unavailable,
-                            ) => {
-                                if unavailable.reason
-                                                != crate::client_commands::PresentationUnavailableReason::UnsupportedHost
-                                            {
-                                                println!("{}", unavailable.message());
-                                                continue;
-                                            }
-                                let notice = match unavailable.capability {
-                                            crate::client_commands::PresentationCapability::DeveloperRenderer
-                                            | crate::client_commands::PresentationCapability::WeatherDiagnostics => minimium_localization::UiNotice::WeatherRequiresDesktop,
-                                            #[cfg(feature = "desktop")]
-                                            crate::client_commands::PresentationCapability::EarthMapTeleport => minimium_localization::UiNotice::MapTeleportDesktopOnly,
-                                            crate::client_commands::PresentationCapability::SkyDiagnostics => minimium_localization::UiNotice::SkyInfoDesktopOnly,
-                                            crate::client_commands::PresentationCapability::MeteorDiagnostics => minimium_localization::UiNotice::MeteorsRequireDesktop,
-                                        };
-                                println!(
-                                    "{}",
-                                    localizer.format(
-                                        options.locale,
-                                        &minimium_localization::UiMessage::Notice(notice)
-                                    )
-                                );
-                            }
-                        },
-                    }
-                }
+                output::display(response, &localizer, options.locale);
                 if should_exit {
                     break;
                 }

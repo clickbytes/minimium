@@ -28,6 +28,7 @@ pub(super) fn handle(
             )
         ),
         FrontendAction::Print(text) => println!("{text}"),
+        FrontendAction::Player(_) => unreachable!("shared player binding"),
         FrontendAction::Help | FrontendAction::Clear => unreachable!("shared console operation"),
         FrontendAction::Connect(_)
         | FrontendAction::HostLocal(_)

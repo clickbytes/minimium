@@ -1,14 +1,14 @@
 use super::*;
 
 impl ServerRuntime {
-    pub(super) fn change_inventory(
+    pub(in crate::runtime) fn change_inventory(
         &mut self,
         player: PlayerId,
         context: WorldContext,
         input: ExcavationInput,
-    ) {
+    ) -> bool {
         let Some(profile) = self.player_profile(player) else {
-            return;
+            return false;
         };
         let committed = self.equipment.confirmed(profile);
         if self.excavation.coordinator.failure().is_some() {
@@ -19,7 +19,7 @@ impl ServerRuntime {
                     inventory: committed,
                 },
             );
-            return;
+            return false;
         }
         let outcome = self.equipment.request_change(
             player,
@@ -36,12 +36,13 @@ impl ServerRuntime {
                     inventory: committed,
                 },
             );
-            return;
+            return false;
         };
         if let Some(inventory) = response {
             self.send_excavation(player, context, ExcavationMessage::Inventory { inventory });
         }
         self.flush_inventory_request();
+        true
     }
 
     pub(super) fn flush_inventory_request(&mut self) {

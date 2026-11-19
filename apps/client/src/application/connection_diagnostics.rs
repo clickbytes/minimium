@@ -188,6 +188,8 @@ impl ClientApplication {
                     )
                 })
                 .collect();
+                let mut pending: Vec<_> = pending;
+                pending.extend(self.end_player_requests());
                 effect = ConnectionEffect::Quit(pending);
                 stage = Stage::OwnerAccepted;
                 Report::ShutdownRequested

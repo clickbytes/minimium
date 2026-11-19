@@ -181,7 +181,7 @@ impl ServerRuntime {
             .input_last_received
             .insert(transfer.player, self.now);
         self.game.pending_world_inputs.retain(|(input, _)| {
-            !matches!(input, crate::world_inputs::WorldInput::Move(player, _) if *player == transfer.player)
+            !matches!(input, crate::world_inputs::WorldInput::Move(player, ..) if *player == transfer.player)
         });
         self.abort_jumps(
             transfer.player,

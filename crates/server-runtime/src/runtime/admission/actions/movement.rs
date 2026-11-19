@@ -10,10 +10,16 @@ pub(in crate::runtime::admission) fn admit_name(
     runtime: &mut ServerRuntime,
     index: usize,
     player: PlayerId,
+    context: minimium_protocol::WorldContext,
+    sequence: u64,
     name: String,
     decoded_at: Instant,
-) {
-    if queue::try_queue(runtime, WorldInput::Rename(player, name), decoded_at) {
+) -> bool {
+    if queue::try_queue(
+        runtime,
+        WorldInput::Rename(player, context, sequence, name),
+        decoded_at,
+    ) {
         if !queue_message(
             &mut runtime.connections.clients[index],
             &mut runtime.metrics,
@@ -21,6 +27,7 @@ pub(in crate::runtime::admission) fn admit_name(
         ) {
             runtime.metrics.dropped_messages = runtime.metrics.dropped_messages.saturating_add(1);
         }
+        true
     } else {
         runtime.metrics.rejected_inputs = runtime.metrics.rejected_inputs.saturating_add(1);
         let _ = queue_message(
@@ -28,6 +35,7 @@ pub(in crate::runtime::admission) fn admit_name(
             &mut runtime.metrics,
             ServerMessage::Error(ServerErrorCode::Busy),
         );
+        false
     }
 }
 
@@ -35,6 +43,8 @@ pub(in crate::runtime::admission) fn admit_motion(
     runtime: &mut ServerRuntime,
     index: usize,
     player: PlayerId,
+    context: minimium_protocol::WorldContext,
+    sequence: u64,
     mut sample: MovementSample,
     decoded_at: Instant,
 ) -> Result<(), minimium_protocol::MotionRejection> {
@@ -64,7 +74,11 @@ pub(in crate::runtime::admission) fn admit_motion(
     }
     sample.target_tick = current_tick + 1;
     runtime.game.input_last_received.insert(player, decoded_at);
-    if !queue::try_queue(runtime, WorldInput::Move(player, sample), decoded_at) {
+    if !queue::try_queue(
+        runtime,
+        WorldInput::Move(player, context, sequence, sample),
+        decoded_at,
+    ) {
         runtime.game.last_input_seq.insert(player, sample.input_seq);
         runtime.resolve_movement_input(player, sample.input_seq);
         Err(minimium_protocol::MotionRejection::Busy)
@@ -113,7 +127,9 @@ pub(in crate::runtime::admission) fn admit_jump(
                 ..Default::default()
             },
         };
-        admit_motion(runtime, index, player, sample, decoded_at)
+        admit_motion(
+            runtime, index, player, context, sequence, sample, decoded_at,
+        )
     };
     let outcome = match result {
         Ok(()) => {

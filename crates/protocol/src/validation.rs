@@ -1,6 +1,6 @@
 use crate::limits::{MAX_CHAT_BYTES, MAX_PLAYER_NAME_BYTES};
 
-pub(crate) fn valid_name(name: &str) -> bool {
+pub fn valid_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= MAX_PLAYER_NAME_BYTES
         && name

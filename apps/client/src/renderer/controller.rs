@@ -49,6 +49,18 @@ pub(super) fn execute_input(
         crate::host_time::sample(),
     );
     dispatch::dispatch(result, |identity, action| {
+        if let FrontendAction::Player(intent) = &action {
+            let result = renderer.application.player_operation(
+                identity,
+                intent,
+                source,
+                crate::host_time::sample(),
+            );
+            if let Some((source, old)) = renderer.application.retire_player_receipt() {
+                renderer.show_operation_result(Some(source), old);
+            }
+            return (false, result);
+        }
         let local = &renderer.application.settings.local_server_config;
         let config = matches!(action, FrontendAction::HostLocal(_)).then(|| local.clone());
         if let Some((effect, result)) = renderer.application.connection_operation(

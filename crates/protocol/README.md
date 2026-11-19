@@ -47,7 +47,7 @@ Codec calls are synchronous and own no connection or mutable session state.
 
 ## Invariants and errors
 
-Every wire version other than 21 is rejected; no compatibility decoder is provided. Preserve framing, field limits and explicit malformed-message errors.
+Every wire version other than 25 is rejected; no compatibility decoder is provided. Preserve framing, field limits and explicit malformed-message errors.
 
 ## Commands
 
@@ -87,3 +87,7 @@ complete. A structural batch installs its terrain and captured water together.
 Wire v23 adds single-field movement patches with optional policy revision checks and correlated PolicyReply messages. Speed and acceleration use metres per second and metres per second squared. The sequence and world context travel back to the requesting session.
 
 Wire v24 adds an explicit jump request and an intent-tagged MovementReceipt for admission, final physical resolution, coalescing or rejection. Ordinary device motion keeps its existing bounded stream.
+
+Wire v25 adds a correlated PlayerActionReceipt for move, chat, name, fire and tool grants. Acceptance means the owner admitted the request; commitment follows execution or durable inventory publication. A rejection carries a reason code: 1 permission, 2 busy, 3 invalid, 4 rate limit, 5 unavailable, 6 stale world, 7 paused, 8 superseded. Disconnection leaves any unconfirmed request outcome unknown.
+
+Client operation binding and the wire codec share valid_name and valid_chat. The name predicate accepts 1 through 24 ASCII letters, digits or underscores. Chat accepts 1 through 128 UTF-8 bytes and rejects control characters.

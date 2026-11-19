@@ -32,6 +32,12 @@ impl ServerRuntime {
                 .worlds
                 .world_input_context_is_current(player, *context)
             {
+                super::player_receipt::send(
+                    self,
+                    index,
+                    &message,
+                    minimium_protocol::PlayerActionDecision::Rejected(6),
+                );
                 self.reject_jump_message(
                     index,
                     &message,

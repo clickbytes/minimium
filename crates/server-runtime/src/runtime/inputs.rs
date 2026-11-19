@@ -1,8 +1,18 @@
 use super::*;
 use crate::connection::queue_message;
 use crate::world_inputs::{WorldEvent, WorldInput};
+use minimium_protocol::{PlayerActionDecision, PlayerActionKind};
 
 const INPUT_IDLE_TIMEOUT: Duration = Duration::from_millis(250);
+
+pub(super) type ScheduledMotion = std::collections::BTreeMap<
+    u64,
+    (
+        minimium_protocol::WorldContext,
+        u64,
+        minimium_protocol::MovementSample,
+    ),
+>;
 
 impl ServerRuntime {
     pub(super) fn resolve_movement_input(
@@ -42,9 +52,16 @@ impl ServerRuntime {
                     .input_wait
                     .record(self.now.saturating_duration_since(decoded_at));
             }
-            if let WorldInput::Move(player, sample) = &input {
+            if let WorldInput::Move(player, context, sequence, sample) = &input {
                 if teleported.contains(player) {
                     self.resolve_movement_input(*player, sample.input_seq);
+                    self.send_player_action_receipt(
+                        *player,
+                        *sequence,
+                        *context,
+                        PlayerActionKind::Move,
+                        PlayerActionDecision::Rejected(8),
+                    );
                     continue;
                 }
             }
@@ -69,7 +86,7 @@ impl ServerRuntime {
         let tick = self.step_boundary().tick();
         let players: Vec<_> = self.game.pending_movement_inputs.keys().copied().collect();
         for player in players {
-            let (current, due_sequences, empty) = {
+            let (current, due_receipts, empty) = {
                 let Some(samples) = self.game.pending_movement_inputs.get_mut(&player) else {
                     continue;
                 };
@@ -81,27 +98,59 @@ impl ServerRuntime {
                     .iter()
                     .filter(|(target, _)| *target == tick)
                     .map(|(_, sample)| *sample)
-                    .max_by_key(|sample| sample.input_seq);
-                let sequences = due
+                    .max_by_key(|(_, _, sample)| sample.input_seq);
+                let receipts = due
                     .iter()
-                    .map(|(_, sample)| sample.input_seq)
+                    .map(|(_, (context, sequence, sample))| (*context, *sequence, sample.input_seq))
                     .collect::<Vec<_>>();
                 for (target, _) in due {
                     samples.remove(&target);
                 }
-                (current, sequences, samples.is_empty())
+                (current, receipts, samples.is_empty())
             };
             if empty {
                 self.game.pending_movement_inputs.remove(&player);
             }
-            if let Some(sample) = current {
+            let committed = current.filter(|(context, _, _)| {
+                self.game
+                    .worlds
+                    .world_input_context_is_current(player, *context)
+            });
+            if let Some((context, sequence, sample)) = committed {
                 self.game
                     .applied_input
                     .insert(player, (sample.input_seq, tick));
                 self.game.active_inputs.insert(player, sample.intent);
+                self.send_player_action_receipt(
+                    player,
+                    sequence,
+                    context,
+                    PlayerActionKind::Move,
+                    PlayerActionDecision::Committed,
+                );
             }
-            for seq in due_sequences {
-                self.resolve_movement_input(player, seq);
+            for (context, sequence, input_seq) in due_receipts {
+                self.resolve_movement_input(player, input_seq);
+                if committed.is_none_or(|(_, committed_sequence, _)| committed_sequence != sequence)
+                {
+                    self.send_player_action_receipt(
+                        player,
+                        sequence,
+                        context,
+                        PlayerActionKind::Move,
+                        PlayerActionDecision::Rejected(
+                            if self
+                                .game
+                                .worlds
+                                .world_input_context_is_current(player, context)
+                            {
+                                8
+                            } else {
+                                6
+                            },
+                        ),
+                    );
+                }
             }
         }
     }
@@ -111,6 +160,44 @@ impl ServerRuntime {
         input: WorldInput,
         teleported: &mut std::collections::HashSet<minimium_core::ids::PlayerId>,
     ) -> Option<WorldEvent> {
+        if !self.validate_player_input(&input) {
+            let receipt = match &input {
+                WorldInput::Move(id, context, sequence, _) => {
+                    Some((*id, *context, *sequence, PlayerActionKind::Move))
+                }
+                WorldInput::Fire(id, context, sequence, _) => {
+                    Some((*id, *context, *sequence, PlayerActionKind::Fire))
+                }
+                WorldInput::Chat(id, context, sequence, _) => {
+                    Some((*id, *context, *sequence, PlayerActionKind::Chat))
+                }
+                WorldInput::Rename(id, context, sequence, _) => {
+                    Some((*id, *context, *sequence, PlayerActionKind::Name))
+                }
+                WorldInput::GrantTools(id, context, sequence) => {
+                    Some((*id, *context, *sequence, PlayerActionKind::GrantTools))
+                }
+                _ => None,
+            };
+            if let Some((id, context, sequence, kind)) = receipt {
+                let reason = if self.game.worlds.world_input_context_is_current(id, context) {
+                    1
+                } else {
+                    6
+                };
+                self.send_player_action_receipt(
+                    id,
+                    sequence,
+                    context,
+                    kind,
+                    PlayerActionDecision::Rejected(reason),
+                );
+            }
+            if let WorldInput::Move(id, _, _, sample) = input {
+                self.resolve_movement_input(id, sample.input_seq);
+            }
+            return None;
+        }
         match input {
             WorldInput::Join {
                 id,
@@ -179,7 +266,7 @@ impl ServerRuntime {
                     self.game.pending_departures.remove(&profile);
                 }
             }
-            WorldInput::Move(id, mut sample) => {
+            WorldInput::Move(id, context, sequence, mut sample) => {
                 if let Some(ticket) = self.game.jumps.get_mut(&id).and_then(|tickets| {
                     tickets.iter_mut().find(|t| t.input_seq == sample.input_seq)
                 }) {
@@ -191,7 +278,7 @@ impl ServerRuntime {
                     .pending_movement_inputs
                     .get(&id)
                     .and_then(|samples| samples.get(&sample.target_tick))
-                    .is_some_and(|old| old.intent.jump)
+                    .is_some_and(|(old_context, _, old)| *old_context == context && old.intent.jump)
                 {
                     sample.intent.jump = true;
                 }
@@ -200,11 +287,18 @@ impl ServerRuntime {
                     .pending_movement_inputs
                     .entry(id)
                     .or_default()
-                    .insert(sample.target_tick, sample);
-                if let Some(previous) =
-                    previous.filter(|previous| previous.input_seq != sample.input_seq)
+                    .insert(sample.target_tick, (context, sequence, sample));
+                if let Some((previous_context, previous_sequence, previous)) =
+                    previous.filter(|(_, _, previous)| previous.input_seq != sample.input_seq)
                 {
                     self.resolve_movement_input(id, previous.input_seq);
+                    self.send_player_action_receipt(
+                        id,
+                        previous_sequence,
+                        previous_context,
+                        PlayerActionKind::Move,
+                        PlayerActionDecision::Rejected(8),
+                    );
                 }
                 self.game
                     .last_input_seq
@@ -219,8 +313,15 @@ impl ServerRuntime {
                     teleported.insert(id);
                     self.abort_jumps(id, minimium_protocol::MotionRejection::Superseded);
                     if let Some(samples) = self.game.pending_movement_inputs.remove(&id) {
-                        for sample in samples.values() {
+                        for (sample_context, sample_sequence, sample) in samples.values() {
                             self.resolve_movement_input(id, sample.input_seq);
+                            self.send_player_action_receipt(
+                                id,
+                                *sample_sequence,
+                                *sample_context,
+                                PlayerActionKind::Move,
+                                PlayerActionDecision::Rejected(8),
+                            );
                         }
                     }
                 }
@@ -243,15 +344,97 @@ impl ServerRuntime {
             WorldInput::Excavation(id, context, input) => {
                 self.apply_excavation(id, context, input);
             }
-            WorldInput::Fire(id, direction) => {
-                return self.apply_fire_input(id, direction);
+            WorldInput::GrantTools(id, context, sequence) => {
+                if self.change_inventory(
+                    id,
+                    context,
+                    minimium_protocol::ExcavationInput::GrantTools,
+                ) {
+                    if let Some(profile) = self.player_profile(id) {
+                        let desired = self.equipment.desired(id, context, profile);
+                        if let Some((old_context, old_sequence, _)) = self
+                            .game
+                            .pending_grant_receipts
+                            .insert(id, (context, sequence, desired))
+                        {
+                            self.send_player_action_receipt(
+                                id,
+                                old_sequence,
+                                old_context,
+                                PlayerActionKind::GrantTools,
+                                PlayerActionDecision::Rejected(8),
+                            );
+                        }
+                        self.resolve_grant_receipts();
+                    }
+                } else {
+                    self.send_player_action_receipt(
+                        id,
+                        sequence,
+                        context,
+                        PlayerActionKind::GrantTools,
+                        PlayerActionDecision::Rejected(5),
+                    );
+                }
             }
-            WorldInput::Chat(id, text) => {
+            WorldInput::Fire(id, context, sequence, direction) => {
+                let event = self.apply_fire_input(id, direction);
+                self.send_player_action_receipt(
+                    id,
+                    sequence,
+                    context,
+                    PlayerActionKind::Fire,
+                    if event.is_some() {
+                        PlayerActionDecision::Committed
+                    } else {
+                        PlayerActionDecision::Rejected(5)
+                    },
+                );
+                return event;
+            }
+            WorldInput::Chat(id, context, sequence, text) => {
                 if !self.operations.player_store.is_active(id) {
+                    self.send_player_action_receipt(
+                        id,
+                        sequence,
+                        context,
+                        PlayerActionKind::Chat,
+                        PlayerActionDecision::Rejected(5),
+                    );
                     return None;
                 }
-                let instance = self.game.worlds.instance_for_player(id)?;
-                let name = self.operations.player_store.name_for_player(id)?.to_owned();
+                let Some(instance) = self.game.worlds.instance_for_player(id) else {
+                    self.send_player_action_receipt(
+                        id,
+                        sequence,
+                        context,
+                        PlayerActionKind::Chat,
+                        PlayerActionDecision::Rejected(5),
+                    );
+                    return None;
+                };
+                let Some(name) = self
+                    .operations
+                    .player_store
+                    .name_for_player(id)
+                    .map(str::to_owned)
+                else {
+                    self.send_player_action_receipt(
+                        id,
+                        sequence,
+                        context,
+                        PlayerActionKind::Chat,
+                        PlayerActionDecision::Rejected(5),
+                    );
+                    return None;
+                };
+                self.send_player_action_receipt(
+                    id,
+                    sequence,
+                    context,
+                    PlayerActionKind::Chat,
+                    PlayerActionDecision::Committed,
+                );
                 return Some(WorldEvent::Chat {
                     instance,
                     sender: id,
@@ -259,173 +442,40 @@ impl ServerRuntime {
                     text,
                 });
             }
-            WorldInput::Rename(id, name) => {
-                self.game
-                    .worlds
-                    .for_player_mut(id)?
-                    .world
-                    .rename_player(id, name.clone());
+            WorldInput::Rename(id, context, sequence, name) => {
+                let Some(world) = self.game.worlds.for_player_mut(id) else {
+                    self.send_player_action_receipt(
+                        id,
+                        sequence,
+                        context,
+                        PlayerActionKind::Name,
+                        PlayerActionDecision::Rejected(5),
+                    );
+                    return None;
+                };
+                if !world.world.rename_player(id, name.clone()) {
+                    self.send_player_action_receipt(
+                        id,
+                        sequence,
+                        context,
+                        PlayerActionKind::Name,
+                        PlayerActionDecision::Rejected(5),
+                    );
+                    return None;
+                }
                 self.operations.player_store.rename(id, name);
+                self.send_player_action_receipt(
+                    id,
+                    sequence,
+                    context,
+                    PlayerActionKind::Name,
+                    PlayerActionDecision::Committed,
+                );
             }
             WorldInput::InteractEntity(id, source_context, entity) => {
                 self.publish_entity_interaction(id, source_context, entity);
             }
         }
         None
-    }
-
-    pub(super) fn begin_entity_transfer(
-        &mut self,
-        id: minimium_core::ids::PlayerId,
-        source_context: minimium_protocol::WorldContext,
-        target_world: minimium_world::world::WorldInstanceId,
-        destination: [f32; 3],
-    ) -> crate::modules::TransferOutcome {
-        use crate::modules::{TransferOutcome, TransferRejection};
-
-        let return_location = self.operations.player_store.return_location_for(id);
-        let terrain =
-            super::gameplay_terrain::build(&self.game.worlds, self.prepared_geography.as_ref());
-        let reads: std::collections::HashMap<_, &dyn minimium_world::terrain::TerrainRead> =
-            terrain
-                .iter()
-                .map(|(instance, read)| {
-                    (*instance, read as &dyn minimium_world::terrain::TerrainRead)
-                })
-                .collect();
-        let offer = self.game.worlds.prepare_entity_transfer_with_terrain(
-            id,
-            source_context,
-            target_world,
-            destination,
-            return_location,
-            &reads,
-            self.now,
-        );
-        let offer = match offer {
-            Ok(offer) => offer,
-            Err(crate::world_registry::TransferRequestRejection::AlreadyPending) => {
-                return TransferOutcome::Rejected(TransferRejection::AlreadyPending)
-            }
-            Err(crate::world_registry::TransferRequestRejection::Validation) => {
-                return TransferOutcome::Rejected(TransferRejection::Validation)
-            }
-            Err(crate::world_registry::TransferRequestRejection::IdentifierSpaceExhausted) => {
-                return TransferOutcome::Rejected(TransferRejection::IdentifierSpaceExhausted)
-            }
-        };
-        let Some(index) = self.connections.client_indices_by_player.get(&id).copied() else {
-            self.game.worlds.cancel_transfer(id, offer.transition_id);
-            return TransferOutcome::Rejected(TransferRejection::ClientUnavailable);
-        };
-        let (clock_sample, environment) =
-            match self.environment_state_for_instance(offer.target_context.instance(), self.now) {
-                Ok(state) => state,
-                Err(error) => {
-                    crate::diagnostics::emit(
-                        &self.server_logger,
-                        minimium_diagnostics::Level::Error,
-                        "server.transfer_environment_failed",
-                        &[
-                            ("player_id", id.to_string()),
-                            ("error_code", error.code().to_owned()),
-                            ("reason", error.to_string()),
-                        ],
-                    );
-                    self.game.worlds.cancel_transfer(id, offer.transition_id);
-                    return TransferOutcome::Rejected(TransferRejection::EnvironmentUnavailable);
-                }
-            };
-        let Some(client) = self.connections.clients.get_mut(index) else {
-            self.game.worlds.cancel_transfer(id, offer.transition_id);
-            return TransferOutcome::Rejected(TransferRejection::ClientUnavailable);
-        };
-        if queue_message(
-            client,
-            &mut self.metrics,
-            minimium_protocol::ServerMessage::TransitionPrepare {
-                transition_id: offer.transition_id,
-                source_context: offer.source_context,
-                target_context: offer.target_context,
-                map_fingerprint: offer.map_fingerprint,
-                destination: offer.destination,
-                destination_mm: offer.destination_mm,
-                manifest: offer.manifest,
-                clock_sample,
-                environment,
-            },
-        ) {
-            TransferOutcome::Started
-        } else {
-            self.game.worlds.cancel_transfer(id, offer.transition_id);
-            self.metrics.dropped_messages = self.metrics.dropped_messages.saturating_add(1);
-            TransferOutcome::Rejected(TransferRejection::Backpressure)
-        }
-    }
-
-    fn map_teleport(
-        &mut self,
-        id: minimium_core::ids::PlayerId,
-        context: minimium_protocol::WorldContext,
-        direction: [f32; 3],
-    ) -> Option<minimium_world::world::Position3Mm> {
-        if !self.game.worlds.can_map_teleport(id, context) {
-            return None;
-        }
-        let instance = self.game.worlds.instance_for_player(id)?;
-        let manifest = self.game.worlds.manifest_for_player(id)?;
-        if manifest.planet()?.mode != 1 {
-            return None;
-        }
-        let geography = self
-            .game
-            .worlds
-            .prepared_terrain_inputs(instance, self.prepared_geography.as_ref())
-            .ok()?;
-        let point = minimium_procgen::planet_point_at_direction_with_geography(
-            manifest,
-            direction,
-            geography.clone(),
-        )?;
-        if point.ocean {
-            return None;
-        }
-        let ground = minimium_procgen::planet_safe_spawn_position_at_direction_with_geography(
-            manifest, direction, geography,
-        )?;
-        let length = ground
-            .iter()
-            .map(|value| (*value as f64).powi(2))
-            .sum::<f64>()
-            .sqrt();
-        let position_mm = minimium_world::world::Position3Mm(std::array::from_fn(|axis| {
-            ground[axis] + (ground[axis] as f64 / length * 2_000.0).round() as i64
-        }));
-        let position = position_mm.0.map(|value| value as f32 / 1000.0);
-        let world = &mut self.game.worlds.get_mut(instance)?.world;
-        if !world.set_position(id, position) || !world.restore_position_mm(id, position_mm) {
-            return None;
-        }
-        if let Some(player) = world.player(id) {
-            if let Err(error) =
-                self.operations
-                    .player_store
-                    .update_from_player(player, instance, world.gravity())
-            {
-                crate::diagnostics::emit(
-                    &self.server_logger,
-                    minimium_diagnostics::Level::Error,
-                    "server.teleport_save_failed",
-                    &[("player_id", id.to_string()), ("reason", error.to_string())],
-                );
-            }
-        }
-        self.game
-            .active_inputs
-            .insert(id, minimium_simulation::MovementIntent::default());
-        self.game.input_last_received.insert(id, self.now);
-        self.sky_views.remove(&id);
-        self.scheduler.next_snapshot = self.now;
-        Some(position_mm)
     }
 }

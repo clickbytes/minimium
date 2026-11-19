@@ -177,6 +177,9 @@ impl ClientTransportPort for TcpClientTransport {
         Ok(progress)
     }
 
+    fn frame_sent(&self, token: ClientFrameToken) -> Option<bool> {
+        Some(token.get() <= self.metrics.bytes_sent)
+    }
     fn metrics(&self) -> ClientTransportMetrics {
         self.metrics
     }

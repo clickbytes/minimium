@@ -30,6 +30,7 @@ mod interface;
 mod meteors;
 mod movement;
 pub(crate) mod output;
+pub(crate) mod player_actions;
 mod presentation;
 mod properties;
 mod text;
@@ -240,6 +241,7 @@ pub(crate) enum FrontendAction {
     HostLocal(Option<ThreadLane>),
     Disconnect,
     FpsShow,
+    Player(player_actions::PlayerIntent),
     Ping,
     NetStats,
     State,
@@ -317,10 +319,9 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
         }
         ClientCommand::Ping => return CommandResult::Action(FrontendAction::Ping),
         ClientCommand::Move(direction) => {
-            ClientAction::Motion(minimium_simulation::MovementIntent {
-                direction,
-                ..Default::default()
-            })
+            return CommandResult::Action(FrontendAction::Player(
+                player_actions::PlayerIntent::Move(direction),
+            ))
         }
         ClientCommand::Jump => return CommandResult::Action(FrontendAction::Jump),
         ClientCommand::InteractPortal => {
@@ -337,12 +338,26 @@ pub(crate) fn execute(command: ClientCommand, context: &mut CommandContext<'_>) 
             ClientAction::InteractEntity { entity }
         }
         ClientCommand::MapTeleport => return CommandResult::Action(FrontendAction::MapTeleport),
-        ClientCommand::Fire => ClientAction::FireWeapon {
-            direction: context.fire_direction,
-        },
-        ClientCommand::GrantTools => ClientAction::GrantTools,
-        ClientCommand::Chat(text) => ClientAction::Chat(text),
-        ClientCommand::SetName(name) => ClientAction::SetName(name),
+        ClientCommand::Fire => {
+            return CommandResult::Action(FrontendAction::Player(
+                player_actions::PlayerIntent::Fire(context.fire_direction),
+            ))
+        }
+        ClientCommand::GrantTools => {
+            return CommandResult::Action(FrontendAction::Player(
+                player_actions::PlayerIntent::GrantTools,
+            ))
+        }
+        ClientCommand::Chat(text) => {
+            return CommandResult::Action(FrontendAction::Player(
+                player_actions::PlayerIntent::Chat(text),
+            ))
+        }
+        ClientCommand::SetName(name) => {
+            return CommandResult::Action(FrontendAction::Player(
+                player_actions::PlayerIntent::Name(name),
+            ))
+        }
         ClientCommand::Help => return CommandResult::Action(FrontendAction::Help),
         ClientCommand::Connect(address) => {
             return CommandResult::Action(FrontendAction::Connect(address))

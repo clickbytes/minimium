@@ -1,5 +1,5 @@
 mod client;
-mod common;
+pub(crate) mod common;
 mod excavation;
 mod server;
 

@@ -559,3 +559,7 @@ ClockPropertySnapshot::status projects the shared committed boundary, revision, 
 The admission owner applies movement patches to the current player policy after checking membership, permission, value and any expected revision. Full-policy writes remain atomic. The owner queues the resulting revision or structured refusal and keeps its committed state if the peer disconnects.
 
 Jump admission, per-tick movement aggregation and the applied simulation batch share request identity. Each coalesced request reports the first request ID and the same physics result. Transfers, pause, full queues and unavailable geometry yield explicit outcomes.
+
+Queued actor movement, fire, chat and rename retain their admission world context. Execution checks that context and the current principal before applying them. Tool grants also recheck DeveloperTeleport. Movement samples scheduled for the simulation tick retain their context through final selection.
+
+Wire v25 owner receipts identify the request sequence, world context and action family. Queued admission reports Accepted; the execution lane reports Committed or a specific refusal. Tool grant commitment is emitted only after the equipment owner exposes the durably published inventory candidate.

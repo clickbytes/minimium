@@ -13,13 +13,19 @@ pub(crate) enum WorldInput {
         health: u16,
     },
     Leave(PlayerId),
-    Move(PlayerId, minimium_protocol::MovementSample),
-    Fire(PlayerId, [f32; 3]),
+    Move(
+        PlayerId,
+        WorldContext,
+        u64,
+        minimium_protocol::MovementSample,
+    ),
+    Fire(PlayerId, WorldContext, u64, [f32; 3]),
     Excavation(PlayerId, WorldContext, minimium_protocol::ExcavationInput),
+    GrantTools(PlayerId, WorldContext, u64),
     MapTeleport(PlayerId, WorldContext, [f32; 3]),
     SetAltitude(PlayerId, WorldContext, f32),
-    Chat(PlayerId, String),
-    Rename(PlayerId, String),
+    Chat(PlayerId, WorldContext, u64, String),
+    Rename(PlayerId, WorldContext, u64, String),
     InteractEntity(PlayerId, WorldContext, minimium_world::entity::EntityId),
 }
 

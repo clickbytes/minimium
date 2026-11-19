@@ -19,6 +19,7 @@ pub(super) fn print_session_event(
         ),
         SessionEvent::Disconnected(reason) => print(Text::from(reason), localizer, locale),
         SessionEvent::Message(message) => match message {
+            ServerMessage::PlayerActionReceipt(_) => {}
             ServerMessage::Excavation { message, .. } => match message {
                 minimium_protocol::ExcavationMessage::Inventory { inventory } => {
                     println!(

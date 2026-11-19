@@ -411,6 +411,7 @@ impl UiMessage {
                     UiNotice::ConnectionTraffic => "connection_traffic",
                     UiNotice::PlayerStateSources => "player_state_sources",
                     UiNotice::ConnectionReceipt => "connection_receipt",
+                    UiNotice::PlayerActionReceipt => "player_action_receipt",
                     UiNotice::ClipboardUnavailable => "clipboard_unavailable",
                     UiNotice::AltitudeRequiresFlight => "altitude_requires_flight",
                     UiNotice::PortalSnapshotUnavailable => "portal_snapshot_unavailable",

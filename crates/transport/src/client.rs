@@ -145,6 +145,10 @@ pub trait ClientTransportPort: Send {
         tracked: Option<ClientFrameToken>,
         now: Instant,
     ) -> Result<ClientFlushProgress, ClientTransportError>;
+    /// Some(true) only once all bytes for this transport-local frame were sent.
+    fn frame_sent(&self, _token: ClientFrameToken) -> Option<bool> {
+        None
+    }
     fn metrics(&self) -> ClientTransportMetrics;
     /// Metadata used by the current separate content HTTP adapter. This exposes
     /// no socket handle or buffers; local transports may return NotConnected.

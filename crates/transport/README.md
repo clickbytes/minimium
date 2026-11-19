@@ -77,3 +77,5 @@ None.
 ## Change guide
 
 Change framing, bounded socket I/O and transport lifecycle here. Change authentication policy, command parsing or gameplay permissions in their runtime/application owners.
+
+ClientTransportPort::frame_sent exposes optional per-frame send progress. The TCP adapter checks the transport-local cumulative end offset. Its write counter advances only on successful writes. Alternate transports may leave the observation unavailable.

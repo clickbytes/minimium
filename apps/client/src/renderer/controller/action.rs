@@ -15,6 +15,7 @@ pub(super) fn execute(
                 output.push_line(line);
             }
         }
+        FrontendAction::Player(_) => unreachable!("shared player binding"),
         FrontendAction::Help | FrontendAction::Clear => unreachable!("shared console operation"),
         FrontendAction::Connect(_)
         | FrontendAction::HostLocal(_)

@@ -50,6 +50,7 @@ impl ServerRuntime {
                 &self.world_logger,
                 &self.shutdown_request,
             ));
+        self.resolve_grant_receipts();
         self.flush_inventory_request();
         self.update_water();
     }

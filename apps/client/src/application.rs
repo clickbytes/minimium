@@ -1,3 +1,4 @@
+mod action_receipts;
 mod admin;
 mod connection_diagnostics;
 pub(crate) use connection_diagnostics::ConnectionEffect;
@@ -49,6 +50,7 @@ pub(crate) struct ClientApplication {
     core: ClientApplicationCore,
     next_command_id: u64,
     connection_requests: connection_diagnostics::Requests,
+    action_receipts: action_receipts::PendingActions,
     policy_output_sources:
         std::collections::BTreeMap<(u64, u64), crate::client_commands::CommandSource>,
     admin_output_source: Option<(
@@ -117,6 +119,7 @@ impl ClientApplication {
             core,
             next_command_id: 1,
             connection_requests: Default::default(),
+            action_receipts: Default::default(),
             policy_output_sources: Default::default(),
             admin_output_source: None,
             ui,
@@ -197,6 +200,7 @@ impl ClientApplication {
             core,
             next_command_id: 1,
             connection_requests: Default::default(),
+            action_receipts: Default::default(),
             policy_output_sources: Default::default(),
             admin_output_source: None,
             #[cfg(feature = "desktop")]

@@ -99,9 +99,15 @@ pub(super) fn lower(
         .map(|a| a.text.as_str())
         .collect::<Vec<_>>();
     match (name, values.as_slice()) {
-        ("social say", [text]) if !text.is_empty() => {
-            return Ok(ClientCommand::Chat((*text).to_owned()))
+        ("social say", [text]) if !minimium_protocol::valid_chat(text) => {
+            return Err(invalid("chat requires 1..128 UTF-8 bytes without controls"))
         }
+        ("social name", [name]) if !minimium_protocol::valid_name(name) => {
+            return Err(invalid(
+                "name requires 1..24 ASCII letters, digits or underscore",
+            ))
+        }
+        ("social say", [text]) => return Ok(ClientCommand::Chat((*text).to_owned())),
         ("config save", [path]) if !op.legacy && !path.is_empty() => {
             return Ok(ClientCommand::ConfigSave((*path).into()))
         }

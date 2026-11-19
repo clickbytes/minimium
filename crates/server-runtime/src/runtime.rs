@@ -19,6 +19,8 @@ pub use effect_receipts::StartupEffectFailure;
 pub use excavation::ExcavationStatus;
 pub use impacts::ImpactStatus;
 mod hosted;
+mod input_receipts;
+mod input_transfer;
 mod inputs;
 mod r#loop;
 mod movement_receipts;
@@ -27,6 +29,7 @@ mod operations;
 mod outbound;
 pub mod schedule;
 mod service_inputs;
+mod stage;
 mod tick;
 mod transfers;
 use diagnostics::emit_system_effect_diagnostic;
@@ -75,8 +78,15 @@ struct GameState {
     active_inputs: HashMap<PlayerId, MovementIntent>,
     player_movement_policies: HashMap<PlayerId, minimium_simulation::MovementPolicy>,
     input_last_received: HashMap<PlayerId, Instant>,
-    pending_movement_inputs:
-        HashMap<PlayerId, std::collections::BTreeMap<u64, minimium_protocol::MovementSample>>,
+    pending_movement_inputs: HashMap<PlayerId, inputs::ScheduledMotion>,
+    pending_grant_receipts: HashMap<
+        PlayerId,
+        (
+            minimium_protocol::WorldContext,
+            u64,
+            minimium_world::items::Inventory,
+        ),
+    >,
     last_input_seq: HashMap<PlayerId, u64>,
     pending_input_seqs: HashMap<PlayerId, std::collections::BTreeSet<u64>>,
     applied_input: HashMap<PlayerId, (u64, u64)>,
@@ -311,6 +321,7 @@ impl ServerRuntime {
             player_movement_policies: HashMap::with_capacity(config.max_players),
             input_last_received: HashMap::with_capacity(config.max_players),
             pending_movement_inputs: HashMap::with_capacity(config.max_players),
+            pending_grant_receipts: HashMap::with_capacity(config.max_players),
             last_input_seq: HashMap::with_capacity(config.max_players),
             pending_input_seqs: HashMap::with_capacity(config.max_players),
             applied_input: HashMap::with_capacity(config.max_players),
@@ -439,61 +450,5 @@ impl ServerRuntime {
         runtime.restore_excavation()?;
         runtime.run_system_stage(crate::modules::Stage::Startup)?;
         Ok(runtime)
-    }
-
-    fn run_system_stage(&mut self, stage: crate::modules::Stage) -> io::Result<()> {
-        if stage == crate::modules::Stage::Startup {
-            let startup_worlds: Vec<_> = self
-                .game
-                .worlds
-                .iter()
-                .map(|(instance, owner)| {
-                    let lifecycle = if owner.content_initialized {
-                        crate::modules::WorldLifecycle::Restored
-                    } else {
-                        crate::modules::WorldLifecycle::New
-                    };
-                    (instance, lifecycle)
-                })
-                .collect();
-            for (instance, lifecycle) in startup_worlds {
-                let feedback_diagnostics = self.schedule.diagnostics();
-                let batch = self.schedule.run_stage(
-                    stage,
-                    self.step_boundary().tick(),
-                    &self.game.worlds,
-                    self.prepared_geography.as_ref(),
-                    &self.game.gameplay_events,
-                    Some((instance, lifecycle)),
-                );
-                self.report_effect_feedback_diagnostics(feedback_diagnostics);
-                let outcome = self.commit_effect_batch(batch)?;
-                self.schedule.publish_effect_receipts(&outcome)?;
-                self.report_effect_batch_outcome(&format!("{stage:?}"), &outcome);
-                if outcome.has_rejections() {
-                    let receipts = self.schedule.drain_pending_effect_receipts();
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        StartupEffectFailure::new(instance, receipts, outcome.rejected_pushes()),
-                    ));
-                }
-            }
-            self.game.worlds.initialize_new_content();
-            return Ok(());
-        }
-        let feedback_diagnostics = self.schedule.diagnostics();
-        let batch = self.schedule.run_stage(
-            stage,
-            self.step_boundary().tick(),
-            &self.game.worlds,
-            self.prepared_geography.as_ref(),
-            &self.game.gameplay_events,
-            None,
-        );
-        self.report_effect_feedback_diagnostics(feedback_diagnostics);
-        let outcome = self.commit_effect_batch(batch)?;
-        self.schedule.publish_effect_receipts(&outcome)?;
-        self.report_effect_batch_outcome(&format!("{stage:?}"), &outcome);
-        Ok(())
     }
 }

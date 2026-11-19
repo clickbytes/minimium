@@ -148,6 +148,7 @@ ui-notice = { $notice ->
     [connection_traffic] Ruch sieciowy
     [player_state_sources] Stan gracza
     [connection_receipt] Potwierdzenie operacji
+    [player_action_receipt] Akcja gracza
     [clipboard_unavailable] Schowek jest niedostępny
     [altitude_requires_flight] set_altitude wymaga włączonego latania
     [portal_snapshot_unavailable] Interakcja z portalem wymaga migawki gracza

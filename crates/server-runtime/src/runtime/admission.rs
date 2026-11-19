@@ -3,6 +3,7 @@ mod dispatch;
 mod identity;
 mod movement_policy;
 mod placement;
+mod player_receipt;
 mod queue;
 mod routing;
 mod technical;

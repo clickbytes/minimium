@@ -30,6 +30,12 @@ pub(super) fn dispatch_message(
             "gameplay",
         )
     {
+        super::player_receipt::send(
+            runtime,
+            index,
+            &message,
+            minimium_protocol::PlayerActionDecision::Rejected(1),
+        );
         runtime.reject_jump_message(
             index,
             &message,
@@ -70,6 +76,12 @@ pub(super) fn dispatch_message(
         // TCP preserves order. Consume the id even if this action is refused or paused.
         let client = &mut runtime.connections.clients[index];
         if *sequence <= client.world_sequence {
+            super::player_receipt::send(
+                runtime,
+                index,
+                &message,
+                minimium_protocol::PlayerActionDecision::Rejected(3),
+            );
             runtime.reject_jump_message(
                 index,
                 &message,
@@ -89,6 +101,12 @@ pub(super) fn dispatch_message(
                     )
             )
         {
+            super::player_receipt::send(
+                runtime,
+                index,
+                &message,
+                minimium_protocol::PlayerActionDecision::Rejected(7),
+            );
             if let (
                 Some(player),
                 ClientWorldInput::Excavation(minimium_protocol::ExcavationInput::Use {
@@ -154,6 +172,7 @@ fn handle_admitted_message(
     decoded_at: Instant,
     player_id: Option<PlayerId>,
 ) {
+    let receipt_source = message.clone();
     match message {
         ClientMessage::Authenticate { .. } => {
             disconnect_invalid_sequence(runtime, index);
@@ -177,17 +196,46 @@ fn handle_admitted_message(
                         "developer inventory",
                     )
                 {
+                    super::player_receipt::send(
+                        runtime,
+                        index,
+                        &receipt_source,
+                        minimium_protocol::PlayerActionDecision::Rejected(1),
+                    );
                     return;
                 }
                 let action_id = match &input {
                     minimium_protocol::ExcavationInput::Use { action_id, .. } => Some(*action_id),
                     _ => None,
                 };
-                if !super::queue::try_queue(
-                    runtime,
-                    crate::world_inputs::WorldInput::Excavation(player, context, input),
-                    decoded_at,
+                let world_input = if matches!(input, minimium_protocol::ExcavationInput::GrantTools)
+                {
+                    crate::world_inputs::WorldInput::GrantTools(player, context, sequence)
+                } else {
+                    crate::world_inputs::WorldInput::Excavation(player, context, input)
+                };
+                let queued = super::queue::try_queue(runtime, world_input, decoded_at);
+                if matches!(
+                    receipt_source,
+                    ClientMessage::WorldInput {
+                        input: ClientWorldInput::Excavation(
+                            minimium_protocol::ExcavationInput::GrantTools
+                        ),
+                        ..
+                    }
                 ) {
+                    super::player_receipt::send(
+                        runtime,
+                        index,
+                        &receipt_source,
+                        if queued {
+                            minimium_protocol::PlayerActionDecision::Accepted
+                        } else {
+                            minimium_protocol::PlayerActionDecision::Rejected(2)
+                        },
+                    );
+                }
+                if !queued {
                     if let Some(action_id) = action_id {
                         runtime.excavation_result(
                             player,
@@ -201,30 +249,60 @@ fn handle_admitted_message(
                 }
             }
             (Some(player), ClientWorldInput::SetName(name)) => {
-                actions::movement::admit_name(runtime, index, player, name, decoded_at)
+                let accepted = actions::movement::admit_name(
+                    runtime, index, player, context, sequence, name, decoded_at,
+                );
+                super::player_receipt::send(
+                    runtime,
+                    index,
+                    &receipt_source,
+                    if accepted {
+                        minimium_protocol::PlayerActionDecision::Accepted
+                    } else {
+                        minimium_protocol::PlayerActionDecision::Rejected(2)
+                    },
+                );
             }
             (Some(player), ClientWorldInput::Jump { input_seq }) => actions::movement::admit_jump(
                 runtime, index, player, context, sequence, input_seq, decoded_at,
             ),
             (Some(player), ClientWorldInput::Motion(input)) => {
-                if matches!(
-                    actions::movement::admit_motion(runtime, index, player, input, decoded_at),
-                    Err(minimium_protocol::MotionRejection::Busy)
-                ) {
-                    crate::connection::queue_message(
-                        &mut runtime.connections.clients[index],
-                        &mut runtime.metrics,
-                        minimium_protocol::ServerMessage::Error(
-                            minimium_protocol::ServerErrorCode::Busy,
-                        ),
-                    );
-                }
+                let outcome = actions::movement::admit_motion(
+                    runtime, index, player, context, sequence, input, decoded_at,
+                );
+                let decision = match outcome {
+                    Ok(()) => minimium_protocol::PlayerActionDecision::Accepted,
+                    Err(minimium_protocol::MotionRejection::Forbidden) => {
+                        minimium_protocol::PlayerActionDecision::Rejected(1)
+                    }
+                    Err(minimium_protocol::MotionRejection::Busy) => {
+                        minimium_protocol::PlayerActionDecision::Rejected(2)
+                    }
+                    Err(_) => minimium_protocol::PlayerActionDecision::Rejected(3),
+                };
+                super::player_receipt::send(runtime, index, &receipt_source, decision);
             }
             (Some(player), ClientWorldInput::Fire { direction }) => {
-                actions::combat::admit_fire(runtime, index, player, direction, decoded_at)
+                let outcome = actions::combat::admit_fire(
+                    runtime, index, player, context, sequence, direction, decoded_at,
+                );
+                super::player_receipt::send(
+                    runtime,
+                    index,
+                    &receipt_source,
+                    super::player_receipt::decision(outcome),
+                );
             }
             (Some(player), ClientWorldInput::Chat(text)) => {
-                actions::chat::admit_chat(runtime, index, player, text, decoded_at)
+                let outcome = actions::chat::admit_chat(
+                    runtime, index, player, context, sequence, text, decoded_at,
+                );
+                super::player_receipt::send(
+                    runtime,
+                    index,
+                    &receipt_source,
+                    super::player_receipt::decision(outcome),
+                );
             }
             (
                 Some(_),

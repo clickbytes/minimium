@@ -190,6 +190,9 @@ impl ClientTransportPort for LocalTransport {
         })
     }
 
+    fn frame_sent(&self, token: ClientFrameToken) -> Option<bool> {
+        Some(token.get() <= self.metrics.bytes_sent)
+    }
     fn metrics(&self) -> ClientTransportMetrics {
         self.metrics
     }

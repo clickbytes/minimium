@@ -9,6 +9,7 @@ use minimium_localization::{Locale, Localizer, UiMessage};
 
 pub(crate) enum ClientPayload {
     Native(Payload),
+    Player(super::player_actions::PlayerReceipt),
     Connection(super::connection_adapter::ConnectionReport),
     CatalogHelp(super::help::CatalogHelp),
     Clear,
@@ -86,7 +87,7 @@ pub(crate) fn native(result: OperationResult) -> ClientResult {
     )
 }
 
-fn failure(
+pub(crate) fn failure(
     identity: OperationContext,
     stage: Stage,
     origin: &str,
@@ -176,6 +177,9 @@ pub(crate) fn display(
     let stage = result.receipt.stage.label();
     let id = &result.identity.operation.0;
     let line = match result.outcome {
+        Ok(ClientPayload::Player(report)) => {
+            format!("{id} {stage} {}", report.details(localizer, locale))
+        }
         Ok(ClientPayload::Connection(report)) => {
             format!("{id} {stage} {}", report.render(localizer, locale))
         }

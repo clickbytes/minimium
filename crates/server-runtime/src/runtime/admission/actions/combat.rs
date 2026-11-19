@@ -9,19 +9,24 @@ pub(in crate::runtime::admission) fn admit_fire(
     runtime: &mut ServerRuntime,
     index: usize,
     player: PlayerId,
+    context: minimium_protocol::WorldContext,
+    sequence: u64,
     direction: [f32; 3],
     decoded_at: Instant,
-) {
+) -> ActorActionAdmission {
     let now = runtime.now;
     let reserved_transport_inputs = super::super::queue::reserved_transport_inputs(runtime);
-    match runtime.game.admit_actor_action(
+    let outcome = runtime.game.admit_actor_action(
         player,
+        context,
+        sequence,
         ActorAction::Fire(direction),
         decoded_at,
         now,
         runtime.environment_clock.boundary().simulation_ms(),
         reserved_transport_inputs,
-    ) {
+    );
+    match outcome {
         ActorActionAdmission::Queued => {}
         ActorActionAdmission::InvalidIntent => super::reject_invalid_action(runtime, index),
         ActorActionAdmission::ActorUnavailable => {
@@ -32,4 +37,5 @@ pub(in crate::runtime::admission) fn admit_fire(
         }
         ActorActionAdmission::Busy => super::reject(runtime, index, ServerErrorCode::Busy),
     }
+    outcome
 }

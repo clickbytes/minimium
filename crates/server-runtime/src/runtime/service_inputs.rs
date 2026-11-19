@@ -17,8 +17,33 @@ impl ServerRuntime {
                     }
                 }
                 _ if !paused => self.game.pending_world_inputs.push((input, at)),
-                WorldInput::Move(player, sample) => {
-                    self.resolve_movement_input(player, sample.input_seq)
+                WorldInput::Move(player, context, sequence, sample) => {
+                    self.resolve_movement_input(player, sample.input_seq);
+                    self.send_player_action_receipt(
+                        player,
+                        sequence,
+                        context,
+                        minimium_protocol::PlayerActionKind::Move,
+                        minimium_protocol::PlayerActionDecision::Rejected(7),
+                    );
+                }
+                WorldInput::GrantTools(player, context, sequence) => {
+                    self.send_player_action_receipt(
+                        player,
+                        sequence,
+                        context,
+                        minimium_protocol::PlayerActionKind::GrantTools,
+                        minimium_protocol::PlayerActionDecision::Rejected(7),
+                    );
+                }
+                WorldInput::Fire(player, context, sequence, _) => {
+                    self.send_player_action_receipt(
+                        player,
+                        sequence,
+                        context,
+                        minimium_protocol::PlayerActionKind::Fire,
+                        minimium_protocol::PlayerActionDecision::Rejected(7),
+                    );
                 }
                 WorldInput::Excavation(
                     player,
@@ -34,8 +59,7 @@ impl ServerRuntime {
                         },
                     );
                 }
-                WorldInput::Fire(player, _)
-                | WorldInput::InteractEntity(player, ..)
+                WorldInput::InteractEntity(player, ..)
                 | WorldInput::MapTeleport(player, ..)
                 | WorldInput::SetAltitude(player, ..)
                 | WorldInput::Excavation(player, ..) => {

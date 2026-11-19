@@ -107,14 +107,8 @@ impl TransferTicket {
     }
 }
 
-/// Cumulative wire traffic metrics and the most recent measured ping RTT.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct SessionMetrics {
-    pub bytes_sent: u64,
-    pub bytes_received: u64,
-    pub ping_sample_at: Option<ClientTime>,
-    pub ping_round_trip: Option<Duration>,
-}
+mod metrics;
+pub use metrics::{QueuedWorldFrame, SessionMetrics};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum QueueError {
@@ -312,14 +306,6 @@ impl ClientSession {
         self.state
     }
 
-    pub fn ping_pending(&self) -> bool {
-        self.pending_ping_at.is_some() || self.pending_ping_frame.is_some()
-    }
-
-    pub fn metrics(&self) -> SessionMetrics {
-        self.metrics
-    }
-
     pub fn clock_sample(&self) -> Option<ClockSample> {
         self.clock_sample
     }
@@ -421,6 +407,12 @@ impl ClientSession {
         let frame = self
             .queue_transport(message)
             .map_err(transport::queue_error)?;
+        if let ClientMessage::WorldInput { sequence, .. } = message {
+            self.metrics.last_queued_world_frame = Some(QueuedWorldFrame {
+                sequence: *sequence,
+                frame,
+            });
+        }
         if matches!(message, ClientMessage::Ping)
             && self.pending_ping_at.is_none()
             && self.pending_ping_frame.is_none()

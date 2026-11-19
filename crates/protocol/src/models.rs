@@ -241,6 +241,7 @@ impl RemotePlayerIds {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ServerMessage {
+    PlayerActionReceipt(crate::PlayerActionReceipt),
     Excavation {
         context: WorldContext,
         message: ExcavationMessage,

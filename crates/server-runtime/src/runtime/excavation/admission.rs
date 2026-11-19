@@ -32,7 +32,7 @@ impl ServerRuntime {
                 self.excavation.state.clients.remove(&player);
             }
             ExcavationInput::GrantTools | ExcavationInput::Equip { .. } => {
-                self.change_inventory(player, context, input);
+                let _ = self.change_inventory(player, context, input);
             }
         }
     }

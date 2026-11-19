@@ -71,3 +71,5 @@ The movement jump and jump spellings invoke player.movement.jump(). The request 
 Batch #579 covers P008, C001, C006 and C050. Client help returns bounded operation IDs with alias and signature metadata from the active catalog. Clear is local to the output view. Locale uses SettingsStore. The admin help route retains its typed built-in and module reports. Client history preserves accepted source spellings, and all three client readers enforce 512 UTF-8 bytes before trimming.
 
 Batch #580 migrates client.connection host_local, connect, disconnect, ping, stats, player.state and client.quit together with their registered aliases. Both hosts use the same process totals, optional session sample, prediction and authoritative player-state projection. An owned process remains distinguishable from a joined endpoint.
+
+Player action bindings preserve raw chat tails, validate decoded chat and player names with the wire predicates, and distinguish queue acceptance from a complete frame write. Fire reports the actual camera or terminal compatibility direction. Owner inventory snapshots and untagged shot events retain their independent identities.

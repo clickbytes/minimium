@@ -107,6 +107,7 @@ pub enum UiNotice {
     ConnectionTraffic,
     PlayerStateSources,
     ConnectionReceipt,
+    PlayerActionReceipt,
     ClipboardUnavailable,
     AltitudeRequiresFlight,
     PortalSnapshotUnavailable,

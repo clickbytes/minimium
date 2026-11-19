@@ -46,6 +46,8 @@ impl GameState {
     pub(super) fn admit_actor_action(
         &mut self,
         player: PlayerId,
+        context: minimium_protocol::WorldContext,
+        sequence: u64,
         action: ActorAction,
         decoded_at: Instant,
         now: Instant,
@@ -93,8 +95,8 @@ impl GameState {
 
         let is_chat = matches!(&action, ActorAction::Chat(_));
         let input = match action {
-            ActorAction::Fire(direction) => WorldInput::Fire(player, direction),
-            ActorAction::Chat(text) => WorldInput::Chat(player, text),
+            ActorAction::Fire(direction) => WorldInput::Fire(player, context, sequence, direction),
+            ActorAction::Chat(text) => WorldInput::Chat(player, context, sequence, text),
         };
         let Some(cooldowns) = self.actor_action_cooldowns.get_mut(&player) else {
             return ActorActionAdmission::ActorUnavailable;

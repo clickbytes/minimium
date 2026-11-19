@@ -146,6 +146,7 @@ ui-notice = { $notice ->
     [connection_traffic] Network traffic
     [player_state_sources] Player state
     [connection_receipt] Lifecycle receipt
+    [player_action_receipt] Player action
     [clipboard_unavailable] Clipboard access is unavailable
     [altitude_requires_flight] set_altitude requires flight to be enabled
     [portal_snapshot_unavailable] Portal interaction requires a player snapshot

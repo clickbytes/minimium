@@ -18,6 +18,9 @@ pub fn decode_server(input: &[u8]) -> Result<Option<(ServerMessage, usize)>, Pro
     };
     let mut reader = Reader::new(payload);
     let message = match ServerKind::try_from(kind)? {
+        ServerKind::PlayerActionReceipt => {
+            ServerMessage::PlayerActionReceipt(crate::PlayerActionReceipt::read(&mut reader)?)
+        }
         ServerKind::Excavation => super::excavation::decode(&mut reader)?,
         ServerKind::ImpactSync => ServerMessage::ImpactSync {
             context: reader.world_context()?,
