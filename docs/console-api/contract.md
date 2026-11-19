@@ -96,6 +96,15 @@ Accept booleans `true` and `false`, schema enum tokens, finite numbers, exact ty
 
 A package registers atomically. Reject duplicate IDs, conflicting schemas, name/alias collisions in either direction, alias chains, duplicate read bindings and leaf/namespace collisions. Report both declarations. Compose the same ID across hosts only when the schema, owner, units and effects agree. Bind the shared clock explicitly to SessionSample or OwnerSnapshot. Reserve built-ins from the actual module registry. An unconverted backend stays marked legacy with scripting disabled.
 
+On the integrated client path, canonical and registered legacy spellings bind
+once to a typed operation. The historical `list` verb uses a narrow compatibility
+adapter; an unknown canonical path is rejected without falling through to a
+word-command parser. F1, terminal and developer stdin format the same typed
+result structure, with host capability and read-source differences labelled.
+Rhai can invoke only entries that explicitly expose a stable neutral result
+projection and pass current owner permission and capability checks. The
+`client.scripting.*` controls are intentionally host-only.
+
 A descriptor records field or method, typed arguments/result, units, access-specific effects, persistence, ACL and capability, context, PL/EN help and source bindings. Queries read. Writes may affect local presentation, player intent, authoritative mutation, persistence, network or process lifecycle, filesystem, or a host job. Each read/write/invoke has its own access policy. The owner always checks permission and revision at execution.
 
 A property report includes factory default, resolved startup value/source, session override, requested/effective values, revision and reason for any difference. Precedence is default, file, environment, CLI, then session. Reset restores the frozen startup layer, including File or CLI provenance. Saving client preferences excludes startup-only CLI overrides. The admin-only creation setting `world.time.initial_config` reads the resolved startup configuration.

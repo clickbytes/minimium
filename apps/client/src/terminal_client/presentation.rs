@@ -6,8 +6,9 @@ pub(super) fn unavailable(
     identity: &OperationContext,
     action: &FrontendAction,
 ) -> Option<dispatch::ClientResult> {
-    let reason = if client_commands::meteor_adapter::MeteorOperation::from_action(action).is_some()
-    {
+    let reason = if matches!(action, FrontendAction::MapTeleport) {
+        "renderer_missing: map selection requires the desktop overview"
+    } else if client_commands::meteor_adapter::MeteorOperation::from_action(action).is_some() {
         "this host has no local meteor presentation"
     } else if client_commands::bolid_preview::BolidPreviewOperation::from_action(action).is_some() {
         "this host has no local bolid preview"

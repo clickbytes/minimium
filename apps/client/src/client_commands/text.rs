@@ -1,6 +1,6 @@
 use super::{
     execute, parse_command, ClientCommand, CommandContext, CommandResult, FrontendAction,
-    ParseError, PresentationResult,
+    ParseError,
 };
 use crate::application::QueuedActionKind;
 use crate::session::QueueError;
@@ -9,6 +9,14 @@ use minimium_commands::{CommandError, CommandErrorCode};
 pub(super) fn legacy(input: &str) -> Result<Option<ClientCommand>, CommandError> {
     if input.split_whitespace().next() == Some("dev") {
         return Err(super::presentation::unknown_dev(input));
+    }
+    if input.split_whitespace().next() != Some("list") {
+        return Err(CommandError::new(
+            CommandErrorCode::UnknownCommand,
+            input.split_whitespace().next(),
+            "unknown command",
+            Some("help"),
+        ));
     }
     parse_command(input).map_err(|error| match error {
         ParseError::Structured(error) => error,
@@ -95,7 +103,6 @@ pub(crate) enum CommandOutput {
         message: crate::messages::ClientText,
         error: bool,
     },
-    Presentation(PresentationResult),
     Clear,
 }
 

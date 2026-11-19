@@ -1,4 +1,3 @@
-mod action;
 mod output;
 pub(in crate::renderer) mod presentation;
 use super::*;
@@ -218,21 +217,74 @@ fn execute_submission(
         if let Some(result) = renderer.application.admin_help(&identity, &action, source) {
             return (false, result);
         }
-        let pending = renderer.application.connection_view().pending_admin();
-        let (exit, output) = action::execute(renderer, action);
+        if let client_commands::FrontendAction::SpawnRandomBolid(count) = action {
+            if renderer.pending_bolid_request.is_some() {
+                return (
+                    false,
+                    dispatch::failure(
+                        identity,
+                        minimium_commands::results::Stage::Rejected,
+                        "client_admin",
+                        minimium_commands::CommandError::new(
+                            minimium_commands::CommandErrorCode::Busy,
+                            Some("server.sky.bolids.spawn"),
+                            "a bolid request is waiting for a fresh gaze",
+                            None::<String>,
+                        ),
+                    ),
+                );
+            }
+            renderer.pending_bolid_request = Some(super::bolids::PendingBolidRequest {
+                count,
+                identity: identity.clone(),
+                source,
+            });
+            renderer.last_sky_view_at = None;
+            return (
+                false,
+                dispatch::native(minimium_commands::results::OperationResult::new(
+                    identity,
+                    minimium_commands::results::OperationReceipt::at(
+                        minimium_commands::results::Stage::Submitted,
+                    ),
+                    Ok(minimium_commands::results::Payload::Value(
+                        minimium_commands::operation::CommandValue::Unit,
+                    )),
+                )),
+            );
+        }
         if let Some(result) = renderer
             .application
-            .admin_submission(pending, &identity, source)
+            .admin_operation(&identity, &action, source)
         {
-            return (exit, result);
+            return (false, result);
+        }
+        if let client_commands::FrontendAction::Print(text) = action {
+            return (
+                false,
+                dispatch::native(minimium_commands::results::OperationResult::new(
+                    identity,
+                    minimium_commands::results::OperationReceipt::at(
+                        minimium_commands::results::Stage::Completed,
+                    ),
+                    Ok(minimium_commands::results::Payload::Value(
+                        minimium_commands::operation::CommandValue::Text(text),
+                    )),
+                )),
+            );
         }
         (
-            exit,
-            dispatch::legacy(
+            false,
+            dispatch::failure(
                 identity,
-                output,
-                &renderer.localizer,
-                renderer.application.settings.locale,
+                minimium_commands::results::Stage::Rejected,
+                "client_binding",
+                minimium_commands::CommandError::new(
+                    minimium_commands::CommandErrorCode::Unavailable,
+                    Some("client operation"),
+                    "catalog action has no desktop binding",
+                    None::<String>,
+                ),
             ),
         )
     })

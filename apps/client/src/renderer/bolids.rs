@@ -3,19 +3,17 @@ use minimium_renderer::milky_way_gpu::{BolidGpuEvent, BolidGpuFrame, MAX_BOLIDS}
 mod preparation;
 pub(super) use preparation::BolidWorker;
 
-impl DesktopHost {
-    pub(super) fn bolid_notice(&mut self, notice: minimium_localization::UiNotice) {
-        self.application.ui.console.push_ui_message(
-            minimium_localization::UiMessage::Notice(notice),
-            &self.localizer,
-            self.application.settings.locale,
-        );
-    }
+pub(super) struct PendingBolidRequest {
+    pub(super) count: u16,
+    pub(super) identity: minimium_commands::results::OperationContext,
+    pub(super) source: crate::client_commands::CommandSource,
+}
 
+impl DesktopHost {
     pub(super) fn flush_pending_bolid(&mut self, now: Instant) {
-        let Some(count) = self.pending_bolid_request else {
+        if self.pending_bolid_request.is_none() {
             return;
-        };
+        }
         if self
             .application
             .connection_view()
@@ -25,24 +23,43 @@ impl DesktopHost {
                 .last_sky_view_at
                 .is_none_or(|at| now.saturating_duration_since(at) >= Duration::from_millis(200))
         {
-            self.pending_bolid_request = None;
-            match self
+            let request = self
+                .pending_bolid_request
+                .take()
+                .expect("pending bolid request");
+            let before = self.application.connection_view().pending_admin();
+            let result = match self
                 .application
-                .request_random_bolid(count, crate::host_time::sample())
+                .request_random_bolid(request.count, crate::host_time::sample())
             {
-                Ok(()) => self.bolid_notice(minimium_localization::UiNotice::BolidRequestSent),
-                Err(error) => self
+                Ok(()) => self
                     .application
-                    .ui
-                    .console
-                    .push_line(format!("spawn_random_bolid: {error}")),
-            }
+                    .admin_submission(before, &request.identity, request.source)
+                    .unwrap_or_else(|| {
+                        bolid_failure(
+                            request.identity.clone(),
+                            "unavailable",
+                            "admin request had no pending correlation",
+                        )
+                    }),
+                Err(error) => {
+                    bolid_failure(request.identity.clone(), error.code(), &error.to_string())
+                }
+            };
+            self.show_operation_result(Some(request.source), result);
         } else if self.application.connection_view().session().is_none() {
-            self.pending_bolid_request = None;
-            self.application
-                .ui
-                .console
-                .push_line("spawn_random_bolid: local server connection ended");
+            let request = self
+                .pending_bolid_request
+                .take()
+                .expect("pending bolid request");
+            self.show_operation_result(
+                Some(request.source),
+                bolid_failure(
+                    request.identity,
+                    "unavailable",
+                    "local server connection ended",
+                ),
+            );
         }
     }
 
@@ -208,6 +225,27 @@ impl DesktopHost {
         }
         frame
     }
+}
+
+pub(super) fn bolid_failure(
+    identity: minimium_commands::results::OperationContext,
+    code: &str,
+    reason: &str,
+) -> crate::client_commands::output::ClientResult {
+    crate::client_commands::output::native(minimium_commands::results::OperationResult::new(
+        identity,
+        minimium_commands::results::OperationReceipt::at(
+            minimium_commands::results::Stage::Rejected,
+        ),
+        Err(minimium_commands::results::OperationFailure {
+            code: code.into(),
+            subject: Some("server.sky.bolids.spawn".into()),
+            reason: reason.into(),
+            usage: None,
+            span: None,
+            origin: "client_admin".into(),
+        }),
+    ))
 }
 
 pub(super) fn strongest_bolid_light(

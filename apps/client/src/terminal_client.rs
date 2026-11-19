@@ -12,8 +12,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-mod actions;
 mod events;
+mod final_actions;
 mod output;
 mod presentation;
 mod properties;
@@ -383,22 +383,9 @@ pub(crate) fn run(mut options: ClientOptions) -> Result<(), Box<dyn Error>> {
                     {
                         return (false, result);
                     }
-                    let pending = application.connection_view().pending_admin();
-                    let (should_exit, result) = actions::handle(
-                        action,
-                        &mut options,
-                        &mut application,
-                        &localizer,
-                        &mut text_properties,
-                    );
-                    if let Some(result) =
-                        application.admin_submission(pending, &identity, CommandSource::Terminal)
-                    {
-                        return (should_exit, result);
-                    }
                     (
-                        should_exit,
-                        dispatch::legacy(identity, result, &localizer, options.locale),
+                        false,
+                        final_actions::handle(&mut application, identity, action),
                     )
                 });
                 #[cfg(feature = "console-scripting")]

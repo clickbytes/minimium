@@ -1,6 +1,6 @@
 # Legacy compatibility matrix
 
-The [machine-readable matrix](../plan/epic-051-inventory.json) enumerates declarations at `fb626d32944b373dd995a5c703ee98eef0db9b35`. Each record identifies its declaring source, existing syntax and aliases, target schema, state owner, scope, consumer, access, read source, commit boundary and migration issue. A result type describes the target contract. Rows with `status: proposed` point to existing data producers and have no legacy invocation.
+The [machine-readable matrix](../plan/epic-051-inventory.json) retains the 142 declarations audited at `fb626d32944b373dd995a5c703ee98eef0db9b35` and five later bolid, impact and scripting entries. Historical `status` and `source` fields describe that baseline. Each row's `current` section names its integrated owner issue, commit and current Rust registration location. The inventory preserves syntax, aliases, types, units, owner, scope, consumer, permission, read source and commit boundary. Designed `N` rows had no baseline legacy spelling and are now registered.
 
 | Rows | Baseline surface | Count |
 | --- | --- | ---: |
@@ -15,7 +15,7 @@ The [machine-readable matrix](../plan/epic-051-inventory.json) enumerates declar
 
 ## Catalog integration
 
-Batch 02 indexes registered commands, properties, the ten concrete presentation forms and installed module commands. Help and list consume this metadata. The command execution backend is still legacy. The client audio spelling is an alias of the meteor sound field. Administrative help resolves installed modules after startup. Existing input is interpreted by its original parser until the binder migration.
+The composed catalog registers commands, properties, ten concrete developer presentation forms and installed server modules atomically. Help, list, completion and input binding use that catalog. Registered aliases and canonical paths resolve to the same operation ID. The client audio spelling is an alias of the meteor sound field. Administrative help includes installed modules. Client text inputs use one binder result; only the explicit historical `list` syntax retains a compatibility adapter.
 
 ### Registered command aliases
 
@@ -42,17 +42,17 @@ Batch 02 indexes registered commands, properties, the ten concrete presentation 
 | C037 · `sky names true\|false` | `show_celestial_names` | [#583](https://github.com/clickbytes/minimium/issues/583) |
 | C041 · `time scale DECIMAL (alias timescale; owned local server; 0.1-1000000x or 0)` | `timescale` | [#573](https://github.com/clickbytes/minimium/issues/573) |
 
-`client.audio.meteors` resolves to `client.sky.meteors.sound`. P005 and P006 track both baseline declarations. Alias lookup and canonical access share one state owner. The five shared clock fields each have a client and a server declaration. A host selects an explicit source binding. `world.seed` preserves primary-world generation and startup provenance. The short forms `say` and `quit` require new aliases. [Findings C01–C23](discrepancies.md)
+`client.audio.meteors` resolves to `client.sky.meteors.sound`. P005 and P006 track both baseline declarations. Alias lookup and canonical access share one state owner. The five shared clock fields each have a client and a server declaration. A host selects an explicit source binding. `world.seed` preserves primary-world generation and startup provenance. `say` and `quit` are registered aliases. [Findings C01–C23](discrepancies.md)
 
 Batch #584 completes P001–P007, C024–C025, C032–C035 and C071–C077. P006 remains a historical matrix row for the alias, with one canonical P005 property and persistent policy. Config accepts either spelling, normalizes equal values, and rejects conflicting values. Local meteor status/spawn/clear and retained bolid previews bind to typed owner operations with bounded reports and exact integer IDs. Debug mode writes may attach a snapshot; reads have no diagnostic side effect. Server bolid interval and meteorid commands retain their separate authoritative owner.
 
-Additional E051 descriptors outside the frozen 142 rows include shower status (A001), script run/status/cancel (A002–A004) and the later script diagnostics. Reconcile them separately at closeout. [Bolid operations](https://github.com/clickbytes/minimium/issues/587) · [Script operations](https://github.com/clickbytes/minimium/issues/593) · [Diagnostics](https://github.com/clickbytes/minimium/issues/595)
+Additional E051 descriptors outside the frozen 142 rows include shower status (A001), script run/status/cancel (A002–A004), and impact status (A005). Script diagnostics extend A003's result rather than adding a new entry. [Bolid operations](https://github.com/clickbytes/minimium/issues/587) · [Script operations](https://github.com/clickbytes/minimium/issues/593) · [Diagnostics](https://github.com/clickbytes/minimium/issues/595)
 
 The client now registers `say` and `quit`, routes `dev inventory tools` to gameplay and passes quoted FOV values through the property validator. A canonical call, a property verb or a registered word command resolves through the host catalog. Client and administrative hosts expose the pure `ui.console.explain(text)` query.
 
 ## Result migration after #571
 
-P008 (`ui.locale`) has a typed read and owner-confirmed set/reset. F1, developer stdin and the terminal share its settings executor and formatter. P001–P007, P009–P028, C001–C048 and the ten presentation forms C070–C079 retain the client display adapter (85 baseline declarations). Server P029–P052 and C049–C069 retain their typed runtime reply views (45 baseline declarations). Their scriptable flags remain false pending their family migrations. Startup-only and proposed rows are tracked separately in the inventory. Batch #596 reconciles these ranges against the final catalog.
+P008 (`ui.locale`) has a typed read and owner-confirmed set/reset. F1, developer stdin and terminal share the settings executor and result formatter. The other client families now return typed owner results or bounded domain text through their adapters; the old client `LegacyReported` display wrapper has been removed. Server runtime replies retain typed stages and source information. The inventory separates baseline declarations from integrated registrations. Rhai exposure is restricted to operations with a stable neutral value projection; host-only script controls remain unavailable to scripts.
 
 Submitted reports client queue admission. OwnerAccepted covers reservations and queued work. Durable requires a storage guarantee. A disconnection after submission leaves the outcome unknown until an authoritative report arrives. For a local camera reset, a file-selected 80° is the startup value. A command-line selection of 90° over that file becomes the startup value instead. Reset clears the session override and restores that value with its original configuration source.
 

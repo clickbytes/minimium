@@ -1,12 +1,10 @@
 use crate::{
     application::SettingsStore,
     client_commands::{
-        format_time_value, property_spec, ClientPropertyCommand, ClientPropertyKey as Key,
-        ClientPropertyValue as Value,
+        ClientPropertyCommand, ClientPropertyKey as Key, ClientPropertyValue as Value,
     },
     options::ClientOptions,
 };
-use minimium_client_runtime::ConnectionController;
 use minimium_commands::{CommandError, CommandErrorCode};
 
 pub(super) struct TextProperties {
@@ -124,87 +122,6 @@ impl TextProperties {
             }
         }
         Self { settings }
-    }
-
-    pub fn execute(
-        &mut self,
-        command: ClientPropertyCommand,
-        _options: &mut ClientOptions,
-        connection: &ConnectionController,
-    ) -> Result<String, CommandError> {
-        match command {
-            ClientPropertyCommand::Get(key) => match key {
-                Key::WorldTimeMode
-                | Key::WorldTimeScale
-                | Key::WorldTimeOfflinePolicy
-                | Key::WorldTimeUtc
-                | Key::WorldTimeRevision
-                | Key::WorldTimeAchievedScale => {
-                    let frame = connection
-                        .session()
-                        .map(|session| session.environment_frame())
-                        .unwrap_or_else(crate::environment::EnvironmentFrameInput::unavailable);
-                    Ok(format_time_value(key, frame).unwrap_or_else(|| {
-                            format!(
-                                "{} requested=unavailable effective=unavailable default=n/a source=unavailable reason=time property data unavailable",
-                                key.key()
-                            )
-                        }))
-                }
-                Key::MovementFly | Key::MovementSpeed | Key::MovementAccel => {
-                    unreachable!("shared movement operation")
-                }
-                Key::Locale | Key::CameraFov => Ok(self.get(key)),
-                Key::MeteorEnabled
-                | Key::MeteorRate
-                | Key::MeteorQuality
-                | Key::MeteorSeed
-                | Key::MeteorAudio
-                | Key::MeteorVolume => unreachable!("typed meteor property operation"),
-                Key::InputBindings
-                | Key::MouseSensitivity
-                | Key::SkyQuality
-                | Key::SkyNames
-                | Key::CloudDetail
-                | Key::AtmosphereDebug
-                | Key::MoonFlux
-                | Key::ExposureEv
-                | Key::TerrainDebug
-                | Key::CloudDebug
-                | Key::SkyDemo => {
-                    unreachable!("typed local environment operation")
-                }
-            },
-            ClientPropertyCommand::Set(value) => Err(unsupported_context(value.key().key())),
-            ClientPropertyCommand::Reset(key) => Err(unsupported_context(key.key())),
-            ClientPropertyCommand::Help(_)
-            | ClientPropertyCommand::List(_)
-            | ClientPropertyCommand::CommandHelp(_)
-            | ClientPropertyCommand::CommandHelpGroup(_) => unreachable!("shared catalog query"),
-        }
-    }
-
-    fn get(&self, key: Key) -> String {
-        let requested = self
-            .settings
-            .requested(key.key())
-            .map(str::to_owned)
-            .expect("local setting is present in the startup catalog");
-        let source = self.settings.source(key.key());
-        let effective = self.settings.effective(key.key()).unwrap_or("unavailable");
-        let reason = self.settings.difference_reason(key.key()).unwrap_or("none");
-        let default = property_spec(key.key())
-            .and_then(|spec| spec.default)
-            .unwrap_or("n/a");
-        format!(
-            "{} requested={} effective={} default={} source={} reason={}",
-            key.key(),
-            requested,
-            effective,
-            default,
-            source.as_str(),
-            reason
-        )
     }
 }
 

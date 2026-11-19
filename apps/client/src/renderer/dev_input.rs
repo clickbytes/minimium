@@ -1,6 +1,6 @@
 //! Desktop execution and formatting for typed local developer presentation commands.
 use super::DesktopHost;
-use crate::client_commands::{output as dispatch, CommandOutput, PresentationResult};
+use crate::client_commands::{output as dispatch, CommandOutput};
 
 pub(super) fn execute(
     renderer: &mut DesktopHost,
@@ -32,14 +32,6 @@ pub(super) fn format_output(renderer: &mut DesktopHost, result: Option<dispatch:
                 "{}",
                 message.localized(&renderer.localizer, renderer.application.settings.locale)
             ),
-            CommandOutput::Presentation(PresentationResult::Output(lines)) => {
-                for line in lines {
-                    println!("{line}");
-                }
-            }
-            CommandOutput::Presentation(PresentationResult::Unavailable(unavailable)) => {
-                println!("dev: {}", unavailable.message());
-            }
             CommandOutput::Clear => {
                 renderer.application.ui.console.clear_lines();
                 print!("\x1b[2J\x1b[H");

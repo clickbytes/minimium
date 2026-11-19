@@ -1,9 +1,7 @@
-mod values;
 use super::DesktopHost;
 use crate::client_commands::{
     ClientPropertyCommand, ClientPropertyKey as Key, ClientPropertyValue as Value,
 };
-use minimium_commands::{PropertySource, PropertyValue};
 
 impl DesktopHost {
     pub(in crate::renderer) fn meteor_property_operation(
@@ -120,24 +118,6 @@ impl DesktopHost {
             OperationReceipt::at(stage),
             Ok(Payload::Property(property)),
         ))
-    }
-
-    pub(super) fn apply_property(&mut self, command: ClientPropertyCommand) -> String {
-        match command {
-            ClientPropertyCommand::Get(key) => self.property_line(key, false),
-            ClientPropertyCommand::Set(value) => {
-                let key = self.set_property(value);
-                self.property_line(key, true)
-            }
-            ClientPropertyCommand::Reset(key) => {
-                self.reset_property(key);
-                self.property_line(key, true)
-            }
-            ClientPropertyCommand::Help(_)
-            | ClientPropertyCommand::List(_)
-            | ClientPropertyCommand::CommandHelp(_)
-            | ClientPropertyCommand::CommandHelpGroup(_) => unreachable!("shared catalog query"),
-        }
     }
 
     fn set_property(&mut self, value: Value) -> Key {

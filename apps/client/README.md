@@ -47,7 +47,7 @@ call ledger; runtime execution of these examples is deferred.
 
 The F1 console, terminal and developer input bind canonical fields, methods and longest registered legacy spellings through the shared command syntax. `ui.console.explain(text)` prints the prepared operation using the local immutable catalog and argument validators.
 
-Console input receives a host request ID. All three text inputs dispatch through the same result adapter. The settings owner returns the typed `ui.locale` read, set or reset with revision and startup provenance. Localized display consumes this receipt. The remaining legacy actions retain their localized display output and carry the `legacy_reported` stage.
+Console input receives a host request ID. F1, terminal and developer stdin dispatch through the same catalog binder and result adapter. The settings owner returns typed `ui.locale` read, set or reset with revision and startup provenance. Admin requests retain correlation and owner stages; the client no longer wraps remaining actions as `legacy_reported` success text. Registered legacy spellings still resolve to their canonical operation ID.
 
 An owned local server can answer catalog help for shared world properties. The invoking console receives a correlated submission and the eventual owner response. Developer stdin receives its completion on stdout. [Wire contract](../../docs/console-api/admin-v1.md)
 

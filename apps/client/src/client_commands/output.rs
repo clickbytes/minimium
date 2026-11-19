@@ -14,68 +14,9 @@ pub(crate) enum ClientPayload {
     MeteorDiagnostic(super::meteor_adapter::MeteorDiagnosticReport),
     CatalogHelp(super::help::CatalogHelp),
     Clear,
-    // Preserve localization tokens, clear instructions and capability reports until display.
-    LegacyText(CommandActionResult),
 }
 pub(crate) type ClientResult = OperationResult<ClientPayload>;
 pub(crate) type Submission = (OperationContext, TextCommandResult);
-
-pub(crate) fn legacy(
-    context: OperationContext,
-    output: CommandActionResult,
-    localizer: &Localizer,
-    locale: Locale,
-) -> ClientResult {
-    // Retain the original localized UI tokens. Bound their emitted representation
-    // using the same codec as other results before handing them to the frontend.
-    let mut text = String::new();
-    for item in &output.outputs {
-        let line = match item {
-            CommandOutput::Line(s) => s.clone(),
-            CommandOutput::ClientText { message, .. } => message.localized(localizer, locale),
-            #[cfg(feature = "desktop")]
-            CommandOutput::UiMessage(m) | CommandOutput::UiError(m) => localizer.format(locale, m),
-            #[cfg(feature = "desktop")]
-            CommandOutput::Presentation(super::PresentationResult::Output(lines)) => {
-                lines.join("\n")
-            }
-            CommandOutput::Presentation(super::PresentationResult::Unavailable(reason)) => {
-                reason.message()
-            }
-            CommandOutput::Clear => String::new(),
-        };
-        if !text.is_empty() {
-            text.push('\n');
-        }
-        if text.len().saturating_add(line.len()) > minimium_commands::results::MAX_PAYLOAD_BYTES {
-            return failure(
-                context,
-                Stage::Rejected,
-                "output",
-                CommandError::new(
-                    CommandErrorCode::ResultLimit,
-                    Some("legacy_text"),
-                    "legacy output exceeds payload limit",
-                    None::<String>,
-                ),
-            );
-        }
-        text.push_str(&line);
-    }
-    let report = OperationResult::new(
-        context,
-        OperationReceipt::at(Stage::LegacyReported),
-        Ok(Payload::LegacyText(text)),
-    );
-    if let Err(error) = report.validate() {
-        return failure(report.identity, Stage::Rejected, "output", error);
-    }
-    OperationResult::new(
-        report.identity,
-        report.receipt,
-        Ok(ClientPayload::LegacyText(output)),
-    )
-}
 
 pub(crate) fn native(result: OperationResult) -> ClientResult {
     if let Err(error) = result.validate() {
@@ -206,7 +147,6 @@ pub(crate) fn display(
                     .collect(),
             }
         }
-        Ok(ClientPayload::LegacyText(output)) => return output,
         Ok(ClientPayload::Native(Payload::Property(value))) => {
             format!("{id} {stage} {}", value.format_with(CommandValue::encode))
         }

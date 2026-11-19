@@ -1,6 +1,6 @@
 # Command and option reference
 
-This page documents the current parsers and dispatchers. The [E051 compatibility matrix](console-api/compatibility.md) maps these spellings to the planned public operations. For operational sequences, see [prototype procedures](prototype.md); for metric meaning and limitations, see [performance policy](performance.md).
+This page documents the current catalog binder and owner dispatchers. The [E051 compatibility matrix](console-api/compatibility.md) maps historical spellings to integrated public operations. For operational sequences, see [prototype procedures](prototype.md); for metric meaning and limitations, see [performance policy](performance.md).
 
 | Program | Options and commands | Defaults and parsing |
 | --- | --- | --- |

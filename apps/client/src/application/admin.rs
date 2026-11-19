@@ -7,6 +7,57 @@ use minimium_commands::results::{
 };
 
 impl ClientApplication {
+    pub(crate) fn admin_operation(
+        &mut self,
+        identity: &OperationContext,
+        action: &FrontendAction,
+        source: CommandSource,
+    ) -> Option<output::ClientResult> {
+        let before = self.connection_view().pending_admin();
+        let now = crate::host_time::sample();
+        let requested = match action {
+            FrontendAction::SpawnRandomBolid(count) => self.request_random_bolid(*count, now),
+            FrontendAction::SpawnRandomMeteorid => self.request_random_meteorid(now),
+            FrontendAction::BolidStatus(id) => self.request_bolid_shower_status(*id, now),
+            FrontendAction::SaveWorld => self.request_persistence_save(now),
+            FrontendAction::SaveStatus(id) => self.request_persistence_status(*id, now),
+            FrontendAction::ImpactStatus { world, id } => {
+                self.request_impact_receipt_status(*world, *id, now)
+            }
+            _ => return None,
+        };
+        Some(match requested {
+            Ok(()) => self
+                .admin_submission(before, identity, source)
+                .unwrap_or_else(|| {
+                    output::native(OperationResult::new(
+                        identity.clone(),
+                        OperationReceipt::at(Stage::Rejected),
+                        Err(OperationFailure {
+                            code: "unavailable".into(),
+                            subject: Some(identity.operation.0.clone()),
+                            reason: "admin request had no pending correlation".into(),
+                            usage: None,
+                            span: None,
+                            origin: "client_admin".into(),
+                        }),
+                    ))
+                }),
+            Err(error) => output::native(OperationResult::new(
+                identity.clone(),
+                OperationReceipt::at(Stage::Rejected),
+                Err(OperationFailure {
+                    code: error.code().into(),
+                    subject: Some(identity.operation.0.clone()),
+                    reason: error.to_string(),
+                    usage: None,
+                    span: None,
+                    origin: "client_admin".into(),
+                }),
+            )),
+        })
+    }
+
     pub(crate) fn policy_operation(
         &mut self,
         identity: &OperationContext,

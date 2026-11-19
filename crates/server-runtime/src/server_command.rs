@@ -61,7 +61,17 @@ fn parse_server_spec(arguments: &[&str]) -> Result<ServerCommand, CommandError> 
 }
 
 fn parse_server_arguments(command: &str, values: &[&str]) -> Result<ServerCommand, CommandError> {
-    if command.starts_with("time") {
+    if matches!(
+        command,
+        "time"
+            | "time status"
+            | "time mode real_time"
+            | "time mode time_scale"
+            | "time set"
+            | "time scale"
+            | "time offline pause"
+            | "time offline advance"
+    ) {
         let time_arguments = command
             .split_whitespace()
             .skip(1)

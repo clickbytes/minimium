@@ -186,7 +186,7 @@ struct DesktopHost {
         Option<minimium_renderer::milky_way_gpu::BolidEvolution>,
     )>,
     last_sky_view_at: Option<Instant>,
-    pending_bolid_request: Option<u16>,
+    pending_bolid_request: Option<bolids::PendingBolidRequest>,
     localizer: minimium_localization::Localizer,
     renderer: Renderer,
     shadow_state: shadows::ShadowState,

@@ -33,3 +33,41 @@ Rendering the same UTC instant as a date in F1 and integer milliseconds in admin
 Three further integration checks protect existing state. Reserve the actual built-in `time` during module registration ([#569](https://github.com/clickbytes/minimium/issues/569)). Patch only the selected movement field to avoid overwriting a newer replica value ([#575](https://github.com/clickbytes/minimium/issues/575)). Treat impact reservation and queueing as pending until the target journal commits ([#587](https://github.com/clickbytes/minimium/issues/587)).
 
 Batch #570 repaired the C01 dispatch and registered the missing C02 aliases. The findings above describe the audit commit. Quoted FOV values now use the same typed property validation for both spellings.
+
+## Integrated resolution index
+
+The table above preserves the original observations. The rows below identify
+the integrated repair and current binding or owner code. Runtime comparison of
+old and new spellings remains in the deferred final testing phase.
+
+| Finding | Integrated commit | Current code and preserved behavior |
+| --- | --- | --- |
+| C01 | [2993820](https://github.com/clickbytes/minimium/commit/2993820) | [client binder](../../apps/client/src/client_commands/bindings.rs) dispatches only registered developer forms; inventory tools reaches the gameplay binding. |
+| C02 | [2993820](https://github.com/clickbytes/minimium/commit/2993820), [5986479](https://github.com/clickbytes/minimium/commit/5986479) | [client catalog](../../apps/client/src/client_commands/catalog.rs) maps `say` and `quit` to the existing IDs and retains the chat tail. |
+| C03 | [89d29fa](https://github.com/clickbytes/minimium/commit/89d29fa) | [policy operation](../../apps/client/src/application/admin.rs) and server movement owner report suppression separately from admission. |
+| C04 | [2bf9799](https://github.com/clickbytes/minimium/commit/2bf9799) | [clock console binding](../../crates/environment/src/console.rs) and server owner validate the same observer context. |
+| C05 | [9ffc52b](https://github.com/clickbytes/minimium/commit/9ffc52b) | [server bolid catalog](../../crates/server-runtime/src/server_command/catalog/bolids.rs) retains owner selection and stage; client renderer readiness grants no permission. |
+| C06 | [32cc544](https://github.com/clickbytes/minimium/commit/32cc544) | [camera adapter](../../apps/client/src/client_commands/camera.rs) shares the FOV validator with the property binding. |
+| C07 | [5986479](https://github.com/clickbytes/minimium/commit/5986479) | [actor catalog](../../apps/client/src/client_commands/catalog/actor.rs) binds one decoded name and the owner validates it. |
+| C08 | [32cc544](https://github.com/clickbytes/minimium/commit/32cc544) | [camera adapter](../../apps/client/src/client_commands/camera.rs) accepts the binder's decoded quoted scalar. |
+| C09 | [2aa6a4e](https://github.com/clickbytes/minimium/commit/2aa6a4e) | [client catalog](../../apps/client/src/client_commands/catalog.rs) registers the audio alias on one meteor sound descriptor. |
+| C10 | [339e051](https://github.com/clickbytes/minimium/commit/339e051), [5d0f721](https://github.com/clickbytes/minimium/commit/5d0f721) | [world module catalog](../../crates/server-runtime/src/commands/world/catalog.rs) is included in targeted admin help. |
+| C11 | [2bf9799](https://github.com/clickbytes/minimium/commit/2bf9799) | [server property catalog](../../crates/server-runtime/src/server_command/properties.rs) reads resolved startup configuration outside the live clock prefix. |
+| C12 | [2bf9799](https://github.com/clickbytes/minimium/commit/2bf9799) | [server command owner](../../crates/server-runtime/src/server_command.rs) returns typed read failures instead of success text. |
+| C13 | [2bf9799](https://github.com/clickbytes/minimium/commit/2bf9799) | [server property catalog](../../crates/server-runtime/src/server_command/properties.rs) exposes the creation-only lifecycle. |
+| C14 | [c84e1a6](https://github.com/clickbytes/minimium/commit/c84e1a6) | [config catalog](../../crates/server-runtime/src/server_command/catalog_config.rs) registers all four startup keys with restart-required discovery. |
+| C15 | [efb9642](https://github.com/clickbytes/minimium/commit/efb9642), [32cc544](https://github.com/clickbytes/minimium/commit/32cc544) | [client result adapter](../../apps/client/src/client_commands/output.rs) preserves typed error code, reason and usage in both hosts. |
+| C16 | [ea14a79](https://github.com/clickbytes/minimium/commit/ea14a79) | [connection adapter](../../apps/client/src/client_commands/connection_adapter.rs) labels process and session counters separately. |
+| C17 | [ea14a79](https://github.com/clickbytes/minimium/commit/ea14a79) | [connection adapter](../../apps/client/src/client_commands/connection_adapter.rs) labels predicted and authoritative state sources. |
+| C18 | [43a672d](https://github.com/clickbytes/minimium/commit/43a672d) | [client admin results](../../apps/client/src/application/admin.rs) retain correlation and route completion to the submitting source. |
+| C19 | [efb9642](https://github.com/clickbytes/minimium/commit/efb9642), [5d0f721](https://github.com/clickbytes/minimium/commit/5d0f721) | [settings owner](../../apps/client/src/application/settings.rs) returns the locale value before frontend formatting. |
+| C20 | [2aa6a4e](https://github.com/clickbytes/minimium/commit/2aa6a4e) | [meteor operation](../../apps/client/src/renderer/meteor_operations.rs) labels presentation-time intervals with their clock. |
+| C21 | [9c45510](https://github.com/clickbytes/minimium/commit/9c45510), [d615775](https://github.com/clickbytes/minimium/commit/d615775) | [console suggestions](../../apps/client/src/console/suggestions.rs) replace the bounded token span at the observed revision. |
+| C22 | [9c45510](https://github.com/clickbytes/minimium/commit/9c45510), [d615775](https://github.com/clickbytes/minimium/commit/d615775) | [console editor](../../apps/client/src/console/editor.rs) replaces the whole token and retains its suffix and kind label. |
+| C23 | [d615775](https://github.com/clickbytes/minimium/commit/d615775), [5d0f721](https://github.com/clickbytes/minimium/commit/5d0f721) | [console events](../../apps/client/src/renderer/console_events.rs) give popup and IME precedence and reject incomplete Enter. |
+
+The additional integration checks map to [339e051](https://github.com/clickbytes/minimium/commit/339e051)
+for actual `time` module reservation, [89d29fa](https://github.com/clickbytes/minimium/commit/89d29fa)
+for a single-field movement patch, and [9ffc52b](https://github.com/clickbytes/minimium/commit/9ffc52b)
+for impact reservation before journal commit. Clock owner snapshots and client
+session samples remain intentionally distinct and identify their source.

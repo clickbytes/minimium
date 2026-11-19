@@ -1,20 +1,5 @@
 use super::super::DesktopHost;
-use crate::client_commands::{self, CommandActionResult, CommandOutput};
-
-#[derive(Default)]
-pub(super) struct CommandOutputCollector {
-    pub(super) result: CommandActionResult,
-}
-
-impl CommandOutputCollector {
-    pub(super) fn push_line(&mut self, line: impl Into<String>) {
-        self.result.outputs.push(CommandOutput::Line(line.into()));
-    }
-
-    pub(super) fn push_ui_message(&mut self, message: minimium_localization::UiMessage) {
-        self.result.outputs.push(CommandOutput::UiMessage(message));
-    }
-}
+use crate::client_commands::{CommandActionResult, CommandOutput};
 
 pub(in crate::renderer) fn format_console_output(
     renderer: &mut DesktopHost,
@@ -43,19 +28,6 @@ pub(in crate::renderer) fn format_console_output(
                     renderer.application.settings.locale,
                 )
             }
-            CommandOutput::Presentation(result) => match result {
-                #[cfg(feature = "desktop")]
-                client_commands::PresentationResult::Output(lines) => {
-                    for line in lines {
-                        renderer.application.ui.console.push_line(line);
-                    }
-                }
-                client_commands::PresentationResult::Unavailable(unavailable) => renderer
-                    .application
-                    .ui
-                    .console
-                    .push_line(unavailable.message()),
-            },
             CommandOutput::Clear => renderer.application.ui.console.clear_lines(),
         }
     }

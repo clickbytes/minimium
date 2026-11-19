@@ -219,7 +219,16 @@ impl DesktopHost {
         }
         let step_disconnect = self.pending_step_disconnect.take();
         self.excavation_debug = Default::default();
-        self.pending_bolid_request = None;
+        if let Some(request) = self.pending_bolid_request.take() {
+            self.show_operation_result(
+                Some(request.source),
+                super::bolids::bolid_failure(
+                    request.identity,
+                    "unavailable",
+                    "local server connection ended before bolid submission",
+                ),
+            );
+        }
         self.last_sky_view_at = None;
         self.bolids.clear();
         self.diagnostic_bolid_age = None;

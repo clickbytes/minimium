@@ -129,8 +129,7 @@ pub(crate) fn lower(
         "client.render.bolids.transmission"
             | "client.sky.meteors.debug.mode"
             | "client.sky.meteors.debug.light"
-    ) && !op.legacy
-    {
+    ) {
         use minimium_commands::syntax::canonical::AccessKind;
         match (op.path.as_str(), op.kind) {
             ("client.render.bolids.transmission", AccessKind::Read) => {
@@ -149,8 +148,8 @@ pub(crate) fn lower(
             }
             ("client.render.bolids.transmission", AccessKind::Write) => {
                 let enabled = matches!(
-                    op.arguments.first().map(|arg| arg.text.as_str()),
-                    Some("true")
+                    op.arguments.first().map(|arg| &arg.value),
+                    Some(minimium_commands::operation::CommandValue::Bool(true))
                 );
                 return Ok(ClientCommand::Presentation(
                     super::PresentationOperation::Developer(
@@ -216,7 +215,7 @@ pub(crate) fn lower(
                     super::PresentationOperation::MeteorDebugRead,
                 ))
             }
-            "client.sky.meteors.debug.light" if !op.legacy => {
+            "client.sky.meteors.debug.light" => {
                 return Ok(ClientCommand::Presentation(
                     super::PresentationOperation::MeteorLightRead,
                 ))
@@ -291,25 +290,7 @@ pub(crate) fn lower(
             .iter()
             .any(|(form, _)| *form == name)
     {
-        let mut words = name
-            .split_whitespace()
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
-        words.extend(values.iter().map(|v| {
-            if name == "dev bolid transmission" {
-                match *v {
-                    "true" => "on",
-                    "false" => "off",
-                    other => other,
-                }
-                .to_owned()
-            } else {
-                (*v).to_owned()
-            }
-        }));
-        return super::presentation::parse_developer(&words)
-            .map(ClientCommand::Presentation)
-            .map_err(|e| e.at(span));
+        return super::developer_binding::lower(op).map(ClientCommand::Presentation);
     }
     let spec = super::command_specs()
         .iter()

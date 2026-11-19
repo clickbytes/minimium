@@ -303,6 +303,9 @@ Preserve current protocol/save compatibility, tick cadence, movement behavior, a
 ## Commands
 
 RuntimeModules composes administrative catalog metadata after module installation. Targeted help resolves installed module operations and their aliases on the owner lane. The runtime reserves all built-in parser names, including the time namespace, before installing extensions.
+Legacy `time` words enter the clock parser only through the exact registered
+spellings. Installed module names that merely begin with `time` retain their
+module binding and cannot be claimed by a prefix parser.
 
 Startup accepts `--material-package PATH`, `--material-http-port PORT` (0 selects
 an available port), and `--climate-scenario PATH`. Both material variants are

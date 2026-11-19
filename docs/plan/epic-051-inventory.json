@@ -25,7 +25,14 @@
       },
       "read_source": "application/settings.rs::SettingsStore; renderer/settings.rs::apply_property_value; renderer/settings/values.rs::property_line; terminal_client/properties.rs::TextProperties",
       "commit_boundary": "Client settings owner records override and reports effective host capability",
-      "migration_issue": 584
+      "migration_issue": 584,
+      "current": {
+        "status": "integrated",
+        "issue": 584,
+        "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 21
+      }
     },
     {
       "id": "P002",
@@ -51,7 +58,14 @@
       },
       "read_source": "application/settings.rs::SettingsStore; renderer/settings.rs::apply_property_value; renderer/settings/values.rs::property_line; terminal_client/properties.rs::TextProperties",
       "commit_boundary": "Client settings owner records override and reports effective host capability",
-      "migration_issue": 584
+      "migration_issue": 584,
+      "current": {
+        "status": "integrated",
+        "issue": 584,
+        "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 29
+      }
     },
     {
       "id": "P003",
@@ -77,7 +91,14 @@
       },
       "read_source": "application/settings.rs::SettingsStore; renderer/settings.rs::apply_property_value; renderer/settings/values.rs::property_line; terminal_client/properties.rs::TextProperties",
       "commit_boundary": "Client settings owner records override and reports effective host capability",
-      "migration_issue": 584
+      "migration_issue": 584,
+      "current": {
+        "status": "integrated",
+        "issue": 584,
+        "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 37
+      }
     },
     {
       "id": "P004",
@@ -103,7 +124,14 @@
       },
       "read_source": "application/settings.rs::SettingsStore; renderer/settings.rs::apply_property_value; renderer/settings/values.rs::property_line; terminal_client/properties.rs::TextProperties",
       "commit_boundary": "Client settings owner records override and reports effective host capability",
-      "migration_issue": 584
+      "migration_issue": 584,
+      "current": {
+        "status": "integrated",
+        "issue": 584,
+        "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 45
+      }
     },
     {
       "id": "P005",
@@ -131,7 +159,14 @@
       },
       "read_source": "application/settings.rs::SettingsStore; renderer/settings.rs::apply_property_value; renderer/settings/values.rs::property_line; terminal_client/properties.rs::TextProperties",
       "commit_boundary": "Client settings owner records override and reports effective host capability",
-      "migration_issue": 584
+      "migration_issue": 584,
+      "current": {
+        "status": "integrated",
+        "issue": 584,
+        "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
+        "registration": "apps/client/src/client_commands/catalog.rs",
+        "line": 29
+      }
     },
     {
       "id": "P006",
@@ -157,7 +192,14 @@
       },
       "read_source": "application/settings.rs::SettingsStore; renderer/settings.rs::apply_property_value; renderer/settings/values.rs::property_line; terminal_client/properties.rs::TextProperties",
       "commit_boundary": "Client settings owner records override and reports effective host capability",
-      "migration_issue": 584
+      "migration_issue": 584,
+      "current": {
+        "status": "integrated",
+        "issue": 584,
+        "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
+        "registration": "apps/client/src/client_commands/catalog.rs",
+        "line": 29
+      }
     },
     {
       "id": "P007",
@@ -183,7 +225,14 @@
       },
       "read_source": "application/settings.rs::SettingsStore; renderer/settings.rs::apply_property_value; renderer/settings/values.rs::property_line; terminal_client/properties.rs::TextProperties",
       "commit_boundary": "Client settings owner records override and reports effective host capability",
-      "migration_issue": 584
+      "migration_issue": 584,
+      "current": {
+        "status": "integrated",
+        "issue": 584,
+        "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
+        "registration": "apps/client/src/client_commands/catalog/settings.rs",
+        "line": 21
+      }
     },
     {
       "id": "P008",
@@ -209,7 +258,14 @@
       },
       "read_source": "application/settings.rs::SettingsStore; renderer/settings.rs::apply_property_value; renderer/settings/values.rs::property_line; terminal_client/properties.rs::TextProperties",
       "commit_boundary": "Client settings owner applies the local locale",
-      "migration_issue": 579
+      "migration_issue": 579,
+      "current": {
+        "status": "integrated",
+        "issue": 579,
+        "commit": "5d0f72144226d5ad971c8b5725392b5efe37a971",
+        "registration": "apps/client/src/client_commands/catalog/settings.rs",
+        "line": 29
+      }
     },
     {
       "id": "P009",
@@ -235,7 +291,14 @@
       },
       "read_source": "application/settings.rs::SettingsStore; renderer/settings.rs::apply_property_value; renderer/settings/values.rs::property_line; terminal_client/properties.rs::TextProperties",
       "commit_boundary": "Client settings owner records override and reports effective host capability",
-      "migration_issue": 574
+      "migration_issue": 574,
+      "current": {
+        "status": "integrated",
+        "issue": 574,
+        "commit": "32cc54418b8b19b23ba15cf5f39993c26488da40",
+        "registration": "apps/client/src/client_commands/catalog/settings.rs",
+        "line": 37
+      }
     },
     {
       "id": "P010",
@@ -261,7 +324,14 @@
       },
       "read_source": "application/settings.rs::SettingsStore; renderer/settings.rs::apply_property_value; renderer/settings/values.rs::property_line; terminal_client/properties.rs::TextProperties",
       "commit_boundary": "Client settings owner records override and reports effective host capability",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/settings.rs",
+        "line": 48
+      }
     },
     {
       "id": "P011",
@@ -287,7 +357,14 @@
       },
       "read_source": "application/settings.rs::SettingsStore; renderer/settings.rs::apply_property_value; renderer/settings/values.rs::property_line; terminal_client/properties.rs::TextProperties",
       "commit_boundary": "Client settings owner records override and reports effective host capability",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/settings.rs",
+        "line": 56
+      }
     },
     {
       "id": "P012",
@@ -314,7 +391,14 @@
       },
       "read_source": "application/settings.rs::SettingsStore; renderer/settings.rs::apply_property_value; renderer/settings/values.rs::property_line; terminal_client/properties.rs::TextProperties",
       "commit_boundary": "Client settings owner records override and reports effective host capability",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/settings.rs",
+        "line": 64
+      }
     },
     {
       "id": "P013",
@@ -340,7 +424,14 @@
       },
       "read_source": "application/settings.rs::SettingsStore; renderer/settings.rs::apply_property_value; renderer/settings/values.rs::property_line; terminal_client/properties.rs::TextProperties",
       "commit_boundary": "Client settings owner records override and reports effective host capability",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 61
+      }
     },
     {
       "id": "P014",
@@ -366,7 +457,14 @@
       },
       "read_source": "application/settings.rs::SettingsStore; renderer/settings.rs::apply_property_value; renderer/settings/values.rs::property_line; terminal_client/properties.rs::TextProperties",
       "commit_boundary": "Client settings owner records override and reports effective host capability",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 69
+      }
     },
     {
       "id": "P015",
@@ -392,7 +490,14 @@
       },
       "read_source": "application/settings.rs::SettingsStore; renderer/settings.rs::apply_property_value; renderer/settings/values.rs::property_line; terminal_client/properties.rs::TextProperties",
       "commit_boundary": "Client settings owner records override and reports effective host capability",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/settings.rs",
+        "line": 72
+      }
     },
     {
       "id": "P016",
@@ -418,7 +523,14 @@
       },
       "read_source": "application/settings.rs::SettingsStore; renderer/settings.rs::apply_property_value; renderer/settings/values.rs::property_line; terminal_client/properties.rs::TextProperties",
       "commit_boundary": "Client settings owner records override and reports effective host capability",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/settings.rs",
+        "line": 80
+      }
     },
     {
       "id": "P017",
@@ -444,7 +556,14 @@
       },
       "read_source": "application/settings.rs::SettingsStore; renderer/settings.rs::apply_property_value; renderer/settings/values.rs::property_line; terminal_client/properties.rs::TextProperties",
       "commit_boundary": "Client settings owner records override and reports effective host capability",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/settings.rs",
+        "line": 88
+      }
     },
     {
       "id": "P018",
@@ -470,7 +589,14 @@
       },
       "read_source": "application/settings.rs::SettingsStore; renderer/settings.rs::apply_property_value; renderer/settings/values.rs::property_line; terminal_client/properties.rs::TextProperties",
       "commit_boundary": "Client settings owner records override and reports effective host capability",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/settings.rs",
+        "line": 97
+      }
     },
     {
       "id": "P019",
@@ -496,7 +622,14 @@
       },
       "read_source": "application/settings.rs::SettingsStore; renderer/settings.rs::apply_property_value; renderer/settings/values.rs::property_line; terminal_client/properties.rs::TextProperties",
       "commit_boundary": "Client settings owner records override and reports effective host capability",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/settings.rs",
+        "line": 105
+      }
     },
     {
       "id": "P020",
@@ -522,7 +655,14 @@
       },
       "read_source": "application/settings.rs::SettingsStore; renderer/settings.rs::apply_property_value; renderer/settings/values.rs::property_line; terminal_client/properties.rs::TextProperties",
       "commit_boundary": "Client settings owner records override and reports effective host capability",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 77
+      }
     },
     {
       "id": "P021",
@@ -548,7 +688,14 @@
       },
       "read_source": "client_commands/movement.rs::report; runtime/admission/world_control.rs::route_message; MovementPolicy response",
       "commit_boundary": "Server validates actor membership and applies movement change",
-      "migration_issue": 575
+      "migration_issue": 575,
+      "current": {
+        "status": "integrated",
+        "issue": 575,
+        "commit": "89d29fa0b71544fb84e25b7a84932f50261805c9",
+        "registration": "apps/client/src/client_commands/catalog/movement.rs",
+        "line": 17
+      }
     },
     {
       "id": "P022",
@@ -574,7 +721,14 @@
       },
       "read_source": "client_commands/movement.rs::report; runtime/admission/world_control.rs::route_message; MovementPolicy response",
       "commit_boundary": "Server validates actor membership and applies movement change",
-      "migration_issue": 575
+      "migration_issue": 575,
+      "current": {
+        "status": "integrated",
+        "issue": 575,
+        "commit": "89d29fa0b71544fb84e25b7a84932f50261805c9",
+        "registration": "apps/client/src/client_commands/catalog/movement.rs",
+        "line": 28
+      }
     },
     {
       "id": "P023",
@@ -600,7 +754,14 @@
       },
       "read_source": "client_commands/movement.rs::report; runtime/admission/world_control.rs::route_message; MovementPolicy response",
       "commit_boundary": "Server validates actor membership and applies movement change",
-      "migration_issue": 575
+      "migration_issue": 575,
+      "current": {
+        "status": "integrated",
+        "issue": 575,
+        "commit": "89d29fa0b71544fb84e25b7a84932f50261805c9",
+        "registration": "apps/client/src/client_commands/catalog/movement.rs",
+        "line": 39
+      }
     },
     {
       "id": "P024",
@@ -626,7 +787,14 @@
       },
       "read_source": "client_commands/properties.rs::format_time_value; runtime/tick/properties.rs::property_report",
       "commit_boundary": "ServerRuntime command boundary on EnvironmentClock",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "apps/client/src/client_commands/properties/types.rs",
+        "line": 49
+      }
     },
     {
       "id": "P025",
@@ -652,7 +820,14 @@
       },
       "read_source": "client_commands/properties.rs::format_time_value; runtime/tick/properties.rs::property_report",
       "commit_boundary": "ServerRuntime command boundary on EnvironmentClock",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "apps/client/src/client_commands/properties/types.rs",
+        "line": 50
+      }
     },
     {
       "id": "P026",
@@ -678,7 +853,14 @@
       },
       "read_source": "client_commands/properties.rs::format_time_value; runtime/tick/properties.rs::property_report",
       "commit_boundary": "ServerRuntime command boundary on EnvironmentClock",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "apps/client/src/client_commands/properties/types.rs",
+        "line": 51
+      }
     },
     {
       "id": "P027",
@@ -703,7 +885,14 @@
       },
       "read_source": "client_commands/properties.rs::format_time_value; runtime/tick/properties.rs::property_report",
       "commit_boundary": "Read-only projection at EnvironmentClock in server-runtime",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "apps/client/src/client_commands/properties/types.rs",
+        "line": 52
+      }
     },
     {
       "id": "P028",
@@ -728,7 +917,14 @@
       },
       "read_source": "client_commands/properties.rs::format_time_value; runtime/tick/properties.rs::property_report",
       "commit_boundary": "Read-only projection at EnvironmentClock in server-runtime",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "apps/client/src/client_commands/properties/types.rs",
+        "line": 53
+      }
     },
     {
       "id": "P029",
@@ -755,7 +951,14 @@
       },
       "read_source": "runtime/tick/properties.rs::property_report / apply_property_command; config/parse/values.rs::validate_value",
       "commit_boundary": "Server startup or world creation during config resolution",
-      "migration_issue": 585
+      "migration_issue": 585,
+      "current": {
+        "status": "integrated",
+        "issue": 585,
+        "commit": "c84e1a6934c4bf58fdc69aa00e70dace0d9b1b44",
+        "registration": "crates/server-runtime/src/server_command/catalog_config.rs",
+        "line": 17
+      }
     },
     {
       "id": "P030",
@@ -782,7 +985,14 @@
       },
       "read_source": "runtime/tick/properties.rs::property_report / apply_property_command; config/parse/values.rs::validate_value",
       "commit_boundary": "Server startup or world creation during config resolution",
-      "migration_issue": 585
+      "migration_issue": 585,
+      "current": {
+        "status": "integrated",
+        "issue": 585,
+        "commit": "c84e1a6934c4bf58fdc69aa00e70dace0d9b1b44",
+        "registration": "crates/server-runtime/src/server_command/catalog_config.rs",
+        "line": 49
+      }
     },
     {
       "id": "P031",
@@ -809,7 +1019,14 @@
       },
       "read_source": "runtime/tick/properties.rs::property_report / apply_property_command; config/parse/values.rs::validate_value",
       "commit_boundary": "Server startup or world creation during config resolution",
-      "migration_issue": 585
+      "migration_issue": 585,
+      "current": {
+        "status": "integrated",
+        "issue": 585,
+        "commit": "c84e1a6934c4bf58fdc69aa00e70dace0d9b1b44",
+        "registration": "crates/server-runtime/src/server_command/catalog_config.rs",
+        "line": 57
+      }
     },
     {
       "id": "P032",
@@ -836,7 +1053,14 @@
       },
       "read_source": "runtime/tick/properties.rs::property_report / apply_property_command; config/parse/values.rs::validate_value",
       "commit_boundary": "Server startup or world creation during config resolution",
-      "migration_issue": 585
+      "migration_issue": 585,
+      "current": {
+        "status": "integrated",
+        "issue": 585,
+        "commit": "c84e1a6934c4bf58fdc69aa00e70dace0d9b1b44",
+        "registration": "crates/server-runtime/src/server_command/catalog_config.rs",
+        "line": 65
+      }
     },
     {
       "id": "P033",
@@ -863,7 +1087,14 @@
       },
       "read_source": "runtime/tick/properties.rs::property_report / apply_property_command; config/parse/values.rs::validate_value",
       "commit_boundary": "Server startup or world creation during config resolution",
-      "migration_issue": 585
+      "migration_issue": 585,
+      "current": {
+        "status": "integrated",
+        "issue": 585,
+        "commit": "c84e1a6934c4bf58fdc69aa00e70dace0d9b1b44",
+        "registration": "crates/server-runtime/src/server_command/catalog_config.rs",
+        "line": 73
+      }
     },
     {
       "id": "P034",
@@ -890,7 +1121,14 @@
       },
       "read_source": "runtime/tick/properties.rs::property_report / apply_property_command; config/parse/values.rs::validate_value",
       "commit_boundary": "Server command boundary updates autosave interval and next deadline",
-      "migration_issue": 585
+      "migration_issue": 585,
+      "current": {
+        "status": "integrated",
+        "issue": 585,
+        "commit": "c84e1a6934c4bf58fdc69aa00e70dace0d9b1b44",
+        "registration": "crates/server-runtime/src/server_command/catalog_config.rs",
+        "line": 81
+      }
     },
     {
       "id": "P035",
@@ -916,7 +1154,14 @@
       },
       "read_source": "runtime/tick/properties.rs::property_report / apply_property_command; config/parse/values.rs::validate_value",
       "commit_boundary": "Server command boundary applies the interval and reschedules the next bolid",
-      "migration_issue": 587
+      "migration_issue": 587,
+      "current": {
+        "status": "integrated",
+        "issue": 587,
+        "commit": "9ffc52b920d2a80f024b3d10c1cf82212e0ebda8",
+        "registration": "crates/server-runtime/src/server_command/catalog_config.rs",
+        "line": 89
+      }
     },
     {
       "id": "P036",
@@ -943,7 +1188,14 @@
       },
       "read_source": "runtime/tick/properties.rs::property_report / apply_property_command; config/parse/values.rs::validate_value",
       "commit_boundary": "Server startup or world creation during config resolution",
-      "migration_issue": 585
+      "migration_issue": 585,
+      "current": {
+        "status": "integrated",
+        "issue": 585,
+        "commit": "c84e1a6934c4bf58fdc69aa00e70dace0d9b1b44",
+        "registration": "crates/server-runtime/src/server_command/catalog_config.rs",
+        "line": 97
+      }
     },
     {
       "id": "P037",
@@ -970,7 +1222,14 @@
       },
       "read_source": "runtime/tick/properties.rs::property_report / apply_property_command; config/parse/values.rs::validate_value",
       "commit_boundary": "Server startup or world creation during config resolution",
-      "migration_issue": 585
+      "migration_issue": 585,
+      "current": {
+        "status": "integrated",
+        "issue": 585,
+        "commit": "c84e1a6934c4bf58fdc69aa00e70dace0d9b1b44",
+        "registration": "crates/server-runtime/src/server_command/catalog_config.rs",
+        "line": 113
+      }
     },
     {
       "id": "P038",
@@ -997,7 +1256,14 @@
       },
       "read_source": "runtime/tick/properties.rs::property_report / apply_property_command; config/parse/values.rs::validate_value",
       "commit_boundary": "Server startup or world creation during config resolution",
-      "migration_issue": 585
+      "migration_issue": 585,
+      "current": {
+        "status": "integrated",
+        "issue": 585,
+        "commit": "c84e1a6934c4bf58fdc69aa00e70dace0d9b1b44",
+        "registration": "crates/server-runtime/src/server_command/catalog_config.rs",
+        "line": 121
+      }
     },
     {
       "id": "P039",
@@ -1024,7 +1290,14 @@
       },
       "read_source": "runtime/tick/properties.rs::property_report -> game.worlds.primary().manifest; resolved_settings retains requested configuration",
       "commit_boundary": "Primary manifest creation fixes the effective generation seed",
-      "migration_issue": 586
+      "migration_issue": 586,
+      "current": {
+        "status": "integrated",
+        "issue": 586,
+        "commit": "f4ba41159827be1cb016c95c45bbf90b62778612",
+        "registration": "crates/server-runtime/src/server_command/catalog/primary.rs",
+        "line": 17
+      }
     },
     {
       "id": "P040",
@@ -1051,7 +1324,14 @@
       },
       "read_source": "runtime/tick/properties.rs::property_report / apply_property_command; config/parse/values.rs::validate_value",
       "commit_boundary": "Server startup or world creation during config resolution",
-      "migration_issue": 585
+      "migration_issue": 585,
+      "current": {
+        "status": "integrated",
+        "issue": 585,
+        "commit": "c84e1a6934c4bf58fdc69aa00e70dace0d9b1b44",
+        "registration": "crates/server-runtime/src/server_command/catalog_config.rs",
+        "line": 129
+      }
     },
     {
       "id": "P041",
@@ -1078,7 +1358,14 @@
       },
       "read_source": "runtime/tick/properties.rs::property_report / apply_property_command; config/parse/values.rs::validate_value",
       "commit_boundary": "Server startup or world creation during config resolution",
-      "migration_issue": 585
+      "migration_issue": 585,
+      "current": {
+        "status": "integrated",
+        "issue": 585,
+        "commit": "c84e1a6934c4bf58fdc69aa00e70dace0d9b1b44",
+        "registration": "crates/server-runtime/src/server_command/catalog_config.rs",
+        "line": 137
+      }
     },
     {
       "id": "P042",
@@ -1105,7 +1392,14 @@
       },
       "read_source": "runtime/tick/properties.rs::property_report / apply_property_command; config/parse/values.rs::validate_value",
       "commit_boundary": "Server startup or world creation during config resolution",
-      "migration_issue": 585
+      "migration_issue": 585,
+      "current": {
+        "status": "integrated",
+        "issue": 585,
+        "commit": "c84e1a6934c4bf58fdc69aa00e70dace0d9b1b44",
+        "registration": "crates/server-runtime/src/server_command/catalog_config.rs",
+        "line": 145
+      }
     },
     {
       "id": "P043",
@@ -1132,7 +1426,14 @@
       },
       "read_source": "config::property_value(&self.resolved_settings, key) at the owner; current property_report intercepts the key and returns Unknown",
       "commit_boundary": "New-world configuration resolution before clock initialization",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "crates/server-runtime/src/server_command/properties.rs",
+        "line": 149
+      }
     },
     {
       "id": "P044",
@@ -1159,7 +1460,14 @@
       },
       "read_source": "runtime/tick/properties.rs::property_report / apply_property_command; config/parse/values.rs::validate_value",
       "commit_boundary": "Server startup or world creation during config resolution",
-      "migration_issue": 585
+      "migration_issue": 585,
+      "current": {
+        "status": "integrated",
+        "issue": 585,
+        "commit": "c84e1a6934c4bf58fdc69aa00e70dace0d9b1b44",
+        "registration": "crates/server-runtime/src/server_command/catalog_config.rs",
+        "line": 153
+      }
     },
     {
       "id": "P045",
@@ -1185,7 +1493,14 @@
       },
       "read_source": "runtime/tick/properties.rs::property_report / apply_property_command; config/parse/values.rs::validate_value",
       "commit_boundary": "Server startup or world creation during config resolution",
-      "migration_issue": 585
+      "migration_issue": 585,
+      "current": {
+        "status": "integrated",
+        "issue": 585,
+        "commit": "c84e1a6934c4bf58fdc69aa00e70dace0d9b1b44",
+        "registration": "crates/server-runtime/src/server_command/catalog_config.rs",
+        "line": 161
+      }
     },
     {
       "id": "P046",
@@ -1211,7 +1526,14 @@
       },
       "read_source": "runtime/tick/properties.rs::property_report -> game.worlds.primary().manifest; resolved_settings retains requested configuration",
       "commit_boundary": "Read-only primary manifest generation revision",
-      "migration_issue": 586
+      "migration_issue": 586,
+      "current": {
+        "status": "integrated",
+        "issue": 586,
+        "commit": "f4ba41159827be1cb016c95c45bbf90b62778612",
+        "registration": "crates/server-runtime/src/server_command/catalog/primary.rs",
+        "line": 25
+      }
     },
     {
       "id": "P047",
@@ -1237,7 +1559,14 @@
       },
       "read_source": "runtime/tick/properties.rs::property_report -> game.worlds.primary().manifest; resolved_settings retains requested configuration",
       "commit_boundary": "Read-only primary manifest generator digest",
-      "migration_issue": 586
+      "migration_issue": 586,
+      "current": {
+        "status": "integrated",
+        "issue": 586,
+        "commit": "f4ba41159827be1cb016c95c45bbf90b62778612",
+        "registration": "crates/server-runtime/src/server_command/catalog/primary.rs",
+        "line": 33
+      }
     },
     {
       "id": "P048",
@@ -1263,7 +1592,14 @@
       },
       "read_source": "client_commands/properties.rs::format_time_value; runtime/tick/properties.rs::property_report",
       "commit_boundary": "ServerRuntime command boundary on EnvironmentClock",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "crates/server-runtime/src/server_command/identity.rs",
+        "line": 27
+      }
     },
     {
       "id": "P049",
@@ -1289,7 +1625,14 @@
       },
       "read_source": "client_commands/properties.rs::format_time_value; runtime/tick/properties.rs::property_report",
       "commit_boundary": "ServerRuntime command boundary on EnvironmentClock",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "crates/server-runtime/src/server_command/identity.rs",
+        "line": 29
+      }
     },
     {
       "id": "P050",
@@ -1315,7 +1658,14 @@
       },
       "read_source": "client_commands/properties.rs::format_time_value; runtime/tick/properties.rs::property_report",
       "commit_boundary": "ServerRuntime command boundary on EnvironmentClock",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "crates/server-runtime/src/server_command/identity.rs",
+        "line": 30
+      }
     },
     {
       "id": "P051",
@@ -1341,7 +1691,14 @@
       },
       "read_source": "client_commands/properties.rs::format_time_value; runtime/tick/properties.rs::property_report",
       "commit_boundary": "Read-only projection at EnvironmentClock in server-runtime",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "crates/server-runtime/src/server_command/properties.rs",
+        "line": 213
+      }
     },
     {
       "id": "P052",
@@ -1367,7 +1724,14 @@
       },
       "read_source": "client_commands/properties.rs::format_time_value; runtime/tick/properties.rs::property_report",
       "commit_boundary": "Read-only projection at EnvironmentClock in server-runtime",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "crates/server-runtime/src/server_command/properties.rs",
+        "line": 221
+      }
     },
     {
       "id": "C001",
@@ -1391,7 +1755,14 @@
       },
       "read_source": "client_commands/help.rs::help_lines",
       "commit_boundary": "Read-only projection at host view of composed operation catalog",
-      "migration_issue": 579
+      "migration_issue": 579,
+      "current": {
+        "status": "integrated",
+        "issue": 579,
+        "commit": "5d0f72144226d5ad971c8b5725392b5efe37a971",
+        "registration": "apps/client/src/client_commands/catalog/console.rs",
+        "line": 18
+      }
     },
     {
       "id": "C002",
@@ -1415,7 +1786,14 @@
       },
       "read_source": "config.rs::save_preferences",
       "commit_boundary": "Client config adapter completes the preference-file write",
-      "migration_issue": 574
+      "migration_issue": 574,
+      "current": {
+        "status": "integrated",
+        "issue": 574,
+        "commit": "32cc54418b8b19b23ba15cf5f39993c26488da40",
+        "registration": "apps/client/src/client_commands/catalog/settings.rs",
+        "line": 114
+      }
     },
     {
       "id": "C003",
@@ -1441,7 +1819,14 @@
       },
       "read_source": "renderer/controller/action.rs::execute",
       "commit_boundary": "Read-only projection at frame metrics",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 88
+      }
     },
     {
       "id": "C004",
@@ -1467,7 +1852,14 @@
       },
       "read_source": "renderer/controller/action.rs::execute; terminal_client/actions.rs::handle",
       "commit_boundary": "Read-only projection at client connection metrics",
-      "migration_issue": 580
+      "migration_issue": 580,
+      "current": {
+        "status": "integrated",
+        "issue": 580,
+        "commit": "ea14a795de1778664ad08f4d3c7906b1489bd91e",
+        "registration": "apps/client/src/client_commands/catalog/connection.rs",
+        "line": 18
+      }
     },
     {
       "id": "C005",
@@ -1493,7 +1885,14 @@
       },
       "read_source": "renderer/controller/action.rs::execute; terminal_client/actions.rs::handle",
       "commit_boundary": "Read-only projection at client session snapshot/prediction view",
-      "migration_issue": 580
+      "migration_issue": 580,
+      "current": {
+        "status": "integrated",
+        "issue": 580,
+        "commit": "ea14a795de1778664ad08f4d3c7906b1489bd91e",
+        "registration": "apps/client/src/client_commands/catalog/actor.rs",
+        "line": 18
+      }
     },
     {
       "id": "C006",
@@ -1519,7 +1918,14 @@
       },
       "read_source": "renderer/controller/action.rs::execute",
       "commit_boundary": "Local console clears the output buffer",
-      "migration_issue": 579
+      "migration_issue": 579,
+      "current": {
+        "status": "integrated",
+        "issue": 579,
+        "commit": "5d0f72144226d5ad971c8b5725392b5efe37a971",
+        "registration": "apps/client/src/client_commands/catalog/console.rs",
+        "line": 26
+      }
     },
     {
       "id": "C007",
@@ -1545,7 +1951,14 @@
       },
       "read_source": "renderer/controller/action.rs::execute; terminal_client/actions.rs::handle",
       "commit_boundary": "Client host takes the shutdown request and tracks cleanup",
-      "migration_issue": 580
+      "migration_issue": 580,
+      "current": {
+        "status": "integrated",
+        "issue": 580,
+        "commit": "ea14a795de1778664ad08f4d3c7906b1489bd91e",
+        "registration": "apps/client/src/client_commands/catalog.rs",
+        "line": 56
+      }
     },
     {
       "id": "C008",
@@ -1571,7 +1984,14 @@
       },
       "read_source": "connection_controller.rs::start_local",
       "commit_boundary": "ConnectionController creates an attempt and records local server ownership",
-      "migration_issue": 580
+      "migration_issue": 580,
+      "current": {
+        "status": "integrated",
+        "issue": 580,
+        "commit": "ea14a795de1778664ad08f4d3c7906b1489bd91e",
+        "registration": "apps/client/src/client_commands/catalog/connection.rs",
+        "line": 34
+      }
     },
     {
       "id": "C009",
@@ -1597,7 +2017,14 @@
       },
       "read_source": "connection_controller.rs::start_remote",
       "commit_boundary": "ConnectionController starts the attempt; session readiness is reported separately",
-      "migration_issue": 580
+      "migration_issue": 580,
+      "current": {
+        "status": "integrated",
+        "issue": 580,
+        "commit": "ea14a795de1778664ad08f4d3c7906b1489bd91e",
+        "registration": "apps/client/src/client_commands/catalog/connection.rs",
+        "line": 42
+      }
     },
     {
       "id": "C010",
@@ -1623,7 +2050,14 @@
       },
       "read_source": "terminal_client/actions.rs::handle",
       "commit_boundary": "ConnectionController completes session cleanup",
-      "migration_issue": 580
+      "migration_issue": 580,
+      "current": {
+        "status": "integrated",
+        "issue": 580,
+        "commit": "ea14a795de1778664ad08f4d3c7906b1489bd91e",
+        "registration": "apps/client/src/client_commands/catalog/connection.rs",
+        "line": 50
+      }
     },
     {
       "id": "C011",
@@ -1649,7 +2083,14 @@
       },
       "read_source": "client-runtime/application/actions.rs::execute",
       "commit_boundary": "ClientSession queues ping; response correlation identifies a completed round trip",
-      "migration_issue": 580
+      "migration_issue": 580,
+      "current": {
+        "status": "integrated",
+        "issue": 580,
+        "commit": "ea14a795de1778664ad08f4d3c7906b1489bd91e",
+        "registration": "apps/client/src/client_commands/catalog/connection.rs",
+        "line": 58
+      }
     },
     {
       "id": "C012",
@@ -1673,7 +2114,14 @@
       },
       "read_source": "runtime/admission/dispatch.rs::handle_admitted_message; runtime/equipment.rs",
       "commit_boundary": "Equipment::commit applies the accepted inventory change",
-      "migration_issue": 581
+      "migration_issue": 581,
+      "current": {
+        "status": "integrated",
+        "issue": 581,
+        "commit": "59864795a4aab7b99c6b258c89035ce5c80940ac",
+        "registration": "apps/client/src/client_commands/catalog/actor.rs",
+        "line": 28
+      }
     },
     {
       "id": "C013",
@@ -1699,7 +2147,14 @@
       },
       "read_source": "client_commands.rs::execute; client-runtime/application/actions.rs::execute",
       "commit_boundary": "Server validates actor membership and applies movement change",
-      "migration_issue": 581
+      "migration_issue": 581,
+      "current": {
+        "status": "integrated",
+        "issue": 581,
+        "commit": "59864795a4aab7b99c6b258c89035ce5c80940ac",
+        "registration": "apps/client/src/client_commands/catalog/movement.rs",
+        "line": 51
+      }
     },
     {
       "id": "C014",
@@ -1725,7 +2180,14 @@
       },
       "read_source": "client_commands.rs::execute",
       "commit_boundary": "Authoritative actor movement step evaluates the jump",
-      "migration_issue": 576
+      "migration_issue": 576,
+      "current": {
+        "status": "integrated",
+        "issue": 576,
+        "commit": "1f8c743840822c9f11678321c951726b859af21b",
+        "registration": "apps/client/src/client_commands/catalog/movement.rs",
+        "line": 62
+      }
     },
     {
       "id": "C015",
@@ -1751,7 +2213,14 @@
       },
       "read_source": "client_commands/gameplay.rs::nearest_portal_entity; client_commands.rs::execute",
       "commit_boundary": "Server membership transfer commit installs the destination context",
-      "migration_issue": 582
+      "migration_issue": 582,
+      "current": {
+        "status": "integrated",
+        "issue": 582,
+        "commit": "8d56ba6579a82486b76a4491fcaf45f4f7134f93",
+        "registration": "apps/client/src/client_commands/catalog/actor.rs",
+        "line": 37
+      }
     },
     {
       "id": "C016",
@@ -1777,7 +2246,14 @@
       },
       "read_source": "renderer/controller/action.rs::execute",
       "commit_boundary": "Local map UI arms selection; server separately validates a selected destination",
-      "migration_issue": 582
+      "migration_issue": 582,
+      "current": {
+        "status": "integrated",
+        "issue": 582,
+        "commit": "8d56ba6579a82486b76a4491fcaf45f4f7134f93",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 99
+      }
     },
     {
       "id": "C017",
@@ -1803,7 +2279,14 @@
       },
       "read_source": "client_commands.rs::execute; CommandContext::fire_direction",
       "commit_boundary": "Server combat step applies an admitted shot",
-      "migration_issue": 581
+      "migration_issue": 581,
+      "current": {
+        "status": "integrated",
+        "issue": 581,
+        "commit": "59864795a4aab7b99c6b258c89035ce5c80940ac",
+        "registration": "apps/client/src/client_commands/catalog/actor.rs",
+        "line": 45
+      }
     },
     {
       "id": "C018",
@@ -1829,7 +2312,14 @@
       },
       "read_source": "client_commands/gameplay.rs::parse",
       "commit_boundary": "Server chat admission accepts the message for delivery",
-      "migration_issue": 581
+      "migration_issue": 581,
+      "current": {
+        "status": "integrated",
+        "issue": 581,
+        "commit": "59864795a4aab7b99c6b258c89035ce5c80940ac",
+        "registration": "apps/client/src/client_commands/catalog.rs",
+        "line": 47
+      }
     },
     {
       "id": "C019",
@@ -1856,7 +2346,14 @@
       },
       "read_source": "client_commands/gameplay.rs::parse",
       "commit_boundary": "Server actor identity accepts the validated profile name",
-      "migration_issue": 581
+      "migration_issue": 581,
+      "current": {
+        "status": "integrated",
+        "issue": 581,
+        "commit": "59864795a4aab7b99c6b258c89035ce5c80940ac",
+        "registration": "apps/client/src/client_commands/catalog/actor.rs",
+        "line": 61
+      }
     },
     {
       "id": "C020",
@@ -1880,7 +2377,14 @@
       },
       "read_source": "client_commands.rs::execute; runtime/admission/world_control.rs::route_message",
       "commit_boundary": "Server validates actor membership and applies movement change",
-      "migration_issue": 582
+      "migration_issue": 582,
+      "current": {
+        "status": "integrated",
+        "issue": 582,
+        "commit": "8d56ba6579a82486b76a4491fcaf45f4f7134f93",
+        "registration": "apps/client/src/client_commands/catalog/movement.rs",
+        "line": 73
+      }
     },
     {
       "id": "C021",
@@ -1906,7 +2410,14 @@
       },
       "read_source": "client_commands/movement.rs::handle_property",
       "commit_boundary": "Server validates actor membership and applies movement change",
-      "migration_issue": 575
+      "migration_issue": 575,
+      "current": {
+        "status": "integrated",
+        "issue": 575,
+        "commit": "89d29fa0b71544fb84e25b7a84932f50261805c9",
+        "registration": "apps/client/src/client_commands/catalog/movement.rs",
+        "line": 17
+      }
     },
     {
       "id": "C022",
@@ -1930,7 +2441,14 @@
       },
       "read_source": "client_commands/movement.rs::handle_property",
       "commit_boundary": "Server validates actor membership and applies movement change",
-      "migration_issue": 575
+      "migration_issue": 575,
+      "current": {
+        "status": "integrated",
+        "issue": 575,
+        "commit": "89d29fa0b71544fb84e25b7a84932f50261805c9",
+        "registration": "apps/client/src/client_commands/catalog/movement.rs",
+        "line": 28
+      }
     },
     {
       "id": "C023",
@@ -1954,7 +2472,14 @@
       },
       "read_source": "client_commands/movement.rs::handle_property",
       "commit_boundary": "Server validates actor membership and applies movement change",
-      "migration_issue": 575
+      "migration_issue": 575,
+      "current": {
+        "status": "integrated",
+        "issue": 575,
+        "commit": "89d29fa0b71544fb84e25b7a84932f50261805c9",
+        "registration": "apps/client/src/client_commands/catalog/movement.rs",
+        "line": 39
+      }
     },
     {
       "id": "C024",
@@ -1978,7 +2503,14 @@
       },
       "read_source": "renderer/meteor_diagnostics.rs::debug",
       "commit_boundary": "MeteorRuntime debug presentation (client)",
-      "migration_issue": 584
+      "migration_issue": 584,
+      "current": {
+        "status": "integrated",
+        "issue": 584,
+        "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
+        "registration": "apps/client/src/client_commands/catalog.rs",
+        "line": 77
+      }
     },
     {
       "id": "C025",
@@ -2002,7 +2534,14 @@
       },
       "read_source": "renderer/meteors/settings.rs::apply_setting",
       "commit_boundary": "MeteorRuntime (client)",
-      "migration_issue": 584
+      "migration_issue": 584,
+      "current": {
+        "status": "integrated",
+        "issue": 584,
+        "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 45
+      }
     },
     {
       "id": "C026",
@@ -2026,7 +2565,14 @@
       },
       "read_source": "connection_controller/time.rs::request_set_time",
       "commit_boundary": "ServerRuntime command boundary on EnvironmentClock",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "crates/environment/src/clock_command.rs",
+        "line": 55
+      }
     },
     {
       "id": "C027",
@@ -2050,7 +2596,14 @@
       },
       "read_source": "connection_controller/time.rs::request_set_time; renderer/controller/action.rs::execute",
       "commit_boundary": "ServerRuntime command boundary on EnvironmentClock",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "crates/environment/src/clock_command.rs",
+        "line": 53
+      }
     },
     {
       "id": "C028",
@@ -2074,7 +2627,14 @@
       },
       "read_source": "renderer/settings.rs::apply_property_value",
       "commit_boundary": "renderer quality owner (client)",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/settings.rs",
+        "line": 64
+      }
     },
     {
       "id": "C029",
@@ -2098,7 +2658,14 @@
       },
       "read_source": "renderer/controller/presentation.rs::execute",
       "commit_boundary": "Read-only projection at prepared sky presentation",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 118
+      }
     },
     {
       "id": "C030",
@@ -2122,7 +2689,14 @@
       },
       "read_source": "renderer/controller/presentation.rs::execute",
       "commit_boundary": "Read-only projection at prepared sky presentation",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 129
+      }
     },
     {
       "id": "C031",
@@ -2146,7 +2720,14 @@
       },
       "read_source": "renderer/settings.rs::apply_property_value",
       "commit_boundary": "local demo environment (client)",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 77
+      }
     },
     {
       "id": "C032",
@@ -2170,7 +2751,14 @@
       },
       "read_source": "renderer/controller/presentation.rs::execute",
       "commit_boundary": "Read-only projection at MeteorRuntime",
-      "migration_issue": 584
+      "migration_issue": 584,
+      "current": {
+        "status": "integrated",
+        "issue": 584,
+        "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 140
+      }
     },
     {
       "id": "C033",
@@ -2194,7 +2782,14 @@
       },
       "read_source": "renderer/meteors/runtime.rs::spawn",
       "commit_boundary": "MeteorRuntime (client)",
-      "migration_issue": 584
+      "migration_issue": 584,
+      "current": {
+        "status": "integrated",
+        "issue": 584,
+        "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 151
+      }
     },
     {
       "id": "C034",
@@ -2218,7 +2813,14 @@
       },
       "read_source": "renderer/controller/presentation.rs::execute",
       "commit_boundary": "renderer transient lights (client)",
-      "migration_issue": 584
+      "migration_issue": 584,
+      "current": {
+        "status": "integrated",
+        "issue": 584,
+        "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
+        "registration": "apps/client/src/client_commands/catalog.rs",
+        "line": 90
+      }
     },
     {
       "id": "C035",
@@ -2242,7 +2844,14 @@
       },
       "read_source": "renderer/meteors/runtime.rs::clear",
       "commit_boundary": "MeteorRuntime (client)",
-      "migration_issue": 584
+      "migration_issue": 584,
+      "current": {
+        "status": "integrated",
+        "issue": 584,
+        "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 173
+      }
     },
     {
       "id": "C036",
@@ -2268,7 +2877,14 @@
       },
       "read_source": "renderer/settings.rs::apply_property_value",
       "commit_boundary": "local camera (client)",
-      "migration_issue": 574
+      "migration_issue": 574,
+      "current": {
+        "status": "integrated",
+        "issue": 574,
+        "commit": "32cc54418b8b19b23ba15cf5f39993c26488da40",
+        "registration": "apps/client/src/client_commands/catalog/settings.rs",
+        "line": 37
+      }
     },
     {
       "id": "C037",
@@ -2294,7 +2910,14 @@
       },
       "read_source": "renderer/settings.rs::apply_property_value",
       "commit_boundary": "sky label presentation (client)",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 61
+      }
     },
     {
       "id": "C038",
@@ -2318,7 +2941,14 @@
       },
       "read_source": "client_commands/properties.rs::format_time_value; commands/time.rs",
       "commit_boundary": "Read-only projection at EnvironmentClock; client replica read adapter",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "crates/environment/src/console.rs",
+        "line": 136
+      }
     },
     {
       "id": "C039",
@@ -2342,7 +2972,14 @@
       },
       "read_source": "runtime/impacts/spawn.rs::spawn_meteorid",
       "commit_boundary": "Target instance impact journal checkpoint after reservation",
-      "migration_issue": 587
+      "migration_issue": 587,
+      "current": {
+        "status": "integrated",
+        "issue": 587,
+        "commit": "9ffc52b920d2a80f024b3d10c1cf82212e0ebda8",
+        "registration": "apps/client/src/client_commands/catalog/bolids.rs",
+        "line": 18
+      }
     },
     {
       "id": "C040",
@@ -2366,7 +3003,14 @@
       },
       "read_source": "runtime/bolid/shower.rs::start_bolid_shower",
       "commit_boundary": "Scheduler accepts a shower; individual spawns commit per target",
-      "migration_issue": 587
+      "migration_issue": 587,
+      "current": {
+        "status": "integrated",
+        "issue": 587,
+        "commit": "9ffc52b920d2a80f024b3d10c1cf82212e0ebda8",
+        "registration": "apps/client/src/client_commands/catalog/bolids.rs",
+        "line": 26
+      }
     },
     {
       "id": "C041",
@@ -2392,7 +3036,14 @@
       },
       "read_source": "client_commands/environment.rs::parse; connection_controller/time.rs::request_time_scale",
       "commit_boundary": "ServerRuntime command boundary on EnvironmentClock",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "apps/client/src/client_commands/properties/types.rs",
+        "line": 50
+      }
     },
     {
       "id": "C042",
@@ -2416,7 +3067,14 @@
       },
       "read_source": "renderer/controller/presentation.rs::execute",
       "commit_boundary": "Read-only projection at terrain presentation",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 184
+      }
     },
     {
       "id": "C043",
@@ -2440,7 +3098,14 @@
       },
       "read_source": "renderer/controller/presentation.rs::execute",
       "commit_boundary": "Read-only projection at atmosphere GPU adapter",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 206
+      }
     },
     {
       "id": "C044",
@@ -2464,7 +3129,14 @@
       },
       "read_source": "renderer/settings.rs::apply_property_value",
       "commit_boundary": "renderer debug owner (client)",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/settings.rs",
+        "line": 72
+      }
     },
     {
       "id": "C045",
@@ -2488,7 +3160,14 @@
       },
       "read_source": "renderer/settings.rs::apply_property_value",
       "commit_boundary": "renderer debug owner (client)",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/settings.rs",
+        "line": 97
+      }
     },
     {
       "id": "C046",
@@ -2512,7 +3191,14 @@
       },
       "read_source": "renderer/controller/presentation.rs::execute",
       "commit_boundary": "Read-only projection at weather presentation",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 217
+      }
     },
     {
       "id": "C047",
@@ -2536,7 +3222,14 @@
       },
       "read_source": "renderer/settings.rs::apply_property_value",
       "commit_boundary": "cloud presentation (client)",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/settings.rs",
+        "line": 105
+      }
     },
     {
       "id": "C048",
@@ -2560,7 +3253,14 @@
       },
       "read_source": "renderer/settings.rs::apply_property_value",
       "commit_boundary": "cloud presentation (client)",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 69
+      }
     },
     {
       "id": "C049",
@@ -2584,7 +3284,14 @@
       },
       "read_source": "runtime/tick/dispatch_commands.rs::apply_commands; commands.rs::execute; hosting/replies.rs::CommandPayloadView",
       "commit_boundary": "Target instance impact journal checkpoint after reservation",
-      "migration_issue": 587
+      "migration_issue": 587,
+      "current": {
+        "status": "integrated",
+        "issue": 587,
+        "commit": "9ffc52b920d2a80f024b3d10c1cf82212e0ebda8",
+        "registration": "crates/server-runtime/src/server_command/catalog/bolids.rs",
+        "line": 18
+      }
     },
     {
       "id": "C050",
@@ -2608,7 +3315,14 @@
       },
       "read_source": "runtime/tick/dispatch_commands.rs::apply_commands; commands.rs::execute; hosting/replies.rs::CommandPayloadView",
       "commit_boundary": "Read-only projection at host view of composed operation catalog",
-      "migration_issue": 579
+      "migration_issue": 579,
+      "current": {
+        "status": "integrated",
+        "issue": 579,
+        "commit": "5d0f72144226d5ad971c8b5725392b5efe37a971",
+        "registration": "crates/server-runtime/src/server_command/bindings.rs",
+        "line": 18
+      }
     },
     {
       "id": "C051",
@@ -2632,7 +3346,14 @@
       },
       "read_source": "runtime/tick/dispatch_commands.rs::apply_commands; commands.rs::execute; hosting/replies.rs::CommandPayloadView",
       "commit_boundary": "Read-only projection at ServerRuntime owner lane",
-      "migration_issue": 585
+      "migration_issue": 585,
+      "current": {
+        "status": "integrated",
+        "issue": 585,
+        "commit": "c84e1a6934c4bf58fdc69aa00e70dace0d9b1b44",
+        "registration": "crates/server-runtime/src/server_command/catalog/admin.rs",
+        "line": 18
+      }
     },
     {
       "id": "C052",
@@ -2656,7 +3377,14 @@
       },
       "read_source": "runtime/tick/dispatch_commands.rs::apply_commands; commands.rs::execute; hosting/replies.rs::CommandPayloadView",
       "commit_boundary": "Read-only projection at ServerRuntime owner lane",
-      "migration_issue": 585
+      "migration_issue": 585,
+      "current": {
+        "status": "integrated",
+        "issue": 585,
+        "commit": "c84e1a6934c4bf58fdc69aa00e70dace0d9b1b44",
+        "registration": "crates/server-runtime/src/server_command/bindings.rs",
+        "line": 95
+      }
     },
     {
       "id": "C053",
@@ -2680,7 +3408,14 @@
       },
       "read_source": "runtime/tick/dispatch_commands.rs::apply_commands; commands.rs::execute; hosting/replies.rs::CommandPayloadView",
       "commit_boundary": "Read-only projection at ServerRuntime owner lane",
-      "migration_issue": 585
+      "migration_issue": 585,
+      "current": {
+        "status": "integrated",
+        "issue": 585,
+        "commit": "c84e1a6934c4bf58fdc69aa00e70dace0d9b1b44",
+        "registration": "crates/server-runtime/src/server_command/catalog/admin.rs",
+        "line": 37
+      }
     },
     {
       "id": "C054",
@@ -2704,7 +3439,14 @@
       },
       "read_source": "runtime/tick/dispatch_commands.rs::apply_commands; commands.rs::execute; hosting/replies.rs::CommandPayloadView",
       "commit_boundary": "All-world snapshot boundary and persistence queue, followed by the job's backend completion",
-      "migration_issue": 591
+      "migration_issue": 591,
+      "current": {
+        "status": "integrated",
+        "issue": 591,
+        "commit": "7103de7e20bbdb0322365d09dd5b306f061012a6",
+        "registration": "crates/server-runtime/src/server_command/catalog/persistence.rs",
+        "line": 18
+      }
     },
     {
       "id": "C055",
@@ -2728,7 +3470,14 @@
       },
       "read_source": "runtime/tick/dispatch_commands.rs::apply_commands; commands.rs::execute; hosting/replies.rs::CommandPayloadView",
       "commit_boundary": "Server enters controlled shutdown; persistence completion is reported separately",
-      "migration_issue": 585
+      "migration_issue": 585,
+      "current": {
+        "status": "integrated",
+        "issue": 585,
+        "commit": "c84e1a6934c4bf58fdc69aa00e70dace0d9b1b44",
+        "registration": "crates/server-runtime/src/server_command/catalog/admin.rs",
+        "line": 45
+      }
     },
     {
       "id": "C056",
@@ -2752,7 +3501,14 @@
       },
       "read_source": "runtime/tick/dispatch_commands.rs::apply_commands; commands.rs::execute; hosting/replies.rs::CommandPayloadView",
       "commit_boundary": "Scheduler accepts a shower; individual spawns commit per target",
-      "migration_issue": 587
+      "migration_issue": 587,
+      "current": {
+        "status": "integrated",
+        "issue": 587,
+        "commit": "9ffc52b920d2a80f024b3d10c1cf82212e0ebda8",
+        "registration": "crates/server-runtime/src/server_command/catalog/bolids.rs",
+        "line": 26
+      }
     },
     {
       "id": "C057",
@@ -2776,7 +3532,14 @@
       },
       "read_source": "runtime/tick/dispatch_commands.rs::apply_commands; commands.rs::execute; hosting/replies.rs::CommandPayloadView",
       "commit_boundary": "Read-only projection at EnvironmentClock",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "crates/server-runtime/src/server_command/catalog.rs",
+        "line": 84
+      }
     },
     {
       "id": "C058",
@@ -2800,7 +3563,14 @@
       },
       "read_source": "runtime/tick/dispatch_commands.rs::apply_commands; commands.rs::execute; hosting/replies.rs::CommandPayloadView",
       "commit_boundary": "Read-only projection at EnvironmentClock",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "crates/server-runtime/src/server_command/catalog.rs",
+        "line": 77
+      }
     },
     {
       "id": "C059",
@@ -2824,7 +3594,14 @@
       },
       "read_source": "runtime/tick/dispatch_commands.rs::apply_commands; commands.rs::execute; hosting/replies.rs::CommandPayloadView",
       "commit_boundary": "ServerRuntime command boundary on EnvironmentClock",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "crates/server-runtime/src/server_command/identity.rs",
+        "line": 27
+      }
     },
     {
       "id": "C060",
@@ -2848,7 +3625,14 @@
       },
       "read_source": "runtime/tick/dispatch_commands.rs::apply_commands; commands.rs::execute; hosting/replies.rs::CommandPayloadView",
       "commit_boundary": "ServerRuntime command boundary on EnvironmentClock",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "crates/server-runtime/src/server_command/identity.rs",
+        "line": 27
+      }
     },
     {
       "id": "C061",
@@ -2872,7 +3656,14 @@
       },
       "read_source": "runtime/tick/dispatch_commands.rs::apply_commands; commands.rs::execute; hosting/replies.rs::CommandPayloadView",
       "commit_boundary": "ServerRuntime command boundary on EnvironmentClock",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "crates/environment/src/clock_command.rs",
+        "line": 47
+      }
     },
     {
       "id": "C062",
@@ -2896,7 +3687,14 @@
       },
       "read_source": "runtime/tick/dispatch_commands.rs::apply_commands; commands.rs::execute; hosting/replies.rs::CommandPayloadView",
       "commit_boundary": "ServerRuntime command boundary on EnvironmentClock",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "crates/server-runtime/src/server_command/identity.rs",
+        "line": 29
+      }
     },
     {
       "id": "C063",
@@ -2920,7 +3718,14 @@
       },
       "read_source": "runtime/tick/dispatch_commands.rs::apply_commands; commands.rs::execute; hosting/replies.rs::CommandPayloadView",
       "commit_boundary": "ServerRuntime command boundary on EnvironmentClock",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "crates/server-runtime/src/server_command/identity.rs",
+        "line": 30
+      }
     },
     {
       "id": "C064",
@@ -2944,7 +3749,14 @@
       },
       "read_source": "runtime/tick/dispatch_commands.rs::apply_commands; commands.rs::execute; hosting/replies.rs::CommandPayloadView",
       "commit_boundary": "ServerRuntime command boundary on EnvironmentClock",
-      "migration_issue": 573
+      "migration_issue": 573,
+      "current": {
+        "status": "integrated",
+        "issue": 573,
+        "commit": "2bf9799ba326d0274dd6069544ac502e5910528f",
+        "registration": "crates/server-runtime/src/server_command/identity.rs",
+        "line": 30
+      }
     },
     {
       "id": "C065",
@@ -2968,7 +3780,14 @@
       },
       "read_source": "commands/world.rs::world_list; commands/world/read_view.rs::RuntimeCommandReadView",
       "commit_boundary": "Read-only projection at WorldRegistry / WorldInstance EntityStore",
-      "migration_issue": 586
+      "migration_issue": 586,
+      "current": {
+        "status": "integrated",
+        "issue": 586,
+        "commit": "f4ba41159827be1cb016c95c45bbf90b62778612",
+        "registration": "crates/server-runtime/src/server_command/bindings.rs",
+        "line": 147
+      }
     },
     {
       "id": "C066",
@@ -2992,7 +3811,14 @@
       },
       "read_source": "commands/world.rs::world_inspect; commands/world/read_view.rs::RuntimeCommandReadView",
       "commit_boundary": "Read-only projection at WorldRegistry / WorldInstance EntityStore",
-      "migration_issue": 586
+      "migration_issue": 586,
+      "current": {
+        "status": "integrated",
+        "issue": 586,
+        "commit": "f4ba41159827be1cb016c95c45bbf90b62778612",
+        "registration": "crates/server-runtime/src/commands/world/catalog.rs",
+        "line": 29
+      }
     },
     {
       "id": "C067",
@@ -3016,7 +3842,14 @@
       },
       "read_source": "commands/world.rs::entity_list; commands/world/read_view.rs::RuntimeCommandReadView",
       "commit_boundary": "Read-only projection at WorldRegistry / WorldInstance EntityStore",
-      "migration_issue": 586
+      "migration_issue": 586,
+      "current": {
+        "status": "integrated",
+        "issue": 586,
+        "commit": "f4ba41159827be1cb016c95c45bbf90b62778612",
+        "registration": "crates/server-runtime/src/server_command/bindings.rs",
+        "line": 147
+      }
     },
     {
       "id": "C068",
@@ -3040,7 +3873,14 @@
       },
       "read_source": "commands/world.rs::entity_inspect; commands/world/read_view.rs::RuntimeCommandReadView",
       "commit_boundary": "Read-only projection at WorldRegistry / WorldInstance EntityStore",
-      "migration_issue": 586
+      "migration_issue": 586,
+      "current": {
+        "status": "integrated",
+        "issue": 586,
+        "commit": "f4ba41159827be1cb016c95c45bbf90b62778612",
+        "registration": "crates/server-runtime/src/server_command/bindings.rs",
+        "line": 147
+      }
     },
     {
       "id": "C069",
@@ -3064,7 +3904,14 @@
       },
       "read_source": "commands/world.rs::entity_despawn; commands/world/read_view.rs::RuntimeCommandReadView",
       "commit_boundary": "Instance effect batch commit after component-owner review",
-      "migration_issue": 588
+      "migration_issue": 588,
+      "current": {
+        "status": "integrated",
+        "issue": 588,
+        "commit": "34dbb8b1238b1a35064904e0a493acc4d797d86e",
+        "registration": "crates/server-runtime/src/commands/world/catalog.rs",
+        "line": 63
+      }
     },
     {
       "id": "C070",
@@ -3088,7 +3935,14 @@
       },
       "read_source": "renderer/dev_input.rs::execute_developer; renderer/controller/presentation.rs::unavailable_for",
       "commit_boundary": "Read-only projection at DesktopHost local presentation",
-      "migration_issue": 583
+      "migration_issue": 583,
+      "current": {
+        "status": "integrated",
+        "issue": 583,
+        "commit": "be8a9d6de256f4b87e28433fe79edd51e77c6296",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 228
+      }
     },
     {
       "id": "C071",
@@ -3112,7 +3966,14 @@
       },
       "read_source": "renderer/dev_input.rs::execute_developer; renderer/controller/presentation.rs::unavailable_for",
       "commit_boundary": "DesktopHost local presentation (client)",
-      "migration_issue": 584
+      "migration_issue": 584,
+      "current": {
+        "status": "integrated",
+        "issue": 584,
+        "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
+        "registration": "apps/client/src/client_commands/catalog.rs",
+        "line": 103
+      }
     },
     {
       "id": "C072",
@@ -3136,7 +3997,14 @@
       },
       "read_source": "renderer/dev_input.rs::execute_developer; renderer/controller/presentation.rs::unavailable_for",
       "commit_boundary": "DesktopHost local presentation (client)",
-      "migration_issue": 584
+      "migration_issue": 584,
+      "current": {
+        "status": "integrated",
+        "issue": 584,
+        "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 247
+      }
     },
     {
       "id": "C073",
@@ -3160,7 +4028,14 @@
       },
       "read_source": "renderer/dev_input.rs::execute_developer; renderer/controller/presentation.rs::unavailable_for",
       "commit_boundary": "Read-only projection at DesktopHost local presentation",
-      "migration_issue": 584
+      "migration_issue": 584,
+      "current": {
+        "status": "integrated",
+        "issue": 584,
+        "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 269
+      }
     },
     {
       "id": "C074",
@@ -3184,7 +4059,14 @@
       },
       "read_source": "renderer/dev_input.rs::execute_developer; renderer/controller/presentation.rs::unavailable_for",
       "commit_boundary": "Read-only projection at DesktopHost local presentation",
-      "migration_issue": 584
+      "migration_issue": 584,
+      "current": {
+        "status": "integrated",
+        "issue": 584,
+        "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 280
+      }
     },
     {
       "id": "C075",
@@ -3208,7 +4090,14 @@
       },
       "read_source": "renderer/dev_input.rs::execute_developer; renderer/controller/presentation.rs::unavailable_for",
       "commit_boundary": "Read-only projection at DesktopHost local presentation",
-      "migration_issue": 584
+      "migration_issue": 584,
+      "current": {
+        "status": "integrated",
+        "issue": 584,
+        "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 291
+      }
     },
     {
       "id": "C076",
@@ -3232,7 +4121,14 @@
       },
       "read_source": "renderer/dev_input.rs::execute_developer; renderer/controller/presentation.rs::unavailable_for",
       "commit_boundary": "DesktopHost local presentation (client)",
-      "migration_issue": 584
+      "migration_issue": 584,
+      "current": {
+        "status": "integrated",
+        "issue": 584,
+        "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 302
+      }
     },
     {
       "id": "C077",
@@ -3256,7 +4152,14 @@
       },
       "read_source": "renderer/dev_input.rs::execute_developer; renderer/controller/presentation.rs::unavailable_for",
       "commit_boundary": "DesktopHost local presentation (client)",
-      "migration_issue": 584
+      "migration_issue": 584,
+      "current": {
+        "status": "integrated",
+        "issue": 584,
+        "commit": "2aa6a4e87fc938adc0f778b05449591294f1eef9",
+        "registration": "apps/client/src/client_commands/catalog/presentation.rs",
+        "line": 318
+      }
     },
     {
       "id": "C078",
@@ -3280,7 +4183,14 @@
       },
       "read_source": "renderer/dev_input.rs::execute_developer; renderer/controller/presentation.rs::unavailable_for",
       "commit_boundary": "Server validates actor membership and applies movement change",
-      "migration_issue": 582
+      "migration_issue": 582,
+      "current": {
+        "status": "integrated",
+        "issue": 582,
+        "commit": "8d56ba6579a82486b76a4491fcaf45f4f7134f93",
+        "registration": "apps/client/src/client_commands/catalog/movement.rs",
+        "line": 84
+      }
     },
     {
       "id": "C079",
@@ -3304,7 +4214,14 @@
       },
       "read_source": "renderer/dev_input.rs::execute_developer; renderer/controller/presentation.rs::unavailable_for",
       "commit_boundary": "DesktopHost local presentation (client)",
-      "migration_issue": 574
+      "migration_issue": 574,
+      "current": {
+        "status": "integrated",
+        "issue": 574,
+        "commit": "32cc54418b8b19b23ba15cf5f39993c26488da40",
+        "registration": "apps/client/src/client_commands/catalog/settings.rs",
+        "line": 140
+      }
     },
     {
       "id": "S001",
@@ -3330,7 +4247,14 @@
       },
       "read_source": "Resolved server startup configuration, validated by config/parse/values.rs::validate_value",
       "commit_boundary": "Server startup or world creation during config resolution",
-      "migration_issue": 585
+      "migration_issue": 585,
+      "current": {
+        "status": "integrated",
+        "issue": 585,
+        "commit": "c84e1a6934c4bf58fdc69aa00e70dace0d9b1b44",
+        "registration": "crates/server-runtime/src/server_command/catalog_config.rs",
+        "line": 25
+      }
     },
     {
       "id": "S002",
@@ -3356,7 +4280,14 @@
       },
       "read_source": "Resolved server startup configuration, validated by config/parse/values.rs::validate_value",
       "commit_boundary": "Server startup or world creation during config resolution",
-      "migration_issue": 585
+      "migration_issue": 585,
+      "current": {
+        "status": "integrated",
+        "issue": 585,
+        "commit": "c84e1a6934c4bf58fdc69aa00e70dace0d9b1b44",
+        "registration": "crates/server-runtime/src/server_command/catalog_config.rs",
+        "line": 33
+      }
     },
     {
       "id": "S003",
@@ -3382,7 +4313,14 @@
       },
       "read_source": "Resolved server startup configuration, validated by config/parse/values.rs::validate_value",
       "commit_boundary": "Server startup or world creation during config resolution",
-      "migration_issue": 585
+      "migration_issue": 585,
+      "current": {
+        "status": "integrated",
+        "issue": 585,
+        "commit": "c84e1a6934c4bf58fdc69aa00e70dace0d9b1b44",
+        "registration": "crates/server-runtime/src/server_command/catalog_config.rs",
+        "line": 41
+      }
     },
     {
       "id": "S004",
@@ -3408,7 +4346,14 @@
       },
       "read_source": "Resolved server startup configuration, validated by config/parse/values.rs::validate_value",
       "commit_boundary": "Server startup or world creation during config resolution",
-      "migration_issue": 585
+      "migration_issue": 585,
+      "current": {
+        "status": "integrated",
+        "issue": 585,
+        "commit": "c84e1a6934c4bf58fdc69aa00e70dace0d9b1b44",
+        "registration": "crates/server-runtime/src/server_command/catalog_config.rs",
+        "line": 105
+      }
     },
     {
       "id": "N001",
@@ -3432,7 +4377,14 @@
       },
       "read_source": "renderer/settings.rs::apply_property_value; renderer/camera.rs; renderer/dev_input.rs::execute_developer",
       "commit_boundary": "Read-only projection at local camera presentation owner",
-      "migration_issue": 574
+      "migration_issue": 574,
+      "current": {
+        "status": "integrated",
+        "issue": 574,
+        "commit": "32cc54418b8b19b23ba15cf5f39993c26488da40",
+        "registration": "apps/client/src/client_commands/catalog.rs",
+        "line": 57
+      }
     },
     {
       "id": "N002",
@@ -3456,7 +4408,14 @@
       },
       "read_source": "ServerRuntime excavation.state.waters and WaterWorld snapshot; new aggregate read adapter required",
       "commit_boundary": "Read-only projection at server hydrology per instance",
-      "migration_issue": 589
+      "migration_issue": 589,
+      "current": {
+        "status": "integrated",
+        "issue": 589,
+        "commit": "43b86a58352f02aa323306b122e39f50c800ae1c",
+        "registration": "crates/server-runtime/src/commands/water.rs",
+        "line": 24
+      }
     },
     {
       "id": "N003",
@@ -3480,7 +4439,14 @@
       },
       "read_source": "WaterPresentation consuming replicated water state; new aggregate geometry-status adapter required",
       "commit_boundary": "Read-only projection at client WaterPresentation geometry adapter",
-      "migration_issue": 590
+      "migration_issue": 590,
+      "current": {
+        "status": "integrated",
+        "issue": 590,
+        "commit": "073aa34f04a42857121094690982b7563e2946e0",
+        "registration": "apps/client/src/client_commands/catalog.rs",
+        "line": 58
+      }
     },
     {
       "id": "N004",
@@ -3504,7 +4470,14 @@
       },
       "read_source": "status save_pending/save_last; new job identity query adapter required",
       "commit_boundary": "Read-only projection at server persistence coordinator",
-      "migration_issue": 591
+      "migration_issue": 591,
+      "current": {
+        "status": "integrated",
+        "issue": 591,
+        "commit": "7103de7e20bbdb0322365d09dd5b306f061012a6",
+        "registration": "crates/server-runtime/src/server_command/bindings.rs",
+        "line": 71
+      }
     },
     {
       "id": "N005",
@@ -3528,7 +4501,14 @@
       },
       "read_source": "client_commands/text.rs::parse_command_typed; proposed pure analyzer",
       "commit_boundary": "Read-only projection at immutable operation catalog/parser",
-      "migration_issue": 570
+      "migration_issue": 570,
+      "current": {
+        "status": "integrated",
+        "issue": 570,
+        "commit": "2993820f5236f39e48ddd334ca55a6324e4c866f",
+        "registration": "crates/server-runtime/src/server_command/bindings.rs",
+        "line": 34
+      }
     },
     {
       "id": "N006",
@@ -3552,7 +4532,14 @@
       },
       "read_source": "runtime/clock.rs::StepDemand::measured_rate -> EnvironmentClock.achieved_ppm; client EnvironmentFrameInput.committed -> ClockSample::achieved_ppm; proposed catalog/read adapter",
       "commit_boundary": "Read-only sample of committed clock boundary",
-      "migration_issue": 592
+      "migration_issue": 592,
+      "current": {
+        "status": "integrated",
+        "issue": 592,
+        "commit": "e5e7c7a5426993cb65b5af8c865405555182a466",
+        "registration": "crates/server-runtime/src/server_command/properties.rs",
+        "line": 229
+      }
     },
     {
       "id": "N007",
@@ -3576,7 +4563,45 @@
       },
       "read_source": "ClockPropertySnapshot and EnvironmentFrameInput.committed; proposed crates/environment/src/console.rs schema and typed bindings. Any unavailable diagnostic requires an explicit producer/DTO extension.",
       "commit_boundary": "Read-only projection at EnvironmentClock and client session replica read adapter",
-      "migration_issue": 592
+      "migration_issue": 592,
+      "current": {
+        "status": "integrated",
+        "issue": 592,
+        "commit": "e5e7c7a5426993cb65b5af8c865405555182a466",
+        "registration": "crates/server-runtime/src/server_command/bindings.rs",
+        "line": 68
+      }
+    },
+    {
+      "id": "A001",
+      "catalog": "server",
+      "status": "implemented",
+      "legacy": "bolids status SHOWER_ID",
+      "aliases": [],
+      "canonical": "server.sky.bolids.status",
+      "kind": "method",
+      "arguments": "shower_id: nonzero BolidShowerId (u64)",
+      "result": "BolidShowerStatus",
+      "unit": "monotonic age and exact event counts",
+      "effect": "Query",
+      "owner": "ServerRuntime bolid scheduler",
+      "scope": "server; authorized target instance",
+      "consumer": "admin, owned-local desktop and terminal clients",
+      "permission": "ServerAdmin",
+      "source": {
+        "path": "crates/server-runtime/src/server_command/catalog/bolids.rs",
+        "symbol": "entry"
+      },
+      "read_source": "one active shower and bounded terminal shower ledger",
+      "commit_boundary": "read-only owner snapshot; no new bolid emission",
+      "migration_issue": 587,
+      "current": {
+        "status": "integrated",
+        "issue": 587,
+        "commit": "9ffc52b920d2a80f024b3d10c1cf82212e0ebda8",
+        "registration": "apps/client/src/client_commands/catalog/bolids.rs",
+        "line": 35
+      }
     },
     {
       "id": "A002",
@@ -3600,7 +4625,14 @@
       },
       "read_source": "bounded local worker ledger",
       "commit_boundary": "client host local job coordinator; domain calls commit separately",
-      "migration_issue": 593
+      "migration_issue": 593,
+      "current": {
+        "status": "integrated",
+        "issue": 593,
+        "commit": "6245fc93ef171d6bce6194c61e2294cb0c51a899",
+        "registration": "apps/client/src/client_commands/catalog.rs",
+        "line": 64
+      }
     },
     {
       "id": "A003",
@@ -3624,7 +4656,14 @@
       },
       "read_source": "bounded local worker ledger",
       "commit_boundary": "client host local job coordinator; domain calls commit separately",
-      "migration_issue": 593
+      "migration_issue": 593,
+      "current": {
+        "status": "integrated",
+        "issue": 593,
+        "commit": "6245fc93ef171d6bce6194c61e2294cb0c51a899",
+        "registration": "apps/client/src/client_commands/catalog.rs",
+        "line": 65
+      }
     },
     {
       "id": "A004",
@@ -3648,7 +4687,45 @@
       },
       "read_source": "bounded local worker ledger",
       "commit_boundary": "client host local job coordinator; domain calls commit separately",
-      "migration_issue": 593
+      "migration_issue": 593,
+      "current": {
+        "status": "integrated",
+        "issue": 593,
+        "commit": "6245fc93ef171d6bce6194c61e2294cb0c51a899",
+        "registration": "apps/client/src/client_commands/catalog.rs",
+        "line": 66
+      }
+    },
+    {
+      "id": "A005",
+      "catalog": "server",
+      "status": "implemented",
+      "legacy": "impacts status INSTANCE_ID BODY_ID",
+      "aliases": [],
+      "canonical": "world.impacts.status",
+      "kind": "method",
+      "arguments": "instance_id: nonzero WorldInstanceId (u128); body_id: nonzero ImpactBodyId (u64)",
+      "result": "ImpactReceipt",
+      "unit": "world tick, terrain version and journal status",
+      "effect": "Query",
+      "owner": "ServerRuntime impact reservation ledger",
+      "scope": "authorized world instance",
+      "consumer": "admin, owned-local desktop and terminal clients",
+      "permission": "ServerAdmin",
+      "source": {
+        "path": "crates/server-runtime/src/server_command/catalog/bolids.rs",
+        "symbol": "entry"
+      },
+      "read_source": "bounded runtime impact reservation ledger",
+      "commit_boundary": "read-only owner snapshot; pending reservation is not journal commit",
+      "migration_issue": 587,
+      "current": {
+        "status": "integrated",
+        "issue": 587,
+        "commit": "9ffc52b920d2a80f024b3d10c1cf82212e0ebda8",
+        "registration": "apps/client/src/client_commands/catalog/bolids.rs",
+        "line": 45
+      }
     }
   ]
 }

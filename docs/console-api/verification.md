@@ -4,6 +4,16 @@ Each issue records its baseline, integration SHA, paths, producer, state owner, 
 
 At the migration gate, reconcile the 142 baseline rows, additional operations, all aliases and all findings. For the two clock extensions review the domain registration, bindings, public compile consumer and diff against the predecessor. Check that parser, help, completion and terminal gain both operations through the catalog, and that Rhai subsequently consumes both through typed metadata.
 
+The [inventory](../plan/epic-051-inventory.json) now records 142 frozen rows
+plus five bolid, impact and scripting operations, each with an integrated issue, commit and
+current Rust registration location. `python scripts/reconcile_epic051_inventory.py`
+refreshes those locations and fails when a registration cannot be found.
+[The resolution index](discrepancies.md#integrated-resolution-index) maps
+C01–C23 and the three additional findings to owner code. Client canonical and
+registered alias input uses one catalog binder result; historical `list` is an
+explicit compatibility adapter. Client semantic responses no longer use the
+`LegacyReported` display wrapper. Runtime comparisons remain NOT RUN.
+
 ## Final static matrix
 
 Record the exit and checked SHA for each command plus examples added during E051. [Final acceptance issue](https://github.com/clickbytes/minimium/issues/597)

@@ -22,6 +22,7 @@ mod explain;
 pub(crate) use explain::{analyze as analyze_console, validate_edit};
 mod connection;
 pub(crate) mod connection_adapter;
+mod developer_binding;
 mod environment;
 mod gameplay;
 mod help;
@@ -56,13 +57,13 @@ pub(crate) use presentation::BolidPath;
 #[cfg(feature = "desktop")]
 pub(crate) use presentation::PresentationRequirement;
 pub(crate) use presentation::{
-    PresentationCapability, PresentationOperation, PresentationResult, PresentationUnavailable,
+    PresentationCapability, PresentationOperation, PresentationUnavailable,
     PresentationUnavailableReason,
 };
 pub(crate) use properties::local_setting_specs;
 pub(crate) use properties::{
-    format_property_help_localized, format_time_value, parse_setting_value, property_spec,
-    ClientPropertyCommand, ClientPropertyKey, ClientPropertyValue,
+    format_property_help_localized, parse_setting_value, property_spec, ClientPropertyCommand,
+    ClientPropertyKey, ClientPropertyValue,
 };
 pub(crate) use text::{
     execute_text, CommandActionResult, CommandOutput, CommandSource, TextCommandResult,

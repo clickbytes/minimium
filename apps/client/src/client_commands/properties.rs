@@ -51,19 +51,6 @@ pub(crate) fn format_property_help_localized(
     )
 }
 
-pub(crate) fn format_time_value(
-    key: ClientPropertyKey,
-    frame: crate::environment::EnvironmentFrameInput,
-) -> Option<String> {
-    super::time_adapter::property(key, frame).map(|p| {
-        format!(
-            "{} {}",
-            key.key(),
-            p.format_with(minimium_commands::operation::CommandValue::encode)
-        )
-    })
-}
-
 pub(crate) fn parse_setting_value(
     key: &str,
     value: &str,
