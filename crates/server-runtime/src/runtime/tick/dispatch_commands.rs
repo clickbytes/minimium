@@ -100,6 +100,7 @@ impl ServerRuntime {
                             runtime_status,
                             client_traffic,
                         },
+                        &self.operation_catalog,
                         &self.module_registry,
                     ),
                     Err(error) => commands::CommandReply::error(

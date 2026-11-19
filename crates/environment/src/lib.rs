@@ -2,6 +2,7 @@
 
 pub mod climate;
 mod commands;
+pub mod console;
 mod model;
 pub mod time;
 

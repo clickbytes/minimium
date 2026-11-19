@@ -110,6 +110,7 @@ struct Scheduler {
     autosave_interval: Duration,
 }
 pub struct ServerRuntime {
+    operation_catalog: minimium_commands::operation::OperationCatalog,
     now: Instant,
     equipment: equipment::Equipment,
     excavation: excavation::Excavation,
@@ -191,11 +192,6 @@ impl ServerRuntime {
             shutdown: shutdown_request,
             session_nonce,
         } = composition;
-        let crate::hosting::RuntimeModules {
-            registry: module_registry,
-            components: component_registry,
-            schedule,
-        } = modules;
         let crate::RuntimeLoggers {
             server: server_logger,
             transport: transport_logger,
@@ -287,7 +283,7 @@ impl ServerRuntime {
                 &entity_counters,
                 &world_initialization,
                 &entities,
-                &component_registry,
+                &modules.components,
             )
             .map_err(|error| {
                 io::Error::new(
@@ -387,9 +383,10 @@ impl ServerRuntime {
             climate,
             authentication_provider,
             next_authentication_attempt: 1,
-            schedule,
-            module_registry,
-            component_registry,
+            schedule: modules.schedule,
+            operation_catalog: modules.catalog,
+            module_registry: modules.registry,
+            component_registry: modules.components,
             environment_clock,
             environment_dirty_revision,
             connections,

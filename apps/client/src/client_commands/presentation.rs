@@ -1,5 +1,21 @@
 use minimium_commands::{lex_command_line_with_spans, CommandError, CommandErrorCode};
 
+pub(super) const COMMAND_FORMS: &[(&str, &str)] = &[
+    ("dev clouds", "dev clouds"),
+    ("dev bolid transmission", "dev bolid transmission on|off"),
+    (
+        "dev bolid path",
+        "dev bolid path ID KIND SEED DURATION_MS X0 Y0 Z0 X1 Y1 Z1",
+    ),
+    ("dev bolid fragments", "dev bolid fragments"),
+    ("dev bolid lighting", "dev bolid lighting"),
+    ("dev bolid status", "dev bolid status"),
+    ("dev bolid replay", "dev bolid replay AGE [SEED [EVENT_ID]]"),
+    ("dev bolid freeze", "dev bolid freeze AGE [SEED [EVENT_ID]]"),
+    ("dev goto", "dev goto LATITUDE LONGITUDE"),
+    ("dev look", "dev look YAW_DEG PITCH_DEG"),
+];
+
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum PresentationOperation {
     Developer(DeveloperOperation),

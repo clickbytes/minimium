@@ -10,7 +10,7 @@ pub struct CommandSpec<T, E> {
 }
 
 /// Declarative help and completion metadata for one positional argument.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(serde::Serialize, Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CommandArgumentSpec {
     pub name: &'static str,
     pub value_type: CommandArgumentType,
@@ -22,7 +22,7 @@ pub struct CommandArgumentSpec {
     pub description: &'static str,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(serde::Serialize, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CommandArgumentType {
     Text,
     Boolean,
@@ -281,14 +281,12 @@ impl<T, E> CommandRegistry<T, E> {
 }
 
 fn valid_command_name(name: &str) -> bool {
-    let words = name.split(' ').collect::<Vec<_>>();
-    !words.is_empty()
-        && words.iter().all(|word| {
-            !word.is_empty()
-                && word.bytes().all(|byte| {
-                    byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"_-".contains(&byte)
-                })
-        })
+    name.split([' ', '.']).all(|part| {
+        !part.is_empty()
+            && part.bytes().all(|byte| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"_-".contains(&byte)
+            })
+    })
 }
 
 fn tail_after_tokens(input: &str, count: usize) -> &str {

@@ -320,6 +320,8 @@ and the planet scale always resolves from the world manifest.
 
 ## Commands
 
+F1, developer stdin and terminal help read the composed client operation catalog. The meteor audio alias resolves to the same settings descriptor as meteor sound. Presentation requirements appear in detailed help.
+
 The shared command registry owns argument metadata (type, optional/rest behavior,
 choices, constraints, unit and description). Console help and enum completion
 derive their output from those descriptors; command execution still delegates

@@ -154,16 +154,7 @@ pub(super) fn validate_property_request(
             Ok(ServerCommand::Property(ServerPropertyCommand::List(prefix)))
         }
         PropertyRequest::Help { target } => {
-            if let Some(target) = target.as_deref() {
-                if property_registry().get(target).is_none() && !server_command_exists(target) {
-                    return Err(property_error(
-                        target,
-                        CommandErrorCode::HelpQuery,
-                        format!("unknown command or server property `{target}`"),
-                        usage,
-                    ));
-                }
-            }
+            // Installed module names are available on the runtime owner.
             Ok(ServerCommand::Property(ServerPropertyCommand::Help(target)))
         }
     }

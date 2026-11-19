@@ -83,7 +83,7 @@ aborts preparation. A failed cloud query does not return a partial snapshot.
 
 ## Commands
 
-Owns time commands and pure UTC/time-scale argument parsing. Server runtime performs command dispatch and authorization checks.
+Owns time commands, pure UTC/time-scale argument parsing and shared clock operation descriptors in `console::clock_entry`. Clients bind the session sample and administrative hosts bind the owner snapshot. Server runtime performs command dispatch and authorization checks.
 
 ## Change guide
 

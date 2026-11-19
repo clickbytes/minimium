@@ -57,7 +57,10 @@ impl ServerRuntime {
                 report(self.property_report("server.sky.bolid_interval"))
             }
             ServerPropertyCommand::List(prefix) => {
-                let matching = crate::server_command::server_properties()
+                let matching = self
+                    .operation_catalog
+                    .entries()
+                    .filter_map(|entry| entry.property)
                     .filter(|spec| prefix.as_deref().is_none_or(|p| spec.key.starts_with(p)));
                 let mut rows = Vec::with_capacity(128);
                 let mut truncated = false;
@@ -76,31 +79,38 @@ impl ServerRuntime {
             }
             ServerPropertyCommand::Help(target) => {
                 if let Some(key) = target {
-                    if let Some(spec) =
-                        crate::server_command::server_properties().find(|spec| spec.key == key)
+                    if let Some((entry, spec)) = self
+                        .operation_catalog
+                        .resolve(key)
+                        .and_then(|entry| entry.property.map(|spec| (entry, spec)))
+                        .filter(|(_, spec)| spec.key == key)
                     {
                         commands::CommandReply::success(commands::CommandPayload::PropertyHelp(
                             *spec,
+                            entry.describe(),
                         ))
                     } else {
-                        crate::server_command::server_command_help(key).map_or_else(
-                            || {
-                                commands::CommandReply::error(
-                                    "server.command.unknown",
-                                    "unknown help target",
-                                )
-                            },
-                            |help| {
-                                commands::CommandReply::success(
-                                    commands::CommandPayload::SingleCommandHelp(help),
-                                )
-                            },
-                        )
+                        crate::server_command::catalog::command_help(&self.operation_catalog, key)
+                            .map_or_else(
+                                || {
+                                    commands::CommandReply::error(
+                                        "server.command.unknown",
+                                        "unknown help target",
+                                    )
+                                },
+                                |help| {
+                                    commands::CommandReply::success(
+                                        commands::CommandPayload::SingleCommandHelp(help),
+                                    )
+                                },
+                            )
                     }
                 } else {
                     commands::CommandReply::success(
                         commands::CommandPayload::PropertyCommandsHelp {
-                            builtins: crate::server_command::server_help_usages(),
+                            builtins: crate::server_command::catalog::builtin_usages(
+                                &self.operation_catalog,
+                            ),
                         },
                     )
                 }

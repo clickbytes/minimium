@@ -63,6 +63,7 @@ impl RuntimeTime {
 
 /// Validated module/component catalog shared by storage loading and construction.
 pub struct RuntimeModules {
+    pub(crate) catalog: minimium_commands::operation::OperationCatalog,
     pub(crate) registry:
         ModuleRegistry<crate::commands::ModuleHandler, runtime::schedule::SystemFn>,
     pub(crate) components: minimium_world::entity::ComponentRegistry,
@@ -78,7 +79,9 @@ impl RuntimeModules {
             crate::commands::build_schedule(&registry, &definition).map_err(io::Error::other)?;
         let components = crate::commands::component_registry(&registry)
             .map_err(|error| io::Error::other(format!("invalid components: {error:?}")))?;
+        let catalog = crate::server_command::catalog::build(&registry).map_err(io::Error::other)?;
         Ok(Self {
+            catalog,
             registry,
             components,
             schedule,

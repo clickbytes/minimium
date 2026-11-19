@@ -15,6 +15,7 @@ use minimium_commands::{
 use minimium_renderer::quality::SkyQuality;
 use std::sync::OnceLock;
 
+mod catalog;
 mod connection;
 mod environment;
 mod gameplay;
@@ -107,7 +108,7 @@ pub(crate) fn parse_fov_degrees(value: &str) -> Result<f32, &'static str> {
 }
 
 pub(crate) fn initialize_registry() {
-    let _ = registry();
+    let _ = catalog::catalog();
 }
 
 fn registry() -> &'static CommandRegistry {

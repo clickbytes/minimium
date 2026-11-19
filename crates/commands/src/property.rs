@@ -17,7 +17,7 @@ pub enum PropertyPermission {
     ServerAdmin,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(serde::Serialize, Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PropertyLifecycle {
     Live,
     RestartRequired,

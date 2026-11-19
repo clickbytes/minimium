@@ -30,7 +30,7 @@ pub(crate) fn render(payload: &CommandPayloadView<'_>) -> BoundedText {
             out.push_str("\nget KEY | set KEY VALUE | reset KEY | list [PREFIX]");
         }
         CommandPayloadView::SingleCommandHelp(help) => {
-            let _ = minimium_commands::write_command_help(&mut out, help.usage, help.arguments);
+            out.push_str(help.description());
         }
         CommandPayloadView::PropertyList {
             prefix,
@@ -300,6 +300,10 @@ pub(crate) fn render_reply_view(view: &CommandReplyView<'_>) -> BoundedText {
         .as_ref()
         .map(render)
         .unwrap_or_else(|| BoundedText::new(view.detail.unwrap_or("command failed")));
+    if let Some(help) = view.catalog_help {
+        out.push_str("\n");
+        out.push_str(help);
+    }
     if view.payload.is_some() {
         if let Some(outcome) = view.effects {
             if !out.as_str().is_empty() {

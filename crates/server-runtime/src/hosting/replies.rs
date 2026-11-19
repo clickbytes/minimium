@@ -15,6 +15,7 @@ pub struct CommandReplyView<'a> {
     pub should_stop: bool,
     pub error_code: Option<&'static str>,
     pub detail: Option<&'a str>,
+    pub catalog_help: Option<&'a str>,
     pub payload: Option<CommandPayloadView<'a>>,
     pub effects: Option<&'a minimium_gameplay::EffectBatchOutcome>,
 }
@@ -133,7 +134,7 @@ impl CommandReply {
             CommandPayload::UnavailableProperty { key, reason } => {
                 CommandPayloadView::UnavailableProperty { key, reason }
             }
-            CommandPayload::PropertyHelp(value) => CommandPayloadView::PropertyHelp(value),
+            CommandPayload::PropertyHelp(value, _) => CommandPayloadView::PropertyHelp(value),
             CommandPayload::PropertyCommandsHelp { builtins } => {
                 CommandPayloadView::PropertyCommandsHelp { builtins }
             }
@@ -222,6 +223,10 @@ impl CommandReply {
             should_stop: self.should_stop(),
             error_code: self.error_code(),
             detail: self.detail(),
+            catalog_help: match self.payload() {
+                Some(CommandPayload::PropertyHelp(_, description)) => Some(description),
+                _ => None,
+            },
             payload,
             effects: self.effect_outcome(),
         }

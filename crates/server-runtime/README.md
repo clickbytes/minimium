@@ -281,6 +281,8 @@ Preserve current protocol/save compatibility, tick cadence, movement behavior, a
 
 ## Commands
 
+RuntimeModules composes administrative catalog metadata after module installation. Targeted help resolves installed module operations and their aliases on the owner lane. The runtime reserves all built-in parser names, including the time namespace, before installing extensions.
+
 Startup accepts `--material-package PATH`, `--material-http-port PORT` (0 selects
 an available port), and `--climate-scenario PATH`. Both material variants are
 validated before admission. The HTTP endpoint serves only manifest-listed files;

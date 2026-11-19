@@ -233,10 +233,7 @@ impl<H, S> ModuleRegistrar<'_, H, S> {
 
 impl<H, S> ModuleRegistry<H, S> {
     /// Reserves names owned by host built-ins before module installation begins.
-    pub fn reserve_command_names(
-        &mut self,
-        names: &'static [&'static str],
-    ) -> Result<(), ModuleError> {
+    pub fn reserve_command_names(&mut self, names: &[&'static str]) -> Result<(), ModuleError> {
         let mut staged = BTreeSet::new();
         for name in names {
             if !valid_path(name)

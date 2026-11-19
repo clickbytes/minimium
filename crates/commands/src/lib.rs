@@ -3,6 +3,7 @@
 mod cli;
 mod config;
 mod error;
+pub mod operation;
 mod property;
 mod registry;
 mod syntax;

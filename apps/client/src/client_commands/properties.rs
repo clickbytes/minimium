@@ -1,4 +1,4 @@
-use super::{command_specs, ClientCommand, ParseError};
+use super::{catalog::catalog, ClientCommand, ParseError};
 use catalog::registry;
 use minimium_commands::{parse_property_request, CommandError, CommandErrorCode, PropertyRequest};
 use minimium_environment::time::{ClockMode, OfflinePolicy};
@@ -29,7 +29,7 @@ pub(crate) fn local_setting_specs() -> impl Iterator<Item = &'static minimium_co
 }
 
 pub(crate) fn property_spec(key: &str) -> Option<&'static minimium_commands::PropertySpec> {
-    catalog::registry().get(key)
+    catalog::registry().get(ClientPropertyKey::parse(key)?.key())
 }
 
 pub(crate) fn format_property_help_localized(
@@ -41,7 +41,14 @@ pub(crate) fn format_property_help_localized(
         locale,
         &minimium_localization::UiMessage::PropertyDescription(spec.key.to_owned()),
     );
-    catalog::format_property_help_with_description(spec, &description)
+    let details = catalog()
+        .resolve(spec.key)
+        .map(|entry| entry.describe())
+        .unwrap_or_default();
+    format!(
+        "{}\n{details}",
+        catalog::format_property_help_with_description(spec, &description)
+    )
 }
 
 pub(crate) fn format_property_list_localized(
@@ -49,7 +56,11 @@ pub(crate) fn format_property_list_localized(
     localizer: &minimium_localization::Localizer,
     locale: minimium_localization::Locale,
 ) -> String {
-    let items = registry().list(prefix).collect::<Vec<_>>();
+    let items = catalog()
+        .entries()
+        .filter_map(|entry| entry.property)
+        .filter(|p| prefix.is_none_or(|prefix| p.key.starts_with(prefix)))
+        .collect::<Vec<_>>();
     if items.is_empty() {
         return localizer.format(
             locale,
@@ -173,29 +184,15 @@ fn parse_request(request: PropertyRequest) -> Result<Option<ClientPropertyComman
         PropertyRequest::Help {
             target: Some(target),
         } => {
-            if registry().get(&target).is_some() {
-                let key = require_key(&target)?;
-                return Ok(Some(ClientPropertyCommand::Help(key)));
+            if let Some(entry) = catalog().resolve(&target) {
+                if let Some(property) = entry.property {
+                    return Ok(Some(ClientPropertyCommand::Help(require_key(
+                        property.key,
+                    )?)));
+                }
+                return Ok(Some(ClientPropertyCommand::CommandHelp(target)));
             }
-            if let Some(spec) = command_specs()
-                .iter()
-                .find(|spec| spec.name == target || spec.alias == Some(target.as_str()))
-            {
-                return Ok(Some(ClientPropertyCommand::CommandHelp(
-                    spec.name.to_owned(),
-                )));
-            }
-            let grouped = command_specs()
-                .iter()
-                .filter(|spec| {
-                    spec.name.starts_with(&format!("{target} "))
-                        || spec
-                            .alias
-                            .is_some_and(|alias| alias.starts_with(&format!("{target} ")))
-                })
-                .map(|spec| spec.name)
-                .collect::<Vec<_>>();
-            if !grouped.is_empty() {
+            if !super::help::group_entries(&target).is_empty() {
                 return Ok(Some(ClientPropertyCommand::CommandHelpGroup(target)));
             }
             Err(CommandError::new(

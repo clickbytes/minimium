@@ -1,9 +1,13 @@
 #[derive(Clone, Debug)]
 pub struct CommandHelp {
     pub(crate) usage: &'static str,
+    pub(crate) description: String,
     pub(crate) arguments: &'static [minimium_commands::CommandArgumentSpec],
 }
 impl CommandHelp {
+    pub fn description(&self) -> &str {
+        &self.description
+    }
     pub fn usage(&self) -> &'static str {
         self.usage
     }

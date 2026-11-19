@@ -13,6 +13,10 @@ The [machine-readable matrix](../plan/epic-051-inventory.json) enumerates declar
 | S001–S004 | Startup resolver keys missing runtime descriptors | 4 |
 | N001–N007 | Designed camera, water, save, explanation and clock reads | 7 |
 
+## Catalog integration
+
+Batch 02 indexes registered commands, properties, the ten concrete presentation forms and installed module commands. Help and list consume this metadata. The command execution backend is still legacy. The client audio spelling is an alias of the meteor sound field. Administrative help resolves installed modules after startup. Existing input is interpreted by its original parser until the binder migration.
+
 ### Registered command aliases
 
 | Legacy declaration | Alias | Migration |

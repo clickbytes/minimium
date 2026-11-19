@@ -1,4 +1,5 @@
-use super::{command_specs, registry};
+use super::{catalog::catalog, command_specs};
+use minimium_commands::operation::CatalogEntry;
 
 pub(crate) fn command_error(
     error: &minimium_commands::CommandError,
@@ -19,15 +20,32 @@ pub(crate) fn command_help(
     localizer: &minimium_localization::Localizer,
     locale: minimium_localization::Locale,
 ) -> String {
-    let Some(spec) = command_specs().iter().find(|spec| spec.name == name) else {
+    let Some(entry) = catalog().resolve(name) else {
         return name.to_owned();
     };
-    let translated = localizer.format(
-        locale,
-        &minimium_localization::UiMessage::CommandHelp(name.to_owned()),
-    );
-    let arguments = minimium_commands::format_command_help("", spec.arguments);
-    format!("{translated}{arguments}")
+    if let Some(spec) = command_specs()
+        .iter()
+        .find(|s| s.name == name || s.alias == Some(name))
+    {
+        let translated = localizer.format(
+            locale,
+            &minimium_localization::UiMessage::CommandHelp(spec.name.to_owned()),
+        );
+        format!("{translated}\n{}", entry.describe())
+    } else {
+        entry.describe()
+    }
+}
+
+pub(super) fn group_entries(prefix: &str) -> Vec<&'static CatalogEntry> {
+    let words = format!("{prefix} ");
+    let path = format!("{prefix}.");
+    catalog()
+        .entries()
+        .filter(|e| {
+            e.spec.path.starts_with(&path) || e.aliases.iter().any(|a| a.name.starts_with(&words))
+        })
+        .collect()
 }
 
 pub(crate) fn command_help_group(
@@ -35,22 +53,28 @@ pub(crate) fn command_help_group(
     localizer: &minimium_localization::Localizer,
     locale: minimium_localization::Locale,
 ) -> String {
-    command_specs()
+    group_entries(prefix)
         .iter()
-        .filter(|spec| spec.name.starts_with(&format!("{prefix} ")))
-        .map(|spec| command_help(spec.name, localizer, locale))
+        .map(|entry| command_help(&entry.spec.path, localizer, locale))
         .collect::<Vec<_>>()
         .join("\n")
 }
 
 pub(crate) fn help_lines() -> Vec<String> {
     let mut lines = vec!["Commands (use help COMMAND for details):".to_owned()];
-    lines.extend(
-        registry()
-            .commands()
+    lines.extend(catalog().entries().map(|entry| {
+        let names = entry
+            .aliases
             .iter()
-            .map(|spec| spec.usage.to_owned()),
-    );
+            .map(|a| a.name)
+            .collect::<Vec<_>>()
+            .join(", ");
+        if names.is_empty() {
+            entry.spec.path.clone()
+        } else {
+            format!("{} ({names})", entry.spec.path)
+        }
+    }));
     lines.push("Properties: get KEY | set KEY VALUE | reset KEY | list [PREFIX]".into());
     lines
         .push("Use help KEY for property details. PageUp/PageDown or wheel scrolls output.".into());

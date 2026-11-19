@@ -166,27 +166,16 @@ mod property_parsing;
 use properties::SERVER_PROPERTIES;
 use property_parsing::parse_property;
 
-pub(crate) const SERVER_COMMAND_NAMES: &[&str] = &[
-    "help",
-    "status",
-    "players list",
-    "metrics show",
-    "world save",
-    "stop",
-    "spawn_random_bolid",
-    "spawn_random_meteorid",
-    "time status",
-    "time mode real_time",
-    "time mode time_scale",
-    "time set",
-    "time scale",
-    "time offline pause",
-    "time offline advance",
-    "get",
-    "set",
-    "reset",
-    "list",
-];
+pub(crate) mod catalog;
+
+pub(crate) fn reserved_command_names() -> Vec<&'static str> {
+    server_registry()
+        .commands()
+        .iter()
+        .flat_map(|spec| std::iter::once(spec.name).chain(spec.alias))
+        .chain(["get", "set", "reset", "list"])
+        .collect()
+}
 
 fn server_registry() -> &'static CommandRegistry<ServerCommand, CommandError> {
     SERVER_REGISTRY.get_or_init(|| {
@@ -339,24 +328,6 @@ pub(crate) fn server_properties() -> impl Iterator<Item = &'static PropertySpec>
     property_registry().specs()
 }
 
-pub(crate) fn server_command_help(target: &str) -> Option<crate::commands::CommandHelp> {
-    server_registry()
-        .commands()
-        .iter()
-        .find(|spec| spec.name == target || spec.alias == Some(target))
-        .map(|spec| crate::commands::CommandHelp {
-            usage: spec.usage,
-            arguments: spec.arguments,
-        })
-}
-
-pub(crate) fn server_command_exists(target: &str) -> bool {
-    server_registry()
-        .commands()
-        .iter()
-        .any(|spec| spec.name == target || spec.alias == Some(target))
-}
-
 pub(crate) fn validate_property_request(
     request: PropertyRequest,
 ) -> Result<ServerCommand, CommandError> {
@@ -469,13 +440,4 @@ fn parse_error(
     usage: &str,
 ) -> CommandError {
     CommandError::new(code, Some(subject), reason, Some(usage))
-}
-
-pub(crate) fn server_help_usages() -> Vec<&'static str> {
-    server_registry()
-        .commands()
-        .iter()
-        .filter(|spec| spec.name != "time")
-        .map(|spec| spec.usage)
-        .collect()
 }

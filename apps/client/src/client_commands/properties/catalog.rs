@@ -32,11 +32,6 @@ const CLIENT_PROPERTIES: &[PropertySpec] = &[
     ),
 
     PropertySpec::new(
-        "client.audio.meteors", PropertyType::Boolean, None,
-        "Enable optional delayed meteor audio in this session.", Some("false"), Some("true|false"),
-        "apps/client::audio", PropertyPermission::Local, PropertyLifecycle::Live, false, true,
-    ),
-    PropertySpec::new(
         Key::MeteorVolume.key(), PropertyType::Decimal, None,
         "Local meteor audio volume.", Some("0.25"), Some("finite 0..=1"),
         "apps/client::audio", PropertyPermission::Local, PropertyLifecycle::Live, false, true,

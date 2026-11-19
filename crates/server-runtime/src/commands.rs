@@ -31,7 +31,7 @@ pub(crate) fn initialize_modules(
     modules: &[Arc<crate::ServerGameplayModule>],
 ) -> Result<ModuleRegistry<ModuleHandler, SystemFn>, crate::modules::ModuleError> {
     let mut registry = ModuleRegistry::default();
-    registry.reserve_command_names(crate::server_command::SERVER_COMMAND_NAMES)?;
+    registry.reserve_command_names(&crate::server_command::reserved_command_names())?;
     registry.install(&world::WorldCommands)?;
     for module in modules {
         registry.install_mapped(module.as_ref(), ModuleHandler::Extension)?;
@@ -194,7 +194,7 @@ pub(crate) enum CommandPayload {
         key: String,
         reason: String,
     },
-    PropertyHelp(minimium_commands::PropertySpec),
+    PropertyHelp(minimium_commands::PropertySpec, String),
     PropertyCommandsHelp {
         builtins: Vec<&'static str>,
     },
@@ -334,6 +334,7 @@ impl CommandReply {
 pub fn execute(
     command: &ServerCommand,
     context: OwnerCommandContext<'_>,
+    catalog: &minimium_commands::operation::OperationCatalog,
     registry: &ModuleRegistry<ModuleHandler, SystemFn>,
 ) -> CommandReply {
     let OwnerCommandContext {
@@ -351,7 +352,7 @@ pub fn execute(
     } = context;
     match command {
         ServerCommand::Help => CommandReply::success(CommandPayload::Help {
-            builtins: crate::server_command::server_help_usages(),
+            builtins: crate::server_command::catalog::builtin_usages(catalog),
             modules: registry
                 .commands()
                 .iter()
@@ -359,6 +360,10 @@ pub fn execute(
                 .map(|command| CommandHelp {
                     usage: command.definition.usage,
                     arguments: command.definition.arguments,
+                    description: catalog
+                        .resolve(command.definition.name)
+                        .expect("installed command")
+                        .describe(),
                 })
                 .collect(),
             truncated: registry.commands().len() > 256,
