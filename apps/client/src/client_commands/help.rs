@@ -3,6 +3,7 @@ use minimium_commands::operation::CatalogEntry;
 use minimium_commands::operation::OperationId;
 use minimium_localization::{Locale, Localizer, UiMessage, UiNotice};
 
+#[cfg(feature = "desktop")]
 pub(crate) fn command_error(
     error: &minimium_commands::CommandError,
     localizer: &minimium_localization::Localizer,

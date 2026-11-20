@@ -38,24 +38,6 @@ impl ClientSettings {
         }
     }
 
-    pub(crate) fn startup_projection(
-        &self,
-        key: &str,
-    ) -> Option<minimium_commands::results::property::StartupValue<String>> {
-        self.values.startup_projection(key)
-    }
-    pub(crate) fn requested(&self, key: &str) -> Option<&str> {
-        self.values.requested(key)
-    }
-    pub(crate) fn effective(&self, key: &str) -> Option<&str> {
-        self.values.effective(key)
-    }
-    pub(crate) fn source(&self, key: &str) -> PropertySource {
-        self.values.source(key)
-    }
-    pub(crate) fn difference_reason(&self, key: &str) -> Option<&str> {
-        self.values.difference_reason(key)
-    }
     pub(crate) fn set(&mut self, value: ClientPropertyValue) {
         self.values.set(value);
     }

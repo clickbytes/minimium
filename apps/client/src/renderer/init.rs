@@ -172,9 +172,7 @@ impl DesktopHost {
             localizer,
             renderer: gpu,
             shadow_state: shadows::ShadowState::default(),
-            prepared_shadow: shadow_prepare::PreparedShadowFrame::invalid(
-                shadows::ShadowInvalidReason::InvalidFrame,
-            ),
+            prepared_shadow: shadow_prepare::PreparedShadowFrame::invalid(),
             shadow_map_preparation: shadow_map_cache::ShadowMapPreparationCache::default(),
             input: InputState {
                 yaw: -std::f32::consts::FRAC_PI_2,

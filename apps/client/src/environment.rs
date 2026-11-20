@@ -9,8 +9,6 @@ pub(crate) use demo::LocalDemoEnvironment;
 #[cfg(feature = "desktop")]
 pub(crate) use minimium_client_runtime::environment::diagnostics;
 pub(crate) use minimium_client_runtime::environment::EnvironmentFrameInput;
-#[cfg(feature = "desktop")]
-pub(crate) use minimium_client_runtime::environment::SkyDiagnosticsSnapshot;
 pub(crate) use minimium_client_runtime::environment::SynchronizationQuality;
 
 pub(crate) fn localized_status_line(

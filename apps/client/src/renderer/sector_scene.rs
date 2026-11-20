@@ -43,13 +43,6 @@ impl ClientSectorCache {
         unfinished
     }
 
-    pub(super) fn presentation(&self, owner: SceneInterestOwner) -> Option<&PreparedScene> {
-        self.presentation
-            .presentations
-            .get(&owner)
-            .map(AsRef::as_ref)
-    }
-
     pub(super) fn new() -> Result<Self, SectorWorkerError> {
         Ok(Self {
             cpu: WorldReadiness::new()?,

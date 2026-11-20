@@ -47,8 +47,6 @@ pub(super) struct PreparedScene {
     pub patches: Vec<Arc<PreparedSector>>,
     pub fog_relief: Option<Arc<minimium_renderer::fog_relief::FogRelief>>,
     pub water_vertices: Arc<Vec<minimium_renderer::ocean_geometry::OceanVertex>>,
-    pub build_ms: f64,
-    pub cache_bytes: usize,
 }
 #[derive(Default)]
 struct State {
@@ -136,7 +134,6 @@ impl SectorWorker {
                             .cloned()
                             .expect("queued scene request")
                     };
-                    let started = std::time::Instant::now();
                     let water_vertices = match (request.water.as_ref(), water_mesh_cache.as_ref()) {
                         (
                             Some(water),
@@ -362,8 +359,6 @@ impl SectorWorker {
                                 patches,
                                 fog_relief,
                                 water_vertices,
-                                build_ms: started.elapsed().as_secs_f64() * 1000.0,
-                                cache_bytes: geometry.bytes(),
                             }),
                         );
                         prepared_water_revision = request.key.water_level_revision;

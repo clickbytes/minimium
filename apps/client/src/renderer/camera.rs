@@ -424,8 +424,7 @@ impl DesktopHost {
             [0.0; 3]
         };
         if self.renderer.set_render_origin(origin) {
-            self.shadow_state
-                .invalidate(shadows::ShadowInvalidReason::StaleContext);
+            self.shadow_state.invalidate();
             self.last_render_position = [f32::INFINITY; 3];
             self.gameplay_presentation.remote_geometry_dirty = true;
         }

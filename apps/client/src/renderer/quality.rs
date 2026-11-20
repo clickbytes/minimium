@@ -19,8 +19,7 @@ impl DesktopHost {
         let effective = if self.renderer.shadow_gpu.settings.enabled {
             SkyQuality::Standard
         } else {
-            self.shadow_state
-                .invalidate(super::shadows::ShadowInvalidReason::Disabled);
+            self.shadow_state.invalidate();
             SkyQuality::Low
         };
         let previous = self.sky_quality;

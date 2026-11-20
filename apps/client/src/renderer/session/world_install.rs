@@ -130,8 +130,7 @@ impl DesktopHost {
                 .unwrap_or_else(|| self.application.core_view().character.position)
                 .map(|v| (v / 4096.0).round() * 4096.0),
         );
-        self.shadow_state
-            .invalidate(super::super::shadows::ShadowInvalidReason::StaleContext);
+        self.shadow_state.invalidate();
         self.last_render_position = [f32::INFINITY; 3];
         self.application.set_loading(true);
         self.renderer.scene_visible = false;

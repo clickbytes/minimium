@@ -1,8 +1,4 @@
-use super::{
-    cache::{MeshStats, Morph},
-    worker::create_weather_model,
-    Publication, Request,
-};
+use super::{cache::Morph, worker::create_weather_model, Publication, Request};
 use glam::DVec3;
 use minimium_environment::weather::{
     CloudSnapshot, SeasonalProfile, CLOUD_OBSERVER_MARGIN, MAX_CLOUDS,
@@ -60,7 +56,6 @@ pub(super) fn fallback(
     };
     let mut faces = Vec::with_capacity(snapshot.clouds.len() * 6);
     let mut morphs = Vec::with_capacity(snapshot.clouds.len());
-    let mut stats = MeshStats::default();
     for (index, cloud) in snapshot.clouds.iter().copied().enumerate() {
         let (_, start, step) = cloud.morph_window(snapshot.utc);
         let retained = previous.and_then(|p| {
@@ -82,14 +77,12 @@ pub(super) fn fallback(
                 .then_some((morph, &p.faces[first..last]))
         });
         let morph = if let Some((morph, old_faces)) = retained {
-            stats.cached += 1;
             faces.extend(old_faces.iter().copied().map(|mut face| {
                 face.center[3] = index as f32;
                 face
             }));
             morph
         } else {
-            stats.simplified += 1;
             for mut face in minimium_renderer::cloud_mesh::envelope(cloud, [0.25; 2]) {
                 face.center[3] = index as f32;
                 faces.push(face);
@@ -100,7 +93,6 @@ pub(super) fn fallback(
                 level: 0,
             }
         };
-        stats.levels[usize::from(morph.level)] += 1;
         morphs.push(morph);
     }
     Ok((
@@ -112,7 +104,6 @@ pub(super) fn fallback(
             coarse: true,
             build_ms: 0.0,
             limited: true,
-            stats,
         }),
         cover,
     ))

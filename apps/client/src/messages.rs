@@ -51,7 +51,6 @@ pub enum ClientText {
     },
     #[cfg(feature = "desktop")]
     CouldNotQueueMovement(QueueProblem),
-    FpsUnavailable,
     #[cfg(feature = "desktop")]
     ShotFired,
     #[cfg(feature = "desktop")]
@@ -264,7 +263,6 @@ impl ClientText {
                     health: *health,
                 },
             ),
-            Self::FpsUnavailable => localizer.format(locale, &UiMessage::FpsUnavailable),
             #[cfg(feature = "desktop")]
             Self::ShotFired => localizer.format(locale, &UiMessage::ShotFired),
             #[cfg(feature = "desktop")]

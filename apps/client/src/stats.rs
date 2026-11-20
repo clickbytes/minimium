@@ -104,6 +104,47 @@ impl FrameStats {
             "gpu_estimate_scope".into(),
             V::Enum("engine_resources_not_driver_vram".into()),
         );
+        let environment = self.environment.snapshot();
+        let histogram = |sample: environment::HistogramSnapshot| {
+            let mut values = BTreeMap::new();
+            values.insert("samples".into(), V::U64(sample.samples));
+            for (name, value) in [("average_us", sample.average_us), ("max_us", sample.max_us)] {
+                if let Some(value) = value.and_then(FiniteValue::new) {
+                    values.insert(name.into(), V::Finite(value));
+                }
+            }
+            for (name, value) in [
+                ("p50_us", sample.p50_us),
+                ("p95_us", sample.p95_us),
+                ("p99_us", sample.p99_us),
+            ] {
+                if let Some(value) = value {
+                    values.insert(name.into(), V::U64(value));
+                }
+            }
+            V::Record(values)
+        };
+        fields.insert("environment_cpu".into(), histogram(environment.cpu));
+        fields.insert(
+            "environment_upload_cpu".into(),
+            histogram(environment.upload_cpu),
+        );
+        fields.insert("shadow_cpu".into(), histogram(environment.shadow_cpu));
+        for (name, value) in [
+            ("ephemeris_evaluations", environment.ephemeris_evaluations),
+            ("ephemeris_cache_hits", environment.ephemeris_cache_hits),
+            ("star_epoch_updates", environment.star_epoch_updates),
+            ("star_epoch_cache_hits", environment.star_epoch_cache_hits),
+            ("sky_draw_calls", environment.sky_draw_calls),
+            ("star_draw_calls", environment.star_draw_calls),
+            ("sun_draw_calls", environment.sun_draw_calls),
+            ("moon_draw_calls", environment.moon_draw_calls),
+            ("halo_draw_calls", environment.halo_draw_calls),
+            ("shadow_draw_calls", environment.shadow_draw_calls),
+            ("environment_frames_skipped", environment.frames_skipped),
+        ] {
+            fields.insert(name.into(), V::U64(value));
+        }
         Some(V::Record(fields))
     }
 
@@ -165,61 +206,7 @@ impl FrameStats {
         self.environment.record_frame(presented, draws);
     }
 
-    pub(crate) fn environment_snapshot(&self) -> environment::EnvironmentStatsSnapshot {
-        self.environment.snapshot()
-    }
-
     pub(crate) fn reset_environment_epoch(&mut self) {
         self.environment.reset_epoch();
     }
-
-    /// Formats the accumulated frame and CPU-work timing summaries.
-    pub fn summary(&self) -> String {
-        let elapsed_seconds = self.elapsed_nanoseconds as f64 / 1_000_000_000.0;
-        let fps = if self.sample_count > 0 && elapsed_seconds > 0.0 {
-            format!("{:.1}", self.presented_frames as f64 / elapsed_seconds)
-        } else {
-            "n/a".to_owned()
-        };
-        let draws_per_presented_frame = if self.presented_frames > 0 {
-            format!(
-                "{:.2}",
-                self.total_draw_calls as f64 / self.presented_frames as f64
-            )
-        } else {
-            "n/a".to_owned()
-        };
-        let frame_average_ms = format_duration_ms(self.frame_intervals.average_microseconds());
-        let frame_p50_ms = format_duration_ms(self.frame_intervals.percentile_microseconds(50));
-        let frame_p95_ms = format_duration_ms(self.frame_intervals.percentile_microseconds(95));
-        let frame_p99_ms = format_duration_ms(self.frame_intervals.percentile_microseconds(99));
-        let frame_max_ms = format_milliseconds(self.frame_intervals.maximum_milliseconds());
-        let cpu_average_ms = format_duration_ms(self.cpu_work.average_microseconds());
-        let cpu_p50_ms = format_duration_ms(self.cpu_work.percentile_microseconds(50));
-        let cpu_p95_ms = format_duration_ms(self.cpu_work.percentile_microseconds(95));
-        let cpu_p99_ms = format_duration_ms(self.cpu_work.percentile_microseconds(99));
-        let cpu_max_ms = format_milliseconds(self.cpu_work.maximum_milliseconds());
-        let gpu_estimate = self
-            .gpu_bytes
-            .map_or_else(|| "unavailable".to_string(), |bytes| format!("{bytes} B"));
-
-        let process_cpu = self
-            .process_cpu_time
-            .map_or_else(|| "n/a".to_owned(), |time| time.as_millis().to_string());
-        format!(
-            "frames={} presented={} presented_FPS_avg={fps} frame_ms(avg/p50/p95/p99/max)={frame_average_ms}/{frame_p50_ms}/{frame_p95_ms}/{frame_p99_ms}/{frame_max_ms} cpu_work_ms(avg/p50/p95/p99/max)={cpu_average_ms}/{cpu_p50_ms}/{cpu_p95_ms}/{cpu_p99_ms}/{cpu_max_ms} timing_samples={} draw_calls_per_presented_frame={draws_per_presented_frame} process_cpu_time_ms={process_cpu} engine_GPU_estimate={gpu_estimate}",
-            self.sample_count, self.presented_frames, self.sample_count
-        )
-    }
-}
-
-fn format_milliseconds(milliseconds: Option<f64>) -> String {
-    milliseconds.map_or_else(|| "n/a".to_owned(), |value| format!("{value:.3}"))
-}
-
-fn format_duration_ms(microseconds: Option<u64>) -> String {
-    microseconds.map_or_else(
-        || "n/a".to_owned(),
-        |value| format!("{:.3}", value as f64 / 1_000.0),
-    )
 }

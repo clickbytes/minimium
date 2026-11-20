@@ -13,8 +13,7 @@ pub(super) fn display(
                 println!("{line}")
             }
             #[cfg(feature = "desktop")]
-            crate::client_commands::CommandOutput::UiMessage(message)
-            | crate::client_commands::CommandOutput::UiError(message) => {
+            crate::client_commands::CommandOutput::UiError(message) => {
                 println!("{}", localizer.format(locale, &message))
             }
             crate::client_commands::CommandOutput::ClientText { message, .. } => {

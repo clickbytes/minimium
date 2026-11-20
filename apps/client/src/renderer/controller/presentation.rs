@@ -9,7 +9,6 @@ pub(in crate::renderer) fn unavailable_for(
     requirement: PresentationRequirement,
 ) -> Option<PresentationUnavailable> {
     let reason = match requirement {
-        PresentationRequirement::HostOnly => return None,
         PresentationRequirement::ReadyPresentation => presentation_reason(renderer, true),
         PresentationRequirement::ActiveWorldPresentation => {
             active_world_reason(renderer).or_else(|| presentation_reason(renderer, false))

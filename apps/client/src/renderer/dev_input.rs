@@ -22,7 +22,7 @@ pub(super) fn format_output(renderer: &mut DesktopHost, result: Option<dispatch:
     for output in result.outputs {
         match output {
             CommandOutput::Line(line) => println!("{line}"),
-            CommandOutput::UiMessage(message) | CommandOutput::UiError(message) => println!(
+            CommandOutput::UiError(message) => println!(
                 "{}",
                 renderer
                     .localizer

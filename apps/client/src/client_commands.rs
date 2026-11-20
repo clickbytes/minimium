@@ -48,6 +48,7 @@ use time_adapter::ClockAction;
 mod weather;
 
 pub(crate) use camera::parse_fov_degrees;
+#[cfg(feature = "desktop")]
 pub(crate) use help::command_error;
 pub(crate) use meteors::{MeteorDebug, MeteorLightDebug, MeteorPreset};
 pub(crate) use minimium_commands::{
@@ -56,10 +57,10 @@ pub(crate) use minimium_commands::{
 pub(crate) use navigation::nearest_portal_entity;
 #[cfg(feature = "desktop")]
 pub(crate) use presentation::BolidPath;
+pub(crate) use presentation::PresentationOperation;
 #[cfg(feature = "desktop")]
-pub(crate) use presentation::PresentationRequirement;
 pub(crate) use presentation::{
-    PresentationCapability, PresentationOperation, PresentationUnavailable,
+    PresentationCapability, PresentationRequirement, PresentationUnavailable,
     PresentationUnavailableReason,
 };
 pub(crate) use properties::local_setting_specs;

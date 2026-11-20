@@ -95,6 +95,12 @@ stdin does not edit console text, history, or preedit state. Renderer-only
 diagnostics are explicit presentation operations and return a host-unavailable
 result in the terminal client.
 
+The desktop `diagnostics fps` result reads `FrameStats::report`. It includes
+frame/process/GPU estimates plus nested environment, upload and shadow CPU
+histograms and astronomy/draw counters from the current measurement epoch.
+Legacy string-only sky, weather and terrain formatters had no active callers;
+their supported commands use the typed reports owned by the renderer adapters.
+
 ## Public API
 
 Cloud debug properties use the renderer's CPU `cloud_presentation::CloudDebug`
@@ -155,13 +161,12 @@ remain CPU-only public contracts when its `gpu` feature is disabled.
 The renderer's `RenderFrame`, `PreparedSector`, uniform and vertex data are also
 available without GPU. The desktop Earth renderer pre-exposes its scene for
 half-float storage, then meters visible HDR luminance before drawing the held
-item and UI. `terrain status` reports the storage gain, adaptation reference,
-solar and lunar altitudes, illuminated fraction and relative lunar flux.
+item and UI. `terrain status` reports typed patch, triangle, revision and resident
+geometry counts. Exposure and lunar-light comparisons use the debug views below.
 The client passes elapsed presentation UTC and elapsed monotonic time from the same
 two rendered frames to the meter. Accelerated celestial changes can reach the HDR
-output in that frame. The actual adapted gain stays on the GPU. In `sky info`,
-`render_minus_estimated_utc_ms` compares the rendered sky's UTC with the current
-client estimate. A negative value gives the age of that sky in world milliseconds.
+output in that frame. The actual adapted gain stays on the GPU. `sky info`
+reports typed observer, quality and celestial values from the current frame.
 
 Consumes renderer, client-runtime, core, environment, world, assets, asset-io, astronomy, platform, protocol, procgen, sectors, telemetry and sample-game content. The application supplies the client-runtime world-content resolver shared by desktop and terminal frontends. Headless server and ctl must not depend on this package.
 
@@ -298,10 +303,9 @@ The snapshot carries the renderer's complete geometry publication stamp and keys
 scene receivers, selected casters, remote casters and the uploaded map must match
 the same world, content, publication and floating-origin revisions before shadow
 encoding is enabled.
-The active scene revision and origin generation in sky diagnostics come from
-the current geometry publication; separate expected fields show the prepared
-shadow's stamp when it is stale. The incomplete reason distinguishes missing
-source, budget failure, stale context and pending/failed upload.
+The current geometry publication supplies the scene revision and origin
+generation used by shadow preparation. Missing source, budget, stale context
+and incomplete casters remain distinct internal invalidation reasons.
 `shadow_prepare::prepare_shadow_frame` performs CPU-only selection, bounds checks,
 uniform preparation and bounded local-map geometry conversion. `Renderer`
 owns shadow buffer allocation/upload and pass encoding; it publishes cache
@@ -424,7 +428,8 @@ values (defaults `auto` and `true`). In `terrain debug light_channels`, red is
 shaded direct moonlight, green is lunar skylight and blue is all other surface
 lighting. The individual views use the same material and exposure. In
 `terrain debug moon_coverage`, red and green show contact and landscape coverage.
-`terrain status` reports UTC, primary/secondary lunar shadows and exposure mode.
+`terrain status` reports the active geometry publication and triangle counts;
+the debug views above remain the presentation controls for lunar comparisons.
 
 Desktop startup loads the cooked offline base set;
 server-required sets are installed before content readiness. Distribute the
@@ -758,8 +763,8 @@ See docs/ambient-meteors.md for resource order, GPU layouts and OIT limitations.
 
 E047-09 uploads a shared 2288-byte, four-source transient-light uniform at frame
 binding 11. Physical-distance ranking and shader extinction are producer-neutral;
-daylight dust consumes the helper, and sky diagnostics report count/bytes/incident
-estimate. See docs/ambient-meteors.md for exact units and limits.
+daylight dust consumes the helper. `sky meteors status` exposes bounded GPU
+counts and upload bytes. See docs/ambient-meteors.md for exact units and limits.
 
 E047-10 connects shared transient lights to terrain/material BRDF, authored
 objects and ocean before tone mapping. The session-local command

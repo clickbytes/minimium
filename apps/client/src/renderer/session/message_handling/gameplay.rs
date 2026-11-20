@@ -47,8 +47,7 @@ impl DesktopHost {
             let position = self.application.core_view().character.position;
             let origin = position.map(|coordinate| (coordinate / 256.0).round() * 256.0);
             self.renderer.set_render_origin(origin);
-            self.shadow_state
-                .invalidate(super::super::super::shadows::ShadowInvalidReason::StaleContext);
+            self.shadow_state.invalidate();
             self.application.set_loading(true);
             self.renderer.scene_visible = false;
             self.last_render_position = [f32::INFINITY; 3];

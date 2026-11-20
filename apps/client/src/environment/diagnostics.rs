@@ -2,8 +2,6 @@ use minimium_environment::time::{ClockId, ClockMode, OfflinePolicy};
 
 use super::SynchronizationQuality;
 
-pub(crate) const SKY_DIAGNOSTICS_VERSION: u32 = 3;
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ClockSource {
     Server,
@@ -45,45 +43,6 @@ impl ClockDiagnostics {
             samples_accepted: None,
             samples_rejected: None,
         }
-    }
-}
-
-pub(crate) struct SkyDiagnosticsSnapshot {
-    pub(crate) version: u32,
-    fields: Vec<(&'static str, String)>,
-}
-
-impl SkyDiagnosticsSnapshot {
-    pub(crate) fn new() -> Self {
-        Self {
-            version: SKY_DIAGNOSTICS_VERSION,
-            fields: Vec::with_capacity(64),
-        }
-    }
-
-    pub(crate) fn push(&mut self, key: &'static str, value: impl ToString) {
-        self.fields.push((key, value.to_string()));
-    }
-
-    pub(crate) fn push_optional<T: ToString>(&mut self, key: &'static str, value: Option<T>) {
-        self.push(
-            key,
-            value.map_or_else(|| "n/a".to_owned(), |value| value.to_string()),
-        );
-    }
-
-    pub(crate) fn lines(self) -> impl Iterator<Item = String> {
-        let mut lines = Vec::with_capacity(self.fields.len().div_ceil(2) + 1);
-        lines.push(format!("sky_diagnostics_version={}", self.version));
-        for chunk in self.fields.chunks(2) {
-            let line = chunk
-                .iter()
-                .map(|(key, value)| format!("{key}={value}"))
-                .collect::<Vec<_>>()
-                .join(" ");
-            lines.push(line);
-        }
-        lines.into_iter()
     }
 }
 

@@ -46,7 +46,6 @@ struct Publication {
     snapshot: CloudSnapshot,
     faces: Vec<Face>,
     morphs: Vec<cache::Morph>,
-    stats: cache::MeshStats,
     limited: bool,
     build_ms: f64,
     coarse: bool,

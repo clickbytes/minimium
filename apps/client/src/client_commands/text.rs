@@ -96,8 +96,6 @@ pub(crate) fn execute_text(
 pub(crate) enum CommandOutput {
     Line(String),
     #[cfg(feature = "desktop")]
-    UiMessage(minimium_localization::UiMessage),
-    #[cfg(feature = "desktop")]
     UiError(minimium_localization::UiMessage),
     ClientText {
         message: crate::messages::ClientText,

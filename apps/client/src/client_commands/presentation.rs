@@ -61,6 +61,7 @@ pub(crate) struct BolidPath {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(feature = "desktop")]
 pub(crate) enum PresentationCapability {
     DeveloperRenderer,
     #[cfg(feature = "desktop")]
@@ -71,8 +72,8 @@ pub(crate) enum PresentationCapability {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(feature = "desktop")]
 pub(crate) enum PresentationRequirement {
-    HostOnly,
     ReadyPresentation,
     ActiveWorldPresentation,
     #[cfg(feature = "desktop")]
@@ -80,6 +81,7 @@ pub(crate) enum PresentationRequirement {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(feature = "desktop")]
 pub(crate) enum PresentationUnavailableReason {
     #[cfg(feature = "desktop")]
     MissingSession,
@@ -93,16 +95,17 @@ pub(crate) enum PresentationUnavailableReason {
     WorldTransferPending,
     #[cfg(feature = "desktop")]
     WrongWorld,
-    UnsupportedHost,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg(feature = "desktop")]
 pub(crate) struct PresentationUnavailable {
     pub capability: PresentationCapability,
     pub requirement: PresentationRequirement,
     pub reason: PresentationUnavailableReason,
 }
 
+#[cfg(feature = "desktop")]
 impl PresentationCapability {
     pub(crate) fn label(self) -> &'static str {
         match self {
@@ -116,10 +119,10 @@ impl PresentationCapability {
     }
 }
 
+#[cfg(feature = "desktop")]
 impl PresentationRequirement {
     pub(crate) fn label(self) -> &'static str {
         match self {
-            Self::HostOnly => "an initialized host",
             Self::ReadyPresentation => "a ready presentation matching the current context",
             Self::ActiveWorldPresentation => "an active world with ready presentation",
             #[cfg(feature = "desktop")]
@@ -128,6 +131,7 @@ impl PresentationRequirement {
     }
 }
 
+#[cfg(feature = "desktop")]
 impl PresentationUnavailableReason {
     pub(crate) fn label(self) -> &'static str {
         match self {
@@ -143,11 +147,11 @@ impl PresentationUnavailableReason {
             Self::WorldTransferPending => "a world transfer or teleport is pending",
             #[cfg(feature = "desktop")]
             Self::WrongWorld => "the active world is not Earth",
-            Self::UnsupportedHost => "this host has no presentation adapter",
         }
     }
 }
 
+#[cfg(feature = "desktop")]
 impl PresentationUnavailable {
     pub(crate) fn message(self) -> String {
         format!(
@@ -159,6 +163,7 @@ impl PresentationUnavailable {
     }
 }
 
+#[cfg(feature = "desktop")]
 impl PresentationOperation {
     pub(crate) fn capability(&self) -> PresentationCapability {
         match self {
@@ -175,38 +180,6 @@ impl PresentationOperation {
             | Self::MeteorClear
             | Self::MeteorLight(_)
             | Self::MeteorDebug(_) => PresentationCapability::MeteorDiagnostics,
-        }
-    }
-
-    pub(crate) fn requirement(&self) -> PresentationRequirement {
-        match self {
-            Self::Developer(DeveloperOperation::BolidTransmission(_))
-            | Self::Developer(DeveloperOperation::BolidTransmissionRead)
-            | Self::AtmosphereStatus
-            | Self::WeatherStatus
-            | Self::TerrainStatus
-            | Self::WaterStatus
-            | Self::MeteorStatus
-            | Self::MeteorDebugRead
-            | Self::MeteorLightRead
-            | Self::MeteorClear
-            | Self::MeteorLight(_)
-            | Self::MeteorDebug(_) => PresentationRequirement::HostOnly,
-            Self::Developer(DeveloperOperation::BolidStatus) => {
-                PresentationRequirement::ActiveWorldPresentation
-            }
-            Self::Developer(DeveloperOperation::BolidReplay { .. }) => {
-                PresentationRequirement::ActiveWorldPresentation
-            }
-            Self::Developer(DeveloperOperation::BolidPath(_))
-            | Self::Developer(DeveloperOperation::BolidFragments)
-            | Self::Developer(DeveloperOperation::BolidLighting) => {
-                PresentationRequirement::ActiveWorldPresentation
-            }
-            Self::SkyInfo | Self::SkyBodies => PresentationRequirement::ReadyPresentation,
-            Self::Developer(DeveloperOperation::Clouds) | Self::MeteorSpawn(_, _) => {
-                PresentationRequirement::ReadyPresentation
-            }
         }
     }
 }

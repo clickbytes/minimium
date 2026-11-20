@@ -185,7 +185,6 @@ impl CloudWorker {
                         faces: mesh.faces,
                         morphs: mesh.morphs,
                         limited: mesh.stats.simplified > 0,
-                        stats: mesh.stats,
                         build_ms: started.elapsed().as_secs_f64() * 1000.0,
                     };
                     let mut state = shared.0.lock().unwrap();

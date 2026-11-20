@@ -15,14 +15,6 @@ pub(super) enum ShadowSource {
 }
 
 impl ShadowSource {
-    pub(super) const fn label(self) -> &'static str {
-        match self {
-            Self::Sun => "sun",
-            Self::Moon => "moon",
-            Self::Bolid => "bolid",
-        }
-    }
-
     pub(super) fn id(self) -> u32 {
         match self {
             Self::Sun => SHADOW_SOURCE_SUN,
@@ -83,19 +75,6 @@ pub(super) enum ShadowInvalidReason {
     StaleContext,
 }
 
-impl ShadowInvalidReason {
-    pub(super) const fn label(self) -> &'static str {
-        match self {
-            Self::Disabled => "disabled",
-            Self::NoSource => "no_source",
-            Self::InvalidFrame => "invalid_frame",
-            Self::IncompleteCasters => "incomplete_casters",
-            Self::BudgetExceeded => "budget_exceeded",
-            Self::StaleContext => "stale_context",
-        }
-    }
-}
-
 #[derive(Default)]
 pub(super) struct ShadowState {
     pub(super) previous_source: Option<ShadowSource>,
@@ -103,16 +82,14 @@ pub(super) struct ShadowState {
     pub(super) valid: bool,
     pub(super) receiver_radius_m: f32,
     pub(super) texel_m: f32,
-    pub(super) invalid_reason: Option<ShadowInvalidReason>,
     pub(super) caster_keys: Vec<(minimium_world::world::SectorKey, u8)>,
 }
 
 impl ShadowState {
-    pub(super) fn invalidate(&mut self, reason: ShadowInvalidReason) {
+    pub(super) fn invalidate(&mut self) {
         self.valid = false;
         self.source = None;
         self.caster_keys.clear();
-        self.invalid_reason = Some(reason);
     }
 }
 

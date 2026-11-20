@@ -31,12 +31,11 @@ pub(super) struct PreparedShadowFrame {
     pub(super) landscape_uniform: Option<ShadowUniform>,
     pub(super) landscape_caster_keys: Vec<(SectorKey, u8)>,
     pub(super) map_casters: Option<PreparedMapCasters>,
-    pub(super) invalid_reason: Option<ShadowInvalidReason>,
     pub(super) valid: bool,
 }
 
 impl PreparedShadowFrame {
-    pub(super) fn invalid(reason: ShadowInvalidReason) -> Self {
+    pub(super) fn invalid() -> Self {
         Self {
             context: None,
             instance: None,
@@ -50,7 +49,6 @@ impl PreparedShadowFrame {
             landscape_uniform: None,
             landscape_caster_keys: Vec::new(),
             map_casters: None,
-            invalid_reason: Some(reason),
             valid: false,
         }
     }
@@ -89,7 +87,6 @@ pub(super) fn prepare_shadow_frame(
     state.caster_keys.clear();
     state.valid = false;
     state.source = None;
-    state.invalid_reason = None;
     state.receiver_radius_m = 0.0;
     state.texel_m = 0.0;
     if !input.shadow_enabled {
@@ -318,7 +315,6 @@ pub(super) fn prepare_shadow_frame(
         )
         .map_err(|()| ShadowInvalidReason::BudgetExceeded)?;
     state.valid = true;
-    state.invalid_reason = None;
     Ok(PreparedShadowFrame {
         context: Some(context),
         instance: Some(input.instance),
@@ -332,7 +328,6 @@ pub(super) fn prepare_shadow_frame(
         landscape_uniform,
         landscape_caster_keys,
         map_casters: Some(map_casters),
-        invalid_reason: None,
         valid: true,
     })
 }
@@ -408,11 +403,10 @@ impl DesktopHost {
             Ok(prepared) => {
                 self.prepared_shadow = prepared;
             }
-            Err(reason) => {
+            Err(_) => {
                 self.shadow_state.valid = false;
                 self.shadow_state.caster_keys.clear();
-                self.shadow_state.invalid_reason = Some(reason);
-                self.prepared_shadow = PreparedShadowFrame::invalid(reason);
+                self.prepared_shadow = PreparedShadowFrame::invalid();
             }
         }
     }
